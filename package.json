@@ -1,0 +1,93 @@
+{
+  "name": "kanban-markdown",
+  "displayName": "Kanban Markdown",
+  "description": "A kanban board for your codebase. Features stored as markdown.",
+  "version": "0.1.0",
+  "publisher": "kanban-markdown",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kanban-markdown.open",
+        "title": "Open Kanban Board",
+        "category": "Kanban Markdown",
+        "icon": {
+          "light": "resources/kanban-light.svg",
+          "dark": "resources/kanban-dark.svg"
+        }
+      },
+      {
+        "command": "kanban-markdown.addFeature",
+        "title": "Add Feature",
+        "category": "Kanban Markdown"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "kanban-markdown.open",
+          "when": "resourcePath =~ /\\.devtool[\\/\\\\]features[\\/\\\\].*\\.md$/"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "kanban-markdown.featureEditor",
+        "displayName": "Feature Editor",
+        "selector": [
+          {
+            "filenamePattern": "**/.devtool/features/*.md"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:extension && npm run build:webview",
+    "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "build:webview": "vite build",
+    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:webview\"",
+    "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "watch:webview": "vite build --watch",
+    "dev": "npm run watch",
+    "lint": "eslint src --ext ts,tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.0",
+    "esbuild": "^0.19.0",
+    "eslint": "^8.55.0",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@tiptap/extension-placeholder": "^3.15.3",
+    "@tiptap/pm": "^3.15.3",
+    "@tiptap/react": "^3.15.3",
+    "@tiptap/starter-kit": "^3.15.3",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.562.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.2.0",
+    "tiptap-markdown": "^0.9.0",
+    "zustand": "^5.0.10"
+  }
+}

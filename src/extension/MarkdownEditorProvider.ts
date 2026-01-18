@@ -47,10 +47,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     // Send initial content when webview is ready
     const sendDocumentToWebview = () => {
       const { frontmatter, content } = this._parseDocument(document.getText())
+      const fileName = document.uri.path.split('/').pop()?.replace(/\.md$/, '') || 'Untitled'
       const message: EditorExtensionMessage = {
         type: 'init',
         content,
-        frontmatter
+        frontmatter,
+        fileName
       }
       webviewPanel.webview.postMessage(message)
     }
@@ -97,6 +99,38 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         case 'requestSave':
           await document.save()
           break
+
+        case 'startWithClaude': {
+          // Save the document first to ensure Claude sees latest changes
+          await document.save()
+
+          // Build the prompt from the document content
+          const fullText = document.getText()
+          const { frontmatter: fm, content: docContent } = this._parseDocument(fullText)
+
+          // Build a concise single-line prompt that references the file
+          const labels = fm.labels.length > 0 ? ` [${fm.labels.join(', ')}]` : ''
+          const description = docContent.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+          const shortDesc = description.length > 200 ? description.substring(0, 200) + '...' : description
+
+          const prompt = `Implement this feature: "${fm.title}" (${fm.priority} priority)${labels}. ${shortDesc} See full details in: ${document.uri.fsPath}`
+
+          // Build permission mode flag
+          const permissionMode = message.permissionMode || 'default'
+          const permissionFlag = permissionMode !== 'default' ? ` --permission-mode ${permissionMode}` : ''
+
+          // Create or show terminal and run claude command interactively
+          const terminal = vscode.window.createTerminal({
+            name: 'Claude Code',
+            cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+          })
+          terminal.show()
+
+          // Escape double quotes for shell
+          const escapedPrompt = prompt.replace(/"/g, '\\"')
+          terminal.sendText(`claude${permissionFlag} "${escapedPrompt}"`)
+          break
+        }
       }
     })
 

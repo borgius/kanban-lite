@@ -18,9 +18,12 @@ export interface FeatureFrontmatter {
 
 // Messages from extension to editor webview
 export type EditorExtensionMessage =
-  | { type: 'init'; content: string; frontmatter: FeatureFrontmatter }
+  | { type: 'init'; content: string; frontmatter: FeatureFrontmatter; fileName: string }
   | { type: 'contentChanged'; content: string }
   | { type: 'themeChanged'; isDark: boolean }
+
+// Claude Code permission modes
+export type ClaudePermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
 // Messages from editor webview to extension
 export type EditorWebviewMessage =
@@ -28,3 +31,4 @@ export type EditorWebviewMessage =
   | { type: 'contentUpdate'; content: string }
   | { type: 'frontmatterUpdate'; frontmatter: FeatureFrontmatter }
   | { type: 'requestSave' }
+  | { type: 'startWithClaude'; permissionMode: ClaudePermissionMode }

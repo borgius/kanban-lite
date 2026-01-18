@@ -532,3 +532,172 @@ body {
   background: var(--accent-color);
   color: white;
 }
+
+/* Raw Markdown Editor */
+.raw-markdown-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 20px 24px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  font-family: var(--vscode-editor-font-family, 'SF Mono', Monaco, Menlo, Consolas, 'Ubuntu Mono', monospace);
+  font-size: var(--vscode-editor-font-size, 14px);
+  line-height: var(--vscode-editor-line-height, 1.6);
+  caret-color: var(--editor-cursor);
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.raw-markdown-editor::placeholder {
+  color: var(--editor-line-number);
+  font-style: italic;
+}
+
+.raw-markdown-editor:focus {
+  outline: none;
+}
+
+.raw-markdown-editor::selection {
+  background-color: var(--editor-selection);
+}
+
+/* Toolbar spacer - pushes content to the right */
+.toolbar-spacer {
+  flex: 1;
+}
+
+/* Claude Code button */
+.claude-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #c2410c 0%, #9a3412 100%);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  position: relative;
+  overflow: hidden;
+}
+
+.claude-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+}
+
+.claude-button:hover {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(194, 65, 12, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+.claude-button:active {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.claude-button svg:first-child {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
+}
+
+.claude-button svg:last-child {
+  opacity: 0.7;
+  margin-left: -2px;
+}
+
+/* Claude dropdown */
+.claude-dropdown-container {
+  position: relative;
+}
+
+.claude-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 260px;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdown-appear 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes dropdown-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.claude-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.claude-dropdown-item:hover {
+  background: rgba(194, 65, 12, 0.15);
+}
+
+.claude-dropdown-item:hover .claude-dropdown-label {
+  color: #fb923c;
+}
+
+.claude-dropdown-item:not(:last-child) {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.claude-dropdown-label {
+  color: var(--editor-fg);
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.claude-dropdown-desc {
+  color: var(--editor-line-number);
+  font-size: 11px;
+  margin-top: 3px;
+  line-height: 1.4;
+}

@@ -23,10 +23,13 @@ import {
   TextSelect,
   Calendar,
   User,
-  ChevronDown
+  ChevronDown,
+  Eye,
+  FileCode,
+  Sparkles
 } from 'lucide-react'
 import { useEditorStore } from './store'
-import type { FeatureFrontmatter } from '../../shared/editorTypes'
+import type { FeatureFrontmatter, ClaudePermissionMode } from '../../shared/editorTypes'
 import type { Priority, FeatureStatus } from '../../shared/types'
 import { cn } from '../lib/utils'
 
@@ -68,6 +71,7 @@ function ToolbarDivider() {
 
 interface FrontmatterPanelProps {
   frontmatter: FeatureFrontmatter
+  fileName: string
   onUpdate: (updates: Partial<FeatureFrontmatter>) => void
 }
 
@@ -88,6 +92,14 @@ const statusLabels: Record<FeatureStatus, string> = {
 
 const priorities: Priority[] = ['critical', 'high', 'medium', 'low']
 const statuses: FeatureStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done']
+
+// Claude permission mode options
+const claudePermissionModes: { value: ClaudePermissionMode; label: string; description: string }[] = [
+  { value: 'default', label: 'Default', description: 'Ask for permission on each action' },
+  { value: 'plan', label: 'Plan Mode', description: 'Create a plan before making changes' },
+  { value: 'acceptEdits', label: 'Auto-accept Edits', description: 'Automatically accept file edits' },
+  { value: 'bypassPermissions', label: 'YOLO Mode', description: 'Skip all permission checks' }
+]
 
 interface DropdownProps {
   value: string
@@ -141,7 +153,57 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
   )
 }
 
-function FrontmatterPanel({ frontmatter, onUpdate }: FrontmatterPanelProps) {
+interface ClaudeDropdownProps {
+  onSelect: (mode: ClaudePermissionMode) => void
+}
+
+function ClaudeDropdown({ onSelect }: ClaudeDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  return (
+    <div ref={dropdownRef} className="claude-dropdown-container">
+      <button
+        className="claude-button"
+        onClick={() => setIsOpen(!isOpen)}
+        title="Start working on this ticket with Claude Code"
+      >
+        <Sparkles size={14} />
+        <span>Start with Claude</span>
+        <ChevronDown size={12} />
+      </button>
+      {isOpen && (
+        <div className="claude-dropdown-menu">
+          {claudePermissionModes.map(mode => (
+            <button
+              key={mode.value}
+              className="claude-dropdown-item"
+              onClick={() => {
+                onSelect(mode.value)
+                setIsOpen(false)
+              }}
+            >
+              <span className="claude-dropdown-label">{mode.label}</span>
+              <span className="claude-dropdown-desc">{mode.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FrontmatterPanel({ frontmatter, fileName, onUpdate }: FrontmatterPanelProps) {
   const formatDueDate = (dateStr: string | null) => {
     if (!dateStr) return null
     const date = new Date(dateStr)
@@ -164,9 +226,9 @@ function FrontmatterPanel({ frontmatter, onUpdate }: FrontmatterPanelProps) {
 
   return (
     <div className="frontmatter-panel">
-      {/* Left side - ID and Title */}
+      {/* Left side - File name and Title */}
       <div className="frontmatter-left">
-        <span className="frontmatter-id">{frontmatter.id}</span>
+        <span className="frontmatter-id">{fileName}</span>
         <span className="frontmatter-title">{frontmatter.title}</span>
       </div>
 
@@ -222,9 +284,13 @@ function FrontmatterPanel({ frontmatter, onUpdate }: FrontmatterPanelProps) {
   )
 }
 
+type EditorMode = 'preview' | 'raw'
+
 export function MarkdownEditor() {
-  const { content, frontmatter, setContent, setFrontmatter, setIsDarkMode } = useEditorStore()
+  const { content, frontmatter, fileName, setContent, setFrontmatter, setFileName, setIsDarkMode } = useEditorStore()
   const isExternalUpdate = useRef(false)
+  const [editorMode, setEditorMode] = useState<EditorMode>('preview')
+  const rawTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   const editor = useEditor({
     extensions: [
@@ -275,6 +341,7 @@ export function MarkdownEditor() {
         case 'init':
           setContent(message.content)
           setFrontmatter(message.frontmatter)
+          setFileName(message.fileName)
           if (editor) {
             isExternalUpdate.current = true
             editor.commands.setContent(message.content || '')
@@ -299,7 +366,7 @@ export function MarkdownEditor() {
 
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [editor, setContent, setFrontmatter, setIsDarkMode])
+  }, [editor, setContent, setFrontmatter, setFileName, setIsDarkMode])
 
   // Watch for VSCode theme changes
   useEffect(() => {
@@ -373,6 +440,32 @@ export function MarkdownEditor() {
   // Check if there's a selection
   const hasSelection = editor ? !editor.state.selection.empty : false
 
+  // Toggle between raw and preview modes
+  const toggleEditorMode = useCallback(() => {
+    if (editorMode === 'preview') {
+      // Switching to raw mode - sync content from Tiptap
+      setEditorMode('raw')
+    } else {
+      // Switching to preview mode - sync content to Tiptap
+      if (editor) {
+        isExternalUpdate.current = true
+        editor.commands.setContent(content || '')
+        isExternalUpdate.current = false
+      }
+      setEditorMode('preview')
+    }
+  }, [editorMode, editor, content])
+
+  // Handle raw textarea changes
+  const handleRawContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value
+    setContent(newContent)
+    vscode.postMessage({
+      type: 'contentUpdate',
+      content: newContent
+    })
+  }, [setContent])
+
   // Handle frontmatter updates
   const handleFrontmatterUpdate = useCallback((updates: Partial<FeatureFrontmatter>) => {
     if (!frontmatter) return
@@ -386,6 +479,11 @@ export function MarkdownEditor() {
     })
   }, [frontmatter, setFrontmatter])
 
+  // Start Claude Code to work on this ticket
+  const startWithClaude = useCallback((permissionMode: ClaudePermissionMode) => {
+    vscode.postMessage({ type: 'startWithClaude', permissionMode })
+  }, [])
+
   if (!editor) {
     return (
       <div className="editor-loading">
@@ -396,7 +494,7 @@ export function MarkdownEditor() {
 
   return (
     <div className="editor-container">
-      {frontmatter && <FrontmatterPanel frontmatter={frontmatter} onUpdate={handleFrontmatterUpdate} />}
+      {frontmatter && <FrontmatterPanel frontmatter={frontmatter} fileName={fileName} onUpdate={handleFrontmatterUpdate} />}
 
       {/* Toolbar */}
       <div className="editor-toolbar">
@@ -463,11 +561,36 @@ export function MarkdownEditor() {
         <ToolbarButton onClick={setHorizontalRule} title="Horizontal Rule">
           <Minus size={16} />
         </ToolbarButton>
+
+        <ToolbarDivider />
+
+        <ToolbarButton
+          onClick={toggleEditorMode}
+          isActive={editorMode === 'raw'}
+          title={editorMode === 'preview' ? 'Show Raw Markdown' : 'Show Preview'}
+        >
+          {editorMode === 'preview' ? <FileCode size={16} /> : <Eye size={16} />}
+        </ToolbarButton>
+
+        <div className="toolbar-spacer" />
+
+        <ClaudeDropdown onSelect={startWithClaude} />
       </div>
 
       {/* Editor Content */}
       <div className="editor-content">
-        <EditorContent editor={editor} />
+        {editorMode === 'preview' ? (
+          <EditorContent editor={editor} />
+        ) : (
+          <textarea
+            ref={rawTextareaRef}
+            className="raw-markdown-editor"
+            value={content}
+            onChange={handleRawContentChange}
+            placeholder="Enter markdown here..."
+            spellCheck={false}
+          />
+        )}
       </div>
     </div>
   )

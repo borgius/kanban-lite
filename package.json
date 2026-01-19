@@ -4,11 +4,33 @@
   "description": "A kanban board for your codebase. Features stored as markdown.",
   "version": "0.1.0",
   "publisher": "kanban-markdown",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kanban-markdown/kanban-markdown-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/kanban-markdown/kanban-markdown-vscode/issues"
+  },
+  "homepage": "https://github.com/kanban-markdown/kanban-markdown-vscode#readme",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "kanban",
+    "markdown",
+    "project management",
+    "task management",
+    "board"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
@@ -29,6 +51,101 @@
         "category": "Kanban Markdown"
       }
     ],
+    "configuration": {
+      "title": "Kanban Markdown",
+      "properties": {
+        "kanban-markdown.featuresDirectory": {
+          "type": "string",
+          "default": ".devtool/features",
+          "description": "Directory path (relative to workspace root) where feature markdown files are stored."
+        },
+        "kanban-markdown.defaultPriority": {
+          "type": "string",
+          "default": "medium",
+          "enum": ["critical", "high", "medium", "low"],
+          "enumDescriptions": [
+            "Critical priority - urgent issues",
+            "High priority - important tasks",
+            "Medium priority - normal tasks",
+            "Low priority - nice to have"
+          ],
+          "description": "Default priority for new features."
+        },
+        "kanban-markdown.defaultStatus": {
+          "type": "string",
+          "default": "backlog",
+          "enum": ["backlog", "todo", "in-progress", "review", "done"],
+          "enumDescriptions": [
+            "Backlog - not yet planned",
+            "To Do - planned for work",
+            "In Progress - currently being worked on",
+            "Review - ready for review",
+            "Done - completed"
+          ],
+          "description": "Default status for new features."
+        },
+        "kanban-markdown.columns": {
+          "type": "array",
+          "default": [
+            { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
+            { "id": "todo", "name": "To Do", "color": "#3b82f6" },
+            { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
+            { "id": "review", "name": "Review", "color": "#8b5cf6" },
+            { "id": "done", "name": "Done", "color": "#22c55e" }
+          ],
+          "description": "Customize the kanban board columns.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the column (used in frontmatter status)"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the column"
+              },
+              "color": {
+                "type": "string",
+                "description": "Color for the column header (hex format)"
+              }
+            },
+            "required": ["id", "name", "color"]
+          }
+        },
+        "kanban-markdown.aiAgent": {
+          "type": "string",
+          "default": "claude",
+          "enum": ["claude", "codex", "opencode"],
+          "enumDescriptions": [
+            "Claude Code (Anthropic)",
+            "Codex (OpenAI)",
+            "OpenCode"
+          ],
+          "description": "Default AI agent to use for the 'Start with AI' feature."
+        },
+        "kanban-markdown.showPriorityBadges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show priority badges on feature cards."
+        },
+        "kanban-markdown.showAssignee": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show assignee on feature cards."
+        },
+        "kanban-markdown.showDueDate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show due date on feature cards."
+        },
+        "kanban-markdown.compactMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use compact card layout to show more features."
+        }
+      }
+    },
     "menus": {
       "editor/title/run": [
         {

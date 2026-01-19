@@ -48,7 +48,12 @@
     "watch:webview": "vite build --watch",
     "dev": "npm run watch",
     "lint": "eslint src --ext ts,tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies -o releases/",
+    "release": "node scripts/release.js",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",
@@ -57,10 +62,12 @@
     "@types/react-dom": "^18.2.0",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "@vscode/vsce": "^3.7.1",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.0",
     "esbuild": "^0.19.0",
     "eslint": "^8.55.0",
+    "ovsx": "^0.10.8",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.3.0",

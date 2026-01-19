@@ -6,3 +6,4 @@ out
 *.log*
 test-project
 .devtools
+releases/

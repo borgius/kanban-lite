@@ -2,7 +2,7 @@
   "name": "kanban-markdown",
   "displayName": "Kanban Markdown",
   "description": "A kanban board for your codebase. Features stored as markdown.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "LachyFS",
   "license": "MIT",
   "repository": {
@@ -156,6 +156,7 @@
     }
   },
   "scripts": {
+    "publish": "vsce publish && ovsx publish",
     "vscode:prepublish": "npm run build",
     "build": "npm run build:extension && npm run build:webview",
     "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",

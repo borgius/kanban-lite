@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
+import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter } from '../shared/types'
 
 interface CreateFeatureData {
@@ -19,6 +20,7 @@ export class KanbanPanel {
   private _features: Feature[] = []
   private _disposables: vscode.Disposable[] = []
   private _fileWatcher: vscode.FileSystemWatcher | undefined
+  private _currentEditingFeatureId: string | null = null
 
   public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     const column = vscode.window.activeTextEditor
@@ -98,6 +100,9 @@ export class KanbanPanel {
             break
           case 'closeFeature':
             // Nothing to do on extension side
+            break
+          case 'startWithAI':
+            await this._startWithAI(message.agent, message.permissionMode)
             break
         }
       },
@@ -297,12 +302,13 @@ export class KanbanPanel {
       return
     }
 
-    const id = `FEAT-${String(this._features.length + 1).padStart(3, '0')}`
+    const title = getTitleFromContent(data.content)
+    const filename = generateFeatureFilename(title)
     const now = new Date().toISOString()
     const featuresInStatus = this._features.filter(f => f.status === data.status)
 
     const feature: Feature = {
-      id,
+      id: filename,
       status: data.status,
       priority: data.priority,
       assignee: null,
@@ -312,7 +318,7 @@ export class KanbanPanel {
       labels: [],
       order: featuresInStatus.length,
       content: data.content,
-      filePath: path.join(featuresDir, `${id}.md`)
+      filePath: path.join(featuresDir, `${filename}.md`)
     }
 
     const content = this._serializeFeature(feature)
@@ -368,6 +374,8 @@ export class KanbanPanel {
     const feature = this._features.find(f => f.id === featureId)
     if (!feature) return
 
+    this._currentEditingFeatureId = featureId
+
     const frontmatter: FeatureFrontmatter = {
       id: feature.id,
       status: feature.status,
@@ -411,6 +419,73 @@ export class KanbanPanel {
 
     // Update all features in webview
     this._sendFeaturesToWebview()
+  }
+
+  private async _startWithAI(
+    agent?: 'claude' | 'codex' | 'opencode',
+    permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
+  ): Promise<void> {
+    // Find the currently editing feature
+    const feature = this._features.find(f => f.id === this._currentEditingFeatureId)
+    if (!feature) {
+      vscode.window.showErrorMessage('No feature selected')
+      return
+    }
+
+    // Parse title from the first # heading in content
+    const titleMatch = feature.content.match(/^#\s+(.+)$/m)
+    const title = titleMatch ? titleMatch[1].trim() : getTitleFromContent(feature.content)
+
+    const labels = feature.labels.length > 0 ? ` [${feature.labels.join(', ')}]` : ''
+    const description = feature.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+    const shortDesc = description.length > 200 ? description.substring(0, 200) + '...' : description
+
+    const prompt = `Implement this feature: "${title}" (${feature.priority} priority)${labels}. ${shortDesc} See full details in: ${feature.filePath}`
+
+    // Use provided agent or fall back to config
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
+    const selectedAgent = agent || config.get<string>('aiAgent') || 'claude'
+    const selectedPermissionMode = permissionMode || 'default'
+
+    let command: string
+    const escapedPrompt = prompt.replace(/"/g, '\\"')
+
+    switch (selectedAgent) {
+      case 'claude': {
+        const permissionFlag = selectedPermissionMode !== 'default' ? ` --permission-mode ${selectedPermissionMode}` : ''
+        command = `claude${permissionFlag} "${escapedPrompt}"`
+        break
+      }
+      case 'codex': {
+        const approvalMap: Record<string, string> = {
+          'default': 'suggest',
+          'plan': 'suggest',
+          'acceptEdits': 'auto-edit',
+          'bypassPermissions': 'full-auto'
+        }
+        const approvalMode = approvalMap[selectedPermissionMode] || 'suggest'
+        command = `codex --approval-mode ${approvalMode} "${escapedPrompt}"`
+        break
+      }
+      case 'opencode': {
+        command = `opencode "${escapedPrompt}"`
+        break
+      }
+      default:
+        command = `claude "${escapedPrompt}"`
+    }
+
+    const agentNames: Record<string, string> = {
+      'claude': 'Claude Code',
+      'codex': 'Codex',
+      'opencode': 'OpenCode'
+    }
+    const terminal = vscode.window.createTerminal({
+      name: agentNames[selectedAgent] || 'AI Agent',
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    })
+    terminal.show()
+    terminal.sendText(command)
   }
 
   private _sendFeaturesToWebview(): void {

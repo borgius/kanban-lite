@@ -3,10 +3,13 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
-import { X, Save, Calendar, User, ChevronDown } from 'lucide-react'
+import { X, Save, Calendar, User, ChevronDown, Wand2 } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { cn } from '../lib/utils'
+
+type AIAgent = 'claude' | 'codex' | 'opencode'
+type PermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
 interface FeatureEditorProps {
   featureId: string
@@ -14,6 +17,7 @@ interface FeatureEditorProps {
   frontmatter: FeatureFrontmatter
   onSave: (content: string, frontmatter: FeatureFrontmatter) => void
   onClose: () => void
+  onStartWithAI: (agent: AIAgent, permissionMode: PermissionMode) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -33,6 +37,50 @@ const statusLabels: Record<FeatureStatus, string> = {
 
 const priorities: Priority[] = ['critical', 'high', 'medium', 'low']
 const statuses: FeatureStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done']
+
+const aiAgentTabs: { agent: AIAgent; label: string; color: string; activeColor: string }[] = [
+  { agent: 'claude', label: 'Claude', color: 'hover:bg-amber-100 dark:hover:bg-amber-900/30', activeColor: 'bg-amber-700 text-white' },
+  { agent: 'codex', label: 'Codex', color: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30', activeColor: 'bg-emerald-500 text-white' },
+  { agent: 'opencode', label: 'OpenCode', color: 'hover:bg-slate-100 dark:hover:bg-slate-700/30', activeColor: 'bg-slate-500 text-white' },
+]
+
+const agentButtonColors: Record<AIAgent, { bg: string; hover: string; shadow: string; border: string }> = {
+  claude: {
+    bg: 'bg-gradient-to-b from-amber-600 to-amber-800',
+    hover: 'hover:from-amber-700 hover:to-amber-900',
+    shadow: 'shadow-[0_2px_8px_-2px_rgba(180,83,9,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    border: 'border border-amber-900/50'
+  },
+  codex: {
+    bg: 'bg-gradient-to-b from-emerald-400 to-emerald-600',
+    hover: 'hover:from-emerald-500 hover:to-emerald-700',
+    shadow: 'shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5),inset_0_1px_0_rgba(255,255,255,0.2)]',
+    border: 'border border-emerald-700/50'
+  },
+  opencode: {
+    bg: 'bg-gradient-to-b from-slate-400 to-slate-600',
+    hover: 'hover:from-slate-500 hover:to-slate-700',
+    shadow: 'shadow-[0_2px_8px_-2px_rgba(100,116,139,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    border: 'border border-slate-700/50'
+  },
+}
+
+const aiModesByAgent: Record<AIAgent, { permissionMode: PermissionMode; label: string; description: string }[]> = {
+  claude: [
+    { permissionMode: 'default', label: 'Default', description: 'With confirmations' },
+    { permissionMode: 'plan', label: 'Plan', description: 'Creates a plan first' },
+    { permissionMode: 'acceptEdits', label: 'Auto-edit', description: 'Auto-accepts file edits' },
+    { permissionMode: 'bypassPermissions', label: 'Full Auto', description: 'Bypasses all prompts' },
+  ],
+  codex: [
+    { permissionMode: 'default', label: 'Suggest', description: 'Suggests changes' },
+    { permissionMode: 'acceptEdits', label: 'Auto-edit', description: 'Auto-accepts edits' },
+    { permissionMode: 'bypassPermissions', label: 'Full Auto', description: 'Full automation' },
+  ],
+  opencode: [
+    { permissionMode: 'default', label: 'Default', description: 'Standard mode' },
+  ],
+}
 
 interface DropdownProps {
   value: string
@@ -80,7 +128,80 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose }: FeatureEditorProps) {
+interface AIDropdownProps {
+  onSelect: (agent: AIAgent, permissionMode: PermissionMode) => void
+}
+
+function AIDropdown({ onSelect }: AIDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [selectedTab, setSelectedTab] = useState<AIAgent>('claude')
+
+  const modes = aiModesByAgent[selectedTab]
+  const buttonColors = agentButtonColors[selectedTab]
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-md transition-all',
+          buttonColors.bg,
+          buttonColors.hover,
+          buttonColors.shadow,
+          buttonColors.border,
+          'active:scale-[0.98] active:shadow-none'
+        )}
+      >
+        <Wand2 size={14} />
+        Build with AI
+        <span className="ml-1 text-[10px] opacity-70">⌘B</span>
+        <ChevronDown size={12} className={cn('transition-transform', isOpen && 'rotate-180')} />
+      </button>
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full right-0 mt-1 z-20 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl min-w-[260px] overflow-hidden">
+            {/* Tabs */}
+            <div className="flex">
+              {aiAgentTabs.map((tab) => (
+                <button
+                  key={tab.agent}
+                  onClick={() => setSelectedTab(tab.agent)}
+                  className={cn(
+                    'flex-1 px-3 py-2.5 text-xs font-medium transition-all',
+                    selectedTab === tab.agent
+                      ? tab.activeColor
+                      : cn('text-zinc-600 dark:text-zinc-400', tab.color)
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {/* Options */}
+            <div className="p-2 space-y-1">
+              {modes.map((mode) => (
+                <button
+                  key={mode.permissionMode}
+                  onClick={() => {
+                    onSelect(selectedTab, mode.permissionMode)
+                    setIsOpen(false)
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors"
+                >
+                  <div className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{mode.label}</div>
+                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">{mode.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose, onStartWithAI }: FeatureEditorProps) {
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [isDirty, setIsDirty] = useState(false)
 
@@ -125,12 +246,16 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
     setIsDirty(true)
   }, [])
 
-  // Keyboard shortcut for save
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault()
+        onStartWithAI('claude', 'default')
       }
       if (e.key === 'Escape') {
         onClose()
@@ -138,7 +263,7 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave, onClose])
+  }, [handleSave, onClose, onStartWithAI])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const title = editor ? getTitleFromContent((editor.storage as any).markdown.getMarkdown()) : getTitleFromContent(content)
@@ -157,6 +282,7 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
           )}
         </div>
         <div className="flex items-center gap-2">
+          <AIDropdown onSelect={onStartWithAI} />
           <button
             onClick={handleSave}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"

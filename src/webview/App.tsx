@@ -145,6 +145,10 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'closeFeature' })
   }
 
+  const handleStartWithAI = (agent: 'claude' | 'codex' | 'opencode', permissionMode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'): void => {
+    vscode.postMessage({ type: 'startWithAI', agent, permissionMode })
+  }
+
   const handleAddFeatureInColumn = (status: string): void => {
     setCreateFeatureStatus(status as FeatureStatus)
     setCreateFeatureOpen(true)
@@ -207,6 +211,7 @@ function App(): React.JSX.Element {
               frontmatter={editingFeature.frontmatter}
               onSave={handleSaveFeature}
               onClose={handleCloseEditor}
+              onStartWithAI={handleStartWithAI}
             />
           </div>
         )}

@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
 import { KanbanPanel } from './KanbanPanel'
+import { generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
 
 async function createFeatureFromPrompts(): Promise<void> {
@@ -64,23 +65,14 @@ async function createFeatureFromPrompts(): Promise<void> {
   const featuresDir = path.join(workspaceFolders[0].uri.fsPath, '.devtool', 'features')
   await fs.promises.mkdir(featuresDir, { recursive: true })
 
-  // Get existing features to determine ID
-  let existingCount = 0
-  try {
-    const files = await fs.promises.readdir(featuresDir)
-    existingCount = files.filter(f => f.endsWith('.md')).length
-  } catch {
-    // Directory might not exist yet
-  }
-
-  const id = `FEAT-${String(existingCount + 1).padStart(3, '0')}`
+  const filename = generateFeatureFilename(title)
   const now = new Date().toISOString()
 
   // Build content with title as first # heading
   const content = `# ${title}${description ? '\n\n' + description : ''}`
 
   const feature: Feature = {
-    id,
+    id: filename,
     status,
     priority,
     assignee: null,
@@ -90,7 +82,7 @@ async function createFeatureFromPrompts(): Promise<void> {
     labels: [],
     order: 0,
     content,
-    filePath: path.join(featuresDir, `${id}.md`)
+    filePath: path.join(featuresDir, `${filename}.md`)
   }
 
   const fileContent = serializeFeature(feature)
@@ -100,7 +92,7 @@ async function createFeatureFromPrompts(): Promise<void> {
   const document = await vscode.workspace.openTextDocument(feature.filePath)
   await vscode.window.showTextDocument(document)
 
-  vscode.window.showInformationMessage(`Created feature: ${id} - ${title}`)
+  vscode.window.showInformationMessage(`Created feature: ${title}`)
 }
 
 function serializeFeature(feature: Feature): string {

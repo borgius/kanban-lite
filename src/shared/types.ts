@@ -23,6 +23,21 @@ export function getTitleFromContent(content: string): string {
   return match ? match[1].trim() : 'Untitled'
 }
 
+// Generate a filename-safe slug from a title
+export function generateFeatureFilename(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single
+    .replace(/^-|-$/g, '') // Trim hyphens from start/end
+    .slice(0, 50) // Limit length
+
+  const now = new Date()
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return slug ? `${slug}-${date}` : `feature-${date}`
+}
+
 export interface KanbanColumn {
   id: string
   name: string

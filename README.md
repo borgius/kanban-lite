@@ -8,12 +8,10 @@ A VSCode/Cursor extension that brings a full-featured kanban board directly into
 
 ![Kanban Board Overview](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/board-overview.png)
 
-![Editor View](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/editor-view.png)
-
-
 ## Features
 
 ### Kanban Board
+
 - **5-column workflow**: Backlog, To Do, In Progress, Review, Done
 - **Drag-and-drop**: Move cards between columns with visual feedback
 - **Split-view editor**: Board on left, inline markdown editor on right
@@ -26,7 +24,12 @@ A VSCode/Cursor extension that brings a full-featured kanban board directly into
   - `Enter` in title - Move to description field
   - `Shift + Enter` in title - Add new line
 
+
 ### Feature Cards
+
+![Editor View](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/editor-view.png)
+
+
 - **Priority levels**: Critical, High, Medium, Low (color-coded badges)
 - **Assignees**: Assign team members to features
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)

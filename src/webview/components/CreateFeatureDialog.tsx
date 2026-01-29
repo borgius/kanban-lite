@@ -95,6 +95,7 @@ function CreateFeatureDialogContent({
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
   // Focus input on mount
   useEffect(() => {
@@ -203,8 +204,15 @@ function CreateFeatureDialogContent({
               target.style.height = 'auto'
               target.style.height = target.scrollHeight + 'px'
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                descriptionRef.current?.focus()
+              }
+            }}
           />
           <textarea
+            ref={descriptionRef}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Add a description..."

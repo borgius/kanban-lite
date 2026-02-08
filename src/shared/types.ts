@@ -52,9 +52,18 @@ export const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'done', name: 'Done', color: '#22c55e' }
 ]
 
+export interface CardDisplaySettings {
+  showPriorityBadges: boolean
+  showAssignee: boolean
+  showDueDate: boolean
+  compactMode: boolean
+  defaultPriority: Priority
+  defaultStatus: FeatureStatus
+}
+
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; features: Feature[]; columns: KanbanColumn[] }
+  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings }
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter }

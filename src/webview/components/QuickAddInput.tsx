@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import type { FeatureStatus, Priority } from '../../shared/types'
+import { useStore } from '../store'
 
 interface QuickAddInputProps {
   status: FeatureStatus
@@ -8,6 +9,7 @@ interface QuickAddInputProps {
 }
 
 export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
+  const { cardSettings } = useStore()
   const [isEditing, setIsEditing] = useState(false)
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -25,7 +27,7 @@ export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
       const content = `# ${title}`
       onAdd({
         status,
-        priority: 'medium',
+        priority: cardSettings.defaultPriority,
         content
       })
       setValue('')

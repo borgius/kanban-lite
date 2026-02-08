@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
 import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
-import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter } from '../shared/types'
+import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 
 interface CreateFeatureData {
   status: FeatureStatus
@@ -491,18 +491,30 @@ export class KanbanPanel {
   }
 
   private _sendFeaturesToWebview(): void {
-    const columns: KanbanColumn[] = [
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
+
+    const defaultColumns: KanbanColumn[] = [
       { id: 'backlog', name: 'Backlog', color: '#6b7280' },
       { id: 'todo', name: 'To Do', color: '#3b82f6' },
       { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
       { id: 'review', name: 'Review', color: '#8b5cf6' },
       { id: 'done', name: 'Done', color: '#22c55e' }
     ]
+    const columns = config.get<KanbanColumn[]>('columns', defaultColumns)
+    const settings: CardDisplaySettings = {
+      showPriorityBadges: config.get<boolean>('showPriorityBadges', true),
+      showAssignee: config.get<boolean>('showAssignee', true),
+      showDueDate: config.get<boolean>('showDueDate', true),
+      compactMode: config.get<boolean>('compactMode', false),
+      defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
+      defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')
+    }
 
     this._panel.webview.postMessage({
       type: 'init',
       features: this._features,
-      columns
+      columns,
+      settings
     })
   }
 }

@@ -22,7 +22,8 @@ function App(): React.JSX.Element {
     setFeatures,
     setColumns,
     updateFeature,
-    setIsDarkMode
+    setIsDarkMode,
+    setCardSettings
   } = useStore()
 
   const [createFeatureOpen, setCreateFeatureOpen] = useState(false)
@@ -100,6 +101,9 @@ function App(): React.JSX.Element {
         case 'init':
           setFeatures(message.features)
           setColumns(message.columns)
+          if (message.settings) {
+            setCardSettings(message.settings)
+          }
           break
         case 'featuresUpdated':
           setFeatures(message.features)

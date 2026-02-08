@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Feature, FeatureStatus, KanbanColumn, Priority } from '../../shared/types'
+import type { Feature, FeatureStatus, KanbanColumn, Priority, CardDisplaySettings } from '../../shared/types'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -14,10 +14,12 @@ interface KanbanState {
   labelFilter: string | 'all'
   dueDateFilter: DueDateFilter
   layout: LayoutMode
+  cardSettings: CardDisplaySettings
 
   setFeatures: (features: Feature[]) => void
   setColumns: (columns: KanbanColumn[]) => void
   setIsDarkMode: (dark: boolean) => void
+  setCardSettings: (settings: CardDisplaySettings) => void
   setSearchQuery: (query: string) => void
   setPriorityFilter: (priority: Priority | 'all') => void
   setAssigneeFilter: (assignee: string | 'all') => void
@@ -83,10 +85,19 @@ export const useStore = create<KanbanState>((set, get) => ({
   labelFilter: 'all',
   dueDateFilter: 'all',
   layout: 'horizontal',
+  cardSettings: {
+    showPriorityBadges: true,
+    showAssignee: true,
+    showDueDate: true,
+    compactMode: false,
+    defaultPriority: 'medium',
+    defaultStatus: 'backlog'
+  },
 
   setFeatures: (features) => set({ features }),
   setColumns: (columns) => set({ columns }),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
+  setCardSettings: (settings) => set({ cardSettings: settings }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setPriorityFilter: (priority) => set({ priorityFilter: priority }),
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),

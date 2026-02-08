@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Plus, ChevronDown, Calendar, User } from 'lucide-react'
 import type { FeatureStatus, Priority } from '../../shared/types'
+import { useStore } from '../store'
 import { cn } from '../lib/utils'
 
 interface CreateFeatureDialogProps {
@@ -86,12 +87,13 @@ function CreateFeatureDialogContent({
   isOpen,
   onClose,
   onCreate,
-  initialStatus = 'backlog'
+  initialStatus
 }: CreateFeatureDialogProps) {
+  const { cardSettings } = useStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [status, setStatus] = useState<FeatureStatus>(initialStatus)
-  const [priority, setPriority] = useState<Priority>('medium')
+  const [status, setStatus] = useState<FeatureStatus>(initialStatus ?? cardSettings.defaultStatus)
+  const [priority, setPriority] = useState<Priority>(cardSettings.defaultPriority)
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)

@@ -1,6 +1,7 @@
 import { Calendar, User } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Feature, Priority } from '../../shared/types'
+import { useStore } from '../store'
 
 interface FeatureCardProps {
   feature: Feature
@@ -23,6 +24,7 @@ const priorityLabels: Record<Priority, string> = {
 }
 
 export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) {
+  const { cardSettings } = useStore()
   const title = getTitleFromContent(feature.content)
 
   const formatDueDate = (dateStr: string | null) => {
@@ -48,27 +50,29 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
   return (
     <div
       onClick={onClick}
-      className={`bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 cursor-pointer hover:shadow-md transition-shadow ${
+      className={`bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 ${cardSettings.compactMode ? 'p-2' : 'p-3'} cursor-pointer hover:shadow-md transition-shadow ${
         isDragging ? 'shadow-lg opacity-90' : ''
       }`}
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-2 mb-2">
+      <div className={`flex items-start justify-between gap-2 ${cardSettings.compactMode ? 'mb-1' : 'mb-2'}`}>
         <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">{feature.id}</span>
-        <span
-          className={`text-xs font-medium px-1.5 py-0.5 rounded ${priorityColors[feature.priority]}`}
-        >
-          {priorityLabels[feature.priority]}
-        </span>
+        {cardSettings.showPriorityBadges && (
+          <span
+            className={`text-xs font-medium px-1.5 py-0.5 rounded ${priorityColors[feature.priority]}`}
+          >
+            {priorityLabels[feature.priority]}
+          </span>
+        )}
       </div>
 
       {/* Title */}
-      <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2 line-clamp-2">
+      <h3 className={`text-sm font-medium text-zinc-900 dark:text-zinc-100 ${cardSettings.compactMode ? 'mb-1 line-clamp-1' : 'mb-2 line-clamp-2'}`}>
         {title}
       </h3>
 
       {/* Labels */}
-      {feature.labels.length > 0 && (
+      {!cardSettings.compactMode && feature.labels.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {feature.labels.slice(0, 3).map((label) => (
             <span
@@ -87,14 +91,14 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
       {/* Footer */}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1">
-          {feature.assignee && feature.assignee !== 'null' && (
+          {cardSettings.showAssignee && feature.assignee && feature.assignee !== 'null' && (
             <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
               <User size={12} />
               <span>@{feature.assignee}</span>
             </div>
           )}
         </div>
-        {dueInfo && (
+        {cardSettings.showDueDate && dueInfo && (
           <div className={`flex items-center gap-1 ${dueInfo.className}`}>
             <Calendar size={12} />
             <span>{dueInfo.text}</span>

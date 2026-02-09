@@ -112,9 +112,27 @@ export class KanbanPanel {
 
     // Set up file watcher for feature files
     this._setupFileWatcher()
+
+    // Listen for settings changes and push updates to webview
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('kanban-markdown')) {
+        if (e.affectsConfiguration('kanban-markdown.featuresDirectory')) {
+          // Features directory changed - need to reload everything
+          this._setupFileWatcher()
+          this._loadFeatures().then(() => this._sendFeaturesToWebview())
+        } else {
+          this._sendFeaturesToWebview()
+        }
+      }
+    }, null, this._disposables)
   }
 
   private _setupFileWatcher(): void {
+    // Dispose old watcher if re-setting up (e.g. featuresDirectory changed)
+    if (this._fileWatcher) {
+      this._fileWatcher.dispose()
+    }
+
     const featuresDir = this._getWorkspaceFeaturesDir()
     if (!featuresDir) return
 

@@ -47,6 +47,17 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       })
     )
 
+    // Listen for settings changes
+    disposables.push(
+      vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('kanban-markdown')) {
+          // Re-evaluate current editor against fresh config
+          // (e.g. featuresDirectory may have changed)
+          provider._onActiveEditorChanged(vscode.window.activeTextEditor)
+        }
+      })
+    )
+
     return vscode.Disposable.from(...disposables)
   }
 

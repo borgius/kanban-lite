@@ -4,6 +4,7 @@ import * as path from 'path'
 import { KanbanPanel } from './KanbanPanel'
 import { generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
+import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 
 async function createFeatureFromPrompts(): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders
@@ -66,6 +67,7 @@ async function createFeatureFromPrompts(): Promise<void> {
   const featuresDirectory = config.get<string>('featuresDirectory') || '.devtool/features'
   const featuresDir = path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
   await fs.promises.mkdir(featuresDir, { recursive: true })
+  await ensureStatusSubfolders(featuresDir)
 
   const filename = generateFeatureFilename(title)
   const now = new Date().toISOString()
@@ -84,7 +86,7 @@ async function createFeatureFromPrompts(): Promise<void> {
     labels: [],
     order: 0,
     content,
-    filePath: path.join(featuresDir, `${filename}.md`)
+    filePath: getFeatureFilePath(featuresDir, status, filename)
   }
 
   const fileContent = serializeFeature(feature)

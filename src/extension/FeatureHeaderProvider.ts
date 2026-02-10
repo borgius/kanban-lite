@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import * as path from 'path'
 import type { FeatureFrontmatter, EditorExtensionMessage, EditorWebviewMessage } from '../shared/editorTypes'
 import type { FeatureStatus, Priority } from '../shared/types'
 
@@ -176,11 +177,13 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       return
     }
 
-    // Only track .md files in the features directory
+    // Only track .md files in the features directory (including status subfolders)
     const uri = editor.document.uri
     const config = vscode.workspace.getConfiguration('kanban-markdown')
     const featuresDirectory = config.get<string>('featuresDirectory') || '.devtool/features'
-    if (uri.fsPath.endsWith('.md') && uri.fsPath.includes(featuresDirectory)) {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const fullFeaturesDir = workspaceRoot ? path.join(workspaceRoot, featuresDirectory) : featuresDirectory
+    if (uri.fsPath.endsWith('.md') && uri.fsPath.startsWith(fullFeaturesDir + path.sep)) {
       this._currentDocument = editor.document
       this._updateViewForCurrentEditor()
     } else {

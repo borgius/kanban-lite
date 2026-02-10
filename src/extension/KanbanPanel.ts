@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath, getStatusFolders } from './featureFileUtils'
 
 interface CreateFeatureData {
   status: FeatureStatus
@@ -21,6 +22,7 @@ export class KanbanPanel {
   private _disposables: vscode.Disposable[] = []
   private _fileWatcher: vscode.FileSystemWatcher | undefined
   private _currentEditingFeatureId: string | null = null
+  private _migrating = false
 
   public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     const column = vscode.window.activeTextEditor
@@ -136,14 +138,15 @@ export class KanbanPanel {
     const featuresDir = this._getWorkspaceFeaturesDir()
     if (!featuresDir) return
 
-    // Watch for changes in the features directory
-    const pattern = new vscode.RelativePattern(featuresDir, '*.md')
+    // Watch for changes in the features directory (recursive for status subfolders)
+    const pattern = new vscode.RelativePattern(featuresDir, '**/*.md')
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     // Debounce to avoid multiple rapid updates
     let debounceTimer: NodeJS.Timeout | undefined
 
     const handleFileChange = () => {
+      if (this._migrating) return
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(async () => {
         await this._loadFeatures()
@@ -226,6 +229,7 @@ export class KanbanPanel {
 
     try {
       await fs.promises.mkdir(featuresDir, { recursive: true })
+      await ensureStatusSubfolders(featuresDir)
       return featuresDir
     } catch {
       return null
@@ -240,15 +244,65 @@ export class KanbanPanel {
     }
 
     try {
-      const files = await fs.promises.readdir(featuresDir)
-      const features: Feature[] = []
+      await fs.promises.mkdir(featuresDir, { recursive: true })
+      await ensureStatusSubfolders(featuresDir)
 
-      for (const file of files) {
-        if (!file.endsWith('.md')) continue
-        const filePath = path.join(featuresDir, file)
-        const content = await fs.promises.readFile(filePath, 'utf-8')
-        const feature = this._parseFeatureFile(content, filePath)
-        if (feature) features.push(feature)
+      // Phase 1: Migrate root-level .md files into status subfolders
+      this._migrating = true
+      try {
+        const rootEntries = await fs.promises.readdir(featuresDir, { withFileTypes: true })
+        for (const entry of rootEntries) {
+          if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+          const filePath = path.join(featuresDir, entry.name)
+          try {
+            const content = await fs.promises.readFile(filePath, 'utf-8')
+            const feature = this._parseFeatureFile(content, filePath)
+            const status = feature?.status || 'backlog'
+            await moveFeatureFile(filePath, featuresDir, status)
+          } catch {
+            // Skip files that fail to migrate (e.g. already moved)
+          }
+        }
+      } finally {
+        this._migrating = false
+      }
+
+      // Phase 2: Load from all status subdirectories
+      const features: Feature[] = []
+      const statusFolders = getStatusFolders()
+
+      for (const status of statusFolders) {
+        const subdir = path.join(featuresDir, status)
+        try {
+          const files = await fs.promises.readdir(subdir)
+          for (const file of files) {
+            if (!file.endsWith('.md')) continue
+            const filePath = path.join(subdir, file)
+            const content = await fs.promises.readFile(filePath, 'utf-8')
+            const feature = this._parseFeatureFile(content, filePath)
+            if (feature) features.push(feature)
+          }
+        } catch {
+          // Subdirectory may not exist yet; skip
+        }
+      }
+
+      // Phase 3: Reconcile mismatches (frontmatter status != subfolder)
+      this._migrating = true
+      try {
+        for (const feature of features) {
+          const currentSubfolder = getStatusFromPath(feature.filePath, featuresDir)
+          if (currentSubfolder && currentSubfolder !== feature.status) {
+            try {
+              const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+              feature.filePath = newPath
+            } catch {
+              // Skip files that fail to move (will retry on next load)
+            }
+          }
+        }
+      } finally {
+        this._migrating = false
       }
 
       this._features = features.sort((a, b) => a.order - b.order)
@@ -338,9 +392,10 @@ export class KanbanPanel {
       labels: [],
       order: featuresInStatus.length,
       content: data.content,
-      filePath: path.join(featuresDir, `${filename}.md`)
+      filePath: getFeatureFilePath(featuresDir, data.status, filename)
     }
 
+    await fs.promises.mkdir(path.dirname(feature.filePath), { recursive: true })
     const content = this._serializeFeature(feature)
     await fs.promises.writeFile(feature.filePath, content, 'utf-8')
 
@@ -352,12 +407,29 @@ export class KanbanPanel {
     const feature = this._features.find(f => f.id === featureId)
     if (!feature) return
 
+    const featuresDir = this._getWorkspaceFeaturesDir()
+    if (!featuresDir) return
+
+    const oldStatus = feature.status
+
     feature.status = newStatus as FeatureStatus
     feature.order = newOrder
     feature.modified = new Date().toISOString()
 
     const content = this._serializeFeature(feature)
     await fs.promises.writeFile(feature.filePath, content, 'utf-8')
+
+    if (oldStatus !== newStatus) {
+      this._migrating = true
+      try {
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, newStatus)
+        feature.filePath = newPath
+      } catch {
+        // Move failed; file stays in old folder, will reconcile on next load
+      } finally {
+        this._migrating = false
+      }
+    }
 
     this._sendFeaturesToWebview()
   }
@@ -379,6 +451,11 @@ export class KanbanPanel {
     const feature = this._features.find(f => f.id === featureId)
     if (!feature) return
 
+    const featuresDir = this._getWorkspaceFeaturesDir()
+    if (!featuresDir) return
+
+    const oldStatus = feature.status
+
     // Merge updates
     Object.assign(feature, updates)
     feature.modified = new Date().toISOString()
@@ -386,6 +463,18 @@ export class KanbanPanel {
     // Persist to file
     const content = this._serializeFeature(feature)
     await fs.promises.writeFile(feature.filePath, content, 'utf-8')
+
+    if (oldStatus !== feature.status) {
+      this._migrating = true
+      try {
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+        feature.filePath = newPath
+      } catch {
+        // Move failed; file stays in old folder, will reconcile on next load
+      } finally {
+        this._migrating = false
+      }
+    }
 
     this._sendFeaturesToWebview()
   }
@@ -424,6 +513,11 @@ export class KanbanPanel {
     const feature = this._features.find(f => f.id === featureId)
     if (!feature) return
 
+    const featuresDir = this._getWorkspaceFeaturesDir()
+    if (!featuresDir) return
+
+    const oldStatus = feature.status
+
     // Update feature in memory
     feature.content = content
     feature.status = frontmatter.status
@@ -436,6 +530,18 @@ export class KanbanPanel {
     // Save to file
     const fileContent = this._serializeFeature(feature)
     await fs.promises.writeFile(feature.filePath, fileContent, 'utf-8')
+
+    if (oldStatus !== feature.status) {
+      this._migrating = true
+      try {
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+        feature.filePath = newPath
+      } catch {
+        // Move failed; file stays in old folder, will reconcile on next load
+      } finally {
+        this._migrating = false
+      }
+    }
 
     // Update all features in webview
     this._sendFeaturesToWebview()

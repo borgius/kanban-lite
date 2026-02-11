@@ -68,6 +68,15 @@ export class KanbanPanel {
     this._extensionUri = extensionUri
     this._context = context
 
+    // Ensure webview options are set (critical for deserialization after reload)
+    this._panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(extensionUri, 'dist'),
+        vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
+      ]
+    }
+
     // Set the webview's initial html content
     this._update()
 

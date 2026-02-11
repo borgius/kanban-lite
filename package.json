@@ -32,7 +32,9 @@
     "task management",
     "board"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onWebviewPanel:kanban-markdown.panel"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [

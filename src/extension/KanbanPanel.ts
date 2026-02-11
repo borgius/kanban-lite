@@ -425,15 +425,58 @@ export class KanbanPanel {
     if (!featuresDir) return
 
     const oldStatus = feature.status
+    const statusChanged = oldStatus !== newStatus
 
+    // Remove feature from old column ordering
+    const oldColumnFeatures = this._features
+      .filter(f => f.status === oldStatus && f.id !== featureId)
+      .sort((a, b) => a.order - b.order)
+
+    // Update feature status
     feature.status = newStatus as FeatureStatus
-    feature.order = newOrder
     feature.modified = new Date().toISOString()
 
-    const content = this._serializeFeature(feature)
-    await fs.promises.writeFile(feature.filePath, content, 'utf-8')
+    // Get features in the target column (excluding the moved feature)
+    const targetColumnFeatures = statusChanged
+      ? this._features.filter(f => f.status === newStatus).sort((a, b) => a.order - b.order)
+      : oldColumnFeatures
 
-    if (oldStatus !== newStatus) {
+    // Insert at the target position
+    const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
+    targetColumnFeatures.splice(clampedOrder, 0, feature)
+
+    // Reindex target column
+    const filesToWrite: Feature[] = []
+    for (let i = 0; i < targetColumnFeatures.length; i++) {
+      if (targetColumnFeatures[i].order !== i) {
+        targetColumnFeatures[i].order = i
+        filesToWrite.push(targetColumnFeatures[i])
+      }
+    }
+
+    // Reindex old column if status changed
+    if (statusChanged) {
+      for (let i = 0; i < oldColumnFeatures.length; i++) {
+        if (oldColumnFeatures[i].order !== i) {
+          oldColumnFeatures[i].order = i
+          filesToWrite.push(oldColumnFeatures[i])
+        }
+      }
+    }
+
+    // Ensure the moved feature is always persisted
+    if (!filesToWrite.includes(feature)) {
+      filesToWrite.push(feature)
+    }
+
+    // Write all modified features to disk
+    for (const f of filesToWrite) {
+      const content = this._serializeFeature(f)
+      await fs.promises.writeFile(f.filePath, content, 'utf-8')
+    }
+
+    // Move file to new subfolder if status changed
+    if (statusChanged) {
       this._migrating = true
       try {
         const newPath = await moveFeatureFile(feature.filePath, featuresDir, newStatus)

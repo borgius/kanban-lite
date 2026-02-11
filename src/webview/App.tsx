@@ -203,8 +203,48 @@ function App(): React.JSX.Element {
     newStatus: string,
     newOrder: number
   ): void => {
-    // Optimistic update
-    updateFeature(featureId, { status: newStatus as FeatureStatus, order: newOrder })
+    // Optimistic reindex: reorder features locally before server confirms
+    const { features } = useStore.getState()
+    const feature = features.find(f => f.id === featureId)
+    if (feature) {
+      const oldStatus = feature.status
+      const statusChanged = oldStatus !== newStatus
+
+      // Remove from old column and get remaining sorted features
+      const oldColumn = features
+        .filter(f => f.status === oldStatus && f.id !== featureId)
+        .sort((a, b) => a.order - b.order)
+
+      // Get target column features (excluding moved feature)
+      const targetColumn = statusChanged
+        ? features.filter(f => f.status === newStatus).sort((a, b) => a.order - b.order)
+        : oldColumn
+
+      // Insert at target position
+      const clampedOrder = Math.max(0, Math.min(newOrder, targetColumn.length))
+      const movedFeature = { ...feature, status: newStatus as FeatureStatus, order: clampedOrder }
+      targetColumn.splice(clampedOrder, 0, movedFeature)
+
+      // Build updated features array with reindexed orders
+      const updated = features.map(f => {
+        if (f.id === featureId) {
+          return movedFeature
+        }
+        const targetIdx = targetColumn.findIndex(t => t.id === f.id)
+        if (targetIdx !== -1) {
+          return { ...f, order: targetIdx }
+        }
+        if (statusChanged) {
+          const oldIdx = oldColumn.findIndex(o => o.id === f.id)
+          if (oldIdx !== -1) {
+            return { ...f, order: oldIdx }
+          }
+        }
+        return f
+      })
+
+      setFeatures(updated)
+    }
 
     // Tell extension to persist
     vscode.postMessage({

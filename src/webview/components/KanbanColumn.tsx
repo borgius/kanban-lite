@@ -3,6 +3,7 @@ import { FeatureCard } from './FeatureCard'
 import { QuickAddInput } from './QuickAddInput'
 import type { Feature, FeatureStatus, Priority, KanbanColumn as KanbanColumnType } from '../../shared/types'
 import type { LayoutMode } from '../store'
+import type { DropTarget } from './KanbanBoard'
 
 interface KanbanColumnProps {
   column: KanbanColumnType
@@ -12,7 +13,11 @@ interface KanbanColumnProps {
   onQuickAdd: (data: { status: FeatureStatus; priority: Priority; content: string }) => void
   onDragStart: (e: React.DragEvent, feature: Feature) => void
   onDragOver: (e: React.DragEvent) => void
+  onDragOverCard: (e: React.DragEvent, columnId: string, cardIndex: number) => void
   onDrop: (e: React.DragEvent, status: string) => void
+  onDragEnd: () => void
+  draggedFeature: Feature | null
+  dropTarget: DropTarget | null
   layout: LayoutMode
 }
 
@@ -24,10 +29,15 @@ export function KanbanColumn({
   onQuickAdd,
   onDragStart,
   onDragOver,
+  onDragOverCard,
   onDrop,
+  onDragEnd,
+  draggedFeature,
+  dropTarget,
   layout
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
+  const isDropTarget = dropTarget && dropTarget.columnId === column.id
 
   return (
     <div
@@ -70,16 +80,30 @@ export function KanbanColumn({
             : "flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]"
         }
       >
-        {features.map((feature) => (
-          <div
-            key={feature.id}
-            draggable
-            onDragStart={(e) => onDragStart(e, feature)}
-            className={isVertical ? "w-64" : ""}
-          >
-            <FeatureCard feature={feature} onClick={() => onFeatureClick(feature)} />
+        {features.map((feature, index) => (
+          <div key={feature.id}>
+            {/* Drop indicator before this card */}
+            {isDropTarget && dropTarget.index === index && (
+              <div className="h-0.5 bg-blue-500 rounded-full mx-1 mb-1" />
+            )}
+            <div
+              draggable
+              onDragStart={(e) => onDragStart(e, feature)}
+              onDragOver={(e) => onDragOverCard(e, column.id, index)}
+              onDragEnd={onDragEnd}
+              className={`${isVertical ? "w-64" : ""} ${
+                draggedFeature?.id === feature.id ? "opacity-40" : ""
+              }`}
+            >
+              <FeatureCard feature={feature} onClick={() => onFeatureClick(feature)} />
+            </div>
           </div>
         ))}
+
+        {/* Drop indicator at end of list */}
+        {isDropTarget && dropTarget.index === features.length && features.length > 0 && (
+          <div className="h-0.5 bg-blue-500 rounded-full mx-1" />
+        )}
 
         {features.length === 0 && (
           <div className={isVertical ? "text-sm text-zinc-400 dark:text-zinc-500 py-4" : "text-center py-8 text-sm text-zinc-400 dark:text-zinc-500"}>

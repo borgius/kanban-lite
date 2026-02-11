@@ -3,6 +3,11 @@ import { KanbanColumn } from './KanbanColumn'
 import { useStore } from '../store'
 import type { Feature, FeatureStatus, Priority } from '../../shared/types'
 
+export interface DropTarget {
+  columnId: string
+  index: number
+}
+
 interface KanbanBoardProps {
   onFeatureClick: (feature: Feature) => void
   onAddFeature: (status: string) => void
@@ -15,6 +20,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onQui
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
   const layout = useStore((s) => s.layout)
   const [draggedFeature, setDraggedFeature] = useState<Feature | null>(null)
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
 
   const handleDragStart = useCallback((e: React.DragEvent, feature: Feature) => {
     setDraggedFeature(feature)
@@ -27,24 +33,63 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onQui
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent, newStatus: string) => {
+  const handleDragOverCard = useCallback(
+    (e: React.DragEvent, columnId: string, cardIndex: number) => {
       e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
 
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      const insertIndex = e.clientY < midY ? cardIndex : cardIndex + 1
+
+      setDropTarget((prev) => {
+        if (prev && prev.columnId === columnId && prev.index === insertIndex) return prev
+        return { columnId, index: insertIndex }
+      })
+    },
+    []
+  )
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, columnId: string) => {
+      e.preventDefault()
       if (!draggedFeature) return
-      if (draggedFeature.status === newStatus) {
-        setDraggedFeature(null)
-        return
+
+      const features = getFilteredFeaturesByStatus(columnId as FeatureStatus)
+      let insertIndex: number
+
+      if (dropTarget && dropTarget.columnId === columnId) {
+        insertIndex = dropTarget.index
+      } else {
+        // Dropped on empty area of the column — append to end
+        insertIndex = features.length
       }
 
-      const featuresInColumn = getFilteredFeaturesByStatus(newStatus as FeatureStatus)
-      const newOrder = featuresInColumn.length
+      // Adjust index if dragging within the same column and moving downward
+      if (draggedFeature.status === columnId) {
+        const currentIndex = features.findIndex((f) => f.id === draggedFeature.id)
+        if (currentIndex !== -1 && insertIndex > currentIndex) {
+          insertIndex--
+        }
+        // No-op if dropping in the same position
+        if (currentIndex === insertIndex) {
+          setDraggedFeature(null)
+          setDropTarget(null)
+          return
+        }
+      }
 
-      onMoveFeature(draggedFeature.id, newStatus, newOrder)
+      onMoveFeature(draggedFeature.id, columnId, insertIndex)
       setDraggedFeature(null)
+      setDropTarget(null)
     },
-    [draggedFeature, getFilteredFeaturesByStatus, onMoveFeature]
+    [draggedFeature, dropTarget, getFilteredFeaturesByStatus, onMoveFeature]
   )
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedFeature(null)
+    setDropTarget(null)
+  }, [])
 
   const isVertical = layout === 'vertical'
 
@@ -61,7 +106,11 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onQui
             onQuickAdd={onQuickAdd}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
+            onDragOverCard={handleDragOverCard}
             onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
+            draggedFeature={draggedFeature}
+            dropTarget={dropTarget}
             layout={layout}
           />
         ))}

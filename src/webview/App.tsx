@@ -38,7 +38,18 @@ function App(): React.JSX.Element {
 
   // Keyboard shortcuts
   useEffect(() => {
+    let altPressedAlone = false
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Track bare ALT press to forward to VS Code menu bar
+      if (e.key === 'Alt') {
+        altPressedAlone = true
+        return
+      }
+      if (e.altKey) {
+        altPressedAlone = false
+      }
+
       // Ignore if user is typing in an input
       if (
         e.target instanceof HTMLInputElement ||
@@ -66,8 +77,19 @@ function App(): React.JSX.Element {
       }
     }
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && altPressedAlone) {
+        altPressedAlone = false
+        vscode.postMessage({ type: 'focusMenuBar' })
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
   }, [createFeatureOpen, editingFeature])
 
   // Listen for VSCode theme changes

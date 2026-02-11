@@ -103,6 +103,9 @@ export class KanbanPanel {
           case 'closeFeature':
             // Nothing to do on extension side
             break
+          case 'focusMenuBar':
+            vscode.commands.executeCommand('workbench.action.focusMenuBar')
+            break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
             break

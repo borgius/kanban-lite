@@ -128,6 +128,8 @@ export class KanbanPanel {
         } else {
           this._sendFeaturesToWebview()
         }
+      } else if (e.affectsConfiguration('chat.disableAIFeatures')) {
+        this._sendFeaturesToWebview()
       }
     }, null, this._disposables)
   }
@@ -632,6 +634,7 @@ export class KanbanPanel {
       showPriorityBadges: config.get<boolean>('showPriorityBadges', true),
       showAssignee: config.get<boolean>('showAssignee', true),
       showDueDate: config.get<boolean>('showDueDate', true),
+      showBuildWithAI: config.get<boolean>('showBuildWithAI', true) && !vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false),
       compactMode: config.get<boolean>('compactMode', false),
       defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
       defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')

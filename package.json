@@ -178,6 +178,11 @@
           "default": true,
           "description": "Show due date on feature cards."
         },
+        "kanban-markdown.showBuildWithAI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the 'Build with AI' button on feature cards."
+        },
         "kanban-markdown.compactMode": {
           "type": "boolean",
           "default": false,

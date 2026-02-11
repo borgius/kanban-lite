@@ -349,7 +349,7 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
         if (debounceRef.current) clearTimeout(debounceRef.current)
         save()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b' && cardSettings.showBuildWithAI) {
         e.preventDefault()
         onStartWithAI('claude', 'default')
       }
@@ -364,7 +364,7 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [save, onClose, onStartWithAI])
+  }, [save, onClose, onStartWithAI, cardSettings.showBuildWithAI])
 
   return (
     <div className="h-full flex flex-col bg-[var(--vscode-editor-background)] border-l border-zinc-200 dark:border-zinc-700">
@@ -374,7 +374,7 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
           <span className="text-xs font-mono text-zinc-500">{featureId}</span>
         </div>
         <div className="flex items-center gap-2">
-          <AIDropdown onSelect={onStartWithAI} />
+          {cardSettings.showBuildWithAI && <AIDropdown onSelect={onStartWithAI} />}
           <button
             onClick={onClose}
             className="p-1.5 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"

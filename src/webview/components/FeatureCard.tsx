@@ -59,7 +59,7 @@ export function FeatureCard({ feature, onClick, onDelete, isDragging }: FeatureC
     }
   }
 
-  const dueInfo = formatDueDate(feature.dueDate)
+  const dueInfo = feature.status === 'done' ? null : formatDueDate(feature.dueDate)
 
   return (
     <div

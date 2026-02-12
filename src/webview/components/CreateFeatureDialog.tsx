@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, ChevronDown, User, Tag, Plus, Check } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar } from 'lucide-react'
 import type { FeatureStatus, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
@@ -43,12 +43,12 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors"
+        className="flex items-center gap-2 px-2 py-1 text-xs font-medium rounded transition-colors"
         style={{
-          border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))',
-          background: 'var(--vscode-input-background)',
-          color: 'var(--vscode-input-foreground)',
+          color: 'var(--vscode-foreground)',
         }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
         {current?.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', current.dot)} />}
         <span>{current?.label}</span>
@@ -96,64 +96,208 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
   )
 }
 
+function AssigneeInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [isFocused, setIsFocused] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const features = useStore(s => s.features)
+
+  const existingAssignees = useMemo(() => {
+    const assignees = new Set<string>()
+    features.forEach(f => { if (f.assignee) assignees.add(f.assignee) })
+    return Array.from(assignees).sort()
+  }, [features])
+
+  const suggestions = useMemo(() => {
+    if (!value.trim()) return existingAssignees
+    return existingAssignees.filter(a => a.toLowerCase().includes(value.toLowerCase()) && a !== value)
+  }, [value, existingAssignees])
+
+  const showSuggestions = isFocused && suggestions.length > 0
+
+  const initials = value.trim()
+    ? value.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    : null
+
+  return (
+    <div ref={containerRef} className="relative flex-1">
+      <div
+        className="flex items-center gap-2 cursor-text"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {initials && (
+          <span
+            className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
+            style={{
+              background: 'var(--vscode-badge-background)',
+              color: 'var(--vscode-badge-foreground)',
+            }}
+          >{initials}</span>
+        )}
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+          placeholder="No assignee"
+          className="flex-1 bg-transparent border-none outline-none text-xs"
+          style={{ color: value ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}
+        />
+      </div>
+      {showSuggestions && (
+        <div
+          className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 max-h-[160px] overflow-auto min-w-[180px]"
+          style={{
+            background: 'var(--vscode-dropdown-background)',
+            border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
+          }}
+        >
+          {suggestions.map(assignee => (
+            <button
+              key={assignee}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(assignee) }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+              style={{ color: 'var(--vscode-dropdown-foreground)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span
+                className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
+                style={{
+                  background: 'var(--vscode-badge-background)',
+                  color: 'var(--vscode-badge-foreground)',
+                }}
+              >{assignee.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2)}</span>
+              <span>{assignee}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels: string[]) => void }) {
   const [newLabel, setNewLabel] = useState('')
+  const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const features = useStore(s => s.features)
 
-  const addLabel = () => {
-    const label = newLabel.trim()
-    if (label && !labels.includes(label)) {
-      onChange([...labels, label])
+  const existingLabels = useMemo(() => {
+    const labelSet = new Set<string>()
+    features.forEach(f => f.labels.forEach(l => labelSet.add(l)))
+    return Array.from(labelSet).sort()
+  }, [features])
+
+  const suggestions = useMemo(() => {
+    const available = existingLabels.filter(l => !labels.includes(l))
+    if (!newLabel.trim()) return available
+    return available.filter(l => l.toLowerCase().includes(newLabel.toLowerCase()))
+  }, [newLabel, existingLabels, labels])
+
+  const showSuggestions = isFocused && suggestions.length > 0
+
+  const addLabel = (label?: string) => {
+    const l = (label || newLabel).trim()
+    if (l && !labels.includes(l)) {
+      onChange([...labels, l])
     }
     setNewLabel('')
   }
 
   return (
-    <div
-      className="flex items-center gap-2 px-3 py-2 rounded-md flex-wrap flex-1 min-w-[140px] cursor-text transition-colors"
-      style={{
-        border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))',
-        background: 'var(--vscode-input-background)',
-      }}
-      onClick={() => inputRef.current?.focus()}
-    >
-      <Tag size={14} style={{ color: 'var(--vscode-descriptionForeground)' }} className="shrink-0" />
-      {labels.map(label => (
-        <span
-          key={label}
-          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full"
+    <div className="relative flex-1">
+      <div
+        className="flex items-center gap-1.5 flex-wrap cursor-text"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {labels.map(label => (
+          <span
+            key={label}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+            style={{
+              background: 'var(--vscode-badge-background)',
+              color: 'var(--vscode-badge-foreground)',
+            }}
+          >
+            {label}
+            <button
+              onClick={(e) => { e.stopPropagation(); onChange(labels.filter(l => l !== label)) }}
+              className="hover:text-red-500 transition-colors"
+            >
+              <X size={9} />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addLabel() }
+            if (e.key === 'Backspace' && !newLabel && labels.length > 0) {
+              onChange(labels.slice(0, -1))
+            }
+            if (e.key === 'Escape') { setNewLabel(''); inputRef.current?.blur() }
+          }}
+          placeholder={labels.length === 0 ? 'Add labels...' : ''}
+          className="flex-1 min-w-[60px] bg-transparent border-none outline-none text-xs"
+          style={{ color: 'var(--vscode-foreground)' }}
+        />
+      </div>
+      {showSuggestions && (
+        <div
+          className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 max-h-[160px] overflow-auto min-w-[180px]"
           style={{
-            background: 'var(--vscode-badge-background)',
-            color: 'var(--vscode-badge-foreground)',
+            background: 'var(--vscode-dropdown-background)',
+            border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
           }}
         >
-          {label}
-          <button
-            onClick={(e) => { e.stopPropagation(); onChange(labels.filter(l => l !== label)) }}
-            className="hover:text-red-500 transition-colors"
-          >
-            <X size={10} />
-          </button>
-        </span>
-      ))}
-      <input
-        ref={inputRef}
-        type="text"
-        value={newLabel}
-        onChange={(e) => setNewLabel(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); addLabel() }
-          if (e.key === 'Backspace' && !newLabel && labels.length > 0) {
-            onChange(labels.slice(0, -1))
-          }
-          if (e.key === 'Escape') { setNewLabel(''); inputRef.current?.blur() }
-        }}
-        placeholder={labels.length === 0 ? 'Add labels...' : ''}
-        className="flex-1 min-w-[60px] bg-transparent border-none outline-none text-xs"
-        style={{
-          color: 'var(--vscode-input-foreground)',
-        }}
-      />
+          {suggestions.map(label => (
+            <button
+              key={label}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+              style={{ color: 'var(--vscode-dropdown-foreground)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span
+                className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
+                style={{
+                  background: 'var(--vscode-badge-background)',
+                  color: 'var(--vscode-badge-foreground)',
+                }}
+              >{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PropertyRow({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-[5px] transition-colors"
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <div className="flex items-center gap-2 w-[90px] shrink-0">
+        <span style={{ color: 'var(--vscode-descriptionForeground)' }}>{icon}</span>
+        <span className="text-[11px]" style={{ color: 'var(--vscode-descriptionForeground)' }}>{label}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        {children}
+      </div>
     </div>
   )
 }
@@ -250,53 +394,40 @@ function CreateFeatureDialogContent({
 
         {/* Metadata */}
         <div
-          className="flex flex-col gap-2 px-4 py-3"
+          className="flex flex-col py-0.5"
           style={{
             borderBottom: '1px solid var(--vscode-panel-border)',
-            background: 'var(--vscode-sideBar-background, var(--vscode-editor-background))',
           }}
         >
-          <div className="flex items-center gap-2">
+          <PropertyRow label="Status" icon={<CircleDot size={13} />}>
             <Dropdown
               value={status}
               options={statusConfig.map(s => ({ value: s.value, label: s.label, dot: s.dot }))}
               onChange={(v) => setStatus(v as FeatureStatus)}
             />
-            {cardSettings.showPriorityBadges && (
+          </PropertyRow>
+          {cardSettings.showPriorityBadges && (
+            <PropertyRow label="Priority" icon={<Signal size={13} />}>
               <Dropdown
                 value={priority}
                 options={priorityConfig.map(p => ({ value: p.value, label: p.label, dot: p.dot }))}
                 onChange={(v) => setPriority(v as Priority)}
               />
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {cardSettings.showAssignee && (
-              <div
-                className="flex items-center gap-2 px-3 py-2 text-xs rounded-md transition-colors"
-                style={{
-                  border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))',
-                  background: 'var(--vscode-input-background)',
-                }}
-              >
-                <User size={14} className="shrink-0" style={{ color: 'var(--vscode-descriptionForeground)' }} />
-                <input
-                  type="text"
-                  value={assignee}
-                  onChange={(e) => setAssignee(e.target.value)}
-                  placeholder="Assignee"
-                  className="bg-transparent border-none outline-none w-28 text-xs"
-                  style={{
-                    color: 'var(--vscode-input-foreground)',
-                  }}
-                />
-              </div>
-            )}
-            {cardSettings.showDueDate && (
+            </PropertyRow>
+          )}
+          {cardSettings.showAssignee && (
+            <PropertyRow label="Assignee" icon={<User size={13} />}>
+              <AssigneeInput value={assignee} onChange={setAssignee} />
+            </PropertyRow>
+          )}
+          {cardSettings.showDueDate && (
+            <PropertyRow label="Due date" icon={<Calendar size={13} />}>
               <DatePicker value={dueDate} onChange={setDueDate} />
-            )}
+            </PropertyRow>
+          )}
+          <PropertyRow label="Labels" icon={<Tag size={13} />}>
             <LabelInput labels={labels} onChange={setLabels} />
-          </div>
+          </PropertyRow>
         </div>
 
         {/* Content */}

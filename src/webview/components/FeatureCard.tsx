@@ -92,9 +92,11 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1">
           {cardSettings.showAssignee && feature.assignee && feature.assignee !== 'null' && (
-            <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
-              <User size={12} />
-              <span>@{feature.assignee}</span>
+            <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+              <span className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-300">
+                {feature.assignee.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
+              </span>
+              <span>{feature.assignee}</span>
             </div>
           )}
         </div>

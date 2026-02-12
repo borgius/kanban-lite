@@ -399,14 +399,20 @@ export function FeatureEditor({ featureId, content, frontmatter, onSave, onClose
           />
         )}
         {cardSettings.showAssignee && (
-          <div className="flex items-center gap-1 text-xs text-zinc-500">
-            <User size={12} />
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+            {currentFrontmatter.assignee ? (
+              <span
+                className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-300"
+              >{currentFrontmatter.assignee.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2)}</span>
+            ) : (
+              <User size={13} />
+            )}
             <input
               type="text"
               value={currentFrontmatter.assignee || ''}
               onChange={(e) => handleFrontmatterUpdate({ assignee: e.target.value || null })}
-              placeholder="Assignee"
-              className="bg-transparent border-none outline-none w-24 placeholder-zinc-400"
+              placeholder="Assignee..."
+              className="bg-transparent border-none outline-none w-32 placeholder-zinc-400"
             />
           </div>
         )}

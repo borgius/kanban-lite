@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
@@ -55,14 +55,13 @@ export function DatePicker({ value, onChange, placeholder = 'Due date' }: DatePi
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors"
+        className="flex items-center gap-2 px-2 py-1 text-xs font-medium rounded transition-colors"
         style={{
-          border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))',
-          background: 'var(--vscode-input-background)',
-          color: value ? 'var(--vscode-input-foreground)' : 'var(--vscode-input-placeholderForeground)',
+          color: value ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
         }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
-        <Calendar size={12} style={{ color: 'var(--vscode-descriptionForeground)' }} className="shrink-0" />
         <span>{value ? formatDisplay(value) : placeholder}</span>
         {value && (
           <span

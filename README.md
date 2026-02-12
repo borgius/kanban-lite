@@ -13,10 +13,10 @@ A VSCode/Cursor extension that brings a full-featured kanban board directly into
 ### Kanban Board
 
 - **5-column workflow**: Backlog, To Do, In Progress, Review, Done
-- **Drag-and-drop**: Move cards between columns with visual feedback
+- **Sidebar view**: Access the board from the activity bar without opening a panel
+- **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Layout toggle**: Switch between horizontal and vertical board layouts
-- **Quick-add input**: Rapidly create features directly in any column
 - **Keyboard shortcuts**:
   - `N` - Create new feature
   - `Esc` - Close dialogs
@@ -45,9 +45,14 @@ A VSCode/Cursor extension that brings a full-featured kanban board directly into
 - **Due date filters**: Overdue, due today, due this week, or no due date
 - **Clear filters button**: Reset all filters at once
 
+### File Organization
+- **Status subfolders**: Features are automatically organized into subfolders by status (with migration of existing files)
+
 ### Editor Integration
 - Rich text editing with Tiptap markdown editor
 - Inline frontmatter editing (dropdowns for status/priority, inputs for assignee/due date/labels)
+- Auto-save functionality
+- Live settings updates without reopening the board
 - Auto-refresh when files change externally
 - Theme integration with VSCode/Cursor (light & dark mode)
 
@@ -110,6 +115,8 @@ Available settings in VSCode/Cursor preferences:
 | `kanban-markdown.showPriorityBadges` | `true` | Show priority badges on cards |
 | `kanban-markdown.showAssignee` | `true` | Show assignee on cards |
 | `kanban-markdown.showDueDate` | `true` | Show due date on cards |
+| `kanban-markdown.showLabels` | `true` | Show labels on cards and in editors |
+| `kanban-markdown.showBuildWithAI` | `true` | Show "Build with AI" button on cards |
 | `kanban-markdown.compactMode` | `false` | Enable compact card display |
 
 Default columns configuration:

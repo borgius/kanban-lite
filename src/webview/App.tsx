@@ -50,11 +50,12 @@ function App(): React.JSX.Element {
         altPressedAlone = false
       }
 
-      // Ignore if user is typing in an input
+      // Ignore if user is typing in an input or contentEditable (e.g. TipTap editor)
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
+        e.target instanceof HTMLSelectElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return
       }
@@ -62,10 +63,6 @@ function App(): React.JSX.Element {
       switch (e.key) {
         case 'n':
           if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
-            return
-          }
-          // Don't open new feature panel if editing an existing feature
-          if (editingFeature) {
             return
           }
           e.preventDefault()

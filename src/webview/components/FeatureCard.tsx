@@ -64,7 +64,7 @@ export function FeatureCard({ feature, onClick, onDelete, isDragging }: FeatureC
   return (
     <div
       onClick={onClick}
-      className={`group relative bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 ${cardSettings.compactMode ? 'p-2' : 'p-3'} cursor-pointer hover:shadow-md transition-shadow ${
+      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 ${cardSettings.compactMode ? 'p-2 min-h-[4.5rem]' : 'p-3 min-h-[7rem]'} cursor-pointer hover:shadow-md transition-shadow ${
         isDragging ? 'shadow-lg opacity-90' : ''
       }`}
     >
@@ -88,37 +88,39 @@ export function FeatureCard({ feature, onClick, onDelete, isDragging }: FeatureC
         </div>
       )}
 
-      {/* Title */}
-      <h3 className={`text-sm font-medium text-zinc-900 dark:text-zinc-100 ${description ? 'mb-1' : cardSettings.compactMode ? 'mb-1' : 'mb-2'} line-clamp-2`}>
-        {title}
-      </h3>
+      {/* Title & Content */}
+      <div className="flex-1">
+        <h3 className={`text-sm font-medium text-zinc-900 dark:text-zinc-100 ${description ? 'mb-1' : cardSettings.compactMode ? 'mb-1' : 'mb-2'} line-clamp-2`}>
+          {title}
+        </h3>
 
-      {/* Description */}
-      {description && !cardSettings.compactMode && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-2">
-          {description}
-        </p>
-      )}
+        {/* Description */}
+        {description && !cardSettings.compactMode && (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-2">
+            {description}
+          </p>
+        )}
 
-      {/* Labels */}
-      {cardSettings.showLabels && !cardSettings.compactMode && feature.labels.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-2">
-          {feature.labels.slice(0, 3).map((label) => (
-            <span
-              key={label}
-              className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
-            >
-              {label}
-            </span>
-          ))}
-          {feature.labels.length > 3 && (
-            <span className="text-xs text-zinc-400">+{feature.labels.length - 3}</span>
-          )}
-        </div>
-      )}
+        {/* Labels */}
+        {cardSettings.showLabels && !cardSettings.compactMode && feature.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {feature.labels.slice(0, 3).map((label) => (
+              <span
+                key={label}
+                className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
+              >
+                {label}
+              </span>
+            ))}
+            {feature.labels.length > 3 && (
+              <span className="text-xs text-zinc-400">+{feature.labels.length - 3}</span>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center justify-between text-xs mt-auto">
         <div className="flex items-center gap-1">
           {cardSettings.showAssignee && feature.assignee && feature.assignee !== 'null' && (
             <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">

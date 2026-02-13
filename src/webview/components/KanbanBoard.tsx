@@ -17,6 +17,7 @@ interface KanbanBoardProps {
 export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature }: KanbanBoardProps) {
   const columns = useStore((s) => s.columns)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
+  const getFeaturesByStatus = useStore((s) => s.getFeaturesByStatus)
   const layout = useStore((s) => s.layout)
   const [draggedFeature, setDraggedFeature] = useState<Feature | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -54,35 +55,56 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature }: Kan
       e.preventDefault()
       if (!draggedFeature) return
 
-      const features = getFilteredFeaturesByStatus(columnId as FeatureStatus)
-      let insertIndex: number
+      const filteredFeatures = getFilteredFeaturesByStatus(columnId as FeatureStatus)
+      let filteredInsertIndex: number
 
       if (dropTarget && dropTarget.columnId === columnId) {
-        insertIndex = dropTarget.index
+        filteredInsertIndex = dropTarget.index
       } else {
         // Dropped on empty area of the column — append to end
-        insertIndex = features.length
+        filteredInsertIndex = filteredFeatures.length
       }
 
       // Adjust index if dragging within the same column and moving downward
       if (draggedFeature.status === columnId) {
-        const currentIndex = features.findIndex((f) => f.id === draggedFeature.id)
-        if (currentIndex !== -1 && insertIndex > currentIndex) {
-          insertIndex--
+        const currentIndex = filteredFeatures.findIndex((f) => f.id === draggedFeature.id)
+        if (currentIndex !== -1 && filteredInsertIndex > currentIndex) {
+          filteredInsertIndex--
         }
         // No-op if dropping in the same position
-        if (currentIndex === insertIndex) {
+        if (currentIndex === filteredInsertIndex) {
           setDraggedFeature(null)
           setDropTarget(null)
           return
         }
       }
 
-      onMoveFeature(draggedFeature.id, columnId, insertIndex)
+      // Translate filtered index to unfiltered index
+      const allFeatures = getFeaturesByStatus(columnId as FeatureStatus)
+        .filter((f) => f.id !== draggedFeature.id)
+      const filteredWithoutDragged = filteredFeatures.filter((f) => f.id !== draggedFeature.id)
+
+      let unfilteredInsertIndex: number
+
+      if (filteredWithoutDragged.length === 0) {
+        // No visible features — append to end of unfiltered list
+        unfilteredInsertIndex = allFeatures.length
+      } else if (filteredInsertIndex >= filteredWithoutDragged.length) {
+        // Inserting past end of filtered list — place after last visible feature
+        const lastVisible = filteredWithoutDragged[filteredWithoutDragged.length - 1]
+        const lastVisibleUnfilteredIdx = allFeatures.findIndex((f) => f.id === lastVisible.id)
+        unfilteredInsertIndex = lastVisibleUnfilteredIdx + 1
+      } else {
+        // Find the anchor feature at the filtered insert position
+        const anchorFeature = filteredWithoutDragged[filteredInsertIndex]
+        unfilteredInsertIndex = allFeatures.findIndex((f) => f.id === anchorFeature.id)
+      }
+
+      onMoveFeature(draggedFeature.id, columnId, unfilteredInsertIndex)
       setDraggedFeature(null)
       setDropTarget(null)
     },
-    [draggedFeature, dropTarget, getFilteredFeaturesByStatus, onMoveFeature]
+    [draggedFeature, dropTarget, getFilteredFeaturesByStatus, getFeaturesByStatus, onMoveFeature]
   )
 
   const handleDragEnd = useCallback(() => {

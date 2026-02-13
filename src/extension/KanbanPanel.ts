@@ -476,7 +476,7 @@ export class KanbanPanel {
 
     // Get features in the target column (excluding the moved feature)
     const targetColumnFeatures = statusChanged
-      ? this._features.filter(f => f.status === newStatus).sort((a, b) => a.order - b.order)
+      ? this._features.filter(f => f.status === newStatus && f.id !== featureId).sort((a, b) => a.order - b.order)
       : oldColumnFeatures
 
     // Insert at the target position
@@ -534,8 +534,28 @@ export class KanbanPanel {
     if (!feature) return
 
     try {
+      const deletedStatus = feature.status
       await vscode.workspace.fs.delete(vscode.Uri.file(feature.filePath))
       this._features = this._features.filter(f => f.id !== featureId)
+
+      // Reindex remaining features in the column to prevent order collisions
+      const remainingInColumn = this._features
+        .filter(f => f.status === deletedStatus)
+        .sort((a, b) => a.order - b.order)
+
+      const filesToWrite: Feature[] = []
+      for (let i = 0; i < remainingInColumn.length; i++) {
+        if (remainingInColumn[i].order !== i) {
+          remainingInColumn[i].order = i
+          filesToWrite.push(remainingInColumn[i])
+        }
+      }
+
+      for (const f of filesToWrite) {
+        const content = this._serializeFeature(f)
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(f.filePath), new TextEncoder().encode(content))
+      }
+
       this._sendFeaturesToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to delete feature: ${err}`)

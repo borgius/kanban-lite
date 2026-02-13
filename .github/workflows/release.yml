@@ -56,7 +56,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Package extension
-        run: pnpm vsce package --no-dependencies -o releases/kanban-markdown-${{ steps.version.outputs.VERSION }}.vsix
+        run: mkdir -p releases && pnpm vsce package --no-dependencies -o releases/kanban-markdown-${{ steps.version.outputs.VERSION }}.vsix
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -5,6 +5,22 @@ All notable changes to the Kanban Markdown extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-13
+
+### Added
+- Open file button in editor to quickly jump to the underlying markdown file ([#19](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues/19))
+- External change detection in editor — reloads content when the file is modified outside the extension ([#19](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues/19))
+
+### Fixed
+- CRLF line endings no longer break markdown frontmatter parsing ([#20](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues/20))
+- Order collisions when deleting features in KanbanPanel ([0f11a00](https://github.com/LachyFS/kanban-markdown-vscode-extension/commit/0f11a00))
+
+### Changed
+- Removed delete button from feature cards for a cleaner card layout ([086e738](https://github.com/LachyFS/kanban-markdown-vscode-extension/commit/086e738))
+
+### Thanks
+- [@hodanli](https://github.com/hodanli) for requesting the open file button and external change detection ([#19](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues/19)), and reporting the CRLF line ending bug ([#20](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues/20))
+
 ## [1.0.0] - 2026-02-12
 
 ### Added

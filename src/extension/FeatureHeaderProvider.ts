@@ -275,6 +275,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       dueDate: getValue('dueDate') || null,
       created: getValue('created') || new Date().toISOString(),
       modified: getValue('modified') || new Date().toISOString(),
+      completedAt: getValue('completedAt') || null,
       labels: getArrayValue('labels'),
       order: parseInt(getValue('order')) || 0
     }
@@ -292,6 +293,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       dueDate: null,
       created: now,
       modified: now,
+      completedAt: null,
       labels: [],
       order: 0
     }
@@ -312,6 +314,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       `dueDate: ${updatedFrontmatter.dueDate ? `"${updatedFrontmatter.dueDate}"` : 'null'}`,
       `created: "${updatedFrontmatter.created}"`,
       `modified: "${updatedFrontmatter.modified}"`,
+      `completedAt: ${updatedFrontmatter.completedAt ? `"${updatedFrontmatter.completedAt}"` : 'null'}`,
       `labels: [${updatedFrontmatter.labels.map((l: string) => `"${l}"`).join(', ')}]`,
       `order: ${updatedFrontmatter.order}`,
       '---',

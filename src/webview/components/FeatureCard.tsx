@@ -1,4 +1,4 @@
-import { Calendar } from 'lucide-react'
+import { Calendar, Check } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Feature, Priority } from '../../shared/types'
 import { useStore } from '../store'
@@ -59,6 +59,26 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
   }
 
   const dueInfo = feature.status === 'done' ? null : formatDueDate(feature.dueDate)
+
+  const formatCompletedAt = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const completed = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - completed.getTime()
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays === 1) return '1d ago'
+    if (diffDays < 30) return `${diffDays}d ago`
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`
+    return `${Math.floor(diffDays / 365)}y ago`
+  }
+
+  const completedText = feature.status === 'done' ? formatCompletedAt(feature.completedAt) : null
 
   return (
     <div
@@ -123,6 +143,12 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
           <div className={`flex items-center gap-1 ${dueInfo.className}`}>
             <Calendar size={12} />
             <span>{dueInfo.text}</span>
+          </div>
+        )}
+        {completedText && (
+          <div className="flex items-center gap-1" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            <Check size={12} />
+            <span>{completedText}</span>
           </div>
         )}
       </div>

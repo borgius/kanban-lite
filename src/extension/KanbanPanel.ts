@@ -435,6 +435,7 @@ export class KanbanPanel {
       dueDate: getValue('dueDate') || null,
       created: getValue('created') || new Date().toISOString(),
       modified: getValue('modified') || new Date().toISOString(),
+      completedAt: getValue('completedAt') || null,
       labels: getArrayValue('labels'),
       order: parseInt(getValue('order')) || 0,
       content: body.trim(),
@@ -452,6 +453,7 @@ export class KanbanPanel {
       `dueDate: ${feature.dueDate ? `"${feature.dueDate}"` : 'null'}`,
       `created: "${feature.created}"`,
       `modified: "${feature.modified}"`,
+      `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
       `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
       `order: ${feature.order}`,
       '---',
@@ -489,6 +491,7 @@ export class KanbanPanel {
       dueDate: data.dueDate,
       created: now,
       modified: now,
+      completedAt: data.status === 'done' ? now : null,
       labels: data.labels,
       order: featuresInStatus.length,
       content: data.content,
@@ -521,6 +524,9 @@ export class KanbanPanel {
     // Update feature status
     feature.status = newStatus as FeatureStatus
     feature.modified = new Date().toISOString()
+    if (statusChanged) {
+      feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
+    }
 
     // Get features in the target column (excluding the moved feature)
     const targetColumnFeatures = statusChanged
@@ -623,6 +629,9 @@ export class KanbanPanel {
     // Merge updates
     Object.assign(feature, updates)
     feature.modified = new Date().toISOString()
+    if (oldStatus !== feature.status) {
+      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+    }
 
     // Persist to file
     const content = this._serializeFeature(feature)
@@ -659,6 +668,7 @@ export class KanbanPanel {
       dueDate: feature.dueDate,
       created: feature.created,
       modified: feature.modified,
+      completedAt: feature.completedAt,
       labels: feature.labels,
       order: feature.order
     }
@@ -692,6 +702,9 @@ export class KanbanPanel {
     feature.dueDate = frontmatter.dueDate
     feature.labels = frontmatter.labels
     feature.modified = new Date().toISOString()
+    if (oldStatus !== feature.status) {
+      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+    }
 
     // Save to file
     const fileContent = this._serializeFeature(feature)

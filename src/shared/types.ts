@@ -11,6 +11,7 @@ export interface Feature {
   dueDate: string | null
   created: string
   modified: string
+  completedAt: string | null
   labels: string[]
   order: number
   content: string
@@ -79,6 +80,7 @@ export interface FeatureFrontmatter {
   dueDate: string | null
   created: string
   modified: string
+  completedAt: string | null
   labels: string[]
   order: number
 }

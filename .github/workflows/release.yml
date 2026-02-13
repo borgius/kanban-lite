@@ -65,13 +65,11 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to VS Code Marketplace
-        if: ${{ vars.PUBLISH_TO_MARKETPLACE == 'true' }}
         run: pnpm vsce publish --no-dependencies
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX
-        if: ${{ vars.PUBLISH_TO_OPENVSX == 'true' }}
         run: pnpm ovsx publish releases/*.vsix
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}

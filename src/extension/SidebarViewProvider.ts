@@ -193,6 +193,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private _parseFrontmatter(content: string, filename: string): SidebarFeature | null {
+    content = content.replace(/\r\n/g, '\n')
     const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
     if (!match) return null
 

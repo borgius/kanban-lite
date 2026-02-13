@@ -241,6 +241,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
   }
 
   private _parseDocument(text: string): { frontmatter: FeatureFrontmatter; content: string } {
+    text = text.replace(/\r\n/g, '\n')
     const frontmatterMatch = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
 
     if (!frontmatterMatch) {

@@ -359,6 +359,7 @@ export class KanbanPanel {
   }
 
   private _parseFeatureFile(content: string, filePath: string): Feature | null {
+    content = content.replace(/\r\n/g, '\n')
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
     if (!frontmatterMatch) return null
 

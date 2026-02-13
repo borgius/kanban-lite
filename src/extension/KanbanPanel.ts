@@ -323,6 +323,19 @@ export class KanbanPanel {
           }
         }
 
+        // Remove old status folders if they are now empty
+        for (const folder of oldStatusFolders) {
+          const subdir = path.join(featuresDir, folder)
+          try {
+            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
+            if (entries.length === 0) {
+              await vscode.workspace.fs.delete(vscode.Uri.file(subdir))
+            }
+          } catch {
+            // Folder doesn't exist or can't be read; skip
+          }
+        }
+
         // Also check root files that have status: done → move to done/
         const rootEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
         for (const [name, type] of rootEntries) {

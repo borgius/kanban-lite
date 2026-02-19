@@ -356,10 +356,11 @@ function CreateFeatureDialogContent({
   }, [])
 
   const handleSubmit = () => {
-    if (!title.trim()) return
-
     const description = descriptionEditor ? getMarkdown(descriptionEditor).trim() : ''
-    const content = `# ${title.trim()}${description ? '\n\n' + description : ''}`
+    const heading = title.trim()
+    const content = heading
+      ? `# ${heading}${description ? '\n\n' + description : ''}`
+      : description
     onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels })
   }
 
@@ -374,7 +375,7 @@ function CreateFeatureDialogContent({
       if (e.key === 'Escape') {
         handleClose()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && title.trim()) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         handleClose()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {

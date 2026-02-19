@@ -18,10 +18,12 @@ export interface Feature {
   filePath: string
 }
 
-// Parse title from the first # heading in markdown content
+// Parse title from the first # heading in markdown content, falling back to the first line
 export function getTitleFromContent(content: string): string {
   const match = content.match(/^#\s+(.+)$/m)
-  return match ? match[1].trim() : 'Untitled'
+  if (match) return match[1].trim()
+  const firstLine = content.split('\n').map(l => l.trim()).find(l => l.length > 0)
+  return firstLine || 'Untitled'
 }
 
 // Generate a filename-safe slug from a title

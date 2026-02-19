@@ -125,7 +125,9 @@ export class KanbanPanel {
             break
           }
           case 'focusMenuBar':
-            vscode.commands.executeCommand('workbench.action.focusMenuBar')
+            // Focus must leave the webview before focusMenuBar works (VS Code limitation)
+            await vscode.commands.executeCommand('workbench.action.focusSideBar')
+            await vscode.commands.executeCommand('workbench.action.focusMenuBar')
             break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
@@ -828,6 +830,7 @@ export class KanbanPanel {
       showBuildWithAI: config.get<boolean>('showBuildWithAI', true) && !vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false),
       showFileName: config.get<boolean>('showFileName', false),
       compactMode: config.get<boolean>('compactMode', false),
+      fontSize: config.get<number>('fontSize', 0),
       defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
       defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')
     }

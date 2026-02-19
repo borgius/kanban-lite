@@ -830,7 +830,6 @@ export class KanbanPanel {
       showBuildWithAI: config.get<boolean>('showBuildWithAI', true) && !vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false),
       showFileName: config.get<boolean>('showFileName', false),
       compactMode: config.get<boolean>('compactMode', false),
-      fontSize: config.get<number>('fontSize', 0),
       defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
       defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')
     }

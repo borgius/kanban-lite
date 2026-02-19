@@ -125,8 +125,9 @@ export class KanbanPanel {
             break
           }
           case 'focusMenuBar':
-            // Focus must leave the webview before focusMenuBar works (VS Code limitation)
-            await vscode.commands.executeCommand('workbench.action.focusSideBar')
+            // Focus must leave the webview before focusMenuBar works (VS Code limitation).
+            // Use Activity Bar (not Side Bar) — it's always visible and won't expand a collapsed sidebar.
+            await vscode.commands.executeCommand('workbench.action.focusActivityBar')
             await vscode.commands.executeCommand('workbench.action.focusMenuBar')
             break
           case 'startWithAI':

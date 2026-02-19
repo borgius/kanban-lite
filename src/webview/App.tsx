@@ -91,15 +91,20 @@ function App(): React.JSX.Element {
   // Keyboard shortcuts
   useEffect(() => {
     let altPressedAlone = false
+    let altDownTimer: ReturnType<typeof setTimeout> | null = null
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Track bare ALT press to forward to VS Code menu bar
       if (e.key === 'Alt') {
         altPressedAlone = true
+        // If ALT is held >1s it's likely a modifier hold or window drag, not a menu toggle
+        if (altDownTimer) clearTimeout(altDownTimer)
+        altDownTimer = setTimeout(() => { altPressedAlone = false }, 1000)
         return
       }
       if (e.altKey) {
         altPressedAlone = false
+        if (altDownTimer) { clearTimeout(altDownTimer); altDownTimer = null }
       }
 
       // Ctrl/Cmd+Z to undo delete (works even in inputs)
@@ -139,15 +144,22 @@ function App(): React.JSX.Element {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Alt' && altPressedAlone) {
         altPressedAlone = false
+        if (altDownTimer) { clearTimeout(altDownTimer); altDownTimer = null }
         vscode.postMessage({ type: 'focusMenuBar' })
       }
     }
 
+    // Cancel ALT-alone if mouse is clicked while ALT is held (e.g. ALT+click window drag on Linux)
+    const handleMouseDown = () => { altPressedAlone = false }
+
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('mousedown', handleMouseDown)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('mousedown', handleMouseDown)
+      if (altDownTimer) clearTimeout(altDownTimer)
     }
   }, [createFeatureOpen, handleUndoLatest])
 

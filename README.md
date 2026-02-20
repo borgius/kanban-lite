@@ -8,6 +8,14 @@ A VSCode/Cursor extension that brings a full-featured kanban board directly into
 
 ![Kanban Board Overview](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/board-overview.png)
 
+## Kanban Skill
+
+Install the [kanban-skill](https://github.com/LachyFS/kanban-skill) via [skills.sh](https://skills.sh) to give your AI agent full context of your board and the ability to create, update, and move features directly from the terminal. Works with Claude Code, Codex, OpenCode, and any skills.sh-compatible agent.
+
+```bash
+npx skills add https://github.com/LachyFS/kanban-skill
+```
+
 ## Features
 
 ### Kanban Board

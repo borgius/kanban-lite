@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import { generateKeyBetween } from 'fractional-indexing'
 import { KanbanPanel } from './KanbanPanel'
 import { SidebarViewProvider } from './SidebarViewProvider'
 import { generateFeatureFilename } from '../shared/types'
@@ -85,7 +86,7 @@ async function createFeatureFromPrompts(): Promise<void> {
     modified: now,
     completedAt: status === 'done' ? now : null,
     labels: [],
-    order: 0,
+    order: generateKeyBetween(null, null),
     content,
     filePath: getFeatureFilePath(featuresDir, status, filename)
   }
@@ -112,7 +113,7 @@ function serializeFeature(feature: Feature): string {
     `modified: "${feature.modified}"`,
     `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
     `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
-    `order: ${feature.order}`,
+    `order: "${feature.order}"`,
     '---',
     ''
   ].join('\n')

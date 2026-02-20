@@ -138,7 +138,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     const { features } = get()
     return features
       .filter((f) => f.status === status)
-      .sort((a, b) => a.order - b.order)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   },
 
   getFilteredFeaturesByStatus: (status) => {
@@ -197,7 +197,7 @@ export const useStore = create<KanbanState>((set, get) => ({
 
         return true
       })
-      .sort((a, b) => a.order - b.order)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   },
 
   getUniqueAssignees: () => {

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
@@ -434,7 +435,33 @@ export class KanbanPanel {
         this._migrating = false
       }
 
-      this._features = features.sort((a, b) => a.order - b.order)
+      // Migrate legacy integer order values to fractional indices
+      const hasLegacyOrder = features.some(f => /^\d+$/.test(f.order))
+      if (hasLegacyOrder) {
+        const byStatus = new Map<string, Feature[]>()
+        for (const f of features) {
+          const list = byStatus.get(f.status) || []
+          list.push(f)
+          byStatus.set(f.status, list)
+        }
+
+        const migrationWrites: Feature[] = []
+        for (const columnFeatures of byStatus.values()) {
+          columnFeatures.sort((a, b) => parseInt(a.order) - parseInt(b.order))
+          const keys = generateNKeysBetween(null, null, columnFeatures.length)
+          for (let i = 0; i < columnFeatures.length; i++) {
+            columnFeatures[i].order = keys[i]
+            migrationWrites.push(columnFeatures[i])
+          }
+        }
+
+        for (const f of migrationWrites) {
+          const content = this._serializeFeature(f)
+          await vscode.workspace.fs.writeFile(vscode.Uri.file(f.filePath), new TextEncoder().encode(content))
+        }
+      }
+
+      this._features = features.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
     } catch {
       this._features = []
     }
@@ -471,7 +498,7 @@ export class KanbanPanel {
       modified: getValue('modified') || new Date().toISOString(),
       completedAt: getValue('completedAt') || null,
       labels: getArrayValue('labels'),
-      order: parseInt(getValue('order')) || 0,
+      order: getValue('order') || 'a0',
       content: body.trim(),
       filePath
     }
@@ -489,7 +516,7 @@ export class KanbanPanel {
       `modified: "${feature.modified}"`,
       `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
       `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
-      `order: ${feature.order}`,
+      `order: "${feature.order}"`,
       '---',
       ''
     ].join('\n')
@@ -520,7 +547,10 @@ export class KanbanPanel {
     const title = getTitleFromContent(data.content)
     const filename = generateFeatureFilename(title)
     const now = new Date().toISOString()
-    const featuresInStatus = this._features.filter(f => f.status === data.status)
+    const featuresInStatus = this._features
+      .filter(f => f.status === data.status)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+    const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
 
     const feature: Feature = {
       id: filename,
@@ -532,7 +562,7 @@ export class KanbanPanel {
       modified: now,
       completedAt: data.status === 'done' ? now : null,
       labels: data.labels,
-      order: featuresInStatus.length,
+      order: generateKeyBetween(lastOrder, null),
       content: data.content,
       filePath: getFeatureFilePath(featuresDir, data.status, filename)
     }
@@ -555,11 +585,6 @@ export class KanbanPanel {
     const oldStatus = feature.status
     const statusChanged = oldStatus !== newStatus
 
-    // Remove feature from old column ordering
-    const oldColumnFeatures = this._features
-      .filter(f => f.status === oldStatus && f.id !== featureId)
-      .sort((a, b) => a.order - b.order)
-
     // Update feature status
     feature.status = newStatus as FeatureStatus
     feature.modified = new Date().toISOString()
@@ -567,44 +592,20 @@ export class KanbanPanel {
       feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
     }
 
-    // Get features in the target column (excluding the moved feature)
-    const targetColumnFeatures = statusChanged
-      ? this._features.filter(f => f.status === newStatus && f.id !== featureId).sort((a, b) => a.order - b.order)
-      : oldColumnFeatures
+    // Get sorted features in the target column (excluding the moved feature)
+    const targetColumnFeatures = this._features
+      .filter(f => f.status === newStatus && f.id !== featureId)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
 
-    // Insert at the target position
+    // Compute fractional index between neighbors at the target position
     const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
-    targetColumnFeatures.splice(clampedOrder, 0, feature)
+    const before = clampedOrder > 0 ? targetColumnFeatures[clampedOrder - 1].order : null
+    const after = clampedOrder < targetColumnFeatures.length ? targetColumnFeatures[clampedOrder].order : null
+    feature.order = generateKeyBetween(before, after)
 
-    // Reindex target column
-    const filesToWrite: Feature[] = []
-    for (let i = 0; i < targetColumnFeatures.length; i++) {
-      if (targetColumnFeatures[i].order !== i) {
-        targetColumnFeatures[i].order = i
-        filesToWrite.push(targetColumnFeatures[i])
-      }
-    }
-
-    // Reindex old column if status changed
-    if (statusChanged) {
-      for (let i = 0; i < oldColumnFeatures.length; i++) {
-        if (oldColumnFeatures[i].order !== i) {
-          oldColumnFeatures[i].order = i
-          filesToWrite.push(oldColumnFeatures[i])
-        }
-      }
-    }
-
-    // Ensure the moved feature is always persisted
-    if (!filesToWrite.includes(feature)) {
-      filesToWrite.push(feature)
-    }
-
-    // Write all modified features to disk
-    for (const f of filesToWrite) {
-      const content = this._serializeFeature(f)
-      await vscode.workspace.fs.writeFile(vscode.Uri.file(f.filePath), new TextEncoder().encode(content))
-    }
+    // Only the moved feature needs to be written
+    const content = this._serializeFeature(feature)
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
 
     // Only move file when crossing the done boundary
     const crossingDoneBoundary = statusChanged && (oldStatus === 'done' || newStatus === 'done')
@@ -628,28 +629,8 @@ export class KanbanPanel {
     if (!feature) return
 
     try {
-      const deletedStatus = feature.status
       await vscode.workspace.fs.delete(vscode.Uri.file(feature.filePath))
       this._features = this._features.filter(f => f.id !== featureId)
-
-      // Reindex remaining features in the column to prevent order collisions
-      const remainingInColumn = this._features
-        .filter(f => f.status === deletedStatus)
-        .sort((a, b) => a.order - b.order)
-
-      const filesToWrite: Feature[] = []
-      for (let i = 0; i < remainingInColumn.length; i++) {
-        if (remainingInColumn[i].order !== i) {
-          remainingInColumn[i].order = i
-          filesToWrite.push(remainingInColumn[i])
-        }
-      }
-
-      for (const f of filesToWrite) {
-        const content = this._serializeFeature(f)
-        await vscode.workspace.fs.writeFile(vscode.Uri.file(f.filePath), new TextEncoder().encode(content))
-      }
-
       this._sendFeaturesToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to delete feature: ${err}`)

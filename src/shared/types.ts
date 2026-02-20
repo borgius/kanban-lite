@@ -13,7 +13,7 @@ export interface Feature {
   modified: string
   completedAt: string | null
   labels: string[]
-  order: number
+  order: string
   content: string
   filePath: string
 }
@@ -86,7 +86,7 @@ export interface FeatureFrontmatter {
   modified: string
   completedAt: string | null
   labels: string[]
-  order: number
+  order: string
 }
 
 export type WebviewMessage =

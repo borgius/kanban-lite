@@ -364,23 +364,26 @@ function CreateFeatureDialogContent({
     onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels })
   }
 
-  // Save and close: creates the feature if there's a title, then closes
-  const handleClose = () => {
+  const handleSaveAndClose = () => {
     handleSubmit()
+    onClose()
+  }
+
+  const handleCancel = () => {
     onClose()
   }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleClose()
+        handleCancel()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        handleClose()
+        handleSaveAndClose()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
-        handleClose()
+        handleSaveAndClose()
       }
     }
 
@@ -392,7 +395,7 @@ function CreateFeatureDialogContent({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30" onClick={handleClose} />
+      <div className="absolute inset-0 bg-black/30" onClick={handleCancel} />
       <div
         className="relative h-full w-1/2 shadow-xl flex flex-col animate-in slide-in-from-right duration-200"
         style={{
@@ -411,7 +414,7 @@ function CreateFeatureDialogContent({
             </h2>
           </div>
           <button
-            onClick={handleClose}
+            onClick={handleCancel}
             className="p-1.5 rounded transition-colors"
             style={{ color: 'var(--vscode-descriptionForeground)' }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
@@ -488,29 +491,53 @@ function CreateFeatureDialogContent({
           <EditorContent editor={descriptionEditor} />
         </div>
 
-        {/* Footer hint */}
+        {/* Footer with Cancel / Save buttons */}
         <div
-          className="px-4 py-2"
+          className="flex items-center justify-between px-4 py-3"
           style={{
             borderTop: '1px solid var(--vscode-panel-border)',
             background: 'var(--vscode-sideBar-background, var(--vscode-editor-background))',
           }}
         >
           <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            Auto-saves on close ·{' '}
             <kbd
               className="px-1.5 py-0.5 rounded text-[10px] font-mono"
               style={{ background: 'var(--vscode-keybindingLabel-background, var(--vscode-badge-background))', color: 'var(--vscode-keybindingLabel-foreground, var(--vscode-foreground))', border: '1px solid var(--vscode-keybindingLabel-border, var(--vscode-panel-border))' }}
-            >Esc</kbd>{' '}
+            >Esc</kbd>{' '}cancel ·{' '}
             <kbd
               className="px-1.5 py-0.5 rounded text-[10px] font-mono"
               style={{ background: 'var(--vscode-keybindingLabel-background, var(--vscode-badge-background))', color: 'var(--vscode-keybindingLabel-foreground, var(--vscode-foreground))', border: '1px solid var(--vscode-keybindingLabel-border, var(--vscode-panel-border))' }}
-            >⌘S</kbd>{' '}
-            <kbd
-              className="px-1.5 py-0.5 rounded text-[10px] font-mono"
-              style={{ background: 'var(--vscode-keybindingLabel-background, var(--vscode-badge-background))', color: 'var(--vscode-keybindingLabel-foreground, var(--vscode-foreground))', border: '1px solid var(--vscode-keybindingLabel-border, var(--vscode-panel-border))' }}
-            >⌘ Enter</kbd>{' '}to save &amp; close
+            >⌘S</kbd>{' '}save
           </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="px-3 py-1.5 text-xs font-medium rounded transition-colors"
+              style={{
+                color: 'var(--vscode-foreground)',
+                background: 'transparent',
+                border: '1px solid var(--vscode-panel-border)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAndClose}
+              className="px-3 py-1.5 text-xs font-medium rounded transition-colors"
+              style={{
+                color: 'var(--vscode-button-foreground)',
+                background: 'var(--vscode-button-background)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--vscode-button-background)'}
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

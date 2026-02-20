@@ -1,4 +1,5 @@
-import { Plus } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Plus, MoreVertical, Pencil, Trash2 } from 'lucide-react'
 import { FeatureCard } from './FeatureCard'
 import type { Feature, KanbanColumn as KanbanColumnType } from '../../shared/types'
 import type { LayoutMode } from '../store'
@@ -9,6 +10,8 @@ interface KanbanColumnProps {
   features: Feature[]
   onFeatureClick: (feature: Feature) => void
   onAddFeature: (status: string) => void
+  onEditColumn: (columnId: string) => void
+  onRemoveColumn: (columnId: string) => void
   onDragStart: (e: React.DragEvent, feature: Feature) => void
   onDragOver: (e: React.DragEvent) => void
   onDragOverCard: (e: React.DragEvent, columnId: string, cardIndex: number) => void
@@ -24,6 +27,8 @@ export function KanbanColumn({
   features,
   onFeatureClick,
   onAddFeature,
+  onEditColumn,
+  onRemoveColumn,
   onDragStart,
   onDragOver,
   onDragOverCard,
@@ -35,6 +40,19 @@ export function KanbanColumn({
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
 
   return (
     <div
@@ -47,11 +65,7 @@ export function KanbanColumn({
       onDrop={(e) => onDrop(e, column.id)}
     >
       {/* Column Header */}
-      <button
-        onClick={() => onAddFeature(column.id)}
-        className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors cursor-pointer"
-        title={`Add to ${column.name}`}
-      >
+      <div className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: column.color }} />
           <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{column.name}</h3>
@@ -59,8 +73,47 @@ export function KanbanColumn({
             {features.length}
           </span>
         </div>
-        <Plus size={16} className="text-zinc-500" />
-      </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => onAddFeature(column.id)}
+            className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
+            title={`Add to ${column.name}`}
+          >
+            <Plus size={16} className="text-zinc-500" />
+          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
+              title="Column options"
+            >
+              <MoreVertical size={16} className="text-zinc-500" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[140px]">
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); onEditColumn(column.id) }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  <Pencil size={14} />
+                  Edit List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); onRemoveColumn(column.id) }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  <Trash2 size={14} />
+                  Remove List
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Column Content */}
       <div

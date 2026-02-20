@@ -13,6 +13,7 @@ export interface Feature {
   modified: string
   completedAt: string | null
   labels: string[]
+  attachments: string[]
   order: string
   content: string
   filePath: string
@@ -74,6 +75,7 @@ export type ExtensionMessage =
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter }
+  | { type: 'showSettings'; settings: CardDisplaySettings }
 
 // Frontmatter for editing
 export interface FeatureFrontmatter {
@@ -86,6 +88,7 @@ export interface FeatureFrontmatter {
   modified: string
   completedAt: string | null
   labels: string[]
+  attachments: string[]
   order: string
 }
 
@@ -99,4 +102,11 @@ export type WebviewMessage =
   | { type: 'saveFeatureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter }
   | { type: 'closeFeature' }
   | { type: 'openFile'; featureId: string }
+  | { type: 'addAttachment'; featureId: string }
+  | { type: 'openAttachment'; featureId: string; attachment: string }
+  | { type: 'removeAttachment'; featureId: string; attachment: string }
   | { type: 'openSettings' }
+  | { type: 'saveSettings'; settings: CardDisplaySettings }
+  | { type: 'addColumn'; column: { name: string; color: string } }
+  | { type: 'editColumn'; columnId: string; updates: { name: string; color: string } }
+  | { type: 'removeColumn'; columnId: string }

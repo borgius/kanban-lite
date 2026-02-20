@@ -1,11 +1,15 @@
-import * as vscode from 'vscode'
-import * as path from 'path'
+import * as net from 'node:net'
+import * as path from 'node:path'
+
 import { generateKeyBetween } from 'fractional-indexing'
+import * as vscode from 'vscode'
+
+import type { Feature, FeatureStatus, Priority } from '../shared/types'
+import { generateFeatureFilename } from '../shared/types'
+import { startServer } from '../standalone/server'
+import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 import { KanbanPanel } from './KanbanPanel'
 import { SidebarViewProvider } from './SidebarViewProvider'
-import { generateFeatureFilename } from '../shared/types'
-import type { Feature, FeatureStatus, Priority } from '../shared/types'
-import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 
 async function createFeatureFromPrompts(): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders
@@ -121,7 +125,61 @@ function serializeFeature(feature: Feature): string {
   return frontmatter + feature.content
 }
 
+let standaloneServer: ReturnType<typeof startServer> | undefined
+let statusBarItem: vscode.StatusBarItem | undefined
+
+function findFreePort(startPort: number, maxAttempts = 10): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let attempt = 0
+    function tryPort(port: number) {
+      const server = net.createServer()
+      server.once('error', () => {
+        attempt++
+        if (attempt >= maxAttempts) {
+          reject(new Error('No free port found'))
+        } else {
+          tryPort(port + 1)
+        }
+      })
+      server.once('listening', () => {
+        server.close(() => resolve(port))
+      })
+      server.listen(port)
+    }
+    tryPort(startPort)
+  })
+}
+
 export function activate(context: vscode.ExtensionContext) {
+  // Start standalone HTTP server so the board is accessible in a browser
+  const workspaceFolders = vscode.workspace.workspaceFolders
+  if (workspaceFolders) {
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
+    const featuresDirectory = config.get<string>('featuresDirectory') || '.devtool/features'
+    const featuresDir = path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
+    const webviewDir = path.join(context.extensionPath, 'dist', 'standalone-webview')
+
+    findFreePort(3464).then(port => {
+      standaloneServer = startServer(featuresDir, port, webviewDir)
+      standaloneServer.on('error', () => {
+        standaloneServer = undefined
+      })
+
+      statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50)
+      statusBarItem.text = `kanban:${port}`
+      statusBarItem.tooltip = `Kanban board running at http://localhost:${port}`
+      statusBarItem.command = {
+        title: 'Open Kanban in Browser',
+        command: 'vscode.open',
+        arguments: [vscode.Uri.parse(`http://localhost:${port}`)]
+      }
+      statusBarItem.show()
+      context.subscriptions.push(statusBarItem)
+    }).catch(() => {
+      // No free port found — non-critical, skip
+    })
+  }
+
   // Sidebar webview in the activity bar
   const sidebarProvider = new SidebarViewProvider(context.extensionUri, context)
   context.subscriptions.push(
@@ -161,4 +219,13 @@ export function activate(context: vscode.ExtensionContext) {
   }
 }
 
-export function deactivate() {}
+export function deactivate() {
+  if (standaloneServer) {
+    standaloneServer.close()
+    standaloneServer = undefined
+  }
+  if (statusBarItem) {
+    statusBarItem.dispose()
+    statusBarItem = undefined
+  }
+}

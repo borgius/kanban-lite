@@ -12,9 +12,11 @@ interface KanbanBoardProps {
   onFeatureClick: (feature: Feature) => void
   onAddFeature: (status: string) => void
   onMoveFeature: (featureId: string, newStatus: string, newOrder: number) => void
+  onEditColumn: (columnId: string) => void
+  onRemoveColumn: (columnId: string) => void
 }
 
-export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature }: KanbanBoardProps) {
+export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn }: KanbanBoardProps) {
   const columns = useStore((s) => s.columns)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
   const getFeaturesByStatus = useStore((s) => s.getFeaturesByStatus)
@@ -124,6 +126,8 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature }: Kan
             features={getFilteredFeaturesByStatus(column.id as FeatureStatus)}
             onFeatureClick={onFeatureClick}
             onAddFeature={onAddFeature}
+            onEditColumn={onEditColumn}
+            onRemoveColumn={onRemoveColumn}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragOverCard={handleDragOverCard}

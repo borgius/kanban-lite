@@ -1,0 +1,13 @@
+import './standalone-shim'
+import './assets/main.css'
+import './assets/standalone-theme.css'
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+)

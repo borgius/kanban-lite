@@ -3,6 +3,7 @@ import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import { parseFeatureFile, serializeFeature } from '../sdk/parser'
 import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
 
 interface CreateFeatureData {
@@ -149,8 +150,26 @@ export class KanbanPanel {
             await vscode.commands.executeCommand('workbench.action.focusActivityBar')
             await vscode.commands.executeCommand('workbench.action.focusMenuBar')
             break
+          case 'addAttachment':
+            await this._addAttachment(message.featureId)
+            break
+          case 'openAttachment':
+            await this._openAttachment(message.featureId, message.attachment)
+            break
+          case 'removeAttachment':
+            await this._removeAttachment(message.featureId, message.attachment)
+            break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
+            break
+          case 'addColumn':
+            await this._addColumn(message.column)
+            break
+          case 'editColumn':
+            await this._editColumn(message.columnId, message.updates)
+            break
+          case 'removeColumn':
+            await this._removeColumn(message.columnId)
             break
         }
       },
@@ -468,60 +487,11 @@ export class KanbanPanel {
   }
 
   private _parseFeatureFile(content: string, filePath: string): Feature | null {
-    content = content.replace(/\r\n/g, '\n')
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-    if (!frontmatterMatch) return null
-
-    const frontmatter = frontmatterMatch[1]
-    const body = frontmatterMatch[2] || ''
-
-    const getValue = (key: string): string => {
-      const match = frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'))
-      if (!match) return ''
-      const value = match[1].trim().replace(/^["']|["']$/g, '')
-      return value === 'null' ? '' : value
-    }
-
-    const getArrayValue = (key: string): string[] => {
-      const match = frontmatter.match(new RegExp(`^${key}:\\s*\\[([^\\]]*)\\]`, 'm'))
-      if (!match) return []
-      return match[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
-    }
-
-    return {
-      id: getValue('id') || path.basename(filePath, '.md'),
-      status: (getValue('status') as FeatureStatus) || 'backlog',
-      priority: (getValue('priority') as Priority) || 'medium',
-      assignee: getValue('assignee') || null,
-      dueDate: getValue('dueDate') || null,
-      created: getValue('created') || new Date().toISOString(),
-      modified: getValue('modified') || new Date().toISOString(),
-      completedAt: getValue('completedAt') || null,
-      labels: getArrayValue('labels'),
-      order: getValue('order') || 'a0',
-      content: body.trim(),
-      filePath
-    }
+    return parseFeatureFile(content, filePath)
   }
 
   private _serializeFeature(feature: Feature): string {
-    const frontmatter = [
-      '---',
-      `id: "${feature.id}"`,
-      `status: "${feature.status}"`,
-      `priority: "${feature.priority}"`,
-      `assignee: ${feature.assignee ? `"${feature.assignee}"` : 'null'}`,
-      `dueDate: ${feature.dueDate ? `"${feature.dueDate}"` : 'null'}`,
-      `created: "${feature.created}"`,
-      `modified: "${feature.modified}"`,
-      `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
-      `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
-      `order: "${feature.order}"`,
-      '---',
-      ''
-    ].join('\n')
-
-    return frontmatter + feature.content
+    return serializeFeature(feature)
   }
 
   public triggerCreateDialog(): void {
@@ -562,6 +532,7 @@ export class KanbanPanel {
       modified: now,
       completedAt: data.status === 'done' ? now : null,
       labels: data.labels,
+      attachments: [],
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       filePath: getFeatureFilePath(featuresDir, data.status, filename)
@@ -702,6 +673,7 @@ export class KanbanPanel {
       modified: feature.modified,
       completedAt: feature.completedAt,
       labels: feature.labels,
+      attachments: feature.attachments,
       order: feature.order
     }
 
@@ -733,6 +705,7 @@ export class KanbanPanel {
     feature.assignee = frontmatter.assignee
     feature.dueDate = frontmatter.dueDate
     feature.labels = frontmatter.labels
+    feature.attachments = frontmatter.attachments || feature.attachments || []
     feature.modified = new Date().toISOString()
     if (oldStatus !== feature.status) {
       feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
@@ -759,6 +732,80 @@ export class KanbanPanel {
 
     // Update all features in webview
     this._sendFeaturesToWebview()
+  }
+
+  private async _addAttachment(featureId: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    const uris = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      openLabel: 'Attach',
+      title: 'Select files to attach'
+    })
+    if (!uris || uris.length === 0) return
+
+    const featureDir = path.dirname(feature.filePath)
+
+    for (const uri of uris) {
+      const fileName = path.basename(uri.fsPath)
+      const destPath = path.join(featureDir, fileName)
+
+      // If file is not already in the feature directory, copy it
+      if (path.dirname(uri.fsPath) !== featureDir) {
+        await vscode.workspace.fs.copy(uri, vscode.Uri.file(destPath), { overwrite: true })
+      }
+
+      // Add to attachments if not already present
+      if (!feature.attachments.includes(fileName)) {
+        feature.attachments.push(fileName)
+      }
+    }
+
+    feature.modified = new Date().toISOString()
+    const fileContent = this._serializeFeature(feature)
+    this._lastWrittenContent = fileContent
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    this._sendFeaturesToWebview()
+    // Refresh the editor with updated frontmatter
+    if (this._currentEditingFeatureId === featureId) {
+      await this._sendFeatureContent(featureId)
+    }
+  }
+
+  private async _openAttachment(featureId: string, attachment: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    const featureDir = path.dirname(feature.filePath)
+    const attachmentPath = path.resolve(featureDir, attachment)
+
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(attachmentPath))
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(attachmentPath))
+      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+    } catch {
+      // For binary files or files that can't be opened as text, reveal in OS
+      await vscode.env.openExternal(vscode.Uri.file(attachmentPath))
+    }
+  }
+
+  private async _removeAttachment(featureId: string, attachment: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    feature.attachments = feature.attachments.filter(a => a !== attachment)
+    feature.modified = new Date().toISOString()
+
+    const fileContent = this._serializeFeature(feature)
+    this._lastWrittenContent = fileContent
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    this._sendFeaturesToWebview()
+    if (this._currentEditingFeatureId === featureId) {
+      await this._sendFeatureContent(featureId)
+    }
   }
 
   private async _startWithAI(
@@ -828,9 +875,8 @@ export class KanbanPanel {
     terminal.sendText(command)
   }
 
-  private _sendFeaturesToWebview(): void {
+  private _getColumns(): KanbanColumn[] {
     const config = vscode.workspace.getConfiguration('kanban-markdown')
-
     const defaultColumns: KanbanColumn[] = [
       { id: 'backlog', name: 'Backlog', color: '#6b7280' },
       { id: 'todo', name: 'To Do', color: '#3b82f6' },
@@ -838,7 +884,18 @@ export class KanbanPanel {
       { id: 'review', name: 'Review', color: '#8b5cf6' },
       { id: 'done', name: 'Done', color: '#22c55e' }
     ]
-    const columns = config.get<KanbanColumn[]>('columns', defaultColumns)
+    return config.get<KanbanColumn[]>('columns', defaultColumns).map(c => ({ ...c }))
+  }
+
+  private async _saveColumns(columns: KanbanColumn[]): Promise<void> {
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
+    await config.update('columns', columns, vscode.ConfigurationTarget.Workspace)
+    // Send immediately with known-good data instead of re-reading from config
+    this._sendFeaturesToWebviewWithColumns(columns)
+  }
+
+  private _sendFeaturesToWebviewWithColumns(columns: KanbanColumn[]): void {
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
     const settings: CardDisplaySettings = {
       showPriorityBadges: config.get<boolean>('showPriorityBadges', true),
       showAssignee: config.get<boolean>('showAssignee', true),
@@ -858,5 +915,45 @@ export class KanbanPanel {
       columns,
       settings
     })
+  }
+
+  private async _addColumn(column: { name: string; color: string }): Promise<void> {
+    const columns = this._getColumns()
+    const id = column.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    let uniqueId = id
+    let counter = 1
+    while (columns.some(c => c.id === uniqueId)) {
+      uniqueId = `${id}-${counter++}`
+    }
+    columns.push({ id: uniqueId, name: column.name, color: column.color })
+    await this._saveColumns(columns)
+  }
+
+  private async _editColumn(columnId: string, updates: { name: string; color: string }): Promise<void> {
+    const columns = this._getColumns()
+    if (!columns.some(c => c.id === columnId)) return
+    const updatedColumns = columns.map(c =>
+      c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
+    )
+    await this._saveColumns(updatedColumns)
+  }
+
+  private async _removeColumn(columnId: string): Promise<void> {
+    const columns = this._getColumns()
+    const hasFeatures = this._features.some(f => f.status === columnId)
+    if (hasFeatures) {
+      vscode.window.showWarningMessage(`Cannot remove list "${columnId}" because it still contains features. Move or delete them first.`)
+      return
+    }
+    const updated = columns.filter(c => c.id !== columnId)
+    if (updated.length === 0) {
+      vscode.window.showWarningMessage('Cannot remove the last list.')
+      return
+    }
+    await this._saveColumns(updated)
+  }
+
+  private _sendFeaturesToWebview(): void {
+    this._sendFeaturesToWebviewWithColumns(this._getColumns())
   }
 }

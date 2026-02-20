@@ -1,0 +1,441 @@
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { KanbanSDK } from '../KanbanSDK'
+
+function createTempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-test-'))
+}
+
+function writeCardFile(dir: string, filename: string, content: string, subfolder?: string): void {
+  const targetDir = subfolder ? path.join(dir, subfolder) : dir
+  fs.mkdirSync(targetDir, { recursive: true })
+  fs.writeFileSync(path.join(targetDir, filename), content, 'utf-8')
+}
+
+function makeCardContent(opts: {
+  id: string
+  status?: string
+  priority?: string
+  title?: string
+  order?: string
+  assignee?: string | null
+  dueDate?: string | null
+  labels?: string[]
+}): string {
+  const {
+    id,
+    status = 'backlog',
+    priority = 'medium',
+    title = 'Test Card',
+    order = 'a0',
+    assignee = null,
+    dueDate = null,
+    labels = []
+  } = opts
+  return `---
+id: "${id}"
+status: "${status}"
+priority: "${priority}"
+assignee: ${assignee ? `"${assignee}"` : 'null'}
+dueDate: ${dueDate ? `"${dueDate}"` : 'null'}
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: [${labels.map(l => `"${l}"`).join(', ')}]
+order: "${order}"
+---
+# ${title}
+
+Description here.`
+}
+
+describe('KanbanSDK', () => {
+  let tempDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    tempDir = createTempDir()
+    sdk = new KanbanSDK(tempDir)
+  })
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  describe('init', () => {
+    it('should create the features directory and done subfolder', async () => {
+      await sdk.init()
+      expect(fs.existsSync(path.join(tempDir, 'done'))).toBe(true)
+    })
+  })
+
+  describe('listCards', () => {
+    it('should return empty array for empty directory', async () => {
+      const cards = await sdk.listCards()
+      expect(cards).toEqual([])
+    })
+
+    it('should list cards from root and done/', async () => {
+      writeCardFile(tempDir, 'active.md', makeCardContent({ id: 'active', status: 'todo', order: 'a0' }))
+      writeCardFile(tempDir, 'completed.md', makeCardContent({ id: 'completed', status: 'done', order: 'a1' }), 'done')
+
+      const cards = await sdk.listCards()
+      expect(cards.length).toBe(2)
+      expect(cards.map(c => c.id).sort()).toEqual(['active', 'completed'])
+    })
+
+    it('should return cards sorted by order', async () => {
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0' }))
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0' }))
+
+      const cards = await sdk.listCards()
+      expect(cards[0].id).toBe('a')
+      expect(cards[1].id).toBe('b')
+    })
+
+    it('should skip files without valid frontmatter', async () => {
+      writeCardFile(tempDir, 'invalid.md', '# No frontmatter')
+      writeCardFile(tempDir, 'valid.md', makeCardContent({ id: 'valid' }))
+
+      const cards = await sdk.listCards()
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('valid')
+    })
+  })
+
+  describe('getCard', () => {
+    it('should return a card by ID', async () => {
+      writeCardFile(tempDir, 'find-me.md', makeCardContent({ id: 'find-me', priority: 'high' }))
+
+      const card = await sdk.getCard('find-me')
+      expect(card).not.toBeNull()
+      expect(card?.id).toBe('find-me')
+      expect(card?.priority).toBe('high')
+    })
+
+    it('should return null for non-existent card', async () => {
+      const card = await sdk.getCard('ghost')
+      expect(card).toBeNull()
+    })
+  })
+
+  describe('createCard', () => {
+    it('should create a card file on disk', async () => {
+      const card = await sdk.createCard({
+        content: '# New Card\n\nSome description',
+        status: 'todo',
+        priority: 'high',
+        labels: ['frontend']
+      })
+
+      expect(card.status).toBe('todo')
+      expect(card.priority).toBe('high')
+      expect(card.labels).toEqual(['frontend'])
+      expect(fs.existsSync(card.filePath)).toBe(true)
+
+      const onDisk = fs.readFileSync(card.filePath, 'utf-8')
+      expect(onDisk).toContain('status: "todo"')
+      expect(onDisk).toContain('# New Card')
+    })
+
+    it('should use defaults for optional fields', async () => {
+      const card = await sdk.createCard({ content: '# Default Card' })
+      expect(card.status).toBe('backlog')
+      expect(card.priority).toBe('medium')
+      expect(card.assignee).toBeNull()
+      expect(card.labels).toEqual([])
+    })
+
+    it('should place done cards in done/ subfolder', async () => {
+      const card = await sdk.createCard({
+        content: '# Done Card',
+        status: 'done'
+      })
+      expect(card.filePath).toContain('/done/')
+      expect(card.completedAt).not.toBeNull()
+    })
+
+    it('should assign incremental order within a column', async () => {
+      const c1 = await sdk.createCard({ content: '# First', status: 'todo' })
+      const c2 = await sdk.createCard({ content: '# Second', status: 'todo' })
+      expect(c2.order > c1.order).toBe(true)
+    })
+  })
+
+  describe('updateCard', () => {
+    it('should update fields and persist', async () => {
+      writeCardFile(tempDir, 'update-me.md', makeCardContent({ id: 'update-me', priority: 'low' }))
+
+      const updated = await sdk.updateCard('update-me', {
+        priority: 'critical',
+        assignee: 'alice',
+        labels: ['urgent']
+      })
+
+      expect(updated.priority).toBe('critical')
+      expect(updated.assignee).toBe('alice')
+      expect(updated.labels).toEqual(['urgent'])
+
+      const onDisk = fs.readFileSync(updated.filePath, 'utf-8')
+      expect(onDisk).toContain('priority: "critical"')
+      expect(onDisk).toContain('assignee: "alice"')
+    })
+
+    it('should move file to done/ when status changes to done', async () => {
+      writeCardFile(tempDir, 'finish-me.md', makeCardContent({ id: 'finish-me', status: 'review' }))
+
+      const updated = await sdk.updateCard('finish-me', { status: 'done' })
+      expect(updated.completedAt).not.toBeNull()
+      expect(updated.filePath).toContain('/done/')
+      expect(fs.existsSync(updated.filePath)).toBe(true)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.updateCard('ghost', { priority: 'high' })).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('moveCard', () => {
+    it('should change status and reorder', async () => {
+      writeCardFile(tempDir, 'move-me.md', makeCardContent({ id: 'move-me', status: 'backlog' }))
+
+      const moved = await sdk.moveCard('move-me', 'in-progress')
+      expect(moved.status).toBe('in-progress')
+    })
+
+    it('should handle done boundary crossing', async () => {
+      writeCardFile(tempDir, 'to-done.md', makeCardContent({ id: 'to-done', status: 'review' }))
+
+      const moved = await sdk.moveCard('to-done', 'done')
+      expect(moved.completedAt).not.toBeNull()
+      expect(moved.filePath).toContain('/done/')
+    })
+
+    it('should insert at specified position', async () => {
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', status: 'todo', order: 'a0' }))
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', status: 'todo', order: 'a2' }))
+      writeCardFile(tempDir, 'new.md', makeCardContent({ id: 'new', status: 'backlog', order: 'a0' }))
+
+      const moved = await sdk.moveCard('new', 'todo', 1)
+      expect(moved.order > 'a0').toBe(true)
+      expect(moved.order < 'a2').toBe(true)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.moveCard('ghost', 'todo')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('deleteCard', () => {
+    it('should remove the file from disk', async () => {
+      writeCardFile(tempDir, 'delete-me.md', makeCardContent({ id: 'delete-me' }))
+      const filePath = path.join(tempDir, 'delete-me.md')
+      expect(fs.existsSync(filePath)).toBe(true)
+
+      await sdk.deleteCard('delete-me')
+      expect(fs.existsSync(filePath)).toBe(false)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.deleteCard('ghost')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('getCardsByStatus', () => {
+    it('should filter cards by status', async () => {
+      writeCardFile(tempDir, 'todo1.md', makeCardContent({ id: 'todo1', status: 'todo', order: 'a0' }))
+      writeCardFile(tempDir, 'todo2.md', makeCardContent({ id: 'todo2', status: 'todo', order: 'a1' }))
+      writeCardFile(tempDir, 'backlog1.md', makeCardContent({ id: 'backlog1', status: 'backlog', order: 'a0' }))
+
+      const todoCards = await sdk.getCardsByStatus('todo')
+      expect(todoCards.length).toBe(2)
+      expect(todoCards.every(c => c.status === 'todo')).toBe(true)
+    })
+  })
+
+  describe('getUniqueAssignees', () => {
+    it('should return sorted unique assignees', async () => {
+      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', assignee: 'bob', order: 'a0' }))
+      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', assignee: 'alice', order: 'a1' }))
+      writeCardFile(tempDir, 'c3.md', makeCardContent({ id: 'c3', assignee: 'bob', order: 'a2' }))
+
+      const assignees = await sdk.getUniqueAssignees()
+      expect(assignees).toEqual(['alice', 'bob'])
+    })
+  })
+
+  describe('getUniqueLabels', () => {
+    it('should return sorted unique labels', async () => {
+      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', labels: ['ui', 'frontend'], order: 'a0' }))
+      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', labels: ['backend', 'ui'], order: 'a1' }))
+
+      const labels = await sdk.getUniqueLabels()
+      expect(labels).toEqual(['backend', 'frontend', 'ui'])
+    })
+  })
+
+  describe('addAttachment', () => {
+    it('should copy file and add to attachments', async () => {
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+
+      // Create a source file to attach
+      const srcFile = path.join(os.tmpdir(), 'test-attach.txt')
+      fs.writeFileSync(srcFile, 'hello', 'utf-8')
+
+      const updated = await sdk.addAttachment('card', srcFile)
+      expect(updated.attachments).toContain('test-attach.txt')
+
+      // Verify file was copied
+      const destPath = path.join(tempDir, 'test-attach.txt')
+      expect(fs.existsSync(destPath)).toBe(true)
+
+      fs.unlinkSync(srcFile)
+    })
+
+    it('should not duplicate attachment if already present', async () => {
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      const srcFile = path.join(os.tmpdir(), 'dup.txt')
+      fs.writeFileSync(srcFile, 'data', 'utf-8')
+
+      await sdk.addAttachment('card', srcFile)
+      const updated = await sdk.addAttachment('card', srcFile)
+      expect(updated.attachments.filter(a => a === 'dup.txt').length).toBe(1)
+
+      fs.unlinkSync(srcFile)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.addAttachment('ghost', '/tmp/x.txt')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('removeAttachment', () => {
+    it('should remove attachment from card metadata', async () => {
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      const srcFile = path.join(os.tmpdir(), 'rm-me.txt')
+      fs.writeFileSync(srcFile, 'data', 'utf-8')
+
+      await sdk.addAttachment('card', srcFile)
+      const updated = await sdk.removeAttachment('card', 'rm-me.txt')
+      expect(updated.attachments).not.toContain('rm-me.txt')
+
+      fs.unlinkSync(srcFile)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.removeAttachment('ghost', 'x.txt')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('listAttachments', () => {
+    it('should return attachments for a card', async () => {
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      const srcFile = path.join(os.tmpdir(), 'att.txt')
+      fs.writeFileSync(srcFile, 'data', 'utf-8')
+
+      await sdk.addAttachment('card', srcFile)
+      const attachments = await sdk.listAttachments('card')
+      expect(attachments).toEqual(['att.txt'])
+
+      fs.unlinkSync(srcFile)
+    })
+
+    it('should throw for non-existent card', async () => {
+      await expect(sdk.listAttachments('ghost')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('listColumns', () => {
+    it('should return default columns when no board.json exists', async () => {
+      const columns = await sdk.listColumns()
+      expect(columns.length).toBe(5)
+      expect(columns[0].id).toBe('backlog')
+      expect(columns[4].id).toBe('done')
+    })
+
+    it('should return custom columns from board.json', async () => {
+      const config = {
+        columns: [
+          { id: 'new', name: 'New', color: '#ff0000' },
+          { id: 'wip', name: 'WIP', color: '#00ff00' },
+        ]
+      }
+      fs.mkdirSync(tempDir, { recursive: true })
+      fs.writeFileSync(path.join(tempDir, 'board.json'), JSON.stringify(config), 'utf-8')
+
+      const columns = await sdk.listColumns()
+      expect(columns.length).toBe(2)
+      expect(columns[0].id).toBe('new')
+      expect(columns[1].id).toBe('wip')
+    })
+  })
+
+  describe('addColumn', () => {
+    it('should add a column and persist to board.json', async () => {
+      const columns = await sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
+      // Default 5 + 1 new
+      expect(columns.length).toBe(6)
+      expect(columns[5].id).toBe('testing')
+
+      // Verify persisted
+      const raw = fs.readFileSync(path.join(tempDir, 'board.json'), 'utf-8')
+      const config = JSON.parse(raw)
+      expect(config.columns.length).toBe(6)
+    })
+
+    it('should throw if column ID already exists', async () => {
+      await expect(sdk.addColumn({ id: 'backlog', name: 'Backlog 2', color: '#000' }))
+        .rejects.toThrow('Column already exists: backlog')
+    })
+  })
+
+  describe('updateColumn', () => {
+    it('should update column name and color', async () => {
+      const columns = await sdk.updateColumn('backlog', { name: 'Inbox', color: '#123456' })
+      const updated = columns.find(c => c.id === 'backlog')
+      expect(updated?.name).toBe('Inbox')
+      expect(updated?.color).toBe('#123456')
+    })
+
+    it('should throw for non-existent column', async () => {
+      await expect(sdk.updateColumn('ghost', { name: 'X' })).rejects.toThrow('Column not found')
+    })
+  })
+
+  describe('removeColumn', () => {
+    it('should remove an empty column', async () => {
+      // Add a custom column first, then remove it
+      await sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aaa' })
+      const columns = await sdk.removeColumn('staging')
+      expect(columns.find(c => c.id === 'staging')).toBeUndefined()
+    })
+
+    it('should throw if cards exist in the column', async () => {
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card', status: 'backlog' }))
+      await expect(sdk.removeColumn('backlog')).rejects.toThrow('Cannot remove column')
+    })
+
+    it('should throw for non-existent column', async () => {
+      await expect(sdk.removeColumn('ghost')).rejects.toThrow('Column not found')
+    })
+  })
+
+  describe('reorderColumns', () => {
+    it('should reorder columns', async () => {
+      const columns = await sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog'])
+      expect(columns[0].id).toBe('done')
+      expect(columns[4].id).toBe('backlog')
+    })
+
+    it('should throw if a column ID is missing', async () => {
+      await expect(sdk.reorderColumns(['done', 'review'])).rejects.toThrow('Must include all column IDs')
+    })
+
+    it('should throw for unknown column ID', async () => {
+      await expect(sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'unknown']))
+        .rejects.toThrow('Column not found')
+    })
+  })
+})

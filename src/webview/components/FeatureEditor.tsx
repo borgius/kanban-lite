@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip } from 'lucide-react'
 import type { FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { useStore } from '../store'
@@ -29,6 +29,9 @@ interface FeatureEditorProps {
   onDelete: () => void
   onOpenFile: () => void
   onStartWithAI: (agent: AIAgent, permissionMode: PermissionMode) => void
+  onAddAttachment: () => void
+  onOpenAttachment: (attachment: string) => void
+  onRemoveAttachment: (attachment: string) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -369,7 +372,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI }: FeatureEditorProps) {
+export function FeatureEditor({ featureId, content, frontmatter, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -599,6 +602,45 @@ export function FeatureEditor({ featureId, content, frontmatter, contentVersion,
           />
         </PropertyRow>
         )}
+        <PropertyRow label="Attachments" icon={<Paperclip size={13} />}>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {currentFrontmatter.attachments.map(attachment => (
+              <span
+                key={attachment}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+                style={{
+                  background: 'var(--vscode-badge-background)',
+                  color: 'var(--vscode-badge-foreground)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenAttachment(attachment)}
+                  className="inline-flex items-center gap-1 hover:underline"
+                  title={attachment}
+                >
+                  <Paperclip size={9} />
+                  {attachment}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveAttachment(attachment)}
+                  className="hover:text-red-500 transition-colors"
+                >
+                  <X size={9} />
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={onAddAttachment}
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors vscode-hover-bg"
+              style={{ color: 'var(--vscode-descriptionForeground)' }}
+            >
+              <Plus size={10} />
+            </button>
+          </div>
+        </PropertyRow>
       </div>
 
       {/* Editor */}

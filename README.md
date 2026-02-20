@@ -138,6 +138,136 @@ Default columns configuration:
 ]
 ```
 
+## CLI
+
+Manage your kanban board from the terminal. After installing with `npm install -g kanban-markdown`:
+
+```bash
+# List all cards
+kanban list
+
+# List with filters
+kanban list --status todo --priority high
+
+# Create a card
+kanban add --title "Implement search" --priority high --label "frontend,search"
+
+# Show card details
+kanban show implement-search
+
+# Move to a different column
+kanban move implement-search in-progress
+
+# Update fields
+kanban edit implement-search --assignee alice --due 2026-03-01
+
+# Delete a card
+kanban delete implement-search
+
+# Attachments
+kanban attach implement-search                          # List attachments
+kanban attach add implement-search ./screenshot.png     # Attach a file
+kanban attach remove implement-search screenshot.png    # Remove attachment
+
+# Manage columns
+kanban columns                                          # List columns
+kanban columns add --id testing --name Testing          # Add column
+kanban columns update testing --color "#ff9900"         # Update column
+kanban columns remove testing                           # Remove column
+
+# Initialize features directory
+kanban init
+```
+
+Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory.
+
+## MCP Server
+
+Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
+
+### Setup with Claude Code
+
+Add to your `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "kanban": {
+      "command": "npx",
+      "args": ["kanban-markdown", "kanban-mcp"],
+      "env": {
+        "KANBAN_FEATURES_DIR": "/path/to/your/project/.devtool/features"
+      }
+    }
+  }
+}
+```
+
+Or run directly:
+
+```bash
+kanban-mcp --dir .devtool/features
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_cards` | List/filter cards by status, priority, assignee, or label |
+| `get_card` | Get full details of a card (supports partial ID matching) |
+| `create_card` | Create a new card with title, body, status, priority, etc. |
+| `update_card` | Update fields of an existing card |
+| `move_card` | Move a card to a different status column |
+| `delete_card` | Permanently delete a card |
+| `list_attachments` | List attachments on a card |
+| `add_attachment` | Attach a file to a card (copies to card directory) |
+| `remove_attachment` | Remove an attachment reference from a card |
+| `list_columns` | List all board columns |
+| `add_column` | Add a new column to the board |
+| `update_column` | Update a column's name or color |
+| `remove_column` | Remove a column (must be empty) |
+
+## SDK
+
+Use the kanban SDK programmatically in your own tools:
+
+```typescript
+import { KanbanSDK } from 'kanban-markdown/dist/sdk'
+
+const sdk = new KanbanSDK('/path/to/.devtool/features')
+
+// List all cards
+const cards = await sdk.listCards()
+
+// Create a card
+const card = await sdk.createCard({
+  content: '# My Card\n\nDescription here.',
+  status: 'todo',
+  priority: 'high',
+  labels: ['backend']
+})
+
+// Move a card
+await sdk.moveCard('card-id', 'in-progress')
+
+// Update fields
+await sdk.updateCard('card-id', { assignee: 'alice' })
+
+// Delete
+await sdk.deleteCard('card-id')
+
+// Attachments
+await sdk.addAttachment('card-id', '/path/to/file.png')
+await sdk.removeAttachment('card-id', 'file.png')
+const attachments = await sdk.listAttachments('card-id')
+
+// Manage columns
+const columns = await sdk.listColumns()
+await sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
+await sdk.updateColumn('testing', { name: 'QA' })
+await sdk.removeColumn('testing')
+```
+
 ## Development
 
 ### Prerequisites
@@ -153,8 +283,16 @@ pnpm install
 # Start development (watch mode)
 pnpm dev
 
-# Build for production
+# Build for production (extension + CLI + MCP server)
 pnpm build
+
+# Build individually
+pnpm build:extension
+pnpm build:cli
+pnpm build:mcp
+
+# Run tests
+pnpm test
 
 # Type checking
 pnpm typecheck
@@ -173,6 +311,20 @@ pnpm lint
 
 **Extension**: TypeScript, VSCode API, esbuild
 **Webview**: React 18, Vite, Tailwind CSS, Zustand, Tiptap
+**SDK/CLI/MCP**: TypeScript, Node.js, @modelcontextprotocol/sdk
+
+### Architecture
+
+```
+src/
+  sdk/           # Standalone SDK (no VSCode dependency)
+  cli/           # CLI tool (built on SDK)
+  mcp-server/    # MCP server (built on SDK)
+  extension/     # VSCode extension (uses SDK for parsing)
+  standalone/    # Standalone web server (uses SDK for parsing)
+  webview/       # React frontend (shared by extension + standalone)
+  shared/        # Shared types
+```
 
 ## License
 

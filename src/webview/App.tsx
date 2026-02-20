@@ -6,7 +6,9 @@ import { CreateFeatureDialog } from './components/CreateFeatureDialog'
 import { FeatureEditor } from './components/FeatureEditor'
 import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
-import type { Feature, FeatureStatus, Priority, ExtensionMessage, FeatureFrontmatter } from '../shared/types'
+import { SettingsPanel } from './components/SettingsPanel'
+import { ColumnDialog } from './components/ColumnDialog'
+import type { Feature, FeatureStatus, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
@@ -22,14 +24,21 @@ function App(): React.JSX.Element {
 
   const {
     columns,
+    cardSettings,
+    settingsOpen,
     setFeatures,
     setColumns,
     setIsDarkMode,
-    setCardSettings
+    setCardSettings,
+    setSettingsOpen
   } = useStore()
 
   const [createFeatureOpen, setCreateFeatureOpen] = useState(false)
   const [createFeatureStatus, setCreateFeatureStatus] = useState<FeatureStatus>('backlog')
+
+  // Column dialog state
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const [editingColumn, setEditingColumn] = useState<KanbanColumn | null>(null)
 
   // Editor state
   const contentVersionRef = useRef(0)
@@ -210,6 +219,10 @@ function App(): React.JSX.Element {
           setCreateFeatureStatus('backlog')
           setCreateFeatureOpen(true)
           break
+        case 'showSettings':
+          setCardSettings(message.settings)
+          setSettingsOpen(true)
+          break
         case 'featureContent': {
           const { cardSettings } = useStore.getState()
           if (cardSettings.markdownEditorMode) break
@@ -231,7 +244,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setFeatures, setColumns, setCardSettings])
+  }, [setFeatures, setColumns, setCardSettings, setSettingsOpen])
 
   const handleFeatureClick = (feature: Feature): void => {
     // Request feature content for inline editing
@@ -268,6 +281,59 @@ function App(): React.JSX.Element {
 
   const handleStartWithAI = (agent: 'claude' | 'codex' | 'opencode', permissionMode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'): void => {
     vscode.postMessage({ type: 'startWithAI', agent, permissionMode })
+  }
+
+  const handleAddAttachment = (): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'addAttachment', featureId: editingFeature.id })
+  }
+
+  const handleOpenAttachment = (attachment: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'openAttachment', featureId: editingFeature.id, attachment })
+  }
+
+  const handleRemoveAttachment = (attachment: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'removeAttachment', featureId: editingFeature.id, attachment })
+  }
+
+  const handleSaveSettings = (settings: CardDisplaySettings): void => {
+    vscode.postMessage({ type: 'saveSettings', settings })
+  }
+
+  const handleAddColumn = (): void => {
+    setEditingColumn(null)
+    setColumnDialogOpen(true)
+  }
+
+  const handleEditColumn = (columnId: string): void => {
+    const col = columns.find(c => c.id === columnId)
+    if (col) {
+      setEditingColumn(col)
+      setColumnDialogOpen(true)
+    }
+  }
+
+  const handleRemoveColumn = (columnId: string): void => {
+    const col = columns.find(c => c.id === columnId)
+    if (!col) return
+    const featuresInColumn = useStore.getState().features.filter(f => f.status === columnId)
+    if (featuresInColumn.length > 0) {
+      // Don't remove columns that still have features
+      return
+    }
+    vscode.postMessage({ type: 'removeColumn', columnId })
+  }
+
+  const handleSaveColumn = (data: { name: string; color: string }): void => {
+    if (editingColumn) {
+      vscode.postMessage({ type: 'editColumn', columnId: editingColumn.id, updates: data })
+    } else {
+      vscode.postMessage({ type: 'addColumn', column: data })
+    }
+    setColumnDialogOpen(false)
+    setEditingColumn(null)
   }
 
   const handleAddFeatureInColumn = (status: string): void => {
@@ -333,13 +399,15 @@ function App(): React.JSX.Element {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--vscode-editor-background)]">
-      <Toolbar onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })} />
+      <Toolbar onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })} onAddColumn={handleAddColumn} />
       <div className="flex-1 flex overflow-hidden">
         <div className={editingFeature ? 'w-1/2' : 'w-full'}>
           <KanbanBoard
             onFeatureClick={handleFeatureClick}
             onAddFeature={handleAddFeatureInColumn}
             onMoveFeature={handleMoveFeature}
+            onEditColumn={handleEditColumn}
+            onRemoveColumn={handleRemoveColumn}
           />
         </div>
         {editingFeature && (
@@ -354,6 +422,9 @@ function App(): React.JSX.Element {
               onDelete={handleDeleteFeature}
               onOpenFile={handleOpenFile}
               onStartWithAI={handleStartWithAI}
+              onAddAttachment={handleAddAttachment}
+              onOpenAttachment={handleOpenAttachment}
+              onRemoveAttachment={handleRemoveAttachment}
             />
           </div>
         )}
@@ -364,6 +435,21 @@ function App(): React.JSX.Element {
         onClose={() => setCreateFeatureOpen(false)}
         onCreate={handleCreateFeature}
         initialStatus={createFeatureStatus}
+      />
+
+      <SettingsPanel
+        isOpen={settingsOpen}
+        settings={cardSettings}
+        onClose={() => setSettingsOpen(false)}
+        onSave={handleSaveSettings}
+      />
+
+      <ColumnDialog
+        isOpen={columnDialogOpen}
+        onClose={() => { setColumnDialogOpen(false); setEditingColumn(null) }}
+        onSave={handleSaveColumn}
+        initial={editingColumn ? { name: editingColumn.name, color: editingColumn.color } : undefined}
+        title={editingColumn ? 'Edit List' : 'Add List'}
       />
 
       {pendingDeletes.map((entry, i) => (

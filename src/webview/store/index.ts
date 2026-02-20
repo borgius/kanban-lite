@@ -15,11 +15,13 @@ interface KanbanState {
   dueDateFilter: DueDateFilter
   layout: LayoutMode
   cardSettings: CardDisplaySettings
+  settingsOpen: boolean
 
   setFeatures: (features: Feature[]) => void
   setColumns: (columns: KanbanColumn[]) => void
   setIsDarkMode: (dark: boolean) => void
   setCardSettings: (settings: CardDisplaySettings) => void
+  setSettingsOpen: (open: boolean) => void
   setSearchQuery: (query: string) => void
   setPriorityFilter: (priority: Priority | 'all') => void
   setAssigneeFilter: (assignee: string | 'all') => void
@@ -97,11 +99,13 @@ export const useStore = create<KanbanState>((set, get) => ({
     defaultPriority: 'medium',
     defaultStatus: 'backlog'
   },
+  settingsOpen: false,
 
   setFeatures: (features) => set({ features }),
   setColumns: (columns) => set({ columns }),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
   setCardSettings: (settings) => set({ cardSettings: settings }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setPriorityFilter: (priority) => set({ priorityFilter: priority }),
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),

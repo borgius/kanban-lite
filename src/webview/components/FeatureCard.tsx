@@ -1,4 +1,4 @@
-import { Calendar, Check, FileText } from 'lucide-react'
+import { Calendar, Check, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Feature, Priority } from '../../shared/types'
 import { useStore } from '../store'
@@ -157,6 +157,12 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
             </div>
           )}
         </div>
+        {feature.attachments.length > 0 && (
+          <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
+            <Paperclip size={12} />
+            <span>{feature.attachments.length}</span>
+          </div>
+        )}
         {cardSettings.showDueDate && dueInfo && (
           <div className={`flex items-center gap-1 ${dueInfo.className}`}>
             <Calendar size={12} />

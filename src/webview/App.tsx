@@ -196,6 +196,9 @@ function App(): React.JSX.Element {
           setFeatures(message.features)
           setColumns(message.columns)
           if (message.settings) {
+            if (message.settings.markdownEditorMode && editingFeature) {
+              setEditingFeature(null)
+            }
             setCardSettings(message.settings)
           }
           break
@@ -206,7 +209,9 @@ function App(): React.JSX.Element {
           setCreateFeatureStatus('backlog')
           setCreateFeatureOpen(true)
           break
-        case 'featureContent':
+        case 'featureContent': {
+          const { cardSettings } = useStore.getState()
+          if (cardSettings.markdownEditorMode) break
           contentVersionRef.current += 1
           setEditingFeature({
             id: message.featureId,
@@ -215,6 +220,7 @@ function App(): React.JSX.Element {
             contentVersion: contentVersionRef.current
           })
           break
+        }
       }
     }
 

@@ -218,6 +218,11 @@
           "type": "boolean",
           "default": false,
           "description": "Use compact card layout to show more features."
+        },
+        "kanban-markdown.markdownEditorMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open feature files in VS Code's native text editor instead of the inline rich-text editor."
         }
       }
     },

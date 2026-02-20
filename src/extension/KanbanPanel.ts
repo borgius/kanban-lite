@@ -95,9 +95,18 @@ export class KanbanPanel {
             await this._loadFeatures()
             this._sendFeaturesToWebview()
             break
-          case 'createFeature':
+          case 'createFeature': {
             await this._createFeature(message.data)
+            const createConfig = vscode.workspace.getConfiguration('kanban-markdown')
+            if (createConfig.get<boolean>('markdownEditorMode', false)) {
+              // Open the newly created feature in native editor
+              const created = this._features[this._features.length - 1]
+              if (created) {
+                this._openFeatureInNativeEditor(created.id)
+              }
+            }
             break
+          }
           case 'moveFeature':
             await this._moveFeature(message.featureId, message.newStatus, message.newOrder)
             break
@@ -107,9 +116,15 @@ export class KanbanPanel {
           case 'updateFeature':
             await this._updateFeature(message.featureId, message.updates)
             break
-          case 'openFeature':
-            await this._sendFeatureContent(message.featureId)
+          case 'openFeature': {
+            const openConfig = vscode.workspace.getConfiguration('kanban-markdown')
+            if (openConfig.get<boolean>('markdownEditorMode', false)) {
+              this._openFeatureInNativeEditor(message.featureId)
+            } else {
+              await this._sendFeatureContent(message.featureId)
+            }
             break
+          }
           case 'saveFeatureContent':
             await this._saveFeatureContent(message.featureId, message.content, message.frontmatter)
             break
@@ -484,7 +499,12 @@ export class KanbanPanel {
   }
 
   public openFeature(featureId: string): void {
-    this._sendFeatureContent(featureId)
+    const config = vscode.workspace.getConfiguration('kanban-markdown')
+    if (config.get<boolean>('markdownEditorMode', false)) {
+      this._openFeatureInNativeEditor(featureId)
+    } else {
+      this._sendFeatureContent(featureId)
+    }
   }
 
   private async _createFeature(data: CreateFeatureData): Promise<void> {
@@ -670,6 +690,18 @@ export class KanbanPanel {
     this._sendFeaturesToWebview()
   }
 
+  private async _openFeatureInNativeEditor(featureId: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    // Use a fixed column beside the panel so repeated clicks reuse the same split
+    const panelColumn = this._panel.viewColumn ?? vscode.ViewColumn.One
+    const targetColumn = panelColumn === vscode.ViewColumn.One ? vscode.ViewColumn.Two : vscode.ViewColumn.Beside
+
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feature.filePath))
+    await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
+  }
+
   private async _sendFeatureContent(featureId: string): Promise<void> {
     const feature = this._features.find(f => f.id === featureId)
     if (!feature) return
@@ -831,6 +863,7 @@ export class KanbanPanel {
       showBuildWithAI: config.get<boolean>('showBuildWithAI', true) && !vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false),
       showFileName: config.get<boolean>('showFileName', false),
       compactMode: config.get<boolean>('compactMode', false),
+      markdownEditorMode: config.get<boolean>('markdownEditorMode', false),
       defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
       defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')
     }

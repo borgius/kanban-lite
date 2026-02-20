@@ -63,6 +63,7 @@ export interface CardDisplaySettings {
   showBuildWithAI: boolean
   showFileName: boolean
   compactMode: boolean
+  markdownEditorMode: boolean
   defaultPriority: Priority
   defaultStatus: FeatureStatus
 }

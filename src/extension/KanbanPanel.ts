@@ -139,6 +139,9 @@ export class KanbanPanel {
             }
             break
           }
+          case 'openSettings':
+            vscode.commands.executeCommand('workbench.action.openSettings', '@ext:LachyFS.kanban-markdown')
+            break
           case 'focusMenuBar':
             // Focus must leave the webview before focusMenuBar works (VS Code limitation).
             // Use Activity Bar (not Side Bar) — it's always visible and won't expand a collapsed sidebar.

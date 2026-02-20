@@ -1,4 +1,4 @@
-import { Search, X, Columns, Rows } from 'lucide-react'
+import { Search, X, Columns, Rows, Settings } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import type { Priority } from '../../shared/types'
 
@@ -21,7 +21,7 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar() {
+export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const {
     searchQuery,
     setSearchQuery,
@@ -145,6 +145,15 @@ export function Toolbar() {
         title={layout === 'horizontal' ? 'Switch to vertical layout' : 'Switch to horizontal layout'}
       >
         {layout === 'horizontal' ? <Rows size={16} /> : <Columns size={16} />}
+      </button>
+
+      {/* Settings */}
+      <button
+        onClick={onOpenSettings}
+        className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+        title="Open settings"
+      >
+        <Settings size={16} />
       </button>
 
       {/* Keyboard hint */}

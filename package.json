@@ -62,8 +62,8 @@
         "title": "Open Kanban Board",
         "category": "Kanban Markdown",
         "icon": {
-          "light": "resources/kanban-light.png",
-          "dark": "resources/kanban-dark.png"
+          "light": "resources/kanban-light.svg",
+          "dark": "resources/kanban-dark.svg"
         }
       },
       {

@@ -5,6 +5,8 @@ import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { parseFeatureFile, serializeFeature } from '../sdk/parser'
 import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
+import { readConfig, writeConfig, configToSettings, settingsToConfig, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
+
 
 interface CreateFeatureData {
   status: FeatureStatus
@@ -25,6 +27,7 @@ export class KanbanPanel {
   private _features: Feature[] = []
   private _disposables: vscode.Disposable[] = []
   private _fileWatcher: vscode.FileSystemWatcher | undefined
+  private _configWatcher: vscode.FileSystemWatcher | undefined
   private _currentEditingFeatureId: string | null = null
   private _lastWrittenContent: string = ''
   private _migrating = false
@@ -99,8 +102,9 @@ export class KanbanPanel {
             break
           case 'createFeature': {
             await this._createFeature(message.data)
-            const createConfig = vscode.workspace.getConfiguration('kanban-markdown')
-            if (createConfig.get<boolean>('markdownEditorMode', false)) {
+            const createRoot = this._getWorkspaceRoot()
+            const createCfg = createRoot ? readConfig(createRoot) : DEFAULT_CONFIG
+            if (createCfg.markdownEditorMode) {
               // Open the newly created feature in native editor
               const created = this._features[this._features.length - 1]
               if (created) {
@@ -119,8 +123,9 @@ export class KanbanPanel {
             await this._updateFeature(message.featureId, message.updates)
             break
           case 'openFeature': {
-            const openConfig = vscode.workspace.getConfiguration('kanban-markdown')
-            if (openConfig.get<boolean>('markdownEditorMode', false)) {
+            const openRoot = this._getWorkspaceRoot()
+            const openCfg = openRoot ? readConfig(openRoot) : DEFAULT_CONFIG
+            if (openCfg.markdownEditorMode) {
               this._openFeatureInNativeEditor(message.featureId)
             } else {
               await this._sendFeatureContent(message.featureId)
@@ -141,9 +146,13 @@ export class KanbanPanel {
             }
             break
           }
-          case 'openSettings':
-            vscode.commands.executeCommand('workbench.action.openSettings', '@ext:LachyFS.kanban-markdown')
+          case 'openSettings': {
+            const settingsRoot = this._getWorkspaceRoot()
+            const settingsCfg = settingsRoot ? readConfig(settingsRoot) : { ...DEFAULT_CONFIG }
+            const openSettings = configToSettings(settingsCfg)
+            this._panel.webview.postMessage({ type: 'showSettings', settings: openSettings })
             break
+          }
           case 'focusMenuBar':
             // Focus must leave the webview before focusMenuBar works (VS Code limitation).
             // Use Activity Bar (not Side Bar) — it's always visible and won't expand a collapsed sidebar.
@@ -183,20 +192,8 @@ export class KanbanPanel {
     // Set up file watcher for feature files
     this._setupFileWatcher()
 
-    // Listen for settings changes and push updates to webview
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('kanban-markdown')) {
-        if (e.affectsConfiguration('kanban-markdown.featuresDirectory')) {
-          // Features directory changed - need to reload everything
-          this._setupFileWatcher()
-          this._loadFeatures().then(() => this._sendFeaturesToWebview())
-        } else {
-          this._sendFeaturesToWebview()
-        }
-      } else if (e.affectsConfiguration('chat.disableAIFeatures')) {
-        this._sendFeaturesToWebview()
-      }
-    }, null, this._disposables)
+    // Watch .kanban.json for config changes
+    this._setupConfigWatcher()
   }
 
   private _setupFileWatcher(): void {
@@ -241,6 +238,36 @@ export class KanbanPanel {
     this._fileWatcher.onDidDelete((uri) => handleFileChange(uri), null, this._disposables)
 
     this._disposables.push(this._fileWatcher)
+  }
+
+  private _setupConfigWatcher(): void {
+    if (this._configWatcher) {
+      this._configWatcher.dispose()
+    }
+
+    const root = this._getWorkspaceRoot()
+    if (!root) return
+
+    const pattern = new vscode.RelativePattern(root, CONFIG_FILENAME)
+    this._configWatcher = vscode.workspace.createFileSystemWatcher(pattern)
+
+    let lastFeaturesDir = this._getWorkspaceFeaturesDir()
+
+    const handleConfigChange = () => {
+      const newFeaturesDir = this._getWorkspaceFeaturesDir()
+      if (lastFeaturesDir !== newFeaturesDir) {
+        lastFeaturesDir = newFeaturesDir
+        this._setupFileWatcher()
+        this._loadFeatures().then(() => this._sendFeaturesToWebview())
+      } else {
+        this._sendFeaturesToWebview()
+      }
+    }
+
+    this._configWatcher.onDidChange(handleConfigChange, null, this._disposables)
+    this._configWatcher.onDidCreate(handleConfigChange, null, this._disposables)
+    this._configWatcher.onDidDelete(handleConfigChange, null, this._disposables)
+    this._disposables.push(this._configWatcher)
   }
 
   public onDispose(callback: () => void): void {
@@ -304,14 +331,17 @@ export class KanbanPanel {
     return text
   }
 
-  private _getWorkspaceFeaturesDir(): string | null {
+  private _getWorkspaceRoot(): string | null {
     const workspaceFolders = vscode.workspace.workspaceFolders
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      return null
-    }
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
-    return path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
+    if (!workspaceFolders || workspaceFolders.length === 0) return null
+    return workspaceFolders[0].uri.fsPath
+  }
+
+  private _getWorkspaceFeaturesDir(): string | null {
+    const root = this._getWorkspaceRoot()
+    if (!root) return null
+    const config = readConfig(root)
+    return path.join(root, config.featuresDirectory)
   }
 
   private async _ensureFeaturesDir(): Promise<string | null> {
@@ -444,8 +474,9 @@ export class KanbanPanel {
   }
 
   public openFeature(featureId: string): void {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    if (config.get<boolean>('markdownEditorMode', false)) {
+    const root = this._getWorkspaceRoot()
+    const cfg = root ? readConfig(root) : DEFAULT_CONFIG
+    if (cfg.markdownEditorMode) {
       this._openFeatureInNativeEditor(featureId)
     } else {
       this._sendFeatureContent(featureId)
@@ -772,8 +803,9 @@ export class KanbanPanel {
     const prompt = `Implement this feature: "${title}" (${feature.priority} priority)${labels}. ${shortDesc} See full details in: ${feature.filePath}`
 
     // Use provided agent or fall back to config
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const selectedAgent = agent || config.get<string>('aiAgent') || 'claude'
+    const aiRoot = this._getWorkspaceRoot()
+    const aiConfig = aiRoot ? readConfig(aiRoot) : DEFAULT_CONFIG
+    const selectedAgent = agent || aiConfig.aiAgent || 'claude'
     const selectedPermissionMode = permissionMode || 'default'
 
     let command: string
@@ -817,59 +849,40 @@ export class KanbanPanel {
     terminal.sendText(command)
   }
 
-  private async _updateConfig(key: string, value: unknown): Promise<void> {
-    const fullKey = `kanban-markdown.${key}`
-    try {
-      await vscode.workspace.getConfiguration().update(fullKey, value, vscode.ConfigurationTarget.Workspace)
-    } catch {
-      // Workspace target may fail if no workspace folder is open; fall back to global
-      await vscode.workspace.getConfiguration().update(fullKey, value, vscode.ConfigurationTarget.Global)
-    }
-  }
-
-  private async _saveSettings(settings: CardDisplaySettings): Promise<void> {
-    await this._updateConfig('showPriorityBadges', settings.showPriorityBadges)
-    await this._updateConfig('showAssignee', settings.showAssignee)
-    await this._updateConfig('showDueDate', settings.showDueDate)
-    await this._updateConfig('showLabels', settings.showLabels)
-    await this._updateConfig('showFileName', settings.showFileName)
-    await this._updateConfig('compactMode', settings.compactMode)
-    await this._updateConfig('defaultPriority', settings.defaultPriority)
-    await this._updateConfig('defaultStatus', settings.defaultStatus)
+  private _saveSettings(settings: CardDisplaySettings): void {
+    const root = this._getWorkspaceRoot()
+    if (!root) return
+    const config = readConfig(root)
+    const updated = settingsToConfig(config, settings)
+    writeConfig(root, updated)
     this._sendFeaturesToWebview()
   }
 
   private _getColumns(): KanbanColumn[] {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const defaultColumns: KanbanColumn[] = [
-      { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-      { id: 'todo', name: 'To Do', color: '#3b82f6' },
-      { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-      { id: 'review', name: 'Review', color: '#8b5cf6' },
-      { id: 'done', name: 'Done', color: '#22c55e' }
-    ]
-    return config.get<KanbanColumn[]>('columns', defaultColumns).map(c => ({ ...c }))
+    const root = this._getWorkspaceRoot()
+    if (!root) return [...DEFAULT_CONFIG.columns]
+    const config = readConfig(root)
+    return config.columns.map(c => ({ ...c }))
   }
 
-  private async _saveColumns(columns: KanbanColumn[]): Promise<void> {
-    await this._updateConfig('columns', columns)
-    // Send immediately with known-good data instead of re-reading from config
+  private _saveColumns(columns: KanbanColumn[]): void {
+    const root = this._getWorkspaceRoot()
+    if (!root) return
+    const config = readConfig(root)
+    config.columns = columns
+    writeConfig(root, config)
     this._sendFeaturesToWebviewWithColumns(columns)
   }
 
   private _sendFeaturesToWebviewWithColumns(columns: KanbanColumn[]): void {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const settings: CardDisplaySettings = {
-      showPriorityBadges: config.get<boolean>('showPriorityBadges', true),
-      showAssignee: config.get<boolean>('showAssignee', true),
-      showDueDate: config.get<boolean>('showDueDate', true),
-      showLabels: config.get<boolean>('showLabels', true),
-      showBuildWithAI: config.get<boolean>('showBuildWithAI', true) && !vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false),
-      showFileName: config.get<boolean>('showFileName', false),
-      compactMode: config.get<boolean>('compactMode', false),
-      markdownEditorMode: config.get<boolean>('markdownEditorMode', false),
-      defaultPriority: config.get<Priority>('defaultPriority', 'medium'),
-      defaultStatus: config.get<FeatureStatus>('defaultStatus', 'backlog')
+    const root = this._getWorkspaceRoot()
+    const config = root ? readConfig(root) : { ...DEFAULT_CONFIG }
+    const settings = configToSettings(config)
+
+    // Override showBuildWithAI based on VS Code's AI feature toggle
+    const aiDisabled = vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false)
+    if (aiDisabled) {
+      settings.showBuildWithAI = false
     }
 
     this._panel.webview.postMessage({

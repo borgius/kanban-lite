@@ -289,3 +289,17 @@ input:focus-visible {
 .markdown-editor-textarea::placeholder {
   color: var(--vscode-input-placeholderForeground);
 }
+
+/* Card inline markdown description */
+.card-inline-markdown code {
+  font-family: var(--vscode-editor-font-family, 'SF Mono', Monaco, Menlo, Consolas, monospace);
+  font-size: 0.85em;
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+  background-color: rgba(127, 127, 127, 0.15);
+}
+
+.card-inline-markdown p {
+  margin: 0;
+  display: inline;
+}

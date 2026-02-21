@@ -1,3 +1,4 @@
+import { marked } from 'marked'
 import { Calendar, Check, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Feature, Priority } from '../../shared/types'
@@ -33,6 +34,10 @@ function getDescriptionFromContent(content: string): string {
     .filter(l => l.length > 0)
     .join(' ')
   return desc
+}
+
+function renderDescriptionHtml(text: string): string {
+  return marked.parseInline(text, { gfm: true }) as string
 }
 
 export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) {
@@ -121,10 +126,12 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
         </div>
 
         {/* Description */}
+        {/* eslint-disable-next-line react/no-danger */}
         {description && !cardSettings.compactMode && (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-2">
-            {description}
-          </p>
+          <div
+            className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-2 card-inline-markdown"
+            dangerouslySetInnerHTML={{ __html: renderDescriptionHtml(description) }}
+          />
         )}
 
         {/* Labels */}

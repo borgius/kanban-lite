@@ -1,7 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import { Markdown } from 'tiptap-markdown'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { marked } from 'marked'
 import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -25,7 +23,7 @@ function wrapSelection(
   const end = textarea.selectionEnd
   const selected = value.substring(start, end)
   let before = value.substring(0, start)
-  let after = value.substring(end)
+  const after = value.substring(end)
   let replacement = selected
   let cursorOffset = 0
 
@@ -145,26 +143,10 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const previewEditor = useEditor({
-    extensions: [
-      StarterKit,
-      Markdown.configure({ html: false }),
-    ],
-    content: '',
-    editable: false,
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none p-4',
-      },
-    },
-  })
-
-  // Update preview content when switching to preview tab
-  useEffect(() => {
-    if (activeTab === 'preview' && previewEditor) {
-      previewEditor.commands.setContent(value || '')
-    }
-  }, [activeTab, value, previewEditor])
+  const previewHtml = useMemo(() => {
+    if (!value.trim()) return ''
+    return marked.parse(value, { async: false, gfm: true, breaks: true }) as string
+  }, [value])
 
   // Auto-focus textarea when switching to write tab
   useEffect(() => {
@@ -288,8 +270,11 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
           />
         ) : (
           <div className="min-h-[200px]">
-            {value.trim() ? (
-              <EditorContent editor={previewEditor} />
+            {previewHtml ? (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none p-4"
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
             ) : (
               <p
                 className="p-4 text-sm italic"

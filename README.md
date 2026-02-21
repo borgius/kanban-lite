@@ -1,9 +1,8 @@
 # Kanban Lite
 
-A VSCode/Cursor extension that brings a full-featured kanban board directly into your editor. Features are stored as human-readable markdown files, making them version-controllable and easy to edit outside the board.
+A lightweight kanban board stored as plain markdown files. Manage your tasks via a **web UI**, **CLI**, **REST API**, or **MCP server** for AI agents. Everything is human-readable, version-controllable, and lives right in your project.
 
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/borgius.kanban-lite?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=borgius.kanban-lite)
-[![Open VSX](https://img.shields.io/open-vsx/v/borgius/kanban-lite?label=Open%20VSX&logo=vscodium)](https://open-vsx.org/extension/borgius/kanban-lite)
+[![npm](https://img.shields.io/npm/v/kanban-lite)](https://www.npmjs.com/package/kanban-lite)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ![Kanban Board Overview](https://raw.githubusercontent.com/borgius/kanban-lite/main/docs/images/board-overview.png)
@@ -18,32 +17,46 @@ npx skills add https://github.com/borgius/kanban-lite
 
 See [SKILL.md](SKILL.md) for the full skill reference covering MCP tools, CLI, and REST API.
 
+## Quick Start
+
+```bash
+# Install globally
+npm install -g kanban-lite
+
+# Initialize a board in your project
+kl init
+
+# Start the web UI
+kl serve
+
+# Or create your first card from the terminal
+kl add --title "My first task" --priority high
+```
+
 ## Features
 
-### Kanban Board
+### Web UI
 
-- **5-column workflow**: Backlog, To Do, In Progress, Review, Done
-- **Sidebar view**: Access the board from the activity bar without opening a panel
+- **5-column workflow**: Backlog, To Do, In Progress, Review, Done (fully customizable)
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Layout toggle**: Switch between horizontal and vertical board layouts
+- **Real-time updates**: WebSocket-powered live sync across clients
+- **Light & dark mode** support
 - **Keyboard shortcuts**:
   - `N` - Create new feature
   - `Esc` - Close dialogs
   - `Cmd/Ctrl + Enter` - Submit create dialog
-  - `Enter` in title - Move to description field
-  - `Shift + Enter` in title - Add new line
-
 
 ### Feature Cards
 
 ![Editor View](https://raw.githubusercontent.com/borgius/kanban-lite/main/docs/images/editor-view.png)
 
-
 - **Priority levels**: Critical, High, Medium, Low (color-coded badges)
 - **Assignees**: Assign team members to features
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)
-- **Labels**: Tag features with multiple labels (shows up to 3 with "+X more")
+- **Labels**: Tag features with multiple labels
+- **Attachments**: Attach files to cards
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
 
@@ -53,90 +66,21 @@ See [SKILL.md](SKILL.md) for the full skill reference covering MCP tools, CLI, a
 - **Assignee filter**: Filter by team member or show unassigned items
 - **Label filter**: Filter by specific labels
 - **Due date filters**: Overdue, due today, due this week, or no due date
-- **Clear filters button**: Reset all filters at once
 
 ### File Organization
-- **Status subfolders**: Features are automatically organized into subfolders by status (with migration of existing files)
-
-### Editor Integration
-- Rich text editing with Tiptap markdown editor
-- Inline frontmatter editing (dropdowns for status/priority, inputs for assignee/due date/labels)
-- Auto-save functionality
-- Live settings updates without reopening the board
-- Auto-refresh when files change externally
-- Theme integration with VSCode/Cursor (light & dark mode)
-
-### AI Agent Integration
-- **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
-- **Codex**: Suggest, Auto-edit, and Full Auto modes
-- **OpenCode**: Agent integration support
-- AI receives feature context (title, priority, labels, description) for informed assistance
+- **Plain markdown**: Cards are standard markdown files with YAML frontmatter
+- **Status subfolders**: Automatically organized into subfolders by status
+- **Git-friendly**: Everything is version-controllable
 
 ## Installation
 
-### VS Code Marketplace
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=borgius.kanban-lite) or search for "Kanban Lite" in the Extensions view.
-
-### Open VSX (VSCodium, Cursor, etc.)
-Install from [Open VSX](https://open-vsx.org/extension/borgius/kanban-lite) or search for "Kanban Lite" in the Extensions view.
-
-### From VSIX (Manual)
-1. Download the `.vsix` file from the releases
-2. In VSCode: Extensions > `...` > Install from VSIX
-3. Select the downloaded file
-
-## Usage
-
-1. Open the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
-2. Run **"Open Kanban Board"**
-3. Start creating and managing features
-
-Features are stored as markdown files in `.kanban/` within your workspace, organized into status subfolders:
-
-```markdown
----
-id: "implement-dark-mode-toggle-2026-01-25"
-status: "todo"
-priority: "high"
-assignee: "john"
-dueDate: "2026-01-25"
-created: "2026-01-25T10:30:00.000Z"
-modified: "2026-01-25T14:20:00.000Z"
-labels: ["feature", "ui"]
-order: 0
----
-
-# Implement dark mode toggle
-
-Add a toggle in settings to switch between light and dark themes...
+```bash
+npm install -g kanban-lite
 ```
-
-## Configuration
-
-Board configuration is stored in `.kanban.json` at your workspace root. This file is shared across all interfaces (VSCode extension, standalone server, CLI).
-
-```json
-{
-  "columns": [
-    { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
-    { "id": "todo", "name": "To Do", "color": "#3b82f6" },
-    { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
-    { "id": "review", "name": "Review", "color": "#8b5cf6" },
-    { "id": "done", "name": "Done", "color": "#22c55e" }
-  ],
-  "showPriorityBadges": true,
-  "showAssignee": true,
-  "showDueDate": true,
-  "showLabels": true,
-  "compactMode": false
-}
-```
-
-Columns are fully customizable — add, remove, rename, or recolor them from the board UI, CLI, or REST API.
 
 ## CLI
 
-Manage your kanban board from the terminal. After installing with `npm install -g kanban-lite`, use `kanban-lite` or the shorthand `kl`:
+Manage your kanban board from the terminal using `kanban-lite` or the shorthand `kl`:
 
 ```bash
 # List all cards
@@ -185,7 +129,7 @@ kl settings update --compactMode true                   # Update a setting
 # Workspace
 kl pwd                                                  # Print workspace root path
 
-# Start standalone web server
+# Start web server
 kl serve                                                # Start on port 3000
 kl serve --port 8080 --no-browser                       # Custom port, no auto-open
 
@@ -197,7 +141,7 @@ Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom
 
 ## Standalone Server
 
-Run the kanban board as a standalone web application with a full REST API, outside of VSCode:
+Run the kanban board as a web application with a full REST API:
 
 ```bash
 # Using the CLI
@@ -211,7 +155,7 @@ kanban-md --port 8080 --dir .kanban --no-browser
 ```
 
 The server provides:
-- **Web UI** at `http://localhost:3000` — the same React board as the VSCode extension
+- **Web UI** at `http://localhost:3000` — a full React-based kanban board
 - **REST API** at `http://localhost:3000/api` — full programmatic access
 - **WebSocket** — real-time updates for connected clients
 
@@ -415,6 +359,57 @@ await sdk.updateColumn('testing', { name: 'QA' })
 await sdk.removeColumn('testing')
 ```
 
+## Data Storage
+
+Cards are stored as markdown files with YAML frontmatter in `.kanban/` within your project:
+
+```markdown
+---
+id: "implement-dark-mode-toggle-2026-01-25"
+status: "todo"
+priority: "high"
+assignee: "john"
+dueDate: "2026-01-25"
+created: "2026-01-25T10:30:00.000Z"
+modified: "2026-01-25T14:20:00.000Z"
+labels: ["feature", "ui"]
+order: 0
+---
+
+# Implement dark mode toggle
+
+Add a toggle in settings to switch between light and dark themes...
+```
+
+## Configuration
+
+Board configuration is stored in `.kanban.json` at your project root:
+
+```json
+{
+  "columns": [
+    { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
+    { "id": "todo", "name": "To Do", "color": "#3b82f6" },
+    { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
+    { "id": "review", "name": "Review", "color": "#8b5cf6" },
+    { "id": "done", "name": "Done", "color": "#22c55e" }
+  ],
+  "showPriorityBadges": true,
+  "showAssignee": true,
+  "showDueDate": true,
+  "showLabels": true,
+  "compactMode": false
+}
+```
+
+Columns are fully customizable — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
+
+## AI Agent Integration
+- **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
+- **Codex**: Suggest, Auto-edit, and Full Auto modes
+- **OpenCode**: Agent integration support
+- AI receives feature context (title, priority, labels, description) for informed assistance
+
 ## Development
 
 ### Prerequisites
@@ -430,13 +425,13 @@ pnpm install
 # Start development (watch mode)
 pnpm dev
 
-# Build for production (extension + CLI + MCP server)
+# Build for production
 pnpm build
 
 # Build individually
-pnpm build:extension
 pnpm build:cli
 pnpm build:mcp
+pnpm build:standalone-server
 
 # Run tests
 pnpm test
@@ -448,28 +443,20 @@ pnpm typecheck
 pnpm lint
 ```
 
-### Debugging
-
-1. Press `F5` in VSCode to launch the Extension Development Host
-2. Open the command palette and run "Open Kanban Board"
-3. Make changes and reload the window (`Cmd+R`) to see updates
-
 ### Tech Stack
 
-**Extension**: TypeScript, VSCode API, esbuild
-**Webview**: React 18, Vite, Tailwind CSS, Zustand, Tiptap
+**Web UI**: React 18, Vite, Tailwind CSS, Zustand, Tiptap
 **SDK/CLI/MCP**: TypeScript, Node.js, @modelcontextprotocol/sdk
 
 ### Architecture
 
 ```
 src/
-  sdk/           # Standalone SDK (no VSCode dependency)
+  sdk/           # Core SDK (no external dependencies)
   cli/           # CLI tool (built on SDK)
   mcp-server/    # MCP server (built on SDK)
-  extension/     # VSCode extension (uses SDK for parsing)
-  standalone/    # Standalone web server (uses SDK for parsing)
-  webview/       # React frontend (shared by extension + standalone)
+  standalone/    # Standalone web server (uses SDK)
+  webview/       # React frontend
   shared/        # Shared types
 ```
 

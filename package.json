@@ -110,11 +110,7 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "package": "vsce package --no-dependencies -o releases/",
-    "release": "node scripts/release.js",
-    "release:patch": "node scripts/release.js patch",
-    "release:minor": "node scripts/release.js minor",
-    "release:major": "node scripts/release.js major"
+    "package": "vsce package --no-dependencies -o releases/"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

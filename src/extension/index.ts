@@ -6,6 +6,7 @@ import * as vscode from 'vscode'
 
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
 import { generateFeatureFilename } from '../shared/types'
+import { readConfig } from '../shared/config'
 import { startServer } from '../standalone/server'
 import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 import { KanbanPanel } from './KanbanPanel'
@@ -68,9 +69,9 @@ async function createFeatureFromPrompts(): Promise<void> {
   })
 
   // Create the feature file
-  const config = vscode.workspace.getConfiguration('kanban-markdown')
-  const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
-  const featuresDir = path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
+  const root = workspaceFolders[0].uri.fsPath
+  const kanbanConfig = readConfig(root)
+  const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
   await ensureStatusSubfolders(featuresDir)
 
@@ -154,9 +155,9 @@ export function activate(context: vscode.ExtensionContext) {
   // Start standalone HTTP server so the board is accessible in a browser
   const workspaceFolders = vscode.workspace.workspaceFolders
   if (workspaceFolders) {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
-    const featuresDir = path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
+    const root = workspaceFolders[0].uri.fsPath
+    const kanbanConfig = readConfig(root)
+    const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
     const webviewDir = path.join(context.extensionPath, 'dist', 'standalone-webview')
 
     findFreePort(3464).then(port => {

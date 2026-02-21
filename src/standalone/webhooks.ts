@@ -20,6 +20,9 @@ export type WebhookEvent =
   | 'column.created'
   | 'column.updated'
   | 'column.deleted'
+  | 'comment.created'
+  | 'comment.updated'
+  | 'comment.deleted'
 
 const WEBHOOKS_FILENAME = '.kanban-webhooks.json'
 

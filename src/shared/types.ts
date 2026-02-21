@@ -3,6 +3,13 @@
 export type Priority = 'critical' | 'high' | 'medium' | 'low'
 export type FeatureStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done'
 
+export interface Comment {
+  id: string
+  author: string
+  created: string
+  content: string
+}
+
 export interface Feature {
   id: string
   status: FeatureStatus
@@ -14,6 +21,7 @@ export interface Feature {
   completedAt: string | null
   labels: string[]
   attachments: string[]
+  comments: Comment[]
   order: string
   content: string
   filePath: string
@@ -82,7 +90,7 @@ export type ExtensionMessage =
   | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings }
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
-  | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter }
+  | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }
   | { type: 'showSettings'; settings: CardDisplaySettings }
 
 // Frontmatter for editing
@@ -118,3 +126,6 @@ export type WebviewMessage =
   | { type: 'addColumn'; column: { name: string; color: string } }
   | { type: 'editColumn'; columnId: string; updates: { name: string; color: string } }
   | { type: 'removeColumn'; columnId: string }
+  | { type: 'addComment'; featureId: string; author: string; content: string }
+  | { type: 'updateComment'; featureId: string; commentId: string; content: string }
+  | { type: 'deleteComment'; featureId: string; commentId: string }

@@ -93,6 +93,7 @@ async function createFeatureFromPrompts(): Promise<void> {
     completedAt: status === 'done' ? now : null,
     labels: [],
     attachments: [],
+    comments: [],
     order: generateKeyBetween(null, null),
     content,
     filePath: getFeatureFilePath(featuresDir, status, filename)

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip } from 'lucide-react'
-import type { FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
+import type { Comment, FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { useStore } from '../store'
 import { MarkdownEditor } from './MarkdownEditor'
@@ -12,6 +12,7 @@ interface FeatureEditorProps {
   featureId: string
   content: string
   frontmatter: FeatureFrontmatter
+  comments: Comment[]
   contentVersion?: number
   onSave: (content: string, frontmatter: FeatureFrontmatter) => void
   onClose: () => void
@@ -21,6 +22,9 @@ interface FeatureEditorProps {
   onAddAttachment: () => void
   onOpenAttachment: (attachment: string) => void
   onRemoveAttachment: (attachment: string) => void
+  onAddComment: (author: string, content: string) => void
+  onUpdateComment: (commentId: string, content: string) => void
+  onDeleteComment: (commentId: string) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -361,7 +365,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment }: FeatureEditorProps) {
+export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -617,6 +621,10 @@ export function FeatureEditor({ featureId, content, frontmatter, contentVersion,
         onChange={handleContentChange}
         placeholder="Start writing..."
         className="flex-1 min-h-0"
+        comments={comments}
+        onAddComment={onAddComment}
+        onUpdateComment={onUpdateComment}
+        onDeleteComment={onDeleteComment}
       />
     </div>
   )

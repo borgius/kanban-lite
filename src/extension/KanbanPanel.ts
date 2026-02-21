@@ -168,6 +168,15 @@ export class KanbanPanel {
           case 'removeAttachment':
             await this._removeAttachment(message.featureId, message.attachment)
             break
+          case 'addComment':
+            await this._addComment(message.featureId, message.author, message.content)
+            break
+          case 'updateComment':
+            await this._updateComment(message.featureId, message.commentId, message.content)
+            break
+          case 'deleteComment':
+            await this._deleteComment(message.featureId, message.commentId)
+            break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
             break
@@ -526,6 +535,7 @@ export class KanbanPanel {
       completedAt: data.status === 'done' ? now : null,
       labels: data.labels,
       attachments: [],
+      comments: [],
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       filePath: getFeatureFilePath(featuresDir, data.status, filename)
@@ -684,7 +694,8 @@ export class KanbanPanel {
       type: 'featureContent',
       featureId: feature.id,
       content: feature.content,
-      frontmatter
+      frontmatter,
+      comments: feature.comments || []
     })
   }
 
@@ -812,6 +823,70 @@ export class KanbanPanel {
     feature.attachments = feature.attachments.filter(a => a !== attachment)
     feature.modified = new Date().toISOString()
 
+    const fileContent = this._serializeFeature(feature)
+    this._lastWrittenContent = fileContent
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    this._sendFeaturesToWebview()
+    if (this._currentEditingFeatureId === featureId) {
+      await this._sendFeatureContent(featureId)
+    }
+  }
+
+  private async _addComment(featureId: string, author: string, content: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    if (!feature.comments) feature.comments = []
+
+    const maxId = feature.comments.reduce((max, c) => {
+      const num = parseInt(c.id.replace('c', ''), 10)
+      return Number.isNaN(num) ? max : Math.max(max, num)
+    }, 0)
+
+    feature.comments.push({
+      id: `c${maxId + 1}`,
+      author,
+      created: new Date().toISOString(),
+      content
+    })
+
+    feature.modified = new Date().toISOString()
+    const fileContent = this._serializeFeature(feature)
+    this._lastWrittenContent = fileContent
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    this._sendFeaturesToWebview()
+    if (this._currentEditingFeatureId === featureId) {
+      await this._sendFeatureContent(featureId)
+    }
+  }
+
+  private async _updateComment(featureId: string, commentId: string, content: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    const comment = (feature.comments || []).find(c => c.id === commentId)
+    if (!comment) return
+
+    comment.content = content
+    feature.modified = new Date().toISOString()
+    const fileContent = this._serializeFeature(feature)
+    this._lastWrittenContent = fileContent
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    this._sendFeaturesToWebview()
+    if (this._currentEditingFeatureId === featureId) {
+      await this._sendFeatureContent(featureId)
+    }
+  }
+
+  private async _deleteComment(featureId: string, commentId: string): Promise<void> {
+    const feature = this._features.find(f => f.id === featureId)
+    if (!feature) return
+
+    feature.comments = (feature.comments || []).filter(c => c.id !== commentId)
+    feature.modified = new Date().toISOString()
     const fileContent = this._serializeFeature(feature)
     this._lastWrittenContent = fileContent
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))

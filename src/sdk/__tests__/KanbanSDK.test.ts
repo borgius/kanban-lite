@@ -465,4 +465,79 @@ describe('KanbanSDK', () => {
         .rejects.toThrow('Column not found')
     })
   })
+
+  describe('comments', () => {
+    it('should add a comment to a card', async () => {
+      const card = await sdk.createCard({ content: '# Comment Test' })
+      expect(card.comments).toEqual([])
+
+      const updated = await sdk.addComment(card.id, 'alice', 'Hello world')
+      expect(updated.comments).toHaveLength(1)
+      expect(updated.comments[0].id).toBe('c1')
+      expect(updated.comments[0].author).toBe('alice')
+      expect(updated.comments[0].content).toBe('Hello world')
+    })
+
+    it('should auto-increment comment IDs', async () => {
+      const card = await sdk.createCard({ content: '# ID Test' })
+      await sdk.addComment(card.id, 'alice', 'First')
+      const updated = await sdk.addComment(card.id, 'bob', 'Second')
+
+      expect(updated.comments).toHaveLength(2)
+      expect(updated.comments[0].id).toBe('c1')
+      expect(updated.comments[1].id).toBe('c2')
+    })
+
+    it('should list comments on a card', async () => {
+      const card = await sdk.createCard({ content: '# List Comments' })
+      await sdk.addComment(card.id, 'alice', 'Comment 1')
+      await sdk.addComment(card.id, 'bob', 'Comment 2')
+
+      const comments = await sdk.listComments(card.id)
+      expect(comments).toHaveLength(2)
+      expect(comments[0].author).toBe('alice')
+      expect(comments[1].author).toBe('bob')
+    })
+
+    it('should update a comment', async () => {
+      const card = await sdk.createCard({ content: '# Update Comment' })
+      await sdk.addComment(card.id, 'alice', 'Original')
+
+      const updated = await sdk.updateComment(card.id, 'c1', 'Edited content')
+      expect(updated.comments[0].content).toBe('Edited content')
+
+      // Verify persisted
+      const reloaded = await sdk.getCard(card.id)
+      expect(reloaded?.comments[0].content).toBe('Edited content')
+    })
+
+    it('should delete a comment', async () => {
+      const card = await sdk.createCard({ content: '# Delete Comment' })
+      await sdk.addComment(card.id, 'alice', 'To be deleted')
+      await sdk.addComment(card.id, 'bob', 'To keep')
+
+      const updated = await sdk.deleteComment(card.id, 'c1')
+      expect(updated.comments).toHaveLength(1)
+      expect(updated.comments[0].id).toBe('c2')
+      expect(updated.comments[0].author).toBe('bob')
+    })
+
+    it('should throw when adding comment to non-existent card', async () => {
+      await expect(sdk.addComment('ghost', 'alice', 'Hello')).rejects.toThrow('Card not found')
+    })
+
+    it('should throw when updating non-existent comment', async () => {
+      const card = await sdk.createCard({ content: '# No Such Comment' })
+      await expect(sdk.updateComment(card.id, 'c99', 'Nope')).rejects.toThrow('Comment not found')
+    })
+
+    it('should preserve comments through card updates', async () => {
+      const card = await sdk.createCard({ content: '# Preserve Comments' })
+      await sdk.addComment(card.id, 'alice', 'Persistent comment')
+
+      const updated = await sdk.updateCard(card.id, { priority: 'high' })
+      expect(updated.comments).toHaveLength(1)
+      expect(updated.comments[0].content).toBe('Persistent comment')
+    })
+  })
 })

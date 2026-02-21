@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween } from 'fractional-indexing'
-import type { Feature, FeatureStatus, KanbanColumn } from '../shared/types'
+import type { Comment, Feature, FeatureStatus, KanbanColumn } from '../shared/types'
 import { getTitleFromContent, generateFeatureFilename, extractNumericId, DEFAULT_COLUMNS } from '../shared/types'
 import { allocateCardId, syncCardIdCounter } from '../shared/config'
 import { parseFeatureFile, serializeFeature } from './parser'
@@ -97,6 +97,7 @@ export class KanbanSDK {
       completedAt: status === 'done' ? now : null,
       labels: data.labels || [],
       attachments: data.attachments || [],
+      comments: [],
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       filePath: getFeatureFilePath(this.featuresDir, status, filename)
@@ -252,6 +253,65 @@ export class KanbanSDK {
     const card = await this.getCard(cardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     return card.attachments
+  }
+
+  // --- Comment management ---
+
+  async listComments(cardId: string): Promise<Comment[]> {
+    const card = await this.getCard(cardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+    return card.comments || []
+  }
+
+  async addComment(cardId: string, author: string, content: string): Promise<Feature> {
+    const card = await this.getCard(cardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    if (!card.comments) card.comments = []
+
+    // Generate next comment ID
+    const maxId = card.comments.reduce((max, c) => {
+      const num = parseInt(c.id.replace('c', ''), 10)
+      return Number.isNaN(num) ? max : Math.max(max, num)
+    }, 0)
+
+    const comment: Comment = {
+      id: `c${maxId + 1}`,
+      author,
+      created: new Date().toISOString(),
+      content
+    }
+
+    card.comments.push(comment)
+    card.modified = new Date().toISOString()
+    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+
+    return card
+  }
+
+  async updateComment(cardId: string, commentId: string, content: string): Promise<Feature> {
+    const card = await this.getCard(cardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    const comment = (card.comments || []).find(c => c.id === commentId)
+    if (!comment) throw new Error(`Comment not found: ${commentId}`)
+
+    comment.content = content
+    card.modified = new Date().toISOString()
+    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+
+    return card
+  }
+
+  async deleteComment(cardId: string, commentId: string): Promise<Feature> {
+    const card = await this.getCard(cardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    card.comments = (card.comments || []).filter(c => c.id !== commentId)
+    card.modified = new Date().toISOString()
+    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+
+    return card
   }
 
   // --- Column management ---

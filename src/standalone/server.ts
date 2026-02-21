@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
-import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter } from '../shared/config'
 import type { KanbanConfig } from '../shared/config'
 import { parseFeatureFile, serializeFeature } from '../sdk/parser'
@@ -274,6 +274,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       completedAt: data.status === 'done' ? now : null,
       labels: data.labels,
       attachments: [],
+      comments: [],
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       filePath: getFeatureFilePath(absoluteFeaturesDir, data.status, filename)
@@ -477,6 +478,73 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     return feature
   }
 
+  // --- Comment mutation functions ---
+
+  function doAddComment(featureId: string, author: string, content: string): Comment | null {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
+
+    if (!feature.comments) feature.comments = []
+
+    const maxId = feature.comments.reduce((max, c) => {
+      const num = parseInt(c.id.replace('c', ''), 10)
+      return Number.isNaN(num) ? max : Math.max(max, num)
+    }, 0)
+
+    const comment: Comment = {
+      id: `c${maxId + 1}`,
+      author,
+      created: new Date().toISOString(),
+      content
+    }
+
+    feature.comments.push(comment)
+    feature.modified = new Date().toISOString()
+    const fileContent = serializeFeature(feature)
+    lastWrittenContent = fileContent
+    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
+
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'comment.created', { ...comment, cardId: featureId })
+    return comment
+  }
+
+  function doUpdateComment(featureId: string, commentId: string, content: string): Comment | null {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
+
+    const comment = (feature.comments || []).find(c => c.id === commentId)
+    if (!comment) return null
+
+    comment.content = content
+    feature.modified = new Date().toISOString()
+    const fileContent = serializeFeature(feature)
+    lastWrittenContent = fileContent
+    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
+
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'comment.updated', { ...comment, cardId: featureId })
+    return comment
+  }
+
+  function doDeleteComment(featureId: string, commentId: string): boolean {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return false
+
+    const comment = (feature.comments || []).find(c => c.id === commentId)
+    if (!comment) return false
+
+    feature.comments = feature.comments.filter(c => c.id !== commentId)
+    feature.modified = new Date().toISOString()
+    const fileContent = serializeFeature(feature)
+    lastWrittenContent = fileContent
+    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
+
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'comment.deleted', { ...comment, cardId: featureId })
+    return true
+  }
+
   // --- WebSocket message handling ---
 
   async function handleMessage(ws: WebSocket, message: unknown): Promise<void> {
@@ -515,7 +583,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           modified: feature.modified, completedAt: feature.completedAt,
           labels: feature.labels, attachments: feature.attachments, order: feature.order
         }
-        ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter }))
+        ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         break
       }
 
@@ -608,7 +676,54 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             modified: feature.modified, completedAt: feature.completedAt,
             labels: feature.labels, attachments: feature.attachments, order: feature.order
           }
-          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter }))
+          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+        }
+        break
+      }
+
+      case 'addComment': {
+        const comment = doAddComment(msg.featureId as string, msg.author as string, msg.content as string)
+        if (!comment) break
+        const feature = features.find(f => f.id === msg.featureId)
+        if (feature && currentEditingFeatureId === msg.featureId) {
+          const frontmatter: FeatureFrontmatter = {
+            id: feature.id, status: feature.status, priority: feature.priority,
+            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+            modified: feature.modified, completedAt: feature.completedAt,
+            labels: feature.labels, attachments: feature.attachments, order: feature.order
+          }
+          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+        }
+        break
+      }
+
+      case 'updateComment': {
+        const comment = doUpdateComment(msg.featureId as string, msg.commentId as string, msg.content as string)
+        if (!comment) break
+        const feature = features.find(f => f.id === msg.featureId)
+        if (feature && currentEditingFeatureId === msg.featureId) {
+          const frontmatter: FeatureFrontmatter = {
+            id: feature.id, status: feature.status, priority: feature.priority,
+            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+            modified: feature.modified, completedAt: feature.completedAt,
+            labels: feature.labels, attachments: feature.attachments, order: feature.order
+          }
+          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+        }
+        break
+      }
+
+      case 'deleteComment': {
+        doDeleteComment(msg.featureId as string, msg.commentId as string)
+        const feature = features.find(f => f.id === msg.featureId)
+        if (feature && currentEditingFeatureId === msg.featureId) {
+          const frontmatter: FeatureFrontmatter = {
+            id: feature.id, status: feature.status, priority: feature.priority,
+            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+            modified: feature.modified, completedAt: feature.completedAt,
+            labels: feature.labels, attachments: feature.attachments, order: feature.order
+          }
+          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         }
         break
       }
@@ -784,6 +899,56 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       return jsonOk(res, sanitizeFeature(feature))
     }
 
+    // ==================== COMMENTS API ====================
+
+    params = route('GET', '/api/tasks/:id/comments')
+    if (params) {
+      const { id } = params
+      const feature = features.find(f => f.id === id)
+      if (!feature) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, feature.comments || [])
+    }
+
+    params = route('POST', '/api/tasks/:id/comments')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const author = body.author as string
+        const content = body.content as string
+        if (!author) return jsonError(res, 400, 'author is required')
+        if (!content) return jsonError(res, 400, 'content is required')
+        const comment = doAddComment(id, author, content)
+        if (!comment) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, comment, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/tasks/:id/comments/:commentId')
+    if (params) {
+      try {
+        const { id, commentId } = params
+        const body = await readBody(req)
+        const content = body.content as string
+        if (!content) return jsonError(res, 400, 'content is required')
+        const comment = doUpdateComment(id, commentId, content)
+        if (!comment) return jsonError(res, 404, 'Comment not found')
+        return jsonOk(res, comment)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/tasks/:id/comments/:commentId')
+    if (params) {
+      const { id, commentId } = params
+      const ok = doDeleteComment(id, commentId)
+      if (!ok) return jsonError(res, 404, 'Comment not found')
+      return jsonOk(res, { deleted: true })
+    }
+
     // ==================== COLUMNS API ====================
 
     params = route('GET', '/api/columns')
@@ -912,7 +1077,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             modified: feature.modified, completedAt: feature.completedAt,
             labels: feature.labels, attachments: feature.attachments, order: feature.order
           }
-          broadcast({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter })
+          broadcast({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] })
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true }))
@@ -1020,7 +1185,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
               modified: editingFeature.modified, completedAt: editingFeature.completedAt,
               labels: editingFeature.labels, attachments: editingFeature.attachments, order: editingFeature.order
             }
-            broadcast({ type: 'featureContent', featureId: editingFeature.id, content: editingFeature.content, frontmatter })
+            broadcast({ type: 'featureContent', featureId: editingFeature.id, content: editingFeature.content, frontmatter, comments: editingFeature.comments || [] })
           }
         }
       }

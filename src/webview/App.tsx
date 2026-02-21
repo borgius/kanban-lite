@@ -8,7 +8,7 @@ import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
-import type { Feature, FeatureStatus, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Feature, FeatureStatus, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
@@ -46,6 +46,7 @@ function App(): React.JSX.Element {
     id: string
     content: string
     frontmatter: FeatureFrontmatter
+    comments: Comment[]
     contentVersion: number
   } | null>(null)
 
@@ -231,6 +232,7 @@ function App(): React.JSX.Element {
             id: message.featureId,
             content: message.content,
             frontmatter: message.frontmatter,
+            comments: message.comments || [],
             contentVersion: contentVersionRef.current
           })
           break
@@ -296,6 +298,21 @@ function App(): React.JSX.Element {
   const handleRemoveAttachment = (attachment: string): void => {
     if (!editingFeature) return
     vscode.postMessage({ type: 'removeAttachment', featureId: editingFeature.id, attachment })
+  }
+
+  const handleAddComment = (author: string, content: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'addComment', featureId: editingFeature.id, author, content })
+  }
+
+  const handleUpdateComment = (commentId: string, content: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'updateComment', featureId: editingFeature.id, commentId, content })
+  }
+
+  const handleDeleteComment = (commentId: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'deleteComment', featureId: editingFeature.id, commentId })
   }
 
   const handleSaveSettings = (settings: CardDisplaySettings): void => {
@@ -416,6 +433,7 @@ function App(): React.JSX.Element {
               featureId={editingFeature.id}
               content={editingFeature.content}
               frontmatter={editingFeature.frontmatter}
+              comments={editingFeature.comments}
               contentVersion={editingFeature.contentVersion}
               onSave={handleSaveFeature}
               onClose={handleCloseEditor}
@@ -425,6 +443,9 @@ function App(): React.JSX.Element {
               onAddAttachment={handleAddAttachment}
               onOpenAttachment={handleOpenAttachment}
               onRemoveAttachment={handleRemoveAttachment}
+              onAddComment={handleAddComment}
+              onUpdateComment={handleUpdateComment}
+              onDeleteComment={handleDeleteComment}
             />
           </div>
         )}

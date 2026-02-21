@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { marked } from 'marked'
-import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks } from 'lucide-react'
+import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle } from 'lucide-react'
+import type { Comment } from '../../shared/types'
 import { cn } from '../lib/utils'
+import { CommentsSection } from './CommentsSection'
 
 interface MarkdownEditorProps {
   value: string
@@ -9,6 +11,10 @@ interface MarkdownEditorProps {
   placeholder?: string
   className?: string
   autoFocus?: boolean
+  comments?: Comment[]
+  onAddComment?: (author: string, content: string) => void
+  onUpdateComment?: (commentId: string, content: string) => void
+  onDeleteComment?: (commentId: string) => void
 }
 
 type FormatAction = 'heading' | 'bold' | 'italic' | 'quote' | 'code' | 'link' | 'ul' | 'ol' | 'tasklist'
@@ -139,8 +145,8 @@ function ToolbarButton({ icon, title, onClick, separator }: ToolbarButtonProps) 
   )
 }
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus }: MarkdownEditorProps) {
-  const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, comments, onAddComment, onUpdateComment, onDeleteComment }: MarkdownEditorProps) {
+  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments'>('write')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const previewHtml = useMemo(() => {
@@ -239,6 +245,36 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             />
           )}
         </button>
+        {comments && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('comments')}
+            className="px-3 py-2 text-xs font-medium transition-colors relative flex items-center gap-1.5"
+            style={{
+              color: activeTab === 'comments' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
+            }}
+          >
+            <MessageCircle size={12} />
+            Comments
+            {comments.length > 0 && (
+              <span
+                className="text-[10px] px-1 rounded-full"
+                style={{
+                  background: 'var(--vscode-badge-background)',
+                  color: 'var(--vscode-badge-foreground)',
+                }}
+              >
+                {comments.length}
+              </span>
+            )}
+            {activeTab === 'comments' && (
+              <span
+                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
+                style={{ background: 'var(--vscode-focusBorder)' }}
+              />
+            )}
+          </button>
+        )}
 
         {/* Toolbar - only visible on Write tab */}
         {activeTab === 'write' && (
@@ -258,7 +294,7 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeTab === 'write' ? (
+        {activeTab === 'write' && (
           <textarea
             ref={textareaRef}
             value={value}
@@ -268,7 +304,8 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             className="markdown-editor-textarea"
             spellCheck={false}
           />
-        ) : (
+        )}
+        {activeTab === 'preview' && (
           <div className="min-h-[200px]">
             {previewHtml ? (
               <div
@@ -284,6 +321,14 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
               </p>
             )}
           </div>
+        )}
+        {activeTab === 'comments' && comments && onAddComment && onUpdateComment && onDeleteComment && (
+          <CommentsSection
+            comments={comments}
+            onAddComment={onAddComment}
+            onUpdateComment={onUpdateComment}
+            onDeleteComment={onDeleteComment}
+          />
         )}
       </div>
     </div>

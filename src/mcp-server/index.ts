@@ -413,6 +413,177 @@ async function main(): Promise<void> {
     }
   )
 
+  // --- Comment Tools ---
+
+  server.tool(
+    'list_comments',
+    'List all comments on a kanban card.',
+    {
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ cardId }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId)
+      if (!card) {
+        const all = await sdk.listCards()
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      const comments = await sdk.listComments(resolvedId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(comments, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'add_comment',
+    'Add a comment to a kanban card.',
+    {
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      author: z.string().describe('Comment author name'),
+      content: z.string().describe('Comment text (supports markdown)'),
+    },
+    async ({ cardId, author, content }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId)
+      if (!card) {
+        const all = await sdk.listCards()
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      const updated = await sdk.addComment(resolvedId, author, content)
+      const added = updated.comments[updated.comments.length - 1]
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(added, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'update_comment',
+    'Update the content of a comment on a kanban card.',
+    {
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      commentId: z.string().describe('Comment ID (e.g. "c1")'),
+      content: z.string().describe('New comment text'),
+    },
+    async ({ cardId, commentId, content }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId)
+      if (!card) {
+        const all = await sdk.listCards()
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      try {
+        const updated = await sdk.updateComment(resolvedId, commentId, content)
+        const comment = updated.comments.find(c => c.id === commentId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(comment, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  server.tool(
+    'delete_comment',
+    'Delete a comment from a kanban card.',
+    {
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      commentId: z.string().describe('Comment ID (e.g. "c1")'),
+    },
+    async ({ cardId, commentId }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId)
+      if (!card) {
+        const all = await sdk.listCards()
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      try {
+        await sdk.deleteComment(resolvedId, commentId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Deleted comment ${commentId} from card ${resolvedId}`,
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
   // --- Column Tools ---
 
   server.tool(

@@ -57,6 +57,7 @@ kl add --title "My first task" --priority high
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)
 - **Labels**: Tag features with multiple labels
 - **Attachments**: Attach files to cards
+- **Comments**: Add discussion threads to cards (stored in the same markdown file)
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
 
@@ -108,6 +109,13 @@ kl delete implement-search
 kl attach implement-search                              # List attachments
 kl attach add implement-search ./screenshot.png         # Attach a file
 kl attach remove implement-search screenshot.png        # Remove attachment
+
+# Comments
+kl comment implement-search                             # List comments
+kl comment add implement-search --author alice \
+  --body "Looks good, needs tests"                      # Add a comment
+kl comment edit implement-search c1 --body "Updated"    # Edit a comment
+kl comment remove implement-search c1                   # Remove a comment
 
 # Manage columns
 kl columns                                              # List columns
@@ -204,6 +212,15 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 |--------|----------|-------------|
 | `GET` | `/api/workspace` | Get workspace root path |
 
+#### Comments
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tasks/:id/comments` | List comments on a task |
+| `POST` | `/api/tasks/:id/comments` | Add a comment (`{ author, content }`) |
+| `PUT` | `/api/tasks/:id/comments/:commentId` | Update a comment (`{ content }`) |
+| `DELETE` | `/api/tasks/:id/comments/:commentId` | Delete a comment |
+
 #### Attachments
 
 | Method | Endpoint | Description |
@@ -232,6 +249,9 @@ Register webhooks to receive HTTP POST notifications when tasks or columns chang
 | `task.updated` | Task properties are changed |
 | `task.moved` | Task is moved to a different column |
 | `task.deleted` | A task is deleted |
+| `comment.created` | A comment is added to a task |
+| `comment.updated` | A comment is edited |
+| `comment.deleted` | A comment is removed |
 | `column.created` | A new column is added |
 | `column.updated` | Column name or color is changed |
 | `column.deleted` | A column is removed |
@@ -307,6 +327,10 @@ kanban-mcp --dir .kanban
 | `list_attachments` | List attachments on a card |
 | `add_attachment` | Attach a file to a card (copies to card directory) |
 | `remove_attachment` | Remove an attachment reference from a card |
+| `list_comments` | List comments on a card |
+| `add_comment` | Add a comment to a card |
+| `update_comment` | Edit a comment's content |
+| `delete_comment` | Remove a comment from a card |
 | `list_columns` | List all board columns |
 | `add_column` | Add a new column to the board |
 | `update_column` | Update a column's name or color |
@@ -347,6 +371,12 @@ await sdk.updateCard('card-id', { assignee: 'alice' })
 // Delete
 await sdk.deleteCard('card-id')
 
+// Comments
+await sdk.addComment('card-id', 'alice', 'Looks good!')
+await sdk.updateComment('card-id', 'c1', 'Updated comment')
+await sdk.deleteComment('card-id', 'c1')
+const comments = await sdk.listComments('card-id')
+
 // Attachments
 await sdk.addAttachment('card-id', '/path/to/file.png')
 await sdk.removeAttachment('card-id', 'file.png')
@@ -379,7 +409,25 @@ order: 0
 # Implement dark mode toggle
 
 Add a toggle in settings to switch between light and dark themes...
+
+---
+comment: true
+id: "c1"
+author: "alice"
+created: "2026-01-25T15:00:00.000Z"
+---
+Should we support system preference detection too?
+
+---
+comment: true
+id: "c2"
+author: "john"
+created: "2026-01-25T15:30:00.000Z"
+---
+Yes, good idea. I'll add that as a follow-up.
 ```
+
+Comments are stored as additional YAML documents in the same file, keeping everything in one place and version-controllable.
 
 ## Configuration
 

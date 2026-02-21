@@ -458,6 +458,122 @@ async function resolveCardId(sdk: KanbanSDK, cardId: string): Promise<string> {
   process.exit(1)
 }
 
+// --- Comment Commands ---
+
+async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+  const subcommand = positional[0] || 'list'
+
+  if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'edit' && subcommand !== 'remove' && subcommand !== 'rm') {
+    // If first positional looks like a card ID, treat it as "list <cardId>"
+    const resolvedId = await resolveCardId(sdk, subcommand)
+    const comments = await sdk.listComments(resolvedId)
+    if (flags.json) {
+      console.log(JSON.stringify(comments, null, 2))
+    } else if (comments.length === 0) {
+      console.log(dim('  No comments.'))
+    } else {
+      for (const c of comments) {
+        console.log(`  ${bold(c.id)}  ${cyan(c.author)}  ${dim(c.created)}`)
+        console.log(`    ${c.content.split('\n').join('\n    ')}`)
+        console.log()
+      }
+    }
+    return
+  }
+
+  const cardId = positional[1]
+
+  switch (subcommand) {
+    case 'list': {
+      if (!cardId) {
+        console.error(red('Usage: kl comment list <card-id>'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId)
+      const comments = await sdk.listComments(resolvedId)
+      if (flags.json) {
+        console.log(JSON.stringify(comments, null, 2))
+      } else if (comments.length === 0) {
+        console.log(dim('  No comments.'))
+      } else {
+        for (const c of comments) {
+          console.log(`  ${bold(c.id)}  ${cyan(c.author)}  ${dim(c.created)}`)
+          console.log(`    ${c.content.split('\n').join('\n    ')}`)
+          console.log()
+        }
+      }
+      break
+    }
+    case 'add': {
+      if (!cardId) {
+        console.error(red('Usage: kl comment add <card-id> --author <name> --body <text>'))
+        process.exit(1)
+      }
+      const author = typeof flags.author === 'string' ? flags.author : ''
+      const body = typeof flags.body === 'string' ? flags.body : ''
+      if (!author) {
+        console.error(red('Error: --author is required'))
+        process.exit(1)
+      }
+      if (!body) {
+        console.error(red('Error: --body is required'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId)
+      const card = await sdk.addComment(resolvedId, author, body)
+      const added = card.comments[card.comments.length - 1]
+      if (flags.json) {
+        console.log(JSON.stringify(added, null, 2))
+      } else {
+        console.log(green(`Added comment ${added.id} to card ${resolvedId}`))
+      }
+      break
+    }
+    case 'edit': {
+      if (!cardId) {
+        console.error(red('Usage: kl comment edit <card-id> <comment-id> --body <text>'))
+        process.exit(1)
+      }
+      const commentId = positional[2]
+      if (!commentId) {
+        console.error(red('Usage: kl comment edit <card-id> <comment-id> --body <text>'))
+        process.exit(1)
+      }
+      const body = typeof flags.body === 'string' ? flags.body : ''
+      if (!body) {
+        console.error(red('Error: --body is required'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId)
+      await sdk.updateComment(resolvedId, commentId, body)
+      if (flags.json) {
+        const comments = await sdk.listComments(resolvedId)
+        const updated = comments.find(c => c.id === commentId)
+        console.log(JSON.stringify(updated, null, 2))
+      } else {
+        console.log(green(`Updated comment ${commentId}`))
+      }
+      break
+    }
+    case 'remove':
+    case 'rm': {
+      if (!cardId) {
+        console.error(red('Usage: kl comment remove <card-id> <comment-id>'))
+        process.exit(1)
+      }
+      const commentId = positional[2]
+      if (!commentId) {
+        console.error(red('Usage: kl comment remove <card-id> <comment-id>'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId)
+      await sdk.deleteComment(resolvedId, commentId)
+      console.log(green(`Deleted comment ${commentId}`))
+      break
+    }
+  }
+}
+
 // --- Column Commands ---
 
 async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
@@ -710,6 +826,12 @@ ${bold('Attachment Commands:')}
   attach add <id> <path>      Attach a file to a card
   attach remove <id> <name>   Remove an attachment from a card
 
+${bold('Comment Commands:')}
+  comment <id>                List comments on a card
+  comment add <id>            Add a comment (--author, --body)
+  comment edit <id> <cid>     Edit a comment (--body)
+  comment remove <id> <cid>   Remove a comment
+
 ${bold('Column Commands:')}
   columns                     List columns
   columns add                 Add a column (--id, --name, --color)
@@ -810,6 +932,10 @@ async function main(): Promise<void> {
       break
     case 'attach':
       await cmdAttach(sdk, positional, flags)
+      break
+    case 'comment':
+    case 'comments':
+      await cmdComment(sdk, positional, flags)
       break
     case 'columns':
     case 'cols':

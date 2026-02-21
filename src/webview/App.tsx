@@ -399,7 +399,7 @@ function App(): React.JSX.Element {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--vscode-editor-background)]">
-      <Toolbar onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })} onAddColumn={handleAddColumn} />
+      <Toolbar onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })} onAddColumn={handleAddColumn} onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })} />
       <div className="flex-1 flex overflow-hidden">
         <div className={editingFeature ? 'w-1/2' : 'w-full'}>
           <KanbanBoard

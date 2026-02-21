@@ -405,12 +405,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
   <div class="separator"></div>
 
-  <div class="section" id="inProgressSection" style="display:none;">
-    <div class="section-header">
-      <span>In Progress</span>
-    </div>
-    <ul class="feature-list" id="inProgressList"></ul>
-  </div>
+  <div id="columnSections"></div>
 
   <script nonce="${nonce}">
     (function() {
@@ -456,30 +451,37 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
           statRows.appendChild(row);
         }
 
-        // In-progress features
-        const inProgressCol = columns.find(c => c.id === 'in-progress');
-        const inProgressColor = inProgressCol ? inProgressCol.color : '#f59e0b';
-        const inProgress = features.filter(f => f.status === 'in-progress');
-        const section = document.getElementById('inProgressSection');
-        const list = document.getElementById('inProgressList');
+        // Column sections with their features
+        const sectionsContainer = document.getElementById('columnSections');
+        sectionsContainer.innerHTML = '';
+        for (const col of columns) {
+          const colFeatures = features.filter(f => f.status === col.id);
+          if (colFeatures.length === 0) continue;
 
-        if (inProgress.length > 0) {
-          section.style.display = '';
-          list.innerHTML = '';
-          for (const f of inProgress) {
+          const section = document.createElement('div');
+          section.className = 'section';
+
+          const header = document.createElement('div');
+          header.className = 'section-header';
+          header.innerHTML = '<span>' + escapeHtml(col.name) + '</span>';
+          section.appendChild(header);
+
+          const list = document.createElement('ul');
+          list.className = 'feature-list';
+          for (const f of colFeatures) {
             const li = document.createElement('li');
             li.className = 'feature-item';
             li.title = f.title;
             li.innerHTML =
-              '<span class="feature-dot" style="background:' + inProgressColor + '"></span>' +
+              '<span class="feature-dot" style="background:' + col.color + '"></span>' +
               '<span class="feature-title">' + escapeHtml(f.title) + '</span>';
             li.addEventListener('click', () => {
               vscode.postMessage({ type: 'openFeature', featureId: f.id });
             });
             list.appendChild(li);
           }
-        } else {
-          section.style.display = 'none';
+          section.appendChild(list);
+          sectionsContainer.appendChild(section);
         }
       }
 

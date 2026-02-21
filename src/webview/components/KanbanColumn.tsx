@@ -58,8 +58,8 @@ export function KanbanColumn({
     <div
       className={
         isVertical
-          ? "flex flex-col bg-zinc-100 dark:bg-zinc-800/50 rounded-lg"
-          : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800/50 rounded-lg"
+          ? "flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
+          : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
       }
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, column.id)}

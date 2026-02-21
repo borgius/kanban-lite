@@ -96,6 +96,11 @@ function handleOpenAttachment(featureId: string, attachment: string) {
       handleOpenAttachment(msg.featureId as string, msg.attachment as string)
       return
     }
+    if (msg.type === 'toggleTheme') {
+      const isDark = document.body.classList.contains('vscode-dark')
+      applyTheme(!isDark)
+      return
+    }
 
     const json = JSON.stringify(message)
     if (connected) {

@@ -183,6 +183,9 @@ export class KanbanPanel {
           case 'removeColumn':
             await this._removeColumn(message.columnId)
             break
+          case 'toggleTheme':
+            await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
+            break
         }
       },
       null,

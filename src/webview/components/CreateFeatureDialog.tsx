@@ -1,21 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
-import { Markdown } from 'tiptap-markdown'
 import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar } from 'lucide-react'
 import type { FeatureStatus, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DatePicker } from './DatePicker'
-
-interface MarkdownStorage {
-  markdown: { getMarkdown: () => string }
-}
-
-function getMarkdown(editor: { storage: unknown }): string {
-  return (editor.storage as MarkdownStorage).markdown.getMarkdown()
-}
+import { MarkdownEditor } from './MarkdownEditor'
 
 interface CreateFeatureDialogProps {
   isOpen: boolean
@@ -333,21 +322,8 @@ function CreateFeatureDialogContent({
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [labels, setLabels] = useState<string[]>([])
+  const [description, setDescription] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
-
-  const descriptionEditor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: 'Add a description...' }),
-      Markdown.configure({ html: false, transformPastedText: true })
-    ],
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[200px]'
-      }
-    }
-  })
 
   // Focus input on mount
   useEffect(() => {
@@ -356,11 +332,11 @@ function CreateFeatureDialogContent({
   }, [])
 
   const handleSubmit = () => {
-    const description = descriptionEditor ? getMarkdown(descriptionEditor).trim() : ''
+    const desc = description.trim()
     const heading = title.trim()
     const content = heading
-      ? `# ${heading}${description ? '\n\n' + description : ''}`
-      : description
+      ? `# ${heading}${desc ? `\n\n${desc}` : ''}`
+      : desc
     onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels })
   }
 
@@ -484,11 +460,14 @@ function CreateFeatureDialogContent({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                descriptionEditor?.commands.focus()
               }
             }}
           />
-          <EditorContent editor={descriptionEditor} />
+          <MarkdownEditor
+            value={description}
+            onChange={setDescription}
+            placeholder="Add a description..."
+          />
         </div>
 
         {/* Footer with Cancel / Save buttons */}

@@ -162,6 +162,9 @@ export class KanbanPanel {
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
             break
+          case 'saveSettings':
+            await this._saveSettings(message.settings)
+            break
           case 'addColumn':
             await this._addColumn(message.column)
             break
@@ -317,7 +320,8 @@ export class KanbanPanel {
 
     try {
       await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-      await ensureStatusSubfolders(featuresDir)
+      const columnIds = this._getColumns().map(c => c.id)
+      await ensureStatusSubfolders(featuresDir, columnIds)
       return featuresDir
     } catch {
       return null
@@ -333,51 +337,12 @@ export class KanbanPanel {
 
     try {
       await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-      await ensureStatusSubfolders(featuresDir)
+      const columnIds = this._getColumns().map(c => c.id)
+      await ensureStatusSubfolders(featuresDir, columnIds)
 
-      // Phase 1: Migrate files from old per-status subfolders into new layout
-      // Non-done subfolders (backlog/, todo/, in-progress/, review/) → move files to root
-      // done/ files stay in done/
-      // Root files with status: done → move to done/
+      // Phase 1: Migrate flat root .md files into their status subfolder
       this._migrating = true
       try {
-        const oldStatusFolders = ['backlog', 'todo', 'in-progress', 'review']
-        for (const folder of oldStatusFolders) {
-          const subdir = path.join(featuresDir, folder)
-          try {
-            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
-            for (const [name, type] of entries) {
-              if (type !== vscode.FileType.File || !name.endsWith('.md')) continue
-              const filePath = path.join(subdir, name)
-              try {
-                const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-                const feature = this._parseFeatureFile(content, filePath)
-                const status = feature?.status || 'backlog'
-                // Move to done/ if status is done, otherwise move to root
-                await moveFeatureFile(filePath, featuresDir, status)
-              } catch {
-                // Skip files that fail to migrate
-              }
-            }
-          } catch {
-            // Old subfolder doesn't exist; skip
-          }
-        }
-
-        // Remove old status folders if they are now empty
-        for (const folder of oldStatusFolders) {
-          const subdir = path.join(featuresDir, folder)
-          try {
-            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
-            if (entries.length === 0) {
-              await vscode.workspace.fs.delete(vscode.Uri.file(subdir))
-            }
-          } catch {
-            // Folder doesn't exist or can't be read; skip
-          }
-        }
-
-        // Also check root files that have status: done → move to done/
         const rootEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
         for (const [name, type] of rootEntries) {
           if (type !== vscode.FileType.File || !name.endsWith('.md')) continue
@@ -385,8 +350,8 @@ export class KanbanPanel {
           try {
             const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
             const feature = this._parseFeatureFile(content, filePath)
-            if (feature?.status === 'done') {
-              await moveFeatureFile(filePath, featuresDir, 'done')
+            if (feature) {
+              await moveFeatureFile(filePath, featuresDir, feature.status, feature.attachments)
             }
           } catch {
             // Skip files that fail to migrate
@@ -396,54 +361,34 @@ export class KanbanPanel {
         this._migrating = false
       }
 
-      // Phase 2: Load .md files from root (non-done) + done/ subfolder
+      // Phase 2: Load .md files from ALL subdirectories
       const features: Feature[] = []
-
-      // Load root-level files
-      const rootEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
-      for (const [file, fileType] of rootEntries) {
-        if (fileType !== vscode.FileType.File || !file.endsWith('.md')) continue
-        const filePath = path.join(featuresDir, file)
-        const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-        const feature = this._parseFeatureFile(content, filePath)
-        if (feature) features.push(feature)
-      }
-
-      // Load done/ subfolder files
-      const doneDir = path.join(featuresDir, 'done')
-      try {
-        const doneEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(doneDir))
-        for (const [file, fileType] of doneEntries) {
-          if (fileType !== vscode.FileType.File || !file.endsWith('.md')) continue
-          const filePath = path.join(doneDir, file)
-          const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-          const feature = this._parseFeatureFile(content, filePath)
-          if (feature) features.push(feature)
+      const topEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
+      for (const [name, type] of topEntries) {
+        if (type !== vscode.FileType.Directory || name.startsWith('.')) continue
+        const subdir = path.join(featuresDir, name)
+        try {
+          const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
+          for (const [file, fileType] of entries) {
+            if (fileType !== vscode.FileType.File || !file.endsWith('.md')) continue
+            const filePath = path.join(subdir, file)
+            const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
+            const feature = this._parseFeatureFile(content, filePath)
+            if (feature) features.push(feature)
+          }
+        } catch {
+          // Skip unreadable directories
         }
-      } catch {
-        // done/ subfolder may not exist yet; skip
       }
 
-      // Phase 3: Reconcile done ↔ non-done mismatches
-      // Root file with status: done → move to done/
-      // done/ file with non-done status → move to root
+      // Phase 3: Reconcile status ↔ folder mismatches
       this._migrating = true
       try {
         for (const feature of features) {
           const pathStatus = getStatusFromPath(feature.filePath, featuresDir)
-          const inDoneFolder = pathStatus === 'done'
-          const isDoneStatus = feature.status === 'done'
-
-          if (isDoneStatus && !inDoneFolder) {
+          if (pathStatus !== null && pathStatus !== feature.status) {
             try {
-              const newPath = await moveFeatureFile(feature.filePath, featuresDir, 'done')
-              feature.filePath = newPath
-            } catch {
-              // Will retry on next load
-            }
-          } else if (!isDoneStatus && inDoneFolder) {
-            try {
-              const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+              const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
               feature.filePath = newPath
             } catch {
               // Will retry on next load
@@ -578,12 +523,11 @@ export class KanbanPanel {
     const content = this._serializeFeature(feature)
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
 
-    // Only move file when crossing the done boundary
-    const crossingDoneBoundary = statusChanged && (oldStatus === 'done' || newStatus === 'done')
-    if (crossingDoneBoundary) {
+    // Move file when status changes
+    if (statusChanged) {
       this._migrating = true
       try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, newStatus)
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, newStatus, feature.attachments)
         feature.filePath = newPath
       } catch {
         // Move failed; file stays in old folder, will reconcile on next load
@@ -628,12 +572,11 @@ export class KanbanPanel {
     const content = this._serializeFeature(feature)
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
 
-    // Only move file when crossing the done boundary
-    const crossingDoneBoundary = oldStatus !== feature.status && (oldStatus === 'done' || feature.status === 'done')
-    if (crossingDoneBoundary) {
+    // Move file when status changes
+    if (oldStatus !== feature.status) {
       this._migrating = true
       try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
         feature.filePath = newPath
       } catch {
         // Move failed; file stays in old folder, will reconcile on next load
@@ -716,12 +659,11 @@ export class KanbanPanel {
     this._lastWrittenContent = fileContent
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
 
-    // Only move file when crossing the done boundary
-    const crossingDoneBoundary = oldStatus !== feature.status && (oldStatus === 'done' || feature.status === 'done')
-    if (crossingDoneBoundary) {
+    // Move file when status changes
+    if (oldStatus !== feature.status) {
       this._migrating = true
       try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status)
+        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
         feature.filePath = newPath
       } catch {
         // Move failed; file stays in old folder, will reconcile on next load
@@ -875,6 +817,28 @@ export class KanbanPanel {
     terminal.sendText(command)
   }
 
+  private async _updateConfig(key: string, value: unknown): Promise<void> {
+    const fullKey = `kanban-markdown.${key}`
+    try {
+      await vscode.workspace.getConfiguration().update(fullKey, value, vscode.ConfigurationTarget.Workspace)
+    } catch {
+      // Workspace target may fail if no workspace folder is open; fall back to global
+      await vscode.workspace.getConfiguration().update(fullKey, value, vscode.ConfigurationTarget.Global)
+    }
+  }
+
+  private async _saveSettings(settings: CardDisplaySettings): Promise<void> {
+    await this._updateConfig('showPriorityBadges', settings.showPriorityBadges)
+    await this._updateConfig('showAssignee', settings.showAssignee)
+    await this._updateConfig('showDueDate', settings.showDueDate)
+    await this._updateConfig('showLabels', settings.showLabels)
+    await this._updateConfig('showFileName', settings.showFileName)
+    await this._updateConfig('compactMode', settings.compactMode)
+    await this._updateConfig('defaultPriority', settings.defaultPriority)
+    await this._updateConfig('defaultStatus', settings.defaultStatus)
+    this._sendFeaturesToWebview()
+  }
+
   private _getColumns(): KanbanColumn[] {
     const config = vscode.workspace.getConfiguration('kanban-markdown')
     const defaultColumns: KanbanColumn[] = [
@@ -888,8 +852,7 @@ export class KanbanPanel {
   }
 
   private async _saveColumns(columns: KanbanColumn[]): Promise<void> {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    await config.update('columns', columns, vscode.ConfigurationTarget.Workspace)
+    await this._updateConfig('columns', columns)
     // Send immediately with known-good data instead of re-reading from config
     this._sendFeaturesToWebviewWithColumns(columns)
   }

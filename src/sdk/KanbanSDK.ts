@@ -22,23 +22,31 @@ export class KanbanSDK {
     await ensureDirectories(this.featuresDir)
     const cards: Feature[] = []
 
-    // Load root-level files
-    const rootEntries = await this._readMdFiles(this.featuresDir)
-    for (const filePath of rootEntries) {
-      const card = await this._loadCard(filePath)
-      if (card) cards.push(card)
+    // Scan all subdirectories for .md files
+    const entries = await fs.readdir(this.featuresDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const subdir = path.join(this.featuresDir, entry.name)
+      try {
+        const mdFiles = await this._readMdFiles(subdir)
+        for (const filePath of mdFiles) {
+          const card = await this._loadCard(filePath)
+          if (card) cards.push(card)
+        }
+      } catch {
+        // Skip unreadable directories
+      }
     }
 
-    // Load done/ subfolder files
-    const doneDir = path.join(this.featuresDir, 'done')
+    // Also load any orphaned root-level .md files (backward compat)
     try {
-      const doneEntries = await this._readMdFiles(doneDir)
-      for (const filePath of doneEntries) {
+      const rootFiles = await this._readMdFiles(this.featuresDir)
+      for (const filePath of rootFiles) {
         const card = await this._loadCard(filePath)
         if (card) cards.push(card)
       }
     } catch {
-      // done/ subfolder may not exist yet
+      // Skip
     }
 
     return cards.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
@@ -107,10 +115,9 @@ export class KanbanSDK {
     // Write updated content
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
-    // Move file if crossing the done boundary
-    const crossingDoneBoundary = oldStatus !== card.status && (oldStatus === 'done' || card.status === 'done')
-    if (crossingDoneBoundary) {
-      const newPath = await moveFeatureFile(card.filePath, this.featuresDir, card.status)
+    // Move file if status changed
+    if (oldStatus !== card.status) {
+      const newPath = await moveFeatureFile(card.filePath, this.featuresDir, card.status, card.attachments)
       card.filePath = newPath
     }
 
@@ -145,10 +152,9 @@ export class KanbanSDK {
     // Write updated content
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
-    // Move file if crossing the done boundary
-    const crossingDoneBoundary = oldStatus !== newStatus && (oldStatus === 'done' || newStatus === 'done')
-    if (crossingDoneBoundary) {
-      const newPath = await moveFeatureFile(card.filePath, this.featuresDir, newStatus)
+    // Move file if status changed
+    if (oldStatus !== newStatus) {
+      const newPath = await moveFeatureFile(card.filePath, this.featuresDir, newStatus, card.attachments)
       card.filePath = newPath
     }
 

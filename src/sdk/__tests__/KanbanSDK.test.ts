@@ -65,9 +65,9 @@ describe('KanbanSDK', () => {
   })
 
   describe('init', () => {
-    it('should create the features directory and done subfolder', async () => {
+    it('should create the features directory', async () => {
       await sdk.init()
-      expect(fs.existsSync(path.join(tempDir, 'done'))).toBe(true)
+      expect(fs.existsSync(tempDir)).toBe(true)
     })
   })
 
@@ -77,8 +77,8 @@ describe('KanbanSDK', () => {
       expect(cards).toEqual([])
     })
 
-    it('should list cards from root and done/', async () => {
-      writeCardFile(tempDir, 'active.md', makeCardContent({ id: 'active', status: 'todo', order: 'a0' }))
+    it('should list cards from status subfolders', async () => {
+      writeCardFile(tempDir, 'active.md', makeCardContent({ id: 'active', status: 'todo', order: 'a0' }), 'todo')
       writeCardFile(tempDir, 'completed.md', makeCardContent({ id: 'completed', status: 'done', order: 'a1' }), 'done')
 
       const cards = await sdk.listCards()
@@ -87,8 +87,8 @@ describe('KanbanSDK', () => {
     })
 
     it('should return cards sorted by order', async () => {
-      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0' }))
-      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0' }))
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0' }), 'backlog')
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0' }), 'backlog')
 
       const cards = await sdk.listCards()
       expect(cards[0].id).toBe('a')
@@ -96,18 +96,26 @@ describe('KanbanSDK', () => {
     })
 
     it('should skip files without valid frontmatter', async () => {
-      writeCardFile(tempDir, 'invalid.md', '# No frontmatter')
-      writeCardFile(tempDir, 'valid.md', makeCardContent({ id: 'valid' }))
+      writeCardFile(tempDir, 'invalid.md', '# No frontmatter', 'backlog')
+      writeCardFile(tempDir, 'valid.md', makeCardContent({ id: 'valid' }), 'backlog')
 
       const cards = await sdk.listCards()
       expect(cards.length).toBe(1)
       expect(cards[0].id).toBe('valid')
     })
+
+    it('should also load orphaned root-level files for backward compat', async () => {
+      writeCardFile(tempDir, 'orphan.md', makeCardContent({ id: 'orphan', status: 'backlog' }))
+
+      const cards = await sdk.listCards()
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('orphan')
+    })
   })
 
   describe('getCard', () => {
     it('should return a card by ID', async () => {
-      writeCardFile(tempDir, 'find-me.md', makeCardContent({ id: 'find-me', priority: 'high' }))
+      writeCardFile(tempDir, 'find-me.md', makeCardContent({ id: 'find-me', priority: 'high' }), 'backlog')
 
       const card = await sdk.getCard('find-me')
       expect(card).not.toBeNull()
@@ -148,6 +156,14 @@ describe('KanbanSDK', () => {
       expect(card.labels).toEqual([])
     })
 
+    it('should place cards in their status subfolder', async () => {
+      const card = await sdk.createCard({
+        content: '# Todo Card',
+        status: 'todo'
+      })
+      expect(card.filePath).toContain('/todo/')
+    })
+
     it('should place done cards in done/ subfolder', async () => {
       const card = await sdk.createCard({
         content: '# Done Card',
@@ -166,7 +182,7 @@ describe('KanbanSDK', () => {
 
   describe('updateCard', () => {
     it('should update fields and persist', async () => {
-      writeCardFile(tempDir, 'update-me.md', makeCardContent({ id: 'update-me', priority: 'low' }))
+      writeCardFile(tempDir, 'update-me.md', makeCardContent({ id: 'update-me', priority: 'low' }), 'backlog')
 
       const updated = await sdk.updateCard('update-me', {
         priority: 'critical',
@@ -184,12 +200,21 @@ describe('KanbanSDK', () => {
     })
 
     it('should move file to done/ when status changes to done', async () => {
-      writeCardFile(tempDir, 'finish-me.md', makeCardContent({ id: 'finish-me', status: 'review' }))
+      writeCardFile(tempDir, 'finish-me.md', makeCardContent({ id: 'finish-me', status: 'review' }), 'review')
 
       const updated = await sdk.updateCard('finish-me', { status: 'done' })
       expect(updated.completedAt).not.toBeNull()
       expect(updated.filePath).toContain('/done/')
       expect(fs.existsSync(updated.filePath)).toBe(true)
+    })
+
+    it('should move file between status folders on any status change', async () => {
+      writeCardFile(tempDir, 'move-status.md', makeCardContent({ id: 'move-status', status: 'backlog' }), 'backlog')
+
+      const updated = await sdk.updateCard('move-status', { status: 'in-progress' })
+      expect(updated.filePath).toContain('/in-progress/')
+      expect(fs.existsSync(updated.filePath)).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-status.md'))).toBe(false)
     })
 
     it('should throw for non-existent card', async () => {
@@ -198,15 +223,17 @@ describe('KanbanSDK', () => {
   })
 
   describe('moveCard', () => {
-    it('should change status and reorder', async () => {
-      writeCardFile(tempDir, 'move-me.md', makeCardContent({ id: 'move-me', status: 'backlog' }))
+    it('should change status and move file to new folder', async () => {
+      writeCardFile(tempDir, 'move-me.md', makeCardContent({ id: 'move-me', status: 'backlog' }), 'backlog')
 
       const moved = await sdk.moveCard('move-me', 'in-progress')
       expect(moved.status).toBe('in-progress')
+      expect(moved.filePath).toContain('/in-progress/')
+      expect(fs.existsSync(moved.filePath)).toBe(true)
     })
 
     it('should handle done boundary crossing', async () => {
-      writeCardFile(tempDir, 'to-done.md', makeCardContent({ id: 'to-done', status: 'review' }))
+      writeCardFile(tempDir, 'to-done.md', makeCardContent({ id: 'to-done', status: 'review' }), 'review')
 
       const moved = await sdk.moveCard('to-done', 'done')
       expect(moved.completedAt).not.toBeNull()
@@ -214,9 +241,9 @@ describe('KanbanSDK', () => {
     })
 
     it('should insert at specified position', async () => {
-      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', status: 'todo', order: 'a0' }))
-      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', status: 'todo', order: 'a2' }))
-      writeCardFile(tempDir, 'new.md', makeCardContent({ id: 'new', status: 'backlog', order: 'a0' }))
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', status: 'todo', order: 'a0' }), 'todo')
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', status: 'todo', order: 'a2' }), 'todo')
+      writeCardFile(tempDir, 'new.md', makeCardContent({ id: 'new', status: 'backlog', order: 'a0' }), 'backlog')
 
       const moved = await sdk.moveCard('new', 'todo', 1)
       expect(moved.order > 'a0').toBe(true)
@@ -230,8 +257,8 @@ describe('KanbanSDK', () => {
 
   describe('deleteCard', () => {
     it('should remove the file from disk', async () => {
-      writeCardFile(tempDir, 'delete-me.md', makeCardContent({ id: 'delete-me' }))
-      const filePath = path.join(tempDir, 'delete-me.md')
+      writeCardFile(tempDir, 'delete-me.md', makeCardContent({ id: 'delete-me' }), 'backlog')
+      const filePath = path.join(tempDir, 'backlog', 'delete-me.md')
       expect(fs.existsSync(filePath)).toBe(true)
 
       await sdk.deleteCard('delete-me')
@@ -245,9 +272,9 @@ describe('KanbanSDK', () => {
 
   describe('getCardsByStatus', () => {
     it('should filter cards by status', async () => {
-      writeCardFile(tempDir, 'todo1.md', makeCardContent({ id: 'todo1', status: 'todo', order: 'a0' }))
-      writeCardFile(tempDir, 'todo2.md', makeCardContent({ id: 'todo2', status: 'todo', order: 'a1' }))
-      writeCardFile(tempDir, 'backlog1.md', makeCardContent({ id: 'backlog1', status: 'backlog', order: 'a0' }))
+      writeCardFile(tempDir, 'todo1.md', makeCardContent({ id: 'todo1', status: 'todo', order: 'a0' }), 'todo')
+      writeCardFile(tempDir, 'todo2.md', makeCardContent({ id: 'todo2', status: 'todo', order: 'a1' }), 'todo')
+      writeCardFile(tempDir, 'backlog1.md', makeCardContent({ id: 'backlog1', status: 'backlog', order: 'a0' }), 'backlog')
 
       const todoCards = await sdk.getCardsByStatus('todo')
       expect(todoCards.length).toBe(2)
@@ -257,9 +284,9 @@ describe('KanbanSDK', () => {
 
   describe('getUniqueAssignees', () => {
     it('should return sorted unique assignees', async () => {
-      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', assignee: 'bob', order: 'a0' }))
-      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', assignee: 'alice', order: 'a1' }))
-      writeCardFile(tempDir, 'c3.md', makeCardContent({ id: 'c3', assignee: 'bob', order: 'a2' }))
+      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', assignee: 'bob', order: 'a0' }), 'backlog')
+      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', assignee: 'alice', order: 'a1' }), 'backlog')
+      writeCardFile(tempDir, 'c3.md', makeCardContent({ id: 'c3', assignee: 'bob', order: 'a2' }), 'backlog')
 
       const assignees = await sdk.getUniqueAssignees()
       expect(assignees).toEqual(['alice', 'bob'])
@@ -268,8 +295,8 @@ describe('KanbanSDK', () => {
 
   describe('getUniqueLabels', () => {
     it('should return sorted unique labels', async () => {
-      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', labels: ['ui', 'frontend'], order: 'a0' }))
-      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', labels: ['backend', 'ui'], order: 'a1' }))
+      writeCardFile(tempDir, 'c1.md', makeCardContent({ id: 'c1', labels: ['ui', 'frontend'], order: 'a0' }), 'backlog')
+      writeCardFile(tempDir, 'c2.md', makeCardContent({ id: 'c2', labels: ['backend', 'ui'], order: 'a1' }), 'backlog')
 
       const labels = await sdk.getUniqueLabels()
       expect(labels).toEqual(['backend', 'frontend', 'ui'])
@@ -278,7 +305,7 @@ describe('KanbanSDK', () => {
 
   describe('addAttachment', () => {
     it('should copy file and add to attachments', async () => {
-      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')
 
       // Create a source file to attach
       const srcFile = path.join(os.tmpdir(), 'test-attach.txt')
@@ -287,15 +314,15 @@ describe('KanbanSDK', () => {
       const updated = await sdk.addAttachment('card', srcFile)
       expect(updated.attachments).toContain('test-attach.txt')
 
-      // Verify file was copied
-      const destPath = path.join(tempDir, 'test-attach.txt')
+      // Verify file was copied to the status subfolder
+      const destPath = path.join(tempDir, 'backlog', 'test-attach.txt')
       expect(fs.existsSync(destPath)).toBe(true)
 
       fs.unlinkSync(srcFile)
     })
 
     it('should not duplicate attachment if already present', async () => {
-      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')
       const srcFile = path.join(os.tmpdir(), 'dup.txt')
       fs.writeFileSync(srcFile, 'data', 'utf-8')
 
@@ -313,7 +340,7 @@ describe('KanbanSDK', () => {
 
   describe('removeAttachment', () => {
     it('should remove attachment from card metadata', async () => {
-      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')
       const srcFile = path.join(os.tmpdir(), 'rm-me.txt')
       fs.writeFileSync(srcFile, 'data', 'utf-8')
 
@@ -331,7 +358,7 @@ describe('KanbanSDK', () => {
 
   describe('listAttachments', () => {
     it('should return attachments for a card', async () => {
-      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }))
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')
       const srcFile = path.join(os.tmpdir(), 'att.txt')
       fs.writeFileSync(srcFile, 'data', 'utf-8')
 
@@ -413,7 +440,7 @@ describe('KanbanSDK', () => {
     })
 
     it('should throw if cards exist in the column', async () => {
-      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card', status: 'backlog' }))
+      writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card', status: 'backlog' }), 'backlog')
       await expect(sdk.removeColumn('backlog')).rejects.toThrow('Cannot remove column')
     })
 

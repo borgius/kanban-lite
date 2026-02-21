@@ -63,6 +63,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Settings persistence ---
   const settingsFilePath = path.join(absoluteFeaturesDir, '.kanban-settings.json')
   let currentSettings: CardDisplaySettings = { ...DEFAULT_SETTINGS }
+  let currentColumns: KanbanColumn[] = [...DEFAULT_COLUMNS]
 
   function loadSettings(): void {
     try {
@@ -71,6 +72,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         currentSettings = { ...DEFAULT_SETTINGS, ...raw }
         currentSettings.showBuildWithAI = false
         currentSettings.markdownEditorMode = false
+        if (Array.isArray(raw.columns)) {
+          currentColumns = raw.columns.map((c: KanbanColumn) => ({ ...c }))
+        }
       }
     } catch {
       currentSettings = { ...DEFAULT_SETTINGS }
@@ -86,6 +90,20 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       fs.writeFileSync(settingsFilePath, JSON.stringify(settings, null, 2), 'utf-8')
     } catch (err) {
       console.error('Failed to save settings:', err)
+    }
+  }
+
+  function saveColumns(columns: KanbanColumn[]): void {
+    currentColumns = columns
+    try {
+      const existing = fs.existsSync(settingsFilePath)
+        ? JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'))
+        : {}
+      existing.columns = columns
+      fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
+      fs.writeFileSync(settingsFilePath, JSON.stringify(existing, null, 2), 'utf-8')
+    } catch (err) {
+      console.error('Failed to save columns:', err)
     }
   }
 
@@ -110,40 +128,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   function loadFeatures(): void {
     fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-    ensureStatusSubfolders(absoluteFeaturesDir)
+    ensureStatusSubfolders(absoluteFeaturesDir, currentColumns.map(c => c.id))
 
-    // Phase 1: Migrate old per-status subfolders
+    // Phase 1: Migrate flat root .md files into their status subfolder
     migrating = true
     try {
-      const oldStatusFolders = ['backlog', 'todo', 'in-progress', 'review']
-      for (const folder of oldStatusFolders) {
-        const subdir = path.join(absoluteFeaturesDir, folder)
-        if (!fs.existsSync(subdir)) continue
-        try {
-          const entries = fs.readdirSync(subdir, { withFileTypes: true })
-          for (const entry of entries) {
-            if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-            const filePath = path.join(subdir, entry.name)
-            try {
-              const content = fs.readFileSync(filePath, 'utf-8')
-              const feature = parseFeatureFile(content, filePath)
-              const status = feature?.status || 'backlog'
-              moveFeatureFile(filePath, absoluteFeaturesDir, status)
-            } catch {
-              // skip
-            }
-          }
-          // Remove empty old folders
-          const remaining = fs.readdirSync(subdir)
-          if (remaining.length === 0) {
-            fs.rmdirSync(subdir)
-          }
-        } catch {
-          // skip
-        }
-      }
-
-      // Move root files with status:done to done/
       const rootEntries = fs.readdirSync(absoluteFeaturesDir, { withFileTypes: true })
       for (const entry of rootEntries) {
         if (!entry.isFile() || !entry.name.endsWith('.md')) continue
@@ -151,8 +140,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         try {
           const content = fs.readFileSync(filePath, 'utf-8')
           const feature = parseFeatureFile(content, filePath)
-          if (feature?.status === 'done') {
-            moveFeatureFile(filePath, absoluteFeaturesDir, 'done')
+          if (feature) {
+            moveFeatureFile(filePath, absoluteFeaturesDir, feature.status, feature.attachments)
           }
         } catch {
           // skip
@@ -162,47 +151,34 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       migrating = false
     }
 
-    // Phase 2: Load features
+    // Phase 2: Load .md files from ALL subdirectories
     const loaded: Feature[] = []
-
-    // Root-level files
-    const rootEntries = fs.readdirSync(absoluteFeaturesDir, { withFileTypes: true })
-    for (const entry of rootEntries) {
-      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-      const filePath = path.join(absoluteFeaturesDir, entry.name)
-      const content = fs.readFileSync(filePath, 'utf-8')
-      const feature = parseFeatureFile(content, filePath)
-      if (feature) loaded.push(feature)
-    }
-
-    // done/ subfolder
-    const doneDir = path.join(absoluteFeaturesDir, 'done')
-    if (fs.existsSync(doneDir)) {
-      const doneEntries = fs.readdirSync(doneDir, { withFileTypes: true })
-      for (const entry of doneEntries) {
-        if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-        const filePath = path.join(doneDir, entry.name)
-        const content = fs.readFileSync(filePath, 'utf-8')
-        const feature = parseFeatureFile(content, filePath)
-        if (feature) loaded.push(feature)
+    const topEntries = fs.readdirSync(absoluteFeaturesDir, { withFileTypes: true })
+    for (const entry of topEntries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const subdir = path.join(absoluteFeaturesDir, entry.name)
+      try {
+        const subEntries = fs.readdirSync(subdir, { withFileTypes: true })
+        for (const sub of subEntries) {
+          if (!sub.isFile() || !sub.name.endsWith('.md')) continue
+          const filePath = path.join(subdir, sub.name)
+          const content = fs.readFileSync(filePath, 'utf-8')
+          const feature = parseFeatureFile(content, filePath)
+          if (feature) loaded.push(feature)
+        }
+      } catch {
+        // skip unreadable directories
       }
     }
 
-    // Phase 3: Reconcile done ↔ non-done mismatches
+    // Phase 3: Reconcile status ↔ folder mismatches
     migrating = true
     try {
       for (const feature of loaded) {
         const pathStatus = getStatusFromPath(feature.filePath, absoluteFeaturesDir)
-        const inDoneFolder = pathStatus === 'done'
-        const isDoneStatus = feature.status === 'done'
-
-        if (isDoneStatus && !inDoneFolder) {
+        if (pathStatus !== null && pathStatus !== feature.status) {
           try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, 'done')
-          } catch { /* retry next load */ }
-        } else if (!isDoneStatus && inDoneFolder) {
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status)
+            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
           } catch { /* retry next load */ }
         }
       }
@@ -240,7 +216,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     return {
       type: 'init',
       features,
-      columns: DEFAULT_COLUMNS,
+      columns: currentColumns,
       settings: currentSettings
     }
   }
@@ -265,7 +241,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'createFeature': {
         const data = msg.data as CreateFeatureData
         fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-        ensureStatusSubfolders(absoluteFeaturesDir)
+        ensureStatusSubfolders(absoluteFeaturesDir, currentColumns.map(c => c.id))
 
         const title = getTitleFromContent(data.content)
         const filename = generateFeatureFilename(title)
@@ -328,11 +304,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const content = serializeFeature(feature)
         fs.writeFileSync(feature.filePath, content, 'utf-8')
 
-        const crossingDoneBoundary = statusChanged && (oldStatus === 'done' || newStatus === 'done')
-        if (crossingDoneBoundary) {
+        if (statusChanged) {
           migrating = true
           try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, newStatus)
+            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, newStatus, feature.attachments)
           } catch {
             // retry next load
           } finally {
@@ -375,11 +350,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const content = serializeFeature(feature)
         fs.writeFileSync(feature.filePath, content, 'utf-8')
 
-        const crossingDoneBoundary = oldStatus !== feature.status && (oldStatus === 'done' || feature.status === 'done')
-        if (crossingDoneBoundary) {
+        if (oldStatus !== feature.status) {
           migrating = true
           try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status)
+            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
           } catch {
             // retry next load
           } finally {
@@ -446,11 +420,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         lastWrittenContent = fileContent
         fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
 
-        const crossingDoneBoundary = oldStatus !== feature.status && (oldStatus === 'done' || feature.status === 'done')
-        if (crossingDoneBoundary) {
+        if (oldStatus !== feature.status) {
           migrating = true
           try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status)
+            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
           } catch {
             // retry next load
           } finally {
@@ -476,6 +449,44 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'saveSettings': {
         const newSettings = msg.settings as CardDisplaySettings
         saveSettingsToFile(newSettings)
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'addColumn': {
+        const col = msg.column as { name: string; color: string }
+        const id = col.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        let uniqueId = id
+        let counter = 1
+        while (currentColumns.some(c => c.id === uniqueId)) {
+          uniqueId = `${id}-${counter++}`
+        }
+        currentColumns.push({ id: uniqueId, name: col.name, color: col.color })
+        saveColumns(currentColumns)
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'editColumn': {
+        const columnId = msg.columnId as string
+        const updates = msg.updates as { name: string; color: string }
+        if (!currentColumns.some(c => c.id === columnId)) break
+        currentColumns = currentColumns.map(c =>
+          c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
+        )
+        saveColumns(currentColumns)
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'removeColumn': {
+        const columnId = msg.columnId as string
+        const hasFeatures = features.some(f => f.status === columnId)
+        if (hasFeatures) break
+        const updated = currentColumns.filter(c => c.id !== columnId)
+        if (updated.length === 0) break
+        currentColumns = updated
+        saveColumns(currentColumns)
         broadcast(buildInitMessage())
         break
       }

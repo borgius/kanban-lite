@@ -1,20 +1,9 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
-import { Markdown } from 'tiptap-markdown'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip } from 'lucide-react'
 import type { FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { useStore } from '../store'
-
-interface MarkdownStorage {
-  markdown: { getMarkdown: () => string }
-}
-
-function getMarkdown(editor: { storage: unknown }): string {
-  return (editor.storage as MarkdownStorage).markdown.getMarkdown()
-}
+import { MarkdownEditor } from './MarkdownEditor'
 
 type AIAgent = 'claude' | 'codex' | 'opencode'
 type PermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
@@ -375,39 +364,17 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 export function FeatureEditor({ featureId, content, frontmatter, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
+  const [currentContent, setCurrentContent] = useState(content)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isInitialLoad = useRef(true)
   const currentFrontmatterRef = useRef(currentFrontmatter)
+  const currentContentRef = useRef(currentContent)
   currentFrontmatterRef.current = currentFrontmatter
-
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: 'Start writing...' }),
-      Markdown.configure({ html: false, transformPastedText: true })
-    ],
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[200px] p-4'
-      }
-    },
-    onUpdate: ({ editor: ed }) => {
-      if (isInitialLoad.current) return
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        const markdown = getMarkdown(ed)
-        onSave(markdown, currentFrontmatterRef.current)
-      }, 800)
-    }
-  })
+  currentContentRef.current = currentContent
 
   const save = useCallback(() => {
-    if (!editor) return
-    const markdown = getMarkdown(editor)
-    onSave(markdown, currentFrontmatter)
-  }, [editor, currentFrontmatter, onSave])
+    onSave(currentContentRef.current, currentFrontmatterRef.current)
+  }, [onSave])
 
   // Clean up debounce on unmount
   useEffect(() => {
@@ -416,21 +383,24 @@ export function FeatureEditor({ featureId, content, frontmatter, contentVersion,
     }
   }, [])
 
-  // Set content when a new feature is opened (keyed by featureId, not content)
+  // Set content when a new feature is opened (keyed by featureId)
   useEffect(() => {
-    if (editor && content) {
-      isInitialLoad.current = true
-      editor.commands.setContent(content)
-      // Allow a tick for the onUpdate from setContent to fire, then re-enable
-      requestAnimationFrame(() => { isInitialLoad.current = false })
-    }
+    setCurrentContent(content)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, featureId, contentVersion])
+  }, [featureId, contentVersion])
 
   // Reset frontmatter when prop changes
   useEffect(() => {
     setCurrentFrontmatter(frontmatter)
   }, [frontmatter])
+
+  const handleContentChange = useCallback((value: string) => {
+    setCurrentContent(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      onSave(value, currentFrontmatterRef.current)
+    }, 800)
+  }, [onSave])
 
   const handleFrontmatterUpdate = useCallback((updates: Partial<FeatureFrontmatter>) => {
     setCurrentFrontmatter(prev => {
@@ -438,13 +408,11 @@ export function FeatureEditor({ featureId, content, frontmatter, contentVersion,
       // Schedule a save with the updated frontmatter
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        if (!editor) return
-        const markdown = getMarkdown(editor)
-        onSave(markdown, next)
+        onSave(currentContentRef.current, next)
       }, 800)
       return next
     })
-  }, [editor, onSave])
+  }, [onSave])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -644,9 +612,12 @@ export function FeatureEditor({ featureId, content, frontmatter, contentVersion,
       </div>
 
       {/* Editor */}
-      <div className="flex-1 overflow-auto">
-        <EditorContent editor={editor} className="h-full" />
-      </div>
+      <MarkdownEditor
+        value={currentContent}
+        onChange={handleContentChange}
+        placeholder="Start writing..."
+        className="flex-1 min-h-0"
+      />
     </div>
   )
 }

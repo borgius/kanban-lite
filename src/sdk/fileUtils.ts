@@ -2,25 +2,21 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 
 export function getFeatureFilePath(featuresDir: string, status: string, filename: string): string {
-  if (status === 'done') {
-    return path.join(featuresDir, 'done', `${filename}.md`)
-  }
-  return path.join(featuresDir, `${filename}.md`)
+  return path.join(featuresDir, status, `${filename}.md`)
 }
 
 export async function ensureDirectories(featuresDir: string): Promise<void> {
-  await fs.mkdir(path.join(featuresDir, 'done'), { recursive: true })
+  await fs.mkdir(featuresDir, { recursive: true })
 }
 
 export async function moveFeatureFile(
   currentPath: string,
   featuresDir: string,
-  newStatus: string
+  newStatus: string,
+  attachments?: string[]
 ): Promise<string> {
   const filename = path.basename(currentPath)
-  const targetDir = newStatus === 'done'
-    ? path.join(featuresDir, 'done')
-    : featuresDir
+  const targetDir = path.join(featuresDir, newStatus)
   let targetPath = path.join(targetDir, filename)
 
   if (currentPath === targetPath) return currentPath
@@ -36,14 +32,28 @@ export async function moveFeatureFile(
   await fs.mkdir(targetDir, { recursive: true })
   await fs.rename(currentPath, targetPath)
 
+  if (attachments && attachments.length > 0) {
+    const sourceDir = path.dirname(currentPath)
+    for (const attachment of attachments) {
+      const srcAttach = path.join(sourceDir, attachment)
+      const destAttach = path.join(targetDir, attachment)
+      try {
+        await fs.access(srcAttach)
+        await fs.rename(srcAttach, destAttach)
+      } catch {
+        // Best effort -- skip failed attachment moves
+      }
+    }
+  }
+
   return targetPath
 }
 
 export function getStatusFromPath(filePath: string, featuresDir: string): string | null {
   const relative = path.relative(featuresDir, filePath)
   const parts = relative.split(path.sep)
-  if (parts.length === 2 && parts[0] === 'done') {
-    return 'done'
+  if (parts.length === 2) {
+    return parts[0]
   }
   return null
 }

@@ -217,13 +217,13 @@ describe('Standalone Server Integration', () => {
 
   describe('ready message and init response', () => {
     it('should return features and columns on ready', async () => {
-      // Pre-populate a feature file
+      // Pre-populate a feature file in its status subfolder
       writeFeatureFile(tempDir, 'test-feature.md', makeFeatureContent({
         id: 'test-feature',
         status: 'backlog',
         priority: 'high',
         title: 'Test Feature'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -280,11 +280,11 @@ describe('Standalone Server Integration', () => {
       writeFeatureFile(tempDir, 'feature-b.md', makeFeatureContent({
         id: 'feature-b',
         order: 'b0'
-      }))
+      }), 'backlog')
       writeFeatureFile(tempDir, 'feature-a.md', makeFeatureContent({
         id: 'feature-a',
         order: 'a0'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -329,18 +329,19 @@ describe('Standalone Server Integration', () => {
       expect(features[0].content).toBe('# My New Feature\n\nSome description')
       expect(features[0].labels).toEqual(['frontend'])
 
-      // Verify file exists on disk
-      const files = fs.readdirSync(tempDir).filter(f => f.endsWith('.md'))
+      // Verify file exists on disk in todo/ subfolder
+      const todoDir = path.join(tempDir, 'todo')
+      const files = fs.readdirSync(todoDir).filter(f => f.endsWith('.md'))
       expect(files.length).toBe(1)
 
-      const fileContent = fs.readFileSync(path.join(tempDir, files[0]), 'utf-8')
+      const fileContent = fs.readFileSync(path.join(todoDir, files[0]), 'utf-8')
       expect(fileContent).toContain('status: "todo"')
       expect(fileContent).toContain('priority: "high"')
       expect(fileContent).toContain('# My New Feature')
       expect(fileContent).toContain('labels: ["frontend"]')
     })
 
-    it('should create done feature in done/ subfolder', async () => {
+    it('should create feature in its status subfolder', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
@@ -374,7 +375,7 @@ describe('Standalone Server Integration', () => {
         id: 'existing',
         status: 'backlog',
         order: 'a0'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -430,12 +431,12 @@ describe('Standalone Server Integration', () => {
   // ── Move Feature ──
 
   describe('moveFeature', () => {
-    it('should change status and update file on disk', async () => {
+    it('should change status and move file to new status folder', async () => {
       writeFeatureFile(tempDir, 'move-me.md', makeFeatureContent({
         id: 'move-me',
         status: 'backlog',
         title: 'Move Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -453,8 +454,9 @@ describe('Standalone Server Integration', () => {
       const features = response.features as Array<Record<string, unknown>>
       expect(features[0].status).toBe('in-progress')
 
-      // Verify file was updated
-      const fileContent = fs.readFileSync(path.join(tempDir, 'move-me.md'), 'utf-8')
+      // Verify file was moved to in-progress/ subfolder
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-me.md'))).toBe(false)
+      const fileContent = fs.readFileSync(path.join(tempDir, 'in-progress', 'move-me.md'), 'utf-8')
       expect(fileContent).toContain('status: "in-progress"')
     })
 
@@ -463,7 +465,7 @@ describe('Standalone Server Integration', () => {
         id: 'finish-me',
         status: 'review',
         title: 'Finish Me'
-      }))
+      }), 'review')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -483,11 +485,11 @@ describe('Standalone Server Integration', () => {
       expect(features[0].completedAt).toBeTruthy()
 
       // File should now be in done/ subfolder
-      expect(fs.existsSync(path.join(tempDir, 'finish-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'review', 'finish-me.md'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'done', 'finish-me.md'))).toBe(true)
     })
 
-    it('should move file out of done/ when status changes from done', async () => {
+    it('should move file from done/ to target status folder', async () => {
       writeFeatureFile(tempDir, 'reopen-me.md', makeFeatureContent({
         id: 'reopen-me',
         status: 'done',
@@ -511,9 +513,9 @@ describe('Standalone Server Integration', () => {
       expect(features[0].status).toBe('todo')
       expect(features[0].completedAt).toBeNull()
 
-      // File should be back in root
+      // File should be in todo/ subfolder
       expect(fs.existsSync(path.join(tempDir, 'done', 'reopen-me.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'reopen-me.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'todo', 'reopen-me.md'))).toBe(true)
     })
 
     it('should compute correct fractional order between neighbors', async () => {
@@ -521,17 +523,17 @@ describe('Standalone Server Integration', () => {
         id: 'feat-a',
         status: 'todo',
         order: 'a0'
-      }))
+      }), 'todo')
       writeFeatureFile(tempDir, 'feat-c.md', makeFeatureContent({
         id: 'feat-c',
         status: 'todo',
         order: 'a2'
-      }))
+      }), 'todo')
       writeFeatureFile(tempDir, 'feat-move.md', makeFeatureContent({
         id: 'feat-move',
         status: 'backlog',
         order: 'a0'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -569,7 +571,7 @@ describe('Standalone Server Integration', () => {
       writeFeatureFile(tempDir, 'delete-me.md', makeFeatureContent({
         id: 'delete-me',
         title: 'Delete Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -586,12 +588,12 @@ describe('Standalone Server Integration', () => {
       expect(features.length).toBe(0)
 
       // File should be removed
-      expect(fs.existsSync(path.join(tempDir, 'delete-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'delete-me.md'))).toBe(false)
     })
 
     it('should only delete the targeted feature', async () => {
-      writeFeatureFile(tempDir, 'keep-me.md', makeFeatureContent({ id: 'keep-me' }))
-      writeFeatureFile(tempDir, 'remove-me.md', makeFeatureContent({ id: 'remove-me' }))
+      writeFeatureFile(tempDir, 'keep-me.md', makeFeatureContent({ id: 'keep-me' }), 'backlog')
+      writeFeatureFile(tempDir, 'remove-me.md', makeFeatureContent({ id: 'remove-me' }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -607,7 +609,7 @@ describe('Standalone Server Integration', () => {
       const features = response.features as Array<Record<string, unknown>>
       expect(features.length).toBe(1)
       expect(features[0].id).toBe('keep-me')
-      expect(fs.existsSync(path.join(tempDir, 'keep-me.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'keep-me.md'))).toBe(true)
     })
 
     it('should handle deleting non-existent feature gracefully', async () => {
@@ -634,7 +636,7 @@ describe('Standalone Server Integration', () => {
         id: 'update-me',
         priority: 'low',
         title: 'Update Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -658,7 +660,7 @@ describe('Standalone Server Integration', () => {
       expect(features[0].labels).toEqual(['urgent'])
 
       // Verify persisted on disk
-      const fileContent = fs.readFileSync(path.join(tempDir, 'update-me.md'), 'utf-8')
+      const fileContent = fs.readFileSync(path.join(tempDir, 'backlog', 'update-me.md'), 'utf-8')
       expect(fileContent).toContain('priority: "critical"')
       expect(fileContent).toContain('assignee: "alice"')
       expect(fileContent).toContain('labels: ["urgent"]')
@@ -668,7 +670,7 @@ describe('Standalone Server Integration', () => {
       writeFeatureFile(tempDir, 'complete-me.md', makeFeatureContent({
         id: 'complete-me',
         status: 'review'
-      }))
+      }), 'review')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -698,7 +700,7 @@ describe('Standalone Server Integration', () => {
         title: 'Open Me',
         assignee: 'bob',
         labels: ['backend', 'api']
-      }))
+      }), 'in-progress')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -733,7 +735,7 @@ describe('Standalone Server Integration', () => {
         status: 'backlog',
         priority: 'low',
         title: 'Save Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -774,8 +776,9 @@ describe('Standalone Server Integration', () => {
       expect(saved.assignee).toBe('charlie')
       expect(saved.labels).toEqual(['updated'])
 
-      // Verify on disk
-      const fileContent = fs.readFileSync(path.join(tempDir, 'save-me.md'), 'utf-8')
+      // Verify on disk — file moved from backlog/ to in-progress/
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'save-me.md'))).toBe(false)
+      const fileContent = fs.readFileSync(path.join(tempDir, 'in-progress', 'save-me.md'), 'utf-8')
       expect(fileContent).toContain('status: "in-progress"')
       expect(fileContent).toContain('# Save Me Updated')
       expect(fileContent).toContain('assignee: "charlie"')
@@ -786,7 +789,7 @@ describe('Standalone Server Integration', () => {
         id: 'save-done',
         status: 'review',
         title: 'Save Done'
-      }))
+      }), 'review')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -816,7 +819,7 @@ describe('Standalone Server Integration', () => {
         }
       }, 'init')
 
-      expect(fs.existsSync(path.join(tempDir, 'save-done.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'review', 'save-done.md'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'done', 'save-done.md'))).toBe(true)
     })
   })
@@ -906,7 +909,7 @@ describe('Standalone Server Integration', () => {
         id: 'external-feature',
         status: 'todo',
         title: 'External Feature'
-      }))
+      }), 'todo')
 
       const response = await updatePromise
       const features = response.features as Array<Record<string, unknown>>
@@ -921,7 +924,7 @@ describe('Standalone Server Integration', () => {
         status: 'backlog',
         priority: 'low',
         title: 'Modify Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -952,7 +955,7 @@ describe('Standalone Server Integration', () => {
       const filePath = writeFeatureFile(tempDir, 'vanish-me.md', makeFeatureContent({
         id: 'vanish-me',
         title: 'Vanish Me'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -981,7 +984,7 @@ describe('Standalone Server Integration', () => {
       writeFeatureFile(tempDir, 'broadcast-test.md', makeFeatureContent({
         id: 'broadcast-test',
         title: 'Broadcast Test'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -1028,12 +1031,12 @@ describe('Standalone Server Integration', () => {
         id: 'legacy-1',
         status: 'backlog',
         order: '0'
-      }))
+      }), 'backlog')
       writeFeatureFile(tempDir, 'legacy-2.md', makeFeatureContent({
         id: 'legacy-2',
         status: 'backlog',
         order: '1'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -1048,8 +1051,8 @@ describe('Standalone Server Integration', () => {
       }
 
       // Files on disk should be updated
-      const file1 = fs.readFileSync(path.join(tempDir, 'legacy-1.md'), 'utf-8')
-      const file2 = fs.readFileSync(path.join(tempDir, 'legacy-2.md'), 'utf-8')
+      const file1 = fs.readFileSync(path.join(tempDir, 'backlog', 'legacy-1.md'), 'utf-8')
+      const file2 = fs.readFileSync(path.join(tempDir, 'backlog', 'legacy-2.md'), 'utf-8')
       const orderMatch1 = file1.match(/order: "(.+)"/)
       const orderMatch2 = file2.match(/order: "(.+)"/)
       expect(orderMatch1).toBeTruthy()
@@ -1063,9 +1066,9 @@ describe('Standalone Server Integration', () => {
 
   // ── Migration: reconcile done/non-done ──
 
-  describe('done/non-done reconciliation', () => {
-    it('should move root file with status:done to done/ subfolder', async () => {
-      // Place a done-status file in root (mismatched)
+  describe('status/folder reconciliation', () => {
+    it('should move root file with status:done to done/ subfolder (migration)', async () => {
+      // Place a done-status file in root (mismatched — legacy flat layout)
       writeFeatureFile(tempDir, 'misplaced-done.md', makeFeatureContent({
         id: 'misplaced-done',
         status: 'done',
@@ -1078,12 +1081,12 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // After load, file should have been moved to done/
+      // After load, file should have been migrated to done/
       expect(fs.existsSync(path.join(tempDir, 'misplaced-done.md'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'done', 'misplaced-done.md'))).toBe(true)
     })
 
-    it('should move done/ file with non-done status to root', async () => {
+    it('should move mismatched file to correct status subfolder', async () => {
       // Place a backlog-status file in done/ (mismatched)
       writeFeatureFile(tempDir, 'misplaced-active.md', makeFeatureContent({
         id: 'misplaced-active',
@@ -1097,9 +1100,9 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // After load, file should have been moved to root
+      // After load, file should have been moved to backlog/
       expect(fs.existsSync(path.join(tempDir, 'done', 'misplaced-active.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'misplaced-active.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'misplaced-active.md'))).toBe(true)
     })
   })
 
@@ -1107,11 +1110,11 @@ describe('Standalone Server Integration', () => {
 
   describe('parsing edge cases', () => {
     it('should skip non-markdown files', async () => {
-      writeFeatureFile(tempDir, 'not-a-feature.txt', 'just some text')
+      writeFeatureFile(tempDir, 'not-a-feature.txt', 'just some text', 'backlog')
       writeFeatureFile(tempDir, 'real-feature.md', makeFeatureContent({
         id: 'real-feature',
         title: 'Real Feature'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -1124,11 +1127,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should skip files without valid frontmatter', async () => {
-      writeFeatureFile(tempDir, 'no-frontmatter.md', '# Just a heading\n\nNo frontmatter here.')
+      writeFeatureFile(tempDir, 'no-frontmatter.md', '# Just a heading\n\nNo frontmatter here.', 'backlog')
       writeFeatureFile(tempDir, 'valid.md', makeFeatureContent({
         id: 'valid',
         title: 'Valid Feature'
-      }))
+      }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -1146,7 +1149,7 @@ describe('Standalone Server Integration', () => {
         title: 'CRLF Feature'
       }).replace(/\n/g, '\r\n')
 
-      writeFeatureFile(tempDir, 'crlf-feature.md', content)
+      writeFeatureFile(tempDir, 'crlf-feature.md', content, 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)

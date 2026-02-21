@@ -77,7 +77,7 @@
       "properties": {
         "kanban-markdown.featuresDirectory": {
           "type": "string",
-          "default": ".devtool/features",
+          "default": ".kanban",
           "description": "Directory path (relative to workspace root) where feature markdown files are stored."
         },
         "kanban-markdown.defaultPriority": {

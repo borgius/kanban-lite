@@ -1,7 +1,7 @@
 import { startServer } from './server'
 
 function parseArgs(args: string[]): { dir: string; port: number; noBrowser: boolean } {
-  let dir = '.devtool/features'
+  let dir = '.kanban'
   let port = 3000
   let noBrowser = false
 
@@ -24,7 +24,7 @@ function parseArgs(args: string[]): { dir: string; port: number; noBrowser: bool
 Usage: kanban-md [options]
 
 Options:
-  -d, --dir <path>    Features directory (default: .devtool/features)
+  -d, --dir <path>    Features directory (default: .kanban)
   -p, --port <number> Port to listen on (default: 3000)
   --no-browser        Don't open browser automatically
   -h, --help          Show this help message

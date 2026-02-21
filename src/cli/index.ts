@@ -553,7 +553,7 @@ ${bold('Other:')}
   init                        Initialize features directory
 
 ${bold('Global Options:')}
-  --dir <path>                Features directory (default: .devtool/features)
+  --dir <path>                Features directory (default: .kanban)
   --json                      Output as JSON
 
 ${bold('List Filters:')}

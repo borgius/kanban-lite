@@ -310,7 +310,7 @@ export class KanbanPanel {
       return null
     }
     const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const featuresDirectory = config.get<string>('featuresDirectory') || '.devtool/features'
+    const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
     return path.join(workspaceFolders[0].uri.fsPath, featuresDirectory)
   }
 

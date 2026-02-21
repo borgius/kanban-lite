@@ -180,7 +180,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     // Only track .md files in the features directory (including status subfolders)
     const uri = editor.document.uri
     const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const featuresDirectory = config.get<string>('featuresDirectory') || '.devtool/features'
+    const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     const fullFeaturesDir = workspaceRoot ? path.join(workspaceRoot, featuresDirectory) : featuresDirectory
     if (uri.fsPath.endsWith('.md') && uri.fsPath.startsWith(fullFeaturesDir + path.sep)) {

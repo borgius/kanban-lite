@@ -5,6 +5,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { FeatureStatus, Priority } from '../shared/types'
+import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
+import { loadWebhooks, createWebhook, deleteWebhook } from '../standalone/webhooks'
 
 // --- Resolve features directory ---
 
@@ -54,7 +56,7 @@ async function main(): Promise<void> {
   const sdk = new KanbanSDK(featuresDir)
 
   const server = new McpServer({
-    name: 'kanban-markdown',
+    name: 'kanban-lite',
     version: '1.0.0',
   })
 
@@ -481,6 +483,138 @@ async function main(): Promise<void> {
         content: [{
           type: 'text' as const,
           text: JSON.stringify(columns, null, 2),
+        }],
+      }
+    }
+  )
+
+  // --- Settings Tools ---
+
+  const workspaceRoot = path.dirname(featuresDir)
+
+  server.tool(
+    'get_settings',
+    'Get the current kanban board display settings.',
+    {},
+    async () => {
+      const config = readConfig(workspaceRoot)
+      const settings = configToSettings(config)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(settings, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'update_settings',
+    'Update kanban board display settings. Only specified fields are changed.',
+    {
+      showPriorityBadges: z.boolean().optional().describe('Show priority badges on cards'),
+      showAssignee: z.boolean().optional().describe('Show assignee on cards'),
+      showDueDate: z.boolean().optional().describe('Show due date on cards'),
+      showLabels: z.boolean().optional().describe('Show labels on cards'),
+      showFileName: z.boolean().optional().describe('Show file name on cards'),
+      compactMode: z.boolean().optional().describe('Enable compact card display'),
+      defaultPriority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Default priority for new cards'),
+      defaultStatus: z.enum(['backlog', 'todo', 'in-progress', 'review', 'done']).optional().describe('Default status for new cards'),
+    },
+    async (updates) => {
+      const config = readConfig(workspaceRoot)
+      const settings = configToSettings(config)
+      const merged = { ...settings }
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          (merged as unknown as Record<string, unknown>)[key] = value
+        }
+      }
+      writeConfig(workspaceRoot, settingsToConfig(config, merged))
+      const updated = configToSettings(readConfig(workspaceRoot))
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(updated, null, 2),
+        }],
+      }
+    }
+  )
+
+  // --- Webhook Tools ---
+
+  server.tool(
+    'list_webhooks',
+    'List all registered webhooks.',
+    {},
+    async () => {
+      const webhooks = loadWebhooks(workspaceRoot)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(webhooks, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'add_webhook',
+    'Register a new webhook to receive event notifications.',
+    {
+      url: z.string().describe('Webhook target URL (HTTP/HTTPS)'),
+      events: z.array(z.string()).optional().describe('Events to subscribe to (e.g. ["task.created", "task.updated"]). Default: ["*"] for all.'),
+      secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
+    },
+    async ({ url, events, secret }) => {
+      const webhook = createWebhook(workspaceRoot, {
+        url,
+        events: events || ['*'],
+        secret,
+      })
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(webhook, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'remove_webhook',
+    'Remove a registered webhook by ID.',
+    {
+      webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
+    },
+    async ({ webhookId }) => {
+      const removed = deleteWebhook(workspaceRoot, webhookId)
+      if (!removed) {
+        return {
+          content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],
+          isError: true,
+        }
+      }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Deleted webhook: ${webhookId}`,
+        }],
+      }
+    }
+  )
+
+  // --- Workspace Info Tool ---
+
+  server.tool(
+    'get_workspace_info',
+    'Get the workspace root path and features directory.',
+    {},
+    async () => {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ workspaceRoot, featuresDir }, null, 2),
         }],
       }
     }

@@ -8,6 +8,7 @@ export interface KanbanConfig {
   defaultStatus: FeatureStatus
   columns: KanbanColumn[]
   aiAgent: string
+  nextCardId: number
   showPriorityBadges: boolean
   showAssignee: boolean
   showDueDate: boolean
@@ -30,6 +31,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
     { id: 'done', name: 'Done', color: '#22c55e' }
   ],
   aiAgent: 'claude',
+  nextCardId: 1,
   showPriorityBadges: true,
   showAssignee: true,
   showDueDate: true,
@@ -59,6 +61,24 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
 export function writeConfig(workspaceRoot: string, config: KanbanConfig): void {
   const filePath = configPath(workspaceRoot)
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+}
+
+/** Read and increment the nextCardId counter, returning the allocated ID */
+export function allocateCardId(workspaceRoot: string): number {
+  const config = readConfig(workspaceRoot)
+  const id = config.nextCardId
+  writeConfig(workspaceRoot, { ...config, nextCardId: id + 1 })
+  return id
+}
+
+/** Ensure nextCardId is ahead of all existing numeric IDs */
+export function syncCardIdCounter(workspaceRoot: string, existingIds: number[]): void {
+  if (existingIds.length === 0) return
+  const maxId = Math.max(...existingIds)
+  const config = readConfig(workspaceRoot)
+  if (config.nextCardId <= maxId) {
+    writeConfig(workspaceRoot, { ...config, nextCardId: maxId + 1 })
+  }
 }
 
 /** Extract CardDisplaySettings from a KanbanConfig */

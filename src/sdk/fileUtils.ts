@@ -49,6 +49,14 @@ export async function moveFeatureFile(
   return targetPath
 }
 
+export async function renameFeatureFile(currentPath: string, newFilename: string): Promise<string> {
+  const dir = path.dirname(currentPath)
+  const newPath = path.join(dir, `${newFilename}.md`)
+  if (currentPath === newPath) return currentPath
+  await fs.rename(currentPath, newPath)
+  return newPath
+}
+
 export function getStatusFromPath(filePath: string, featuresDir: string): string | null {
   const relative = path.relative(featuresDir, filePath)
   const parts = relative.split(path.sep)

@@ -2,6 +2,9 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
+import { loadWebhooks, createWebhook, deleteWebhook } from '../standalone/webhooks'
+import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
+import type { CardDisplaySettings } from '../shared/types'
 
 const VALID_STATUSES: FeatureStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done']
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
@@ -61,7 +64,7 @@ async function resolveFeaturesDir(flags: Record<string, string | true>): Promise
     return path.resolve(flags.dir)
   }
   const root = await findWorkspaceRoot(process.cwd())
-  return path.join(root, '.devtool', 'features')
+  return path.join(root, '.kanban')
 }
 
 // --- Colors ---
@@ -176,7 +179,7 @@ async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Pr
 async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
-    console.error(red('Error: card ID required. Usage: kanban show <id>'))
+    console.error(red('Error: card ID required. Usage: kl show <id>'))
     process.exit(1)
   }
 
@@ -211,7 +214,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Record<strin
 async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Promise<void> {
   const title = typeof flags.title === 'string' ? flags.title : ''
   if (!title) {
-    console.error(red('Error: --title is required. Usage: kanban add --title "My card"'))
+    console.error(red('Error: --title is required. Usage: kl add --title "My card"'))
     process.exit(1)
   }
 
@@ -245,12 +248,12 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
   }
 }
 
-async function cmdMove(sdk: KanbanSDK, positional: string[]): Promise<void> {
+async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
   const newStatus = positional[1] as FeatureStatus
 
   if (!cardId || !newStatus) {
-    console.error(red('Usage: kanban move <id> <status>'))
+    console.error(red('Usage: kl move <id> <status> [--position <n>]'))
     process.exit(1)
   }
   if (!VALID_STATUSES.includes(newStatus)) {
@@ -276,14 +279,15 @@ async function cmdMove(sdk: KanbanSDK, positional: string[]): Promise<void> {
     }
   }
 
-  const updated = await sdk.moveCard(resolvedId, newStatus)
+  const position = typeof flags.position === 'string' ? parseInt(flags.position, 10) : undefined
+  const updated = await sdk.moveCard(resolvedId, newStatus, position)
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
 async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
-    console.error(red('Usage: kanban edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...]'))
+    console.error(red('Usage: kl edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...]'))
     process.exit(1)
   }
 
@@ -336,7 +340,7 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<strin
 async function cmdDelete(sdk: KanbanSDK, positional: string[]): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
-    console.error(red('Usage: kanban delete <id>'))
+    console.error(red('Usage: kl delete <id>'))
     process.exit(1)
   }
 
@@ -390,7 +394,7 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
   switch (subcommand) {
     case 'list': {
       if (!cardId) {
-        console.error(red('Usage: kanban attach list <card-id>'))
+        console.error(red('Usage: kl attach list <card-id>'))
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId)
@@ -406,12 +410,12 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
     }
     case 'add': {
       if (!cardId) {
-        console.error(red('Usage: kanban attach add <card-id> <file-path>'))
+        console.error(red('Usage: kl attach add <card-id> <file-path>'))
         process.exit(1)
       }
       const filePath = positional[2]
       if (!filePath) {
-        console.error(red('Usage: kanban attach add <card-id> <file-path>'))
+        console.error(red('Usage: kl attach add <card-id> <file-path>'))
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId)
@@ -422,12 +426,12 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
     case 'remove':
     case 'rm': {
       if (!cardId) {
-        console.error(red('Usage: kanban attach remove <card-id> <filename>'))
+        console.error(red('Usage: kl attach remove <card-id> <filename>'))
         process.exit(1)
       }
       const filename = positional[2]
       if (!filename) {
-        console.error(red('Usage: kanban attach remove <card-id> <filename>'))
+        console.error(red('Usage: kl attach remove <card-id> <filename>'))
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId)
@@ -478,7 +482,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
       const name = typeof flags.name === 'string' ? flags.name : ''
       const color = typeof flags.color === 'string' ? flags.color : '#6b7280'
       if (!id || !name) {
-        console.error(red('Usage: kanban columns add --id <id> --name <name> [--color <hex>]'))
+        console.error(red('Usage: kl columns add --id <id> --name <name> [--color <hex>]'))
         process.exit(1)
       }
       const columns = await sdk.addColumn({ id, name, color })
@@ -489,7 +493,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
     case 'update': {
       const columnId = positional[1]
       if (!columnId) {
-        console.error(red('Usage: kanban columns update <id> [--name <name>] [--color <hex>]'))
+        console.error(red('Usage: kl columns update <id> [--name <name>] [--color <hex>]'))
         process.exit(1)
       }
       const updates: Record<string, string> = {}
@@ -508,7 +512,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
     case 'rm': {
       const columnId = positional[1]
       if (!columnId) {
-        console.error(red('Usage: kanban columns remove <id>'))
+        console.error(red('Usage: kl columns remove <id>'))
         process.exit(1)
       }
       const columns = await sdk.removeColumn(columnId)
@@ -523,18 +527,181 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
   }
 }
 
+// --- Webhook Commands ---
+
+async function cmdWebhooks(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+  const subcommand = positional[0] || 'list'
+
+  switch (subcommand) {
+    case 'list': {
+      const webhooks = loadWebhooks(workspaceRoot)
+      if (flags.json) {
+        console.log(JSON.stringify(webhooks, null, 2))
+      } else if (webhooks.length === 0) {
+        console.log(dim('  No webhooks registered.'))
+      } else {
+        console.log(`  ${dim('ID'.padEnd(22))}  ${dim('URL'.padEnd(40))}  ${dim('EVENTS'.padEnd(20))}  ${dim('ACTIVE')}`)
+        console.log(dim('  ' + '-'.repeat(90)))
+        for (const w of webhooks) {
+          const events = w.events.join(', ')
+          const active = w.active ? green('yes') : red('no')
+          console.log(`  ${bold(w.id.padEnd(22))}  ${w.url.padEnd(40)}  ${events.padEnd(20)}  ${active}`)
+        }
+      }
+      break
+    }
+    case 'add': {
+      const url = typeof flags.url === 'string' ? flags.url : ''
+      if (!url) {
+        console.error(red('Usage: kl webhooks add --url <url> [--events <event1,event2>] [--secret <key>]'))
+        process.exit(1)
+      }
+      const events = typeof flags.events === 'string' ? flags.events.split(',').map(e => e.trim()) : ['*']
+      const secret = typeof flags.secret === 'string' ? flags.secret : undefined
+      const webhook = createWebhook(workspaceRoot, { url, events, secret })
+      if (flags.json) {
+        console.log(JSON.stringify(webhook, null, 2))
+      } else {
+        console.log(green(`Created webhook: ${webhook.id}`))
+        console.log(`  URL:    ${webhook.url}`)
+        console.log(`  Events: ${webhook.events.join(', ')}`)
+        if (webhook.secret) console.log(`  Secret: ${dim('(configured)')}`)
+      }
+      break
+    }
+    case 'remove':
+    case 'rm': {
+      const webhookId = positional[1]
+      if (!webhookId) {
+        console.error(red('Usage: kl webhooks remove <id>'))
+        process.exit(1)
+      }
+      const removed = deleteWebhook(workspaceRoot, webhookId)
+      if (removed) {
+        console.log(green(`Removed webhook: ${webhookId}`))
+      } else {
+        console.error(red(`Webhook not found: ${webhookId}`))
+        process.exit(1)
+      }
+      break
+    }
+    default:
+      console.error(red(`Unknown webhooks subcommand: ${subcommand}`))
+      console.error('Available: list, add, remove')
+      process.exit(1)
+  }
+}
+
+// --- Settings Commands ---
+
+const SETTINGS_KEYS = [
+  'showPriorityBadges', 'showAssignee', 'showDueDate', 'showLabels',
+  'showFileName', 'compactMode', 'defaultPriority', 'defaultStatus'
+] as const
+
+async function cmdSettings(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+  const subcommand = positional[0] || 'show'
+
+  switch (subcommand) {
+    case 'show':
+    case 'list': {
+      const config = readConfig(workspaceRoot)
+      const settings = configToSettings(config)
+      if (flags.json) {
+        console.log(JSON.stringify(settings, null, 2))
+      } else {
+        console.log(`  ${dim('SETTING'.padEnd(24))}  ${dim('VALUE')}`)
+        console.log(dim('  ' + '-'.repeat(40)))
+        for (const key of SETTINGS_KEYS) {
+          console.log(`  ${bold(key.padEnd(24))}  ${String(settings[key as keyof CardDisplaySettings])}`)
+        }
+      }
+      break
+    }
+    case 'update':
+    case 'set': {
+      const config = readConfig(workspaceRoot)
+      const settings = configToSettings(config)
+      let changed = false
+      const settingsAny = settings as unknown as Record<string, unknown>
+      for (const key of SETTINGS_KEYS) {
+        if (typeof flags[key] === 'string') {
+          const val = flags[key] as string
+          if (val === 'true') {
+            settingsAny[key] = true
+          } else if (val === 'false') {
+            settingsAny[key] = false
+          } else {
+            settingsAny[key] = val
+          }
+          changed = true
+        }
+      }
+      if (!changed) {
+        console.error(red('No settings specified. Use --<setting> <value>'))
+        console.error(`Available: ${SETTINGS_KEYS.join(', ')}`)
+        process.exit(1)
+      }
+      writeConfig(workspaceRoot, settingsToConfig(config, settings))
+      console.log(green('Settings updated.'))
+      if (flags.json) {
+        console.log(JSON.stringify(configToSettings(readConfig(workspaceRoot)), null, 2))
+      }
+      break
+    }
+    default:
+      console.error(red(`Unknown settings subcommand: ${subcommand}`))
+      console.error('Available: show, update')
+      process.exit(1)
+  }
+}
+
+// --- Serve Command ---
+
+async function cmdServe(flags: Record<string, string | true>): Promise<void> {
+  const dir = typeof flags.dir === 'string' ? flags.dir : '.kanban'
+  const port = typeof flags.port === 'string' ? parseInt(flags.port, 10) : 3000
+  const noBrowser = !!flags['no-browser']
+
+  // Dynamically import the standalone server
+  const { startServer } = await import('../standalone/server')
+  const server = startServer(dir, port)
+
+  if (!noBrowser) {
+    server.on('listening', async () => {
+      try {
+        const open = (await import('open')).default
+        open(`http://localhost:${port}`)
+      } catch {
+        // open is optional
+      }
+    })
+  }
+
+  process.on('SIGINT', () => {
+    console.log('\nShutting down...')
+    server.close()
+    process.exit(0)
+  })
+  process.on('SIGTERM', () => {
+    server.close()
+    process.exit(0)
+  })
+}
+
 function showHelp(): void {
   console.log(`
-${bold('kanban')} - Manage your kanban board from the command line
+${bold('kanban-lite')} (${bold('kl')}) - Manage your kanban board from the command line
 
 ${bold('Usage:')}
-  kanban <command> [options]
+  kanban-lite <command> [options]
+  kl <command> [options]
 
 ${bold('Card Commands:')}
   list                        List cards
   show <id>                   Show card details
   add --title "..."           Create a new card
-  move <id> <status>          Move card to a new status
+  move <id> <status>          Move card to a new status (--position <n>)
   edit <id> [--field value]   Update card fields
   delete <id>                 Delete a card
 
@@ -549,8 +716,21 @@ ${bold('Column Commands:')}
   columns update <id>         Update a column (--name, --color)
   columns remove <id>         Remove a column
 
+${bold('Webhook Commands:')}
+  webhooks                    List registered webhooks
+  webhooks add                Register a webhook (--url, --events, --secret)
+  webhooks remove <id>        Remove a webhook
+
+${bold('Settings Commands:')}
+  settings                    Show current settings
+  settings update             Update settings (--<key> <value>)
+
+${bold('Server:')}
+  serve                       Start standalone web server with REST API
+
 ${bold('Other:')}
   init                        Initialize features directory
+  pwd                         Print workspace root path
 
 ${bold('Global Options:')}
   --dir <path>                Features directory (default: .kanban)
@@ -570,6 +750,15 @@ ${bold('Add/Edit Options:')}
   --assignee <name>           Assignee
   --due <date>                Due date
   --label <l1,l2>             Labels (comma-separated)
+
+${bold('Webhook Options:')}
+  --url <url>                 Webhook target URL (required for add)
+  --events <e1,e2>            Events to subscribe to (default: *)
+  --secret <key>              HMAC-SHA256 signing secret
+
+${bold('Serve Options:')}
+  --port <number>             Port to listen on (default: 3000)
+  --no-browser                Don't open browser automatically
 `)
 }
 
@@ -583,7 +772,14 @@ async function main(): Promise<void> {
     return
   }
 
+  // Serve doesn't need SDK
+  if (command === 'serve') {
+    await cmdServe(flags)
+    return
+  }
+
   const featuresDir = await resolveFeaturesDir(flags)
+  const workspaceRoot = path.dirname(featuresDir)
   const sdk = new KanbanSDK(featuresDir)
 
   switch (command) {
@@ -602,7 +798,7 @@ async function main(): Promise<void> {
       break
     case 'move':
     case 'mv':
-      await cmdMove(sdk, positional)
+      await cmdMove(sdk, positional, flags)
       break
     case 'edit':
     case 'update':
@@ -618,6 +814,21 @@ async function main(): Promise<void> {
     case 'columns':
     case 'cols':
       await cmdColumns(sdk, positional, flags)
+      break
+    case 'webhooks':
+    case 'webhook':
+    case 'wh':
+      await cmdWebhooks(positional, flags, workspaceRoot)
+      break
+    case 'settings':
+      await cmdSettings(positional, flags, workspaceRoot)
+      break
+    case 'pwd':
+      if (flags.json) {
+        console.log(JSON.stringify({ path: workspaceRoot }))
+      } else {
+        console.log(workspaceRoot)
+      }
       break
     case 'init':
       await cmdInit(sdk)

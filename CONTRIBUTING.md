@@ -1,6 +1,6 @@
-# Contributing to Kanban Markdown
+# Contributing to Kanban Lite
 
-Thanks for your interest in contributing to Kanban Markdown! This guide will help you get started.
+Thanks for your interest in contributing to Kanban Lite! This guide will help you get started.
 
 ## Getting Started
 
@@ -15,8 +15,8 @@ Thanks for your interest in contributing to Kanban Markdown! This guide will hel
 1. Fork and clone the repository:
 
    ```sh
-   git clone https://github.com/<your-username>/kanban-markdown-vscode-extension.git
-   cd kanban-markdown-vscode-extension
+   git clone https://github.com/<your-username>/kanban-lite.git
+   cd kanban-lite
    ```
 
 2. Install dependencies:
@@ -99,7 +99,7 @@ src/
 
 ## Reporting Bugs
 
-Open an issue at [GitHub Issues](https://github.com/LachyFS/kanban-markdown-vscode-extension/issues) with:
+Open an issue at [GitHub Issues](https://github.com/LachyFS/kanban-lite/issues) with:
 
 - Steps to reproduce
 - Expected vs actual behavior

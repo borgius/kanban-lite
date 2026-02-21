@@ -1,14 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
   <!-- Column 1 (green) -->
-  <polygon points="4,5.5 4,15.5 7,17 7,7" fill="#166534" />
-  <polygon points="7,7 7,17 10,15.5 10,5.5" fill="#15803d" />
-  <polygon points="4,5.5 7,4 10,5.5 7,7" fill="#22c55e" />
+  <rect x="2" y="3" width="5.5" height="16" rx="1.2" fill="#64748b" opacity="0.08"/>
+  <rect x="2.8" y="3.8" width="3.9" height="0.8" rx="0.4" fill="#059669"/>
+  <rect x="2.8" y="5.5" width="3.9" height="2.8" rx="0.8" fill="#059669" opacity="0.6"/>
+  <rect x="2.8" y="9" width="3.9" height="2.8" rx="0.8" fill="#059669" opacity="0.4"/>
+  <rect x="2.8" y="12.5" width="3.9" height="2.8" rx="0.8" fill="#059669" opacity="0.25"/>
   <!-- Column 2 (amber) -->
-  <polygon points="9,9 9,17 12,18.5 12,10.5" fill="#854d0e" />
-  <polygon points="12,10.5 12,18.5 15,17 15,9" fill="#a16207" />
-  <polygon points="9,9 12,7.5 15,9 12,10.5" fill="#ca8a04" />
-  <!-- Column 3 (red) -->
-  <polygon points="14,12.5 14,18 17,19.5 17,14" fill="#9f1239" />
-  <polygon points="17,14 17,19.5 20,18 20,12.5" fill="#be123c" />
-  <polygon points="14,12.5 17,11 20,12.5 17,14" fill="#e11d48" />
+  <rect x="9.25" y="2" width="5.5" height="18" rx="1.2" fill="#64748b" opacity="0.08"/>
+  <rect x="10.05" y="2.8" width="3.9" height="0.8" rx="0.4" fill="#d97706"/>
+  <rect x="10.05" y="4.5" width="3.9" height="3.2" rx="0.8" fill="#d97706" opacity="0.6"/>
+  <rect x="10.05" y="8.4" width="3.9" height="2.8" rx="0.8" fill="#d97706" opacity="0.4"/>
+  <g transform="rotate(-3, 12, 14)">
+    <rect x="9.85" y="12" width="4.3" height="2.8" rx="0.8" fill="#d97706" opacity="0.7" stroke="#d97706" stroke-width="0.3" stroke-opacity="0.3"/>
+  </g>
+  <!-- Column 3 (pink) -->
+  <rect x="16.5" y="3" width="5.5" height="16" rx="1.2" fill="#64748b" opacity="0.08"/>
+  <rect x="17.3" y="3.8" width="3.9" height="0.8" rx="0.4" fill="#db2777"/>
+  <rect x="17.3" y="5.5" width="3.9" height="2.8" rx="0.8" fill="#db2777" opacity="0.6"/>
+  <rect x="17.3" y="9" width="3.9" height="2.8" rx="0.8" fill="#db2777" opacity="0.4"/>
 </svg>

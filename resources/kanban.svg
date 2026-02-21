@@ -1,11 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Column 1 (tallest) -->
-  <path d="M7,4 L4,5.5 L4,15.5 L7,17 L10,15.5 L10,5.5 Z" />
-  <path d="M7,7 L4,5.5 M7,7 L10,5.5 M7,7 L7,17" />
-  <!-- Column 2 (medium) -->
-  <path d="M12,7.5 L9,9 L9,17 L12,18.5 L15,17 L15,9 Z" />
-  <path d="M12,10.5 L9,9 M12,10.5 L15,9 M12,10.5 L12,18.5" />
-  <!-- Column 3 (shortest) -->
-  <path d="M17,11 L14,12.5 L14,18 L17,19.5 L20,18 L20,12.5 Z" />
-  <path d="M17,14 L14,12.5 M17,14 L20,12.5 M17,14 L17,19.5" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- Column 1 -->
+  <rect x="2" y="3" width="5.5" height="16" rx="1.2" opacity="0.08"/>
+  <rect x="2.8" y="3.8" width="3.9" height="0.8" rx="0.4" opacity="0.9"/>
+  <rect x="2.8" y="5.5" width="3.9" height="2.8" rx="0.8" opacity="0.6"/>
+  <rect x="2.8" y="9" width="3.9" height="2.8" rx="0.8" opacity="0.4"/>
+  <rect x="2.8" y="12.5" width="3.9" height="2.8" rx="0.8" opacity="0.25"/>
+  <!-- Column 2 -->
+  <rect x="9.25" y="2" width="5.5" height="18" rx="1.2" opacity="0.08"/>
+  <rect x="10.05" y="2.8" width="3.9" height="0.8" rx="0.4" opacity="0.9"/>
+  <rect x="10.05" y="4.5" width="3.9" height="3.2" rx="0.8" opacity="0.6"/>
+  <rect x="10.05" y="8.4" width="3.9" height="2.8" rx="0.8" opacity="0.4"/>
+  <g transform="rotate(-3, 12, 14)">
+    <rect x="9.85" y="12" width="4.3" height="2.8" rx="0.8" opacity="0.7"/>
+  </g>
+  <!-- Column 3 -->
+  <rect x="16.5" y="3" width="5.5" height="16" rx="1.2" opacity="0.08"/>
+  <rect x="17.3" y="3.8" width="3.9" height="0.8" rx="0.4" opacity="0.9"/>
+  <rect x="17.3" y="5.5" width="3.9" height="2.8" rx="0.8" opacity="0.6"/>
+  <rect x="17.3" y="9" width="3.9" height="2.8" rx="0.8" opacity="0.4"/>
 </svg>

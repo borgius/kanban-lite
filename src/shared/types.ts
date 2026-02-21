@@ -28,18 +28,26 @@ export function getTitleFromContent(content: string): string {
 }
 
 // Generate a filename-safe slug from a title
-export function generateFeatureFilename(title: string): string {
-  const slug = title
+export function generateSlug(title: string): string {
+  return title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
     .replace(/\s+/g, '-') // Replace spaces with hyphens
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-|-$/g, '') // Trim hyphens from start/end
-    .slice(0, 50) // Limit length
+    .slice(0, 50) || 'feature' // Limit length, fallback
+}
 
-  const now = new Date()
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  return slug ? `${slug}-${date}` : `feature-${date}`
+// Generate a filename from an incremental ID and a title
+export function generateFeatureFilename(id: number, title: string): string {
+  const slug = generateSlug(title)
+  return `${id}-${slug}`
+}
+
+// Extract the numeric ID prefix from a filename or ID string like "42-build-dashboard"
+export function extractNumericId(filenameOrId: string): number | null {
+  const match = filenameOrId.match(/^(\d+)(?:-|$)/)
+  return match ? parseInt(match[1], 10) : null
 }
 
 export interface KanbanColumn {

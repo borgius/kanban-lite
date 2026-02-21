@@ -28,6 +28,13 @@ Options:
   -p, --port <number> Port to listen on (default: 3000)
   --no-browser        Don't open browser automatically
   -h, --help          Show this help message
+
+REST API available at http://localhost:<port>/api
+  Tasks:    GET/POST /api/tasks, GET/PUT/DELETE /api/tasks/:id
+  Move:     PATCH /api/tasks/:id/move
+  Columns:  GET/POST /api/columns, PUT/DELETE /api/columns/:id
+  Settings: GET/PUT /api/settings
+  Webhooks: GET/POST /api/webhooks, DELETE /api/webhooks/:id
 `)
         process.exit(0)
     }

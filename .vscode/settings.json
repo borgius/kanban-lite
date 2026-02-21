@@ -8,14 +8,14 @@
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "kanban-markdown.showPriorityBadges": true,
-  "kanban-markdown.showAssignee": true,
-  "kanban-markdown.showDueDate": true,
-  "kanban-markdown.showLabels": true,
-  "kanban-markdown.showBuildWithAI": false,
-  "kanban-markdown.showFileName": false,
-  "kanban-markdown.compactMode": false,
-  "kanban-markdown.markdownEditorMode": false,
-  "kanban-markdown.defaultPriority": "medium",
-  "kanban-markdown.defaultStatus": "backlog"
+  "kanban-lite.showPriorityBadges": true,
+  "kanban-lite.showAssignee": true,
+  "kanban-lite.showDueDate": true,
+  "kanban-lite.showLabels": true,
+  "kanban-lite.showBuildWithAI": false,
+  "kanban-lite.showFileName": false,
+  "kanban-lite.compactMode": false,
+  "kanban-lite.markdownEditorMode": false,
+  "kanban-lite.defaultPriority": "medium",
+  "kanban-lite.defaultStatus": "backlog"
 }

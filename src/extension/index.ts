@@ -6,7 +6,7 @@ import * as vscode from 'vscode'
 
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
 import { generateFeatureFilename } from '../shared/types'
-import { readConfig } from '../shared/config'
+import { readConfig, allocateCardId } from '../shared/config'
 import { startServer } from '../standalone/server'
 import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 import { KanbanPanel } from './KanbanPanel'
@@ -75,14 +75,15 @@ async function createFeatureFromPrompts(): Promise<void> {
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
   await ensureStatusSubfolders(featuresDir, kanbanConfig.columns.map(c => c.id))
 
-  const filename = generateFeatureFilename(title)
+  const numericId = allocateCardId(root)
+  const filename = generateFeatureFilename(numericId, title)
   const now = new Date().toISOString()
 
   // Build content with title as first # heading
   const content = `# ${title}${description ? '\n\n' + description : ''}`
 
   const feature: Feature = {
-    id: filename,
+    id: String(numericId),
     status,
     priority,
     assignee: null,
@@ -189,7 +190,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('kanban-markdown.open', () => {
+    vscode.commands.registerCommand('kanban-lite.open', () => {
       const wasOpen = !!KanbanPanel.currentPanel
       KanbanPanel.createOrShow(context.extensionUri, context)
       if (!wasOpen && KanbanPanel.currentPanel) {
@@ -202,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('kanban-markdown.addFeature', () => {
+    vscode.commands.registerCommand('kanban-lite.addFeature', () => {
       createFeatureFromPrompts()
     })
   )

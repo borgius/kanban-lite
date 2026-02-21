@@ -1,11 +1,11 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { parseFeatureFile, serializeFeature } from '../sdk/parser'
-import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
-import { readConfig, writeConfig, configToSettings, settingsToConfig, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
+import { ensureStatusSubfolders, moveFeatureFile, renameFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
+import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 
 
 interface CreateFeatureData {
@@ -18,7 +18,7 @@ interface CreateFeatureData {
 }
 
 export class KanbanPanel {
-  public static readonly viewType = 'kanban-markdown.panel'
+  public static readonly viewType = 'kanban-lite.panel'
   public static currentPanel: KanbanPanel | undefined
 
   private readonly _panel: vscode.WebviewPanel
@@ -455,6 +455,17 @@ export class KanbanPanel {
         }
       }
 
+      // Sync ID counter with existing cards
+      const root = this._getWorkspaceRoot()
+      if (root) {
+        const numericIds = features
+          .map(f => parseInt(f.id, 10))
+          .filter(n => !Number.isNaN(n))
+        if (numericIds.length > 0) {
+          syncCardIdCounter(root, numericIds)
+        }
+      }
+
       this._features = features.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
     } catch {
       this._features = []
@@ -491,7 +502,10 @@ export class KanbanPanel {
     }
 
     const title = getTitleFromContent(data.content)
-    const filename = generateFeatureFilename(title)
+    const workspaceRoot = this._getWorkspaceRoot()
+    if (!workspaceRoot) return
+    const numericId = allocateCardId(workspaceRoot)
+    const filename = generateFeatureFilename(numericId, title)
     const now = new Date().toISOString()
     const featuresInStatus = this._features
       .filter(f => f.status === data.status)
@@ -499,7 +513,7 @@ export class KanbanPanel {
     const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
 
     const feature: Feature = {
-      id: filename,
+      id: String(numericId),
       status: data.status,
       priority: data.priority,
       assignee: data.assignee,
@@ -591,6 +605,7 @@ export class KanbanPanel {
     if (!featuresDir) return
 
     const oldStatus = feature.status
+    const oldTitle = getTitleFromContent(feature.content)
 
     // Merge updates
     Object.assign(feature, updates)
@@ -602,6 +617,17 @@ export class KanbanPanel {
     // Persist to file
     const content = this._serializeFeature(feature)
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
+
+    // Rename file if title changed (numeric-ID cards only)
+    const newTitle = getTitleFromContent(feature.content)
+    const numId = extractNumericId(feature.id)
+    if (numId !== null && newTitle !== oldTitle) {
+      const newFilename = generateFeatureFilename(numId, newTitle)
+      this._migrating = true
+      try {
+        feature.filePath = await renameFeatureFile(feature.filePath, newFilename)
+      } catch { /* retry next load */ } finally { this._migrating = false }
+    }
 
     // Move file when status changes
     if (oldStatus !== feature.status) {
@@ -671,6 +697,7 @@ export class KanbanPanel {
     if (!featuresDir) return
 
     const oldStatus = feature.status
+    const oldTitle = getTitleFromContent(feature.content)
 
     // Update feature in memory
     feature.content = content
@@ -689,6 +716,17 @@ export class KanbanPanel {
     const fileContent = this._serializeFeature(feature)
     this._lastWrittenContent = fileContent
     await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+
+    // Rename file if title changed (numeric-ID cards only)
+    const saveNewTitle = getTitleFromContent(feature.content)
+    const saveNumId = extractNumericId(feature.id)
+    if (saveNumId !== null && saveNewTitle !== oldTitle) {
+      const newFilename = generateFeatureFilename(saveNumId, saveNewTitle)
+      this._migrating = true
+      try {
+        feature.filePath = await renameFeatureFile(feature.filePath, newFilename)
+      } catch { /* retry next load */ } finally { this._migrating = false }
+    }
 
     // Move file when status changes
     if (oldStatus !== feature.status) {

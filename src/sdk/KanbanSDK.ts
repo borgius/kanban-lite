@@ -2,9 +2,10 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween } from 'fractional-indexing'
 import type { Feature, FeatureStatus, KanbanColumn } from '../shared/types'
-import { getTitleFromContent, generateFeatureFilename, DEFAULT_COLUMNS } from '../shared/types'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId, DEFAULT_COLUMNS } from '../shared/types'
+import { allocateCardId, syncCardIdCounter } from '../shared/config'
 import { parseFeatureFile, serializeFeature } from './parser'
-import { ensureDirectories, getFeatureFilePath, moveFeatureFile } from './fileUtils'
+import { ensureDirectories, getFeatureFilePath, moveFeatureFile, renameFeatureFile } from './fileUtils'
 import type { CreateCardInput, BoardConfig } from './types'
 
 const BOARD_CONFIG_FILE = 'board.json'
@@ -49,6 +50,14 @@ export class KanbanSDK {
       // Skip
     }
 
+    // Sync ID counter with existing cards
+    const numericIds = cards
+      .map(c => parseInt(c.id, 10))
+      .filter(n => !Number.isNaN(n))
+    if (numericIds.length > 0) {
+      syncCardIdCounter(path.dirname(this.featuresDir), numericIds)
+    }
+
     return cards.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
@@ -63,7 +72,9 @@ export class KanbanSDK {
     const status = data.status || 'backlog'
     const priority = data.priority || 'medium'
     const title = getTitleFromContent(data.content)
-    const filename = generateFeatureFilename(title)
+    const workspaceRoot = path.dirname(this.featuresDir)
+    const numericId = allocateCardId(workspaceRoot)
+    const filename = generateFeatureFilename(numericId, title)
     const now = new Date().toISOString()
 
     // Compute order: place at end of target column
@@ -76,7 +87,7 @@ export class KanbanSDK {
       : null
 
     const card: Feature = {
-      id: filename,
+      id: String(numericId),
       status,
       priority,
       assignee: data.assignee ?? null,
@@ -102,6 +113,7 @@ export class KanbanSDK {
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
     const oldStatus = card.status
+    const oldTitle = getTitleFromContent(card.content)
 
     // Merge updates (exclude filePath/id from being overwritten)
     const { filePath: _fp, id: _id, ...safeUpdates } = updates
@@ -114,6 +126,14 @@ export class KanbanSDK {
 
     // Write updated content
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+
+    // Rename file if title changed (numeric-ID cards only)
+    const newTitle = getTitleFromContent(card.content)
+    const numericId = extractNumericId(card.id)
+    if (numericId !== null && newTitle !== oldTitle) {
+      const newFilename = generateFeatureFilename(numericId, newTitle)
+      card.filePath = await renameFeatureFile(card.filePath, newFilename)
+    }
 
     // Move file if status changed
     if (oldStatus !== card.status) {

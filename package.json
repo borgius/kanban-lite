@@ -1,18 +1,18 @@
 {
-  "name": "kanban-markdown",
-  "displayName": "Kanban Markdown",
+  "name": "kanban-lite",
+  "displayName": "Kanban Lite",
   "description": "A kanban board for your codebase. Features stored as markdown.",
-  "version": "1.8.1",
-  "publisher": "LachyFS",
+  "version": "1.0.1",
+  "publisher": "borgius",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LachyFS/kanban-markdown-vscode-extension"
+    "url": "https://github.com/borgius/kanban-lite"
   },
   "bugs": {
-    "url": "https://github.com/LachyFS/kanban-markdown-vscode-extension/issues"
+    "url": "https://github.com/borgius/kanban-lite/issues"
   },
-  "homepage": "https://github.com/LachyFS/kanban-markdown-vscode-extension#readme",
+  "homepage": "https://github.com/borgius/kanban-lite#readme",
   "icon": "resources/icon.png",
   "galleryBanner": {
     "color": "#1e1e1e",
@@ -33,24 +33,24 @@
     "board"
   ],
   "activationEvents": [
-    "onWebviewPanel:kanban-markdown.panel",
-    "onView:kanban-markdown.boardView"
+    "onWebviewPanel:kanban-lite.panel",
+    "onView:kanban-lite.boardView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "kanban-markdown",
-          "title": "Kanban Markdown",
+          "id": "kanban-lite",
+          "title": "Kanban Lite",
           "icon": "resources/kanban.svg"
         }
       ]
     },
     "views": {
-      "kanban-markdown": [
+      "kanban-lite": [
         {
-          "id": "kanban-markdown.boardView",
+          "id": "kanban-lite.boardView",
           "name": "Board",
           "type": "webview"
         }
@@ -58,24 +58,24 @@
     },
     "commands": [
       {
-        "command": "kanban-markdown.open",
+        "command": "kanban-lite.open",
         "title": "Open Kanban Board",
-        "category": "Kanban Markdown",
+        "category": "Kanban Lite",
         "icon": {
           "light": "resources/kanban-light.svg",
           "dark": "resources/kanban-dark.svg"
         }
       },
       {
-        "command": "kanban-markdown.addFeature",
+        "command": "kanban-lite.addFeature",
         "title": "Add Feature",
-        "category": "Kanban Markdown"
+        "category": "Kanban Lite"
       }
     ],
     "menus": {
       "editor/title/run": [
         {
-          "command": "kanban-markdown.open",
+          "command": "kanban-lite.open",
           "when": "resourceLangId == markdown"
         }
       ]
@@ -83,7 +83,8 @@
   },
   "bin": {
     "kanban-md": "./dist/standalone.js",
-    "kanban": "./dist/cli.js",
+    "kanban-lite": "./dist/cli.js",
+    "kl": "./dist/cli.js",
     "kanban-mcp": "./dist/mcp-server.js"
   },
   "scripts": {

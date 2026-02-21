@@ -1,20 +1,22 @@
-# Kanban Markdown
+# Kanban Lite
 
 A VSCode/Cursor extension that brings a full-featured kanban board directly into your editor. Features are stored as human-readable markdown files, making them version-controllable and easy to edit outside the board.
 
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/LachyFS.kanban-markdown?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=LachyFS.kanban-markdown)
-[![Open VSX](https://img.shields.io/open-vsx/v/LachyFS/kanban-markdown?label=Open%20VSX&logo=vscodium)](https://open-vsx.org/extension/LachyFS/kanban-markdown)
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/borgius.kanban-lite?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=borgius.kanban-lite)
+[![Open VSX](https://img.shields.io/open-vsx/v/borgius/kanban-lite?label=Open%20VSX&logo=vscodium)](https://open-vsx.org/extension/borgius/kanban-lite)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-![Kanban Board Overview](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/board-overview.png)
+![Kanban Board Overview](https://raw.githubusercontent.com/borgius/kanban-lite/main/docs/images/board-overview.png)
 
 ## Kanban Skill
 
-Install the [kanban-skill](https://github.com/LachyFS/kanban-skill) via [skills.sh](https://skills.sh) to give your AI agent full context of your board and the ability to create, update, and move features directly from the terminal. Works with Claude Code, Codex, OpenCode, and any skills.sh-compatible agent.
+Install the kanban skill via [skills.sh](https://skills.sh) to give your AI agent full context of your board and the ability to create, update, and move features directly from the terminal. Works with Claude Code, Codex, OpenCode, and any skills.sh-compatible agent.
 
 ```bash
-npx skills add https://github.com/LachyFS/kanban-skill
+npx skills add https://github.com/borgius/kanban-lite
 ```
+
+See [SKILL.md](SKILL.md) for the full skill reference covering MCP tools, CLI, and REST API.
 
 ## Features
 
@@ -35,7 +37,7 @@ npx skills add https://github.com/LachyFS/kanban-skill
 
 ### Feature Cards
 
-![Editor View](https://raw.githubusercontent.com/LachyFS/kanban-markdown-vscode-extension/main/docs/images/editor-view.png)
+![Editor View](https://raw.githubusercontent.com/borgius/kanban-lite/main/docs/images/editor-view.png)
 
 
 - **Priority levels**: Critical, High, Medium, Low (color-coded badges)
@@ -73,10 +75,10 @@ npx skills add https://github.com/LachyFS/kanban-skill
 ## Installation
 
 ### VS Code Marketplace
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=LachyFS.kanban-markdown) or search for "Kanban Markdown" in the Extensions view.
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=borgius.kanban-lite) or search for "Kanban Lite" in the Extensions view.
 
 ### Open VSX (VSCodium, Cursor, etc.)
-Install from [Open VSX](https://open-vsx.org/extension/LachyFS/kanban-markdown) or search for "Kanban Markdown" in the Extensions view.
+Install from [Open VSX](https://open-vsx.org/extension/borgius/kanban-lite) or search for "Kanban Lite" in the Extensions view.
 
 ### From VSIX (Manual)
 1. Download the `.vsix` file from the releases
@@ -89,7 +91,7 @@ Install from [Open VSX](https://open-vsx.org/extension/LachyFS/kanban-markdown) 
 2. Run **"Open Kanban Board"**
 3. Start creating and managing features
 
-Features are stored as markdown files in `.devtool/features/` within your workspace:
+Features are stored as markdown files in `.kanban/` within your workspace, organized into status subfolders:
 
 ```markdown
 ---
@@ -111,75 +113,214 @@ Add a toggle in settings to switch between light and dark themes...
 
 ## Configuration
 
-Available settings in VSCode/Cursor preferences:
+Board configuration is stored in `.kanban.json` at your workspace root. This file is shared across all interfaces (VSCode extension, standalone server, CLI).
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `kanban-markdown.featuresDirectory` | `.devtool/features` | Directory for feature files |
-| `kanban-markdown.defaultPriority` | `medium` | Default priority for new features |
-| `kanban-markdown.defaultStatus` | `backlog` | Default status for new features |
-| `kanban-markdown.columns` | *see below* | Customize column IDs, names, and colors |
-| `kanban-markdown.aiAgent` | `claude` | AI agent (`claude`, `codex`, or `opencode`) |
-| `kanban-markdown.showPriorityBadges` | `true` | Show priority badges on cards |
-| `kanban-markdown.showAssignee` | `true` | Show assignee on cards |
-| `kanban-markdown.showDueDate` | `true` | Show due date on cards |
-| `kanban-markdown.showLabels` | `true` | Show labels on cards and in editors |
-| `kanban-markdown.showBuildWithAI` | `true` | Show "Build with AI" button on cards |
-| `kanban-markdown.compactMode` | `false` | Enable compact card display |
-
-Default columns configuration:
 ```json
-[
-  { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
-  { "id": "todo", "name": "To Do", "color": "#3b82f6" },
-  { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
-  { "id": "review", "name": "Review", "color": "#8b5cf6" },
-  { "id": "done", "name": "Done", "color": "#22c55e" }
-]
+{
+  "columns": [
+    { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
+    { "id": "todo", "name": "To Do", "color": "#3b82f6" },
+    { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
+    { "id": "review", "name": "Review", "color": "#8b5cf6" },
+    { "id": "done", "name": "Done", "color": "#22c55e" }
+  ],
+  "showPriorityBadges": true,
+  "showAssignee": true,
+  "showDueDate": true,
+  "showLabels": true,
+  "compactMode": false
+}
 ```
+
+Columns are fully customizable — add, remove, rename, or recolor them from the board UI, CLI, or REST API.
 
 ## CLI
 
-Manage your kanban board from the terminal. After installing with `npm install -g kanban-markdown`:
+Manage your kanban board from the terminal. After installing with `npm install -g kanban-lite`, use `kanban-lite` or the shorthand `kl`:
 
 ```bash
 # List all cards
-kanban list
+kl list
 
 # List with filters
-kanban list --status todo --priority high
+kl list --status todo --priority high
 
 # Create a card
-kanban add --title "Implement search" --priority high --label "frontend,search"
+kl add --title "Implement search" --priority high --label "frontend,search"
 
 # Show card details
-kanban show implement-search
+kl show implement-search
 
 # Move to a different column
-kanban move implement-search in-progress
+kl move implement-search in-progress
 
 # Update fields
-kanban edit implement-search --assignee alice --due 2026-03-01
+kl edit implement-search --assignee alice --due 2026-03-01
 
 # Delete a card
-kanban delete implement-search
+kl delete implement-search
 
 # Attachments
-kanban attach implement-search                          # List attachments
-kanban attach add implement-search ./screenshot.png     # Attach a file
-kanban attach remove implement-search screenshot.png    # Remove attachment
+kl attach implement-search                              # List attachments
+kl attach add implement-search ./screenshot.png         # Attach a file
+kl attach remove implement-search screenshot.png        # Remove attachment
 
 # Manage columns
-kanban columns                                          # List columns
-kanban columns add --id testing --name Testing          # Add column
-kanban columns update testing --color "#ff9900"         # Update column
-kanban columns remove testing                           # Remove column
+kl columns                                              # List columns
+kl columns add --id testing --name Testing              # Add column
+kl columns update testing --color "#ff9900"             # Update column
+kl columns remove testing                               # Remove column
+
+# Webhooks
+kl webhooks                                             # List webhooks
+kl webhooks add --url https://example.com/hook          # Register webhook
+kl webhooks add --url https://example.com/hook \
+  --events task.created,task.moved --secret mykey       # With event filter and secret
+kl webhooks remove wh_abc123                            # Remove webhook
+
+# Settings
+kl settings                                             # Show current settings
+kl settings update --compactMode true                   # Update a setting
+
+# Workspace
+kl pwd                                                  # Print workspace root path
+
+# Start standalone web server
+kl serve                                                # Start on port 3000
+kl serve --port 8080 --no-browser                       # Custom port, no auto-open
 
 # Initialize features directory
-kanban init
+kl init
 ```
 
 Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory.
+
+## Standalone Server
+
+Run the kanban board as a standalone web application with a full REST API, outside of VSCode:
+
+```bash
+# Using the CLI
+kl serve
+
+# Or directly
+kanban-md
+
+# With options
+kanban-md --port 8080 --dir .kanban --no-browser
+```
+
+The server provides:
+- **Web UI** at `http://localhost:3000` — the same React board as the VSCode extension
+- **REST API** at `http://localhost:3000/api` — full programmatic access
+- **WebSocket** — real-time updates for connected clients
+
+### REST API
+
+All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "message" }`. CORS is enabled for all origins.
+
+#### Tasks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tasks` | List all tasks (query: `?status=&priority=&assignee=&label=`) |
+| `GET` | `/api/tasks/:id` | Get a single task |
+| `POST` | `/api/tasks` | Create a task |
+| `PUT` | `/api/tasks/:id` | Update task properties |
+| `PATCH` | `/api/tasks/:id/move` | Move task to column/position |
+| `DELETE` | `/api/tasks/:id` | Delete a task |
+
+#### Columns
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/columns` | List all columns |
+| `POST` | `/api/columns` | Add a column |
+| `PUT` | `/api/columns/:id` | Update a column |
+| `DELETE` | `/api/columns/:id` | Delete a column |
+
+#### Settings
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/settings` | Get board settings |
+| `PUT` | `/api/settings` | Update board settings |
+
+#### Webhooks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/webhooks` | List registered webhooks |
+| `POST` | `/api/webhooks` | Register a webhook |
+| `DELETE` | `/api/webhooks/:id` | Remove a webhook |
+
+#### Workspace
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/workspace` | Get workspace root path |
+
+#### Attachments
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/tasks/:id/attachments` | Upload attachment(s) |
+| `GET` | `/api/tasks/:id/attachments/:filename` | Download an attachment |
+| `DELETE` | `/api/tasks/:id/attachments/:filename` | Remove an attachment |
+
+### Example: Create a task via API
+
+```bash
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# My Task\n\nDescription here", "status": "todo", "priority": "high"}'
+```
+
+## Webhooks
+
+Register webhooks to receive HTTP POST notifications when tasks or columns change. Webhooks work with both the standalone server and the CLI.
+
+### Events
+
+| Event | Trigger |
+|-------|---------|
+| `task.created` | A new task is created |
+| `task.updated` | Task properties are changed |
+| `task.moved` | Task is moved to a different column |
+| `task.deleted` | A task is deleted |
+| `column.created` | A new column is added |
+| `column.updated` | Column name or color is changed |
+| `column.deleted` | A column is removed |
+
+### Payload
+
+```json
+{
+  "event": "task.created",
+  "timestamp": "2026-02-21T10:30:00.000Z",
+  "data": { "id": "my-task", "status": "todo", "priority": "high", "..." : "..." }
+}
+```
+
+### Headers
+
+- `Content-Type: application/json`
+- `X-Webhook-Event: task.created`
+- `X-Webhook-Signature: sha256=<hmac>` (if a secret is configured)
+
+### Register via CLI or API
+
+```bash
+# CLI
+kl webhooks add --url https://example.com/hook --events task.created,task.moved --secret mykey
+
+# API
+curl -X POST http://localhost:3000/api/webhooks \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/hook", "events": ["task.created", "task.moved"], "secret": "mykey"}'
+```
+
+Webhook registrations are stored in `.kanban-webhooks.json` at the workspace root.
 
 ## MCP Server
 
@@ -194,9 +335,9 @@ Add to your `.claude/settings.json`:
   "mcpServers": {
     "kanban": {
       "command": "npx",
-      "args": ["kanban-markdown", "kanban-mcp"],
+      "args": ["kanban-lite", "kanban-mcp"],
       "env": {
-        "KANBAN_FEATURES_DIR": "/path/to/your/project/.devtool/features"
+        "KANBAN_FEATURES_DIR": "/path/to/your/project/.kanban"
       }
     }
   }
@@ -206,7 +347,7 @@ Add to your `.claude/settings.json`:
 Or run directly:
 
 ```bash
-kanban-mcp --dir .devtool/features
+kanban-mcp --dir .kanban
 ```
 
 ### Available Tools
@@ -226,15 +367,21 @@ kanban-mcp --dir .devtool/features
 | `add_column` | Add a new column to the board |
 | `update_column` | Update a column's name or color |
 | `remove_column` | Remove a column (must be empty) |
+| `get_settings` | Get board display settings |
+| `update_settings` | Update board display settings |
+| `list_webhooks` | List registered webhooks |
+| `add_webhook` | Register a new webhook |
+| `remove_webhook` | Remove a webhook |
+| `get_workspace_info` | Get workspace root path and features directory |
 
 ## SDK
 
 Use the kanban SDK programmatically in your own tools:
 
 ```typescript
-import { KanbanSDK } from 'kanban-markdown/dist/sdk'
+import { KanbanSDK } from 'kanban-lite/dist/sdk'
 
-const sdk = new KanbanSDK('/path/to/.devtool/features')
+const sdk = new KanbanSDK('/path/to/.kanban')
 
 // List all cards
 const cards = await sdk.listCards()
@@ -325,6 +472,10 @@ src/
   webview/       # React frontend (shared by extension + standalone)
   shared/        # Shared types
 ```
+
+## Acknowledgments
+
+This project was originally created by [LachyFS](https://github.com/LachyFS). Thank you for building the foundation that made Kanban Lite possible.
 
 ## License
 

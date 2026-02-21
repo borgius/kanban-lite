@@ -25,19 +25,17 @@ const priorityLabels: Record<Priority, string> = {
 }
 
 function getDescriptionFromContent(content: string): string {
-  // Remove the first # heading line, then grab the first non-empty text
+  // Remove the first # heading line, then grab the remaining content
   const lines = content.split('\n')
   const headingIndex = lines.findIndex(l => /^#\s+/.test(l))
   const afterHeading = headingIndex >= 0 ? lines.slice(headingIndex + 1) : lines
-  const desc = afterHeading
-    .map(l => l.replace(/^#{1,6}\s+/, '').trim())
-    .filter(l => l.length > 0)
-    .join(' ')
-  return desc
+  // Trim leading/trailing blank lines but preserve internal structure (lists, etc.)
+  const trimmed = afterHeading.join('\n').trim()
+  return trimmed
 }
 
 function renderDescriptionHtml(text: string): string {
-  return marked.parseInline(text, { gfm: true }) as string
+  return marked.parse(text, { async: false, gfm: true, breaks: true }) as string
 }
 
 export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) {

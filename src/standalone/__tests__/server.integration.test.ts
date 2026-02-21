@@ -118,8 +118,40 @@ function httpGet(url: string): Promise<{ status: number; headers: http.IncomingH
     http.get(url, (res) => {
       let body = ''
       res.on('data', (chunk) => body += chunk)
-      res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body }))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }))
     }).on('error', reject)
+  })
+}
+
+// Helper: make HTTP request with method, body, and headers
+function httpRequest(
+  method: string,
+  url: string,
+  body?: unknown
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url)
+    const payload = body ? JSON.stringify(body) : undefined
+    const req = http.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.pathname + parsed.search,
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(payload ? { 'Content-Length': Buffer.byteLength(payload).toString() } : {})
+        }
+      },
+      (res) => {
+        let data = ''
+        res.on('data', (chunk) => data += chunk)
+        res.on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body: data }))
+      }
+    )
+    req.on('error', reject)
+    if (payload) req.write(payload)
+    req.end()
   })
 }
 
@@ -166,11 +198,14 @@ describe('Standalone Server Integration', () => {
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
-    // Clean up temp dirs and config file
+    // Clean up temp dirs, config file, and webhooks file
     fs.rmSync(tempDir, { recursive: true, force: true })
     fs.rmSync(webviewDir, { recursive: true, force: true })
-    const configFile = path.join(path.dirname(tempDir), '.kanban.json')
+    const workspaceRoot = path.dirname(tempDir)
+    const configFile = path.join(workspaceRoot, '.kanban.json')
     if (fs.existsSync(configFile)) fs.rmSync(configFile)
+    const webhooksFile = path.join(workspaceRoot, '.kanban-webhooks.json')
+    if (fs.existsSync(webhooksFile)) fs.rmSync(webhooksFile)
   })
 
   // ── HTTP Tests ──
@@ -1324,6 +1359,558 @@ describe('Standalone Server Integration', () => {
       // Should fall back to defaults
       expect(settings.showPriorityBadges).toBe(true)
       expect(settings.compactMode).toBe(false)
+    })
+  })
+
+  // ── REST API: Tasks ──
+
+  describe('REST API — Tasks', () => {
+    it('GET /api/tasks should list tasks', async () => {
+      writeFeatureFile(tempDir, 'api-task-1.md', makeFeatureContent({
+        id: 'api-task-1',
+        status: 'backlog',
+        title: 'API Task 1'
+      }), 'backlog')
+      writeFeatureFile(tempDir, 'api-task-2.md', makeFeatureContent({
+        id: 'api-task-2',
+        status: 'todo',
+        title: 'API Task 2'
+      }), 'todo')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      // Initialize via WS so server loads features
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(2)
+      // Should not include filePath
+      expect(json.data[0].filePath).toBeUndefined()
+    })
+
+    it('GET /api/tasks should filter by status', async () => {
+      writeFeatureFile(tempDir, 'filter-1.md', makeFeatureContent({
+        id: 'filter-1',
+        status: 'backlog'
+      }), 'backlog')
+      writeFeatureFile(tempDir, 'filter-2.md', makeFeatureContent({
+        id: 'filter-2',
+        status: 'todo'
+      }), 'todo')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks?status=todo`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(1)
+      expect(json.data[0].id).toBe('filter-2')
+    })
+
+    it('GET /api/tasks should filter by priority', async () => {
+      writeFeatureFile(tempDir, 'pri-high.md', makeFeatureContent({
+        id: 'pri-high',
+        priority: 'high'
+      }), 'backlog')
+      writeFeatureFile(tempDir, 'pri-low.md', makeFeatureContent({
+        id: 'pri-low',
+        priority: 'low'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks?priority=high`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(1)
+      expect(json.data[0].id).toBe('pri-high')
+    })
+
+    it('GET /api/tasks should filter by assignee', async () => {
+      writeFeatureFile(tempDir, 'assign-alice.md', makeFeatureContent({
+        id: 'assign-alice',
+        assignee: 'alice'
+      }), 'backlog')
+      writeFeatureFile(tempDir, 'assign-bob.md', makeFeatureContent({
+        id: 'assign-bob',
+        assignee: 'bob'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks?assignee=alice`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(1)
+      expect(json.data[0].id).toBe('assign-alice')
+    })
+
+    it('GET /api/tasks should filter by label', async () => {
+      writeFeatureFile(tempDir, 'label-fe.md', makeFeatureContent({
+        id: 'label-fe',
+        labels: ['frontend']
+      }), 'backlog')
+      writeFeatureFile(tempDir, 'label-be.md', makeFeatureContent({
+        id: 'label-be',
+        labels: ['backend']
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks?label=frontend`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(1)
+      expect(json.data[0].id).toBe('label-fe')
+    })
+
+    it('GET /api/tasks/:id should return a single task', async () => {
+      writeFeatureFile(tempDir, 'single-task.md', makeFeatureContent({
+        id: 'single-task',
+        status: 'todo',
+        priority: 'high',
+        title: 'Single Task'
+      }), 'todo')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks/single-task`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.id).toBe('single-task')
+      expect(json.data.status).toBe('todo')
+      expect(json.data.filePath).toBeUndefined()
+    })
+
+    it('GET /api/tasks/:id should return 404 for non-existent task', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks/nonexistent`)
+      expect(res.status).toBe(404)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(false)
+    })
+
+    it('POST /api/tasks should create a task', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# API Created Task\n\nDescription.',
+        status: 'todo',
+        priority: 'high',
+        assignee: 'alice',
+        labels: ['api']
+      })
+      expect(res.status).toBe(201)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.status).toBe('todo')
+      expect(json.data.priority).toBe('high')
+      expect(json.data.assignee).toBe('alice')
+      expect(json.data.labels).toEqual(['api'])
+      expect(json.data.filePath).toBeUndefined()
+
+      // Verify persisted on disk
+      const todoDir = path.join(tempDir, 'todo')
+      const files = fs.readdirSync(todoDir).filter(f => f.endsWith('.md'))
+      expect(files.length).toBe(1)
+    })
+
+    it('PUT /api/tasks/:id should update a task', async () => {
+      writeFeatureFile(tempDir, 'update-api.md', makeFeatureContent({
+        id: 'update-api',
+        status: 'backlog',
+        priority: 'low'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/tasks/update-api`, {
+        priority: 'critical',
+        assignee: 'bob'
+      })
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.priority).toBe('critical')
+      expect(json.data.assignee).toBe('bob')
+    })
+
+    it('PUT /api/tasks/:id should return 404 for non-existent task', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/tasks/nonexistent`, {
+        priority: 'high'
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('PATCH /api/tasks/:id/move should move a task', async () => {
+      writeFeatureFile(tempDir, 'move-api.md', makeFeatureContent({
+        id: 'move-api',
+        status: 'backlog'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PATCH', `http://localhost:${port}/api/tasks/move-api/move`, {
+        status: 'in-progress',
+        position: 0
+      })
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.status).toBe('in-progress')
+
+      // File should be moved
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-api.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'in-progress', 'move-api.md'))).toBe(true)
+    })
+
+    it('DELETE /api/tasks/:id should delete a task', async () => {
+      writeFeatureFile(tempDir, 'delete-api.md', makeFeatureContent({
+        id: 'delete-api'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('DELETE', `http://localhost:${port}/api/tasks/delete-api`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+
+      // File should be gone
+      expect(fs.existsSync(path.join(tempDir, 'backlog', 'delete-api.md'))).toBe(false)
+    })
+
+    it('DELETE /api/tasks/:id should return 404 for non-existent task', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('DELETE', `http://localhost:${port}/api/tasks/nonexistent`)
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // ── REST API: Columns ──
+
+  describe('REST API — Columns', () => {
+    it('GET /api/columns should list columns', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/columns`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.length).toBe(5)
+      expect(json.data.map((c: Record<string, unknown>) => c.id)).toEqual([
+        'backlog', 'todo', 'in-progress', 'review', 'done'
+      ])
+    })
+
+    it('POST /api/columns should add a column', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/columns`, {
+        name: 'Testing',
+        color: '#ff9900'
+      })
+      expect(res.status).toBe(201)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.name).toBe('Testing')
+      expect(json.data.color).toBe('#ff9900')
+
+      // Verify column was added
+      const listRes = await httpGet(`http://localhost:${port}/api/columns`)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.data.length).toBe(6)
+      const testing = listJson.data.find((c: Record<string, unknown>) => c.id === json.data.id)
+      expect(testing).toBeDefined()
+      expect(testing.name).toBe('Testing')
+    })
+
+    it('PUT /api/columns/:id should update a column', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/columns/review`, {
+        name: 'QA Review',
+        color: '#ff0000'
+      })
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+
+      // Verify update
+      const listRes = await httpGet(`http://localhost:${port}/api/columns`)
+      const listJson = JSON.parse(listRes.body)
+      const review = listJson.data.find((c: Record<string, unknown>) => c.id === 'review')
+      expect(review.name).toBe('QA Review')
+      expect(review.color).toBe('#ff0000')
+    })
+
+    it('PUT /api/columns/:id should return 404 for non-existent column', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/columns/nonexistent`, {
+        name: 'Nope'
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('DELETE /api/columns/:id should remove an empty column', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      // Add a column first, then remove it
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/columns`, {
+        name: 'Temp Col',
+        color: '#000'
+      })
+      const createdCol = JSON.parse(createRes.body).data
+      const colId = createdCol.id
+
+      const res = await httpRequest('DELETE', `http://localhost:${port}/api/columns/${colId}`)
+      expect(res.status).toBe(200)
+
+      // Verify removal
+      const listRes = await httpGet(`http://localhost:${port}/api/columns`)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.data.find((c: Record<string, unknown>) => c.id === colId)).toBeUndefined()
+    })
+  })
+
+  // ── REST API: Settings ──
+
+  describe('REST API — Settings', () => {
+    it('GET /api/settings should return settings', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/settings`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.showPriorityBadges).toBe(true)
+      expect(json.data.showBuildWithAI).toBe(false)
+    })
+
+    it('PUT /api/settings should update settings', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/settings`, {
+        showPriorityBadges: false,
+        compactMode: true,
+        showAssignee: true,
+        showDueDate: true,
+        showLabels: true,
+        showBuildWithAI: false,
+        showFileName: false,
+        markdownEditorMode: false,
+        defaultPriority: 'high',
+        defaultStatus: 'todo'
+      })
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.showPriorityBadges).toBe(false)
+      expect(json.data.compactMode).toBe(true)
+
+      // Verify via GET
+      const getRes = await httpGet(`http://localhost:${port}/api/settings`)
+      const getJson = JSON.parse(getRes.body)
+      expect(getJson.data.showPriorityBadges).toBe(false)
+      expect(getJson.data.compactMode).toBe(true)
+    })
+  })
+
+  // ── REST API: Webhooks ──
+
+  describe('REST API — Webhooks', () => {
+    it('GET /api/webhooks should return empty list initially', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/webhooks`)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data).toEqual([])
+    })
+
+    it('POST /api/webhooks should register a webhook', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/webhooks`, {
+        url: 'https://example.com/hook',
+        events: ['task.created', 'task.moved'],
+        secret: 'test-secret'
+      })
+      expect(res.status).toBe(201)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.url).toBe('https://example.com/hook')
+      expect(json.data.events).toEqual(['task.created', 'task.moved'])
+      expect(json.data.id).toMatch(/^wh_/)
+
+      // Verify via GET
+      const listRes = await httpGet(`http://localhost:${port}/api/webhooks`)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.data.length).toBe(1)
+    })
+
+    it('DELETE /api/webhooks/:id should remove a webhook', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      // Create first
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/webhooks`, {
+        url: 'https://example.com/hook',
+        events: ['*']
+      })
+      const webhookId = JSON.parse(createRes.body).data.id
+
+      // Delete
+      const res = await httpRequest('DELETE', `http://localhost:${port}/api/webhooks/${webhookId}`)
+      expect(res.status).toBe(200)
+
+      // Verify removed
+      const listRes = await httpGet(`http://localhost:${port}/api/webhooks`)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.data.length).toBe(0)
+    })
+
+    it('DELETE /api/webhooks/:id should return 404 for non-existent webhook', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('DELETE', `http://localhost:${port}/api/webhooks/wh_nonexistent`)
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // ── REST API: CORS & Error Handling ──
+
+  describe('REST API — CORS & Error Handling', () => {
+    it('should include CORS headers on API responses', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks`)
+      expect(res.headers['access-control-allow-origin']).toBe('*')
+    })
+
+    it('should handle OPTIONS preflight for CORS', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpRequest('OPTIONS', `http://localhost:${port}/api/tasks`)
+      expect(res.status).toBe(204)
+      expect(res.headers['access-control-allow-origin']).toBe('*')
+      expect(res.headers['access-control-allow-methods']).toBeDefined()
+    })
+
+    it('should return 404 for unknown API paths', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/nonexistent`)
+      expect(res.status).toBe(404)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(false)
+    })
+
+    it('REST API changes should broadcast to WebSocket clients', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      // Listen for init broadcast from WS
+      const wsUpdate = waitForMessage(ws, 'init', 5000)
+
+      // Create task via API
+      await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Broadcast Test',
+        status: 'backlog',
+        priority: 'medium'
+      })
+
+      // WS client should receive broadcast
+      const response = await wsUpdate
+      const features = response.features as Array<Record<string, unknown>>
+      expect(features.length).toBe(1)
+      expect(features[0].content).toContain('Broadcast Test')
     })
   })
 })

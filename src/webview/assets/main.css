@@ -301,5 +301,29 @@ input:focus-visible {
 
 .card-inline-markdown p {
   margin: 0;
-  display: inline;
+}
+
+.card-inline-markdown ul,
+.card-inline-markdown ol {
+  margin: 0.25em 0;
+  padding-left: 1.25em;
+}
+
+.card-inline-markdown li {
+  margin: 0;
+}
+
+.card-inline-markdown li p {
+  margin: 0;
+}
+
+.card-inline-markdown h1,
+.card-inline-markdown h2,
+.card-inline-markdown h3,
+.card-inline-markdown h4,
+.card-inline-markdown h5,
+.card-inline-markdown h6 {
+  font-size: inherit;
+  font-weight: 600;
+  margin: 0;
 }

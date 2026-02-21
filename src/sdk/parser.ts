@@ -1,6 +1,15 @@
 import * as path from 'path'
 import type { Feature, FeatureStatus, Priority } from '../shared/types'
 
+function extractIdFromFilename(filePath: string): string {
+  const basename = path.basename(filePath, '.md')
+  // New format: "42-some-slug" → "42"
+  const numericMatch = basename.match(/^(\d+)-/)
+  if (numericMatch) return numericMatch[1]
+  // Legacy format: full basename is the ID
+  return basename
+}
+
 export function parseFeatureFile(content: string, filePath: string): Feature | null {
   content = content.replace(/\r\n/g, '\n')
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
@@ -23,7 +32,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   }
 
   return {
-    id: getValue('id') || path.basename(filePath, '.md'),
+    id: getValue('id') || extractIdFromFilename(filePath),
     status: (getValue('status') as FeatureStatus) || 'backlog',
     priority: (getValue('priority') as Priority) || 'medium',
     assignee: getValue('assignee') || null,

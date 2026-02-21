@@ -4,12 +4,13 @@ import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
-import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
+import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter } from '../shared/config'
 import type { KanbanConfig } from '../shared/config'
 import { parseFeatureFile, serializeFeature } from '../sdk/parser'
-import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './fileUtils'
+import { ensureStatusSubfolders, moveFeatureFile, renameFeatureFile, getFeatureFilePath, getStatusFromPath } from './fileUtils'
+import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook } from './webhooks'
 
 interface CreateFeatureData {
   status: FeatureStatus
@@ -49,8 +50,68 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     return readConfig(workspaceRoot)
   }
 
-  function saveConfig(config: KanbanConfig): void {
+  function saveConfigFile(config: KanbanConfig): void {
     writeConfig(workspaceRoot, config)
+  }
+
+  // --- Helpers ---
+
+  function sanitizeFeature(feature: Feature): Omit<Feature, 'filePath'> {
+    const { filePath: _, ...rest } = feature
+    return rest
+  }
+
+  function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', () => {
+        try {
+          const text = Buffer.concat(chunks).toString('utf-8')
+          resolve(text ? JSON.parse(text) : {})
+        } catch (err) {
+          reject(err)
+        }
+      })
+      req.on('error', reject)
+    })
+  }
+
+  function matchRoute(
+    expectedMethod: string,
+    actualMethod: string,
+    pathname: string,
+    pattern: string
+  ): Record<string, string> | null {
+    if (expectedMethod !== actualMethod) return null
+    const patternParts = pattern.split('/')
+    const pathParts = pathname.split('/')
+    if (patternParts.length !== pathParts.length) return null
+    const params: Record<string, string> = {}
+    for (let i = 0; i < patternParts.length; i++) {
+      if (patternParts[i].startsWith(':')) {
+        params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i])
+      } else if (patternParts[i] !== pathParts[i]) {
+        return null
+      }
+    }
+    return params
+  }
+
+  function jsonOk(res: http.ServerResponse, data: unknown, status = 200): void {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    })
+    res.end(JSON.stringify({ ok: true, data }))
+  }
+
+  function jsonError(res: http.ServerResponse, status: number, error: string): void {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    })
+    res.end(JSON.stringify({ ok: false, error }))
   }
 
   // --- HTML template ---
@@ -151,15 +212,22 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
     }
 
+    // Sync ID counter with existing cards
+    const numericIds = loaded
+      .map(f => parseInt(f.id, 10))
+      .filter(n => !Number.isNaN(n))
+    if (numericIds.length > 0) {
+      syncCardIdCounter(workspaceRoot, numericIds)
+    }
+
     features = loaded.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
-  // --- Message handling ---
+  // --- Message building & broadcast ---
 
   function buildInitMessage(): unknown {
     const config = getConfig()
     const settings = configToSettings(config)
-    // Standalone mode: force these off
     settings.showBuildWithAI = false
     settings.markdownEditorMode = false
     return {
@@ -179,329 +247,204 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
-  async function handleMessage(ws: WebSocket, message: unknown): Promise<void> {
-    const msg = message as Record<string, unknown>
-    switch (msg.type) {
-      case 'ready':
-        loadFeatures()
-        ws.send(JSON.stringify(buildInitMessage()))
-        break
+  // --- Mutation functions ---
+  // Shared by both WebSocket handlers and REST API routes.
 
-      case 'createFeature': {
-        const data = msg.data as CreateFeatureData
-        fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-        ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
+  function doCreateFeature(data: CreateFeatureData): Feature {
+    fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
+    ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
 
-        const title = getTitleFromContent(data.content)
-        const filename = generateFeatureFilename(title)
-        const now = new Date().toISOString()
-        const featuresInStatus = features
-          .filter(f => f.status === data.status)
-          .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-        const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
+    const title = getTitleFromContent(data.content)
+    const numericId = allocateCardId(workspaceRoot)
+    const filename = generateFeatureFilename(numericId, title)
+    const now = new Date().toISOString()
+    const featuresInStatus = features
+      .filter(f => f.status === data.status)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+    const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
 
-        const feature: Feature = {
-          id: filename,
-          status: data.status,
-          priority: data.priority,
-          assignee: data.assignee,
-          dueDate: data.dueDate,
-          created: now,
-          modified: now,
-          completedAt: data.status === 'done' ? now : null,
-          labels: data.labels,
-          attachments: [],
-          order: generateKeyBetween(lastOrder, null),
-          content: data.content,
-          filePath: getFeatureFilePath(absoluteFeaturesDir, data.status, filename)
-        }
+    const feature: Feature = {
+      id: String(numericId),
+      status: data.status,
+      priority: data.priority,
+      assignee: data.assignee,
+      dueDate: data.dueDate,
+      created: now,
+      modified: now,
+      completedAt: data.status === 'done' ? now : null,
+      labels: data.labels,
+      attachments: [],
+      order: generateKeyBetween(lastOrder, null),
+      content: data.content,
+      filePath: getFeatureFilePath(absoluteFeaturesDir, data.status, filename)
+    }
 
-        fs.mkdirSync(path.dirname(feature.filePath), { recursive: true })
-        const content = serializeFeature(feature)
-        fs.writeFileSync(feature.filePath, content, 'utf-8')
+    fs.mkdirSync(path.dirname(feature.filePath), { recursive: true })
+    const content = serializeFeature(feature)
+    fs.writeFileSync(feature.filePath, content, 'utf-8')
 
-        features.push(feature)
-        broadcast(buildInitMessage())
-        break
+    features.push(feature)
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'task.created', sanitizeFeature(feature))
+    return feature
+  }
+
+  function doMoveFeature(featureId: string, newStatus: string, newOrder: number): Feature | null {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
+
+    const oldStatus = feature.status
+    const statusChanged = oldStatus !== newStatus
+
+    feature.status = newStatus as FeatureStatus
+    feature.modified = new Date().toISOString()
+    if (statusChanged) {
+      feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
+    }
+
+    const targetColumnFeatures = features
+      .filter(f => f.status === newStatus && f.id !== featureId)
+      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+
+    const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
+    const before = clampedOrder > 0 ? targetColumnFeatures[clampedOrder - 1].order : null
+    const after = clampedOrder < targetColumnFeatures.length ? targetColumnFeatures[clampedOrder].order : null
+    feature.order = generateKeyBetween(before, after)
+
+    const content = serializeFeature(feature)
+    fs.writeFileSync(feature.filePath, content, 'utf-8')
+
+    if (statusChanged) {
+      migrating = true
+      try {
+        feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, newStatus, feature.attachments)
+      } catch {
+        // retry next load
+      } finally {
+        migrating = false
       }
+    }
 
-      case 'moveFeature': {
-        const featureId = msg.featureId as string
-        const newStatus = msg.newStatus as string
-        const newOrder = msg.newOrder as number
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'task.moved', {
+      ...sanitizeFeature(feature),
+      previousStatus: oldStatus
+    })
+    return feature
+  }
 
-        const oldStatus = feature.status
-        const statusChanged = oldStatus !== newStatus
+  function doUpdateFeature(featureId: string, updates: Partial<Feature>): Feature | null {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
 
-        feature.status = newStatus as FeatureStatus
-        feature.modified = new Date().toISOString()
-        if (statusChanged) {
-          feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
-        }
+    const oldStatus = feature.status
+    const oldTitle = getTitleFromContent(feature.content)
+    const { filePath: _fp, id: _id, ...safeUpdates } = updates
+    Object.assign(feature, safeUpdates)
+    feature.modified = new Date().toISOString()
+    if (oldStatus !== feature.status) {
+      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+    }
 
-        const targetColumnFeatures = features
-          .filter(f => f.status === newStatus && f.id !== featureId)
-          .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+    const content = serializeFeature(feature)
+    fs.writeFileSync(feature.filePath, content, 'utf-8')
 
-        const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
-        const before = clampedOrder > 0 ? targetColumnFeatures[clampedOrder - 1].order : null
-        const after = clampedOrder < targetColumnFeatures.length ? targetColumnFeatures[clampedOrder].order : null
-        feature.order = generateKeyBetween(before, after)
+    // Rename file if title changed (numeric-ID cards only)
+    const newTitle = getTitleFromContent(feature.content)
+    const numId = extractNumericId(feature.id)
+    if (numId !== null && newTitle !== oldTitle) {
+      const newFilename = generateFeatureFilename(numId, newTitle)
+      migrating = true
+      try {
+        feature.filePath = renameFeatureFile(feature.filePath, newFilename)
+      } catch { /* retry next load */ } finally { migrating = false }
+    }
 
-        const content = serializeFeature(feature)
-        fs.writeFileSync(feature.filePath, content, 'utf-8')
-
-        if (statusChanged) {
-          migrating = true
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, newStatus, feature.attachments)
-          } catch {
-            // retry next load
-          } finally {
-            migrating = false
-          }
-        }
-
-        broadcast(buildInitMessage())
-        break
+    if (oldStatus !== feature.status) {
+      migrating = true
+      try {
+        feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
+      } catch {
+        // retry next load
+      } finally {
+        migrating = false
       }
+    }
 
-      case 'deleteFeature': {
-        const featureId = msg.featureId as string
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(feature))
+    return feature
+  }
 
-        try {
-          fs.unlinkSync(feature.filePath)
-          features = features.filter(f => f.id !== featureId)
-          broadcast(buildInitMessage())
-        } catch (err) {
-          console.error('Failed to delete feature:', err)
-        }
-        break
-      }
+  function doDeleteFeature(featureId: string): boolean {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return false
 
-      case 'updateFeature': {
-        const featureId = msg.featureId as string
-        const updates = msg.updates as Partial<Feature>
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
-
-        const oldStatus = feature.status
-        Object.assign(feature, updates)
-        feature.modified = new Date().toISOString()
-        if (oldStatus !== feature.status) {
-          feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
-        }
-
-        const content = serializeFeature(feature)
-        fs.writeFileSync(feature.filePath, content, 'utf-8')
-
-        if (oldStatus !== feature.status) {
-          migrating = true
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-          } catch {
-            // retry next load
-          } finally {
-            migrating = false
-          }
-        }
-
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'openFeature': {
-        const featureId = msg.featureId as string
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
-
-        currentEditingFeatureId = featureId
-
-        const frontmatter: FeatureFrontmatter = {
-          id: feature.id,
-          status: feature.status,
-          priority: feature.priority,
-          assignee: feature.assignee,
-          dueDate: feature.dueDate,
-          created: feature.created,
-          modified: feature.modified,
-          completedAt: feature.completedAt,
-          labels: feature.labels,
-          attachments: feature.attachments,
-          order: feature.order
-        }
-
-        ws.send(JSON.stringify({
-          type: 'featureContent',
-          featureId: feature.id,
-          content: feature.content,
-          frontmatter
-        }))
-        break
-      }
-
-      case 'saveFeatureContent': {
-        const featureId = msg.featureId as string
-        const newContent = msg.content as string
-        const frontmatter = msg.frontmatter as FeatureFrontmatter
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
-
-        const oldStatus = feature.status
-
-        feature.content = newContent
-        feature.status = frontmatter.status
-        feature.priority = frontmatter.priority
-        feature.assignee = frontmatter.assignee
-        feature.dueDate = frontmatter.dueDate
-        feature.labels = frontmatter.labels
-        feature.attachments = frontmatter.attachments || feature.attachments || []
-        feature.modified = new Date().toISOString()
-        if (oldStatus !== feature.status) {
-          feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
-        }
-
-        const fileContent = serializeFeature(feature)
-        lastWrittenContent = fileContent
-        fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-        if (oldStatus !== feature.status) {
-          migrating = true
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-          } catch {
-            // retry next load
-          } finally {
-            migrating = false
-          }
-        }
-
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'closeFeature':
-        currentEditingFeatureId = null
-        break
-
-      case 'openSettings': {
-        const config = getConfig()
-        const settings = configToSettings(config)
-        // Standalone mode: force these off
-        settings.showBuildWithAI = false
-        settings.markdownEditorMode = false
-        ws.send(JSON.stringify({
-          type: 'showSettings',
-          settings
-        }))
-        break
-      }
-
-      case 'saveSettings': {
-        const newSettings = msg.settings as CardDisplaySettings
-        const config = getConfig()
-        saveConfig(settingsToConfig(config, newSettings))
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'addColumn': {
-        const col = msg.column as { name: string; color: string }
-        const config = getConfig()
-        const columns = config.columns
-        const id = col.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-        let uniqueId = id
-        let counter = 1
-        while (columns.some(c => c.id === uniqueId)) {
-          uniqueId = `${id}-${counter++}`
-        }
-        columns.push({ id: uniqueId, name: col.name, color: col.color })
-        saveConfig({ ...config, columns })
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'editColumn': {
-        const columnId = msg.columnId as string
-        const updates = msg.updates as { name: string; color: string }
-        const config = getConfig()
-        if (!config.columns.some(c => c.id === columnId)) break
-        const columns = config.columns.map(c =>
-          c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
-        )
-        saveConfig({ ...config, columns })
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'removeColumn': {
-        const columnId = msg.columnId as string
-        const hasFeatures = features.some(f => f.status === columnId)
-        if (hasFeatures) break
-        const config = getConfig()
-        const columns = config.columns.filter(c => c.id !== columnId)
-        if (columns.length === 0) break
-        saveConfig({ ...config, columns })
-        broadcast(buildInitMessage())
-        break
-      }
-
-      case 'removeAttachment': {
-        const featureId = msg.featureId as string
-        const attachment = msg.attachment as string
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
-
-        feature.attachments = (feature.attachments || []).filter(a => a !== attachment)
-        feature.modified = new Date().toISOString()
-        const fileContent = serializeFeature(feature)
-        lastWrittenContent = fileContent
-        fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-        // Send updated feature content back if editing
-        if (currentEditingFeatureId === featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            id: feature.id,
-            status: feature.status,
-            priority: feature.priority,
-            assignee: feature.assignee,
-            dueDate: feature.dueDate,
-            created: feature.created,
-            modified: feature.modified,
-            completedAt: feature.completedAt,
-            labels: feature.labels,
-            attachments: feature.attachments,
-            order: feature.order
-          }
-          ws.send(JSON.stringify({
-            type: 'featureContent',
-            featureId: feature.id,
-            content: feature.content,
-            frontmatter
-          }))
-        }
-        broadcast(buildInitMessage())
-        break
-      }
-
-      // VSCode-specific actions — no-ops in standalone
-      case 'openFile':
-      case 'focusMenuBar':
-      case 'startWithAI':
-      case 'addAttachment':
-      case 'openAttachment':
-        break
+    try {
+      fs.unlinkSync(feature.filePath)
+      const deleted = sanitizeFeature(feature)
+      features = features.filter(f => f.id !== featureId)
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'task.deleted', deleted)
+      return true
+    } catch (err) {
+      console.error('Failed to delete feature:', err)
+      return false
     }
   }
 
-  // --- HTTP server ---
+  function doAddColumn(name: string, color: string): KanbanColumn {
+    const config = getConfig()
+    const columns = config.columns
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    let uniqueId = id
+    let counter = 1
+    while (columns.some(c => c.id === uniqueId)) {
+      uniqueId = `${id}-${counter++}`
+    }
+    const column: KanbanColumn = { id: uniqueId, name, color }
+    columns.push(column)
+    saveConfigFile({ ...config, columns })
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'column.created', column)
+    return column
+  }
 
-  // Helper: add attachment file to a feature and persist
-  function addAttachmentToFeature(featureId: string, filename: string, fileData: Buffer): boolean {
+  function doEditColumn(columnId: string, updates: { name: string; color: string }): KanbanColumn | null {
+    const config = getConfig()
+    const col = config.columns.find(c => c.id === columnId)
+    if (!col) return null
+    const columns = config.columns.map(c =>
+      c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
+    )
+    saveConfigFile({ ...config, columns })
+    const updated = columns.find(c => c.id === columnId) ?? col
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'column.updated', updated)
+    return updated
+  }
+
+  function doRemoveColumn(columnId: string): { removed: boolean; error?: string } {
+    const hasFeatures = features.some(f => f.status === columnId)
+    if (hasFeatures) return { removed: false, error: 'Column has tasks' }
+    const config = getConfig()
+    const col = config.columns.find(c => c.id === columnId)
+    if (!col) return { removed: false, error: 'Column not found' }
+    const columns = config.columns.filter(c => c.id !== columnId)
+    if (columns.length === 0) return { removed: false, error: 'Cannot remove last column' }
+    saveConfigFile({ ...config, columns })
+    broadcast(buildInitMessage())
+    fireWebhooks(workspaceRoot, 'column.deleted', col)
+    return { removed: true }
+  }
+
+  function doSaveSettings(newSettings: CardDisplaySettings): void {
+    const config = getConfig()
+    saveConfigFile(settingsToConfig(config, newSettings))
+    broadcast(buildInitMessage())
+  }
+
+  function doAddAttachment(featureId: string, filename: string, fileData: Buffer): boolean {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return false
 
@@ -520,126 +463,509 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     return true
   }
 
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url || '/', `http://${req.headers.host}`)
+  function doRemoveAttachment(featureId: string, attachment: string): Feature | null {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
 
-    // --- API: Upload attachment ---
-    if (req.method === 'POST' && url.pathname === '/api/upload-attachment') {
-      const chunks: Buffer[] = []
-      req.on('data', (chunk: Buffer) => chunks.push(chunk))
-      req.on('end', () => {
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString('utf-8'))
-          const featureId = body.featureId as string
-          const files = body.files as { name: string; data: string }[]
+    feature.attachments = (feature.attachments || []).filter(a => a !== attachment)
+    feature.modified = new Date().toISOString()
+    const fileContent = serializeFeature(feature)
+    lastWrittenContent = fileContent
+    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
 
-          if (!featureId || !Array.isArray(files)) {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Missing featureId or files' }))
-            return
-          }
+    broadcast(buildInitMessage())
+    return feature
+  }
 
-          for (const file of files) {
-            const buf = Buffer.from(file.data, 'base64')
-            addAttachmentToFeature(featureId, file.name, buf)
-          }
+  // --- WebSocket message handling ---
 
-          // Broadcast updated state and send feature content
-          broadcast(buildInitMessage())
-          const feature = features.find(f => f.id === featureId)
-          if (feature && currentEditingFeatureId === featureId) {
-            const frontmatter: FeatureFrontmatter = {
-              id: feature.id,
-              status: feature.status,
-              priority: feature.priority,
-              assignee: feature.assignee,
-              dueDate: feature.dueDate,
-              created: feature.created,
-              modified: feature.modified,
-              completedAt: feature.completedAt,
-              labels: feature.labels,
-              attachments: feature.attachments,
-              order: feature.order
-            }
-            broadcast({
-              type: 'featureContent',
-              featureId: feature.id,
-              content: feature.content,
-              frontmatter
-            })
-          }
+  async function handleMessage(ws: WebSocket, message: unknown): Promise<void> {
+    const msg = message as Record<string, unknown>
+    switch (msg.type) {
+      case 'ready':
+        loadFeatures()
+        ws.send(JSON.stringify(buildInitMessage()))
+        break
 
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true }))
-        } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: String(err) }))
+      case 'createFeature':
+        doCreateFeature(msg.data as CreateFeatureData)
+        break
+
+      case 'moveFeature':
+        doMoveFeature(msg.featureId as string, msg.newStatus as string, msg.newOrder as number)
+        break
+
+      case 'deleteFeature':
+        doDeleteFeature(msg.featureId as string)
+        break
+
+      case 'updateFeature':
+        doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)
+        break
+
+      case 'openFeature': {
+        const featureId = msg.featureId as string
+        const feature = features.find(f => f.id === featureId)
+        if (!feature) break
+
+        currentEditingFeatureId = featureId
+        const frontmatter: FeatureFrontmatter = {
+          id: feature.id, status: feature.status, priority: feature.priority,
+          assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+          modified: feature.modified, completedAt: feature.completedAt,
+          labels: feature.labels, attachments: feature.attachments, order: feature.order
         }
+        ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter }))
+        break
+      }
+
+      case 'saveFeatureContent': {
+        const featureId = msg.featureId as string
+        const newContent = msg.content as string
+        const fm = msg.frontmatter as FeatureFrontmatter
+        const feature = features.find(f => f.id === featureId)
+        if (!feature) break
+
+        const oldStatus = feature.status
+        const oldTitle = getTitleFromContent(feature.content)
+        feature.content = newContent
+        feature.status = fm.status
+        feature.priority = fm.priority
+        feature.assignee = fm.assignee
+        feature.dueDate = fm.dueDate
+        feature.labels = fm.labels
+        feature.attachments = fm.attachments || feature.attachments || []
+        feature.modified = new Date().toISOString()
+        if (oldStatus !== feature.status) {
+          feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+        }
+
+        const fileContent = serializeFeature(feature)
+        lastWrittenContent = fileContent
+        fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
+
+        // Rename file if title changed (numeric-ID cards only)
+        const saveNewTitle = getTitleFromContent(feature.content)
+        const saveNumId = extractNumericId(feature.id)
+        if (saveNumId !== null && saveNewTitle !== oldTitle) {
+          const newFilename = generateFeatureFilename(saveNumId, saveNewTitle)
+          migrating = true
+          try {
+            feature.filePath = renameFeatureFile(feature.filePath, newFilename)
+          } catch { /* retry next load */ } finally { migrating = false }
+        }
+
+        if (oldStatus !== feature.status) {
+          migrating = true
+          try {
+            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
+          } catch { /* retry next load */ } finally { migrating = false }
+        }
+
+        broadcast(buildInitMessage())
+        fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(feature))
+        break
+      }
+
+      case 'closeFeature':
+        currentEditingFeatureId = null
+        break
+
+      case 'openSettings': {
+        const config = getConfig()
+        const settings = configToSettings(config)
+        settings.showBuildWithAI = false
+        settings.markdownEditorMode = false
+        ws.send(JSON.stringify({ type: 'showSettings', settings }))
+        break
+      }
+
+      case 'saveSettings':
+        doSaveSettings(msg.settings as CardDisplaySettings)
+        break
+
+      case 'addColumn': {
+        const col = msg.column as { name: string; color: string }
+        doAddColumn(col.name, col.color)
+        break
+      }
+
+      case 'editColumn':
+        doEditColumn(msg.columnId as string, msg.updates as { name: string; color: string })
+        break
+
+      case 'removeColumn':
+        doRemoveColumn(msg.columnId as string)
+        break
+
+      case 'removeAttachment': {
+        const featureId = msg.featureId as string
+        const feature = doRemoveAttachment(featureId, msg.attachment as string)
+        if (feature && currentEditingFeatureId === featureId) {
+          const frontmatter: FeatureFrontmatter = {
+            id: feature.id, status: feature.status, priority: feature.priority,
+            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+            modified: feature.modified, completedAt: feature.completedAt,
+            labels: feature.labels, attachments: feature.attachments, order: feature.order
+          }
+          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter }))
+        }
+        break
+      }
+
+      // VSCode-specific actions — no-ops in standalone
+      case 'openFile':
+      case 'focusMenuBar':
+      case 'startWithAI':
+      case 'addAttachment':
+      case 'openAttachment':
+        break
+    }
+  }
+
+  // --- HTTP server ---
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`)
+    const { pathname } = url
+    const method = req.method || 'GET'
+
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400'
       })
+      res.end()
       return
     }
 
-    // --- API: Serve attachment file ---
-    if (req.method === 'GET' && url.pathname === '/api/attachment') {
-      const featureId = url.searchParams.get('featureId')
-      const filename = url.searchParams.get('filename')
-      if (!featureId || !filename) {
-        res.writeHead(400, { 'Content-Type': 'text/plain' })
-        res.end('Missing featureId or filename')
-        return
-      }
+    // Route helper: match and extract params, then handle
+    const route = (expectedMethod: string, pattern: string): Record<string, string> | null =>
+      matchRoute(expectedMethod, method, pathname, pattern)
 
-      const feature = features.find(f => f.id === featureId)
-      if (!feature) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' })
-        res.end('Feature not found')
-        return
-      }
+    // ==================== TASKS API ====================
 
+    let params = route('GET', '/api/tasks')
+    if (params) {
+      loadFeatures()
+      let result = features.map(sanitizeFeature)
+      const status = url.searchParams.get('status')
+      if (status) result = result.filter(f => f.status === status)
+      const priority = url.searchParams.get('priority')
+      if (priority) result = result.filter(f => f.priority === priority)
+      const assignee = url.searchParams.get('assignee')
+      if (assignee) result = result.filter(f => f.assignee === assignee)
+      const label = url.searchParams.get('label')
+      if (label) result = result.filter(f => f.labels.includes(label))
+      return jsonOk(res, result)
+    }
+
+    params = route('POST', '/api/tasks')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        const data: CreateFeatureData = {
+          content: (body.content as string) || '',
+          status: (body.status as FeatureStatus) || 'backlog',
+          priority: (body.priority as Priority) || 'medium',
+          assignee: (body.assignee as string) || null,
+          dueDate: (body.dueDate as string) || null,
+          labels: (body.labels as string[]) || []
+        }
+        if (!data.content) return jsonError(res, 400, 'content is required')
+        const feature = doCreateFeature(data)
+        return jsonOk(res, sanitizeFeature(feature), 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('GET', '/api/tasks/:id')
+    if (params) {
+      const { id } = params
+      const feature = features.find(f => f.id === id)
+      if (!feature) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, sanitizeFeature(feature))
+    }
+
+    params = route('PUT', '/api/tasks/:id')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const feature = doUpdateFeature(id, body as Partial<Feature>)
+        if (!feature) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PATCH', '/api/tasks/:id/move')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const newStatus = body.status as string
+        const position = body.position as number ?? 0
+        if (!newStatus) return jsonError(res, 400, 'status is required')
+        const feature = doMoveFeature(id, newStatus, position)
+        if (!feature) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/tasks/:id')
+    if (params) {
+      const { id } = params
+      const ok = doDeleteFeature(id)
+      if (!ok) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, { deleted: true })
+    }
+
+    // ==================== ATTACHMENTS API ====================
+
+    params = route('POST', '/api/tasks/:id/attachments')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const files = body.files as { name: string; data: string }[]
+        if (!Array.isArray(files)) return jsonError(res, 400, 'files array is required')
+        for (const file of files) {
+          const buf = Buffer.from(file.data, 'base64')
+          doAddAttachment(id, file.name, buf)
+        }
+        broadcast(buildInitMessage())
+        const feature = features.find(f => f.id === id)
+        if (!feature) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('GET', '/api/tasks/:id/attachments/:filename')
+    if (params) {
+      const { id, filename: attachName } = params
+      const feature = features.find(f => f.id === id)
+      if (!feature) return jsonError(res, 404, 'Task not found')
       const featureDir = path.dirname(feature.filePath)
-      const attachmentPath = path.resolve(featureDir, filename)
-      // Security: ensure the resolved path is within the features directory
+      const attachmentPath = path.resolve(featureDir, attachName)
       if (!attachmentPath.startsWith(absoluteFeaturesDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' })
         res.end('Forbidden')
         return
       }
-
-      const ext = path.extname(filename)
+      const ext = path.extname(attachName)
       const contentType = MIME_TYPES[ext] || 'application/octet-stream'
-
       fs.readFile(attachmentPath, (err, data) => {
-        if (err) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' })
-          res.end('File not found')
-          return
-        }
+        if (err) { res.writeHead(404); res.end('File not found'); return }
         res.writeHead(200, {
           'Content-Type': contentType,
-          'Content-Disposition': `inline; filename="${filename}"`
+          'Content-Disposition': `inline; filename="${attachName}"`,
+          'Access-Control-Allow-Origin': '*'
         })
         res.end(data)
       })
       return
     }
 
-    let filePath = path.join(resolvedWebviewDir, url.pathname === '/' ? 'index.html' : url.pathname)
+    params = route('DELETE', '/api/tasks/:id/attachments/:filename')
+    if (params) {
+      const { id, filename: attachName } = params
+      const feature = doRemoveAttachment(id, attachName)
+      if (!feature) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, sanitizeFeature(feature))
+    }
 
-    // Serve index.html for any non-file path (SPA fallback)
+    // ==================== COLUMNS API ====================
+
+    params = route('GET', '/api/columns')
+    if (params) {
+      return jsonOk(res, getConfig().columns)
+    }
+
+    params = route('POST', '/api/columns')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        const name = body.name as string
+        const color = body.color as string
+        if (!name) return jsonError(res, 400, 'name is required')
+        const column = doAddColumn(name, color || '#6b7280')
+        return jsonOk(res, column, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/columns/:id')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const column = doEditColumn(id, { name: body.name as string, color: body.color as string })
+        if (!column) return jsonError(res, 404, 'Column not found')
+        return jsonOk(res, column)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/columns/:id')
+    if (params) {
+      const { id } = params
+      const result = doRemoveColumn(id)
+      if (!result.removed) return jsonError(res, 400, result.error || 'Cannot remove column')
+      return jsonOk(res, { deleted: true })
+    }
+
+    // ==================== SETTINGS API ====================
+
+    params = route('GET', '/api/settings')
+    if (params) {
+      const config = getConfig()
+      const settings = configToSettings(config)
+      settings.showBuildWithAI = false
+      settings.markdownEditorMode = false
+      return jsonOk(res, settings)
+    }
+
+    params = route('PUT', '/api/settings')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        doSaveSettings(body as unknown as CardDisplaySettings)
+        const config = getConfig()
+        return jsonOk(res, configToSettings(config))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    // ==================== WEBHOOKS API ====================
+
+    params = route('GET', '/api/webhooks')
+    if (params) {
+      return jsonOk(res, loadWebhooks(workspaceRoot))
+    }
+
+    params = route('POST', '/api/webhooks')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        const webhookUrl = body.url as string
+        const events = body.events as string[]
+        const secret = body.secret as string | undefined
+        if (!webhookUrl) return jsonError(res, 400, 'url is required')
+        if (!events || !Array.isArray(events) || events.length === 0) {
+          return jsonError(res, 400, 'events array is required')
+        }
+        const webhook = createWebhook(workspaceRoot, { url: webhookUrl, events, secret })
+        return jsonOk(res, webhook, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/webhooks/:id')
+    if (params) {
+      const { id } = params
+      const ok = deleteWebhook(workspaceRoot, id)
+      if (!ok) return jsonError(res, 404, 'Webhook not found')
+      return jsonOk(res, { deleted: true })
+    }
+
+    // ==================== WORKSPACE API ====================
+
+    params = route('GET', '/api/workspace')
+    if (params) {
+      return jsonOk(res, { path: workspaceRoot })
+    }
+
+    // ==================== LEGACY API (backwards compat) ====================
+
+    if (method === 'POST' && pathname === '/api/upload-attachment') {
+      try {
+        const body = await readBody(req)
+        const featureId = body.featureId as string
+        const files = body.files as { name: string; data: string }[]
+        if (!featureId || !Array.isArray(files)) return jsonError(res, 400, 'Missing featureId or files')
+
+        for (const file of files) {
+          const buf = Buffer.from(file.data, 'base64')
+          doAddAttachment(featureId, file.name, buf)
+        }
+
+        broadcast(buildInitMessage())
+        const feature = features.find(f => f.id === featureId)
+        if (feature && currentEditingFeatureId === featureId) {
+          const frontmatter: FeatureFrontmatter = {
+            id: feature.id, status: feature.status, priority: feature.priority,
+            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
+            modified: feature.modified, completedAt: feature.completedAt,
+            labels: feature.labels, attachments: feature.attachments, order: feature.order
+          }
+          broadcast({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter })
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: String(err) }))
+      }
+      return
+    }
+
+    if (method === 'GET' && pathname === '/api/attachment') {
+      const featureId = url.searchParams.get('featureId')
+      const filename = url.searchParams.get('filename')
+      if (!featureId || !filename) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('Missing featureId or filename'); return
+      }
+      const feature = features.find(f => f.id === featureId)
+      if (!feature) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Feature not found'); return }
+      const featureDir = path.dirname(feature.filePath)
+      const attachmentPath = path.resolve(featureDir, filename)
+      if (!attachmentPath.startsWith(absoluteFeaturesDir)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end('Forbidden'); return
+      }
+      const ext = path.extname(filename)
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+      fs.readFile(attachmentPath, (err, data) => {
+        if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('File not found'); return }
+        res.writeHead(200, { 'Content-Type': contentType, 'Content-Disposition': `inline; filename="${filename}"` })
+        res.end(data)
+      })
+      return
+    }
+
+    // Catch-all for unmatched /api/* routes
+    if (pathname.startsWith('/api/')) {
+      return jsonError(res, 404, 'Not found')
+    }
+
+    // ==================== STATIC FILES ====================
+
+    const filePath = path.join(resolvedWebviewDir, pathname === '/' ? 'index.html' : pathname)
+
     if (!path.extname(filePath)) {
-      // Serve generated index.html
       res.writeHead(200, { 'Content-Type': 'text/html' })
       res.end(indexHtml)
       return
     }
 
-    // Serve static file
     const ext = path.extname(filePath)
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
 
     fs.readFile(filePath, (err, data) => {
       if (err) {
-        // Try serving index.html for SPA routes
         res.writeHead(200, { 'Content-Type': 'text/html' })
         res.end(indexHtml)
         return
@@ -668,7 +994,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-  // Ensure features dir exists before watching
   fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
 
   const watcher = chokidar.watch(absoluteFeaturesDir, {
@@ -684,31 +1009,18 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       loadFeatures()
       broadcast(buildInitMessage())
 
-      // If the changed file is the currently-edited feature, refresh editor
       if (currentEditingFeatureId && changedPath) {
         const editingFeature = features.find(f => f.id === currentEditingFeatureId)
         if (editingFeature && editingFeature.filePath === changedPath) {
           const currentContent = serializeFeature(editingFeature)
           if (currentContent !== lastWrittenContent) {
             const frontmatter: FeatureFrontmatter = {
-              id: editingFeature.id,
-              status: editingFeature.status,
-              priority: editingFeature.priority,
-              assignee: editingFeature.assignee,
-              dueDate: editingFeature.dueDate,
-              created: editingFeature.created,
-              modified: editingFeature.modified,
-              completedAt: editingFeature.completedAt,
-              labels: editingFeature.labels,
-              attachments: editingFeature.attachments,
-              order: editingFeature.order
+              id: editingFeature.id, status: editingFeature.status, priority: editingFeature.priority,
+              assignee: editingFeature.assignee, dueDate: editingFeature.dueDate, created: editingFeature.created,
+              modified: editingFeature.modified, completedAt: editingFeature.completedAt,
+              labels: editingFeature.labels, attachments: editingFeature.attachments, order: editingFeature.order
             }
-            broadcast({
-              type: 'featureContent',
-              featureId: editingFeature.id,
-              content: editingFeature.content,
-              frontmatter
-            })
+            broadcast({ type: 'featureContent', featureId: editingFeature.id, content: editingFeature.content, frontmatter })
           }
         }
       }
@@ -719,7 +1031,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   watcher.on('add', handleFileChange)
   watcher.on('unlink', handleFileChange)
 
-  // Clean up on server close
   server.on('close', () => {
     watcher.close()
     wss.close()
@@ -727,6 +1038,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   server.listen(port, () => {
     console.log(`Kanban board running at http://localhost:${port}`)
+    console.log(`API available at http://localhost:${port}/api`)
     console.log(`Features directory: ${absoluteFeaturesDir}`)
   })
 

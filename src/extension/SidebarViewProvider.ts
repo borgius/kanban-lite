@@ -13,7 +13,7 @@ interface SidebarFeature {
 }
 
 export class SidebarViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'kanban-markdown.boardView'
+  public static readonly viewType = 'kanban-lite.boardView'
 
   private _view?: vscode.WebviewView
   private _features: SidebarFeature[] = []
@@ -60,17 +60,17 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
           this._refresh()
           break
         case 'openBoard':
-          vscode.commands.executeCommand('kanban-markdown.open')
+          vscode.commands.executeCommand('kanban-lite.open')
           break
         case 'newFeature':
-          vscode.commands.executeCommand('kanban-markdown.open')
+          vscode.commands.executeCommand('kanban-lite.open')
           // Wait for the panel to be ready, then trigger create dialog
           setTimeout(() => {
             KanbanPanel.currentPanel?.triggerCreateDialog()
           }, 500)
           break
         case 'openFeature':
-          vscode.commands.executeCommand('kanban-markdown.open')
+          vscode.commands.executeCommand('kanban-lite.open')
           setTimeout(() => {
             KanbanPanel.currentPanel?.openFeature(message.featureId)
           }, 500)
@@ -80,7 +80,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
-        vscode.commands.executeCommand('kanban-markdown.open')
+        vscode.commands.executeCommand('kanban-lite.open')
       }
     }, null, this._disposables)
 
@@ -89,7 +89,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     })
 
     // Auto-open the board when the sidebar first loads
-    vscode.commands.executeCommand('kanban-markdown.open')
+    vscode.commands.executeCommand('kanban-lite.open')
 
     webviewView.webview.html = this._getHtml()
   }
@@ -218,7 +218,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       return v === 'null' ? '' : v
     }
 
-    const id = getValue('id') || path.basename(filename, '.md')
+    const basename = path.basename(filename, '.md')
+    const numericMatch = basename.match(/^(\d+)-/)
+    const id = getValue('id') || (numericMatch ? numericMatch[1] : basename)
     const status = (getValue('status') as FeatureStatus) || 'backlog'
     const priority = (getValue('priority') as Priority) || 'medium'
     const title = getTitleFromContent(body)

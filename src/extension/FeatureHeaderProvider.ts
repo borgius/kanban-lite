@@ -9,7 +9,7 @@ import { readConfig, CONFIG_FILENAME } from '../shared/config'
  * The actual markdown editing is done by VSCode's native text editor.
  */
 export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'kanban-markdown.featureHeader'
+  public static readonly viewType = 'kanban-lite.featureHeader'
 
   private _view?: vscode.WebviewView
   private _currentDocument?: vscode.TextDocument

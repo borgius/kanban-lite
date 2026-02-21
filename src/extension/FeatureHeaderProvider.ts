@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import type { FeatureFrontmatter, EditorExtensionMessage, EditorWebviewMessage } from '../shared/editorTypes'
 import type { FeatureStatus, Priority } from '../shared/types'
+import { readConfig, CONFIG_FILENAME } from '../shared/config'
 
 /**
  * Provides a webview panel that shows feature metadata (frontmatter) as a header.
@@ -48,16 +49,22 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       })
     )
 
-    // Listen for settings changes
-    disposables.push(
-      vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('kanban-markdown')) {
-          // Re-evaluate current editor against fresh config
-          // (e.g. featuresDirectory may have changed)
-          provider._onActiveEditorChanged(vscode.window.activeTextEditor)
-        }
-      })
-    )
+    // Listen for .kanban.json changes
+    const workspaceFolders = vscode.workspace.workspaceFolders
+    if (workspaceFolders) {
+      const root = workspaceFolders[0].uri.fsPath
+      const configPattern = new vscode.RelativePattern(root, CONFIG_FILENAME)
+      const configWatcher = vscode.workspace.createFileSystemWatcher(configPattern)
+
+      const handleConfigChange = () => {
+        provider._onActiveEditorChanged(vscode.window.activeTextEditor)
+      }
+
+      configWatcher.onDidChange(handleConfigChange)
+      configWatcher.onDidCreate(handleConfigChange)
+      configWatcher.onDidDelete(handleConfigChange)
+      disposables.push(configWatcher)
+    }
 
     return vscode.Disposable.from(...disposables)
   }
@@ -179,10 +186,10 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
 
     // Only track .md files in the features directory (including status subfolders)
     const uri = editor.document.uri
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const featuresDirectory = config.get<string>('featuresDirectory') || '.kanban'
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
-    const fullFeaturesDir = workspaceRoot ? path.join(workspaceRoot, featuresDirectory) : featuresDirectory
+    if (!workspaceRoot) return
+    const kanbanConfig = readConfig(workspaceRoot)
+    const fullFeaturesDir = path.join(workspaceRoot, kanbanConfig.featuresDirectory)
     if (uri.fsPath.endsWith('.md') && uri.fsPath.startsWith(fullFeaturesDir + path.sep)) {
       this._currentDocument = editor.document
       this._updateViewForCurrentEditor()

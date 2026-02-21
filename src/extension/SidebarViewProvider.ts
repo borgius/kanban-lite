@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import { getTitleFromContent } from '../shared/types'
 import type { FeatureStatus, Priority, KanbanColumn } from '../shared/types'
+import { readConfig, CONFIG_FILENAME } from '../shared/config'
 import { KanbanPanel } from './KanbanPanel'
 
 interface SidebarFeature {
@@ -23,14 +24,23 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
     this._setupFileWatcher()
 
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('kanban-markdown')) {
-        if (e.affectsConfiguration('kanban-markdown.featuresDirectory')) {
-          this._setupFileWatcher()
-        }
+    // Watch .kanban.json for config changes
+    const workspaceFolders = vscode.workspace.workspaceFolders
+    if (workspaceFolders) {
+      const root = workspaceFolders[0].uri.fsPath
+      const configPattern = new vscode.RelativePattern(root, CONFIG_FILENAME)
+      const configWatcher = vscode.workspace.createFileSystemWatcher(configPattern)
+
+      const handleConfigChange = () => {
+        this._setupFileWatcher()
         this._refresh()
       }
-    }, null, this._disposables)
+
+      configWatcher.onDidChange(handleConfigChange, null, this._disposables)
+      configWatcher.onDidCreate(handleConfigChange, null, this._disposables)
+      configWatcher.onDidDelete(handleConfigChange, null, this._disposables)
+      this._disposables.push(configWatcher)
+    }
   }
 
   public resolveWebviewView(
@@ -141,21 +151,17 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   private _getFeaturesDir(): string | null {
     const workspaceFolders = vscode.workspace.workspaceFolders
     if (!workspaceFolders || workspaceFolders.length === 0) return null
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const dir = config.get<string>('featuresDirectory') || '.kanban'
-    return path.join(workspaceFolders[0].uri.fsPath, dir)
+    const root = workspaceFolders[0].uri.fsPath
+    const config = readConfig(root)
+    return path.join(root, config.featuresDirectory)
   }
 
   private _getColumns(): KanbanColumn[] {
-    const config = vscode.workspace.getConfiguration('kanban-markdown')
-    const defaultColumns: KanbanColumn[] = [
-      { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-      { id: 'todo', name: 'To Do', color: '#3b82f6' },
-      { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-      { id: 'review', name: 'Review', color: '#8b5cf6' },
-      { id: 'done', name: 'Done', color: '#22c55e' }
-    ]
-    return config.get<KanbanColumn[]>('columns', defaultColumns)
+    const workspaceFolders = vscode.workspace.workspaceFolders
+    if (!workspaceFolders || workspaceFolders.length === 0) return []
+    const root = workspaceFolders[0].uri.fsPath
+    const config = readConfig(root)
+    return config.columns
   }
 
   private async _loadFeatures(): Promise<void> {

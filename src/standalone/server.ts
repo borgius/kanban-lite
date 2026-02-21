@@ -6,6 +6,8 @@ import chokidar from 'chokidar'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import { getTitleFromContent, generateFeatureFilename } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
+import type { KanbanConfig } from '../shared/config'
 import { parseFeatureFile, serializeFeature } from '../sdk/parser'
 import { ensureStatusSubfolders, moveFeatureFile, getFeatureFilePath, getStatusFromPath } from './fileUtils'
 
@@ -29,26 +31,6 @@ const MIME_TYPES: Record<string, string> = {
   '.map': 'application/json'
 }
 
-const DEFAULT_COLUMNS: KanbanColumn[] = [
-  { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-  { id: 'todo', name: 'To Do', color: '#3b82f6' },
-  { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-  { id: 'review', name: 'Review', color: '#8b5cf6' },
-  { id: 'done', name: 'Done', color: '#22c55e' }
-]
-
-const DEFAULT_SETTINGS: CardDisplaySettings = {
-  showPriorityBadges: true,
-  showAssignee: true,
-  showDueDate: true,
-  showLabels: true,
-  showBuildWithAI: false,
-  showFileName: false,
-  compactMode: false,
-  markdownEditorMode: false,
-  defaultPriority: 'medium',
-  defaultStatus: 'backlog'
-}
 
 export function startServer(featuresDir: string, port: number, webviewDir?: string): http.Server {
   const absoluteFeaturesDir = path.resolve(featuresDir)
@@ -60,54 +42,16 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // Resolve webview static files directory
   const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
 
-  // --- Settings persistence ---
-  const settingsFilePath = path.join(absoluteFeaturesDir, '.kanban-settings.json')
-  let currentSettings: CardDisplaySettings = { ...DEFAULT_SETTINGS }
-  let currentColumns: KanbanColumn[] = [...DEFAULT_COLUMNS]
+  // Derive workspace root from features directory
+  const workspaceRoot = path.dirname(absoluteFeaturesDir)
 
-  function loadSettings(): void {
-    try {
-      if (fs.existsSync(settingsFilePath)) {
-        const raw = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'))
-        currentSettings = { ...DEFAULT_SETTINGS, ...raw }
-        currentSettings.showBuildWithAI = false
-        currentSettings.markdownEditorMode = false
-        if (Array.isArray(raw.columns)) {
-          currentColumns = raw.columns.map((c: KanbanColumn) => ({ ...c }))
-        }
-      }
-    } catch {
-      currentSettings = { ...DEFAULT_SETTINGS }
-    }
+  function getConfig(): KanbanConfig {
+    return readConfig(workspaceRoot)
   }
 
-  function saveSettingsToFile(settings: CardDisplaySettings): void {
-    settings.showBuildWithAI = false
-    settings.markdownEditorMode = false
-    currentSettings = settings
-    try {
-      fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-      fs.writeFileSync(settingsFilePath, JSON.stringify(settings, null, 2), 'utf-8')
-    } catch (err) {
-      console.error('Failed to save settings:', err)
-    }
+  function saveConfig(config: KanbanConfig): void {
+    writeConfig(workspaceRoot, config)
   }
-
-  function saveColumns(columns: KanbanColumn[]): void {
-    currentColumns = columns
-    try {
-      const existing = fs.existsSync(settingsFilePath)
-        ? JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'))
-        : {}
-      existing.columns = columns
-      fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-      fs.writeFileSync(settingsFilePath, JSON.stringify(existing, null, 2), 'utf-8')
-    } catch (err) {
-      console.error('Failed to save columns:', err)
-    }
-  }
-
-  loadSettings()
 
   // --- HTML template ---
   const indexHtml = `<!DOCTYPE html>
@@ -128,7 +72,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   function loadFeatures(): void {
     fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-    ensureStatusSubfolders(absoluteFeaturesDir, currentColumns.map(c => c.id))
+    ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
 
     // Phase 1: Migrate flat root .md files into their status subfolder
     migrating = true
@@ -213,11 +157,16 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Message handling ---
 
   function buildInitMessage(): unknown {
+    const config = getConfig()
+    const settings = configToSettings(config)
+    // Standalone mode: force these off
+    settings.showBuildWithAI = false
+    settings.markdownEditorMode = false
     return {
       type: 'init',
       features,
-      columns: currentColumns,
-      settings: currentSettings
+      columns: config.columns,
+      settings
     }
   }
 
@@ -241,7 +190,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'createFeature': {
         const data = msg.data as CreateFeatureData
         fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-        ensureStatusSubfolders(absoluteFeaturesDir, currentColumns.map(c => c.id))
+        ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
 
         const title = getTitleFromContent(data.content)
         const filename = generateFeatureFilename(title)
@@ -439,30 +388,36 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         currentEditingFeatureId = null
         break
 
-      case 'openSettings':
+      case 'openSettings': {
+        const config = getConfig()
+        const settings = configToSettings(config)
         ws.send(JSON.stringify({
           type: 'showSettings',
-          settings: currentSettings
+          settings
         }))
         break
+      }
 
       case 'saveSettings': {
         const newSettings = msg.settings as CardDisplaySettings
-        saveSettingsToFile(newSettings)
+        const config = getConfig()
+        saveConfig(settingsToConfig(config, newSettings))
         broadcast(buildInitMessage())
         break
       }
 
       case 'addColumn': {
         const col = msg.column as { name: string; color: string }
+        const config = getConfig()
+        const columns = config.columns
         const id = col.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
         let uniqueId = id
         let counter = 1
-        while (currentColumns.some(c => c.id === uniqueId)) {
+        while (columns.some(c => c.id === uniqueId)) {
           uniqueId = `${id}-${counter++}`
         }
-        currentColumns.push({ id: uniqueId, name: col.name, color: col.color })
-        saveColumns(currentColumns)
+        columns.push({ id: uniqueId, name: col.name, color: col.color })
+        saveConfig({ ...config, columns })
         broadcast(buildInitMessage())
         break
       }
@@ -470,11 +425,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'editColumn': {
         const columnId = msg.columnId as string
         const updates = msg.updates as { name: string; color: string }
-        if (!currentColumns.some(c => c.id === columnId)) break
-        currentColumns = currentColumns.map(c =>
+        const config = getConfig()
+        if (!config.columns.some(c => c.id === columnId)) break
+        const columns = config.columns.map(c =>
           c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
         )
-        saveColumns(currentColumns)
+        saveConfig({ ...config, columns })
         broadcast(buildInitMessage())
         break
       }
@@ -483,10 +439,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const columnId = msg.columnId as string
         const hasFeatures = features.some(f => f.status === columnId)
         if (hasFeatures) break
-        const updated = currentColumns.filter(c => c.id !== columnId)
-        if (updated.length === 0) break
-        currentColumns = updated
-        saveColumns(currentColumns)
+        const config = getConfig()
+        const columns = config.columns.filter(c => c.id !== columnId)
+        if (columns.length === 0) break
+        saveConfig({ ...config, columns })
         broadcast(buildInitMessage())
         break
       }

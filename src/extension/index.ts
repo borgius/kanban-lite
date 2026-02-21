@@ -73,7 +73,7 @@ async function createFeatureFromPrompts(): Promise<void> {
   const kanbanConfig = readConfig(root)
   const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-  await ensureStatusSubfolders(featuresDir)
+  await ensureStatusSubfolders(featuresDir, kanbanConfig.columns.map(c => c.id))
 
   const filename = generateFeatureFilename(title)
   const now = new Date().toISOString()
@@ -91,6 +91,7 @@ async function createFeatureFromPrompts(): Promise<void> {
     modified: now,
     completedAt: status === 'done' ? now : null,
     labels: [],
+    attachments: [],
     order: generateKeyBetween(null, null),
     content,
     filePath: getFeatureFilePath(featuresDir, status, filename)

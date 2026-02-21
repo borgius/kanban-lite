@@ -166,9 +166,11 @@ describe('Standalone Server Integration', () => {
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
-    // Clean up temp dirs
+    // Clean up temp dirs and config file
     fs.rmSync(tempDir, { recursive: true, force: true })
     fs.rmSync(webviewDir, { recursive: true, force: true })
+    const configFile = path.join(path.dirname(tempDir), '.kanban.json')
+    if (fs.existsSync(configFile)) fs.rmSync(configFile)
   })
 
   // ── HTTP Tests ──
@@ -1209,19 +1211,19 @@ describe('Standalone Server Integration', () => {
       expect(settings.defaultPriority).toBe('high')
       expect(settings.defaultStatus).toBe('todo')
 
-      // Verify file on disk
-      const settingsFile = path.join(tempDir, '.kanban-settings.json')
-      expect(fs.existsSync(settingsFile)).toBe(true)
-      const persisted = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'))
+      // Verify file on disk (config is at workspace root, i.e. parent of features dir)
+      const configFile = path.join(path.dirname(tempDir), '.kanban.json')
+      expect(fs.existsSync(configFile)).toBe(true)
+      const persisted = JSON.parse(fs.readFileSync(configFile, 'utf-8'))
       expect(persisted.compactMode).toBe(true)
       expect(persisted.showLabels).toBe(false)
     })
 
     it('should load persisted settings on server restart', async () => {
-      // Write settings file before starting server
+      // Write config file at workspace root (parent of features dir)
       fs.mkdirSync(tempDir, { recursive: true })
       fs.writeFileSync(
-        path.join(tempDir, '.kanban-settings.json'),
+        path.join(path.dirname(tempDir), '.kanban.json'),
         JSON.stringify({
           showPriorityBadges: false,
           compactMode: true,

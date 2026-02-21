@@ -391,6 +391,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'openSettings': {
         const config = getConfig()
         const settings = configToSettings(config)
+        // Standalone mode: force these off
+        settings.showBuildWithAI = false
+        settings.markdownEditorMode = false
         ws.send(JSON.stringify({
           type: 'showSettings',
           settings

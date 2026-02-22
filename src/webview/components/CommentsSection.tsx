@@ -1,6 +1,41 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
+import { Marked } from 'marked'
 import { Send, Pencil, Trash2 } from 'lucide-react'
 import type { Comment } from '../../shared/types'
+
+// Dedicated marked instance for comments with links opening in new tabs
+const commentMarked = new Marked({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens)
+      const titleAttr = title ? ` title="${title}"` : ''
+      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
+    }
+  }
+})
+
+function parseCommentMarkdown(content: string): string {
+  // Wrap bare URLs in <> so GFM autolink picks them up.
+  // Negative lookbehind avoids URLs already in markdown link syntax or HTML attributes.
+  const processed = content.replace(
+    /(?<!\]\(|"|'|<)(https?:\/\/[^\s<>\])"']+)/g,
+    '<$1>'
+  )
+  return commentMarked.parse(processed, { async: false }) as string
+}
+
+function CommentBody({ content }: { content: string }) {
+  const html = useMemo(() => parseCommentMarkdown(content), [content])
+  return (
+    <div
+      className="comment-markdown"
+      style={{ color: 'var(--vscode-foreground)' }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
 
 function timeAgo(dateStr: string): string {
   const now = Date.now()
@@ -61,17 +96,20 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
     <div className="flex flex-col">
       {/* Comment list */}
       {comments.length > 0 && (
-        <div className="flex flex-col gap-1 px-4 pb-2">
+        <div className="flex flex-col gap-2 px-4 py-3">
           {comments.map(comment => (
             <div
               key={comment.id}
-              className="rounded p-2 text-xs group"
-              style={{ background: 'var(--vscode-input-background)' }}
+              className="rounded p-2 pl-3 text-xs group"
+              style={{
+                background: 'var(--vscode-input-background)',
+                borderLeft: '2px solid var(--vscode-textLink-foreground, #3b82f6)',
+              }}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <span
-                    className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
+                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
                     style={{
                       background: 'var(--vscode-badge-background)',
                       color: 'var(--vscode-badge-foreground)',
@@ -82,7 +120,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
                   <span className="font-medium" style={{ color: 'var(--vscode-foreground)' }}>
                     {comment.author}
                   </span>
-                  <span style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                  <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}>
                     {timeAgo(comment.created)}
                   </span>
                 </div>
@@ -149,12 +187,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
                   </div>
                 </div>
               ) : (
-                <div
-                  className="whitespace-pre-wrap"
-                  style={{ color: 'var(--vscode-foreground)' }}
-                >
-                  {comment.content}
-                </div>
+                <CommentBody content={comment.content} />
               )}
             </div>
           ))}

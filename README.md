@@ -344,50 +344,41 @@ kanban-mcp --dir .kanban
 
 ## SDK
 
-Use the kanban SDK programmatically in your own tools:
+Use the kanban SDK programmatically in your own tools. The `KanbanSDK` class is the single source of truth — the CLI, MCP server, VSCode extension, and standalone server all delegate to it.
 
 ```typescript
 import { KanbanSDK } from 'kanban-lite/dist/sdk'
 
 const sdk = new KanbanSDK('/path/to/.kanban')
 
-// List all cards
+// Cards
 const cards = await sdk.listCards()
-
-// Create a card
-const card = await sdk.createCard({
-  content: '# My Card\n\nDescription here.',
-  status: 'todo',
-  priority: 'high',
-  labels: ['backend']
-})
-
-// Move a card
-await sdk.moveCard('card-id', 'in-progress')
-
-// Update fields
-await sdk.updateCard('card-id', { assignee: 'alice' })
-
-// Delete
-await sdk.deleteCard('card-id')
+const card = await sdk.createCard({ content: '# My Task', status: 'todo', priority: 'high' })
+await sdk.moveCard(card.id, 'in-progress')
+await sdk.updateCard(card.id, { assignee: 'alice' })
+await sdk.deleteCard(card.id)
 
 // Comments
 await sdk.addComment('card-id', 'alice', 'Looks good!')
-await sdk.updateComment('card-id', 'c1', 'Updated comment')
+await sdk.updateComment('card-id', 'c1', 'Updated')
 await sdk.deleteComment('card-id', 'c1')
-const comments = await sdk.listComments('card-id')
 
 // Attachments
 await sdk.addAttachment('card-id', '/path/to/file.png')
 await sdk.removeAttachment('card-id', 'file.png')
-const attachments = await sdk.listAttachments('card-id')
 
-// Manage columns
-const columns = await sdk.listColumns()
-await sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
-await sdk.updateColumn('testing', { name: 'QA' })
+// Columns
+const columns = sdk.listColumns()
+sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
+sdk.updateColumn('testing', { name: 'QA' })
 await sdk.removeColumn('testing')
+
+// Settings
+const settings = sdk.getSettings()
+sdk.updateSettings({ ...settings, compactMode: true })
 ```
+
+See the [full SDK documentation](docs/sdk.md) for detailed API reference, types, error handling, and file layout.
 
 ## Data Storage
 

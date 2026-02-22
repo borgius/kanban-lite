@@ -9,6 +9,12 @@ export async function ensureDirectories(featuresDir: string): Promise<void> {
   await fs.mkdir(featuresDir, { recursive: true })
 }
 
+export async function ensureStatusSubfolders(featuresDir: string, statuses: string[]): Promise<void> {
+  for (const status of statuses) {
+    await fs.mkdir(path.join(featuresDir, status), { recursive: true })
+  }
+}
+
 export async function moveFeatureFile(
   currentPath: string,
   featuresDir: string,

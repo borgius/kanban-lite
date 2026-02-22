@@ -3,6 +3,7 @@ import * as path from 'path'
 import { getTitleFromContent } from '../shared/types'
 import type { FeatureStatus, Priority, KanbanColumn } from '../shared/types'
 import { readConfig, CONFIG_FILENAME } from '../shared/config'
+import { KanbanSDK } from '../sdk/KanbanSDK'
 import { KanbanPanel } from './KanbanPanel'
 
 interface SidebarFeature {
@@ -157,11 +158,10 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private _getColumns(): KanbanColumn[] {
-    const workspaceFolders = vscode.workspace.workspaceFolders
-    if (!workspaceFolders || workspaceFolders.length === 0) return []
-    const root = workspaceFolders[0].uri.fsPath
-    const config = readConfig(root)
-    return config.columns
+    const featuresDir = this._getFeaturesDir()
+    if (!featuresDir) return []
+    const sdk = new KanbanSDK(featuresDir)
+    return sdk.listColumns()
   }
 
   private async _loadFeatures(): Promise<void> {
@@ -171,61 +171,18 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       return
     }
 
-    const features: SidebarFeature[] = []
-
-    // Load .md files from ALL subdirectories
     try {
-      const topEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
-      for (const [name, type] of topEntries) {
-        if (type !== vscode.FileType.Directory || name.startsWith('.')) continue
-        const subdir = path.join(featuresDir, name)
-        try {
-          const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
-          for (const [file, fileType] of entries) {
-            if (fileType !== vscode.FileType.File || !file.endsWith('.md')) continue
-            const filePath = path.join(subdir, file)
-            try {
-              const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-              const parsed = this._parseFrontmatter(content, file)
-              if (parsed) features.push(parsed)
-            } catch {
-              // Skip unreadable files
-            }
-          }
-        } catch {
-          // Skip unreadable directories
-        }
-      }
+      const sdk = new KanbanSDK(featuresDir)
+      const cards = await sdk.listCards()
+      this._features = cards.map(c => ({
+        id: c.id,
+        title: getTitleFromContent(c.content),
+        status: c.status,
+        priority: c.priority,
+      }))
     } catch {
-      // Root directory may not exist
+      this._features = []
     }
-
-    this._features = features
-  }
-
-  private _parseFrontmatter(content: string, filename: string): SidebarFeature | null {
-    content = content.replace(/\r\n/g, '\n')
-    const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-    if (!match) return null
-
-    const fm = match[1]
-    const body = match[2] || ''
-
-    const getValue = (key: string): string => {
-      const m = fm.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'))
-      if (!m) return ''
-      const v = m[1].trim().replace(/^["']|["']$/g, '')
-      return v === 'null' ? '' : v
-    }
-
-    const basename = path.basename(filename, '.md')
-    const numericMatch = basename.match(/^(\d+)-/)
-    const id = getValue('id') || (numericMatch ? numericMatch[1] : basename)
-    const status = (getValue('status') as FeatureStatus) || 'backlog'
-    const priority = (getValue('priority') as Priority) || 'medium'
-    const title = getTitleFromContent(body)
-
-    return { id, title, status, priority }
   }
 
   private _getHtml(): string {

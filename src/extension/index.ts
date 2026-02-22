@@ -1,14 +1,12 @@
 import * as net from 'node:net'
 import * as path from 'node:path'
 
-import { generateKeyBetween } from 'fractional-indexing'
 import * as vscode from 'vscode'
 
-import type { Feature, FeatureStatus, Priority } from '../shared/types'
-import { generateFeatureFilename } from '../shared/types'
-import { readConfig, allocateCardId } from '../shared/config'
+import type { FeatureStatus, Priority } from '../shared/types'
+import { readConfig } from '../shared/config'
+import { KanbanSDK } from '../sdk/KanbanSDK'
 import { startServer } from '../standalone/server'
-import { ensureStatusSubfolders, getFeatureFilePath } from './featureFileUtils'
 import { KanbanPanel } from './KanbanPanel'
 import { SidebarViewProvider } from './SidebarViewProvider'
 
@@ -68,65 +66,20 @@ async function createFeatureFromPrompts(): Promise<void> {
     placeHolder: 'Enter a description for the feature'
   })
 
-  // Create the feature file
+  // Create the feature via SDK
   const root = workspaceFolders[0].uri.fsPath
   const kanbanConfig = readConfig(root)
   const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
-  await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-  await ensureStatusSubfolders(featuresDir, kanbanConfig.columns.map(c => c.id))
+  const sdk = new KanbanSDK(featuresDir)
 
-  const numericId = allocateCardId(root)
-  const filename = generateFeatureFilename(numericId, title)
-  const now = new Date().toISOString()
-
-  // Build content with title as first # heading
   const content = `# ${title}${description ? '\n\n' + description : ''}`
-
-  const feature: Feature = {
-    id: String(numericId),
-    status,
-    priority,
-    assignee: null,
-    dueDate: null,
-    created: now,
-    modified: now,
-    completedAt: status === 'done' ? now : null,
-    labels: [],
-    attachments: [],
-    comments: [],
-    order: generateKeyBetween(null, null),
-    content,
-    filePath: getFeatureFilePath(featuresDir, status, filename)
-  }
-
-  const fileContent = serializeFeature(feature)
-  await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+  const feature = await sdk.createCard({ content, status, priority })
 
   // Open the created file
   const document = await vscode.workspace.openTextDocument(feature.filePath)
   await vscode.window.showTextDocument(document)
 
   vscode.window.showInformationMessage(`Created feature: ${title}`)
-}
-
-function serializeFeature(feature: Feature): string {
-  const frontmatter = [
-    '---',
-    `id: "${feature.id}"`,
-    `status: "${feature.status}"`,
-    `priority: "${feature.priority}"`,
-    `assignee: ${feature.assignee ? `"${feature.assignee}"` : 'null'}`,
-    `dueDate: ${feature.dueDate ? `"${feature.dueDate}"` : 'null'}`,
-    `created: "${feature.created}"`,
-    `modified: "${feature.modified}"`,
-    `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
-    `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
-    `order: "${feature.order}"`,
-    '---',
-    ''
-  ].join('\n')
-
-  return frontmatter + feature.content
 }
 
 let standaloneServer: ReturnType<typeof startServer> | undefined

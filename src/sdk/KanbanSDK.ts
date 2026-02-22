@@ -1,17 +1,20 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import { generateKeyBetween } from 'fractional-indexing'
+import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Comment, Feature, FeatureStatus, KanbanColumn } from '../shared/types'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId, DEFAULT_COLUMNS } from '../shared/types'
-import { allocateCardId, syncCardIdCounter } from '../shared/config'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
+import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter } from '../shared/config'
+import type { CardDisplaySettings } from '../shared/types'
 import { parseFeatureFile, serializeFeature } from './parser'
-import { ensureDirectories, getFeatureFilePath, moveFeatureFile, renameFeatureFile } from './fileUtils'
-import type { CreateCardInput, BoardConfig } from './types'
-
-const BOARD_CONFIG_FILE = 'board.json'
+import { ensureDirectories, ensureStatusSubfolders, getFeatureFilePath, getStatusFromPath, moveFeatureFile, renameFeatureFile } from './fileUtils'
+import type { CreateCardInput } from './types'
 
 export class KanbanSDK {
   constructor(public readonly featuresDir: string) {}
+
+  get workspaceRoot(): string {
+    return path.dirname(this.featuresDir)
+  }
 
   async init(): Promise<void> {
     await ensureDirectories(this.featuresDir)
@@ -19,11 +22,31 @@ export class KanbanSDK {
 
   // --- Card CRUD ---
 
-  async listCards(): Promise<Feature[]> {
+  async listCards(columns?: string[]): Promise<Feature[]> {
     await ensureDirectories(this.featuresDir)
-    const cards: Feature[] = []
+    if (columns) {
+      await ensureStatusSubfolders(this.featuresDir, columns)
+    }
 
-    // Scan all subdirectories for .md files
+    // Phase 1: Migrate flat root .md files into their status subfolder
+    try {
+      const rootFiles = await this._readMdFiles(this.featuresDir)
+      for (const filePath of rootFiles) {
+        try {
+          const card = await this._loadCard(filePath)
+          if (card) {
+            await moveFeatureFile(filePath, this.featuresDir, card.status, card.attachments)
+          }
+        } catch {
+          // Skip files that fail to migrate
+        }
+      }
+    } catch {
+      // Skip
+    }
+
+    // Phase 2: Load .md files from ALL subdirectories
+    const cards: Feature[] = []
     const entries = await fs.readdir(this.featuresDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
@@ -39,15 +62,35 @@ export class KanbanSDK {
       }
     }
 
-    // Also load any orphaned root-level .md files (backward compat)
-    try {
-      const rootFiles = await this._readMdFiles(this.featuresDir)
-      for (const filePath of rootFiles) {
-        const card = await this._loadCard(filePath)
-        if (card) cards.push(card)
+    // Phase 3: Reconcile status ↔ folder mismatches
+    for (const card of cards) {
+      const pathStatus = getStatusFromPath(card.filePath, this.featuresDir)
+      if (pathStatus !== null && pathStatus !== card.status) {
+        try {
+          card.filePath = await moveFeatureFile(card.filePath, this.featuresDir, card.status, card.attachments)
+        } catch {
+          // Will retry on next load
+        }
       }
-    } catch {
-      // Skip
+    }
+
+    // Migrate legacy integer order values to fractional indices
+    const hasLegacyOrder = cards.some(c => /^\d+$/.test(c.order))
+    if (hasLegacyOrder) {
+      const byStatus = new Map<string, Feature[]>()
+      for (const c of cards) {
+        const list = byStatus.get(c.status) || []
+        list.push(c)
+        byStatus.set(c.status, list)
+      }
+      for (const columnCards of byStatus.values()) {
+        columnCards.sort((a, b) => parseInt(a.order) - parseInt(b.order))
+        const keys = generateNKeysBetween(null, null, columnCards.length)
+        for (let i = 0; i < columnCards.length; i++) {
+          columnCards[i].order = keys[i]
+          await fs.writeFile(columnCards[i].filePath, serializeFeature(columnCards[i]), 'utf-8')
+        }
+      }
     }
 
     // Sync ID counter with existing cards
@@ -316,33 +359,32 @@ export class KanbanSDK {
 
   // --- Column management ---
 
-  async listColumns(): Promise<KanbanColumn[]> {
-    const config = await this._readBoardConfig()
-    return config.columns
+  listColumns(): KanbanColumn[] {
+    return readConfig(this.workspaceRoot).columns
   }
 
-  async addColumn(column: KanbanColumn): Promise<KanbanColumn[]> {
-    const config = await this._readBoardConfig()
+  addColumn(column: KanbanColumn): KanbanColumn[] {
+    const config = readConfig(this.workspaceRoot)
     if (config.columns.some(c => c.id === column.id)) {
       throw new Error(`Column already exists: ${column.id}`)
     }
     config.columns.push(column)
-    await this._writeBoardConfig(config)
+    writeConfig(this.workspaceRoot, config)
     return config.columns
   }
 
-  async updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>): Promise<KanbanColumn[]> {
-    const config = await this._readBoardConfig()
+  updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>): KanbanColumn[] {
+    const config = readConfig(this.workspaceRoot)
     const col = config.columns.find(c => c.id === columnId)
     if (!col) throw new Error(`Column not found: ${columnId}`)
     if (updates.name !== undefined) col.name = updates.name
     if (updates.color !== undefined) col.color = updates.color
-    await this._writeBoardConfig(config)
+    writeConfig(this.workspaceRoot, config)
     return config.columns
   }
 
   async removeColumn(columnId: string): Promise<KanbanColumn[]> {
-    const config = await this._readBoardConfig()
+    const config = readConfig(this.workspaceRoot)
     const idx = config.columns.findIndex(c => c.id === columnId)
     if (idx === -1) throw new Error(`Column not found: ${columnId}`)
 
@@ -354,12 +396,12 @@ export class KanbanSDK {
     }
 
     config.columns.splice(idx, 1)
-    await this._writeBoardConfig(config)
+    writeConfig(this.workspaceRoot, config)
     return config.columns
   }
 
-  async reorderColumns(columnIds: string[]): Promise<KanbanColumn[]> {
-    const config = await this._readBoardConfig()
+  reorderColumns(columnIds: string[]): KanbanColumn[] {
+    const config = readConfig(this.workspaceRoot)
     const colMap = new Map(config.columns.map(c => [c.id, c]))
 
     // Validate all IDs exist
@@ -371,8 +413,19 @@ export class KanbanSDK {
     }
 
     config.columns = columnIds.map(id => colMap.get(id) as KanbanColumn)
-    await this._writeBoardConfig(config)
+    writeConfig(this.workspaceRoot, config)
     return config.columns
+  }
+
+  // --- Settings management ---
+
+  getSettings(): CardDisplaySettings {
+    return configToSettings(readConfig(this.workspaceRoot))
+  }
+
+  updateSettings(settings: CardDisplaySettings): void {
+    const config = readConfig(this.workspaceRoot)
+    writeConfig(this.workspaceRoot, settingsToConfig(config, settings))
   }
 
   // --- Private helpers ---
@@ -389,21 +442,4 @@ export class KanbanSDK {
     return parseFeatureFile(content, filePath)
   }
 
-  private _boardConfigPath(): string {
-    return path.join(this.featuresDir, BOARD_CONFIG_FILE)
-  }
-
-  private async _readBoardConfig(): Promise<BoardConfig> {
-    try {
-      const raw = await fs.readFile(this._boardConfigPath(), 'utf-8')
-      return JSON.parse(raw) as BoardConfig
-    } catch {
-      return { columns: [...DEFAULT_COLUMNS] }
-    }
-  }
-
-  private async _writeBoardConfig(config: BoardConfig): Promise<void> {
-    await ensureDirectories(this.featuresDir)
-    await fs.writeFile(this._boardConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
-  }
 }

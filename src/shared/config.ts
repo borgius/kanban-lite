@@ -50,11 +50,12 @@ export function configPath(workspaceRoot: string): string {
 
 export function readConfig(workspaceRoot: string): KanbanConfig {
   const filePath = configPath(workspaceRoot)
+  const defaults = { ...DEFAULT_CONFIG, columns: [...DEFAULT_CONFIG.columns] }
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    return { ...DEFAULT_CONFIG, ...raw }
+    return { ...defaults, ...raw }
   } catch {
-    return { ...DEFAULT_CONFIG }
+    return defaults
   }
 }
 

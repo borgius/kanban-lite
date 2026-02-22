@@ -3,13 +3,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
 import type { Comment, Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
-import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter } from '../shared/config'
-import type { KanbanConfig } from '../shared/config'
-import { parseFeatureFile, serializeFeature } from '../sdk/parser'
-import { ensureStatusSubfolders, moveFeatureFile, renameFeatureFile, getFeatureFilePath, getStatusFromPath } from './fileUtils'
+import { KanbanSDK } from '../sdk/KanbanSDK'
+import { serializeFeature } from '../sdk/parser'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook } from './webhooks'
 
 interface CreateFeatureData {
@@ -45,14 +41,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   // Derive workspace root from features directory
   const workspaceRoot = path.dirname(absoluteFeaturesDir)
-
-  function getConfig(): KanbanConfig {
-    return readConfig(workspaceRoot)
-  }
-
-  function saveConfigFile(config: KanbanConfig): void {
-    writeConfig(workspaceRoot, config)
-  }
+  const sdk = new KanbanSDK(absoluteFeaturesDir)
 
   // --- Helpers ---
 
@@ -131,109 +120,25 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   // --- Feature loading ---
 
-  function loadFeatures(): void {
-    fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-    ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
-
-    // Phase 1: Migrate flat root .md files into their status subfolder
+  async function loadFeatures(): Promise<void> {
     migrating = true
     try {
-      const rootEntries = fs.readdirSync(absoluteFeaturesDir, { withFileTypes: true })
-      for (const entry of rootEntries) {
-        if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-        const filePath = path.join(absoluteFeaturesDir, entry.name)
-        try {
-          const content = fs.readFileSync(filePath, 'utf-8')
-          const feature = parseFeatureFile(content, filePath)
-          if (feature) {
-            moveFeatureFile(filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-          }
-        } catch {
-          // skip
-        }
-      }
+      features = await sdk.listCards(sdk.listColumns().map(c => c.id))
     } finally {
       migrating = false
     }
-
-    // Phase 2: Load .md files from ALL subdirectories
-    const loaded: Feature[] = []
-    const topEntries = fs.readdirSync(absoluteFeaturesDir, { withFileTypes: true })
-    for (const entry of topEntries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const subdir = path.join(absoluteFeaturesDir, entry.name)
-      try {
-        const subEntries = fs.readdirSync(subdir, { withFileTypes: true })
-        for (const sub of subEntries) {
-          if (!sub.isFile() || !sub.name.endsWith('.md')) continue
-          const filePath = path.join(subdir, sub.name)
-          const content = fs.readFileSync(filePath, 'utf-8')
-          const feature = parseFeatureFile(content, filePath)
-          if (feature) loaded.push(feature)
-        }
-      } catch {
-        // skip unreadable directories
-      }
-    }
-
-    // Phase 3: Reconcile status ↔ folder mismatches
-    migrating = true
-    try {
-      for (const feature of loaded) {
-        const pathStatus = getStatusFromPath(feature.filePath, absoluteFeaturesDir)
-        if (pathStatus !== null && pathStatus !== feature.status) {
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-          } catch { /* retry next load */ }
-        }
-      }
-    } finally {
-      migrating = false
-    }
-
-    // Migrate legacy integer order → fractional indices
-    const hasLegacyOrder = loaded.some(f => /^\d+$/.test(f.order))
-    if (hasLegacyOrder) {
-      const byStatus = new Map<string, Feature[]>()
-      for (const f of loaded) {
-        const list = byStatus.get(f.status) || []
-        list.push(f)
-        byStatus.set(f.status, list)
-      }
-
-      for (const columnFeatures of byStatus.values()) {
-        columnFeatures.sort((a, b) => parseInt(a.order) - parseInt(b.order))
-        const keys = generateNKeysBetween(null, null, columnFeatures.length)
-        for (let i = 0; i < columnFeatures.length; i++) {
-          columnFeatures[i].order = keys[i]
-          const content = serializeFeature(columnFeatures[i])
-          fs.writeFileSync(columnFeatures[i].filePath, content, 'utf-8')
-        }
-      }
-    }
-
-    // Sync ID counter with existing cards
-    const numericIds = loaded
-      .map(f => parseInt(f.id, 10))
-      .filter(n => !Number.isNaN(n))
-    if (numericIds.length > 0) {
-      syncCardIdCounter(workspaceRoot, numericIds)
-    }
-
-    features = loaded.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
   // --- Message building & broadcast ---
 
   function buildInitMessage(): unknown {
-    const config = getConfig()
-    const settings = configToSettings(config)
+    const settings = sdk.getSettings()
     settings.showBuildWithAI = false
     settings.markdownEditorMode = false
     return {
       type: 'init',
       features,
-      columns: config.columns,
+      columns: sdk.listColumns(),
       settings
     }
   }
@@ -250,141 +155,71 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Mutation functions ---
   // Shared by both WebSocket handlers and REST API routes.
 
-  function doCreateFeature(data: CreateFeatureData): Feature {
-    fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
-    ensureStatusSubfolders(absoluteFeaturesDir, getConfig().columns.map(c => c.id))
-
-    const title = getTitleFromContent(data.content)
-    const numericId = allocateCardId(workspaceRoot)
-    const filename = generateFeatureFilename(numericId, title)
-    const now = new Date().toISOString()
-    const featuresInStatus = features
-      .filter(f => f.status === data.status)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-    const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
-
-    const feature: Feature = {
-      id: String(numericId),
-      status: data.status,
-      priority: data.priority,
-      assignee: data.assignee,
-      dueDate: data.dueDate,
-      created: now,
-      modified: now,
-      completedAt: data.status === 'done' ? now : null,
-      labels: data.labels,
-      attachments: [],
-      comments: [],
-      order: generateKeyBetween(lastOrder, null),
-      content: data.content,
-      filePath: getFeatureFilePath(absoluteFeaturesDir, data.status, filename)
+  async function doCreateFeature(data: CreateFeatureData): Promise<Feature> {
+    migrating = true
+    try {
+      const feature = await sdk.createCard({
+        content: data.content,
+        status: data.status,
+        priority: data.priority,
+        assignee: data.assignee,
+        dueDate: data.dueDate,
+        labels: data.labels,
+      })
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'task.created', sanitizeFeature(feature))
+      return feature
+    } finally {
+      migrating = false
     }
-
-    fs.mkdirSync(path.dirname(feature.filePath), { recursive: true })
-    const content = serializeFeature(feature)
-    fs.writeFileSync(feature.filePath, content, 'utf-8')
-
-    features.push(feature)
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'task.created', sanitizeFeature(feature))
-    return feature
   }
 
-  function doMoveFeature(featureId: string, newStatus: string, newOrder: number): Feature | null {
+  async function doMoveFeature(featureId: string, newStatus: string, newOrder: number): Promise<Feature | null> {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return null
+    const oldStatus = feature.status
+
+    migrating = true
+    try {
+      const updated = await sdk.moveCard(featureId, newStatus as FeatureStatus, newOrder)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'task.moved', {
+        ...sanitizeFeature(updated),
+        previousStatus: oldStatus
+      })
+      return updated
+    } finally {
+      migrating = false
+    }
+  }
+
+  async function doUpdateFeature(featureId: string, updates: Partial<Feature>): Promise<Feature | null> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return null
 
-    const oldStatus = feature.status
-    const statusChanged = oldStatus !== newStatus
-
-    feature.status = newStatus as FeatureStatus
-    feature.modified = new Date().toISOString()
-    if (statusChanged) {
-      feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
+    migrating = true
+    try {
+      const updated = await sdk.updateCard(featureId, updates)
+      lastWrittenContent = serializeFeature(updated)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(updated))
+      return updated
+    } finally {
+      migrating = false
     }
-
-    const targetColumnFeatures = features
-      .filter(f => f.status === newStatus && f.id !== featureId)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-
-    const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
-    const before = clampedOrder > 0 ? targetColumnFeatures[clampedOrder - 1].order : null
-    const after = clampedOrder < targetColumnFeatures.length ? targetColumnFeatures[clampedOrder].order : null
-    feature.order = generateKeyBetween(before, after)
-
-    const content = serializeFeature(feature)
-    fs.writeFileSync(feature.filePath, content, 'utf-8')
-
-    if (statusChanged) {
-      migrating = true
-      try {
-        feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, newStatus, feature.attachments)
-      } catch {
-        // retry next load
-      } finally {
-        migrating = false
-      }
-    }
-
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'task.moved', {
-      ...sanitizeFeature(feature),
-      previousStatus: oldStatus
-    })
-    return feature
   }
 
-  function doUpdateFeature(featureId: string, updates: Partial<Feature>): Feature | null {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
-
-    const oldStatus = feature.status
-    const oldTitle = getTitleFromContent(feature.content)
-    const { filePath: _fp, id: _id, ...safeUpdates } = updates
-    Object.assign(feature, safeUpdates)
-    feature.modified = new Date().toISOString()
-    if (oldStatus !== feature.status) {
-      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
-    }
-
-    const content = serializeFeature(feature)
-    fs.writeFileSync(feature.filePath, content, 'utf-8')
-
-    // Rename file if title changed (numeric-ID cards only)
-    const newTitle = getTitleFromContent(feature.content)
-    const numId = extractNumericId(feature.id)
-    if (numId !== null && newTitle !== oldTitle) {
-      const newFilename = generateFeatureFilename(numId, newTitle)
-      migrating = true
-      try {
-        feature.filePath = renameFeatureFile(feature.filePath, newFilename)
-      } catch { /* retry next load */ } finally { migrating = false }
-    }
-
-    if (oldStatus !== feature.status) {
-      migrating = true
-      try {
-        feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-      } catch {
-        // retry next load
-      } finally {
-        migrating = false
-      }
-    }
-
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(feature))
-    return feature
-  }
-
-  function doDeleteFeature(featureId: string): boolean {
+  async function doDeleteFeature(featureId: string): Promise<boolean> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return false
 
     try {
-      fs.unlinkSync(feature.filePath)
       const deleted = sanitizeFeature(feature)
-      features = features.filter(f => f.id !== featureId)
+      await sdk.deleteCard(featureId)
+      await loadFeatures()
       broadcast(buildInitMessage())
       fireWebhooks(workspaceRoot, 'task.deleted', deleted)
       return true
@@ -395,154 +230,143 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   }
 
   function doAddColumn(name: string, color: string): KanbanColumn {
-    const config = getConfig()
-    const columns = config.columns
+    const existingColumns = sdk.listColumns()
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
     let uniqueId = id
     let counter = 1
-    while (columns.some(c => c.id === uniqueId)) {
+    while (existingColumns.some(c => c.id === uniqueId)) {
       uniqueId = `${id}-${counter++}`
     }
     const column: KanbanColumn = { id: uniqueId, name, color }
-    columns.push(column)
-    saveConfigFile({ ...config, columns })
+    sdk.addColumn(column)
     broadcast(buildInitMessage())
     fireWebhooks(workspaceRoot, 'column.created', column)
     return column
   }
 
   function doEditColumn(columnId: string, updates: { name: string; color: string }): KanbanColumn | null {
-    const config = getConfig()
-    const col = config.columns.find(c => c.id === columnId)
-    if (!col) return null
-    const columns = config.columns.map(c =>
-      c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
-    )
-    saveConfigFile({ ...config, columns })
-    const updated = columns.find(c => c.id === columnId) ?? col
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'column.updated', updated)
-    return updated
+    try {
+      const columns = sdk.updateColumn(columnId, { name: updates.name, color: updates.color })
+      const updated = columns.find(c => c.id === columnId) ?? null
+      broadcast(buildInitMessage())
+      if (updated) fireWebhooks(workspaceRoot, 'column.updated', updated)
+      return updated
+    } catch {
+      return null
+    }
   }
 
-  function doRemoveColumn(columnId: string): { removed: boolean; error?: string } {
-    const hasFeatures = features.some(f => f.status === columnId)
-    if (hasFeatures) return { removed: false, error: 'Column has tasks' }
-    const config = getConfig()
-    const col = config.columns.find(c => c.id === columnId)
-    if (!col) return { removed: false, error: 'Column not found' }
-    const columns = config.columns.filter(c => c.id !== columnId)
-    if (columns.length === 0) return { removed: false, error: 'Cannot remove last column' }
-    saveConfigFile({ ...config, columns })
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'column.deleted', col)
-    return { removed: true }
+  async function doRemoveColumn(columnId: string): Promise<{ removed: boolean; error?: string }> {
+    try {
+      const columns = sdk.listColumns()
+      if (columns.length <= 1) return { removed: false, error: 'Cannot remove last column' }
+      const col = columns.find(c => c.id === columnId)
+      if (!col) return { removed: false, error: 'Column not found' }
+      await sdk.removeColumn(columnId)
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'column.deleted', col)
+      return { removed: true }
+    } catch (err) {
+      return { removed: false, error: String(err) }
+    }
   }
 
   function doSaveSettings(newSettings: CardDisplaySettings): void {
-    const config = getConfig()
-    saveConfigFile(settingsToConfig(config, newSettings))
+    sdk.updateSettings(newSettings)
     broadcast(buildInitMessage())
   }
 
-  function doAddAttachment(featureId: string, filename: string, fileData: Buffer): boolean {
+  async function doAddAttachment(featureId: string, filename: string, fileData: Buffer): Promise<boolean> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return false
 
+    // Write file data to the card's directory
     const featureDir = path.dirname(feature.filePath)
-    const destPath = path.join(featureDir, filename)
-    fs.writeFileSync(destPath, fileData)
+    fs.writeFileSync(path.join(featureDir, filename), fileData)
 
-    if (!feature.attachments) feature.attachments = []
-    if (!feature.attachments.includes(filename)) {
-      feature.attachments.push(filename)
+    // Register attachment via SDK (skips copy since file is already in place)
+    migrating = true
+    try {
+      const updated = await sdk.addAttachment(featureId, path.join(featureDir, filename))
+      lastWrittenContent = serializeFeature(updated)
+      await loadFeatures()
+    } finally {
+      migrating = false
     }
-    feature.modified = new Date().toISOString()
-    const content = serializeFeature(feature)
-    lastWrittenContent = content
-    fs.writeFileSync(feature.filePath, content, 'utf-8')
     return true
   }
 
-  function doRemoveAttachment(featureId: string, attachment: string): Feature | null {
+  async function doRemoveAttachment(featureId: string, attachment: string): Promise<Feature | null> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return null
 
-    feature.attachments = (feature.attachments || []).filter(a => a !== attachment)
-    feature.modified = new Date().toISOString()
-    const fileContent = serializeFeature(feature)
-    lastWrittenContent = fileContent
-    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-    broadcast(buildInitMessage())
-    return feature
+    migrating = true
+    try {
+      const updated = await sdk.removeAttachment(featureId, attachment)
+      lastWrittenContent = serializeFeature(updated)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      return updated
+    } finally {
+      migrating = false
+    }
   }
 
   // --- Comment mutation functions ---
 
-  function doAddComment(featureId: string, author: string, content: string): Comment | null {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
-
-    if (!feature.comments) feature.comments = []
-
-    const maxId = feature.comments.reduce((max, c) => {
-      const num = parseInt(c.id.replace('c', ''), 10)
-      return Number.isNaN(num) ? max : Math.max(max, num)
-    }, 0)
-
-    const comment: Comment = {
-      id: `c${maxId + 1}`,
-      author,
-      created: new Date().toISOString(),
-      content
+  async function doAddComment(featureId: string, author: string, content: string): Promise<Comment | null> {
+    migrating = true
+    try {
+      const updated = await sdk.addComment(featureId, author, content)
+      lastWrittenContent = serializeFeature(updated)
+      const comment = updated.comments[updated.comments.length - 1]
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'comment.created', { ...comment, cardId: featureId })
+      return comment
+    } catch {
+      return null
+    } finally {
+      migrating = false
     }
-
-    feature.comments.push(comment)
-    feature.modified = new Date().toISOString()
-    const fileContent = serializeFeature(feature)
-    lastWrittenContent = fileContent
-    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'comment.created', { ...comment, cardId: featureId })
-    return comment
   }
 
-  function doUpdateComment(featureId: string, commentId: string, content: string): Comment | null {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
-
-    const comment = (feature.comments || []).find(c => c.id === commentId)
-    if (!comment) return null
-
-    comment.content = content
-    feature.modified = new Date().toISOString()
-    const fileContent = serializeFeature(feature)
-    lastWrittenContent = fileContent
-    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'comment.updated', { ...comment, cardId: featureId })
-    return comment
+  async function doUpdateComment(featureId: string, commentId: string, content: string): Promise<Comment | null> {
+    migrating = true
+    try {
+      const updated = await sdk.updateComment(featureId, commentId, content)
+      lastWrittenContent = serializeFeature(updated)
+      const comment = (updated.comments || []).find(c => c.id === commentId)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      if (comment) fireWebhooks(workspaceRoot, 'comment.updated', { ...comment, cardId: featureId })
+      return comment ?? null
+    } catch {
+      return null
+    } finally {
+      migrating = false
+    }
   }
 
-  function doDeleteComment(featureId: string, commentId: string): boolean {
+  async function doDeleteComment(featureId: string, commentId: string): Promise<boolean> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return false
-
     const comment = (feature.comments || []).find(c => c.id === commentId)
     if (!comment) return false
 
-    feature.comments = feature.comments.filter(c => c.id !== commentId)
-    feature.modified = new Date().toISOString()
-    const fileContent = serializeFeature(feature)
-    lastWrittenContent = fileContent
-    fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-    broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'comment.deleted', { ...comment, cardId: featureId })
-    return true
+    migrating = true
+    try {
+      const updated = await sdk.deleteComment(featureId, commentId)
+      lastWrittenContent = serializeFeature(updated)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      fireWebhooks(workspaceRoot, 'comment.deleted', { ...comment, cardId: featureId })
+      return true
+    } catch {
+      return false
+    } finally {
+      migrating = false
+    }
   }
 
   // --- WebSocket message handling ---
@@ -551,24 +375,24 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     const msg = message as Record<string, unknown>
     switch (msg.type) {
       case 'ready':
-        loadFeatures()
+        await loadFeatures()
         ws.send(JSON.stringify(buildInitMessage()))
         break
 
       case 'createFeature':
-        doCreateFeature(msg.data as CreateFeatureData)
+        await doCreateFeature(msg.data as CreateFeatureData)
         break
 
       case 'moveFeature':
-        doMoveFeature(msg.featureId as string, msg.newStatus as string, msg.newOrder as number)
+        await doMoveFeature(msg.featureId as string, msg.newStatus as string, msg.newOrder as number)
         break
 
       case 'deleteFeature':
-        doDeleteFeature(msg.featureId as string)
+        await doDeleteFeature(msg.featureId as string)
         break
 
       case 'updateFeature':
-        doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)
+        await doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)
         break
 
       case 'openFeature': {
@@ -591,47 +415,15 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const featureId = msg.featureId as string
         const newContent = msg.content as string
         const fm = msg.frontmatter as FeatureFrontmatter
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
-
-        const oldStatus = feature.status
-        const oldTitle = getTitleFromContent(feature.content)
-        feature.content = newContent
-        feature.status = fm.status
-        feature.priority = fm.priority
-        feature.assignee = fm.assignee
-        feature.dueDate = fm.dueDate
-        feature.labels = fm.labels
-        feature.attachments = fm.attachments || feature.attachments || []
-        feature.modified = new Date().toISOString()
-        if (oldStatus !== feature.status) {
-          feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
-        }
-
-        const fileContent = serializeFeature(feature)
-        lastWrittenContent = fileContent
-        fs.writeFileSync(feature.filePath, fileContent, 'utf-8')
-
-        // Rename file if title changed (numeric-ID cards only)
-        const saveNewTitle = getTitleFromContent(feature.content)
-        const saveNumId = extractNumericId(feature.id)
-        if (saveNumId !== null && saveNewTitle !== oldTitle) {
-          const newFilename = generateFeatureFilename(saveNumId, saveNewTitle)
-          migrating = true
-          try {
-            feature.filePath = renameFeatureFile(feature.filePath, newFilename)
-          } catch { /* retry next load */ } finally { migrating = false }
-        }
-
-        if (oldStatus !== feature.status) {
-          migrating = true
-          try {
-            feature.filePath = moveFeatureFile(feature.filePath, absoluteFeaturesDir, feature.status, feature.attachments)
-          } catch { /* retry next load */ } finally { migrating = false }
-        }
-
-        broadcast(buildInitMessage())
-        fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(feature))
+        await doUpdateFeature(featureId, {
+          content: newContent,
+          status: fm.status,
+          priority: fm.priority,
+          assignee: fm.assignee,
+          dueDate: fm.dueDate,
+          labels: fm.labels,
+          attachments: fm.attachments,
+        })
         break
       }
 
@@ -640,8 +432,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
 
       case 'openSettings': {
-        const config = getConfig()
-        const settings = configToSettings(config)
+        const settings = sdk.getSettings()
         settings.showBuildWithAI = false
         settings.markdownEditorMode = false
         ws.send(JSON.stringify({ type: 'showSettings', settings }))
@@ -663,12 +454,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
 
       case 'removeColumn':
-        doRemoveColumn(msg.columnId as string)
+        await doRemoveColumn(msg.columnId as string)
         break
 
       case 'removeAttachment': {
         const featureId = msg.featureId as string
-        const feature = doRemoveAttachment(featureId, msg.attachment as string)
+        const feature = await doRemoveAttachment(featureId, msg.attachment as string)
         if (feature && currentEditingFeatureId === featureId) {
           const frontmatter: FeatureFrontmatter = {
             id: feature.id, status: feature.status, priority: feature.priority,
@@ -682,7 +473,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
 
       case 'addComment': {
-        const comment = doAddComment(msg.featureId as string, msg.author as string, msg.content as string)
+        const comment = await doAddComment(msg.featureId as string, msg.author as string, msg.content as string)
         if (!comment) break
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
@@ -698,7 +489,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
 
       case 'updateComment': {
-        const comment = doUpdateComment(msg.featureId as string, msg.commentId as string, msg.content as string)
+        const comment = await doUpdateComment(msg.featureId as string, msg.commentId as string, msg.content as string)
         if (!comment) break
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
@@ -714,7 +505,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
 
       case 'deleteComment': {
-        doDeleteComment(msg.featureId as string, msg.commentId as string)
+        await doDeleteComment(msg.featureId as string, msg.commentId as string)
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
           const frontmatter: FeatureFrontmatter = {
@@ -765,7 +556,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     let params = route('GET', '/api/tasks')
     if (params) {
-      loadFeatures()
+      await loadFeatures()
       let result = features.map(sanitizeFeature)
       const status = url.searchParams.get('status')
       if (status) result = result.filter(f => f.status === status)
@@ -791,7 +582,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           labels: (body.labels as string[]) || []
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
-        const feature = doCreateFeature(data)
+        const feature = await doCreateFeature(data)
         return jsonOk(res, sanitizeFeature(feature), 201)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -811,7 +602,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const { id } = params
         const body = await readBody(req)
-        const feature = doUpdateFeature(id, body as Partial<Feature>)
+        const feature = await doUpdateFeature(id, body as Partial<Feature>)
         if (!feature) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeFeature(feature))
       } catch (err) {
@@ -827,7 +618,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const newStatus = body.status as string
         const position = body.position as number ?? 0
         if (!newStatus) return jsonError(res, 400, 'status is required')
-        const feature = doMoveFeature(id, newStatus, position)
+        const feature = await doMoveFeature(id, newStatus, position)
         if (!feature) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeFeature(feature))
       } catch (err) {
@@ -838,7 +629,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id')
     if (params) {
       const { id } = params
-      const ok = doDeleteFeature(id)
+      const ok = await doDeleteFeature(id)
       if (!ok) return jsonError(res, 404, 'Task not found')
       return jsonOk(res, { deleted: true })
     }
@@ -854,7 +645,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         if (!Array.isArray(files)) return jsonError(res, 400, 'files array is required')
         for (const file of files) {
           const buf = Buffer.from(file.data, 'base64')
-          doAddAttachment(id, file.name, buf)
+          await doAddAttachment(id, file.name, buf)
         }
         broadcast(buildInitMessage())
         const feature = features.find(f => f.id === id)
@@ -894,7 +685,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id/attachments/:filename')
     if (params) {
       const { id, filename: attachName } = params
-      const feature = doRemoveAttachment(id, attachName)
+      const feature = await doRemoveAttachment(id, attachName)
       if (!feature) return jsonError(res, 404, 'Task not found')
       return jsonOk(res, sanitizeFeature(feature))
     }
@@ -918,7 +709,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const content = body.content as string
         if (!author) return jsonError(res, 400, 'author is required')
         if (!content) return jsonError(res, 400, 'content is required')
-        const comment = doAddComment(id, author, content)
+        const comment = await doAddComment(id, author, content)
         if (!comment) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, comment, 201)
       } catch (err) {
@@ -933,7 +724,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const body = await readBody(req)
         const content = body.content as string
         if (!content) return jsonError(res, 400, 'content is required')
-        const comment = doUpdateComment(id, commentId, content)
+        const comment = await doUpdateComment(id, commentId, content)
         if (!comment) return jsonError(res, 404, 'Comment not found')
         return jsonOk(res, comment)
       } catch (err) {
@@ -944,7 +735,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id/comments/:commentId')
     if (params) {
       const { id, commentId } = params
-      const ok = doDeleteComment(id, commentId)
+      const ok = await doDeleteComment(id, commentId)
       if (!ok) return jsonError(res, 404, 'Comment not found')
       return jsonOk(res, { deleted: true })
     }
@@ -953,7 +744,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     params = route('GET', '/api/columns')
     if (params) {
-      return jsonOk(res, getConfig().columns)
+      return jsonOk(res, sdk.listColumns())
     }
 
     params = route('POST', '/api/columns')
@@ -986,7 +777,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/columns/:id')
     if (params) {
       const { id } = params
-      const result = doRemoveColumn(id)
+      const result = await doRemoveColumn(id)
       if (!result.removed) return jsonError(res, 400, result.error || 'Cannot remove column')
       return jsonOk(res, { deleted: true })
     }
@@ -995,8 +786,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     params = route('GET', '/api/settings')
     if (params) {
-      const config = getConfig()
-      const settings = configToSettings(config)
+      const settings = sdk.getSettings()
       settings.showBuildWithAI = false
       settings.markdownEditorMode = false
       return jsonOk(res, settings)
@@ -1007,8 +797,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const body = await readBody(req)
         doSaveSettings(body as unknown as CardDisplaySettings)
-        const config = getConfig()
-        return jsonOk(res, configToSettings(config))
+        return jsonOk(res, sdk.getSettings())
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1065,7 +854,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
         for (const file of files) {
           const buf = Buffer.from(file.data, 'base64')
-          doAddAttachment(featureId, file.name, buf)
+          await doAddAttachment(featureId, file.name, buf)
         }
 
         broadcast(buildInitMessage())
@@ -1170,8 +959,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (changedPath && !changedPath.endsWith('.md')) return
     if (migrating) return
     if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
-      loadFeatures()
+    debounceTimer = setTimeout(async () => {
+      await loadFeatures()
       broadcast(buildInitMessage())
 
       if (currentEditingFeatureId && changedPath) {

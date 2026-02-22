@@ -52,16 +52,19 @@ Description here.`
 }
 
 describe('KanbanSDK', () => {
-  let tempDir: string
+  let workspaceDir: string
+  let tempDir: string // featuresDir (alias kept for minimal test changes)
   let sdk: KanbanSDK
 
   beforeEach(() => {
-    tempDir = createTempDir()
+    workspaceDir = createTempDir()
+    tempDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(tempDir, { recursive: true })
     sdk = new KanbanSDK(tempDir)
   })
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true })
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
   describe('init', () => {
@@ -375,24 +378,24 @@ describe('KanbanSDK', () => {
   })
 
   describe('listColumns', () => {
-    it('should return default columns when no board.json exists', async () => {
-      const columns = await sdk.listColumns()
+    it('should return default columns when no .kanban.json exists', () => {
+      const columns = sdk.listColumns()
       expect(columns.length).toBe(5)
       expect(columns[0].id).toBe('backlog')
       expect(columns[4].id).toBe('done')
     })
 
-    it('should return custom columns from board.json', async () => {
+    it('should return custom columns from .kanban.json', async () => {
       const config = {
+        featuresDirectory: '.kanban',
         columns: [
           { id: 'new', name: 'New', color: '#ff0000' },
           { id: 'wip', name: 'WIP', color: '#00ff00' },
         ]
       }
-      fs.mkdirSync(tempDir, { recursive: true })
-      fs.writeFileSync(path.join(tempDir, 'board.json'), JSON.stringify(config), 'utf-8')
+      fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
 
-      const columns = await sdk.listColumns()
+      const columns = sdk.listColumns()
       expect(columns.length).toBe(2)
       expect(columns[0].id).toBe('new')
       expect(columns[1].id).toBe('wip')
@@ -400,41 +403,41 @@ describe('KanbanSDK', () => {
   })
 
   describe('addColumn', () => {
-    it('should add a column and persist to board.json', async () => {
-      const columns = await sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
+    it('should add a column and persist to .kanban.json', () => {
+      const columns = sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
       // Default 5 + 1 new
       expect(columns.length).toBe(6)
       expect(columns[5].id).toBe('testing')
 
       // Verify persisted
-      const raw = fs.readFileSync(path.join(tempDir, 'board.json'), 'utf-8')
+      const raw = fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')
       const config = JSON.parse(raw)
       expect(config.columns.length).toBe(6)
     })
 
-    it('should throw if column ID already exists', async () => {
-      await expect(sdk.addColumn({ id: 'backlog', name: 'Backlog 2', color: '#000' }))
-        .rejects.toThrow('Column already exists: backlog')
+    it('should throw if column ID already exists', () => {
+      expect(() => sdk.addColumn({ id: 'backlog', name: 'Backlog 2', color: '#000' }))
+        .toThrow('Column already exists: backlog')
     })
   })
 
   describe('updateColumn', () => {
-    it('should update column name and color', async () => {
-      const columns = await sdk.updateColumn('backlog', { name: 'Inbox', color: '#123456' })
+    it('should update column name and color', () => {
+      const columns = sdk.updateColumn('backlog', { name: 'Inbox', color: '#123456' })
       const updated = columns.find(c => c.id === 'backlog')
       expect(updated?.name).toBe('Inbox')
       expect(updated?.color).toBe('#123456')
     })
 
-    it('should throw for non-existent column', async () => {
-      await expect(sdk.updateColumn('ghost', { name: 'X' })).rejects.toThrow('Column not found')
+    it('should throw for non-existent column', () => {
+      expect(() => sdk.updateColumn('ghost', { name: 'X' })).toThrow('Column not found')
     })
   })
 
   describe('removeColumn', () => {
     it('should remove an empty column', async () => {
       // Add a custom column first, then remove it
-      await sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aaa' })
+      sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aaa' })
       const columns = await sdk.removeColumn('staging')
       expect(columns.find(c => c.id === 'staging')).toBeUndefined()
     })
@@ -450,19 +453,19 @@ describe('KanbanSDK', () => {
   })
 
   describe('reorderColumns', () => {
-    it('should reorder columns', async () => {
-      const columns = await sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog'])
+    it('should reorder columns', () => {
+      const columns = sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog'])
       expect(columns[0].id).toBe('done')
       expect(columns[4].id).toBe('backlog')
     })
 
-    it('should throw if a column ID is missing', async () => {
-      await expect(sdk.reorderColumns(['done', 'review'])).rejects.toThrow('Must include all column IDs')
+    it('should throw if a column ID is missing', () => {
+      expect(() => sdk.reorderColumns(['done', 'review'])).toThrow('Must include all column IDs')
     })
 
-    it('should throw for unknown column ID', async () => {
-      await expect(sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'unknown']))
-        .rejects.toThrow('Column not found')
+    it('should throw for unknown column ID', () => {
+      expect(() => sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'unknown']))
+        .toThrow('Column not found')
     })
   })
 

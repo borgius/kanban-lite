@@ -1,11 +1,10 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
-import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
+import { getTitleFromContent } from '../shared/types'
 import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
-import { parseFeatureFile, serializeFeature } from '../sdk/parser'
-import { ensureStatusSubfolders, moveFeatureFile, renameFeatureFile, getFeatureFilePath, getStatusFromPath } from './featureFileUtils'
-import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
+import { serializeFeature } from '../sdk/parser'
+import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
+import { KanbanSDK } from '../sdk/KanbanSDK'
 
 
 interface CreateFeatureData {
@@ -32,6 +31,7 @@ export class KanbanPanel {
   private _lastWrittenContent: string = ''
   private _migrating = false
   private _onDisposeCallbacks: (() => void)[] = []
+  private _sdk: KanbanSDK | null = null
 
   public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     const column = vscode.window.activeTextEditor
@@ -235,7 +235,7 @@ export class KanbanPanel {
         if (this._currentEditingFeatureId && uri) {
           const editingFeature = this._features.find(f => f.id === this._currentEditingFeatureId)
           if (editingFeature && editingFeature.filePath === uri.fsPath) {
-            const currentContent = this._serializeFeature(editingFeature)
+            const currentContent = serializeFeature(editingFeature)
             if (currentContent !== this._lastWrittenContent) {
               // External change detected — refresh the editor
               this._sendFeatureContent(this._currentEditingFeatureId)
@@ -356,140 +356,31 @@ export class KanbanPanel {
     return path.join(root, config.featuresDirectory)
   }
 
-  private async _ensureFeaturesDir(): Promise<string | null> {
+  private _getSDK(): KanbanSDK | null {
     const featuresDir = this._getWorkspaceFeaturesDir()
     if (!featuresDir) return null
-
-    try {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-      const columnIds = this._getColumns().map(c => c.id)
-      await ensureStatusSubfolders(featuresDir, columnIds)
-      return featuresDir
-    } catch {
-      return null
+    if (!this._sdk || this._sdk.featuresDir !== featuresDir) {
+      this._sdk = new KanbanSDK(featuresDir)
     }
+    return this._sdk
   }
 
   private async _loadFeatures(): Promise<void> {
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) {
+    const sdk = this._getSDK()
+    if (!sdk) {
       this._features = []
       return
     }
 
     try {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(featuresDir))
-      const columnIds = this._getColumns().map(c => c.id)
-      await ensureStatusSubfolders(featuresDir, columnIds)
-
-      // Phase 1: Migrate flat root .md files into their status subfolder
       this._migrating = true
-      try {
-        const rootEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
-        for (const [name, type] of rootEntries) {
-          if (type !== vscode.FileType.File || !name.endsWith('.md')) continue
-          const filePath = path.join(featuresDir, name)
-          try {
-            const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-            const feature = this._parseFeatureFile(content, filePath)
-            if (feature) {
-              await moveFeatureFile(filePath, featuresDir, feature.status, feature.attachments)
-            }
-          } catch {
-            // Skip files that fail to migrate
-          }
-        }
-      } finally {
-        this._migrating = false
-      }
-
-      // Phase 2: Load .md files from ALL subdirectories
-      const features: Feature[] = []
-      const topEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(featuresDir))
-      for (const [name, type] of topEntries) {
-        if (type !== vscode.FileType.Directory || name.startsWith('.')) continue
-        const subdir = path.join(featuresDir, name)
-        try {
-          const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(subdir))
-          for (const [file, fileType] of entries) {
-            if (fileType !== vscode.FileType.File || !file.endsWith('.md')) continue
-            const filePath = path.join(subdir, file)
-            const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)))
-            const feature = this._parseFeatureFile(content, filePath)
-            if (feature) features.push(feature)
-          }
-        } catch {
-          // Skip unreadable directories
-        }
-      }
-
-      // Phase 3: Reconcile status ↔ folder mismatches
-      this._migrating = true
-      try {
-        for (const feature of features) {
-          const pathStatus = getStatusFromPath(feature.filePath, featuresDir)
-          if (pathStatus !== null && pathStatus !== feature.status) {
-            try {
-              const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
-              feature.filePath = newPath
-            } catch {
-              // Will retry on next load
-            }
-          }
-        }
-      } finally {
-        this._migrating = false
-      }
-
-      // Migrate legacy integer order values to fractional indices
-      const hasLegacyOrder = features.some(f => /^\d+$/.test(f.order))
-      if (hasLegacyOrder) {
-        const byStatus = new Map<string, Feature[]>()
-        for (const f of features) {
-          const list = byStatus.get(f.status) || []
-          list.push(f)
-          byStatus.set(f.status, list)
-        }
-
-        const migrationWrites: Feature[] = []
-        for (const columnFeatures of byStatus.values()) {
-          columnFeatures.sort((a, b) => parseInt(a.order) - parseInt(b.order))
-          const keys = generateNKeysBetween(null, null, columnFeatures.length)
-          for (let i = 0; i < columnFeatures.length; i++) {
-            columnFeatures[i].order = keys[i]
-            migrationWrites.push(columnFeatures[i])
-          }
-        }
-
-        for (const f of migrationWrites) {
-          const content = this._serializeFeature(f)
-          await vscode.workspace.fs.writeFile(vscode.Uri.file(f.filePath), new TextEncoder().encode(content))
-        }
-      }
-
-      // Sync ID counter with existing cards
-      const root = this._getWorkspaceRoot()
-      if (root) {
-        const numericIds = features
-          .map(f => parseInt(f.id, 10))
-          .filter(n => !Number.isNaN(n))
-        if (numericIds.length > 0) {
-          syncCardIdCounter(root, numericIds)
-        }
-      }
-
-      this._features = features.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+      const columns = this._getColumns().map(c => c.id)
+      this._features = await sdk.listCards(columns)
     } catch {
       this._features = []
+    } finally {
+      this._migrating = false
     }
-  }
-
-  private _parseFeatureFile(content: string, filePath: string): Feature | null {
-    return parseFeatureFile(content, filePath)
-  }
-
-  private _serializeFeature(feature: Feature): string {
-    return serializeFeature(feature)
   }
 
   public triggerCreateDialog(): void {
@@ -507,102 +398,50 @@ export class KanbanPanel {
   }
 
   private async _createFeature(data: CreateFeatureData): Promise<void> {
-    const featuresDir = await this._ensureFeaturesDir()
-    if (!featuresDir) {
+    const sdk = this._getSDK()
+    if (!sdk) {
       vscode.window.showErrorMessage('No workspace folder open')
       return
     }
 
-    const title = getTitleFromContent(data.content)
-    const workspaceRoot = this._getWorkspaceRoot()
-    if (!workspaceRoot) return
-    const numericId = allocateCardId(workspaceRoot)
-    const filename = generateFeatureFilename(numericId, title)
-    const now = new Date().toISOString()
-    const featuresInStatus = this._features
-      .filter(f => f.status === data.status)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-    const lastOrder = featuresInStatus.length > 0 ? featuresInStatus[featuresInStatus.length - 1].order : null
-
-    const feature: Feature = {
-      id: String(numericId),
-      status: data.status,
-      priority: data.priority,
-      assignee: data.assignee,
-      dueDate: data.dueDate,
-      created: now,
-      modified: now,
-      completedAt: data.status === 'done' ? now : null,
-      labels: data.labels,
-      attachments: [],
-      comments: [],
-      order: generateKeyBetween(lastOrder, null),
-      content: data.content,
-      filePath: getFeatureFilePath(featuresDir, data.status, filename)
+    this._migrating = true
+    try {
+      const feature = await sdk.createCard({
+        content: data.content,
+        status: data.status,
+        priority: data.priority,
+        assignee: data.assignee ?? undefined,
+        dueDate: data.dueDate ?? undefined,
+        labels: data.labels
+      })
+      this._features.push(feature)
+      this._sendFeaturesToWebview()
+    } finally {
+      this._migrating = false
     }
-
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(feature.filePath)))
-    const content = this._serializeFeature(feature)
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
-
-    this._features.push(feature)
-    this._sendFeaturesToWebview()
   }
 
   private async _moveFeature(featureId: string, newStatus: string, newOrder: number): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) return
-
-    const oldStatus = feature.status
-    const statusChanged = oldStatus !== newStatus
-
-    // Update feature status
-    feature.status = newStatus as FeatureStatus
-    feature.modified = new Date().toISOString()
-    if (statusChanged) {
-      feature.completedAt = newStatus === 'done' ? new Date().toISOString() : null
+    this._migrating = true
+    try {
+      const updated = await sdk.moveCard(featureId, newStatus as FeatureStatus, newOrder)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
+      this._sendFeaturesToWebview()
+    } finally {
+      this._migrating = false
     }
-
-    // Get sorted features in the target column (excluding the moved feature)
-    const targetColumnFeatures = this._features
-      .filter(f => f.status === newStatus && f.id !== featureId)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-
-    // Compute fractional index between neighbors at the target position
-    const clampedOrder = Math.max(0, Math.min(newOrder, targetColumnFeatures.length))
-    const before = clampedOrder > 0 ? targetColumnFeatures[clampedOrder - 1].order : null
-    const after = clampedOrder < targetColumnFeatures.length ? targetColumnFeatures[clampedOrder].order : null
-    feature.order = generateKeyBetween(before, after)
-
-    // Only the moved feature needs to be written
-    const content = this._serializeFeature(feature)
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
-
-    // Move file when status changes
-    if (statusChanged) {
-      this._migrating = true
-      try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, newStatus, feature.attachments)
-        feature.filePath = newPath
-      } catch {
-        // Move failed; file stays in old folder, will reconcile on next load
-      } finally {
-        this._migrating = false
-      }
-    }
-
-    this._sendFeaturesToWebview()
   }
 
   private async _deleteFeature(featureId: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
     try {
-      await vscode.workspace.fs.delete(vscode.Uri.file(feature.filePath))
+      await sdk.deleteCard(featureId)
       this._features = this._features.filter(f => f.id !== featureId)
       this._sendFeaturesToWebview()
     } catch (err) {
@@ -611,51 +450,18 @@ export class KanbanPanel {
   }
 
   private async _updateFeature(featureId: string, updates: Partial<Feature>): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) return
-
-    const oldStatus = feature.status
-    const oldTitle = getTitleFromContent(feature.content)
-
-    // Merge updates
-    Object.assign(feature, updates)
-    feature.modified = new Date().toISOString()
-    if (oldStatus !== feature.status) {
-      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+    this._migrating = true
+    try {
+      const updated = await sdk.updateCard(featureId, updates)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
+      this._sendFeaturesToWebview()
+    } finally {
+      this._migrating = false
     }
-
-    // Persist to file
-    const content = this._serializeFeature(feature)
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(content))
-
-    // Rename file if title changed (numeric-ID cards only)
-    const newTitle = getTitleFromContent(feature.content)
-    const numId = extractNumericId(feature.id)
-    if (numId !== null && newTitle !== oldTitle) {
-      const newFilename = generateFeatureFilename(numId, newTitle)
-      this._migrating = true
-      try {
-        feature.filePath = await renameFeatureFile(feature.filePath, newFilename)
-      } catch { /* retry next load */ } finally { this._migrating = false }
-    }
-
-    // Move file when status changes
-    if (oldStatus !== feature.status) {
-      this._migrating = true
-      try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
-        feature.filePath = newPath
-      } catch {
-        // Move failed; file stays in old folder, will reconcile on next load
-      } finally {
-        this._migrating = false
-      }
-    }
-
-    this._sendFeaturesToWebview()
   }
 
   private async _openFeatureInNativeEditor(featureId: string): Promise<void> {
@@ -704,64 +510,33 @@ export class KanbanPanel {
     content: string,
     frontmatter: FeatureFrontmatter
   ): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) return
-
-    const oldStatus = feature.status
-    const oldTitle = getTitleFromContent(feature.content)
-
-    // Update feature in memory
-    feature.content = content
-    feature.status = frontmatter.status
-    feature.priority = frontmatter.priority
-    feature.assignee = frontmatter.assignee
-    feature.dueDate = frontmatter.dueDate
-    feature.labels = frontmatter.labels
-    feature.attachments = frontmatter.attachments || feature.attachments || []
-    feature.modified = new Date().toISOString()
-    if (oldStatus !== feature.status) {
-      feature.completedAt = feature.status === 'done' ? new Date().toISOString() : null
+    this._migrating = true
+    try {
+      const updated = await sdk.updateCard(featureId, {
+        content,
+        status: frontmatter.status,
+        priority: frontmatter.priority,
+        assignee: frontmatter.assignee,
+        dueDate: frontmatter.dueDate,
+        labels: frontmatter.labels,
+        attachments: frontmatter.attachments
+      })
+      this._lastWrittenContent = serializeFeature(updated)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
+      this._sendFeaturesToWebview()
+    } finally {
+      this._migrating = false
     }
-
-    // Save to file
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
-
-    // Rename file if title changed (numeric-ID cards only)
-    const saveNewTitle = getTitleFromContent(feature.content)
-    const saveNumId = extractNumericId(feature.id)
-    if (saveNumId !== null && saveNewTitle !== oldTitle) {
-      const newFilename = generateFeatureFilename(saveNumId, saveNewTitle)
-      this._migrating = true
-      try {
-        feature.filePath = await renameFeatureFile(feature.filePath, newFilename)
-      } catch { /* retry next load */ } finally { this._migrating = false }
-    }
-
-    // Move file when status changes
-    if (oldStatus !== feature.status) {
-      this._migrating = true
-      try {
-        const newPath = await moveFeatureFile(feature.filePath, featuresDir, feature.status, feature.attachments)
-        feature.filePath = newPath
-      } catch {
-        // Move failed; file stays in old folder, will reconcile on next load
-      } finally {
-        this._migrating = false
-      }
-    }
-
-    // Update all features in webview
-    this._sendFeaturesToWebview()
   }
 
   private async _addAttachment(featureId: string): Promise<void> {
+    const sdk = this._getSDK()
     const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    if (!feature || !sdk) return
 
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: true,
@@ -770,32 +545,21 @@ export class KanbanPanel {
     })
     if (!uris || uris.length === 0) return
 
-    const featureDir = path.dirname(feature.filePath)
-
-    for (const uri of uris) {
-      const fileName = path.basename(uri.fsPath)
-      const destPath = path.join(featureDir, fileName)
-
-      // If file is not already in the feature directory, copy it
-      if (path.dirname(uri.fsPath) !== featureDir) {
-        await vscode.workspace.fs.copy(uri, vscode.Uri.file(destPath), { overwrite: true })
+    this._migrating = true
+    try {
+      let updated = feature
+      for (const uri of uris) {
+        updated = await sdk.addAttachment(featureId, uri.fsPath)
       }
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
 
-      // Add to attachments if not already present
-      if (!feature.attachments.includes(fileName)) {
-        feature.attachments.push(fileName)
+      this._sendFeaturesToWebview()
+      if (this._currentEditingFeatureId === featureId) {
+        await this._sendFeatureContent(featureId)
       }
-    }
-
-    feature.modified = new Date().toISOString()
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
-
-    this._sendFeaturesToWebview()
-    // Refresh the editor with updated frontmatter
-    if (this._currentEditingFeatureId === featureId) {
-      await this._sendFeatureContent(featureId)
+    } finally {
+      this._migrating = false
     }
   }
 
@@ -817,83 +581,78 @@ export class KanbanPanel {
   }
 
   private async _removeAttachment(featureId: string, attachment: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    feature.attachments = feature.attachments.filter(a => a !== attachment)
-    feature.modified = new Date().toISOString()
+    this._migrating = true
+    try {
+      const updated = await sdk.removeAttachment(featureId, attachment)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
 
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
-
-    this._sendFeaturesToWebview()
-    if (this._currentEditingFeatureId === featureId) {
-      await this._sendFeatureContent(featureId)
+      this._sendFeaturesToWebview()
+      if (this._currentEditingFeatureId === featureId) {
+        await this._sendFeatureContent(featureId)
+      }
+    } finally {
+      this._migrating = false
     }
   }
 
   private async _addComment(featureId: string, author: string, content: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    if (!feature.comments) feature.comments = []
+    this._migrating = true
+    try {
+      const updated = await sdk.addComment(featureId, author, content)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
 
-    const maxId = feature.comments.reduce((max, c) => {
-      const num = parseInt(c.id.replace('c', ''), 10)
-      return Number.isNaN(num) ? max : Math.max(max, num)
-    }, 0)
-
-    feature.comments.push({
-      id: `c${maxId + 1}`,
-      author,
-      created: new Date().toISOString(),
-      content
-    })
-
-    feature.modified = new Date().toISOString()
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
-
-    this._sendFeaturesToWebview()
-    if (this._currentEditingFeatureId === featureId) {
-      await this._sendFeatureContent(featureId)
+      this._sendFeaturesToWebview()
+      if (this._currentEditingFeatureId === featureId) {
+        await this._sendFeatureContent(featureId)
+      }
+    } finally {
+      this._migrating = false
     }
   }
 
   private async _updateComment(featureId: string, commentId: string, content: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    const comment = (feature.comments || []).find(c => c.id === commentId)
-    if (!comment) return
+    this._migrating = true
+    try {
+      const updated = await sdk.updateComment(featureId, commentId, content)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
 
-    comment.content = content
-    feature.modified = new Date().toISOString()
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
-
-    this._sendFeaturesToWebview()
-    if (this._currentEditingFeatureId === featureId) {
-      await this._sendFeatureContent(featureId)
+      this._sendFeaturesToWebview()
+      if (this._currentEditingFeatureId === featureId) {
+        await this._sendFeatureContent(featureId)
+      }
+    } finally {
+      this._migrating = false
     }
   }
 
   private async _deleteComment(featureId: string, commentId: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
-    feature.comments = (feature.comments || []).filter(c => c.id !== commentId)
-    feature.modified = new Date().toISOString()
-    const fileContent = this._serializeFeature(feature)
-    this._lastWrittenContent = fileContent
-    await vscode.workspace.fs.writeFile(vscode.Uri.file(feature.filePath), new TextEncoder().encode(fileContent))
+    this._migrating = true
+    try {
+      const updated = await sdk.deleteComment(featureId, commentId)
+      const idx = this._features.findIndex(f => f.id === featureId)
+      if (idx !== -1) this._features[idx] = updated
 
-    this._sendFeaturesToWebview()
-    if (this._currentEditingFeatureId === featureId) {
-      await this._sendFeatureContent(featureId)
+      this._sendFeaturesToWebview()
+      if (this._currentEditingFeatureId === featureId) {
+        await this._sendFeatureContent(featureId)
+      }
+    } finally {
+      this._migrating = false
     }
   }
 
@@ -966,34 +725,22 @@ export class KanbanPanel {
   }
 
   private _saveSettings(settings: CardDisplaySettings): void {
-    const root = this._getWorkspaceRoot()
-    if (!root) return
-    const config = readConfig(root)
-    const updated = settingsToConfig(config, settings)
-    writeConfig(root, updated)
+    const sdk = this._getSDK()
+    if (!sdk) return
+    sdk.updateSettings(settings)
     this._sendFeaturesToWebview()
   }
 
   private _getColumns(): KanbanColumn[] {
-    const root = this._getWorkspaceRoot()
-    if (!root) return [...DEFAULT_CONFIG.columns]
-    const config = readConfig(root)
-    return config.columns.map(c => ({ ...c }))
+    const sdk = this._getSDK()
+    if (!sdk) return [...DEFAULT_CONFIG.columns]
+    return sdk.listColumns()
   }
 
-  private _saveColumns(columns: KanbanColumn[]): void {
-    const root = this._getWorkspaceRoot()
-    if (!root) return
-    const config = readConfig(root)
-    config.columns = columns
-    writeConfig(root, config)
-    this._sendFeaturesToWebviewWithColumns(columns)
-  }
-
-  private _sendFeaturesToWebviewWithColumns(columns: KanbanColumn[]): void {
-    const root = this._getWorkspaceRoot()
-    const config = root ? readConfig(root) : { ...DEFAULT_CONFIG }
-    const settings = configToSettings(config)
+  private _sendFeaturesToWebview(): void {
+    const sdk = this._getSDK()
+    const columns = sdk ? sdk.listColumns() : [...DEFAULT_CONFIG.columns]
+    const settings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
 
     // Override showBuildWithAI based on VS Code's AI feature toggle
     const aiDisabled = vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false)
@@ -1009,43 +756,41 @@ export class KanbanPanel {
     })
   }
 
-  private async _addColumn(column: { name: string; color: string }): Promise<void> {
-    const columns = this._getColumns()
+  private _addColumn(column: { name: string; color: string }): void {
+    const sdk = this._getSDK()
+    if (!sdk) return
     const id = column.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
     let uniqueId = id
     let counter = 1
-    while (columns.some(c => c.id === uniqueId)) {
+    const existing = sdk.listColumns()
+    while (existing.some(c => c.id === uniqueId)) {
       uniqueId = `${id}-${counter++}`
     }
-    columns.push({ id: uniqueId, name: column.name, color: column.color })
-    await this._saveColumns(columns)
+    sdk.addColumn({ id: uniqueId, name: column.name, color: column.color })
+    this._sendFeaturesToWebview()
   }
 
-  private async _editColumn(columnId: string, updates: { name: string; color: string }): Promise<void> {
-    const columns = this._getColumns()
-    if (!columns.some(c => c.id === columnId)) return
-    const updatedColumns = columns.map(c =>
-      c.id === columnId ? { ...c, name: updates.name, color: updates.color } : c
-    )
-    await this._saveColumns(updatedColumns)
+  private _editColumn(columnId: string, updates: { name: string; color: string }): void {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    sdk.updateColumn(columnId, updates)
+    this._sendFeaturesToWebview()
   }
 
-  private async _removeColumn(columnId: string): Promise<void> {
-    const columns = this._getColumns()
+  private _removeColumn(columnId: string): void {
+    const sdk = this._getSDK()
+    if (!sdk) return
     const hasFeatures = this._features.some(f => f.status === columnId)
     if (hasFeatures) {
       vscode.window.showWarningMessage(`Cannot remove list "${columnId}" because it still contains features. Move or delete them first.`)
       return
     }
-    const updated = columns.filter(c => c.id !== columnId)
-    if (updated.length === 0) {
+    const columns = sdk.listColumns()
+    if (columns.length <= 1) {
       vscode.window.showWarningMessage('Cannot remove the last list.')
       return
     }
-    await this._saveColumns(updated)
-  }
-
-  private _sendFeaturesToWebview(): void {
-    this._sendFeaturesToWebviewWithColumns(this._getColumns())
+    sdk.removeColumn(columnId)
+    this._sendFeaturesToWebview()
   }
 }

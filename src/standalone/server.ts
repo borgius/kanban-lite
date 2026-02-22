@@ -121,12 +121,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Feature loading ---
 
   async function loadFeatures(): Promise<void> {
-    migrating = true
-    try {
-      features = await sdk.listCards(sdk.listColumns().map(c => c.id))
-    } finally {
-      migrating = false
-    }
+    features = await sdk.listCards(sdk.listColumns().map(c => c.id))
   }
 
   // --- Message building & broadcast ---
@@ -375,8 +370,13 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     const msg = message as Record<string, unknown>
     switch (msg.type) {
       case 'ready':
-        await loadFeatures()
-        ws.send(JSON.stringify(buildInitMessage()))
+        migrating = true
+        try {
+          await loadFeatures()
+          ws.send(JSON.stringify(buildInitMessage()))
+        } finally {
+          migrating = false
+        }
         break
 
       case 'createFeature':
@@ -960,8 +960,14 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (migrating) return
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(async () => {
-      await loadFeatures()
-      broadcast(buildInitMessage())
+      if (migrating) return
+      migrating = true
+      try {
+        await loadFeatures()
+        broadcast(buildInitMessage())
+      } finally {
+        migrating = false
+      }
 
       if (currentEditingFeatureId && changedPath) {
         const editingFeature = features.find(f => f.id === currentEditingFeatureId)

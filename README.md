@@ -347,7 +347,7 @@ kanban-mcp --dir .kanban
 Use the kanban SDK programmatically in your own tools. The `KanbanSDK` class is the single source of truth — the CLI, MCP server, VSCode extension, and standalone server all delegate to it.
 
 ```typescript
-import { KanbanSDK } from 'kanban-lite/dist/sdk'
+import { KanbanSDK } from 'kanban-lite/sdk'
 
 const sdk = new KanbanSDK('/path/to/.kanban')
 

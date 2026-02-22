@@ -37,6 +37,18 @@
     "onView:kanban-lite.boardView"
   ],
   "main": "./dist/extension.js",
+  "exports": {
+    ".": "./dist/extension.js",
+    "./sdk": {
+      "types": "./dist/sdk/sdk/index.d.ts",
+      "default": "./dist/sdk/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "sdk": ["./dist/sdk/sdk/index.d.ts"]
+    }
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -90,7 +102,8 @@
   "scripts": {
     "publish:all": "vsce publish && ovsx publish",
     "vscode:prepublish": "npm run build",
-    "build": "npm run build:extension && npm run build:webview && npm run build:standalone-webview && npm run build:cli && npm run build:mcp",
+    "build": "npm run build:extension && npm run build:webview && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
+    "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.js --format=cjs --platform=node && tsc -p tsconfig.sdk.json",
     "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --banner:js=\"#!/usr/bin/env node\"",
     "build:mcp": "esbuild src/mcp-server/index.ts --bundle --outfile=dist/mcp-server.js --format=cjs --platform=node --external:@modelcontextprotocol/sdk --external:zod --banner:js=\"#!/usr/bin/env node\"",
     "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",

@@ -11,21 +11,21 @@ npm install kanban-lite
 ## Import
 
 ```typescript
-import { KanbanSDK } from 'kanban-lite/dist/sdk'
+import { KanbanSDK } from 'kanban-lite/sdk'
 ```
 
 You can also import types and utilities:
 
 ```typescript
-import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/dist/sdk'
-import { parseFeatureFile, serializeFeature, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/dist/sdk'
-import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/dist/sdk'
+import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
+import { parseFeatureFile, serializeFeature, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 ```
 
 ## Quick Start
 
 ```typescript
-import { KanbanSDK } from 'kanban-lite/dist/sdk'
+import { KanbanSDK } from 'kanban-lite/sdk'
 
 const sdk = new KanbanSDK('/path/to/project/.kanban')
 

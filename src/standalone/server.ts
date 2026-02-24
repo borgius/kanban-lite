@@ -525,6 +525,23 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
       }
 
+      case 'transferCard': {
+        const featureId = msg.featureId as string
+        const toBoard = msg.toBoard as string
+        const targetStatus = msg.targetStatus as string
+        migrating = true
+        try {
+          const card = await sdk.transferCard(featureId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
+          await loadFeatures()
+          broadcast(buildInitMessage())
+          fireWebhooks(workspaceRoot, 'task.moved', sanitizeFeature(card))
+        } catch (err) {
+          console.error('Failed to transfer card:', err)
+        } finally {
+          migrating = false
+        }
+        break
+      }
       case 'switchBoard':
         currentBoardId = msg.boardId as string
         migrating = true

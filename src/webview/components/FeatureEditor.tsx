@@ -25,6 +25,7 @@ interface FeatureEditorProps {
   onAddComment: (author: string, content: string) => void
   onUpdateComment: (commentId: string, content: string) => void
   onDeleteComment: (commentId: string) => void
+  onTransferToBoard: (toBoard: string, targetStatus: string) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -34,30 +35,13 @@ const priorityLabels: Record<Priority, string> = {
   low: 'Low'
 }
 
-const statusLabels: Record<FeatureStatus, string> = {
-  backlog: 'Backlog',
-  todo: 'To Do',
-  'in-progress': 'In Progress',
-  review: 'Review',
-  done: 'Done'
-}
-
 const priorities: Priority[] = ['critical', 'high', 'medium', 'low']
-const statuses: FeatureStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done']
 
 const priorityDots: Record<Priority, string> = {
   critical: 'bg-red-500',
   high: 'bg-orange-500',
   medium: 'bg-yellow-500',
   low: 'bg-green-500',
-}
-
-const statusDots: Record<FeatureStatus, string> = {
-  backlog: 'bg-zinc-400',
-  todo: 'bg-blue-400',
-  'in-progress': 'bg-amber-400',
-  review: 'bg-purple-400',
-  done: 'bg-emerald-400',
 }
 
 const aiAgentTabs: { agent: AIAgent; label: string; color: string; activeColor: string }[] = [
@@ -160,6 +144,124 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
                 {option.value === value && <Check size={12} style={{ color: 'var(--vscode-focusBorder)' }} className="shrink-0" />}
               </button>
             ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+interface StatusDropdownProps {
+  value: string
+  onChange: (status: string) => void
+  onTransferToBoard: (toBoard: string, targetStatus: string) => void
+}
+
+function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const columns = useStore(s => s.columns)
+  const boards = useStore(s => s.boards)
+  const currentBoard = useStore(s => s.currentBoard)
+
+  const otherBoards = boards.filter(b => b.id !== currentBoard)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
+        style={{ color: 'var(--vscode-foreground)' }}
+      >
+        {(() => {
+          const col = columns.find(c => c.id === value)
+          return col ? (
+            <>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+              <span>{col.name}</span>
+            </>
+          ) : (
+            <span>{value}</span>
+          )
+        })()}
+        <ChevronDown size={12} style={{ color: 'var(--vscode-descriptionForeground)' }} className="ml-0.5" />
+      </button>
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div
+            className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 min-w-[180px] max-h-[320px] overflow-y-auto"
+            style={{
+              background: 'var(--vscode-dropdown-background)',
+              border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
+            }}
+          >
+            {/* Current board statuses (flat) */}
+            {columns.map(col => (
+              <button
+                key={col.id}
+                onClick={() => {
+                  onChange(col.id)
+                  setIsOpen(false)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                style={{
+                  color: 'var(--vscode-dropdown-foreground)',
+                  background: col.id === value ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
+                }}
+                onMouseEnter={e => {
+                  if (col.id !== value) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'
+                }}
+                onMouseLeave={e => {
+                  if (col.id !== value) e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                <span className="flex-1 text-left">{col.name}</span>
+                {col.id === value && <Check size={12} style={{ color: 'var(--vscode-focusBorder)' }} className="shrink-0" />}
+              </button>
+            ))}
+
+            {/* Other boards section */}
+            {otherBoards.length > 0 && (
+              <>
+                <div
+                  className="mx-2 my-1"
+                  style={{ borderTop: '1px solid var(--vscode-panel-border)' }}
+                />
+                <div
+                  className="px-3 py-1 text-[10px] font-medium uppercase tracking-wider"
+                  style={{ color: 'var(--vscode-descriptionForeground)' }}
+                >
+                  Move to...
+                </div>
+                {otherBoards.map(board => (
+                  <div key={board.id}>
+                    <div
+                      className="px-3 py-1 text-[10px] font-semibold"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                    >
+                      {board.name}
+                    </div>
+                    {(board.columns || []).map(col => (
+                      <button
+                        key={`${board.id}-${col.id}`}
+                        onClick={() => {
+                          onTransferToBoard(board.id, col.id)
+                          setIsOpen(false)
+                        }}
+                        className="w-full flex items-center gap-2 pl-5 pr-3 py-1.5 text-xs transition-colors"
+                        style={{ color: 'var(--vscode-dropdown-foreground)' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                        <span className="flex-1 text-left">{col.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </>
       )}
@@ -365,7 +467,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment }: FeatureEditorProps) {
+export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -517,10 +619,10 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
         style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
       >
         <PropertyRow label="Status" icon={<CircleDot size={13} />}>
-          <Dropdown
+          <StatusDropdown
             value={currentFrontmatter.status}
-            options={statuses.map(s => ({ value: s, label: statusLabels[s], dot: statusDots[s] }))}
             onChange={(v) => handleFrontmatterUpdate({ status: v as FeatureStatus })}
+            onTransferToBoard={onTransferToBoard}
           />
         </PropertyRow>
         {cardSettings.showPriorityBadges && (

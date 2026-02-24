@@ -193,6 +193,27 @@ export class KanbanPanel {
           case 'removeColumn':
             await this._removeColumn(message.columnId)
             break
+          case 'transferCard': {
+            const sdk = this._getSDK()
+            if (!sdk || !this._currentBoardId) break
+            this._migrating = true
+            try {
+              await sdk.transferCard(
+                message.featureId,
+                this._currentBoardId,
+                message.toBoard,
+                message.targetStatus
+              )
+              this._currentEditingFeatureId = null
+              await this._loadFeatures()
+              this._sendFeaturesToWebview()
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to transfer card: ${err}`)
+            } finally {
+              this._migrating = false
+            }
+            break
+          }
           case 'switchBoard':
             this._currentBoardId = message.boardId
             await this._loadFeatures()

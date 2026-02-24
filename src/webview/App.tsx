@@ -270,6 +270,17 @@ function App(): React.JSX.Element {
     })
   }
 
+  const handleTransferToBoard = (toBoard: string, targetStatus: string): void => {
+    if (!editingFeature) return
+    vscode.postMessage({
+      type: 'transferCard',
+      featureId: editingFeature.id,
+      toBoard,
+      targetStatus
+    })
+    setEditingFeature(null)
+  }
+
   const handleCloseEditor = (): void => {
     setEditingFeature(null)
     vscode.postMessage({ type: 'closeFeature' })
@@ -456,6 +467,7 @@ function App(): React.JSX.Element {
               onAddComment={handleAddComment}
               onUpdateComment={handleUpdateComment}
               onDeleteComment={handleDeleteComment}
+              onTransferToBoard={handleTransferToBoard}
             />
           </div>
         )}

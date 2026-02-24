@@ -198,6 +198,20 @@ export class KanbanPanel {
             await this._loadFeatures()
             this._sendFeaturesToWebview()
             break
+          case 'createBoard': {
+            if (!this._sdk) break
+            const { generateSlug } = await import('../shared/types')
+            const boardId = generateSlug(message.name) || 'board'
+            try {
+              this._sdk.createBoard(boardId, message.name)
+              this._currentBoardId = boardId
+              await this._loadFeatures()
+              this._sendFeaturesToWebview()
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to create board: ${err}`)
+            }
+            break
+          }
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break

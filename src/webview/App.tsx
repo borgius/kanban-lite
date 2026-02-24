@@ -24,7 +24,6 @@ function App(): React.JSX.Element {
 
   const {
     columns,
-    boards,
     cardSettings,
     settingsOpen,
     setFeatures,
@@ -426,6 +425,7 @@ function App(): React.JSX.Element {
         onAddColumn={handleAddColumn}
         onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })}
         onSwitchBoard={(boardId) => vscode.postMessage({ type: 'switchBoard', boardId })}
+        onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}
       />
       <div className="flex-1 flex overflow-hidden">
         <div className={editingFeature ? 'w-1/2' : 'w-full'}>

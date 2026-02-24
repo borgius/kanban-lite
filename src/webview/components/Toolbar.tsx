@@ -1,4 +1,5 @@
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import type { Priority } from '../../shared/types'
 
@@ -21,7 +22,7 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void }) {
+export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard, onCreateBoard }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void }) {
   const {
     searchQuery,
     setSearchQuery,
@@ -49,22 +50,100 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
   const labels = getUniqueLabels()
   const filtersActive = hasActiveFilters()
 
+  const [boardDropdownOpen, setBoardDropdownOpen] = useState(false)
+  const [creatingBoard, setCreatingBoard] = useState(false)
+  const [newBoardName, setNewBoardName] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const newBoardInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setBoardDropdownOpen(false)
+        setCreatingBoard(false)
+        setNewBoardName('')
+      }
+    }
+    if (boardDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [boardDropdownOpen])
+
+  useEffect(() => {
+    if (creatingBoard && newBoardInputRef.current) {
+      newBoardInputRef.current.focus()
+    }
+  }, [creatingBoard])
+
+  const currentBoardName = boards.find(b => b.id === currentBoard)?.name || currentBoard
+
+  const handleCreateBoard = () => {
+    const name = newBoardName.trim()
+    if (!name) return
+    onCreateBoard(name)
+    setNewBoardName('')
+    setCreatingBoard(false)
+    setBoardDropdownOpen(false)
+  }
+
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 flex-wrap">
-      {/* Board Selector (hidden for single board) */}
-      {boards.length > 1 && (
-        <select
-          value={currentBoard}
-          onChange={(e) => onSwitchBoard(e.target.value)}
-          className={selectClassName}
+      {/* Board Selector */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => setBoardDropdownOpen(!boardDropdownOpen)}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
         >
-          {boards.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-      )}
+          <span className="max-w-[120px] truncate">{currentBoardName}</span>
+          <ChevronDown size={14} className={`text-zinc-400 transition-transform ${boardDropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {boardDropdownOpen && (
+          <div className="absolute top-full left-0 mt-1 min-w-[180px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
+            {boards.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => {
+                  onSwitchBoard(b.id)
+                  setBoardDropdownOpen(false)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+              >
+                <Check size={14} className={b.id === currentBoard ? 'text-blue-500' : 'invisible'} />
+                <span className="truncate">{b.name}</span>
+              </button>
+            ))}
+            <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+            {creatingBoard ? (
+              <div className="px-3 py-1.5">
+                <input
+                  ref={newBoardInputRef}
+                  type="text"
+                  value={newBoardName}
+                  onChange={(e) => setNewBoardName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateBoard()
+                    if (e.key === 'Escape') { setCreatingBoard(false); setNewBoardName('') }
+                  }}
+                  placeholder="Board name..."
+                  className="w-full px-2 py-1 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCreatingBoard(true)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400 transition-colors"
+              >
+                <Plus size={14} />
+                <span>New Board</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Search */}
       <div className="relative flex-1 min-w-[180px] max-w-xs">

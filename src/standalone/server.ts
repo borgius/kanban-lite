@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import type { Comment, Feature, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import { generateSlug, type Comment, type Feature, type Priority, type KanbanColumn, type FeatureFrontmatter, type CardDisplaySettings } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeFeature } from '../sdk/parser'
 import { readConfig } from '../shared/config'
@@ -535,6 +535,25 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           migrating = false
         }
         break
+
+      case 'createBoard': {
+        const boardName = msg.name as string
+        const boardId = generateSlug(boardName) || 'board'
+        try {
+          sdk.createBoard(boardId, boardName)
+          currentBoardId = boardId
+          migrating = true
+          try {
+            await loadFeatures()
+            broadcast(buildInitMessage())
+          } finally {
+            migrating = false
+          }
+        } catch (err) {
+          console.error('Failed to create board:', err)
+        }
+        break
+      }
 
       // VSCode-specific actions — no-ops in standalone
       case 'openFile':

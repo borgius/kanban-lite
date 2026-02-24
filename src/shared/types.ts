@@ -137,3 +137,4 @@ export type WebviewMessage =
   | { type: 'updateComment'; featureId: string; commentId: string; content: string }
   | { type: 'deleteComment'; featureId: string; commentId: string }
   | { type: 'switchBoard'; boardId: string }
+  | { type: 'createBoard'; name: string }

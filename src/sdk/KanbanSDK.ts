@@ -60,7 +60,8 @@ export class KanbanSDK {
     return Object.entries(config.boards).map(([id, board]) => ({
       id,
       name: board.name,
-      description: board.description
+      description: board.description,
+      columns: board.columns
     }))
   }
 

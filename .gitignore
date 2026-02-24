@@ -10,3 +10,5 @@ releases/
 .claude/
 .devtool/
 .worktrees/
+.kanban
+.kanban.json

@@ -1,12 +1,11 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import type { Feature, FeatureStatus, Priority } from '../shared/types'
+import type { Feature, Priority } from '../shared/types'
 import { loadWebhooks, createWebhook, deleteWebhook } from '../standalone/webhooks'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 
-const VALID_STATUSES: FeatureStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done']
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
 // --- Arg parsing ---
@@ -34,6 +33,19 @@ function parseArgs(argv: string[]): { command: string; positional: string[]; fla
   }
 
   return { command, positional, flags }
+}
+
+// --- Board ID helper ---
+
+function getBoardId(flags: Record<string, string | true>): string | undefined {
+  return typeof flags.board === 'string' ? flags.board : undefined
+}
+
+// --- Dynamic status validation ---
+
+async function getValidStatuses(sdk: KanbanSDK, boardId?: string): Promise<string[]> {
+  const columns = await sdk.listColumns(boardId)
+  return columns.map(c => c.id)
 }
 
 // --- Resolve features directory ---
@@ -129,6 +141,9 @@ function formatCardDetail(c: Feature): string {
     `  Modified:  ${c.modified}`,
     `  File:      ${c.filePath}`,
   ]
+  if (c.boardId) {
+    lines.push(`  Board:     ${c.boardId}`)
+  }
   if (c.completedAt) {
     lines.push(`  Completed: ${c.completedAt}`)
   }
@@ -143,7 +158,8 @@ function formatCardDetail(c: Feature): string {
 // --- Card Commands ---
 
 async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Promise<void> {
-  let cards = await sdk.listCards()
+  const boardId = getBoardId(flags)
+  let cards = await sdk.listCards(undefined, boardId)
 
   if (typeof flags.status === 'string') {
     cards = cards.filter(c => c.status === flags.status)
@@ -183,10 +199,11 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Record<strin
     process.exit(1)
   }
 
-  const card = await sdk.getCard(cardId)
+  const boardId = getBoardId(flags)
+  const card = await sdk.getCard(cardId, boardId)
   if (!card) {
     // Try partial match
-    const all = await sdk.listCards()
+    const all = await sdk.listCards(undefined, boardId)
     const matches = all.filter(c => c.id.includes(cardId))
     if (matches.length === 1) {
       if (flags.json) {
@@ -218,10 +235,14 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
     process.exit(1)
   }
 
-  const status = (typeof flags.status === 'string' ? flags.status : 'backlog') as FeatureStatus
-  if (!VALID_STATUSES.includes(status)) {
-    console.error(red(`Invalid status: ${status}. Must be one of: ${VALID_STATUSES.join(', ')}`))
-    process.exit(1)
+  const boardId = getBoardId(flags)
+  const status = typeof flags.status === 'string' ? flags.status : undefined
+  if (status) {
+    const validStatuses = await getValidStatuses(sdk, boardId)
+    if (!validStatuses.includes(status)) {
+      console.error(red(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`))
+      process.exit(1)
+    }
   }
 
   const priority = (typeof flags.priority === 'string' ? flags.priority : 'medium') as Priority
@@ -237,7 +258,7 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
 
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels })
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, boardId })
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -250,37 +271,25 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
 
 async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
-  const newStatus = positional[1] as FeatureStatus
+  const newStatus = positional[1]
 
   if (!cardId || !newStatus) {
     console.error(red('Usage: kl move <id> <status> [--position <n>]'))
     process.exit(1)
   }
-  if (!VALID_STATUSES.includes(newStatus)) {
-    console.error(red(`Invalid status: ${newStatus}. Must be one of: ${VALID_STATUSES.join(', ')}`))
+
+  const boardId = getBoardId(flags)
+  const validStatuses = await getValidStatuses(sdk, boardId)
+  if (!validStatuses.includes(newStatus)) {
+    console.error(red(`Invalid status: ${newStatus}. Must be one of: ${validStatuses.join(', ')}`))
     process.exit(1)
   }
 
   // Support partial ID match
-  let resolvedId = cardId
-  const card = await sdk.getCard(cardId)
-  if (!card) {
-    const all = await sdk.listCards()
-    const matches = all.filter(c => c.id.includes(cardId))
-    if (matches.length === 1) {
-      resolvedId = matches[0].id
-    } else if (matches.length > 1) {
-      console.error(red(`Multiple cards match "${cardId}":`))
-      for (const m of matches) console.error(`  ${m.id}`)
-      process.exit(1)
-    } else {
-      console.error(red(`Card not found: ${cardId}`))
-      process.exit(1)
-    }
-  }
+  const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
   const position = typeof flags.position === 'string' ? parseInt(flags.position, 10) : undefined
-  const updated = await sdk.moveCard(resolvedId, newStatus, position)
+  const updated = await sdk.moveCard(resolvedId, newStatus, position, boardId)
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
@@ -291,31 +300,19 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<strin
     process.exit(1)
   }
 
+  const boardId = getBoardId(flags)
+
   // Support partial ID match
-  let resolvedId = cardId
-  const card = await sdk.getCard(cardId)
-  if (!card) {
-    const all = await sdk.listCards()
-    const matches = all.filter(c => c.id.includes(cardId))
-    if (matches.length === 1) {
-      resolvedId = matches[0].id
-    } else if (matches.length > 1) {
-      console.error(red(`Multiple cards match "${cardId}":`))
-      for (const m of matches) console.error(`  ${m.id}`)
-      process.exit(1)
-    } else {
-      console.error(red(`Card not found: ${cardId}`))
-      process.exit(1)
-    }
-  }
+  const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
   const updates: Partial<Feature> = {}
   if (typeof flags.status === 'string') {
-    if (!VALID_STATUSES.includes(flags.status as FeatureStatus)) {
-      console.error(red(`Invalid status: ${flags.status}`))
+    const validStatuses = await getValidStatuses(sdk, boardId)
+    if (!validStatuses.includes(flags.status)) {
+      console.error(red(`Invalid status: ${flags.status}. Must be one of: ${validStatuses.join(', ')}`))
       process.exit(1)
     }
-    updates.status = flags.status as FeatureStatus
+    updates.status = flags.status
   }
   if (typeof flags.priority === 'string') {
     if (!VALID_PRIORITIES.includes(flags.priority as Priority)) {
@@ -333,36 +330,23 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<strin
     process.exit(1)
   }
 
-  const updated = await sdk.updateCard(resolvedId, updates)
+  const updated = await sdk.updateCard(resolvedId, updates, boardId)
   console.log(green(`Updated: ${updated.id}`))
 }
 
-async function cmdDelete(sdk: KanbanSDK, positional: string[]): Promise<void> {
+async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl delete <id>'))
     process.exit(1)
   }
 
-  // Support partial ID match
-  let resolvedId = cardId
-  const card = await sdk.getCard(cardId)
-  if (!card) {
-    const all = await sdk.listCards()
-    const matches = all.filter(c => c.id.includes(cardId))
-    if (matches.length === 1) {
-      resolvedId = matches[0].id
-    } else if (matches.length > 1) {
-      console.error(red(`Multiple cards match "${cardId}":`))
-      for (const m of matches) console.error(`  ${m.id}`)
-      process.exit(1)
-    } else {
-      console.error(red(`Card not found: ${cardId}`))
-      process.exit(1)
-    }
-  }
+  const boardId = getBoardId(flags)
 
-  await sdk.deleteCard(resolvedId)
+  // Support partial ID match
+  const resolvedId = await resolveCardId(sdk, cardId, boardId)
+
+  await sdk.deleteCard(resolvedId, boardId)
   console.log(green(`Deleted: ${resolvedId}`))
 }
 
@@ -371,16 +355,131 @@ async function cmdInit(sdk: KanbanSDK): Promise<void> {
   console.log(green(`Initialized: ${sdk.featuresDir}`))
 }
 
+// --- Board Commands ---
+
+async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+  const subcommand = positional[0] || 'list'
+
+  switch (subcommand) {
+    case 'list': {
+      const boards = sdk.listBoards()
+      if (flags.json) {
+        console.log(JSON.stringify(boards, null, 2))
+      } else if (boards.length === 0) {
+        console.log(dim('  No boards found.'))
+      } else {
+        console.log(`  ${dim('ID'.padEnd(20))}  ${dim('NAME'.padEnd(20))}  ${dim('DESCRIPTION')}`)
+        console.log(dim('  ' + '-'.repeat(60)))
+        for (const b of boards) {
+          console.log(`  ${bold(b.id.padEnd(20))}  ${b.name.padEnd(20)}  ${b.description || '-'}`)
+        }
+      }
+      break
+    }
+    case 'add': {
+      const id = typeof flags.id === 'string' ? flags.id : ''
+      const name = typeof flags.name === 'string' ? flags.name : ''
+      if (!id || !name) {
+        console.error(red('Usage: kl boards add --id <id> --name <name> [--description <desc>]'))
+        process.exit(1)
+      }
+      const description = typeof flags.description === 'string' ? flags.description : undefined
+      const board = await sdk.createBoard(id, name, { description })
+      if (flags.json) {
+        console.log(JSON.stringify(board, null, 2))
+      } else {
+        console.log(green(`Created board: ${board.id} (${board.name})`))
+      }
+      break
+    }
+    case 'show': {
+      const boardId = positional[1]
+      if (!boardId) {
+        console.error(red('Usage: kl boards show <id>'))
+        process.exit(1)
+      }
+      const board = sdk.getBoard(boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(board, null, 2))
+      } else {
+        console.log(`${bold(board.name)}`)
+        console.log(`  ID:          ${boardId}`)
+        if (board.description) console.log(`  Description: ${board.description}`)
+        console.log(`  Columns:     ${board.columns.map(c => c.name).join(', ')}`)
+        console.log(`  Next Card:   ${board.nextCardId}`)
+        console.log(`  Default:     status=${board.defaultStatus}, priority=${board.defaultPriority}`)
+      }
+      break
+    }
+    case 'remove':
+    case 'rm': {
+      const boardId = positional[1]
+      if (!boardId) {
+        console.error(red('Usage: kl boards remove <id>'))
+        process.exit(1)
+      }
+      await sdk.deleteBoard(boardId)
+      console.log(green(`Removed board: ${boardId}`))
+      break
+    }
+    case 'default': {
+      const boardId = positional[1]
+      if (!boardId) {
+        const config = readConfig(workspaceRoot)
+        console.log(config.defaultBoard)
+        break
+      }
+      const config = readConfig(workspaceRoot)
+      if (!config.boards[boardId]) {
+        console.error(red(`Board not found: ${boardId}`))
+        process.exit(1)
+      }
+      config.defaultBoard = boardId
+      writeConfig(workspaceRoot, config)
+      console.log(green(`Default board set to: ${boardId}`))
+      break
+    }
+    default:
+      console.error(red(`Unknown boards subcommand: ${subcommand}`))
+      console.error('Available: list, add, show, remove, default')
+      process.exit(1)
+  }
+}
+
+// --- Transfer Command ---
+
+async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+  const cardId = positional[0]
+  if (!cardId) {
+    console.error(red('Usage: kl transfer <card-id> --from <board> --to <board> [--status <status>]'))
+    process.exit(1)
+  }
+
+  const fromBoard = typeof flags.from === 'string' ? flags.from : undefined
+  const toBoard = typeof flags.to === 'string' ? flags.to : undefined
+
+  if (!fromBoard || !toBoard) {
+    console.error(red('Both --from and --to are required'))
+    process.exit(1)
+  }
+
+  const targetStatus = typeof flags.status === 'string' ? flags.status : undefined
+  const resolvedId = await resolveCardId(sdk, cardId, fromBoard)
+  const card = await sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus)
+  console.log(green(`Transferred ${card.id} from ${fromBoard} → ${toBoard} (${colorStatus(card.status)})`))
+}
+
 // --- Attachment Commands ---
 
 async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const subcommand = positional[0] || 'list'
   const cardId = positional[1]
+  const boardId = getBoardId(flags)
 
   if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'rm' && subcommand !== 'remove') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
-    const resolvedId = await resolveCardId(sdk, subcommand)
-    const attachments = await sdk.listAttachments(resolvedId)
+    const resolvedId = await resolveCardId(sdk, subcommand, boardId)
+    const attachments = await sdk.listAttachments(resolvedId, boardId)
     if (flags.json) {
       console.log(JSON.stringify(attachments, null, 2))
     } else if (attachments.length === 0) {
@@ -397,8 +496,8 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
         console.error(red('Usage: kl attach list <card-id>'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      const attachments = await sdk.listAttachments(resolvedId)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const attachments = await sdk.listAttachments(resolvedId, boardId)
       if (flags.json) {
         console.log(JSON.stringify(attachments, null, 2))
       } else if (attachments.length === 0) {
@@ -418,8 +517,8 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
         console.error(red('Usage: kl attach add <card-id> <file-path>'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      const updated = await sdk.addAttachment(resolvedId, filePath)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const updated = await sdk.addAttachment(resolvedId, filePath, boardId)
       console.log(green(`Attached to ${updated.id}: ${path.basename(filePath)}`))
       break
     }
@@ -434,19 +533,19 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<str
         console.error(red('Usage: kl attach remove <card-id> <filename>'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      const updated = await sdk.removeAttachment(resolvedId, filename)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const updated = await sdk.removeAttachment(resolvedId, filename, boardId)
       console.log(green(`Removed from ${updated.id}: ${filename}`))
       break
     }
   }
 }
 
-async function resolveCardId(sdk: KanbanSDK, cardId: string): Promise<string> {
-  const card = await sdk.getCard(cardId)
+async function resolveCardId(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<string> {
+  const card = await sdk.getCard(cardId, boardId)
   if (card) return cardId
 
-  const all = await sdk.listCards()
+  const all = await sdk.listCards(undefined, boardId)
   const matches = all.filter(c => c.id.includes(cardId))
   if (matches.length === 1) return matches[0].id
   if (matches.length > 1) {
@@ -462,11 +561,12 @@ async function resolveCardId(sdk: KanbanSDK, cardId: string): Promise<string> {
 
 async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const subcommand = positional[0] || 'list'
+  const boardId = getBoardId(flags)
 
   if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'edit' && subcommand !== 'remove' && subcommand !== 'rm') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
-    const resolvedId = await resolveCardId(sdk, subcommand)
-    const comments = await sdk.listComments(resolvedId)
+    const resolvedId = await resolveCardId(sdk, subcommand, boardId)
+    const comments = await sdk.listComments(resolvedId, boardId)
     if (flags.json) {
       console.log(JSON.stringify(comments, null, 2))
     } else if (comments.length === 0) {
@@ -489,8 +589,8 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Usage: kl comment list <card-id>'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      const comments = await sdk.listComments(resolvedId)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const comments = await sdk.listComments(resolvedId, boardId)
       if (flags.json) {
         console.log(JSON.stringify(comments, null, 2))
       } else if (comments.length === 0) {
@@ -519,8 +619,8 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Error: --body is required'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      const card = await sdk.addComment(resolvedId, author, body)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const card = await sdk.addComment(resolvedId, author, body, boardId)
       const added = card.comments[card.comments.length - 1]
       if (flags.json) {
         console.log(JSON.stringify(added, null, 2))
@@ -544,10 +644,10 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Error: --body is required'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      await sdk.updateComment(resolvedId, commentId, body)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      await sdk.updateComment(resolvedId, commentId, body, boardId)
       if (flags.json) {
-        const comments = await sdk.listComments(resolvedId)
+        const comments = await sdk.listComments(resolvedId, boardId)
         const updated = comments.find(c => c.id === commentId)
         console.log(JSON.stringify(updated, null, 2))
       } else {
@@ -566,8 +666,8 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Usage: kl comment remove <card-id> <comment-id>'))
         process.exit(1)
       }
-      const resolvedId = await resolveCardId(sdk, cardId)
-      await sdk.deleteComment(resolvedId, commentId)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      await sdk.deleteComment(resolvedId, commentId, boardId)
       console.log(green(`Deleted comment ${commentId}`))
       break
     }
@@ -578,10 +678,11 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
 
 async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const subcommand = positional[0] || 'list'
+  const boardId = getBoardId(flags)
 
   switch (subcommand) {
     case 'list': {
-      const columns = await sdk.listColumns()
+      const columns = await sdk.listColumns(boardId)
       if (flags.json) {
         console.log(JSON.stringify(columns, null, 2))
       } else {
@@ -601,7 +702,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Usage: kl columns add --id <id> --name <name> [--color <hex>]'))
         process.exit(1)
       }
-      const columns = await sdk.addColumn({ id, name, color })
+      const columns = await sdk.addColumn({ id, name, color }, boardId)
       console.log(green(`Added column: ${id} (${name})`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -619,7 +720,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('No updates specified. Use --name or --color'))
         process.exit(1)
       }
-      const columns = await sdk.updateColumn(columnId, updates)
+      const columns = await sdk.updateColumn(columnId, updates, boardId)
       console.log(green(`Updated column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -631,7 +732,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
         console.error(red('Usage: kl columns remove <id>'))
         process.exit(1)
       }
-      const columns = await sdk.removeColumn(columnId)
+      const columns = await sdk.removeColumn(columnId, boardId)
       console.log(green(`Removed column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -821,6 +922,14 @@ ${bold('Card Commands:')}
   edit <id> [--field value]   Update card fields
   delete <id>                 Delete a card
 
+${bold('Board Commands:')}
+  boards                      List boards
+  boards add                  Create a board (--id, --name, --description)
+  boards show <id>            Show board details
+  boards remove <id>          Remove a board
+  boards default [id]         Get or set the default board
+  transfer <id>               Transfer a card (--from, --to, --status)
+
 ${bold('Attachment Commands:')}
   attach <id>                 List attachments on a card
   attach add <id> <path>      Attach a file to a card
@@ -856,6 +965,7 @@ ${bold('Other:')}
 
 ${bold('Global Options:')}
   --dir <path>                Features directory (default: .kanban)
+  --board <id>                Target board (default: default board)
   --json                      Output as JSON
 
 ${bold('List Filters:')}
@@ -872,6 +982,11 @@ ${bold('Add/Edit Options:')}
   --assignee <name>           Assignee
   --due <date>                Due date
   --label <l1,l2>             Labels (comma-separated)
+
+${bold('Transfer Options:')}
+  --from <board>              Source board (required)
+  --to <board>                Destination board (required)
+  --status <status>           Target status in destination board
 
 ${bold('Webhook Options:')}
   --url <url>                 Webhook target URL (required for add)
@@ -928,7 +1043,14 @@ async function main(): Promise<void> {
       break
     case 'delete':
     case 'rm':
-      await cmdDelete(sdk, positional)
+      await cmdDelete(sdk, positional, flags)
+      break
+    case 'boards':
+    case 'board':
+      await cmdBoards(sdk, positional, flags, workspaceRoot)
+      break
+    case 'transfer':
+      await cmdTransfer(sdk, positional, flags)
       break
     case 'attach':
       await cmdAttach(sdk, positional, flags)

@@ -9,7 +9,7 @@ function createTempDir(): string {
 }
 
 function writeCardFile(dir: string, filename: string, content: string, subfolder?: string): void {
-  const targetDir = subfolder ? path.join(dir, subfolder) : dir
+  const targetDir = subfolder ? path.join(dir, 'boards', 'default', subfolder) : dir
   fs.mkdirSync(targetDir, { recursive: true })
   fs.writeFileSync(path.join(targetDir, filename), content, 'utf-8')
 }
@@ -217,7 +217,7 @@ describe('KanbanSDK', () => {
       const updated = await sdk.updateCard('move-status', { status: 'in-progress' })
       expect(updated.filePath).toContain('/in-progress/')
       expect(fs.existsSync(updated.filePath)).toBe(true)
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-status.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'move-status.md'))).toBe(false)
     })
 
     it('should throw for non-existent card', async () => {
@@ -261,7 +261,7 @@ describe('KanbanSDK', () => {
   describe('deleteCard', () => {
     it('should remove the file from disk', async () => {
       writeCardFile(tempDir, 'delete-me.md', makeCardContent({ id: 'delete-me' }), 'backlog')
-      const filePath = path.join(tempDir, 'backlog', 'delete-me.md')
+      const filePath = path.join(tempDir, 'boards', 'default', 'backlog', 'delete-me.md')
       expect(fs.existsSync(filePath)).toBe(true)
 
       await sdk.deleteCard('delete-me')
@@ -318,7 +318,7 @@ describe('KanbanSDK', () => {
       expect(updated.attachments).toContain('test-attach.txt')
 
       // Verify file was copied to the status subfolder
-      const destPath = path.join(tempDir, 'backlog', 'test-attach.txt')
+      const destPath = path.join(tempDir, 'boards', 'default', 'backlog', 'test-attach.txt')
       expect(fs.existsSync(destPath)).toBe(true)
 
       fs.unlinkSync(srcFile)
@@ -412,7 +412,7 @@ describe('KanbanSDK', () => {
       // Verify persisted
       const raw = fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')
       const config = JSON.parse(raw)
-      expect(config.columns.length).toBe(6)
+      expect(config.boards.default.columns.length).toBe(6)
     })
 
     it('should throw if column ID already exists', () => {

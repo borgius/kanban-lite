@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Feature, FeatureStatus, KanbanColumn, Priority, CardDisplaySettings } from '../../shared/types'
+import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo } from '../../shared/types'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -7,6 +7,8 @@ export type LayoutMode = 'horizontal' | 'vertical'
 interface KanbanState {
   features: Feature[]
   columns: KanbanColumn[]
+  boards: BoardInfo[]
+  currentBoard: string
   isDarkMode: boolean
   searchQuery: string
   priorityFilter: Priority | 'all'
@@ -19,6 +21,8 @@ interface KanbanState {
 
   setFeatures: (features: Feature[]) => void
   setColumns: (columns: KanbanColumn[]) => void
+  setBoards: (boards: BoardInfo[]) => void
+  setCurrentBoard: (boardId: string) => void
   setIsDarkMode: (dark: boolean) => void
   setCardSettings: (settings: CardDisplaySettings) => void
   setSettingsOpen: (open: boolean) => void
@@ -34,8 +38,8 @@ interface KanbanState {
   addFeature: (feature: Feature) => void
   updateFeature: (id: string, updates: Partial<Feature>) => void
   removeFeature: (id: string) => void
-  getFeaturesByStatus: (status: FeatureStatus) => Feature[]
-  getFilteredFeaturesByStatus: (status: FeatureStatus) => Feature[]
+  getFeaturesByStatus: (status: string) => Feature[]
+  getFilteredFeaturesByStatus: (status: string) => Feature[]
   getUniqueAssignees: () => string[]
   getUniqueLabels: () => string[]
   hasActiveFilters: () => boolean
@@ -80,6 +84,8 @@ const isOverdue = (date: Date): boolean => {
 export const useStore = create<KanbanState>((set, get) => ({
   features: [],
   columns: [],
+  boards: [],
+  currentBoard: 'default',
   isDarkMode: getInitialDarkMode(),
   searchQuery: '',
   priorityFilter: 'all',
@@ -103,6 +109,8 @@ export const useStore = create<KanbanState>((set, get) => ({
 
   setFeatures: (features) => set({ features }),
   setColumns: (columns) => set({ columns }),
+  setBoards: (boards) => set({ boards }),
+  setCurrentBoard: (boardId) => set({ currentBoard: boardId }),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
   setCardSettings: (settings) => set({ cardSettings: settings }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),

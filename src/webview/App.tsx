@@ -8,7 +8,7 @@ import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
-import type { Comment, Feature, FeatureStatus, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Feature, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
@@ -24,17 +24,20 @@ function App(): React.JSX.Element {
 
   const {
     columns,
+    boards,
     cardSettings,
     settingsOpen,
     setFeatures,
     setColumns,
+    setBoards,
+    setCurrentBoard,
     setIsDarkMode,
     setCardSettings,
     setSettingsOpen
   } = useStore()
 
   const [createFeatureOpen, setCreateFeatureOpen] = useState(false)
-  const [createFeatureStatus, setCreateFeatureStatus] = useState<FeatureStatus>('backlog')
+  const [createFeatureStatus, setCreateFeatureStatus] = useState<string>('backlog')
 
   // Column dialog state
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
@@ -206,6 +209,8 @@ function App(): React.JSX.Element {
         case 'init':
           setFeatures(message.features)
           setColumns(message.columns)
+          if (message.boards) setBoards(message.boards)
+          if (message.currentBoard) setCurrentBoard(message.currentBoard)
           if (message.settings) {
             if (message.settings.markdownEditorMode && editingFeature) {
               setEditingFeature(null)
@@ -246,7 +251,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setFeatures, setColumns, setCardSettings, setSettingsOpen])
+  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setCardSettings, setSettingsOpen])
 
   const handleFeatureClick = (feature: Feature): void => {
     // Request feature content for inline editing
@@ -354,12 +359,12 @@ function App(): React.JSX.Element {
   }
 
   const handleAddFeatureInColumn = (status: string): void => {
-    setCreateFeatureStatus(status as FeatureStatus)
+    setCreateFeatureStatus(status)
     setCreateFeatureOpen(true)
   }
 
   const handleCreateFeature = (data: {
-    status: FeatureStatus
+    status: string
     priority: Priority
     content: string
   }): void => {
@@ -390,7 +395,7 @@ function App(): React.JSX.Element {
 
       const updated = features.map(f =>
         f.id === featureId
-          ? { ...f, status: newStatus as FeatureStatus, order: newOrderKey }
+          ? { ...f, status: newStatus, order: newOrderKey }
           : f
       )
       setFeatures(updated)
@@ -416,7 +421,12 @@ function App(): React.JSX.Element {
 
   return (
     <div className="h-full w-full flex flex-col bg-[var(--vscode-editor-background)]">
-      <Toolbar onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })} onAddColumn={handleAddColumn} onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })} />
+      <Toolbar
+        onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })}
+        onAddColumn={handleAddColumn}
+        onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })}
+        onSwitchBoard={(boardId) => vscode.postMessage({ type: 'switchBoard', boardId })}
+      />
       <div className="flex-1 flex overflow-hidden">
         <div className={editingFeature ? 'w-1/2' : 'w-full'}>
           <KanbanBoard

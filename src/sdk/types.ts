@@ -1,15 +1,12 @@
-import type { FeatureStatus, KanbanColumn, Priority } from '../shared/types'
+import type { Priority } from '../shared/types'
 
 export interface CreateCardInput {
   content: string
-  status?: FeatureStatus
+  status?: string
   priority?: Priority
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
   attachments?: string[]
-}
-
-export interface BoardConfig {
-  columns: KanbanColumn[]
+  boardId?: string
 }

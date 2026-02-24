@@ -3,13 +3,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import type { Comment, Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Feature, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeFeature } from '../sdk/parser'
+import { readConfig } from '../shared/config'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook } from './webhooks'
 
 interface CreateFeatureData {
-  status: FeatureStatus
+  status: string
   priority: Priority
   content: string
   assignee: string | null
@@ -35,6 +36,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   let migrating = false
   let currentEditingFeatureId: string | null = null
   let lastWrittenContent = ''
+  let currentBoardId: string | undefined
 
   // Resolve webview static files directory
   const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
@@ -121,20 +123,23 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Feature loading ---
 
   async function loadFeatures(): Promise<void> {
-    features = await sdk.listCards(sdk.listColumns().map(c => c.id))
+    features = await sdk.listCards(sdk.listColumns(currentBoardId).map(c => c.id), currentBoardId)
   }
 
   // --- Message building & broadcast ---
 
   function buildInitMessage(): unknown {
+    const config = readConfig(workspaceRoot)
     const settings = sdk.getSettings()
     settings.showBuildWithAI = false
     settings.markdownEditorMode = false
     return {
       type: 'init',
       features,
-      columns: sdk.listColumns(),
-      settings
+      columns: sdk.listColumns(currentBoardId),
+      settings,
+      boards: sdk.listBoards(),
+      currentBoard: currentBoardId || config.defaultBoard
     }
   }
 
@@ -160,6 +165,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         assignee: data.assignee,
         dueDate: data.dueDate,
         labels: data.labels,
+        boardId: currentBoardId,
       })
       await loadFeatures()
       broadcast(buildInitMessage())
@@ -177,7 +183,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     migrating = true
     try {
-      const updated = await sdk.moveCard(featureId, newStatus as FeatureStatus, newOrder)
+      const updated = await sdk.moveCard(featureId, newStatus, newOrder, currentBoardId)
       await loadFeatures()
       broadcast(buildInitMessage())
       fireWebhooks(workspaceRoot, 'task.moved', {
@@ -196,7 +202,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     migrating = true
     try {
-      const updated = await sdk.updateCard(featureId, updates)
+      const updated = await sdk.updateCard(featureId, updates, currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
       broadcast(buildInitMessage())
@@ -213,7 +219,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     try {
       const deleted = sanitizeFeature(feature)
-      await sdk.deleteCard(featureId)
+      await sdk.deleteCard(featureId, currentBoardId)
       await loadFeatures()
       broadcast(buildInitMessage())
       fireWebhooks(workspaceRoot, 'task.deleted', deleted)
@@ -225,7 +231,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   }
 
   function doAddColumn(name: string, color: string): KanbanColumn {
-    const existingColumns = sdk.listColumns()
+    const existingColumns = sdk.listColumns(currentBoardId)
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
     let uniqueId = id
     let counter = 1
@@ -233,7 +239,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       uniqueId = `${id}-${counter++}`
     }
     const column: KanbanColumn = { id: uniqueId, name, color }
-    sdk.addColumn(column)
+    sdk.addColumn(column, currentBoardId)
     broadcast(buildInitMessage())
     fireWebhooks(workspaceRoot, 'column.created', column)
     return column
@@ -241,7 +247,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   function doEditColumn(columnId: string, updates: { name: string; color: string }): KanbanColumn | null {
     try {
-      const columns = sdk.updateColumn(columnId, { name: updates.name, color: updates.color })
+      const columns = sdk.updateColumn(columnId, { name: updates.name, color: updates.color }, currentBoardId)
       const updated = columns.find(c => c.id === columnId) ?? null
       broadcast(buildInitMessage())
       if (updated) fireWebhooks(workspaceRoot, 'column.updated', updated)
@@ -253,11 +259,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   async function doRemoveColumn(columnId: string): Promise<{ removed: boolean; error?: string }> {
     try {
-      const columns = sdk.listColumns()
+      const columns = sdk.listColumns(currentBoardId)
       if (columns.length <= 1) return { removed: false, error: 'Cannot remove last column' }
       const col = columns.find(c => c.id === columnId)
       if (!col) return { removed: false, error: 'Column not found' }
-      await sdk.removeColumn(columnId)
+      await sdk.removeColumn(columnId, currentBoardId)
       broadcast(buildInitMessage())
       fireWebhooks(workspaceRoot, 'column.deleted', col)
       return { removed: true }
@@ -282,7 +288,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     // Register attachment via SDK (skips copy since file is already in place)
     migrating = true
     try {
-      const updated = await sdk.addAttachment(featureId, path.join(featureDir, filename))
+      const updated = await sdk.addAttachment(featureId, path.join(featureDir, filename), currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
     } finally {
@@ -297,7 +303,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     migrating = true
     try {
-      const updated = await sdk.removeAttachment(featureId, attachment)
+      const updated = await sdk.removeAttachment(featureId, attachment, currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
       broadcast(buildInitMessage())
@@ -312,7 +318,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   async function doAddComment(featureId: string, author: string, content: string): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.addComment(featureId, author, content)
+      const updated = await sdk.addComment(featureId, author, content, currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       const comment = updated.comments[updated.comments.length - 1]
       await loadFeatures()
@@ -329,7 +335,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   async function doUpdateComment(featureId: string, commentId: string, content: string): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.updateComment(featureId, commentId, content)
+      const updated = await sdk.updateComment(featureId, commentId, content, currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       const comment = (updated.comments || []).find(c => c.id === commentId)
       await loadFeatures()
@@ -351,7 +357,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     migrating = true
     try {
-      const updated = await sdk.deleteComment(featureId, commentId)
+      const updated = await sdk.deleteComment(featureId, commentId, currentBoardId)
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
       broadcast(buildInitMessage())
@@ -519,6 +525,17 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
       }
 
+      case 'switchBoard':
+        currentBoardId = msg.boardId as string
+        migrating = true
+        try {
+          await loadFeatures()
+          broadcast(buildInitMessage())
+        } finally {
+          migrating = false
+        }
+        break
+
       // VSCode-specific actions — no-ops in standalone
       case 'openFile':
       case 'focusMenuBar':
@@ -552,9 +569,191 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     const route = (expectedMethod: string, pattern: string): Record<string, string> | null =>
       matchRoute(expectedMethod, method, pathname, pattern)
 
+    // ==================== BOARDS API ====================
+
+    let params = route('GET', '/api/boards')
+    if (params) {
+      return jsonOk(res, sdk.listBoards())
+    }
+
+    params = route('POST', '/api/boards')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        const id = body.id as string
+        const name = body.name as string
+        if (!id) return jsonError(res, 400, 'id is required')
+        if (!name) return jsonError(res, 400, 'name is required')
+        const board = sdk.createBoard(id, name, {
+          description: body.description as string | undefined,
+          columns: body.columns as KanbanColumn[] | undefined,
+        })
+        return jsonOk(res, board, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('GET', '/api/boards/:boardId')
+    if (params) {
+      try {
+        const { boardId } = params
+        const board = sdk.getBoard(boardId)
+        return jsonOk(res, board)
+      } catch (err) {
+        return jsonError(res, 404, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/boards/:boardId')
+    if (params) {
+      try {
+        const { boardId } = params
+        const body = await readBody(req)
+        const board = sdk.updateBoard(boardId, body as Record<string, unknown>)
+        return jsonOk(res, board)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/boards/:boardId')
+    if (params) {
+      try {
+        const { boardId } = params
+        await sdk.deleteBoard(boardId)
+        return jsonOk(res, { deleted: true })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    // Transfer a task between boards
+    params = route('POST', '/api/boards/:boardId/tasks/:id/transfer')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        const body = await readBody(req)
+        const config = readConfig(workspaceRoot)
+        const fromBoard = currentBoardId || config.defaultBoard
+        const targetStatus = body.targetStatus as string | undefined
+        const card = await sdk.transferCard(id, fromBoard, boardId, targetStatus)
+        return jsonOk(res, sanitizeFeature(card))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    // ==================== BOARD-SCOPED TASKS API ====================
+
+    params = route('GET', '/api/boards/:boardId/tasks')
+    if (params) {
+      try {
+        const { boardId } = params
+        const boardColumns = sdk.listColumns(boardId)
+        const boardTasks = await sdk.listCards(boardColumns.map(c => c.id), boardId)
+        let result = boardTasks.map(sanitizeFeature)
+        const status = url.searchParams.get('status')
+        if (status) result = result.filter(f => f.status === status)
+        const priority = url.searchParams.get('priority')
+        if (priority) result = result.filter(f => f.priority === priority)
+        const assignee = url.searchParams.get('assignee')
+        if (assignee) result = result.filter(f => f.assignee === assignee)
+        const label = url.searchParams.get('label')
+        if (label) result = result.filter(f => f.labels.includes(label))
+        return jsonOk(res, result)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/boards/:boardId/tasks')
+    if (params) {
+      try {
+        const { boardId } = params
+        const body = await readBody(req)
+        const content = (body.content as string) || ''
+        if (!content) return jsonError(res, 400, 'content is required')
+        const feature = await sdk.createCard({
+          content,
+          status: (body.status as string) || 'backlog',
+          priority: (body.priority as Priority) || 'medium',
+          assignee: (body.assignee as string) || null,
+          dueDate: (body.dueDate as string) || null,
+          labels: (body.labels as string[]) || [],
+          boardId,
+        })
+        return jsonOk(res, sanitizeFeature(feature), 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('GET', '/api/boards/:boardId/tasks/:id')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        const card = await sdk.getCard(id, boardId)
+        if (!card) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeFeature(card))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/boards/:boardId/tasks/:id')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        const body = await readBody(req)
+        const feature = await sdk.updateCard(id, body as Partial<Feature>, boardId)
+        return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PATCH', '/api/boards/:boardId/tasks/:id/move')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        const body = await readBody(req)
+        const newStatus = body.status as string
+        const position = body.position as number ?? 0
+        if (!newStatus) return jsonError(res, 400, 'status is required')
+        const feature = await sdk.moveCard(id, newStatus, position, boardId)
+        return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/boards/:boardId/tasks/:id')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        await sdk.deleteCard(id, boardId)
+        return jsonOk(res, { deleted: true })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    // ==================== BOARD-SCOPED COLUMNS API ====================
+
+    params = route('GET', '/api/boards/:boardId/columns')
+    if (params) {
+      try {
+        const { boardId } = params
+        return jsonOk(res, sdk.listColumns(boardId))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
     // ==================== TASKS API ====================
 
-    let params = route('GET', '/api/tasks')
+    params = route('GET', '/api/tasks')
     if (params) {
       await loadFeatures()
       let result = features.map(sanitizeFeature)
@@ -575,7 +774,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const body = await readBody(req)
         const data: CreateFeatureData = {
           content: (body.content as string) || '',
-          status: (body.status as FeatureStatus) || 'backlog',
+          status: (body.status as string) || 'backlog',
           priority: (body.priority as Priority) || 'medium',
           assignee: (body.assignee as string) || null,
           dueDate: (body.dueDate as string) || null,
@@ -744,7 +943,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     params = route('GET', '/api/columns')
     if (params) {
-      return jsonOk(res, sdk.listColumns())
+      return jsonOk(res, sdk.listColumns(currentBoardId))
     }
 
     params = route('POST', '/api/columns')

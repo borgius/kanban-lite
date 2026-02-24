@@ -1,14 +1,14 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { getTitleFromContent } from '../shared/types'
-import type { Feature, FeatureStatus, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Feature, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { serializeFeature } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 
 
 interface CreateFeatureData {
-  status: FeatureStatus
+  status: string
   priority: Priority
   content: string
   assignee: string | null
@@ -28,6 +28,7 @@ export class KanbanPanel {
   private _fileWatcher: vscode.FileSystemWatcher | undefined
   private _configWatcher: vscode.FileSystemWatcher | undefined
   private _currentEditingFeatureId: string | null = null
+  private _currentBoardId: string | undefined = undefined
   private _lastWrittenContent: string = ''
   private _migrating = false
   private _onDisposeCallbacks: (() => void)[] = []
@@ -192,6 +193,11 @@ export class KanbanPanel {
           case 'removeColumn':
             await this._removeColumn(message.columnId)
             break
+          case 'switchBoard':
+            this._currentBoardId = message.boardId
+            await this._loadFeatures()
+            this._sendFeaturesToWebview()
+            break
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break
@@ -217,8 +223,8 @@ export class KanbanPanel {
     const featuresDir = this._getWorkspaceFeaturesDir()
     if (!featuresDir) return
 
-    // Watch for changes in the features directory (recursive for status subfolders)
-    const pattern = new vscode.RelativePattern(featuresDir, '**/*.md')
+    // Watch for changes in the features directory (recursive for board/status subfolders)
+    const pattern = new vscode.RelativePattern(featuresDir, 'boards/**/*.md')
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     // Debounce to avoid multiple rapid updates
@@ -375,7 +381,7 @@ export class KanbanPanel {
     try {
       this._migrating = true
       const columns = this._getColumns().map(c => c.id)
-      this._features = await sdk.listCards(columns)
+      this._features = await sdk.listCards(columns, this._currentBoardId)
     } catch {
       this._features = []
     } finally {
@@ -412,7 +418,8 @@ export class KanbanPanel {
         priority: data.priority,
         assignee: data.assignee ?? undefined,
         dueDate: data.dueDate ?? undefined,
-        labels: data.labels
+        labels: data.labels,
+        boardId: this._currentBoardId
       })
       this._features.push(feature)
       this._sendFeaturesToWebview()
@@ -427,7 +434,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.moveCard(featureId, newStatus as FeatureStatus, newOrder)
+      const updated = await sdk.moveCard(featureId, newStatus, newOrder, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
       this._sendFeaturesToWebview()
@@ -441,7 +448,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.deleteCard(featureId)
+      await sdk.deleteCard(featureId, this._currentBoardId)
       this._features = this._features.filter(f => f.id !== featureId)
       this._sendFeaturesToWebview()
     } catch (err) {
@@ -455,7 +462,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(featureId, updates)
+      const updated = await sdk.updateCard(featureId, updates, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
       this._sendFeaturesToWebview()
@@ -523,7 +530,7 @@ export class KanbanPanel {
         dueDate: frontmatter.dueDate,
         labels: frontmatter.labels,
         attachments: frontmatter.attachments
-      })
+      }, this._currentBoardId)
       this._lastWrittenContent = serializeFeature(updated)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
@@ -549,7 +556,7 @@ export class KanbanPanel {
     try {
       let updated = feature
       for (const uri of uris) {
-        updated = await sdk.addAttachment(featureId, uri.fsPath)
+        updated = await sdk.addAttachment(featureId, uri.fsPath, this._currentBoardId)
       }
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
@@ -586,7 +593,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.removeAttachment(featureId, attachment)
+      const updated = await sdk.removeAttachment(featureId, attachment, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
 
@@ -605,7 +612,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.addComment(featureId, author, content)
+      const updated = await sdk.addComment(featureId, author, content, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
 
@@ -624,7 +631,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateComment(featureId, commentId, content)
+      const updated = await sdk.updateComment(featureId, commentId, content, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
 
@@ -643,7 +650,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.deleteComment(featureId, commentId)
+      const updated = await sdk.deleteComment(featureId, commentId, this._currentBoardId)
       const idx = this._features.findIndex(f => f.id === featureId)
       if (idx !== -1) this._features[idx] = updated
 
@@ -733,14 +740,18 @@ export class KanbanPanel {
 
   private _getColumns(): KanbanColumn[] {
     const sdk = this._getSDK()
-    if (!sdk) return [...DEFAULT_CONFIG.columns]
-    return sdk.listColumns()
+    if (!sdk) return [...DEFAULT_CONFIG.boards.default.columns]
+    return sdk.listColumns(this._currentBoardId)
   }
 
   private _sendFeaturesToWebview(): void {
     const sdk = this._getSDK()
-    const columns = sdk ? sdk.listColumns() : [...DEFAULT_CONFIG.columns]
+    const columns = sdk ? sdk.listColumns(this._currentBoardId) : [...DEFAULT_CONFIG.boards.default.columns]
     const settings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
+    const boards = sdk ? sdk.listBoards() : []
+    const root = this._getWorkspaceRoot()
+    const config = root ? readConfig(root) : DEFAULT_CONFIG
+    const currentBoard = this._currentBoardId || config.defaultBoard
 
     // Override showBuildWithAI based on VS Code's AI feature toggle
     const aiDisabled = vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false)
@@ -752,7 +763,9 @@ export class KanbanPanel {
       type: 'init',
       features: this._features,
       columns,
-      settings
+      settings,
+      boards,
+      currentBoard
     })
   }
 
@@ -766,14 +779,14 @@ export class KanbanPanel {
     while (existing.some(c => c.id === uniqueId)) {
       uniqueId = `${id}-${counter++}`
     }
-    sdk.addColumn({ id: uniqueId, name: column.name, color: column.color })
+    sdk.addColumn({ id: uniqueId, name: column.name, color: column.color }, this._currentBoardId)
     this._sendFeaturesToWebview()
   }
 
   private _editColumn(columnId: string, updates: { name: string; color: string }): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    sdk.updateColumn(columnId, updates)
+    sdk.updateColumn(columnId, updates, this._currentBoardId)
     this._sendFeaturesToWebview()
   }
 
@@ -790,7 +803,7 @@ export class KanbanPanel {
       vscode.window.showWarningMessage('Cannot remove the last list.')
       return
     }
-    sdk.removeColumn(columnId)
+    sdk.removeColumn(columnId, this._currentBoardId)
     this._sendFeaturesToWebview()
   }
 }

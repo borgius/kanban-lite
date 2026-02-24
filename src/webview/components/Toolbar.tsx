@@ -21,7 +21,7 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void }) {
+export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void }) {
   const {
     searchQuery,
     setSearchQuery,
@@ -40,7 +40,9 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme }: { onOpen
     layout,
     toggleLayout,
     isDarkMode,
-    cardSettings
+    cardSettings,
+    boards,
+    currentBoard
   } = useStore()
 
   const assignees = getUniqueAssignees()
@@ -49,6 +51,21 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme }: { onOpen
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 flex-wrap">
+      {/* Board Selector (hidden for single board) */}
+      {boards.length > 1 && (
+        <select
+          value={currentBoard}
+          onChange={(e) => onSwitchBoard(e.target.value)}
+          className={selectClassName}
+        >
+          {boards.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      )}
+
       {/* Search */}
       <div className="relative flex-1 min-w-[180px] max-w-xs">
         <Search

@@ -1,7 +1,7 @@
 // Kanban types
 
 export type Priority = 'critical' | 'high' | 'medium' | 'low'
-export type FeatureStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done'
+export type FeatureStatus = string
 
 export interface Comment {
   id: string
@@ -12,6 +12,7 @@ export interface Comment {
 
 export interface Feature {
   id: string
+  boardId?: string
   status: FeatureStatus
   priority: Priority
   assignee: string | null
@@ -25,6 +26,12 @@ export interface Feature {
   order: string
   content: string
   filePath: string
+}
+
+export interface BoardInfo {
+  id: string
+  name: string
+  description?: string
 }
 
 // Parse title from the first # heading in markdown content, falling back to the first line
@@ -82,12 +89,12 @@ export interface CardDisplaySettings {
   compactMode: boolean
   markdownEditorMode: boolean
   defaultPriority: Priority
-  defaultStatus: FeatureStatus
+  defaultStatus: string
 }
 
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings }
+  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string }
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }
@@ -96,7 +103,7 @@ export type ExtensionMessage =
 // Frontmatter for editing
 export interface FeatureFrontmatter {
   id: string
-  status: FeatureStatus
+  status: string
   priority: Priority
   assignee: string | null
   dueDate: string | null
@@ -110,7 +117,7 @@ export interface FeatureFrontmatter {
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createFeature'; data: { status: FeatureStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[] } }
+  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[] } }
   | { type: 'moveFeature'; featureId: string; newStatus: string; newOrder: number }
   | { type: 'deleteFeature'; featureId: string }
   | { type: 'updateFeature'; featureId: string; updates: Partial<Feature> }
@@ -129,3 +136,4 @@ export type WebviewMessage =
   | { type: 'addComment'; featureId: string; author: string; content: string }
   | { type: 'updateComment'; featureId: string; commentId: string; content: string }
   | { type: 'deleteComment'; featureId: string; commentId: string }
+  | { type: 'switchBoard'; boardId: string }

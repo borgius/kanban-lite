@@ -12,8 +12,9 @@ function createTempDir(): string {
 }
 
 // Helper: write a feature markdown file
+// Files are stored under boards/default/{status}/ in the multi-board layout
 function writeFeatureFile(dir: string, filename: string, content: string, subfolder?: string): string {
-  const targetDir = subfolder ? path.join(dir, subfolder) : dir
+  const targetDir = subfolder ? path.join(dir, 'boards', 'default', subfolder) : path.join(dir, 'boards', 'default')
   fs.mkdirSync(targetDir, { recursive: true })
   const filePath = path.join(targetDir, filename)
   fs.writeFileSync(filePath, content, 'utf-8')
@@ -366,8 +367,8 @@ describe('Standalone Server Integration', () => {
       expect(features[0].content).toBe('# My New Feature\n\nSome description')
       expect(features[0].labels).toEqual(['frontend'])
 
-      // Verify file exists on disk in todo/ subfolder
-      const todoDir = path.join(tempDir, 'todo')
+      // Verify file exists on disk in boards/default/todo/ subfolder
+      const todoDir = path.join(tempDir, 'boards', 'default', 'todo')
       const files = fs.readdirSync(todoDir).filter(f => f.endsWith('.md'))
       expect(files.length).toBe(1)
 
@@ -402,8 +403,8 @@ describe('Standalone Server Integration', () => {
       expect(features[0].status).toBe('done')
       expect(features[0].completedAt).toBeTruthy()
 
-      // File should be in done/ subfolder
-      const doneFiles = fs.readdirSync(path.join(tempDir, 'done')).filter(f => f.endsWith('.md'))
+      // File should be in boards/default/done/ subfolder
+      const doneFiles = fs.readdirSync(path.join(tempDir, 'boards', 'default', 'done')).filter(f => f.endsWith('.md'))
       expect(doneFiles.length).toBe(1)
     })
 
@@ -436,7 +437,7 @@ describe('Standalone Server Integration', () => {
       const backlogFeatures = features.filter(f => f.status === 'backlog')
       expect(backlogFeatures.length).toBe(2)
       // New feature should come after existing (order > 'a0')
-      expect(backlogFeatures[1].order > backlogFeatures[0].order).toBe(true)
+      expect((backlogFeatures[1].order as string) > (backlogFeatures[0].order as string)).toBe(true)
     })
 
     it('should preserve assignee and dueDate', async () => {
@@ -491,9 +492,9 @@ describe('Standalone Server Integration', () => {
       const features = response.features as Array<Record<string, unknown>>
       expect(features[0].status).toBe('in-progress')
 
-      // Verify file was moved to in-progress/ subfolder
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-me.md'))).toBe(false)
-      const fileContent = fs.readFileSync(path.join(tempDir, 'in-progress', 'move-me.md'), 'utf-8')
+      // Verify file was moved to boards/default/in-progress/ subfolder
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'move-me.md'))).toBe(false)
+      const fileContent = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'in-progress', 'move-me.md'), 'utf-8')
       expect(fileContent).toContain('status: "in-progress"')
     })
 
@@ -521,9 +522,9 @@ describe('Standalone Server Integration', () => {
       expect(features[0].status).toBe('done')
       expect(features[0].completedAt).toBeTruthy()
 
-      // File should now be in done/ subfolder
-      expect(fs.existsSync(path.join(tempDir, 'review', 'finish-me.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'done', 'finish-me.md'))).toBe(true)
+      // File should now be in boards/default/done/ subfolder
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'review', 'finish-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'finish-me.md'))).toBe(true)
     })
 
     it('should move file from done/ to target status folder', async () => {
@@ -550,9 +551,9 @@ describe('Standalone Server Integration', () => {
       expect(features[0].status).toBe('todo')
       expect(features[0].completedAt).toBeNull()
 
-      // File should be in todo/ subfolder
-      expect(fs.existsSync(path.join(tempDir, 'done', 'reopen-me.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'todo', 'reopen-me.md'))).toBe(true)
+      // File should be in boards/default/todo/ subfolder
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'reopen-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'todo', 'reopen-me.md'))).toBe(true)
     })
 
     it('should compute correct fractional order between neighbors', async () => {
@@ -596,8 +597,8 @@ describe('Standalone Server Integration', () => {
       expect(todoFeatures[1].id).toBe('feat-move')
       expect(todoFeatures[2].id).toBe('feat-c')
       // Verify order is between a0 and a2
-      expect(todoFeatures[1].order > todoFeatures[0].order).toBe(true)
-      expect(todoFeatures[1].order < todoFeatures[2].order).toBe(true)
+      expect((todoFeatures[1].order as string) > (todoFeatures[0].order as string)).toBe(true)
+      expect((todoFeatures[1].order as string) < (todoFeatures[2].order as string)).toBe(true)
     })
   })
 
@@ -625,7 +626,7 @@ describe('Standalone Server Integration', () => {
       expect(features.length).toBe(0)
 
       // File should be removed
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'delete-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'delete-me.md'))).toBe(false)
     })
 
     it('should only delete the targeted feature', async () => {
@@ -646,7 +647,7 @@ describe('Standalone Server Integration', () => {
       const features = response.features as Array<Record<string, unknown>>
       expect(features.length).toBe(1)
       expect(features[0].id).toBe('keep-me')
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'keep-me.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'keep-me.md'))).toBe(true)
     })
 
     it('should handle deleting non-existent feature gracefully', async () => {
@@ -697,7 +698,7 @@ describe('Standalone Server Integration', () => {
       expect(features[0].labels).toEqual(['urgent'])
 
       // Verify persisted on disk
-      const fileContent = fs.readFileSync(path.join(tempDir, 'backlog', 'update-me.md'), 'utf-8')
+      const fileContent = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'backlog', 'update-me.md'), 'utf-8')
       expect(fileContent).toContain('priority: "critical"')
       expect(fileContent).toContain('assignee: "alice"')
       expect(fileContent).toContain('labels: ["urgent"]')
@@ -813,9 +814,9 @@ describe('Standalone Server Integration', () => {
       expect(saved.assignee).toBe('charlie')
       expect(saved.labels).toEqual(['updated'])
 
-      // Verify on disk — file moved from backlog/ to in-progress/
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'save-me.md'))).toBe(false)
-      const fileContent = fs.readFileSync(path.join(tempDir, 'in-progress', 'save-me.md'), 'utf-8')
+      // Verify on disk — file moved from boards/default/backlog/ to boards/default/in-progress/
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'save-me.md'))).toBe(false)
+      const fileContent = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'in-progress', 'save-me.md'), 'utf-8')
       expect(fileContent).toContain('status: "in-progress"')
       expect(fileContent).toContain('# Save Me Updated')
       expect(fileContent).toContain('assignee: "charlie"')
@@ -856,8 +857,8 @@ describe('Standalone Server Integration', () => {
         }
       }, 'init')
 
-      expect(fs.existsSync(path.join(tempDir, 'review', 'save-done.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'done', 'save-done.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'review', 'save-done.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'save-done.md'))).toBe(true)
     })
   })
 
@@ -1088,8 +1089,8 @@ describe('Standalone Server Integration', () => {
       }
 
       // Files on disk should be updated
-      const file1 = fs.readFileSync(path.join(tempDir, 'backlog', 'legacy-1.md'), 'utf-8')
-      const file2 = fs.readFileSync(path.join(tempDir, 'backlog', 'legacy-2.md'), 'utf-8')
+      const file1 = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'backlog', 'legacy-1.md'), 'utf-8')
+      const file2 = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'backlog', 'legacy-2.md'), 'utf-8')
       const orderMatch1 = file1.match(/order: "(.+)"/)
       const orderMatch2 = file2.match(/order: "(.+)"/)
       expect(orderMatch1).toBeTruthy()
@@ -1118,9 +1119,9 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // After load, file should have been migrated to done/
-      expect(fs.existsSync(path.join(tempDir, 'misplaced-done.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'done', 'misplaced-done.md'))).toBe(true)
+      // After load, file should have been migrated to boards/default/done/
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'misplaced-done.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'misplaced-done.md'))).toBe(true)
     })
 
     it('should move mismatched file to correct status subfolder', async () => {
@@ -1137,9 +1138,9 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // After load, file should have been moved to backlog/
-      expect(fs.existsSync(path.join(tempDir, 'done', 'misplaced-active.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'misplaced-active.md'))).toBe(true)
+      // After load, file should have been moved to boards/default/backlog/
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'misplaced-active.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'misplaced-active.md'))).toBe(true)
     })
   })
 
@@ -1536,7 +1537,7 @@ describe('Standalone Server Integration', () => {
       expect(json.data.filePath).toBeUndefined()
 
       // Verify persisted on disk
-      const todoDir = path.join(tempDir, 'todo')
+      const todoDir = path.join(tempDir, 'boards', 'default', 'todo')
       const files = fs.readdirSync(todoDir).filter(f => f.endsWith('.md'))
       expect(files.length).toBe(1)
     })
@@ -1597,8 +1598,8 @@ describe('Standalone Server Integration', () => {
       expect(json.data.status).toBe('in-progress')
 
       // File should be moved
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'move-api.md'))).toBe(false)
-      expect(fs.existsSync(path.join(tempDir, 'in-progress', 'move-api.md'))).toBe(true)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'move-api.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'in-progress', 'move-api.md'))).toBe(true)
     })
 
     it('DELETE /api/tasks/:id should delete a task', async () => {
@@ -1617,7 +1618,7 @@ describe('Standalone Server Integration', () => {
       expect(json.ok).toBe(true)
 
       // File should be gone
-      expect(fs.existsSync(path.join(tempDir, 'backlog', 'delete-api.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'delete-api.md'))).toBe(false)
     })
 
     it('DELETE /api/tasks/:id should return 404 for non-existent task', async () => {

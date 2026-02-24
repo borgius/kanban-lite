@@ -32,6 +32,7 @@ export interface BoardInfo {
   id: string
   name: string
   description?: string
+  columns?: KanbanColumn[]
 }
 
 // Parse title from the first # heading in markdown content, falling back to the first line
@@ -138,3 +139,4 @@ export type WebviewMessage =
   | { type: 'deleteComment'; featureId: string; commentId: string }
   | { type: 'switchBoard'; boardId: string }
   | { type: 'createBoard'; name: string }
+  | { type: 'transferCard'; featureId: string; toBoard: string; targetStatus: string }

@@ -12,11 +12,53 @@ import { ensureDirectories, ensureStatusSubfolders, getFeatureFilePath, getStatu
 import type { CreateCardInput } from './types'
 import { migrateFileSystemToMultiBoard } from './migration'
 
+/**
+ * Core SDK for managing kanban boards stored as markdown files.
+ *
+ * Provides full CRUD operations for boards, cards, columns, comments,
+ * attachments, and display settings. Cards are persisted as markdown files
+ * with YAML frontmatter under the `.kanban/` directory, organized by board
+ * and status column.
+ *
+ * This class is the foundation that the CLI, MCP server, and standalone
+ * HTTP server are all built on top of.
+ *
+ * @example
+ * ```ts
+ * const sdk = new KanbanSDK('/path/to/project/.kanban')
+ * await sdk.init()
+ * const cards = await sdk.listCards()
+ * ```
+ */
 export class KanbanSDK {
   private _migrated = false
 
+  /**
+   * Creates a new KanbanSDK instance.
+   *
+   * @param featuresDir - Absolute path to the `.kanban` features directory.
+   *   The parent of this directory is treated as the workspace root.
+   *
+   * @example
+   * ```ts
+   * const sdk = new KanbanSDK('/home/user/my-project/.kanban')
+   * ```
+   */
   constructor(public readonly featuresDir: string) {}
 
+  /**
+   * The workspace root directory (parent of the features directory).
+   *
+   * This is the project root where `.kanban.json` configuration lives.
+   *
+   * @returns The absolute path to the workspace root directory.
+   *
+   * @example
+   * ```ts
+   * const sdk = new KanbanSDK('/home/user/my-project/.kanban')
+   * console.log(sdk.workspaceRoot) // '/home/user/my-project'
+   * ```
+   */
   get workspaceRoot(): string {
     return path.dirname(this.featuresDir)
   }
@@ -47,6 +89,21 @@ export class KanbanSDK {
     this._migrated = true
   }
 
+  /**
+   * Initializes the SDK by running any pending filesystem migrations and
+   * ensuring the default board's directory structure exists.
+   *
+   * This should be called once before performing any operations, especially
+   * on a fresh workspace or after upgrading from a single-board layout.
+   *
+   * @returns A promise that resolves when initialization is complete.
+   *
+   * @example
+   * ```ts
+   * const sdk = new KanbanSDK('/path/to/project/.kanban')
+   * await sdk.init()
+   * ```
+   */
   async init(): Promise<void> {
     await this._ensureMigrated()
     const boardDir = this._boardDir()
@@ -55,6 +112,18 @@ export class KanbanSDK {
 
   // --- Board management ---
 
+  /**
+   * Lists all boards defined in the workspace configuration.
+   *
+   * @returns An array of {@link BoardInfo} objects containing each board's
+   *   `id`, `name`, and optional `description`.
+   *
+   * @example
+   * ```ts
+   * const boards = sdk.listBoards()
+   * // [{ id: 'default', name: 'Default Board', description: undefined }]
+   * ```
+   */
   listBoards(): BoardInfo[] {
     const config = readConfig(this.workspaceRoot)
     return Object.entries(config.boards).map(([id, board]) => ({
@@ -65,6 +134,31 @@ export class KanbanSDK {
     }))
   }
 
+  /**
+   * Creates a new board with the given ID and name.
+   *
+   * If no columns are specified, the new board inherits columns from the
+   * default board. If the default board has no columns, a standard set of
+   * five columns (Backlog, To Do, In Progress, Review, Done) is used.
+   *
+   * @param id - Unique identifier for the board (used in file paths and API calls).
+   * @param name - Human-readable display name for the board.
+   * @param options - Optional configuration for the new board.
+   * @param options.description - A short description of the board's purpose.
+   * @param options.columns - Custom column definitions. Defaults to the default board's columns.
+   * @param options.defaultStatus - The default status for new cards. Defaults to the first column's ID.
+   * @param options.defaultPriority - The default priority for new cards. Defaults to the workspace default.
+   * @returns A {@link BoardInfo} object for the newly created board.
+   * @throws {Error} If a board with the given `id` already exists.
+   *
+   * @example
+   * ```ts
+   * const board = sdk.createBoard('bugs', 'Bug Tracker', {
+   *   description: 'Track and triage bugs',
+   *   defaultStatus: 'triage'
+   * })
+   * ```
+   */
   createBoard(id: string, name: string, options?: {
     description?: string
     columns?: KanbanColumn[]
@@ -97,6 +191,24 @@ export class KanbanSDK {
     return { id, name, description: options?.description }
   }
 
+  /**
+   * Deletes a board and its directory from the filesystem.
+   *
+   * The board must be empty (no cards) and must not be the default board.
+   * The board's directory is removed recursively from disk, and the board
+   * entry is removed from the workspace configuration.
+   *
+   * @param boardId - The ID of the board to delete.
+   * @returns A promise that resolves when the board has been deleted.
+   * @throws {Error} If the board does not exist.
+   * @throws {Error} If the board is the default board.
+   * @throws {Error} If the board still contains cards.
+   *
+   * @example
+   * ```ts
+   * await sdk.deleteBoard('old-sprint')
+   * ```
+   */
   async deleteBoard(boardId: string): Promise<void> {
     const config = readConfig(this.workspaceRoot)
     if (!config.boards[boardId]) {
@@ -124,10 +236,47 @@ export class KanbanSDK {
     writeConfig(this.workspaceRoot, config)
   }
 
+  /**
+   * Retrieves the full configuration for a specific board.
+   *
+   * @param boardId - The ID of the board to retrieve.
+   * @returns The {@link BoardConfig} object containing columns, settings, and metadata.
+   * @throws {Error} If the board does not exist.
+   *
+   * @example
+   * ```ts
+   * const config = sdk.getBoard('default')
+   * console.log(config.columns) // [{ id: 'backlog', name: 'Backlog', ... }, ...]
+   * ```
+   */
   getBoard(boardId: string): BoardConfig {
     return getBoardConfig(this.workspaceRoot, boardId)
   }
 
+  /**
+   * Updates properties of an existing board.
+   *
+   * Only the provided fields are updated; omitted fields remain unchanged.
+   * The `nextCardId` counter cannot be modified through this method.
+   *
+   * @param boardId - The ID of the board to update.
+   * @param updates - A partial object containing the fields to update.
+   * @param updates.name - New display name for the board.
+   * @param updates.description - New description for the board.
+   * @param updates.columns - Replacement column definitions.
+   * @param updates.defaultStatus - New default status for new cards.
+   * @param updates.defaultPriority - New default priority for new cards.
+   * @returns The updated {@link BoardConfig} object.
+   * @throws {Error} If the board does not exist.
+   *
+   * @example
+   * ```ts
+   * const updated = sdk.updateBoard('bugs', {
+   *   name: 'Bug Tracker v2',
+   *   defaultPriority: 'high'
+   * })
+   * ```
+   */
   updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>): BoardConfig {
     const config = readConfig(this.workspaceRoot)
     const board = config.boards[boardId]
@@ -145,6 +294,31 @@ export class KanbanSDK {
     return board
   }
 
+  /**
+   * Transfers a card from one board to another.
+   *
+   * The card file is physically moved to the target board's directory. If a
+   * target status is not specified, the card is placed in the target board's
+   * default status column. The card's order is recalculated to place it at
+   * the end of the target column. Timestamps (`modified`, `completedAt`)
+   * are updated accordingly.
+   *
+   * @param cardId - The ID of the card to transfer.
+   * @param fromBoardId - The ID of the source board.
+   * @param toBoardId - The ID of the destination board.
+   * @param targetStatus - Optional status column in the destination board.
+   *   Defaults to the destination board's default status.
+   * @returns A promise resolving to the updated {@link Feature} card object.
+   * @throws {Error} If either board does not exist.
+   * @throws {Error} If the card is not found in the source board.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.transferCard('42', 'inbox', 'bugs', 'triage')
+   * console.log(card.boardId) // 'bugs'
+   * console.log(card.status)  // 'triage'
+   * ```
+   */
   async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Feature> {
     const toBoardDir = this._boardDir(toBoardId)
 
@@ -192,6 +366,31 @@ export class KanbanSDK {
 
   // --- Card CRUD ---
 
+  /**
+   * Lists all cards on a board, optionally filtered by column/status.
+   *
+   * This method performs several housekeeping tasks during loading:
+   * - Migrates flat root-level `.md` files into their proper status subdirectories
+   * - Reconciles status/folder mismatches (moves files to match their frontmatter status)
+   * - Migrates legacy integer ordering to fractional indexing
+   * - Syncs the card ID counter with existing cards
+   *
+   * Cards are returned sorted by their fractional order key.
+   *
+   * @param columns - Optional array of status/column IDs to filter by.
+   *   When provided, ensures those subdirectories exist on disk.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of {@link Feature} card objects, sorted by order.
+   *
+   * @example
+   * ```ts
+   * // List all cards on the default board
+   * const allCards = await sdk.listCards()
+   *
+   * // List only cards in 'todo' and 'in-progress' columns on the 'bugs' board
+   * const filtered = await sdk.listCards(['todo', 'in-progress'], 'bugs')
+   * ```
+   */
   async listCards(columns?: string[], boardId?: string): Promise<Feature[]> {
     await this._ensureMigrated()
     const boardDir = this._boardDir(boardId)
@@ -286,11 +485,60 @@ export class KanbanSDK {
     return cards.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
+  /**
+   * Retrieves a single card by its ID.
+   *
+   * Supports partial ID matching -- the provided `cardId` is matched against
+   * all cards on the board.
+   *
+   * @param cardId - The full or partial ID of the card to retrieve.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the matching {@link Feature} card, or `null` if not found.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.getCard('42')
+   * if (card) {
+   *   console.log(card.content)
+   * }
+   * ```
+   */
   async getCard(cardId: string, boardId?: string): Promise<Feature | null> {
     const cards = await this.listCards(undefined, boardId)
     return cards.find(c => c.id === cardId) || null
   }
 
+  /**
+   * Creates a new card on a board.
+   *
+   * The card is assigned an auto-incrementing numeric ID, placed at the end
+   * of its target status column using fractional indexing, and persisted as a
+   * markdown file with YAML frontmatter. If no status or priority is provided,
+   * the board's defaults are used.
+   *
+   * @param data - The card creation input. See {@link CreateCardInput}.
+   * @param data.content - Markdown content for the card. The first `# Heading` becomes the title.
+   * @param data.status - Optional status column. Defaults to the board's default status.
+   * @param data.priority - Optional priority level. Defaults to the board's default priority.
+   * @param data.assignee - Optional assignee name.
+   * @param data.dueDate - Optional due date as an ISO 8601 string.
+   * @param data.labels - Optional array of label strings.
+   * @param data.attachments - Optional array of attachment filenames.
+   * @param data.boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the newly created {@link Feature} card.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.createCard({
+   *   content: '# Fix login bug\n\nUsers cannot log in with email.',
+   *   status: 'todo',
+   *   priority: 'high',
+   *   labels: ['bug', 'auth'],
+   *   boardId: 'bugs'
+   * })
+   * console.log(card.id) // '7'
+   * ```
+   */
   async createCard(data: CreateCardInput): Promise<Feature> {
     await this._ensureMigrated()
     const resolvedBoardId = this._resolveBoardId(data.boardId)
@@ -340,6 +588,30 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Updates an existing card's properties.
+   *
+   * Only the provided fields are updated; omitted fields remain unchanged.
+   * The `filePath`, `id`, and `boardId` fields are protected and cannot be
+   * overwritten. If the card's title changes, the underlying file is renamed.
+   * If the status changes, the file is moved to the new status subdirectory
+   * and `completedAt` is updated accordingly.
+   *
+   * @param cardId - The ID of the card to update.
+   * @param updates - A partial {@link Feature} object with the fields to update.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const updated = await sdk.updateCard('42', {
+   *   priority: 'critical',
+   *   assignee: 'alice',
+   *   labels: ['urgent', 'backend']
+   * })
+   * ```
+   */
   async updateCard(cardId: string, updates: Partial<Feature>, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -378,6 +650,30 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Moves a card to a different status column and/or position within that column.
+   *
+   * The card's fractional order key is recalculated based on the target
+   * position. If the status changes, the underlying file is moved to the
+   * corresponding subdirectory and `completedAt` is updated accordingly.
+   *
+   * @param cardId - The ID of the card to move.
+   * @param newStatus - The target status/column ID.
+   * @param position - Optional zero-based index within the target column.
+   *   Defaults to the end of the column.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * // Move card to 'in-progress' at position 0 (top of column)
+   * const card = await sdk.moveCard('42', 'in-progress', 0)
+   *
+   * // Move card to 'done' at the end (default)
+   * const done = await sdk.moveCard('42', 'done')
+   * ```
+   */
   async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Feature> {
     const cards = await this.listCards(undefined, boardId)
     const card = cards.find(c => c.id === cardId)
@@ -417,17 +713,60 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Deletes a card and its markdown file from disk.
+   *
+   * @param cardId - The ID of the card to delete.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves when the card file has been deleted.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * await sdk.deleteCard('42', 'bugs')
+   * ```
+   */
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     await fs.unlink(card.filePath)
   }
 
+  /**
+   * Returns all cards in a specific status column.
+   *
+   * This is a convenience wrapper around {@link listCards} that filters
+   * by a single status value.
+   *
+   * @param status - The status/column ID to filter by (e.g., `'todo'`, `'in-progress'`).
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of {@link Feature} cards in the given status.
+   *
+   * @example
+   * ```ts
+   * const inProgress = await sdk.getCardsByStatus('in-progress')
+   * console.log(`${inProgress.length} cards in progress`)
+   * ```
+   */
   async getCardsByStatus(status: string, boardId?: string): Promise<Feature[]> {
     const cards = await this.listCards(undefined, boardId)
     return cards.filter(c => c.status === status)
   }
 
+  /**
+   * Returns a sorted list of unique assignee names across all cards on a board.
+   *
+   * Cards with no assignee are excluded from the result.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to a sorted array of unique assignee name strings.
+   *
+   * @example
+   * ```ts
+   * const assignees = await sdk.getUniqueAssignees('bugs')
+   * // ['alice', 'bob', 'charlie']
+   * ```
+   */
   async getUniqueAssignees(boardId?: string): Promise<string[]> {
     const cards = await this.listCards(undefined, boardId)
     const assignees = new Set<string>()
@@ -437,6 +776,18 @@ export class KanbanSDK {
     return [...assignees].sort()
   }
 
+  /**
+   * Returns a sorted list of unique labels across all cards on a board.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to a sorted array of unique label strings.
+   *
+   * @example
+   * ```ts
+   * const labels = await sdk.getUniqueLabels()
+   * // ['bug', 'enhancement', 'frontend', 'urgent']
+   * ```
+   */
   async getUniqueLabels(boardId?: string): Promise<string[]> {
     const cards = await this.listCards(undefined, boardId)
     const labels = new Set<string>()
@@ -448,6 +799,25 @@ export class KanbanSDK {
 
   // --- Attachment management ---
 
+  /**
+   * Adds a file attachment to a card.
+   *
+   * The source file is copied into the card's directory (alongside its
+   * markdown file) unless it already resides there. The attachment filename
+   * is added to the card's `attachments` array if not already present.
+   *
+   * @param cardId - The ID of the card to attach the file to.
+   * @param sourcePath - Path to the file to attach. Can be absolute or relative.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.addAttachment('42', '/tmp/screenshot.png')
+   * console.log(card.attachments) // ['screenshot.png']
+   * ```
+   */
   async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -473,6 +843,23 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Removes an attachment reference from a card's metadata.
+   *
+   * This removes the attachment filename from the card's `attachments` array
+   * but does not delete the physical file from disk.
+   *
+   * @param cardId - The ID of the card to remove the attachment from.
+   * @param attachment - The attachment filename to remove (e.g., `'screenshot.png'`).
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.removeAttachment('42', 'old-screenshot.png')
+   * ```
+   */
   async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -484,6 +871,20 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Lists all attachment filenames for a card.
+   *
+   * @param cardId - The ID of the card whose attachments to list.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of attachment filename strings.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const files = await sdk.listAttachments('42')
+   * // ['screenshot.png', 'debug-log.txt']
+   * ```
+   */
   async listAttachments(cardId: string, boardId?: string): Promise<string[]> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -492,12 +893,47 @@ export class KanbanSDK {
 
   // --- Comment management ---
 
+  /**
+   * Lists all comments on a card.
+   *
+   * @param cardId - The ID of the card whose comments to list.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of {@link Comment} objects.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const comments = await sdk.listComments('42')
+   * for (const c of comments) {
+   *   console.log(`${c.author}: ${c.content}`)
+   * }
+   * ```
+   */
   async listComments(cardId: string, boardId?: string): Promise<Comment[]> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     return card.comments || []
   }
 
+  /**
+   * Adds a comment to a card.
+   *
+   * The comment is assigned an auto-incrementing ID (e.g., `'c1'`, `'c2'`)
+   * based on the existing comments. The card's `modified` timestamp is updated.
+   *
+   * @param cardId - The ID of the card to comment on.
+   * @param author - The name of the comment author.
+   * @param content - The comment text content.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card (including the new comment).
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.addComment('42', 'alice', 'This needs more investigation.')
+   * console.log(card.comments.length) // 1
+   * ```
+   */
   async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -524,6 +960,22 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Updates the content of an existing comment on a card.
+   *
+   * @param cardId - The ID of the card containing the comment.
+   * @param commentId - The ID of the comment to update (e.g., `'c1'`).
+   * @param content - The new content for the comment.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   * @throws {Error} If the comment is not found on the card.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
+   * ```
+   */
   async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -538,6 +990,20 @@ export class KanbanSDK {
     return card
   }
 
+  /**
+   * Deletes a comment from a card.
+   *
+   * @param cardId - The ID of the card containing the comment.
+   * @param commentId - The ID of the comment to delete (e.g., `'c1'`).
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated {@link Feature} card.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.deleteComment('42', 'c2')
+   * ```
+   */
   async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Feature> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -551,6 +1017,18 @@ export class KanbanSDK {
 
   // --- Column management (board-scoped) ---
 
+  /**
+   * Lists all columns defined for a board.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns An array of {@link KanbanColumn} objects in their current order.
+   *
+   * @example
+   * ```ts
+   * const columns = sdk.listColumns('bugs')
+   * // [{ id: 'triage', name: 'Triage', color: '#ef4444' }, ...]
+   * ```
+   */
   listColumns(boardId?: string): KanbanColumn[] {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
@@ -558,6 +1036,28 @@ export class KanbanSDK {
     return board?.columns || []
   }
 
+  /**
+   * Adds a new column to a board.
+   *
+   * The column is appended to the end of the board's column list.
+   *
+   * @param column - The column definition to add.
+   * @param column.id - Unique identifier for the column (used as status values on cards).
+   * @param column.name - Human-readable display name.
+   * @param column.color - CSS color string for the column header.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns The full updated array of {@link KanbanColumn} objects for the board.
+   * @throws {Error} If the board is not found.
+   * @throws {Error} If a column with the same ID already exists.
+   *
+   * @example
+   * ```ts
+   * const columns = sdk.addColumn(
+   *   { id: 'blocked', name: 'Blocked', color: '#ef4444' },
+   *   'default'
+   * )
+   * ```
+   */
   addColumn(column: KanbanColumn, boardId?: string): KanbanColumn[] {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
@@ -571,6 +1071,29 @@ export class KanbanSDK {
     return board.columns
   }
 
+  /**
+   * Updates the properties of an existing column.
+   *
+   * Only the provided fields (`name`, `color`) are updated; the column's
+   * `id` cannot be changed.
+   *
+   * @param columnId - The ID of the column to update.
+   * @param updates - A partial object with the fields to update.
+   * @param updates.name - New display name for the column.
+   * @param updates.color - New CSS color string for the column.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns The full updated array of {@link KanbanColumn} objects for the board.
+   * @throws {Error} If the board is not found.
+   * @throws {Error} If the column is not found.
+   *
+   * @example
+   * ```ts
+   * const columns = sdk.updateColumn('in-progress', {
+   *   name: 'Working On',
+   *   color: '#f97316'
+   * })
+   * ```
+   */
   updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string): KanbanColumn[] {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
@@ -584,6 +1107,24 @@ export class KanbanSDK {
     return board.columns
   }
 
+  /**
+   * Removes a column from a board.
+   *
+   * The column must be empty (no cards currently assigned to it).
+   * This operation cannot be undone.
+   *
+   * @param columnId - The ID of the column to remove.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the updated array of {@link KanbanColumn} objects.
+   * @throws {Error} If the board is not found.
+   * @throws {Error} If the column is not found.
+   * @throws {Error} If the column still contains cards.
+   *
+   * @example
+   * ```ts
+   * const columns = await sdk.removeColumn('blocked', 'default')
+   * ```
+   */
   async removeColumn(columnId: string, boardId?: string): Promise<KanbanColumn[]> {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
@@ -604,6 +1145,27 @@ export class KanbanSDK {
     return board.columns
   }
 
+  /**
+   * Reorders the columns of a board.
+   *
+   * The `columnIds` array must contain every existing column ID exactly once,
+   * in the desired new order.
+   *
+   * @param columnIds - An array of all column IDs in the desired order.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns The reordered array of {@link KanbanColumn} objects.
+   * @throws {Error} If the board is not found.
+   * @throws {Error} If any column ID in the array does not exist.
+   * @throws {Error} If the array does not include all column IDs.
+   *
+   * @example
+   * ```ts
+   * const columns = sdk.reorderColumns(
+   *   ['backlog', 'todo', 'blocked', 'in-progress', 'review', 'done'],
+   *   'default'
+   * )
+   * ```
+   */
   reorderColumns(columnIds: string[], boardId?: string): KanbanColumn[] {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
@@ -626,10 +1188,42 @@ export class KanbanSDK {
 
   // --- Settings management (global) ---
 
+  /**
+   * Returns the global card display settings for the workspace.
+   *
+   * Display settings control which fields are shown on card previews
+   * (e.g., priority badges, assignee avatars, due dates, labels).
+   *
+   * @returns The current {@link CardDisplaySettings} object.
+   *
+   * @example
+   * ```ts
+   * const settings = sdk.getSettings()
+   * console.log(settings.showPriority) // true
+   * ```
+   */
   getSettings(): CardDisplaySettings {
     return configToSettings(readConfig(this.workspaceRoot))
   }
 
+  /**
+   * Updates the global card display settings for the workspace.
+   *
+   * The provided settings object fully replaces the display settings
+   * in the workspace configuration file (`.kanban.json`).
+   *
+   * @param settings - The new {@link CardDisplaySettings} to apply.
+   *
+   * @example
+   * ```ts
+   * sdk.updateSettings({
+   *   showPriority: true,
+   *   showAssignee: true,
+   *   showDueDate: false,
+   *   showLabels: true
+   * })
+   * ```
+   */
   updateSettings(settings: CardDisplaySettings): void {
     const config = readConfig(this.workspaceRoot)
     writeConfig(this.workspaceRoot, settingsToConfig(config, settings))

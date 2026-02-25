@@ -12,3 +12,4 @@ releases/
 .worktrees/
 .kanban
 .kanban.json
+.tmp-docs

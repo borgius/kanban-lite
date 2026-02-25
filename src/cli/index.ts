@@ -906,6 +906,62 @@ async function cmdServe(flags: Record<string, string | true>): Promise<void> {
   })
 }
 
+const HELP_TOPICS: Record<string, string> = {
+  sdk: 'docs/sdk.md',
+  api: 'docs/api.md',
+}
+
+function formatMarkdownForTerminal(md: string): string {
+  return md
+    .split('\n')
+    .map(line => {
+      // Headers
+      if (line.startsWith('# ')) return '\n' + bold(line.slice(2))
+      if (line.startsWith('## ')) return '\n' + bold(line.slice(3))
+      if (line.startsWith('### ')) return '\n' + cyan(line.slice(4))
+      if (line.startsWith('#### ')) return dim(line.slice(5))
+      // Horizontal rules
+      if (/^---+$/.test(line.trim())) return ''
+      // Bold text inline
+      return line.replace(/\*\*(.+?)\*\*/g, (_m, p1) => bold(p1))
+    })
+    .join('\n')
+}
+
+async function findPackageRoot(): Promise<string> {
+  let dir = __dirname
+  while (true) {
+    try {
+      await fs.access(path.join(dir, 'package.json'))
+      return dir
+    } catch {
+      const parent = path.dirname(dir)
+      if (parent === dir) return __dirname
+      dir = parent
+    }
+  }
+}
+
+async function showDocHelp(topic: string): Promise<void> {
+  const relativePath = HELP_TOPICS[topic]
+  if (!relativePath) {
+    console.error(red(`Unknown help topic: ${topic}`))
+    console.error(`Available topics: ${Object.keys(HELP_TOPICS).join(', ')}`)
+    process.exit(1)
+  }
+
+  const pkgRoot = await findPackageRoot()
+  const docPath = path.join(pkgRoot, relativePath)
+
+  try {
+    const content = await fs.readFile(docPath, 'utf-8')
+    console.log(formatMarkdownForTerminal(content))
+  } catch {
+    console.error(red(`Documentation not found: ${docPath}`))
+    process.exit(1)
+  }
+}
+
 function showHelp(): void {
   console.log(`
 ${bold('kanban-lite')} (${bold('kl')}) - Manage your kanban board from the command line
@@ -1004,8 +1060,20 @@ ${bold('Serve Options:')}
 async function main(): Promise<void> {
   const { command, positional, flags } = parseArgs(process.argv)
 
+  if (command === 'version' || flags.version) {
+    const pkgRoot = await findPackageRoot()
+    const pkg = JSON.parse(await fs.readFile(path.join(pkgRoot, 'package.json'), 'utf-8'))
+    console.log(pkg.version)
+    return
+  }
+
   if (command === 'help' || flags.help) {
-    showHelp()
+    const topic = command === 'help' ? positional[0] : undefined
+    if (topic) {
+      await showDocHelp(topic)
+    } else {
+      showHelp()
+    }
     return
   }
 

@@ -141,6 +141,8 @@ kl webhooks                                             # List webhooks
 kl webhooks add --url https://example.com/hook          # Register webhook
 kl webhooks add --url https://example.com/hook \
   --events task.created,task.moved --secret mykey       # With event filter and secret
+kl webhooks update wh_abc123 --active false             # Disable a webhook
+kl webhooks update wh_abc123 --events task.created      # Change subscribed events
 kl webhooks remove wh_abc123                            # Remove webhook
 
 # Settings
@@ -243,6 +245,7 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 |--------|----------|-------------|
 | `GET` | `/api/webhooks` | List registered webhooks |
 | `POST` | `/api/webhooks` | Register a webhook |
+| `PUT` | `/api/webhooks/:id` | Update a webhook |
 | `DELETE` | `/api/webhooks/:id` | Remove a webhook |
 
 #### Workspace
@@ -278,7 +281,9 @@ curl -X POST http://localhost:3000/api/tasks \
 
 ## Webhooks
 
-Register webhooks to receive HTTP POST notifications when tasks or columns change. Webhooks work with both the standalone server and the CLI.
+Register webhooks to receive HTTP POST notifications when data changes. Webhooks fire from **all interfaces** — REST API, CLI, MCP server, and the web UI — ensuring consistent event delivery regardless of how a mutation is triggered.
+
+> See the [full Webhooks documentation](docs/webhooks.md) for detailed event payloads, signature verification, and delivery behavior.
 
 ### Events
 
@@ -286,7 +291,7 @@ Register webhooks to receive HTTP POST notifications when tasks or columns chang
 |-------|---------|
 | `task.created` | A new task is created |
 | `task.updated` | Task properties are changed |
-| `task.moved` | Task is moved to a different column |
+| `task.moved` | Task is moved to a different column or transferred between boards |
 | `task.deleted` | A task is deleted |
 | `comment.created` | A comment is added to a task |
 | `comment.updated` | A comment is edited |
@@ -294,6 +299,12 @@ Register webhooks to receive HTTP POST notifications when tasks or columns chang
 | `column.created` | A new column is added |
 | `column.updated` | Column name or color is changed |
 | `column.deleted` | A column is removed |
+| `attachment.added` | A file is attached to a task |
+| `attachment.removed` | An attachment is removed from a task |
+| `settings.updated` | Board display settings are changed |
+| `board.created` | A new board is created |
+| `board.updated` | Board configuration is changed |
+| `board.deleted` | A board is deleted |
 
 ### Payload
 
@@ -311,11 +322,15 @@ Register webhooks to receive HTTP POST notifications when tasks or columns chang
 - `X-Webhook-Event: task.created`
 - `X-Webhook-Signature: sha256=<hmac>` (if a secret is configured)
 
-### Register via CLI or API
+### Manage via CLI or API
 
 ```bash
-# CLI
+# Register
 kl webhooks add --url https://example.com/hook --events task.created,task.moved --secret mykey
+
+# Update
+kl webhooks update wh_abc123 --active false
+kl webhooks update wh_abc123 --events task.created,task.deleted
 
 # API
 curl -X POST http://localhost:3000/api/webhooks \
@@ -323,7 +338,7 @@ curl -X POST http://localhost:3000/api/webhooks \
   -d '{"url": "https://example.com/hook", "events": ["task.created", "task.moved"], "secret": "mykey"}'
 ```
 
-Webhook registrations are stored in `.kanban-webhooks.json` at the workspace root.
+Webhook registrations are stored in `.kanban.json` at the workspace root and persist across server restarts.
 
 ## MCP Server
 
@@ -383,6 +398,7 @@ kanban-mcp --dir .kanban
 | `update_settings` | Update board display settings |
 | `list_webhooks` | List registered webhooks |
 | `add_webhook` | Register a new webhook |
+| `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
 | `get_workspace_info` | Get workspace root path and features directory |
 

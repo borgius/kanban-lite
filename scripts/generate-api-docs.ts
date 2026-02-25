@@ -415,7 +415,7 @@ const ROUTES: Route[] = [
       { name: 'events', type: 'string[]', required: false, default: '["*"]', description: 'Events to subscribe to' },
       { name: 'secret', type: 'string', required: false, description: 'HMAC-SHA256 signing secret' },
     ],
-    notes: '**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`',
+    notes: '**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`',
     example: `curl -X POST http://localhost:3000/api/webhooks \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -423,6 +423,22 @@ const ROUTES: Route[] = [
     "events": ["task.created", "task.moved"],
     "secret": "my-signing-key"
   }'`,
+  },
+  {
+    section: 'Webhooks',
+    subsection: 'Update Webhook',
+    method: 'PUT',
+    path: '/api/webhooks/:id',
+    description: '',
+    bodyFields: [
+      { name: 'url', type: 'string', required: false, description: 'New target URL' },
+      { name: 'events', type: 'string[]', required: false, description: 'New event subscriptions' },
+      { name: 'secret', type: 'string', required: false, description: 'New HMAC-SHA256 signing secret' },
+      { name: 'active', type: 'boolean', required: false, description: 'Enable or disable the webhook' },
+    ],
+    example: `curl -X PUT http://localhost:3000/api/webhooks/wh_abc123 \\
+  -H "Content-Type: application/json" \\
+  -d '{ "active": false }'`,
   },
   {
     section: 'Webhooks',

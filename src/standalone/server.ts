@@ -7,7 +7,8 @@ import { generateSlug, type Comment, type Feature, type Priority, type KanbanCol
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeFeature } from '../sdk/parser'
 import { readConfig } from '../shared/config'
-import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook } from './webhooks'
+import { sanitizeFeature } from '../sdk/types'
+import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
 
 interface CreateFeatureData {
   status: string
@@ -43,14 +44,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   // Derive workspace root from features directory
   const workspaceRoot = path.dirname(absoluteFeaturesDir)
-  const sdk = new KanbanSDK(absoluteFeaturesDir)
+  const sdk = new KanbanSDK(absoluteFeaturesDir, {
+    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
+  })
 
   // --- Helpers ---
-
-  function sanitizeFeature(feature: Feature): Omit<Feature, 'filePath'> {
-    const { filePath: _, ...rest } = feature
-    return rest
-  }
 
   function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
@@ -169,7 +167,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       })
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'task.created', sanitizeFeature(feature))
       return feature
     } finally {
       migrating = false
@@ -179,17 +176,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   async function doMoveFeature(featureId: string, newStatus: string, newOrder: number): Promise<Feature | null> {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return null
-    const oldStatus = feature.status
 
     migrating = true
     try {
       const updated = await sdk.moveCard(featureId, newStatus, newOrder, currentBoardId)
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'task.moved', {
-        ...sanitizeFeature(updated),
-        previousStatus: oldStatus
-      })
       return updated
     } finally {
       migrating = false
@@ -206,7 +198,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'task.updated', sanitizeFeature(updated))
       return updated
     } finally {
       migrating = false
@@ -218,11 +209,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (!feature) return false
 
     try {
-      const deleted = sanitizeFeature(feature)
       await sdk.deleteCard(featureId, currentBoardId)
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'task.deleted', deleted)
       return true
     } catch (err) {
       console.error('Failed to delete feature:', err)
@@ -241,7 +230,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     const column: KanbanColumn = { id: uniqueId, name, color }
     sdk.addColumn(column, currentBoardId)
     broadcast(buildInitMessage())
-    fireWebhooks(workspaceRoot, 'column.created', column)
     return column
   }
 
@@ -250,7 +238,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       const columns = sdk.updateColumn(columnId, { name: updates.name, color: updates.color }, currentBoardId)
       const updated = columns.find(c => c.id === columnId) ?? null
       broadcast(buildInitMessage())
-      if (updated) fireWebhooks(workspaceRoot, 'column.updated', updated)
       return updated
     } catch {
       return null
@@ -265,7 +252,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       if (!col) return { removed: false, error: 'Column not found' }
       await sdk.removeColumn(columnId, currentBoardId)
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'column.deleted', col)
       return { removed: true }
     } catch (err) {
       return { removed: false, error: String(err) }
@@ -323,7 +309,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       const comment = updated.comments[updated.comments.length - 1]
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'comment.created', { ...comment, cardId: featureId })
       return comment
     } catch {
       return null
@@ -340,7 +325,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       const comment = (updated.comments || []).find(c => c.id === commentId)
       await loadFeatures()
       broadcast(buildInitMessage())
-      if (comment) fireWebhooks(workspaceRoot, 'comment.updated', { ...comment, cardId: featureId })
       return comment ?? null
     } catch {
       return null
@@ -361,7 +345,6 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       lastWrittenContent = serializeFeature(updated)
       await loadFeatures()
       broadcast(buildInitMessage())
-      fireWebhooks(workspaceRoot, 'comment.deleted', { ...comment, cardId: featureId })
       return true
     } catch {
       return false
@@ -531,10 +514,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const targetStatus = msg.targetStatus as string
         migrating = true
         try {
-          const card = await sdk.transferCard(featureId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
+          await sdk.transferCard(featureId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
           await loadFeatures()
           broadcast(buildInitMessage())
-          fireWebhooks(workspaceRoot, 'task.moved', sanitizeFeature(card))
         } catch (err) {
           console.error('Failed to transfer card:', err)
         } finally {
@@ -1058,6 +1040,19 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         }
         const webhook = createWebhook(workspaceRoot, { url: webhookUrl, events, secret })
         return jsonOk(res, webhook, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/webhooks/:id')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const webhook = updateWebhook(workspaceRoot, id, body as Partial<{ url: string; events: string[]; secret: string; active: boolean }>)
+        if (!webhook) return jsonError(res, 404, 'Webhook not found')
+        return jsonOk(res, webhook)
       } catch (err) {
         return jsonError(res, 400, String(err))
       }

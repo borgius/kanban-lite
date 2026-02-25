@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { Priority } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
-import { loadWebhooks, createWebhook, deleteWebhook } from '../standalone/webhooks'
+import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 
 // --- Resolve features directory ---
 
@@ -53,7 +53,10 @@ function getTitleFromContent(content: string): string {
 
 async function main(): Promise<void> {
   const featuresDir = await resolveFeaturesDir()
-  const sdk = new KanbanSDK(featuresDir)
+  const workspaceRoot = path.dirname(featuresDir)
+  const sdk = new KanbanSDK(featuresDir, {
+    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
+  })
 
   const server = new McpServer({
     name: 'kanban-lite',
@@ -737,8 +740,6 @@ async function main(): Promise<void> {
 
   // --- Settings Tools ---
 
-  const workspaceRoot = path.dirname(featuresDir)
-
   server.tool(
     'get_settings',
     'Get the current kanban board display settings.',
@@ -846,6 +847,38 @@ async function main(): Promise<void> {
         content: [{
           type: 'text' as const,
           text: `Deleted webhook: ${webhookId}`,
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'update_webhook',
+    'Update an existing webhook configuration (URL, events, secret, or active status).',
+    {
+      webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
+      url: z.string().optional().describe('New webhook target URL'),
+      events: z.array(z.string()).optional().describe('New events to subscribe to'),
+      secret: z.string().optional().describe('New HMAC-SHA256 signing secret'),
+      active: z.boolean().optional().describe('Set webhook active (true) or inactive (false)'),
+    },
+    async ({ webhookId, url, events, secret, active }) => {
+      const updates: Partial<{ url: string; events: string[]; secret: string; active: boolean }> = {}
+      if (url !== undefined) updates.url = url
+      if (events !== undefined) updates.events = events
+      if (secret !== undefined) updates.secret = secret
+      if (active !== undefined) updates.active = active
+      const updated = updateWebhook(workspaceRoot, webhookId, updates)
+      if (!updated) {
+        return {
+          content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],
+          isError: true,
+        }
+      }
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(updated, null, 2),
         }],
       }
     }

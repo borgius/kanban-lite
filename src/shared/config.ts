@@ -4,6 +4,25 @@ import type { KanbanColumn, CardDisplaySettings, Priority } from './types'
 import { DEFAULT_COLUMNS } from './types'
 
 /**
+ * A registered webhook endpoint that receives event notifications.
+ *
+ * Webhooks are stored in the workspace `.kanban.json` config file and
+ * are fired asynchronously whenever a matching event occurs.
+ */
+export interface Webhook {
+  /** Unique identifier (e.g., `'wh_a1b2c3d4e5f6'`). */
+  id: string
+  /** The HTTP(S) URL that receives POST requests with event payloads. */
+  url: string
+  /** Event names to subscribe to (e.g., `['task.created']`), or `['*']` for all events. */
+  events: string[]
+  /** Optional HMAC-SHA256 signing key for payload verification. */
+  secret?: string
+  /** Whether this webhook is active. Inactive webhooks are skipped during delivery. */
+  active: boolean
+}
+
+/**
  * Configuration for a single kanban board.
  *
  * Each board has its own set of columns, card ID counter, and default
@@ -63,6 +82,8 @@ export interface KanbanConfig {
   compactMode: boolean
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
+  /** Registered webhook endpoints for event notifications. */
+  webhooks?: Webhook[]
 }
 
 // Legacy v1 config (for migration)

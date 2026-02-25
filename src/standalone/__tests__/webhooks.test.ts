@@ -29,24 +29,20 @@ describe('Webhooks Module', () => {
       expect(webhooks).toEqual([])
     })
 
-    it('should return empty array for invalid JSON', () => {
-      fs.writeFileSync(path.join(tempDir, '.kanban-webhooks.json'), 'not json{', 'utf-8')
+    it('should return empty array when config has no webhooks key', () => {
+      fs.writeFileSync(path.join(tempDir, '.kanban.json'), '{"columns":[]}', 'utf-8')
       const webhooks = loadWebhooks(tempDir)
       expect(webhooks).toEqual([])
     })
 
-    it('should return empty array for non-array JSON', () => {
-      fs.writeFileSync(path.join(tempDir, '.kanban-webhooks.json'), '{"not": "array"}', 'utf-8')
-      const webhooks = loadWebhooks(tempDir)
-      expect(webhooks).toEqual([])
-    })
-
-    it('should load webhooks from file', () => {
+    it('should load webhooks from .kanban.json config', () => {
       const data: Webhook[] = [
         { id: 'wh_test1', url: 'https://example.com/hook1', events: ['*'], active: true },
         { id: 'wh_test2', url: 'https://example.com/hook2', events: ['task.created'], secret: 'mysecret', active: true }
       ]
-      fs.writeFileSync(path.join(tempDir, '.kanban-webhooks.json'), JSON.stringify(data), 'utf-8')
+      // Must use version: 2 to avoid v1 migration which drops webhooks
+      const config = { version: 2, boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', featuresDirectory: '.kanban', webhooks: data }
+      fs.writeFileSync(path.join(tempDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
 
       const webhooks = loadWebhooks(tempDir)
       expect(webhooks.length).toBe(2)
@@ -58,16 +54,16 @@ describe('Webhooks Module', () => {
   // ── saveWebhooks ──
 
   describe('saveWebhooks', () => {
-    it('should persist webhooks to file', () => {
+    it('should persist webhooks to .kanban.json config', () => {
       const data: Webhook[] = [
         { id: 'wh_save', url: 'https://example.com/save', events: ['task.created'], active: true }
       ]
       saveWebhooks(tempDir, data)
 
-      const raw = fs.readFileSync(path.join(tempDir, '.kanban-webhooks.json'), 'utf-8')
+      const raw = fs.readFileSync(path.join(tempDir, '.kanban.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.length).toBe(1)
-      expect(parsed[0].id).toBe('wh_save')
+      expect(parsed.webhooks.length).toBe(1)
+      expect(parsed.webhooks[0].id).toBe('wh_save')
     })
 
     it('should overwrite existing webhooks', () => {

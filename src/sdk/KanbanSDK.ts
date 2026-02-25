@@ -9,7 +9,8 @@ import type { CardDisplaySettings } from '../shared/types'
 import type { Priority } from '../shared/types'
 import { parseFeatureFile, serializeFeature } from './parser'
 import { ensureDirectories, ensureStatusSubfolders, getFeatureFilePath, getStatusFromPath, moveFeatureFile, renameFeatureFile } from './fileUtils'
-import type { CreateCardInput } from './types'
+import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
+import { sanitizeFeature } from './types'
 import { migrateFileSystemToMultiBoard } from './migration'
 
 /**
@@ -32,19 +33,42 @@ import { migrateFileSystemToMultiBoard } from './migration'
  */
 export class KanbanSDK {
   private _migrated = false
+  private _onEvent?: SDKEventHandler
 
   /**
    * Creates a new KanbanSDK instance.
    *
    * @param featuresDir - Absolute path to the `.kanban` features directory.
    *   The parent of this directory is treated as the workspace root.
+   * @param options - Optional configuration including an event handler callback.
    *
    * @example
    * ```ts
    * const sdk = new KanbanSDK('/home/user/my-project/.kanban')
+   *
+   * // With event handler for webhooks
+   * const sdk = new KanbanSDK('/home/user/my-project/.kanban', {
+   *   onEvent: (event, data) => fireWebhooks(root, event, data)
+   * })
    * ```
    */
-  constructor(public readonly featuresDir: string) {}
+  constructor(public readonly featuresDir: string, options?: SDKOptions) {
+    this._onEvent = options?.onEvent
+  }
+
+  /**
+   * Emits an event to the registered handler, if one exists.
+   * Called internally after every successful mutating operation.
+   */
+  private emitEvent(event: SDKEventType, data: unknown): void {
+    if (this._onEvent) {
+      try {
+        this._onEvent(event, data)
+      } catch (err) {
+        console.error(`SDK event handler error for ${event}:`, err)
+      }
+    }
+  }
 
   /**
    * The workspace root directory (parent of the features directory).
@@ -188,7 +212,9 @@ export class KanbanSDK {
     }
     writeConfig(this.workspaceRoot, config)
 
-    return { id, name, description: options?.description }
+    const boardInfo = { id, name, description: options?.description }
+    this.emitEvent('board.created', boardInfo)
+    return boardInfo
   }
 
   /**
@@ -234,6 +260,7 @@ export class KanbanSDK {
 
     delete config.boards[boardId]
     writeConfig(this.workspaceRoot, config)
+    this.emitEvent('board.deleted', { id: boardId })
   }
 
   /**
@@ -291,6 +318,7 @@ export class KanbanSDK {
     if (updates.defaultPriority !== undefined) board.defaultPriority = updates.defaultPriority
 
     writeConfig(this.workspaceRoot, config)
+    this.emitEvent('board.updated', { id: boardId, ...board })
     return board
   }
 
@@ -329,6 +357,7 @@ export class KanbanSDK {
     // Find card in source board
     const card = await this.getCard(cardId, fromBoardId)
     if (!card) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
+    const previousStatus = card.status
 
     // Determine target status
     const toBoard = config.boards[toBoardId]
@@ -361,6 +390,7 @@ export class KanbanSDK {
 
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('task.moved', { ...sanitizeFeature(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
     return card
   }
 
@@ -585,6 +615,7 @@ export class KanbanSDK {
     await fs.mkdir(path.dirname(card.filePath), { recursive: true })
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('task.created', sanitizeFeature(card))
     return card
   }
 
@@ -647,6 +678,7 @@ export class KanbanSDK {
       card.filePath = newPath
     }
 
+    this.emitEvent('task.updated', sanitizeFeature(card))
     return card
   }
 
@@ -710,6 +742,7 @@ export class KanbanSDK {
       card.filePath = newPath
     }
 
+    this.emitEvent('task.moved', { ...sanitizeFeature(card), previousStatus: oldStatus })
     return card
   }
 
@@ -729,7 +762,9 @@ export class KanbanSDK {
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
+    const snapshot = sanitizeFeature(card)
     await fs.unlink(card.filePath)
+    this.emitEvent('task.deleted', snapshot)
   }
 
   /**
@@ -840,6 +875,7 @@ export class KanbanSDK {
     card.modified = new Date().toISOString()
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('attachment.added', { cardId, attachment: fileName })
     return card
   }
 
@@ -868,6 +904,7 @@ export class KanbanSDK {
     card.modified = new Date().toISOString()
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('attachment.removed', { cardId, attachment })
     return card
   }
 
@@ -957,6 +994,7 @@ export class KanbanSDK {
     card.modified = new Date().toISOString()
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('comment.created', { ...comment, cardId })
     return card
   }
 
@@ -987,6 +1025,7 @@ export class KanbanSDK {
     card.modified = new Date().toISOString()
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    this.emitEvent('comment.updated', { ...comment, cardId })
     return card
   }
 
@@ -1008,10 +1047,14 @@ export class KanbanSDK {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
+    const comment = (card.comments || []).find(c => c.id === commentId)
     card.comments = (card.comments || []).filter(c => c.id !== commentId)
     card.modified = new Date().toISOString()
     await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
 
+    if (comment) {
+      this.emitEvent('comment.deleted', { ...comment, cardId })
+    }
     return card
   }
 
@@ -1068,6 +1111,7 @@ export class KanbanSDK {
     }
     board.columns.push(column)
     writeConfig(this.workspaceRoot, config)
+    this.emitEvent('column.created', column)
     return board.columns
   }
 
@@ -1104,6 +1148,7 @@ export class KanbanSDK {
     if (updates.name !== undefined) col.name = updates.name
     if (updates.color !== undefined) col.color = updates.color
     writeConfig(this.workspaceRoot, config)
+    this.emitEvent('column.updated', col)
     return board.columns
   }
 
@@ -1140,8 +1185,10 @@ export class KanbanSDK {
       throw new Error(`Cannot remove column "${columnId}": ${cardsInColumn.length} card(s) still in this column`)
     }
 
+    const removed = board.columns[idx]
     board.columns.splice(idx, 1)
     writeConfig(this.workspaceRoot, config)
+    this.emitEvent('column.deleted', removed)
     return board.columns
   }
 
@@ -1227,6 +1274,7 @@ export class KanbanSDK {
   updateSettings(settings: CardDisplaySettings): void {
     const config = readConfig(this.workspaceRoot)
     writeConfig(this.workspaceRoot, settingsToConfig(config, settings))
+    this.emitEvent('settings.updated', settings)
   }
 
   // --- Private helpers ---

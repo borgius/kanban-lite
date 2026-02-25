@@ -2,7 +2,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { Feature, Priority } from '../shared/types'
-import { loadWebhooks, createWebhook, deleteWebhook } from '../standalone/webhooks'
+import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 
@@ -802,9 +802,35 @@ async function cmdWebhooks(positional: string[], flags: Record<string, string | 
       }
       break
     }
+    case 'update': {
+      const webhookId = positional[1]
+      if (!webhookId) {
+        console.error(red('Usage: kl webhooks update <id> [--url <url>] [--events <e1,e2>] [--secret <key>] [--active true|false]'))
+        process.exit(1)
+      }
+      const updates: Partial<{ url: string; events: string[]; secret: string; active: boolean }> = {}
+      if (typeof flags.url === 'string') updates.url = flags.url
+      if (typeof flags.events === 'string') updates.events = flags.events.split(',').map(e => e.trim())
+      if (typeof flags.secret === 'string') updates.secret = flags.secret
+      if (typeof flags.active === 'string') updates.active = flags.active === 'true'
+      const updated = updateWebhook(workspaceRoot, webhookId, updates)
+      if (!updated) {
+        console.error(red(`Webhook not found: ${webhookId}`))
+        process.exit(1)
+      }
+      if (flags.json) {
+        console.log(JSON.stringify(updated, null, 2))
+      } else {
+        console.log(green(`Updated webhook: ${updated.id}`))
+        console.log(`  URL:    ${updated.url}`)
+        console.log(`  Events: ${updated.events.join(', ')}`)
+        console.log(`  Active: ${updated.active ? green('yes') : red('no')}`)
+      }
+      break
+    }
     default:
       console.error(red(`Unknown webhooks subcommand: ${subcommand}`))
-      console.error('Available: list, add, remove')
+      console.error('Available: list, add, update, remove')
       process.exit(1)
   }
 }
@@ -1006,6 +1032,7 @@ ${bold('Column Commands:')}
 ${bold('Webhook Commands:')}
   webhooks                    List registered webhooks
   webhooks add                Register a webhook (--url, --events, --secret)
+  webhooks update <id>        Update a webhook (--url, --events, --secret, --active)
   webhooks remove <id>        Remove a webhook
 
 ${bold('Settings Commands:')}
@@ -1085,7 +1112,9 @@ async function main(): Promise<void> {
 
   const featuresDir = await resolveFeaturesDir(flags)
   const workspaceRoot = path.dirname(featuresDir)
-  const sdk = new KanbanSDK(featuresDir)
+  const sdk = new KanbanSDK(featuresDir, {
+    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
+  })
 
   switch (command) {
     case 'list':

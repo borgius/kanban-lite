@@ -549,7 +549,7 @@ POST /api/webhooks
 | `events` | `string[]` | No | `["*"]` | Events to subscribe to |
 | `secret` | `string` | No |  | HMAC-SHA256 signing secret |
 
-**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`
+**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`
 
 **Example:**
 
@@ -561,6 +561,31 @@ curl -X POST http://localhost:3000/api/webhooks \
     "events": ["task.created", "task.moved"],
     "secret": "my-signing-key"
   }'
+```
+
+---
+
+### Update Webhook
+
+```
+PUT /api/webhooks/:id
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | `string` | No | New target URL |
+| `events` | `string[]` | No | New event subscriptions |
+| `secret` | `string` | No | New HMAC-SHA256 signing secret |
+| `active` | `boolean` | No | Enable or disable the webhook |
+
+**Example:**
+
+```bash
+curl -X PUT http://localhost:3000/api/webhooks/wh_abc123 \
+  -H "Content-Type: application/json" \
+  -d '{ "active": false }'
 ```
 
 ---

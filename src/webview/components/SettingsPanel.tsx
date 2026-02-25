@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, ChevronDown } from 'lucide-react'
-import type { CardDisplaySettings, Priority, FeatureStatus } from '../../shared/types'
+import type { CardDisplaySettings, Priority, FeatureStatus, WorkspaceInfo } from '../../shared/types'
 import { cn } from '../lib/utils'
 
 const priorityConfig: { value: Priority; label: string; dot: string }[] = [
@@ -21,13 +21,14 @@ const statusConfig: { value: FeatureStatus; label: string; dot: string }[] = [
 interface SettingsPanelProps {
   isOpen: boolean
   settings: CardDisplaySettings
+  workspace?: WorkspaceInfo | null
   onClose: () => void
   onSave: (settings: CardDisplaySettings) => void
 }
 
-export function SettingsPanel({ isOpen, settings, onClose, onSave }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, settings, workspace, onClose, onSave }: SettingsPanelProps) {
   if (!isOpen) return null
-  return <SettingsPanelContent settings={settings} onClose={onClose} onSave={onSave} />
+  return <SettingsPanelContent settings={settings} workspace={workspace} onClose={onClose} onSave={onSave} />
 }
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -88,6 +89,21 @@ function SettingsToggle({ label, description, checked, onChange }: {
         )}
       </div>
       <ToggleSwitch checked={checked} onChange={onChange} />
+    </div>
+  )
+}
+
+function SettingsInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-1.5">
+      <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>{label}</div>
+      <div
+        className="text-xs font-mono truncate max-w-[60%] text-right"
+        style={{ color: 'var(--vscode-foreground)', opacity: 0.7 }}
+        title={value}
+      >
+        {value}
+      </div>
     </div>
   )
 }
@@ -161,7 +177,7 @@ function SettingsDropdown({ label, value, options, onChange }: {
   )
 }
 
-function SettingsPanelContent({ settings, onClose, onSave }: Omit<SettingsPanelProps, 'isOpen'>) {
+function SettingsPanelContent({ settings, workspace, onClose, onSave }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
 
   useEffect(() => { setLocal(settings) }, [settings])
@@ -212,6 +228,17 @@ function SettingsPanelContent({ settings, onClose, onSave }: Omit<SettingsPanelP
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
+          {workspace && (
+            <>
+              <SettingsSection title="Workspace">
+                <SettingsInfo label="Project Path" value={workspace.projectPath} />
+                <SettingsInfo label="Features Directory" value={workspace.featuresDirectory} />
+                <SettingsInfo label="Server Port" value={String(workspace.port)} />
+                <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
+              </SettingsSection>
+              <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+            </>
+          )}
           <SettingsSection title="Card Display">
             <SettingsToggle
               label="Show Priority Badges"

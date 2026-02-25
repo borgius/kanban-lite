@@ -723,6 +723,7 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
         onChange={handleContentChange}
         placeholder="Start writing..."
         className="flex-1 min-h-0"
+        mode="edit"
         comments={comments}
         onAddComment={onAddComment}
         onUpdateComment={onUpdateComment}

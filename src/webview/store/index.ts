@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo } from '../../shared/types'
+import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo } from '../../shared/types'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -16,9 +16,11 @@ interface KanbanState {
   labelFilter: string | 'all'
   dueDateFilter: DueDateFilter
   layout: LayoutMode
+  workspace: WorkspaceInfo | null
   cardSettings: CardDisplaySettings
   settingsOpen: boolean
 
+  setWorkspace: (workspace: WorkspaceInfo) => void
   setFeatures: (features: Feature[]) => void
   setColumns: (columns: KanbanColumn[]) => void
   setBoards: (boards: BoardInfo[]) => void
@@ -93,6 +95,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   labelFilter: 'all',
   dueDateFilter: 'all',
   layout: 'horizontal',
+  workspace: null,
   cardSettings: {
     showPriorityBadges: true,
     showAssignee: true,
@@ -107,6 +110,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   },
   settingsOpen: false,
 
+  setWorkspace: (workspace) => set({ workspace }),
   setFeatures: (features) => set({ features }),
   setColumns: (columns) => set({ columns }),
   setBoards: (boards) => set({ boards }),

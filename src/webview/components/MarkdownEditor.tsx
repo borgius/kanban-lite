@@ -11,6 +11,7 @@ interface MarkdownEditorProps {
   placeholder?: string
   className?: string
   autoFocus?: boolean
+  mode?: 'create' | 'edit'
   comments?: Comment[]
   onAddComment?: (author: string, content: string) => void
   onUpdateComment?: (commentId: string, content: string) => void
@@ -145,8 +146,10 @@ function ToolbarButton({ icon, title, onClick, separator }: ToolbarButtonProps) 
   )
 }
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, comments, onAddComment, onUpdateComment, onDeleteComment }: MarkdownEditorProps) {
-  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments'>('write')
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment }: MarkdownEditorProps) {
+  const isEditMode = mode === 'edit'
+  const writeLabel = isEditMode ? 'Edit' : 'Write'
+  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments'>(isEditMode ? 'preview' : 'write')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const previewHtml = useMemo(() => {
@@ -213,38 +216,25 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
         style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
       >
         {/* Tabs */}
-        <button
-          type="button"
-          onClick={() => setActiveTab('write')}
-          className="px-3 py-2 text-xs font-medium transition-colors relative"
-          style={{
-            color: activeTab === 'write' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-          }}
-        >
-          Write
-          {activeTab === 'write' && (
-            <span
-              className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-              style={{ background: 'var(--vscode-focusBorder)' }}
-            />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('preview')}
-          className="px-3 py-2 text-xs font-medium transition-colors relative"
-          style={{
-            color: activeTab === 'preview' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-          }}
-        >
-          Preview
-          {activeTab === 'preview' && (
-            <span
-              className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-              style={{ background: 'var(--vscode-focusBorder)' }}
-            />
-          )}
-        </button>
+        {(isEditMode ? ['preview', 'write'] as const : ['write', 'preview'] as const).map(tab => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className="px-3 py-2 text-xs font-medium transition-colors relative"
+            style={{
+              color: activeTab === tab ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
+            }}
+          >
+            {tab === 'write' ? writeLabel : 'Preview'}
+            {activeTab === tab && (
+              <span
+                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
+                style={{ background: 'var(--vscode-focusBorder)' }}
+              />
+            )}
+          </button>
+        ))}
         {comments && (
           <button
             type="button"

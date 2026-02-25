@@ -903,7 +903,8 @@ async function cmdSettings(positional: string[], flags: Record<string, string | 
 
 async function cmdServe(flags: Record<string, string | true>): Promise<void> {
   const dir = typeof flags.dir === 'string' ? flags.dir : '.kanban'
-  const port = typeof flags.port === 'string' ? parseInt(flags.port, 10) : 3000
+  const config = readConfig(process.cwd())
+  const port = typeof flags.port === 'string' ? parseInt(flags.port, 10) : config.port
   const noBrowser = !!flags['no-browser']
 
   // Dynamically import the standalone server

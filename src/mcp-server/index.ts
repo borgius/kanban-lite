@@ -894,7 +894,7 @@ async function main(): Promise<void> {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ workspaceRoot, featuresDir }, null, 2),
+          text: JSON.stringify({ workspaceRoot, featuresDir, port: readConfig(workspaceRoot).port }, null, 2),
         }],
       }
     }

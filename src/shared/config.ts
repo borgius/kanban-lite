@@ -82,6 +82,8 @@ export interface KanbanConfig {
   compactMode: boolean
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
+  /** Port number for the standalone HTTP server. */
+  port: number
   /** Registered webhook endpoints for event notifications. */
   webhooks?: Webhook[]
 }
@@ -135,7 +137,8 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showBuildWithAI: true,
   showFileName: false,
   compactMode: false,
-  markdownEditorMode: false
+  markdownEditorMode: false,
+  port: 3000
 }
 
 /**
@@ -198,7 +201,8 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showBuildWithAI: v1.showBuildWithAI,
     showFileName: v1.showFileName,
     compactMode: v1.compactMode,
-    markdownEditorMode: v1.markdownEditorMode
+    markdownEditorMode: v1.markdownEditorMode,
+    port: 3000
   }
 }
 

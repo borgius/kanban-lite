@@ -137,7 +137,13 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       columns: sdk.listColumns(currentBoardId),
       settings,
       boards: sdk.listBoards(),
-      currentBoard: currentBoardId || config.defaultBoard
+      currentBoard: currentBoardId || config.defaultBoard,
+      workspace: {
+        projectPath: workspaceRoot,
+        featuresDirectory: config.featuresDirectory,
+        port: config.port,
+        configVersion: config.version
+      }
     }
   }
 
@@ -1070,7 +1076,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     params = route('GET', '/api/workspace')
     if (params) {
-      return jsonOk(res, { path: workspaceRoot })
+      const wsConfig = readConfig(workspaceRoot)
+      return jsonOk(res, { path: workspaceRoot, port: wsConfig.port })
     }
 
     // ==================== LEGACY API (backwards compat) ====================

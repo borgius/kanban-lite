@@ -24,6 +24,7 @@ function App(): React.JSX.Element {
 
   const {
     columns,
+    workspace,
     cardSettings,
     settingsOpen,
     setFeatures,
@@ -31,6 +32,7 @@ function App(): React.JSX.Element {
     setBoards,
     setCurrentBoard,
     setIsDarkMode,
+    setWorkspace,
     setCardSettings,
     setSettingsOpen
   } = useStore()
@@ -210,6 +212,7 @@ function App(): React.JSX.Element {
           setColumns(message.columns)
           if (message.boards) setBoards(message.boards)
           if (message.currentBoard) setCurrentBoard(message.currentBoard)
+          if (message.workspace) setWorkspace(message.workspace)
           if (message.settings) {
             if (message.settings.markdownEditorMode && editingFeature) {
               setEditingFeature(null)
@@ -250,7 +253,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setCardSettings, setSettingsOpen])
+  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen])
 
   const handleFeatureClick = (feature: Feature): void => {
     // Request feature content for inline editing
@@ -483,6 +486,7 @@ function App(): React.JSX.Element {
       <SettingsPanel
         isOpen={settingsOpen}
         settings={cardSettings}
+        workspace={workspace}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
       />

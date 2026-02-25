@@ -258,9 +258,19 @@ export interface FeatureFrontmatter {
   order: string
 }
 
+/**
+ * Read-only workspace information displayed in the settings panel.
+ */
+export interface WorkspaceInfo {
+  projectPath: string
+  featuresDirectory: string
+  port: number
+  configVersion: number
+}
+
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string }
+  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo }
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }

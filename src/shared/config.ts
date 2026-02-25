@@ -3,33 +3,65 @@ import * as path from 'path'
 import type { KanbanColumn, CardDisplaySettings, Priority } from './types'
 import { DEFAULT_COLUMNS } from './types'
 
-// Per-board configuration
+/**
+ * Configuration for a single kanban board.
+ *
+ * Each board has its own set of columns, card ID counter, and default
+ * status/priority values. Boards are stored as entries in the
+ * {@link KanbanConfig.boards} record.
+ */
 export interface BoardConfig {
+  /** Human-readable name of the board. */
   name: string
+  /** Optional description of the board's purpose. */
   description?: string
+  /** Ordered list of columns displayed on this board. */
   columns: KanbanColumn[]
+  /** Next auto-increment card ID to allocate for this board. */
   nextCardId: number
+  /** Default column/status for newly created cards on this board. */
   defaultStatus: string
+  /** Default priority for newly created cards on this board. */
   defaultPriority: Priority
 }
 
-// V2 config with multi-board support
+/**
+ * Root configuration object for the kanban workspace (v2 format).
+ *
+ * Supports multiple boards via the {@link boards} record. When read from
+ * disk, v1 configs are automatically migrated to this v2 format.
+ * Persisted as `.kanban.json` in the workspace root.
+ */
 export interface KanbanConfig {
+  /** Schema version, always `2` for the current format. */
   version: 2
+  /** Map of board IDs to their configurations. */
   boards: Record<string, BoardConfig>
+  /** ID of the board to use when none is explicitly specified. */
   defaultBoard: string
+  /** Directory (relative to workspace root) where card files are stored. */
   featuresDirectory: string
+  /** AI agent identifier used for the "Build with AI" feature. */
   aiAgent: string
-  // Global display settings (fallback defaults for defaultPriority/defaultStatus)
+  /** Global default priority for new cards (used as fallback). */
   defaultPriority: Priority
+  /** Global default status/column for new cards (used as fallback). */
   defaultStatus: string
+  /** Whether to show colored priority badges on cards. */
   showPriorityBadges: boolean
+  /** Whether to display the assignee on cards. */
   showAssignee: boolean
+  /** Whether to display the due date on cards. */
   showDueDate: boolean
+  /** Whether to display labels/tags on cards. */
   showLabels: boolean
+  /** Whether to show the "Build with AI" action on cards. */
   showBuildWithAI: boolean
+  /** Whether to display the source filename on cards. */
   showFileName: boolean
+  /** Whether to use a compact card layout with reduced spacing. */
   compactMode: boolean
+  /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
 }
 
@@ -60,6 +92,11 @@ const DEFAULT_BOARD_CONFIG: BoardConfig = {
   defaultPriority: 'medium'
 }
 
+/**
+ * Default configuration used when no `.kanban.json` file exists or when
+ * fields are missing from an existing config. Includes a single `'default'`
+ * board with the standard five columns.
+ */
 export const DEFAULT_CONFIG: KanbanConfig = {
   version: 2,
   boards: {
@@ -80,8 +117,21 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   markdownEditorMode: false
 }
 
+/**
+ * The filename used for the kanban configuration file: `'.kanban.json'`.
+ */
 export const CONFIG_FILENAME = '.kanban.json'
 
+/**
+ * Returns the absolute path to the `.kanban.json` config file for a workspace.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @returns Absolute path to the config file.
+ *
+ * @example
+ * configPath('/home/user/my-project')
+ * // => '/home/user/my-project/.kanban.json'
+ */
 export function configPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, CONFIG_FILENAME)
 }
@@ -131,6 +181,18 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   }
 }
 
+/**
+ * Reads the kanban config from disk. If the file is missing or unreadable,
+ * returns the default config. If the file contains a v1 config, it is
+ * automatically migrated to v2 format and persisted back to disk.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @returns The parsed (and possibly migrated) kanban configuration.
+ *
+ * @example
+ * const config = readConfig('/home/user/my-project')
+ * console.log(config.defaultBoard) // => 'default'
+ */
 export function readConfig(workspaceRoot: string): KanbanConfig {
   const filePath = configPath(workspaceRoot)
   const defaults = { ...DEFAULT_CONFIG, boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } } }
@@ -154,18 +216,54 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
   }
 }
 
+/**
+ * Writes the kanban config to disk as pretty-printed JSON.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param config - The kanban configuration to persist.
+ *
+ * @example
+ * const config = readConfig('/home/user/my-project')
+ * config.defaultBoard = 'sprint-1'
+ * writeConfig('/home/user/my-project', config)
+ */
 export function writeConfig(workspaceRoot: string, config: KanbanConfig): void {
   const filePath = configPath(workspaceRoot)
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
-/** Get the default board ID from config */
+/**
+ * Returns the default board ID from the workspace config.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @returns The default board ID string (e.g. `'default'`).
+ *
+ * @example
+ * const boardId = getDefaultBoardId('/home/user/my-project')
+ * // => 'default'
+ */
 export function getDefaultBoardId(workspaceRoot: string): string {
   const config = readConfig(workspaceRoot)
   return config.defaultBoard
 }
 
-/** Get board config, using default board if boardId is omitted */
+/**
+ * Returns the configuration for a specific board. If `boardId` is omitted,
+ * the default board is used.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param boardId - Optional board ID. Defaults to the workspace's default board.
+ * @returns The board configuration object.
+ * @throws {Error} If the resolved board ID does not exist in the config.
+ *
+ * @example
+ * const board = getBoardConfig('/home/user/my-project', 'sprint-1')
+ * console.log(board.name) // => 'Sprint 1'
+ *
+ * @example
+ * // Uses default board
+ * const board = getBoardConfig('/home/user/my-project')
+ */
 export function getBoardConfig(workspaceRoot: string, boardId?: string): BoardConfig {
   const config = readConfig(workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
@@ -176,7 +274,19 @@ export function getBoardConfig(workspaceRoot: string, boardId?: string): BoardCo
   return board
 }
 
-/** Read and increment the nextCardId counter for a board, returning the allocated ID */
+/**
+ * Allocates the next card ID for a board by reading and incrementing the
+ * board's `nextCardId` counter. The updated config is persisted to disk.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param boardId - Optional board ID. Defaults to the workspace's default board.
+ * @returns The newly allocated numeric card ID.
+ * @throws {Error} If the resolved board ID does not exist in the config.
+ *
+ * @example
+ * const id = allocateCardId('/home/user/my-project')
+ * // => 1 (first call), 2 (second call), etc.
+ */
 export function allocateCardId(workspaceRoot: string, boardId?: string): number {
   const config = readConfig(workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
@@ -190,7 +300,21 @@ export function allocateCardId(workspaceRoot: string, boardId?: string): number 
   return id
 }
 
-/** Ensure nextCardId is ahead of all existing numeric IDs for a board */
+/**
+ * Synchronizes the board's `nextCardId` counter to be greater than all
+ * existing card IDs. This prevents ID collisions when cards have been
+ * created outside the normal allocation flow (e.g. manual file creation).
+ *
+ * Does nothing if `existingIds` is empty or the counter is already ahead.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param boardId - The board ID to synchronize.
+ * @param existingIds - Array of numeric card IDs currently present on the board.
+ *
+ * @example
+ * syncCardIdCounter('/home/user/my-project', 'default', [1, 5, 12])
+ * // Board's nextCardId is now at least 13
+ */
 export function syncCardIdCounter(workspaceRoot: string, boardId: string, existingIds: number[]): void {
   if (existingIds.length === 0) return
   const maxId = Math.max(...existingIds)
@@ -204,7 +328,18 @@ export function syncCardIdCounter(workspaceRoot: string, boardId: string, existi
   }
 }
 
-/** Extract CardDisplaySettings from a KanbanConfig (global settings + fallback defaults) */
+/**
+ * Extracts {@link CardDisplaySettings} from a {@link KanbanConfig} by
+ * picking out the global display-related fields.
+ *
+ * @param config - The kanban configuration to extract settings from.
+ * @returns A `CardDisplaySettings` object with the current display preferences.
+ *
+ * @example
+ * const config = readConfig('/home/user/my-project')
+ * const settings = configToSettings(config)
+ * console.log(settings.compactMode) // => false
+ */
 export function configToSettings(config: KanbanConfig): CardDisplaySettings {
   return {
     showPriorityBadges: config.showPriorityBadges,
@@ -220,7 +355,19 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
   }
 }
 
-/** Merge CardDisplaySettings back into a KanbanConfig */
+/**
+ * Merges {@link CardDisplaySettings} back into a {@link KanbanConfig},
+ * returning a new config object with the display fields updated.
+ *
+ * @param config - The existing kanban configuration to update.
+ * @param settings - The display settings to merge into the config.
+ * @returns A new `KanbanConfig` with the display settings applied.
+ *
+ * @example
+ * const config = readConfig('/home/user/my-project')
+ * const updated = settingsToConfig(config, { ...configToSettings(config), compactMode: true })
+ * writeConfig('/home/user/my-project', updated)
+ */
 export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySettings): KanbanConfig {
   return {
     ...config,

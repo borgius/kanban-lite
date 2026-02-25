@@ -27,6 +27,19 @@ function parseCommentBlock(header: string, body: string): Comment | null {
   return { id, author, created, content: body.trim() }
 }
 
+/**
+ * Parses a markdown file with YAML frontmatter into a Feature object.
+ *
+ * The file is expected to have a YAML frontmatter block delimited by `---` at the
+ * top, followed by the card body content. Additional `---` delimited blocks after
+ * the body are parsed as comment sections (if they contain `comment: true`),
+ * otherwise they are treated as part of the body content.
+ *
+ * @param content - The raw string content of the markdown file.
+ * @param filePath - The absolute file path, used to extract the card ID from the filename
+ *   if no `id` field is present in the frontmatter.
+ * @returns The parsed {@link Feature} object, or `null` if no valid frontmatter block is found.
+ */
 export function parseFeatureFile(content: string, filePath: string): Feature | null {
   content = content.replace(/\r\n/g, '\n')
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
@@ -89,6 +102,16 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   }
 }
 
+/**
+ * Serializes a Feature object back to markdown with YAML frontmatter.
+ *
+ * Produces a string with a `---` delimited YAML frontmatter block containing all
+ * card metadata, followed by the card body content. Any comments attached to the
+ * feature are appended as additional `---` delimited sections at the end of the file.
+ *
+ * @param feature - The {@link Feature} object to serialize.
+ * @returns The complete markdown string ready to be written to a `.md` file.
+ */
 export function serializeFeature(feature: Feature): string {
   const frontmatter = [
     '---',

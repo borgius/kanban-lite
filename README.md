@@ -37,7 +37,8 @@ kl add --title "My first task" --priority high
 
 ### Web UI
 
-- **5-column workflow**: Backlog, To Do, In Progress, Review, Done (fully customizable)
+- **Multi-board support**: Create multiple boards with independent columns and settings
+- **5-column workflow**: Backlog, To Do, In Progress, Review, Done (fully customizable per board)
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Layout toggle**: Switch between horizontal and vertical board layouts
@@ -117,6 +118,18 @@ kl comment add implement-search --author alice \
 kl comment edit implement-search c1 --body "Updated"    # Edit a comment
 kl comment remove implement-search c1                   # Remove a comment
 
+# Boards
+kl boards                                               # List boards
+kl boards add --id bugs --name "Bug Tracker"            # Create a board
+kl boards show bugs                                     # Show board details
+kl boards remove bugs                                   # Remove an empty board
+kl boards default bugs                                  # Set default board
+kl transfer card-42 --from default --to bugs            # Transfer card between boards
+
+# Target a specific board (works with most commands)
+kl list --board bugs                                    # List cards in a board
+kl add --title "Login bug" --board bugs                 # Create card in a board
+
 # Manage columns
 kl columns                                              # List columns
 kl columns add --id testing --name Testing              # Add column
@@ -143,9 +156,15 @@ kl serve --port 8080 --no-browser                       # Custom port, no auto-o
 
 # Initialize features directory
 kl init
+
+# Other
+kl version                                              # Print version
+kl help                                                 # Show help
+kl help sdk                                             # Show SDK documentation
+kl help api                                             # Show REST API documentation
 ```
 
-Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory.
+Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
 
 ## Standalone Server
 
@@ -171,6 +190,18 @@ The server provides:
 
 All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "message" }`. CORS is enabled for all origins.
 
+> See the [full REST API documentation](docs/api.md) for detailed endpoint reference, request/response examples, and board-scoped routes.
+
+#### Boards
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/boards` | List all boards |
+| `POST` | `/api/boards` | Create a board |
+| `GET` | `/api/boards/:boardId` | Get board configuration |
+| `PUT` | `/api/boards/:boardId` | Update board configuration |
+| `DELETE` | `/api/boards/:boardId` | Delete an empty board |
+
 #### Tasks
 
 | Method | Endpoint | Description |
@@ -181,6 +212,14 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `PUT` | `/api/tasks/:id` | Update task properties |
 | `PATCH` | `/api/tasks/:id/move` | Move task to column/position |
 | `DELETE` | `/api/tasks/:id` | Delete a task |
+
+Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
+
+#### Transfer
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/boards/:boardId/tasks/:id/transfer` | Transfer a task to another board |
 
 #### Columns
 
@@ -318,6 +357,11 @@ kanban-mcp --dir .kanban
 
 | Tool | Description |
 |------|-------------|
+| `list_boards` | List all boards in the workspace |
+| `create_board` | Create a new board with optional custom columns |
+| `get_board` | Get board configuration and details |
+| `delete_board` | Delete an empty board |
+| `transfer_card` | Move a card from one board to another |
 | `list_cards` | List/filter cards by status, priority, assignee, or label |
 | `get_card` | Get full details of a card (supports partial ID matching) |
 | `create_card` | Create a new card with title, body, status, priority, etc. |
@@ -342,6 +386,8 @@ kanban-mcp --dir .kanban
 | `remove_webhook` | Remove a webhook |
 | `get_workspace_info` | Get workspace root path and features directory |
 
+All card, column, comment, and attachment tools accept an optional `boardId` parameter to target a specific board.
+
 ## SDK
 
 Use the kanban SDK programmatically in your own tools. The `KanbanSDK` class is the single source of truth — the CLI, MCP server, VSCode extension, and standalone server all delegate to it.
@@ -351,7 +397,13 @@ import { KanbanSDK } from 'kanban-lite/sdk'
 
 const sdk = new KanbanSDK('/path/to/.kanban')
 
-// Cards
+// Boards
+const boards = sdk.listBoards()
+sdk.createBoard('bugs', 'Bug Tracker', { description: 'Track production bugs' })
+await sdk.transferCard('42', 'default', 'bugs')
+await sdk.deleteBoard('bugs')
+
+// Cards (all accept optional boardId as last argument)
 const cards = await sdk.listCards()
 const card = await sdk.createCard({ content: '# My Task', status: 'todo', priority: 'high' })
 await sdk.moveCard(card.id, 'in-progress')
@@ -382,7 +434,7 @@ See the [full SDK documentation](docs/sdk.md) for detailed API reference, types,
 
 ## Data Storage
 
-Cards are stored as markdown files with YAML frontmatter in `.kanban/` within your project:
+Cards are stored as markdown files with YAML frontmatter in `.kanban/boards/<boardId>/` within your project:
 
 ```markdown
 ---
@@ -422,17 +474,27 @@ Comments are stored as additional YAML documents in the same file, keeping every
 
 ## Configuration
 
-Board configuration is stored in `.kanban.json` at your project root:
+Board configuration is stored in `.kanban.json` at your project root. It supports multiple boards, each with their own columns and settings:
 
 ```json
 {
-  "columns": [
-    { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
-    { "id": "todo", "name": "To Do", "color": "#3b82f6" },
-    { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
-    { "id": "review", "name": "Review", "color": "#8b5cf6" },
-    { "id": "done", "name": "Done", "color": "#22c55e" }
-  ],
+  "version": 2,
+  "defaultBoard": "default",
+  "boards": {
+    "default": {
+      "name": "Default Board",
+      "columns": [
+        { "id": "backlog", "name": "Backlog", "color": "#6b7280" },
+        { "id": "todo", "name": "To Do", "color": "#3b82f6" },
+        { "id": "in-progress", "name": "In Progress", "color": "#f59e0b" },
+        { "id": "review", "name": "Review", "color": "#8b5cf6" },
+        { "id": "done", "name": "Done", "color": "#22c55e" }
+      ],
+      "nextCardId": 1,
+      "defaultStatus": "backlog",
+      "defaultPriority": "medium"
+    }
+  },
   "showPriorityBadges": true,
   "showAssignee": true,
   "showDueDate": true,
@@ -441,7 +503,7 @@ Board configuration is stored in `.kanban.json` at your project root:
 }
 ```
 
-Columns are fully customizable — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
+Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 
 ## AI Agent Integration
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes

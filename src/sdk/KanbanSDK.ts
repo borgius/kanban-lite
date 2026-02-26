@@ -1,8 +1,8 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Comment, Feature, KanbanColumn, BoardInfo } from '../shared/types'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId } from '../shared/types'
+import type { Comment, Feature, KanbanColumn, BoardInfo, LabelDefinition } from '../shared/types'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId, DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
 import type { BoardConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
@@ -132,6 +132,7 @@ export class KanbanSDK {
     await this._ensureMigrated()
     const boardDir = this._boardDir()
     await ensureDirectories(boardDir)
+    await ensureStatusSubfolders(boardDir, [DELETED_STATUS_ID])
   }
 
   // --- Board management ---
@@ -747,11 +748,12 @@ export class KanbanSDK {
   }
 
   /**
-   * Deletes a card and its markdown file from disk.
+   * Soft-deletes a card by moving it to the `deleted` status column.
+   * The file remains on disk and can be restored.
    *
-   * @param cardId - The ID of the card to delete.
+   * @param cardId - The ID of the card to soft-delete.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise that resolves when the card file has been deleted.
+   * @returns A promise that resolves when the card has been moved to deleted status.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -760,6 +762,27 @@ export class KanbanSDK {
    * ```
    */
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
+    const card = await this.getCard(cardId, boardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+    if (card.status === DELETED_STATUS_ID) return
+    await this.updateCard(cardId, { status: DELETED_STATUS_ID }, boardId)
+  }
+
+  /**
+   * Permanently deletes a card's markdown file from disk.
+   * This cannot be undone.
+   *
+   * @param cardId - The ID of the card to permanently delete.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves when the card file has been removed from disk.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * await sdk.permanentlyDeleteCard('42', 'bugs')
+   * ```
+   */
+  async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     const snapshot = sanitizeFeature(card)
@@ -830,6 +853,46 @@ export class KanbanSDK {
       for (const l of c.labels) labels.add(l)
     }
     return [...labels].sort()
+  }
+
+  // --- Label definition management ---
+
+  getLabels(): Record<string, LabelDefinition> {
+    const config = readConfig(this.workspaceRoot)
+    return config.labels || {}
+  }
+
+  setLabel(name: string, definition: LabelDefinition): void {
+    const config = readConfig(this.workspaceRoot)
+    if (!config.labels) config.labels = {}
+    config.labels[name] = definition
+    writeConfig(this.workspaceRoot, config)
+  }
+
+  deleteLabel(name: string): void {
+    const config = readConfig(this.workspaceRoot)
+    if (config.labels) {
+      delete config.labels[name]
+      writeConfig(this.workspaceRoot, config)
+    }
+  }
+
+  async renameLabel(oldName: string, newName: string): Promise<void> {
+    const config = readConfig(this.workspaceRoot)
+    if (config.labels && config.labels[oldName]) {
+      config.labels[newName] = config.labels[oldName]
+      delete config.labels[oldName]
+      writeConfig(this.workspaceRoot, config)
+    }
+
+    // Cascade to all cards
+    const cards = await this.listCards()
+    for (const card of cards) {
+      if (card.labels.includes(oldName)) {
+        const newLabels = card.labels.map(l => l === oldName ? newName : l)
+        await this.updateCard(card.id, { labels: newLabels })
+      }
+    }
   }
 
   // --- Attachment management ---
@@ -1107,6 +1170,7 @@ export class KanbanSDK {
     const resolvedId = boardId || config.defaultBoard
     const board = config.boards[resolvedId]
     if (!board) throw new Error(`Board not found: ${resolvedId}`)
+    if (column.id === DELETED_STATUS_ID) throw new Error(`"${DELETED_STATUS_ID}" is a reserved column ID`)
     if (board.columns.some(c => c.id === column.id)) {
       throw new Error(`Column already exists: ${column.id}`)
     }
@@ -1176,6 +1240,7 @@ export class KanbanSDK {
     const resolvedId = boardId || config.defaultBoard
     const board = config.boards[resolvedId]
     if (!board) throw new Error(`Board not found: ${resolvedId}`)
+    if (columnId === DELETED_STATUS_ID) throw new Error(`Cannot remove the reserved "${DELETED_STATUS_ID}" column`)
     const idx = board.columns.findIndex(c => c.id === columnId)
     if (idx === -1) throw new Error(`Column not found: ${columnId}`)
 

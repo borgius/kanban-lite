@@ -306,6 +306,51 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('Label management', () => {
+    it('getLabels returns empty object by default', async () => {
+      const labels = sdk.getLabels()
+      expect(labels).toEqual({})
+    })
+
+    it('setLabel creates a new label definition', async () => {
+      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      const labels = sdk.getLabels()
+      expect(labels['bug']).toEqual({ color: '#e11d48', group: 'Type' })
+    })
+
+    it('setLabel updates an existing label definition', async () => {
+      sdk.setLabel('bug', { color: '#e11d48' })
+      sdk.setLabel('bug', { color: '#2563eb', group: 'Type' })
+      const labels = sdk.getLabels()
+      expect(labels['bug']).toEqual({ color: '#2563eb', group: 'Type' })
+    })
+
+    it('deleteLabel removes label definition from config', async () => {
+      sdk.setLabel('bug', { color: '#e11d48' })
+      sdk.deleteLabel('bug')
+      const labels = sdk.getLabels()
+      expect(labels['bug']).toBeUndefined()
+    })
+
+    it('renameLabel updates config key and cascades to all cards', async () => {
+      writeCardFile(tempDir, '1-card.md', makeCardContent({
+        id: '1-card', status: 'backlog', labels: ['bug', 'frontend']
+      }), 'backlog')
+      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+
+      await sdk.renameLabel('bug', 'defect')
+
+      const labels = sdk.getLabels()
+      expect(labels['bug']).toBeUndefined()
+      expect(labels['defect']).toEqual({ color: '#e11d48', group: 'Type' })
+
+      const cards = await sdk.listCards()
+      expect(cards[0].labels).toContain('defect')
+      expect(cards[0].labels).not.toContain('bug')
+      expect(cards[0].labels).toContain('frontend')
+    })
+  })
+
   describe('addAttachment', () => {
     it('should copy file and add to attachments', async () => {
       writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')

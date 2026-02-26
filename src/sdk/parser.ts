@@ -111,6 +111,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   }
 
   const meta = getMetadata()
+  const actions = getArrayValue('actions')
 
   return {
     id: getValue('id') || extractIdFromFilename(filePath),
@@ -127,7 +128,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     order: getValue('order') || 'a0',
     content: body.trim(),
     ...(meta ? { metadata: meta } : {}),
-    ...(getArrayValue('actions').length > 0 ? { actions: getArrayValue('actions') } : {}),
+    ...(actions.length > 0 ? { actions } : {}),
     filePath
   }
 }

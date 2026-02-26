@@ -68,7 +68,7 @@ and status column.
 This class is the foundation that the CLI, MCP server, and standalone
 HTTP server are all built on top of.
 
-**Kind**: global class  
+**Kind**: global class
 
 * [KanbanSDK](#KanbanSDK)
     * [new KanbanSDK(featuresDir, options)](#new_KanbanSDK_new)
@@ -126,7 +126,7 @@ Creates a new KanbanSDK instance.
 | featuresDir | Absolute path to the `.kanban` features directory.   The parent of this directory is treated as the workspace root. |
 | options | Optional configuration including an event handler callback. |
 
-**Example**  
+**Example**
 ```ts
 const sdk = new KanbanSDK('/path/to/project/.kanban')
 await sdk.init()
@@ -142,9 +142,9 @@ The workspace root directory (parent of the features directory).
 
 This is the project root where `.kanban.json` configuration lives.
 
-**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The absolute path to the workspace root directory.  
-**Example**  
+**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The absolute path to the workspace root directory.
+**Example**
 ```ts
 const sdk = new KanbanSDK('/home/user/my-project/.kanban')
 console.log(sdk.workspaceRoot) // '/home/user/my-project'
@@ -158,7 +158,7 @@ console.log(sdk.workspaceRoot) // '/home/user/my-project'
 Emits an event to the registered handler, if one exists.
 Called internally after every successful mutating operation.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 
 * * *
 
@@ -171,9 +171,9 @@ ensuring the default board's directory structure exists.
 This should be called once before performing any operations, especially
 on a fresh workspace or after upgrading from a single-board layout.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise that resolves when initialization is complete.  
-**Example**  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise that resolves when initialization is complete.
+**Example**
 ```ts
 const sdk = new KanbanSDK('/path/to/project/.kanban')
 await sdk.init()
@@ -186,10 +186,10 @@ await sdk.init()
 #### kanbanSDK.listBoards() ⇒
 Lists all boards defined in the workspace configuration.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 **Returns**: An array of [BoardInfo](BoardInfo) objects containing each board's
-  `id`, `name`, and optional `description`.  
-**Example**  
+  `id`, `name`, and optional `description`.
+**Example**
 ```ts
 const boards = sdk.listBoards()
 // [{ id: 'default', name: 'Default Board', description: undefined }]
@@ -206,8 +206,8 @@ If no columns are specified, the new board inherits columns from the
 default board. If the default board has no columns, a standard set of
 five columns (Backlog, To Do, In Progress, Review, Done) is used.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A [BoardInfo](BoardInfo) object for the newly created board.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A [BoardInfo](BoardInfo) object for the newly created board.
 **Throws**:
 
 - <code>Error</code> If a board with the given `id` already exists.
@@ -223,7 +223,7 @@ five columns (Backlog, To Do, In Progress, Review, Done) is used.
 | options.defaultStatus | The default status for new cards. Defaults to the first column's ID. |
 | options.defaultPriority | The default priority for new cards. Defaults to the workspace default. |
 
-**Example**  
+**Example**
 ```ts
 const board = sdk.createBoard('bugs', 'Bug Tracker', {
   description: 'Track and triage bugs',
@@ -242,8 +242,8 @@ The board must be empty (no cards) and must not be the default board.
 The board's directory is removed recursively from disk, and the board
 entry is removed from the workspace configuration.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise that resolves when the board has been deleted.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise that resolves when the board has been deleted.
 **Throws**:
 
 - <code>Error</code> If the board does not exist.
@@ -255,7 +255,7 @@ entry is removed from the workspace configuration.
 | --- | --- |
 | boardId | The ID of the board to delete. |
 
-**Example**  
+**Example**
 ```ts
 await sdk.deleteBoard('old-sprint')
 ```
@@ -267,8 +267,8 @@ await sdk.deleteBoard('old-sprint')
 #### kanbanSDK.getBoard(boardId) ⇒
 Retrieves the full configuration for a specific board.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The [BoardConfig](BoardConfig) object containing columns, settings, and metadata.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The [BoardConfig](BoardConfig) object containing columns, settings, and metadata.
 **Throws**:
 
 - <code>Error</code> If the board does not exist.
@@ -278,7 +278,7 @@ Retrieves the full configuration for a specific board.
 | --- | --- |
 | boardId | The ID of the board to retrieve. |
 
-**Example**  
+**Example**
 ```ts
 const config = sdk.getBoard('default')
 console.log(config.columns) // [{ id: 'backlog', name: 'Backlog', ... }, ...]
@@ -294,8 +294,8 @@ Updates properties of an existing board.
 Only the provided fields are updated; omitted fields remain unchanged.
 The `nextCardId` counter cannot be modified through this method.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The updated [BoardConfig](BoardConfig) object.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The updated [BoardConfig](BoardConfig) object.
 **Throws**:
 
 - <code>Error</code> If the board does not exist.
@@ -311,7 +311,7 @@ The `nextCardId` counter cannot be modified through this method.
 | updates.defaultStatus | New default status for new cards. |
 | updates.defaultPriority | New default priority for new cards. |
 
-**Example**  
+**Example**
 ```ts
 const updated = sdk.updateBoard('bugs', {
   name: 'Bug Tracker v2',
@@ -332,8 +332,8 @@ default status column. The card's order is recalculated to place it at
 the end of the target column. Timestamps (`modified`, `completedAt`)
 are updated accordingly.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card object.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card object.
 **Throws**:
 
 - <code>Error</code> If either board does not exist.
@@ -347,7 +347,7 @@ are updated accordingly.
 | toBoardId | The ID of the destination board. |
 | targetStatus | Optional status column in the destination board.   Defaults to the destination board's default status. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.transferCard('42', 'inbox', 'bugs', 'triage')
 console.log(card.boardId) // 'bugs'
@@ -372,15 +372,15 @@ This method performs several housekeeping tasks during loading:
 
 Cards are returned sorted by their fractional order key.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Feature](Feature) card objects, sorted by order.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to an array of [Feature](Feature) card objects, sorted by order.
 
 | Param | Description |
 | --- | --- |
 | columns | Optional array of status/column IDs to filter by.   When provided, ensures those subdirectories exist on disk. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 // List all cards on the default board
 const allCards = await sdk.listCards()
@@ -399,15 +399,15 @@ Retrieves a single card by its ID.
 Supports partial ID matching -- the provided `cardId` is matched against
 all cards on the board.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the matching [Feature](Feature) card, or `null` if not found.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the matching [Feature](Feature) card, or `null` if not found.
 
 | Param | Description |
 | --- | --- |
 | cardId | The full or partial ID of the card to retrieve. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.getCard('42')
 if (card) {
@@ -427,8 +427,8 @@ of its target status column using fractional indexing, and persisted as a
 markdown file with YAML frontmatter. If no status or priority is provided,
 the board's defaults are used.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the newly created [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the newly created [Feature](Feature) card.
 
 | Param | Description |
 | --- | --- |
@@ -443,7 +443,7 @@ the board's defaults are used.
 | data.metadata | Optional arbitrary key-value metadata stored in the card's frontmatter. |
 | data.boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.createCard({
   content: '# Fix login bug\n\nUsers cannot log in with email.',
@@ -468,8 +468,8 @@ overwritten. If the card's title changes, the underlying file is renamed.
 If the status changes, the file is moved to the new status subdirectory
 and `completedAt` is updated accordingly.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -481,7 +481,7 @@ and `completedAt` is updated accordingly.
 | updates | A partial [Feature](Feature) object with the fields to update. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const updated = await sdk.updateCard('42', {
   priority: 'critical',
@@ -501,8 +501,8 @@ The card's fractional order key is recalculated based on the target
 position. If the status changes, the underlying file is moved to the
 corresponding subdirectory and `completedAt` is updated accordingly.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -515,7 +515,7 @@ corresponding subdirectory and `completedAt` is updated accordingly.
 | position | Optional zero-based index within the target column.   Defaults to the end of the column. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 // Move card to 'in-progress' at position 0 (top of column)
 const card = await sdk.moveCard('42', 'in-progress', 0)
@@ -532,8 +532,8 @@ const done = await sdk.moveCard('42', 'done')
 Soft-deletes a card by moving it to the `deleted` status column.
 The file remains on disk and can be restored.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise that resolves when the card has been moved to deleted status.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise that resolves when the card has been moved to deleted status.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -544,7 +544,7 @@ The file remains on disk and can be restored.
 | cardId | The ID of the card to soft-delete. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 await sdk.deleteCard('42', 'bugs')
 ```
@@ -557,8 +557,8 @@ await sdk.deleteCard('42', 'bugs')
 Permanently deletes a card's markdown file from disk.
 This cannot be undone.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise that resolves when the card file has been removed from disk.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise that resolves when the card file has been removed from disk.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -569,7 +569,7 @@ This cannot be undone.
 | cardId | The ID of the card to permanently delete. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 await sdk.permanentlyDeleteCard('42', 'bugs')
 ```
@@ -584,15 +584,15 @@ Returns all cards in a specific status column.
 This is a convenience wrapper around [listCards](listCards) that filters
 by a single status value.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Feature](Feature) cards in the given status.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to an array of [Feature](Feature) cards in the given status.
 
 | Param | Description |
 | --- | --- |
 | status | The status/column ID to filter by (e.g., `'todo'`, `'in-progress'`). |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const inProgress = await sdk.getCardsByStatus('in-progress')
 console.log(`${inProgress.length} cards in progress`)
@@ -607,14 +607,14 @@ Returns a sorted list of unique assignee names across all cards on a board.
 
 Cards with no assignee are excluded from the result.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to a sorted array of unique assignee name strings.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to a sorted array of unique assignee name strings.
 
 | Param | Description |
 | --- | --- |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const assignees = await sdk.getUniqueAssignees('bugs')
 // ['alice', 'bob', 'charlie']
@@ -627,14 +627,14 @@ const assignees = await sdk.getUniqueAssignees('bugs')
 #### kanbanSDK.getUniqueLabels(boardId) ⇒
 Returns a sorted list of unique labels across all cards on a board.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to a sorted array of unique label strings.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to a sorted array of unique label strings.
 
 | Param | Description |
 | --- | --- |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const labels = await sdk.getUniqueLabels()
 // ['bug', 'enhancement', 'frontend', 'urgent']
@@ -650,9 +650,9 @@ Returns all label definitions from the workspace configuration.
 Label definitions map label names to their color and optional group.
 Labels on cards that have no definition will render with default gray styling.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A record mapping label names to [LabelDefinition](LabelDefinition) objects.  
-**Example**  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A record mapping label names to [LabelDefinition](LabelDefinition) objects.
+**Example**
 ```ts
 const labels = sdk.getLabels()
 // { bug: { color: '#e11d48', group: 'Type' }, docs: { color: '#16a34a' } }
@@ -668,14 +668,14 @@ Creates or updates a label definition in the workspace configuration.
 If the label already exists, its definition is replaced entirely.
 The change is persisted to `.kanban.json` immediately.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 
 | Param | Description |
 | --- | --- |
 | name | The label name (e.g. `'bug'`, `'frontend'`). |
 | definition | The label definition with color and optional group. |
 
-**Example**  
+**Example**
 ```ts
 sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
 sdk.setLabel('docs', { color: '#16a34a' })
@@ -692,13 +692,13 @@ This only removes the color/group definition — cards that use this
 label keep their label strings. Those labels will render with default
 gray styling in the UI.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 
 | Param | Description |
 | --- | --- |
 | name | The label name to remove. |
 
-**Example**  
+**Example**
 ```ts
 sdk.deleteLabel('bug')
 ```
@@ -713,14 +713,14 @@ Renames a label in the configuration and cascades the change to all cards.
 Updates the label key in `.kanban.json` and replaces the old label name
 with the new one on every card that uses it.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 
 | Param | Description |
 | --- | --- |
 | oldName | The current label name. |
 | newName | The new label name. |
 
-**Example**  
+**Example**
 ```ts
 await sdk.renameLabel('bug', 'defect')
 // Config updated: 'defect' now has bug's color/group
@@ -737,14 +737,14 @@ Returns a sorted list of label names that belong to the given group.
 Labels without an explicit `group` property are not matched by any
 group name (they are considered ungrouped).
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A sorted array of label names in the group.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A sorted array of label names in the group.
 
 | Param | Description |
 | --- | --- |
 | group | The group name to filter by (e.g. `'Type'`, `'Priority'`). |
 
-**Example**  
+**Example**
 ```ts
 sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
 sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
@@ -763,15 +763,15 @@ Returns all cards that have at least one label belonging to the given group.
 Looks up all labels in the group via [getLabelsInGroup](getLabelsInGroup), then filters
 cards to those containing any of those labels.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of matching [Feature](Feature) cards.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to an array of matching [Feature](Feature) cards.
 
 | Param | Description |
 | --- | --- |
 | group | The group name to filter by. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const typeCards = await sdk.filterCardsByLabelGroup('Type')
 // Returns all cards with 'bug', 'feature', or any other 'Type' label
@@ -788,8 +788,8 @@ The source file is copied into the card's directory (alongside its
 markdown file) unless it already resides there. The attachment filename
 is added to the card's `attachments` array if not already present.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -801,7 +801,7 @@ is added to the card's `attachments` array if not already present.
 | sourcePath | Path to the file to attach. Can be absolute or relative. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.addAttachment('42', '/tmp/screenshot.png')
 console.log(card.attachments) // ['screenshot.png']
@@ -817,8 +817,8 @@ Removes an attachment reference from a card's metadata.
 This removes the attachment filename from the card's `attachments` array
 but does not delete the physical file from disk.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -830,7 +830,7 @@ but does not delete the physical file from disk.
 | attachment | The attachment filename to remove (e.g., `'screenshot.png'`). |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.removeAttachment('42', 'old-screenshot.png')
 ```
@@ -842,8 +842,8 @@ const card = await sdk.removeAttachment('42', 'old-screenshot.png')
 #### kanbanSDK.listAttachments(cardId, boardId) ⇒
 Lists all attachment filenames for a card.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of attachment filename strings.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to an array of attachment filename strings.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -854,7 +854,7 @@ Lists all attachment filenames for a card.
 | cardId | The ID of the card whose attachments to list. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const files = await sdk.listAttachments('42')
 // ['screenshot.png', 'debug-log.txt']
@@ -867,8 +867,8 @@ const files = await sdk.listAttachments('42')
 #### kanbanSDK.listComments(cardId, boardId) ⇒
 Lists all comments on a card.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Comment](Comment) objects.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to an array of [Comment](Comment) objects.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -879,7 +879,7 @@ Lists all comments on a card.
 | cardId | The ID of the card whose comments to list. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const comments = await sdk.listComments('42')
 for (const c of comments) {
@@ -897,8 +897,8 @@ Adds a comment to a card.
 The comment is assigned an auto-incrementing ID (e.g., `'c1'`, `'c2'`)
 based on the existing comments. The card's `modified` timestamp is updated.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card (including the new comment).  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card (including the new comment).
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -911,7 +911,7 @@ based on the existing comments. The card's `modified` timestamp is updated.
 | content | The comment text content. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.addComment('42', 'alice', 'This needs more investigation.')
 console.log(card.comments.length) // 1
@@ -924,8 +924,8 @@ console.log(card.comments.length) // 1
 #### kanbanSDK.updateComment(cardId, commentId, content, boardId) ⇒
 Updates the content of an existing comment on a card.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -939,7 +939,7 @@ Updates the content of an existing comment on a card.
 | content | The new content for the comment. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
 ```
@@ -951,8 +951,8 @@ const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.
 #### kanbanSDK.deleteComment(cardId, commentId, boardId) ⇒
 Deletes a comment from a card.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated [Feature](Feature) card.
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -964,7 +964,7 @@ Deletes a comment from a card.
 | commentId | The ID of the comment to delete (e.g., `'c1'`). |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const card = await sdk.deleteComment('42', 'c2')
 ```
@@ -976,14 +976,14 @@ const card = await sdk.deleteComment('42', 'c2')
 #### kanbanSDK.listColumns(boardId) ⇒
 Lists all columns defined for a board.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: An array of [KanbanColumn](KanbanColumn) objects in their current order.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: An array of [KanbanColumn](KanbanColumn) objects in their current order.
 
 | Param | Description |
 | --- | --- |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const columns = sdk.listColumns('bugs')
 // [{ id: 'triage', name: 'Triage', color: '#ef4444' }, ...]
@@ -998,8 +998,8 @@ Adds a new column to a board.
 
 The column is appended to the end of the board's column list.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The full updated array of [KanbanColumn](KanbanColumn) objects for the board.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The full updated array of [KanbanColumn](KanbanColumn) objects for the board.
 **Throws**:
 
 - <code>Error</code> If the board is not found.
@@ -1015,7 +1015,7 @@ The column is appended to the end of the board's column list.
 | column.color | CSS color string for the column header. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const columns = sdk.addColumn(
   { id: 'blocked', name: 'Blocked', color: '#ef4444' },
@@ -1033,8 +1033,8 @@ Updates the properties of an existing column.
 Only the provided fields (`name`, `color`) are updated; the column's
 `id` cannot be changed.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The full updated array of [KanbanColumn](KanbanColumn) objects for the board.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The full updated array of [KanbanColumn](KanbanColumn) objects for the board.
 **Throws**:
 
 - <code>Error</code> If the board is not found.
@@ -1049,7 +1049,7 @@ Only the provided fields (`name`, `color`) are updated; the column's
 | updates.color | New CSS color string for the column. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const columns = sdk.updateColumn('in-progress', {
   name: 'Working On',
@@ -1067,8 +1067,8 @@ Removes a column from a board.
 The column must be empty (no cards currently assigned to it).
 This operation cannot be undone.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated array of [KanbanColumn](KanbanColumn) objects.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: A promise resolving to the updated array of [KanbanColumn](KanbanColumn) objects.
 **Throws**:
 
 - <code>Error</code> If the board is not found.
@@ -1082,7 +1082,7 @@ This operation cannot be undone.
 | columnId | The ID of the column to remove. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const columns = await sdk.removeColumn('blocked', 'default')
 ```
@@ -1097,8 +1097,8 @@ Reorders the columns of a board.
 The `columnIds` array must contain every existing column ID exactly once,
 in the desired new order.
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The reordered array of [KanbanColumn](KanbanColumn) objects.  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The reordered array of [KanbanColumn](KanbanColumn) objects.
 **Throws**:
 
 - <code>Error</code> If the board is not found.
@@ -1111,7 +1111,7 @@ in the desired new order.
 | columnIds | An array of all column IDs in the desired order. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```ts
 const columns = sdk.reorderColumns(
   ['backlog', 'todo', 'blocked', 'in-progress', 'review', 'done'],
@@ -1129,9 +1129,9 @@ Returns the global card display settings for the workspace.
 Display settings control which fields are shown on card previews
 (e.g., priority badges, assignee avatars, due dates, labels).
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The current [CardDisplaySettings](CardDisplaySettings) object.  
-**Example**  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
+**Returns**: The current [CardDisplaySettings](CardDisplaySettings) object.
+**Example**
 ```ts
 const settings = sdk.getSettings()
 console.log(settings.showPriority) // true
@@ -1147,13 +1147,13 @@ Updates the global card display settings for the workspace.
 The provided settings object fully replaces the display settings
 in the workspace configuration file (`.kanban.json`).
 
-**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)
 
 | Param | Description |
 | --- | --- |
 | settings | The new [CardDisplaySettings](CardDisplaySettings) to apply. |
 
-**Example**  
+**Example**
 ```ts
 sdk.updateSettings({
   showPriority: true,
@@ -1174,8 +1174,8 @@ sdk.updateSettings({
 The default set of five kanban columns provided when no custom columns
 are configured: Backlog, To Do, In Progress, Review, and Done.
 
-**Kind**: global variable  
-**Example**  
+**Kind**: global variable
+**Example**
 ```js
 // Use as the initial column configuration
 const config = { columns: [...DEFAULT_COLUMNS] }
@@ -1190,19 +1190,19 @@ Extracts a title from markdown content by finding the first `# heading`.
 Falls back to the first non-empty line if no heading is found,
 or `'Untitled'` if the content is empty.
 
-**Kind**: global function  
-**Returns**: The extracted title string.  
+**Kind**: global function
+**Returns**: The extracted title string.
 
 | Param | Description |
 | --- | --- |
 | content | Raw markdown string to extract the title from. |
 
-**Example**  
+**Example**
 ```js
 getTitleFromContent('# My Card\nSome body text')
 // => 'My Card'
 ```
-**Example**  
+**Example**
 ```js
 getTitleFromContent('Just a line of text')
 // => 'Just a line of text'
@@ -1218,19 +1218,19 @@ Creates a filename-safe slug from a title string.
 The slug is lowercased, stripped of special characters, limited to 50
 characters, and falls back to `'feature'` if the result would be empty.
 
-**Kind**: global function  
-**Returns**: A URL/filename-safe slug string.  
+**Kind**: global function
+**Returns**: A URL/filename-safe slug string.
 
 | Param | Description |
 | --- | --- |
 | title | The human-readable title to slugify. |
 
-**Example**  
+**Example**
 ```js
 generateSlug('Build Dashboard UI')
 // => 'build-dashboard-ui'
 ```
-**Example**  
+**Example**
 ```js
 generateSlug('Hello, World!!!')
 // => 'hello-world'
@@ -1246,15 +1246,15 @@ Generates a card filename from an incremental numeric ID and a title.
 The filename is composed of the ID prefix followed by a slugified title
 (e.g. `'42-build-dashboard'`).
 
-**Kind**: global function  
-**Returns**: <code>id</code> - A filename string in the format `'-{slug}'`.  
+**Kind**: global function
+**Returns**: <code>id</code> - A filename string in the format `'-{slug}'`.
 
 | Param | Description |
 | --- | --- |
 | id | The numeric card ID. |
 | title | The human-readable card title. |
 
-**Example**  
+**Example**
 ```js
 generateFeatureFilename(42, 'Build Dashboard')
 // => '42-build-dashboard'
@@ -1270,19 +1270,19 @@ Extracts the numeric ID prefix from a filename or card ID string.
 Looks for a leading sequence of digits optionally followed by a hyphen
 (e.g. `'42-build-dashboard'` yields `42`).
 
-**Kind**: global function  
-**Returns**: The parsed numeric ID, or `null` if no numeric prefix is found.  
+**Kind**: global function
+**Returns**: The parsed numeric ID, or `null` if no numeric prefix is found.
 
 | Param | Description |
 | --- | --- |
 | filenameOrId | A filename or card ID string such as `'42-build-dashboard'`. |
 
-**Example**  
+**Example**
 ```js
 extractNumericId('42-build-dashboard')
 // => 42
 ```
-**Example**  
+**Example**
 ```js
 extractNumericId('no-number')
 // => null
@@ -1297,14 +1297,14 @@ Strips the `filePath` property from a card before exposing it
 in webhook payloads or API responses. The file path is an internal
 implementation detail that should not be leaked externally.
 
-**Kind**: global function  
-**Returns**: A copy of the card without the `filePath` field.  
+**Kind**: global function
+**Returns**: A copy of the card without the `filePath` field.
 
 | Param | Description |
 | --- | --- |
 | feature | The card object to sanitize. |
 
-**Example**  
+**Example**
 ```js
 const safe = sanitizeFeature(card)
 // safe.filePath is undefined
@@ -1322,7 +1322,7 @@ Default configuration used when no `.kanban.json` file exists or when
 fields are missing from an existing config. Includes a single `'default'`
 board with the standard five columns.
 
-**Kind**: global variable  
+**Kind**: global variable
 
 * * *
 
@@ -1331,7 +1331,7 @@ board with the standard five columns.
 ### CONFIG\_FILENAME
 The filename used for the kanban configuration file: `'.kanban.json'`.
 
-**Kind**: global variable  
+**Kind**: global variable
 
 * * *
 
@@ -1340,14 +1340,14 @@ The filename used for the kanban configuration file: `'.kanban.json'`.
 ### configPath(workspaceRoot) ⇒
 Returns the absolute path to the `.kanban.json` config file for a workspace.
 
-**Kind**: global function  
-**Returns**: Absolute path to the config file.  
+**Kind**: global function
+**Returns**: Absolute path to the config file.
 
 | Param | Description |
 | --- | --- |
 | workspaceRoot | Absolute path to the workspace root directory. |
 
-**Example**  
+**Example**
 ```js
 configPath('/home/user/my-project')
 // => '/home/user/my-project/.kanban.json'
@@ -1362,14 +1362,14 @@ Reads the kanban config from disk. If the file is missing or unreadable,
 returns the default config. If the file contains a v1 config, it is
 automatically migrated to v2 format and persisted back to disk.
 
-**Kind**: global function  
-**Returns**: The parsed (and possibly migrated) kanban configuration.  
+**Kind**: global function
+**Returns**: The parsed (and possibly migrated) kanban configuration.
 
 | Param | Description |
 | --- | --- |
 | workspaceRoot | Absolute path to the workspace root directory. |
 
-**Example**  
+**Example**
 ```js
 const config = readConfig('/home/user/my-project')
 console.log(config.defaultBoard) // => 'default'
@@ -1382,14 +1382,14 @@ console.log(config.defaultBoard) // => 'default'
 ### writeConfig(workspaceRoot, config)
 Writes the kanban config to disk as pretty-printed JSON.
 
-**Kind**: global function  
+**Kind**: global function
 
 | Param | Description |
 | --- | --- |
 | workspaceRoot | Absolute path to the workspace root directory. |
 | config | The kanban configuration to persist. |
 
-**Example**  
+**Example**
 ```js
 const config = readConfig('/home/user/my-project')
 config.defaultBoard = 'sprint-1'
@@ -1403,14 +1403,14 @@ writeConfig('/home/user/my-project', config)
 ### getDefaultBoardId(workspaceRoot) ⇒
 Returns the default board ID from the workspace config.
 
-**Kind**: global function  
-**Returns**: The default board ID string (e.g. `'default'`).  
+**Kind**: global function
+**Returns**: The default board ID string (e.g. `'default'`).
 
 | Param | Description |
 | --- | --- |
 | workspaceRoot | Absolute path to the workspace root directory. |
 
-**Example**  
+**Example**
 ```js
 const boardId = getDefaultBoardId('/home/user/my-project')
 // => 'default'
@@ -1424,8 +1424,8 @@ const boardId = getDefaultBoardId('/home/user/my-project')
 Returns the configuration for a specific board. If `boardId` is omitted,
 the default board is used.
 
-**Kind**: global function  
-**Returns**: The board configuration object.  
+**Kind**: global function
+**Returns**: The board configuration object.
 **Throws**:
 
 - <code>Error</code> If the resolved board ID does not exist in the config.
@@ -1436,12 +1436,12 @@ the default board is used.
 | workspaceRoot | Absolute path to the workspace root directory. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```js
 const board = getBoardConfig('/home/user/my-project', 'sprint-1')
 console.log(board.name) // => 'Sprint 1'
 ```
-**Example**  
+**Example**
 ```js
 // Uses default board
 const board = getBoardConfig('/home/user/my-project')
@@ -1455,8 +1455,8 @@ const board = getBoardConfig('/home/user/my-project')
 Allocates the next card ID for a board by reading and incrementing the
 board's `nextCardId` counter. The updated config is persisted to disk.
 
-**Kind**: global function  
-**Returns**: The newly allocated numeric card ID.  
+**Kind**: global function
+**Returns**: The newly allocated numeric card ID.
 **Throws**:
 
 - <code>Error</code> If the resolved board ID does not exist in the config.
@@ -1467,7 +1467,7 @@ board's `nextCardId` counter. The updated config is persisted to disk.
 | workspaceRoot | Absolute path to the workspace root directory. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
-**Example**  
+**Example**
 ```js
 const id = allocateCardId('/home/user/my-project')
 // => 1 (first call), 2 (second call), etc.
@@ -1484,7 +1484,7 @@ created outside the normal allocation flow (e.g. manual file creation).
 
 Does nothing if `existingIds` is empty or the counter is already ahead.
 
-**Kind**: global function  
+**Kind**: global function
 
 | Param | Description |
 | --- | --- |
@@ -1492,7 +1492,7 @@ Does nothing if `existingIds` is empty or the counter is already ahead.
 | boardId | The board ID to synchronize. |
 | existingIds | Array of numeric card IDs currently present on the board. |
 
-**Example**  
+**Example**
 ```js
 syncCardIdCounter('/home/user/my-project', 'default', [1, 5, 12])
 // Board's nextCardId is now at least 13
@@ -1506,14 +1506,14 @@ syncCardIdCounter('/home/user/my-project', 'default', [1, 5, 12])
 Extracts [CardDisplaySettings](CardDisplaySettings) from a [KanbanConfig](KanbanConfig) by
 picking out the global display-related fields.
 
-**Kind**: global function  
-**Returns**: A `CardDisplaySettings` object with the current display preferences.  
+**Kind**: global function
+**Returns**: A `CardDisplaySettings` object with the current display preferences.
 
 | Param | Description |
 | --- | --- |
 | config | The kanban configuration to extract settings from. |
 
-**Example**  
+**Example**
 ```js
 const config = readConfig('/home/user/my-project')
 const settings = configToSettings(config)
@@ -1528,15 +1528,15 @@ console.log(settings.compactMode) // => false
 Merges [CardDisplaySettings](CardDisplaySettings) back into a [KanbanConfig](KanbanConfig),
 returning a new config object with the display fields updated.
 
-**Kind**: global function  
-**Returns**: A new `KanbanConfig` with the display settings applied.  
+**Kind**: global function
+**Returns**: A new `KanbanConfig` with the display settings applied.
 
 | Param | Description |
 | --- | --- |
 | config | The existing kanban configuration to update. |
 | settings | The display settings to merge into the config. |
 
-**Example**  
+**Example**
 ```js
 const config = readConfig('/home/user/my-project')
 const updated = settingsToConfig(config, { ...configToSettings(config), compactMode: true })
@@ -1558,8 +1558,8 @@ top, followed by the card body content. Additional `---` delimited blocks after
 the body are parsed as comment sections (if they contain `comment: true`),
 otherwise they are treated as part of the body content.
 
-**Kind**: global function  
-**Returns**: The parsed [Feature](Feature) object, or `null` if no valid frontmatter block is found.  
+**Kind**: global function
+**Returns**: The parsed [Feature](Feature) object, or `null` if no valid frontmatter block is found.
 
 | Param | Description |
 | --- | --- |
@@ -1578,8 +1578,8 @@ Produces a string with a `---` delimited YAML frontmatter block containing all
 card metadata, followed by the card body content. Any comments attached to the
 feature are appended as additional `---` delimited sections at the end of the file.
 
-**Kind**: global function  
-**Returns**: The complete markdown string ready to be written to a `.md` file.  
+**Kind**: global function
+**Returns**: The complete markdown string ready to be written to a `.md` file.
 
 | Param | Description |
 | --- | --- |
@@ -1596,8 +1596,8 @@ feature are appended as additional `---` delimited sections at the end of the fi
 ### getFeatureFilePath(featuresDir, status, filename) ⇒
 Constructs the full file path for a card markdown file.
 
-**Kind**: global function  
-**Returns**: The absolute path to the card file, including the `.md` extension.  
+**Kind**: global function
+**Returns**: The absolute path to the card file, including the `.md` extension.
 
 | Param | Description |
 | --- | --- |
@@ -1613,8 +1613,8 @@ Constructs the full file path for a card markdown file.
 ### ensureDirectories(featuresDir) ⇒
 Creates the features directory if it does not already exist.
 
-**Kind**: global function  
-**Returns**: A promise that resolves when the directory has been created or already exists.  
+**Kind**: global function
+**Returns**: A promise that resolves when the directory has been created or already exists.
 
 | Param | Description |
 | --- | --- |
@@ -1628,8 +1628,8 @@ Creates the features directory if it does not already exist.
 ### ensureStatusSubfolders(featuresDir, statuses) ⇒
 Creates subdirectories for each status column under the features directory.
 
-**Kind**: global function  
-**Returns**: A promise that resolves when all status subdirectories have been created.  
+**Kind**: global function
+**Returns**: A promise that resolves when all status subdirectories have been created.
 
 | Param | Description |
 | --- | --- |
@@ -1646,8 +1646,8 @@ Moves a card file to a new status directory, handling name collisions by
 appending a numeric suffix (e.g., `card-1.md`, `card-2.md`). Optionally
 co-moves attachment files from the source directory to the target directory.
 
-**Kind**: global function  
-**Returns**: A promise that resolves to the new absolute path of the moved card file.  
+**Kind**: global function
+**Returns**: A promise that resolves to the new absolute path of the moved card file.
 
 | Param | Description |
 | --- | --- |
@@ -1664,8 +1664,8 @@ co-moves attachment files from the source directory to the target directory.
 ### renameFeatureFile(currentPath, newFilename) ⇒
 Renames a card file in place within its current directory.
 
-**Kind**: global function  
-**Returns**: A promise that resolves to the new absolute path of the renamed card file.  
+**Kind**: global function
+**Returns**: A promise that resolves to the new absolute path of the renamed card file.
 
 | Param | Description |
 | --- | --- |
@@ -1683,8 +1683,8 @@ Extracts the status from a card's file path by examining the directory structure
 Expects the file to be located at `{featuresDir}/{status}/{filename}.md`. If the
 relative path does not match this two-level structure, returns `null`.
 
-**Kind**: global function  
-**Returns**: The status string extracted from the path, or `null` if the path structure is unexpected.  
+**Kind**: global function
+**Returns**: The status string extracted from the path, or `null` if the path structure is unexpected.
 
 | Param | Description |
 | --- | --- |

@@ -351,6 +351,46 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('Label group filtering', () => {
+    it('filterCardsByLabelGroup returns cards with any label from the group', async () => {
+      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+      sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
+
+      writeCardFile(tempDir, '1-card.md', makeCardContent({
+        id: '1-card', status: 'backlog', labels: ['bug']
+      }), 'backlog')
+      writeCardFile(tempDir, '2-card.md', makeCardContent({
+        id: '2-card', status: 'backlog', labels: ['high']
+      }), 'backlog')
+      writeCardFile(tempDir, '3-card.md', makeCardContent({
+        id: '3-card', status: 'backlog', labels: ['feature', 'high']
+      }), 'backlog')
+
+      const typeCards = await sdk.filterCardsByLabelGroup('Type')
+      expect(typeCards.map(c => c.id).sort()).toEqual(['1-card', '3-card'])
+
+      const priorityCards = await sdk.filterCardsByLabelGroup('Priority')
+      expect(priorityCards.map(c => c.id).sort()).toEqual(['2-card', '3-card'])
+    })
+
+    it('filterCardsByLabelGroup returns empty for unknown group', async () => {
+      const cards = await sdk.filterCardsByLabelGroup('NonExistent')
+      expect(cards).toEqual([])
+    })
+
+    it('getLabelsInGroup returns labels belonging to a group', () => {
+      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+      sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
+      sdk.setLabel('docs', { color: '#16a34a' })
+
+      expect(sdk.getLabelsInGroup('Type').sort()).toEqual(['bug', 'feature'])
+      expect(sdk.getLabelsInGroup('Priority')).toEqual(['high'])
+      expect(sdk.getLabelsInGroup('Other')).toEqual([])
+    })
+  })
+
   describe('addAttachment', () => {
     it('should copy file and add to attachments', async () => {
       writeCardFile(tempDir, 'card.md', makeCardContent({ id: 'card' }), 'backlog')

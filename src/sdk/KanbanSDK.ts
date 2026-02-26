@@ -895,6 +895,21 @@ export class KanbanSDK {
     }
   }
 
+  getLabelsInGroup(group: string): string[] {
+    const labels = this.getLabels()
+    return Object.entries(labels)
+      .filter(([, def]) => def.group === group)
+      .map(([name]) => name)
+      .sort()
+  }
+
+  async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Feature[]> {
+    const groupLabels = this.getLabelsInGroup(group)
+    if (groupLabels.length === 0) return []
+    const cards = await this.listCards(undefined, boardId)
+    return cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
+  }
+
   // --- Attachment management ---
 
   /**

@@ -567,7 +567,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className="px-4 py-2.5 text-xs font-medium capitalize transition-colors relative"
+              className="px-4 py-2.5 text-xs font-medium transition-colors relative"
               style={{
                 color: activeTab === tab
                   ? 'var(--vscode-foreground)'

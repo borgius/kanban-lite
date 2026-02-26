@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import type { Priority } from '../../shared/types'
@@ -46,9 +46,22 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
     currentBoard
   } = useStore()
 
+  const labelDefs = useStore(s => s.labelDefs)
+
   const assignees = getUniqueAssignees()
   const labels = getUniqueLabels()
   const filtersActive = hasActiveFilters()
+
+  const groupedLabels = useMemo(() => {
+    const groups: Record<string, string[]> = {}
+    labels.forEach(label => {
+      const def = labelDefs[label]
+      const group = def?.group || 'Other'
+      if (!groups[group]) groups[group] = []
+      groups[group].push(label)
+    })
+    return groups
+  }, [labels, labelDefs])
 
   const [boardDropdownOpen, setBoardDropdownOpen] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
@@ -200,10 +213,13 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
         className={selectClassName}
       >
         <option value="all">All Labels</option>
-        {labels.map((l) => (
-          <option key={l} value={l}>
-            {l}
-          </option>
+        {Object.entries(groupedLabels).map(([group, groupLabels]) => (
+          <optgroup key={group} label={group}>
+            <option value={`group:${group}`}>All {group}</option>
+            {groupLabels.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </optgroup>
         ))}
       </select>
       )}

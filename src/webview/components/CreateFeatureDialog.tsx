@@ -186,6 +186,7 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const features = useStore(s => s.features)
+  const labelDefs = useStore(s => s.labelDefs)
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
@@ -215,24 +216,28 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
         className="flex items-center gap-1.5 flex-wrap cursor-text"
         onClick={() => inputRef.current?.focus()}
       >
-        {labels.map(label => (
-          <span
-            key={label}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
-            style={{
-              background: 'var(--vscode-badge-background)',
-              color: 'var(--vscode-badge-foreground)',
-            }}
-          >
-            {label}
-            <button
-              onClick={(e) => { e.stopPropagation(); onChange(labels.filter(l => l !== label)) }}
-              className="hover:text-red-500 transition-colors"
+        {labels.map(label => {
+          const def = labelDefs[label]
+          return (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+              style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
+                background: 'var(--vscode-badge-background)',
+                color: 'var(--vscode-badge-foreground)',
+              }}
             >
-              <X size={9} />
-            </button>
-          </span>
-        ))}
+              {label}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onChange(labels.filter(l => l !== label)) }}
+                className="hover:text-red-500 transition-colors"
+              >
+                <X size={9} />
+              </button>
+            </span>
+          )
+        })}
         <input
           ref={inputRef}
           type="text"
@@ -260,25 +265,28 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
             border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
           }}
         >
-          {suggestions.map(label => (
-            <button
-              key={label}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
-              style={{ color: 'var(--vscode-dropdown-foreground)' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              <span
-                className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >{label}</span>
-            </button>
-          ))}
+          {suggestions.map(label => {
+            const def = labelDefs[label]
+            return (
+              <button
+                key={label}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                style={{ color: 'var(--vscode-dropdown-foreground)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <span
+                  className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
+                  style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
+                    background: 'var(--vscode-badge-background)',
+                    color: 'var(--vscode-badge-foreground)',
+                  }}
+                >{label}</span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

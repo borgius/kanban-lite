@@ -40,6 +40,7 @@ function renderDescriptionHtml(text: string): string {
 
 export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) {
   const { cardSettings } = useStore()
+  const labelDefs = useStore(s => s.labelDefs)
   const title = getTitleFromContent(feature.content)
   const description = getDescriptionFromContent(feature.content)
   const fileName = feature.filePath ? feature.filePath.split('/').pop() || '' : ''
@@ -135,14 +136,18 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
         {/* Labels */}
         {cardSettings.showLabels && feature.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {feature.labels.slice(0, 3).map((label) => (
-              <span
-                key={label}
-                className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
-              >
-                {label}
-              </span>
-            ))}
+            {feature.labels.slice(0, 3).map((label) => {
+              const def = labelDefs[label]
+              return (
+                <span
+                  key={label}
+                  className={`text-xs px-1.5 py-0.5 rounded ${!def ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' : ''}`}
+                  style={def ? { backgroundColor: `${def.color}20`, color: def.color } : undefined}
+                >
+                  {label}
+                </span>
+              )
+            })}
             {feature.labels.length > 3 && (
               <span className="text-xs text-zinc-400">+{feature.labels.length - 3}</span>
             )}
@@ -166,6 +171,11 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
           <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
             <Paperclip size={12} />
             <span>{feature.attachments.length}</span>
+          </div>
+        )}
+        {feature.metadata && Object.keys(feature.metadata).length > 0 && (
+          <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
+            <span className="text-[10px] font-mono">{`{${Object.keys(feature.metadata).length}}`}</span>
           </div>
         )}
         {cardSettings.showDueDate && dueInfo && (

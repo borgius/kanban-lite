@@ -360,11 +360,74 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
   )
 }
 
+function MetadataSection({ metadata }: { metadata?: Record<string, any> }) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (!metadata || Object.keys(metadata).length === 0) return null
+
+  const keys = Object.keys(metadata)
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+      >
+        <span className="text-[10px]">{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span>Metadata</span>
+        <span className="text-zinc-400 dark:text-zinc-500">({keys.length})</span>
+      </button>
+      {!expanded && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {keys.map(key => (
+            <span key={key} className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 font-mono">
+              {key}
+            </span>
+          ))}
+        </div>
+      )}
+      {expanded && (
+        <div className="mt-1.5 text-xs font-mono bg-zinc-50 dark:bg-zinc-900 rounded p-2 border border-zinc-200 dark:border-zinc-700">
+          <MetadataTree data={metadata} depth={0} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MetadataTree({ data, depth }: { data: Record<string, any>; depth: number }) {
+  return (
+    <div style={{ paddingLeft: depth > 0 ? 12 : 0 }}>
+      {Object.entries(data).map(([key, value]) => (
+        <div key={key} className="py-0.5">
+          {value && typeof value === 'object' && !Array.isArray(value) ? (
+            <>
+              <span className="text-zinc-500 dark:text-zinc-400">{key}:</span>
+              <MetadataTree data={value} depth={depth + 1} />
+            </>
+          ) : Array.isArray(value) ? (
+            <div>
+              <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
+              <span className="text-zinc-700 dark:text-zinc-300">[{value.join(', ')}]</span>
+            </div>
+          ) : (
+            <div>
+              <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
+              <span className="text-zinc-700 dark:text-zinc-300">{String(value)}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels: string[]) => void }) {
   const [newLabel, setNewLabel] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const features = useStore(s => s.features)
+  const labelDefs = useStore(s => s.labelDefs)
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
@@ -394,24 +457,28 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 
   return (
     <div className="relative flex items-center gap-1.5 flex-wrap">
-      {labels.map(label => (
-        <span
-          key={label}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
-          style={{
-            background: 'var(--vscode-badge-background)',
-            color: 'var(--vscode-badge-foreground)',
-          }}
-        >
-          {label}
-          <button
-            onClick={() => removeLabel(label)}
-            className="hover:text-red-500 transition-colors"
+      {labels.map(label => {
+        const def = labelDefs[label]
+        return (
+          <span
+            key={label}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+            style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
+              background: 'var(--vscode-badge-background)',
+              color: 'var(--vscode-badge-foreground)',
+            }}
           >
-            <X size={9} />
-          </button>
-        </span>
-      ))}
+            {label}
+            <button
+              type="button"
+              onClick={() => removeLabel(label)}
+              className="hover:text-red-500 transition-colors"
+            >
+              <X size={9} />
+            </button>
+          </span>
+        )
+      })}
       <button
         onClick={() => { setIsFocused(true); setTimeout(() => inputRef.current?.focus(), 0) }}
         className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors vscode-hover-bg"
@@ -445,25 +512,28 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
             border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
           }}
         >
-          {suggestions.map(label => (
-            <button
-              key={label}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
-              style={{ color: 'var(--vscode-dropdown-foreground)' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              <span
-                className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >{label}</span>
-            </button>
-          ))}
+          {suggestions.map(label => {
+            const def = labelDefs[label]
+            return (
+              <button
+                key={label}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                style={{ color: 'var(--vscode-dropdown-foreground)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <span
+                  className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
+                  style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
+                    background: 'var(--vscode-badge-background)',
+                    color: 'var(--vscode-badge-foreground)',
+                  }}
+                >{label}</span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -742,6 +812,9 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
             </button>
           </div>
         </PropertyRow>
+        <div className="px-4 pb-2">
+          <MetadataSection metadata={currentFrontmatter.metadata} />
+        </div>
       </div>
 
       {/* Editor */}

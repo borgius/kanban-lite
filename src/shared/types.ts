@@ -200,6 +200,9 @@ export const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'done', name: 'Done', color: '#22c55e' }
 ]
 
+export const DELETED_STATUS_ID = 'deleted'
+export const DELETED_COLUMN: KanbanColumn = { id: DELETED_STATUS_ID, name: 'Deleted', color: '#ef4444' }
+
 /**
  * UI display preferences controlling which card fields are visible and
  * how the board renders cards.
@@ -221,11 +224,33 @@ export interface CardDisplaySettings {
   compactMode: boolean
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
+  /** Whether to display the hidden Deleted column on the board. */
+  showDeletedColumn: boolean
   /** The default priority assigned to newly created cards. */
   defaultPriority: Priority
   /** The default column/status assigned to newly created cards. */
   defaultStatus: string
 }
+
+export interface LabelDefinition {
+  color: string
+  group?: string
+}
+
+export const LABEL_PRESET_COLORS: { name: string; hex: string }[] = [
+  { name: 'red', hex: '#e11d48' },
+  { name: 'orange', hex: '#ea580c' },
+  { name: 'amber', hex: '#d97706' },
+  { name: 'yellow', hex: '#ca8a04' },
+  { name: 'lime', hex: '#65a30d' },
+  { name: 'green', hex: '#16a34a' },
+  { name: 'teal', hex: '#0d9488' },
+  { name: 'cyan', hex: '#0891b2' },
+  { name: 'blue', hex: '#2563eb' },
+  { name: 'indigo', hex: '#4f46e5' },
+  { name: 'violet', hex: '#7c3aed' },
+  { name: 'pink', hex: '#db2777' },
+]
 
 /**
  * YAML frontmatter fields stored at the top of each card's markdown file.
@@ -299,4 +324,6 @@ export type WebviewMessage =
   | { type: 'deleteComment'; featureId: string; commentId: string }
   | { type: 'switchBoard'; boardId: string }
   | { type: 'createBoard'; name: string }
+  | { type: 'permanentDeleteFeature'; featureId: string }
+  | { type: 'restoreFeature'; featureId: string }
   | { type: 'transferCard'; featureId: string; toBoard: string; targetStatus: string }

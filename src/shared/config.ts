@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { KanbanColumn, CardDisplaySettings, Priority } from './types'
+import type { KanbanColumn, CardDisplaySettings, Priority, LabelDefinition } from './types'
 import { DEFAULT_COLUMNS } from './types'
 
 /**
@@ -82,10 +82,14 @@ export interface KanbanConfig {
   compactMode: boolean
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
+  /** Whether to show the deleted column in the UI. */
+  showDeletedColumn: boolean
   /** Port number for the standalone HTTP server. */
   port: number
   /** Registered webhook endpoints for event notifications. */
   webhooks?: Webhook[]
+  /** Label definitions keyed by label name, with color and optional group. */
+  labels?: Record<string, LabelDefinition>
 }
 
 // Legacy v1 config (for migration)
@@ -138,7 +142,9 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showFileName: false,
   compactMode: false,
   markdownEditorMode: false,
-  port: 3000
+  showDeletedColumn: false,
+  port: 3000,
+  labels: {}
 }
 
 /**
@@ -202,6 +208,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showFileName: v1.showFileName,
     compactMode: v1.compactMode,
     markdownEditorMode: v1.markdownEditorMode,
+    showDeletedColumn: false,
     port: 3000
   }
 }
@@ -375,6 +382,7 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     showFileName: config.showFileName,
     compactMode: config.compactMode,
     markdownEditorMode: config.markdownEditorMode,
+    showDeletedColumn: config.showDeletedColumn,
     defaultPriority: config.defaultPriority,
     defaultStatus: config.defaultStatus
   }
@@ -402,6 +410,7 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     showLabels: settings.showLabels,
     showFileName: settings.showFileName,
     compactMode: settings.compactMode,
+    showDeletedColumn: settings.showDeletedColumn,
     defaultPriority: settings.defaultPriority,
     defaultStatus: settings.defaultStatus
   }

@@ -225,6 +225,21 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
+  async function doPermanentDeleteFeature(featureId: string): Promise<boolean> {
+    const feature = features.find(f => f.id === featureId)
+    if (!feature) return false
+
+    try {
+      await sdk.permanentlyDeleteCard(featureId, currentBoardId)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      return true
+    } catch (err) {
+      console.error('Failed to permanently delete feature:', err)
+      return false
+    }
+  }
+
   function doAddColumn(name: string, color: string): KanbanColumn {
     const existingColumns = sdk.listColumns(currentBoardId)
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -385,6 +400,17 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'deleteFeature':
         await doDeleteFeature(msg.featureId as string)
         break
+
+      case 'permanentDeleteFeature':
+        await doPermanentDeleteFeature(msg.featureId as string)
+        break
+
+      case 'restoreFeature': {
+        const restoreId = msg.featureId as string
+        const defaultStatus = sdk.getSettings().defaultStatus
+        await doUpdateFeature(restoreId, { status: defaultStatus })
+        break
+      }
 
       case 'updateFeature':
         await doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)
@@ -677,6 +703,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const boardColumns = sdk.listColumns(boardId)
         const boardTasks = await sdk.listCards(boardColumns.map(c => c.id), boardId)
         let result = boardTasks.map(sanitizeFeature)
+        if (url.searchParams.get('includeDeleted') !== 'true') {
+          result = result.filter(f => f.status !== 'deleted')
+        }
         const status = url.searchParams.get('status')
         if (status) result = result.filter(f => f.status === status)
         const priority = url.searchParams.get('priority')
@@ -685,6 +714,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         if (assignee) result = result.filter(f => f.assignee === assignee)
         const label = url.searchParams.get('label')
         if (label) result = result.filter(f => f.labels.includes(label))
+        const labelGroup = url.searchParams.get('labelGroup')
+        if (labelGroup) {
+          const groupLabels = sdk.getLabelsInGroup(labelGroup)
+          result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
+        }
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -752,11 +786,26 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
     }
 
+    params = route('DELETE', '/api/boards/:boardId/tasks/:id/permanent')
+    if (params) {
+      try {
+        const { boardId, id } = params
+        await sdk.permanentlyDeleteCard(id, boardId)
+        await loadFeatures()
+        broadcast(buildInitMessage())
+        return jsonOk(res, { deleted: true, permanent: true })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
     params = route('DELETE', '/api/boards/:boardId/tasks/:id')
     if (params) {
       try {
         const { boardId, id } = params
         await sdk.deleteCard(id, boardId)
+        await loadFeatures()
+        broadcast(buildInitMessage())
         return jsonOk(res, { deleted: true })
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -781,6 +830,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (params) {
       await loadFeatures()
       let result = features.map(sanitizeFeature)
+      if (url.searchParams.get('includeDeleted') !== 'true') {
+        result = result.filter(f => f.status !== 'deleted')
+      }
       const status = url.searchParams.get('status')
       if (status) result = result.filter(f => f.status === status)
       const priority = url.searchParams.get('priority')
@@ -789,6 +841,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       if (assignee) result = result.filter(f => f.assignee === assignee)
       const label = url.searchParams.get('label')
       if (label) result = result.filter(f => f.labels.includes(label))
+      const labelGroup = url.searchParams.get('labelGroup')
+      if (labelGroup) {
+        const groupLabels = sdk.getLabelsInGroup(labelGroup)
+        result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
+      }
       return jsonOk(res, result)
     }
 
@@ -847,6 +904,14 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
+    }
+
+    params = route('DELETE', '/api/tasks/:id/permanent')
+    if (params) {
+      const { id } = params
+      const ok = await doPermanentDeleteFeature(id)
+      if (!ok) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, { deleted: true, permanent: true })
     }
 
     params = route('DELETE', '/api/tasks/:id')
@@ -1070,6 +1135,50 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       const ok = deleteWebhook(workspaceRoot, id)
       if (!ok) return jsonError(res, 404, 'Webhook not found')
       return jsonOk(res, { deleted: true })
+    }
+
+    // ==================== LABELS API ====================
+
+    params = route('GET', '/api/labels')
+    if (params) {
+      return jsonOk(res, sdk.getLabels())
+    }
+
+    params = route('PUT', '/api/labels/:name')
+    if (params) {
+      try {
+        const name = decodeURIComponent(params.name)
+        const body = await readBody(req)
+        sdk.setLabel(name, { color: body.color as string, group: body.group as string | undefined })
+        return jsonOk(res, sdk.getLabels())
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PATCH', '/api/labels/:name')
+    if (params) {
+      try {
+        const name = decodeURIComponent(params.name)
+        const body = await readBody(req)
+        const newName = body.newName as string
+        if (!newName) return jsonError(res, 400, 'newName is required')
+        await sdk.renameLabel(name, newName)
+        return jsonOk(res, sdk.getLabels())
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/labels/:name')
+    if (params) {
+      try {
+        const name = decodeURIComponent(params.name)
+        sdk.deleteLabel(name)
+        return jsonOk(res, { success: true })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== WORKSPACE API ====================

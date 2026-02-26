@@ -17,7 +17,7 @@ import { KanbanSDK } from 'kanban-lite/sdk'
 You can also import types and utilities:
 
 ```typescript
-import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
+import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput, LabelDefinition } from 'kanban-lite/sdk'
 import { parseFeatureFile, serializeFeature, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 ```
@@ -71,8 +71,9 @@ HTTP server are all built on top of.
 **Kind**: global class  
 
 * [KanbanSDK](#KanbanSDK)
-    * [new KanbanSDK(featuresDir)](#new_KanbanSDK_new)
+    * [new KanbanSDK(featuresDir, options)](#new_KanbanSDK_new)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
+    * [.emitEvent()](#KanbanSDK+emitEvent)
     * [.init()](#KanbanSDK+init) ⇒
     * [.listBoards()](#KanbanSDK+listBoards) ⇒
     * [.createBoard(id, name, options)](#KanbanSDK+createBoard) ⇒
@@ -86,9 +87,16 @@ HTTP server are all built on top of.
     * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
     * [.moveCard(cardId, newStatus, position, boardId)](#KanbanSDK+moveCard) ⇒
     * [.deleteCard(cardId, boardId)](#KanbanSDK+deleteCard) ⇒
+    * [.permanentlyDeleteCard(cardId, boardId)](#KanbanSDK+permanentlyDeleteCard) ⇒
     * [.getCardsByStatus(status, boardId)](#KanbanSDK+getCardsByStatus) ⇒
     * [.getUniqueAssignees(boardId)](#KanbanSDK+getUniqueAssignees) ⇒
     * [.getUniqueLabels(boardId)](#KanbanSDK+getUniqueLabels) ⇒
+    * [.getLabels()](#KanbanSDK+getLabels) ⇒
+    * [.setLabel(name, definition)](#KanbanSDK+setLabel)
+    * [.deleteLabel(name)](#KanbanSDK+deleteLabel)
+    * [.renameLabel(oldName, newName)](#KanbanSDK+renameLabel)
+    * [.getLabelsInGroup(group)](#KanbanSDK+getLabelsInGroup) ⇒
+    * [.filterCardsByLabelGroup(group, boardId)](#KanbanSDK+filterCardsByLabelGroup) ⇒
     * [.addAttachment(cardId, sourcePath, boardId)](#KanbanSDK+addAttachment) ⇒
     * [.removeAttachment(cardId, attachment, boardId)](#KanbanSDK+removeAttachment) ⇒
     * [.listAttachments(cardId, boardId)](#KanbanSDK+listAttachments) ⇒
@@ -109,13 +117,14 @@ HTTP server are all built on top of.
 
 <a name="new_KanbanSDK_new"></a>
 
-#### new KanbanSDK(featuresDir)
+#### new KanbanSDK(featuresDir, options)
 Creates a new KanbanSDK instance.
 
 
 | Param | Description |
 | --- | --- |
 | featuresDir | Absolute path to the `.kanban` features directory.   The parent of this directory is treated as the workspace root. |
+| options | Optional configuration including an event handler callback. |
 
 **Example**  
 ```ts
@@ -140,6 +149,16 @@ This is the project root where `.kanban.json` configuration lives.
 const sdk = new KanbanSDK('/home/user/my-project/.kanban')
 console.log(sdk.workspaceRoot) // '/home/user/my-project'
 ```
+
+* * *
+
+<a name="KanbanSDK+emitEvent"></a>
+
+#### kanbanSDK.emitEvent()
+Emits an event to the registered handler, if one exists.
+Called internally after every successful mutating operation.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -342,6 +361,9 @@ console.log(card.status)  // 'triage'
 #### kanbanSDK.listCards(columns, boardId) ⇒
 Lists all cards on a board, optionally filtered by column/status.
 
+**Note:** This includes soft-deleted cards (status `'deleted'`).
+Filter them out if you need only active cards.
+
 This method performs several housekeeping tasks during loading:
 - Migrates flat root-level `.md` files into their proper status subdirectories
 - Reconciles status/folder mismatches (moves files to match their frontmatter status)
@@ -418,6 +440,7 @@ the board's defaults are used.
 | data.dueDate | Optional due date as an ISO 8601 string. |
 | data.labels | Optional array of label strings. |
 | data.attachments | Optional array of attachment filenames. |
+| data.metadata | Optional arbitrary key-value metadata stored in the card's frontmatter. |
 | data.boardId | Optional board ID. Defaults to the workspace's default board. |
 
 **Example**  
@@ -506,10 +529,11 @@ const done = await sdk.moveCard('42', 'done')
 <a name="KanbanSDK+deleteCard"></a>
 
 #### kanbanSDK.deleteCard(cardId, boardId) ⇒
-Deletes a card and its markdown file from disk.
+Soft-deletes a card by moving it to the `deleted` status column.
+The file remains on disk and can be restored.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise that resolves when the card file has been deleted.  
+**Returns**: A promise that resolves when the card has been moved to deleted status.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -517,12 +541,37 @@ Deletes a card and its markdown file from disk.
 
 | Param | Description |
 | --- | --- |
-| cardId | The ID of the card to delete. |
+| cardId | The ID of the card to soft-delete. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
 **Example**  
 ```ts
 await sdk.deleteCard('42', 'bugs')
+```
+
+* * *
+
+<a name="KanbanSDK+permanentlyDeleteCard"></a>
+
+#### kanbanSDK.permanentlyDeleteCard(cardId, boardId) ⇒
+Permanently deletes a card's markdown file from disk.
+This cannot be undone.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise that resolves when the card file has been removed from disk.  
+**Throws**:
+
+- <code>Error</code> If the card is not found.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card to permanently delete. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+await sdk.permanentlyDeleteCard('42', 'bugs')
 ```
 
 * * *
@@ -589,6 +638,143 @@ Returns a sorted list of unique labels across all cards on a board.
 ```ts
 const labels = await sdk.getUniqueLabels()
 // ['bug', 'enhancement', 'frontend', 'urgent']
+```
+
+* * *
+
+<a name="KanbanSDK+getLabels"></a>
+
+#### kanbanSDK.getLabels() ⇒
+Returns all label definitions from the workspace configuration.
+
+Label definitions map label names to their color and optional group.
+Labels on cards that have no definition will render with default gray styling.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A record mapping label names to [LabelDefinition](LabelDefinition) objects.  
+**Example**  
+```ts
+const labels = sdk.getLabels()
+// { bug: { color: '#e11d48', group: 'Type' }, docs: { color: '#16a34a' } }
+```
+
+* * *
+
+<a name="KanbanSDK+setLabel"></a>
+
+#### kanbanSDK.setLabel(name, definition)
+Creates or updates a label definition in the workspace configuration.
+
+If the label already exists, its definition is replaced entirely.
+The change is persisted to `.kanban.json` immediately.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+| Param | Description |
+| --- | --- |
+| name | The label name (e.g. `'bug'`, `'frontend'`). |
+| definition | The label definition with color and optional group. |
+
+**Example**  
+```ts
+sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+sdk.setLabel('docs', { color: '#16a34a' })
+```
+
+* * *
+
+<a name="KanbanSDK+deleteLabel"></a>
+
+#### kanbanSDK.deleteLabel(name)
+Removes a label definition from the workspace configuration.
+
+This only removes the color/group definition — cards that use this
+label keep their label strings. Those labels will render with default
+gray styling in the UI.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+| Param | Description |
+| --- | --- |
+| name | The label name to remove. |
+
+**Example**  
+```ts
+sdk.deleteLabel('bug')
+```
+
+* * *
+
+<a name="KanbanSDK+renameLabel"></a>
+
+#### kanbanSDK.renameLabel(oldName, newName)
+Renames a label in the configuration and cascades the change to all cards.
+
+Updates the label key in `.kanban.json` and replaces the old label name
+with the new one on every card that uses it.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+| Param | Description |
+| --- | --- |
+| oldName | The current label name. |
+| newName | The new label name. |
+
+**Example**  
+```ts
+await sdk.renameLabel('bug', 'defect')
+// Config updated: 'defect' now has bug's color/group
+// All cards with 'bug' label now have 'defect' instead
+```
+
+* * *
+
+<a name="KanbanSDK+getLabelsInGroup"></a>
+
+#### kanbanSDK.getLabelsInGroup(group) ⇒
+Returns a sorted list of label names that belong to the given group.
+
+Labels without an explicit `group` property are not matched by any
+group name (they are considered ungrouped).
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A sorted array of label names in the group.  
+
+| Param | Description |
+| --- | --- |
+| group | The group name to filter by (e.g. `'Type'`, `'Priority'`). |
+
+**Example**  
+```ts
+sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+
+sdk.getLabelsInGroup('Type')
+// ['bug', 'feature']
+```
+
+* * *
+
+<a name="KanbanSDK+filterCardsByLabelGroup"></a>
+
+#### kanbanSDK.filterCardsByLabelGroup(group, boardId) ⇒
+Returns all cards that have at least one label belonging to the given group.
+
+Looks up all labels in the group via [getLabelsInGroup](getLabelsInGroup), then filters
+cards to those containing any of those labels.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to an array of matching [Feature](Feature) cards.  
+
+| Param | Description |
+| --- | --- |
+| group | The group name to filter by. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const typeCards = await sdk.filterCardsByLabelGroup('Type')
+// Returns all cards with 'bug', 'feature', or any other 'Type' label
 ```
 
 * * *
@@ -818,6 +1004,7 @@ The column is appended to the end of the board's column list.
 
 - <code>Error</code> If the board is not found.
 - <code>Error</code> If a column with the same ID already exists.
+- <code>Error</code> If the column ID is `'deleted'` (reserved for soft-delete).
 
 
 | Param | Description |
@@ -887,6 +1074,7 @@ This operation cannot be undone.
 - <code>Error</code> If the board is not found.
 - <code>Error</code> If the column is not found.
 - <code>Error</code> If the column still contains cards.
+- <code>Error</code> If the column ID is `'deleted'` (reserved for soft-delete).
 
 
 | Param | Description |
@@ -1098,6 +1286,28 @@ extractNumericId('42-build-dashboard')
 ```js
 extractNumericId('no-number')
 // => null
+```
+
+* * *
+
+<a name="sanitizeFeature"></a>
+
+### sanitizeFeature(feature) ⇒
+Strips the `filePath` property from a card before exposing it
+in webhook payloads or API responses. The file path is an internal
+implementation detail that should not be leaked externally.
+
+**Kind**: global function  
+**Returns**: A copy of the card without the `filePath` field.  
+
+| Param | Description |
+| --- | --- |
+| feature | The card object to sanitize. |
+
+**Example**  
+```js
+const safe = sanitizeFeature(card)
+// safe.filePath is undefined
 ```
 
 * * *

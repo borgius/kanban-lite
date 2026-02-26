@@ -400,6 +400,9 @@ export class KanbanSDK {
   /**
    * Lists all cards on a board, optionally filtered by column/status.
    *
+   * **Note:** This includes soft-deleted cards (status `'deleted'`).
+   * Filter them out if you need only active cards.
+   *
    * This method performs several housekeeping tasks during loading:
    * - Migrates flat root-level `.md` files into their proper status subdirectories
    * - Reconciles status/folder mismatches (moves files to match their frontmatter status)
@@ -555,6 +558,7 @@ export class KanbanSDK {
    * @param data.dueDate - Optional due date as an ISO 8601 string.
    * @param data.labels - Optional array of label strings.
    * @param data.attachments - Optional array of attachment filenames.
+   * @param data.metadata - Optional arbitrary key-value metadata stored in the card's frontmatter.
    * @param data.boardId - Optional board ID. Defaults to the workspace's default board.
    * @returns A promise resolving to the newly created {@link Feature} card.
    *
@@ -858,11 +862,40 @@ export class KanbanSDK {
 
   // --- Label definition management ---
 
+  /**
+   * Returns all label definitions from the workspace configuration.
+   *
+   * Label definitions map label names to their color and optional group.
+   * Labels on cards that have no definition will render with default gray styling.
+   *
+   * @returns A record mapping label names to {@link LabelDefinition} objects.
+   *
+   * @example
+   * ```ts
+   * const labels = sdk.getLabels()
+   * // { bug: { color: '#e11d48', group: 'Type' }, docs: { color: '#16a34a' } }
+   * ```
+   */
   getLabels(): Record<string, LabelDefinition> {
     const config = readConfig(this.workspaceRoot)
     return config.labels || {}
   }
 
+  /**
+   * Creates or updates a label definition in the workspace configuration.
+   *
+   * If the label already exists, its definition is replaced entirely.
+   * The change is persisted to `.kanban.json` immediately.
+   *
+   * @param name - The label name (e.g. `'bug'`, `'frontend'`).
+   * @param definition - The label definition with color and optional group.
+   *
+   * @example
+   * ```ts
+   * sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+   * sdk.setLabel('docs', { color: '#16a34a' })
+   * ```
+   */
   setLabel(name: string, definition: LabelDefinition): void {
     const config = readConfig(this.workspaceRoot)
     if (!config.labels) config.labels = {}
@@ -870,6 +903,20 @@ export class KanbanSDK {
     writeConfig(this.workspaceRoot, config)
   }
 
+  /**
+   * Removes a label definition from the workspace configuration.
+   *
+   * This only removes the color/group definition — cards that use this
+   * label keep their label strings. Those labels will render with default
+   * gray styling in the UI.
+   *
+   * @param name - The label name to remove.
+   *
+   * @example
+   * ```ts
+   * sdk.deleteLabel('bug')
+   * ```
+   */
   deleteLabel(name: string): void {
     const config = readConfig(this.workspaceRoot)
     if (config.labels) {
@@ -878,6 +925,22 @@ export class KanbanSDK {
     }
   }
 
+  /**
+   * Renames a label in the configuration and cascades the change to all cards.
+   *
+   * Updates the label key in `.kanban.json` and replaces the old label name
+   * with the new one on every card that uses it.
+   *
+   * @param oldName - The current label name.
+   * @param newName - The new label name.
+   *
+   * @example
+   * ```ts
+   * await sdk.renameLabel('bug', 'defect')
+   * // Config updated: 'defect' now has bug's color/group
+   * // All cards with 'bug' label now have 'defect' instead
+   * ```
+   */
   async renameLabel(oldName: string, newName: string): Promise<void> {
     const config = readConfig(this.workspaceRoot)
     if (config.labels && config.labels[oldName]) {
@@ -896,6 +959,24 @@ export class KanbanSDK {
     }
   }
 
+  /**
+   * Returns a sorted list of label names that belong to the given group.
+   *
+   * Labels without an explicit `group` property are not matched by any
+   * group name (they are considered ungrouped).
+   *
+   * @param group - The group name to filter by (e.g. `'Type'`, `'Priority'`).
+   * @returns A sorted array of label names in the group.
+   *
+   * @example
+   * ```ts
+   * sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+   * sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+   *
+   * sdk.getLabelsInGroup('Type')
+   * // ['bug', 'feature']
+   * ```
+   */
   getLabelsInGroup(group: string): string[] {
     const labels = this.getLabels()
     return Object.entries(labels)
@@ -904,6 +985,22 @@ export class KanbanSDK {
       .sort()
   }
 
+  /**
+   * Returns all cards that have at least one label belonging to the given group.
+   *
+   * Looks up all labels in the group via {@link getLabelsInGroup}, then filters
+   * cards to those containing any of those labels.
+   *
+   * @param group - The group name to filter by.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of matching {@link Feature} cards.
+   *
+   * @example
+   * ```ts
+   * const typeCards = await sdk.filterCardsByLabelGroup('Type')
+   * // Returns all cards with 'bug', 'feature', or any other 'Type' label
+   * ```
+   */
   async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Feature[]> {
     const groupLabels = this.getLabelsInGroup(group)
     if (groupLabels.length === 0) return []
@@ -1172,6 +1269,7 @@ export class KanbanSDK {
    * @returns The full updated array of {@link KanbanColumn} objects for the board.
    * @throws {Error} If the board is not found.
    * @throws {Error} If a column with the same ID already exists.
+   * @throws {Error} If the column ID is `'deleted'` (reserved for soft-delete).
    *
    * @example
    * ```ts
@@ -1245,6 +1343,7 @@ export class KanbanSDK {
    * @throws {Error} If the board is not found.
    * @throws {Error} If the column is not found.
    * @throws {Error} If the column still contains cards.
+   * @throws {Error} If the column ID is `'deleted'` (reserved for soft-delete).
    *
    * @example
    * ```ts

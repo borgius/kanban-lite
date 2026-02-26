@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import { generateSlug, type Comment, type Feature, type Priority, type KanbanColumn, type FeatureFrontmatter, type CardDisplaySettings } from '../shared/types'
+import { generateSlug, type Comment, type Feature, type Priority, type KanbanColumn, type FeatureFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeFeature } from '../sdk/parser'
 import { readConfig } from '../shared/config'
@@ -19,6 +19,7 @@ interface CreateFeatureData {
   dueDate: string | null
   labels: string[]
   metadata?: Record<string, any>
+  actions?: string[]
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -51,6 +52,18 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   })
 
   // --- Helpers ---
+
+  const VALID_SORTS: CardSortOption[] = ['created:asc', 'created:desc', 'modified:asc', 'modified:desc']
+
+  function applySortParam<T extends { created: string; modified: string }>(result: T[], sortParam: string | null): T[] {
+    if (!sortParam || !VALID_SORTS.includes(sortParam as CardSortOption)) return result
+    const [field, dir] = sortParam.split(':')
+    return [...result].sort((a, b) => {
+      const aVal = field === 'created' ? a.created : a.modified
+      const bVal = field === 'created' ? b.created : b.modified
+      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    })
+  }
 
   function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
@@ -173,6 +186,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         dueDate: data.dueDate,
         labels: data.labels,
         metadata: data.metadata,
+        actions: data.actions,
         boardId: currentBoardId,
       })
       await loadFeatures()
@@ -450,7 +464,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
           modified: feature.modified, completedAt: feature.completedAt,
           labels: feature.labels, attachments: feature.attachments, order: feature.order,
-          metadata: feature.metadata
+          metadata: feature.metadata, actions: feature.actions
         }
         ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         break
@@ -468,6 +482,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           dueDate: fm.dueDate,
           labels: fm.labels,
           attachments: fm.attachments,
+          actions: fm.actions,
         })
         break
       }
@@ -510,7 +525,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order
+            labels: feature.labels, attachments: feature.attachments, order: feature.order,
+            actions: feature.actions
           }
           ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         }
@@ -526,7 +542,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order
+            labels: feature.labels, attachments: feature.attachments, order: feature.order,
+            actions: feature.actions
           }
           ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         }
@@ -542,7 +559,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order
+            labels: feature.labels, attachments: feature.attachments, order: feature.order,
+            actions: feature.actions
           }
           ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         }
@@ -557,7 +575,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order
+            labels: feature.labels, attachments: feature.attachments, order: feature.order,
+            actions: feature.actions
           }
           ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         }
@@ -627,6 +646,17 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'deleteLabel': {
         sdk.deleteLabel(msg.name as string)
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        break
+      }
+
+      case 'triggerAction': {
+        const { featureId, action, callbackKey } = msg as { featureId: string; action: string; callbackKey: string }
+        try {
+          await sdk.triggerAction(featureId, action)
+          ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))
+        }
         break
       }
 
@@ -769,6 +799,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         }
         if (Object.keys(metaFilter).length > 0)
           result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
+        result = applySortParam(result, url.searchParams.get('sort'))
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -790,6 +821,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           dueDate: (body.dueDate as string) || null,
           labels: (body.labels as string[]) || [],
           metadata: body.metadata as Record<string, any> | undefined,
+          actions: body.actions as string[] | undefined,
           boardId,
         })
         return jsonOk(res, sanitizeFeature(feature), 201)
@@ -832,6 +864,19 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         if (!newStatus) return jsonError(res, 400, 'status is required')
         const feature = await sdk.moveCard(id, newStatus, position, boardId)
         return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/boards/:boardId/tasks/:id/actions/:action')
+    if (params) {
+      try {
+        const { boardId, id, action } = params
+        await sdk.triggerAction(id, action, boardId)
+        res.writeHead(204)
+        res.end()
+        return
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -903,6 +948,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       }
       if (Object.keys(metaFilter).length > 0)
         result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
+      result = applySortParam(result, url.searchParams.get('sort'))
       return jsonOk(res, result)
     }
 
@@ -918,6 +964,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           dueDate: (body.dueDate as string) || null,
           labels: (body.labels as string[]) || [],
           metadata: body.metadata as Record<string, any> | undefined,
+          actions: body.actions as string[] | undefined,
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
         const feature = await doCreateFeature(data)
@@ -959,6 +1006,19 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = await doMoveFeature(id, newStatus, position)
         if (!feature) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeFeature(feature))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/tasks/:id/actions/:action')
+    if (params) {
+      try {
+        const { id, action } = params
+        await sdk.triggerAction(id, action)
+        res.writeHead(204)
+        res.end()
+        return
       } catch (err) {
         return jsonError(res, 400, String(err))
       }

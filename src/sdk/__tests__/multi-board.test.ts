@@ -31,6 +31,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     showFileName: false,
     compactMode: false,
     markdownEditorMode: false,
+    showDeletedColumn: false,
     port: 3000,
     ...overrides
   }

@@ -276,6 +276,12 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave }: Omit<Set
               checked={local.compactMode}
               onChange={v => update({ compactMode: v })}
             />
+            <SettingsToggle
+              label="Show Deleted Column"
+              description="Display the Deleted column to manage soft-deleted cards"
+              checked={local.showDeletedColumn}
+              onChange={v => update({ showDeletedColumn: v })}
+            />
           </SettingsSection>
 
           <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />

@@ -105,6 +105,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     showFileName: false,
     compactMode: false,
     markdownEditorMode: false,
+    showDeletedColumn: false,
     defaultPriority: 'medium',
     defaultStatus: 'backlog'
   },

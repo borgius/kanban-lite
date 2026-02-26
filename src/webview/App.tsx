@@ -9,7 +9,7 @@ import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
 import type { Comment, Feature, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
-import { getTitleFromContent } from '../shared/types'
+import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
 declare const acquireVsCodeApi: () => {
@@ -55,7 +55,7 @@ function App(): React.JSX.Element {
   } | null>(null)
 
   // Undo delete stack
-  const [pendingDeletes, setPendingDeletes] = useState<{ id: string; feature: Feature }[]>([])
+  const [pendingDeletes, setPendingDeletes] = useState<{ id: string; feature: Feature; originalStatus: string }[]>([])
   const pendingDeletesRef = useRef(pendingDeletes)
   useEffect(() => {
     pendingDeletesRef.current = pendingDeletes
@@ -68,8 +68,9 @@ function App(): React.JSX.Element {
     const feature = features.find(f => f.id === featureId)
     if (!feature) return
 
-    // Optimistically remove from local state
-    setFeatures(features.filter(f => f.id !== featureId))
+    // Optimistically move to deleted status in local state
+    const originalStatus = feature.status
+    setFeatures(features.map(f => f.id === featureId ? { ...f, status: DELETED_STATUS_ID } : f))
 
     // Close editor if this feature is open
     if (editingFeature?.id === featureId) {
@@ -78,7 +79,7 @@ function App(): React.JSX.Element {
 
     // Push onto the undo stack
     const id = String(nextIdRef.current++)
-    setPendingDeletes(prev => [...prev, { id, feature }])
+    setPendingDeletes(prev => [...prev, { id, feature, originalStatus }])
   }, [editingFeature, setFeatures])
 
   const commitDelete = useCallback((entryId: string) => {
@@ -91,9 +92,9 @@ function App(): React.JSX.Element {
   const handleUndoDelete = useCallback((entryId: string) => {
     const entry = pendingDeletesRef.current.find(d => d.id === entryId)
     if (!entry) return
-    // Restore the feature
+    // Restore the feature to its original status
     const { features } = useStore.getState()
-    setFeatures([...features, entry.feature])
+    setFeatures(features.map(f => f.id === entry.feature.id ? { ...f, status: entry.originalStatus } : f))
     setPendingDeletes(prev => prev.filter(d => d.id !== entryId))
   }, [setFeatures])
 
@@ -294,6 +295,18 @@ function App(): React.JSX.Element {
     handleDeleteFeatureFromCard(editingFeature.id)
   }
 
+  const handlePermanentDeleteFeature = (): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'permanentDeleteFeature', featureId: editingFeature.id })
+    setEditingFeature(null)
+  }
+
+  const handleRestoreFeature = (): void => {
+    if (!editingFeature) return
+    vscode.postMessage({ type: 'restoreFeature', featureId: editingFeature.id })
+    setEditingFeature(null)
+  }
+
   const handleOpenFile = (): void => {
     if (!editingFeature) return
     vscode.postMessage({ type: 'openFile', featureId: editingFeature.id })
@@ -462,6 +475,8 @@ function App(): React.JSX.Element {
               onSave={handleSaveFeature}
               onClose={handleCloseEditor}
               onDelete={handleDeleteFeature}
+              onPermanentDelete={handlePermanentDeleteFeature}
+              onRestore={handleRestoreFeature}
               onOpenFile={handleOpenFile}
               onStartWithAI={handleStartWithAI}
               onAddAttachment={handleAddAttachment}

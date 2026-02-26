@@ -120,6 +120,12 @@ export class KanbanPanel {
           case 'deleteFeature':
             await this._deleteFeature(message.featureId)
             break
+          case 'permanentDeleteFeature':
+            await this._permanentDeleteFeature(message.featureId)
+            break
+          case 'restoreFeature':
+            await this._restoreFeature(message.featureId)
+            break
           case 'updateFeature':
             await this._updateFeature(message.featureId, message.updates)
             break
@@ -484,10 +490,37 @@ export class KanbanPanel {
 
     try {
       await sdk.deleteCard(featureId, this._currentBoardId)
-      this._features = this._features.filter(f => f.id !== featureId)
+      await this._loadFeatures()
       this._sendFeaturesToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to delete feature: ${err}`)
+    }
+  }
+
+  private async _permanentDeleteFeature(featureId: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    try {
+      await sdk.permanentlyDeleteCard(featureId, this._currentBoardId)
+      this._features = this._features.filter(f => f.id !== featureId)
+      this._sendFeaturesToWebview()
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to permanently delete feature: ${err}`)
+    }
+  }
+
+  private async _restoreFeature(featureId: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    try {
+      const settings = sdk.getSettings()
+      await sdk.updateCard(featureId, { status: settings.defaultStatus }, this._currentBoardId)
+      await this._loadFeatures()
+      this._sendFeaturesToWebview()
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to restore feature: ${err}`)
     }
   }
 

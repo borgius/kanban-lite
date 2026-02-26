@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { KanbanColumn } from './KanbanColumn'
 import { useStore } from '../store'
 import type { Feature, FeatureStatus } from '../../shared/types'
+import { DELETED_COLUMN } from '../../shared/types'
 
 export interface DropTarget {
   columnId: string
@@ -18,6 +19,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn }: KanbanBoardProps) {
   const columns = useStore((s) => s.columns)
+  const cardSettings = useStore((s) => s.cardSettings)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
   const getFeaturesByStatus = useStore((s) => s.getFeaturesByStatus)
   const layout = useStore((s) => s.layout)
@@ -138,6 +140,26 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             layout={layout}
           />
         ))}
+        {cardSettings.showDeletedColumn && (
+          <KanbanColumn
+            key={DELETED_COLUMN.id}
+            column={DELETED_COLUMN}
+            features={getFilteredFeaturesByStatus(DELETED_COLUMN.id as FeatureStatus)}
+            onFeatureClick={onFeatureClick}
+            onAddFeature={onAddFeature}
+            onEditColumn={onEditColumn}
+            onRemoveColumn={onRemoveColumn}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragOverCard={handleDragOverCard}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
+            draggedFeature={draggedFeature}
+            dropTarget={dropTarget}
+            layout={layout}
+            isDeletedColumn
+          />
+        )}
       </div>
     </div>
   )

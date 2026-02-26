@@ -605,7 +605,7 @@ describe('Standalone Server Integration', () => {
   // ── Delete Feature ──
 
   describe('deleteFeature', () => {
-    it('should delete feature file from disk', async () => {
+    it('should soft-delete feature by moving to deleted status', async () => {
       writeFeatureFile(tempDir, 'delete-me.md', makeFeatureContent({
         id: 'delete-me',
         title: 'Delete Me'
@@ -622,14 +622,18 @@ describe('Standalone Server Integration', () => {
         featureId: 'delete-me'
       }, 'init')
 
-      const features = response.features as Array<unknown>
-      expect(features.length).toBe(0)
+      const features = response.features as Array<Record<string, unknown>>
+      // Card still exists but with deleted status
+      const deletedCard = features.find((f: Record<string, unknown>) => f.id === 'delete-me')
+      expect(deletedCard).toBeTruthy()
+      expect(deletedCard!.status).toBe('deleted')
 
-      // File should be removed
+      // File should be moved to deleted folder, not removed
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'delete-me.md'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'deleted', 'delete-me.md'))).toBe(true)
     })
 
-    it('should only delete the targeted feature', async () => {
+    it('should only soft-delete the targeted feature', async () => {
       writeFeatureFile(tempDir, 'keep-me.md', makeFeatureContent({ id: 'keep-me' }), 'backlog')
       writeFeatureFile(tempDir, 'remove-me.md', makeFeatureContent({ id: 'remove-me' }), 'backlog')
 
@@ -645,8 +649,13 @@ describe('Standalone Server Integration', () => {
       }, 'init')
 
       const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('keep-me')
+      expect(features.length).toBe(2)
+      const kept = features.find((f: Record<string, unknown>) => f.id === 'keep-me')
+      expect(kept).toBeTruthy()
+      expect(kept!.status).toBe('backlog')
+      const removed = features.find((f: Record<string, unknown>) => f.id === 'remove-me')
+      expect(removed).toBeTruthy()
+      expect(removed!.status).toBe('deleted')
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'keep-me.md'))).toBe(true)
     })
 

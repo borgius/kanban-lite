@@ -20,6 +20,7 @@ interface KanbanColumnProps {
   draggedFeature: Feature | null
   dropTarget: DropTarget | null
   layout: LayoutMode
+  isDeletedColumn?: boolean
 }
 
 export function KanbanColumn({
@@ -36,7 +37,8 @@ export function KanbanColumn({
   onDragEnd,
   draggedFeature,
   dropTarget,
-  layout
+  layout,
+  isDeletedColumn
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
@@ -74,44 +76,50 @@ export function KanbanColumn({
           </span>
         </div>
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => onAddFeature(column.id)}
-            className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
-            title={`Add to ${column.name}`}
-          >
-            <Plus size={16} className="text-zinc-500" />
-          </button>
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
-              title="Column options"
-            >
-              <MoreVertical size={16} className="text-zinc-500" />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[140px]">
+          {isDeletedColumn ? (
+            <Trash2 size={16} className="text-zinc-500 mr-1" />
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => onAddFeature(column.id)}
+                className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
+                title={`Add to ${column.name}`}
+              >
+                <Plus size={16} className="text-zinc-500" />
+              </button>
+              <div className="relative" ref={menuRef}>
                 <button
                   type="button"
-                  onClick={() => { setMenuOpen(false); onEditColumn(column.id) }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                  onClick={() => setMenuOpen(!menuOpen)}
+                  className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
+                  title="Column options"
                 >
-                  <Pencil size={14} />
-                  Edit List
+                  <MoreVertical size={16} className="text-zinc-500" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); onRemoveColumn(column.id) }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
-                >
-                  <Trash2 size={14} />
-                  Remove List
-                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[140px]">
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); onEditColumn(column.id) }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      <Pencil size={14} />
+                      Edit List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); onRemoveColumn(column.id) }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Remove List
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
 

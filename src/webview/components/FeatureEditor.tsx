@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip } from 'lucide-react'
 import type { Comment, FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
+import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { useStore } from '../store'
 import { MarkdownEditor } from './MarkdownEditor'
@@ -17,6 +18,8 @@ interface FeatureEditorProps {
   onSave: (content: string, frontmatter: FeatureFrontmatter) => void
   onClose: () => void
   onDelete: () => void
+  onPermanentDelete: () => void
+  onRestore: () => void
   onOpenFile: () => void
   onStartWithAI: (agent: AIAgent, permissionMode: PermissionMode) => void
   onAddAttachment: () => void
@@ -467,11 +470,12 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard }: FeatureEditorProps) {
+export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
+  const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentFrontmatterRef = useRef(currentFrontmatter)
   const currentContentRef = useRef(currentContent)
@@ -561,23 +565,46 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
       >
         <div className="flex items-center gap-3">
           <span className="text-xs font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>{featureId}</span>
-          {confirmingDelete ? (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs" style={{ color: 'var(--vscode-errorForeground)' }}>Delete?</span>
-              <button
-                onClick={() => { setConfirmingDelete(false); onDelete() }}
-                className="px-2 py-1 text-xs font-medium rounded transition-colors text-white bg-red-600 hover:bg-red-700"
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setConfirmingDelete(false)}
-                className="px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
-                style={{ color: 'var(--vscode-foreground)' }}
-              >
-                No
-              </button>
-            </div>
+          {isDeleted ? (
+            confirmingPermanentDelete ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs" style={{ color: 'var(--vscode-errorForeground)' }}>Permanently delete from disk?</span>
+                <button
+                  onClick={() => { setConfirmingPermanentDelete(false); onPermanentDelete() }}
+                  className="px-2 py-1 text-xs font-medium rounded transition-colors text-white bg-red-600 hover:bg-red-700"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirmingPermanentDelete(false)}
+                  className="px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
+                  style={{ color: 'var(--vscode-foreground)' }}
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={onRestore}
+                  className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
+                  style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
+                  title="Restore card"
+                >
+                  <CircleDot size={16} />
+                  <span className="text-xs">RESTORE</span>
+                </button>
+                <button
+                  onClick={() => setConfirmingPermanentDelete(true)}
+                  className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
+                  style={{ color: 'var(--vscode-errorForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
+                  title="Permanently delete from disk"
+                >
+                  <Trash2 size={16} />
+                  <span className="text-xs">PERMANENT DELETE</span>
+                </button>
+              </>
+            )
           ) : (
             <>
               <button
@@ -590,10 +617,10 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
                 <span className="text-xs">OPEN</span>
               </button>
               <button
-                onClick={() => setConfirmingDelete(true)}
+                onClick={onDelete}
                 className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
                 style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                title="Delete ticket"
+                title="Move to deleted"
               >
                 <Trash2 size={16} />
                 <span className="text-xs">DELETE</span>

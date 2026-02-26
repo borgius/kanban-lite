@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar } from 'lucide-react'
+import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar, Zap } from 'lucide-react'
 import type { FeatureStatus, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
@@ -9,7 +9,7 @@ import { MarkdownEditor } from './MarkdownEditor'
 interface CreateFeatureDialogProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (data: { status: FeatureStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[] }) => void
+  onCreate: (data: { status: FeatureStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[] }) => void
   initialStatus?: FeatureStatus
 }
 
@@ -293,6 +293,61 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
   )
 }
 
+function ActionInput({ actions, onChange }: { actions: string[]; onChange: (actions: string[]) => void }) {
+  const [newAction, setNewAction] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const addAction = (action?: string) => {
+    const a = (action || newAction).trim()
+    if (a && !actions.includes(a)) {
+      onChange([...actions, a])
+    }
+    setNewAction('')
+  }
+
+  return (
+    <div className="relative flex-1">
+      <label className="flex items-center gap-1.5 flex-wrap cursor-text">
+        {actions.map(action => (
+          <span
+            key={action}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+            style={{
+              background: 'var(--vscode-badge-background)',
+              color: 'var(--vscode-badge-foreground)',
+            }}
+          >
+            {action}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChange(actions.filter(a => a !== action)) }}
+              className="hover:text-red-500 transition-colors"
+            >
+              <X size={9} />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={newAction}
+          onChange={(e) => setNewAction(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addAction() }
+            if (e.key === 'Backspace' && !newAction && actions.length > 0) {
+              onChange(actions.slice(0, -1))
+            }
+            if (e.key === 'Escape') { setNewAction(''); inputRef.current?.blur() }
+          }}
+          placeholder={actions.length === 0 ? 'Add actions...' : ''}
+          className="flex-1 min-w-[60px] bg-transparent border-none outline-none text-xs"
+          style={{ color: 'var(--vscode-foreground)' }}
+        />
+      </label>
+    </div>
+  )
+}
+
 function PropertyRow({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div
@@ -330,6 +385,7 @@ function CreateFeatureDialogContent({
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [labels, setLabels] = useState<string[]>([])
+  const [actions, setActions] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -345,7 +401,7 @@ function CreateFeatureDialogContent({
     const content = heading
       ? `# ${heading}${desc ? `\n\n${desc}` : ''}`
       : desc
-    onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels })
+    onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels, actions })
   }
 
   const handleSaveAndClose = () => {
@@ -446,6 +502,9 @@ function CreateFeatureDialogContent({
             <LabelInput labels={labels} onChange={setLabels} />
           </PropertyRow>
           )}
+          <PropertyRow label="Actions" icon={<Zap size={13} />}>
+            <ActionInput actions={actions} onChange={setActions} />
+          </PropertyRow>
         </div>
 
         {/* Content */}

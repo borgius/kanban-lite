@@ -144,7 +144,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         featuresDirectory: config.featuresDirectory,
         port: config.port,
         configVersion: config.version
-      }
+      },
+      labels: sdk.getLabels()
     }
   }
 
@@ -585,6 +586,26 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         } catch (err) {
           console.error('Failed to create board:', err)
         }
+        break
+      }
+
+      case 'setLabel': {
+        sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string })
+        broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'renameLabel': {
+        await sdk.renameLabel(msg.oldName as string, msg.newName as string)
+        broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'deleteLabel': {
+        sdk.deleteLabel(msg.name as string)
+        broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         break
       }
 

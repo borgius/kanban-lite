@@ -299,11 +299,12 @@ export interface WorkspaceInfo {
 
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo }
+  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
   | { type: 'featuresUpdated'; features: Feature[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }
   | { type: 'showSettings'; settings: CardDisplaySettings }
+  | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -331,3 +332,6 @@ export type WebviewMessage =
   | { type: 'permanentDeleteFeature'; featureId: string }
   | { type: 'restoreFeature'; featureId: string }
   | { type: 'transferCard'; featureId: string; toBoard: string; targetStatus: string }
+  | { type: 'setLabel'; name: string; definition: LabelDefinition }
+  | { type: 'renameLabel'; oldName: string; newName: string }
+  | { type: 'deleteLabel'; name: string }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo } from '../../shared/types'
+import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -19,8 +19,10 @@ interface KanbanState {
   workspace: WorkspaceInfo | null
   cardSettings: CardDisplaySettings
   settingsOpen: boolean
+  labelDefs: Record<string, LabelDefinition>
 
   setWorkspace: (workspace: WorkspaceInfo) => void
+  setLabelDefs: (labels: Record<string, LabelDefinition>) => void
   setFeatures: (features: Feature[]) => void
   setColumns: (columns: KanbanColumn[]) => void
   setBoards: (boards: BoardInfo[]) => void
@@ -110,8 +112,10 @@ export const useStore = create<KanbanState>((set, get) => ({
     defaultStatus: 'backlog'
   },
   settingsOpen: false,
+  labelDefs: {},
 
   setWorkspace: (workspace) => set({ workspace }),
+  setLabelDefs: (labels) => set({ labelDefs: labels }),
   setFeatures: (features) => set({ features }),
   setColumns: (columns) => set({ columns }),
   setBoards: (boards) => set({ boards }),
@@ -185,7 +189,18 @@ export const useStore = create<KanbanState>((set, get) => ({
         }
 
         // Label filter
-        if (labelFilter !== 'all' && !f.labels.includes(labelFilter)) return false
+        if (labelFilter !== 'all') {
+          if (labelFilter.startsWith('group:')) {
+            const group = labelFilter.slice(6)
+            const { labelDefs } = get()
+            const groupLabels = Object.entries(labelDefs)
+              .filter(([, def]) => def.group === group)
+              .map(([name]) => name)
+            if (!f.labels.some(l => groupLabels.includes(l))) return false
+          } else {
+            if (!f.labels.includes(labelFilter)) return false
+          }
+        }
 
         // Due date filter
         if (dueDateFilter !== 'all') {

@@ -34,7 +34,8 @@ function App(): React.JSX.Element {
     setIsDarkMode,
     setWorkspace,
     setCardSettings,
-    setSettingsOpen
+    setSettingsOpen,
+    setLabelDefs
   } = useStore()
 
   const [createFeatureOpen, setCreateFeatureOpen] = useState(false)
@@ -220,6 +221,7 @@ function App(): React.JSX.Element {
             }
             setCardSettings(message.settings)
           }
+          if (message.labels) setLabelDefs(message.labels)
           break
         case 'featuresUpdated':
           setFeatures(message.features)
@@ -227,6 +229,9 @@ function App(): React.JSX.Element {
         case 'triggerCreateDialog':
           setCreateFeatureStatus('backlog')
           setCreateFeatureOpen(true)
+          break
+        case 'labelsUpdated':
+          setLabelDefs(message.labels)
           break
         case 'showSettings':
           setCardSettings(message.settings)
@@ -254,7 +259,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen])
+  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
 
   const handleFeatureClick = (feature: Feature): void => {
     // Request feature content for inline editing

@@ -239,6 +239,32 @@ export class KanbanPanel {
             }
             break
           }
+          case 'setLabel': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            sdk.setLabel(message.name, message.definition)
+            await this._loadFeatures()
+            this._sendFeaturesToWebview()
+            this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
+            break
+          }
+          case 'renameLabel': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            await sdk.renameLabel(message.oldName, message.newName)
+            await this._loadFeatures()
+            this._sendFeaturesToWebview()
+            this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
+            break
+          }
+          case 'deleteLabel': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            sdk.deleteLabel(message.name)
+            this._sendFeaturesToWebview()
+            this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
+            break
+          }
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break
@@ -833,7 +859,8 @@ export class KanbanPanel {
       columns,
       settings,
       boards,
-      currentBoard
+      currentBoard,
+      labels: sdk ? sdk.getLabels() : {}
     })
   }
 

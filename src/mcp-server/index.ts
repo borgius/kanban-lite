@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import type { Priority } from '../shared/types'
+import { DELETED_STATUS_ID, type Priority } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 
@@ -131,13 +131,20 @@ async function main(): Promise<void> {
       priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
       assignee: z.string().optional().describe('Filter by assignee name'),
       label: z.string().optional().describe('Filter by label'),
+      labelGroup: z.string().optional().describe('Filter by label group name'),
+      includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted cards in results'),
     },
-    async ({ boardId, status, priority, assignee, label }) => {
+    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted }) => {
       let cards = await sdk.listCards(undefined, boardId)
+      if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
       if (status) cards = cards.filter(c => c.status === status)
       if (priority) cards = cards.filter(c => c.priority === priority)
       if (assignee) cards = cards.filter(c => c.assignee === assignee)
       if (label) cards = cards.filter(c => c.labels.includes(label))
+      if (labelGroup) {
+        const groupLabels = sdk.getLabelsInGroup(labelGroup)
+        cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
+      }
 
       const summary = cards.map(c => ({
         id: c.id,
@@ -327,7 +334,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'delete_card',
-    'Permanently delete a kanban card.',
+    'Soft-delete a kanban card (moves to deleted status). Use permanent_delete_card to remove from disk.',
     {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
@@ -359,7 +366,47 @@ async function main(): Promise<void> {
       return {
         content: [{
           type: 'text' as const,
-          text: `Deleted card: ${resolvedId}`,
+          text: `Soft-deleted card: ${resolvedId} (moved to deleted status)`,
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'permanent_delete_card',
+    'Permanently delete a kanban card from disk. This cannot be undone.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      // Resolve partial ID
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId, boardId)
+      if (!card) {
+        const all = await sdk.listCards(undefined, boardId)
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      await sdk.permanentlyDeleteCard(resolvedId, boardId)
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Permanently deleted card: ${resolvedId}`,
         }],
       }
     }
@@ -738,6 +785,39 @@ async function main(): Promise<void> {
     }
   )
 
+  // --- Label Tools ---
+
+  server.tool('list_labels', 'List all label definitions with colors and groups', {
+    boardId: z.string().optional().describe('Board ID')
+  }, async () => {
+    const labels = sdk.getLabels()
+    return { content: [{ type: 'text' as const, text: JSON.stringify(labels, null, 2) }] }
+  })
+
+  server.tool('set_label', 'Create or update a label definition', {
+    name: z.string().describe('Label name'),
+    color: z.string().describe('Hex color (e.g. "#e11d48")'),
+    group: z.string().optional().describe('Optional group name (e.g. "Type", "Priority")')
+  }, async ({ name, color, group }) => {
+    sdk.setLabel(name, { color, group })
+    return { content: [{ type: 'text' as const, text: `Label "${name}" set with color ${color}${group ? ` in group "${group}"` : ''}` }] }
+  })
+
+  server.tool('rename_label', 'Rename a label (cascades to all cards)', {
+    oldName: z.string().describe('Current label name'),
+    newName: z.string().describe('New label name')
+  }, async ({ oldName, newName }) => {
+    await sdk.renameLabel(oldName, newName)
+    return { content: [{ type: 'text' as const, text: `Label "${oldName}" renamed to "${newName}"` }] }
+  })
+
+  server.tool('delete_label', 'Remove a label definition (cards keep the label text)', {
+    name: z.string().describe('Label name to remove')
+  }, async ({ name }) => {
+    sdk.deleteLabel(name)
+    return { content: [{ type: 'text' as const, text: `Label "${name}" definition removed` }] }
+  })
+
   // --- Settings Tools ---
 
   server.tool(
@@ -766,6 +846,7 @@ async function main(): Promise<void> {
       showLabels: z.boolean().optional().describe('Show labels on cards'),
       showFileName: z.boolean().optional().describe('Show file name on cards'),
       compactMode: z.boolean().optional().describe('Enable compact card display'),
+      showDeletedColumn: z.boolean().optional().describe('Show the deleted cards column on the board'),
       defaultPriority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Default priority for new cards'),
       defaultStatus: z.string().optional().describe('Default status for new cards'),
     },

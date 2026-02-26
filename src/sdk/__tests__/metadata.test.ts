@@ -105,6 +105,28 @@ metadata:
     })
   })
 
+  it('should return undefined when metadata is an inline scalar value', () => {
+    const content = `---
+id: "meta-scalar"
+status: "todo"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: []
+attachments: []
+order: "a0"
+metadata: "just-a-string"
+---
+# Scalar Metadata Card`
+
+    const feature = parseFeatureFile(content, '/tmp/meta-scalar.md')
+    expect(feature).not.toBeNull()
+    expect(feature?.metadata).toBeUndefined()
+  })
+
   it('should return undefined metadata when no metadata block exists', () => {
     const content = `---
 id: "no-meta"

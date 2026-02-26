@@ -74,7 +74,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     if (metaStart === -1) return undefined
     const indentedLines: string[] = []
     for (let j = metaStart; j < lines.length; j++) {
-      if (/^\s/.test(lines[j])) {
+      if (/^\s/.test(lines[j]) || lines[j].trim() === '') {
         indentedLines.push(lines[j])
       } else {
         break

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check } from 'lucide-react'
-import { useStore, type DueDateFilter } from '../store'
+import { useStore, type DueDateFilter, type SortOrder } from '../store'
 import type { Priority } from '../../shared/types'
 
 const priorities: { value: Priority | 'all'; label: string }[] = [
@@ -34,6 +34,8 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
     setLabelFilter,
     dueDateFilter,
     setDueDateFilter,
+    sortOrder,
+    setSortOrder,
     clearAllFilters,
     getUniqueAssignees,
     getUniqueLabels,
@@ -238,6 +240,19 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
           ))}
         </select>
       )}
+
+      {/* Sort Order */}
+      <select
+        value={sortOrder}
+        onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+        className={selectClassName}
+      >
+        <option value="order">Board Order</option>
+        <option value="created:asc">Created (oldest)</option>
+        <option value="created:desc">Created (newest)</option>
+        <option value="modified:asc">Modified (oldest)</option>
+        <option value="modified:desc">Modified (newest)</option>
+      </select>
 
       {/* Clear Filters Button */}
       {filtersActive && (

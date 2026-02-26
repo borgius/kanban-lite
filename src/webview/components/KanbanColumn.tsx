@@ -22,6 +22,7 @@ interface KanbanColumnProps {
   layout: LayoutMode
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
+  selectedFeatureId?: string
 }
 
 export function KanbanColumn({
@@ -40,7 +41,8 @@ export function KanbanColumn({
   dropTarget,
   layout,
   isDeletedColumn,
-  onPurgeColumn
+  onPurgeColumn,
+  selectedFeatureId
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
@@ -160,7 +162,7 @@ export function KanbanColumn({
                 draggedFeature?.id === feature.id ? "opacity-40" : ""
               }`}
             >
-              <FeatureCard feature={feature} onClick={() => onFeatureClick(feature)} />
+              <FeatureCard feature={feature} onClick={() => onFeatureClick(feature)} isSelected={feature.id === selectedFeatureId} />
             </div>
           </div>
         ))}

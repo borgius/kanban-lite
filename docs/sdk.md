@@ -81,7 +81,7 @@ HTTP server are all built on top of.
     * [.getBoard(boardId)](#KanbanSDK+getBoard) ⇒
     * [.updateBoard(boardId, updates)](#KanbanSDK+updateBoard) ⇒
     * [.transferCard(cardId, fromBoardId, toBoardId, targetStatus)](#KanbanSDK+transferCard) ⇒
-    * [.listCards(columns, boardId, metaFilter)](#KanbanSDK+listCards) ⇒
+    * [.listCards(columns, boardId, metaFilter, sort)](#KanbanSDK+listCards) ⇒
     * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
     * [.createCard(data)](#KanbanSDK+createCard) ⇒
     * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
@@ -358,7 +358,7 @@ console.log(card.status)  // 'triage'
 
 <a name="KanbanSDK+listCards"></a>
 
-#### kanbanSDK.listCards(columns, boardId, metaFilter) ⇒
+#### kanbanSDK.listCards(columns, boardId, metaFilter, sort) ⇒
 Lists all cards on a board, optionally filtered by column/status.
 
 **Note:** This includes soft-deleted cards (status `'deleted'`).
@@ -370,16 +370,18 @@ This method performs several housekeeping tasks during loading:
 - Migrates legacy integer ordering to fractional indexing
 - Syncs the card ID counter with existing cards
 
-Cards are returned sorted by their fractional order key.
+By default cards are returned sorted by their fractional order key (board order).
+Pass a [CardSortOption](CardSortOption) to sort by creation or modification date instead.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Feature](Feature) card objects, sorted by order.  
+**Returns**: A promise resolving to an array of [Feature](Feature) card objects.  
 
 | Param | Description |
 | --- | --- |
 | columns | Optional array of status/column IDs to filter by.   When provided, ensures those subdirectories exist on disk. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 | metaFilter | Optional map of dot-notation metadata paths to required substrings.   Only cards whose metadata contains all specified values (case-insensitive substring match)   are returned. |
+| sort | Optional sort order. One of `'created:asc'`, `'created:desc'`,   `'modified:asc'`, `'modified:desc'`. Defaults to fractional board order. |
 
 **Example**  
 ```ts
@@ -391,6 +393,9 @@ const filtered = await sdk.listCards(['todo', 'in-progress'], 'bugs')
 
 // List cards where metadata.sprint contains 'Q1' and metadata.links.jira contains 'PROJ'
 const q1Jira = await sdk.listCards(undefined, undefined, { 'sprint': 'Q1', 'links.jira': 'PROJ' })
+
+// List all cards sorted by creation date, newest first
+const newest = await sdk.listCards(undefined, undefined, undefined, 'created:desc')
 ```
 
 * * *

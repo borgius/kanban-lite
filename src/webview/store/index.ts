@@ -3,6 +3,7 @@ import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, W
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
+export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
 
 interface KanbanState {
   features: Feature[]
@@ -15,6 +16,7 @@ interface KanbanState {
   assigneeFilter: string | 'all'
   labelFilter: string | 'all'
   dueDateFilter: DueDateFilter
+  sortOrder: SortOrder
   layout: LayoutMode
   workspace: WorkspaceInfo | null
   cardSettings: CardDisplaySettings
@@ -35,6 +37,7 @@ interface KanbanState {
   setAssigneeFilter: (assignee: string | 'all') => void
   setLabelFilter: (label: string | 'all') => void
   setDueDateFilter: (filter: DueDateFilter) => void
+  setSortOrder: (sort: SortOrder) => void
   setLayout: (layout: LayoutMode) => void
   toggleLayout: () => void
   clearAllFilters: () => void
@@ -113,6 +116,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   assigneeFilter: 'all',
   labelFilter: 'all',
   dueDateFilter: 'all',
+  sortOrder: 'order',
   layout: 'horizontal',
   workspace: null,
   cardSettings: {
@@ -145,6 +149,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),
   setLabelFilter: (label) => set({ labelFilter: label }),
   setDueDateFilter: (filter) => set({ dueDateFilter: filter }),
+  setSortOrder: (sort) => set({ sortOrder: sort }),
   setLayout: (layout) => set({ layout }),
   toggleLayout: () => set((state) => ({ layout: state.layout === 'horizontal' ? 'vertical' : 'horizontal' })),
 
@@ -154,7 +159,8 @@ export const useStore = create<KanbanState>((set, get) => ({
       priorityFilter: 'all',
       assigneeFilter: 'all',
       labelFilter: 'all',
-      dueDateFilter: 'all'
+      dueDateFilter: 'all',
+      sortOrder: 'order'
     }),
 
   addFeature: (feature) =>
@@ -186,7 +192,8 @@ export const useStore = create<KanbanState>((set, get) => ({
       priorityFilter,
       assigneeFilter,
       labelFilter,
-      dueDateFilter
+      dueDateFilter,
+      sortOrder
     } = get()
 
     return features
@@ -261,7 +268,13 @@ export const useStore = create<KanbanState>((set, get) => ({
 
         return true
       })
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+      .sort((a, b) => {
+        if (sortOrder === 'created:asc') return a.created.localeCompare(b.created)
+        if (sortOrder === 'created:desc') return b.created.localeCompare(a.created)
+        if (sortOrder === 'modified:asc') return a.modified.localeCompare(b.modified)
+        if (sortOrder === 'modified:desc') return b.modified.localeCompare(a.modified)
+        return a.order < b.order ? -1 : a.order > b.order ? 1 : 0
+      })
   },
 
   getUniqueAssignees: () => {
@@ -288,14 +301,16 @@ export const useStore = create<KanbanState>((set, get) => ({
       priorityFilter,
       assigneeFilter,
       labelFilter,
-      dueDateFilter
+      dueDateFilter,
+      sortOrder
     } = get()
     return (
       searchQuery !== '' ||
       priorityFilter !== 'all' ||
       assigneeFilter !== 'all' ||
       labelFilter !== 'all' ||
-      dueDateFilter !== 'all'
+      dueDateFilter !== 'all' ||
+      sortOrder !== 'order'
     )
   }
 }))

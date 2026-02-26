@@ -16,9 +16,10 @@ interface KanbanBoardProps {
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
   onPurgeDeletedCards: () => void
+  selectedFeatureId?: string
 }
 
-export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn, onPurgeDeletedCards }: KanbanBoardProps) {
+export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn, onPurgeDeletedCards, selectedFeatureId }: KanbanBoardProps) {
   const columns = useStore((s) => s.columns)
   const cardSettings = useStore((s) => s.cardSettings)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
@@ -139,6 +140,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             draggedFeature={draggedFeature}
             dropTarget={dropTarget}
             layout={layout}
+            selectedFeatureId={selectedFeatureId}
           />
         ))}
         {cardSettings.showDeletedColumn && (
@@ -160,6 +162,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             layout={layout}
             isDeletedColumn
             onPurgeColumn={onPurgeDeletedCards}
+            selectedFeatureId={selectedFeatureId}
           />
         )}
       </div>

@@ -9,6 +9,7 @@ interface FeatureCardProps {
   feature: Feature
   onClick: () => void
   isDragging?: boolean
+  isSelected?: boolean
 }
 
 const priorityColors: Record<Priority, string> = {
@@ -39,7 +40,7 @@ function renderDescriptionHtml(text: string): string {
   return marked.parse(text, { async: false, gfm: true, breaks: true }) as string
 }
 
-export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) {
+export function FeatureCard({ feature, onClick, isDragging, isSelected }: FeatureCardProps) {
   const { cardSettings } = useStore()
   const labelDefs = useStore(s => s.labelDefs)
   const title = getTitleFromContent(feature.content)
@@ -89,7 +90,7 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 ${cardSettings.compactMode ? 'p-2 min-h-[4.5rem]' : 'p-3 min-h-[7rem]'} cursor-pointer hover:shadow-md transition-shadow ${
+      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border ${isSelected ? 'border-blue-500 dark:border-blue-400 ring-1 ring-blue-500 dark:ring-blue-400' : 'border-zinc-200 dark:border-zinc-700'} ${cardSettings.compactMode ? 'p-2 min-h-[4.5rem]' : 'p-3 min-h-[7rem]'} cursor-pointer hover:shadow-md transition-shadow ${
         isDragging ? 'shadow-lg opacity-90' : ''
       }`}
     >

@@ -22,6 +22,8 @@ export interface CreateCardInput {
   boardId?: string
   /** Arbitrary user-defined metadata to store in the card's frontmatter. */
   metadata?: Record<string, any>
+  /** Named action strings that can be triggered via the action webhook. */
+  actions?: string[]
 }
 
 /**

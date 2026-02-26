@@ -90,6 +90,8 @@ export interface KanbanConfig {
   webhooks?: Webhook[]
   /** Label definitions keyed by label name, with color and optional group. */
   labels?: Record<string, LabelDefinition>
+  /** Optional URL to POST to when a card action is triggered. */
+  actionWebhookUrl?: string
 }
 
 // Legacy v1 config (for migration)

@@ -10,6 +10,17 @@
 export type Priority = 'critical' | 'high' | 'medium' | 'low'
 
 /**
+ * Sort option for {@link KanbanSDK.listCards}.
+ * - `'created:asc'` — oldest cards first
+ * - `'created:desc'` — newest cards first
+ * - `'modified:asc'` — least recently modified first
+ * - `'modified:desc'` — most recently modified first
+ *
+ * When omitted, cards are sorted by their fractional `order` index (board order).
+ */
+export type CardSortOption = 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
+
+/**
  * String alias representing a column or status identifier.
  * Corresponds to the `id` field of a {@link KanbanColumn} (e.g. `'backlog'`, `'in-progress'`).
  */
@@ -66,6 +77,8 @@ export interface Feature {
   content: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
   metadata?: Record<string, any>
+  /** Named action strings that can be triggered via the action webhook. */
+  actions?: string[]
   /** Absolute path to the card's markdown file on disk. */
   filePath: string
 }
@@ -285,6 +298,8 @@ export interface FeatureFrontmatter {
   order: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
   metadata?: Record<string, any>
+  /** Named action strings that can be triggered via the action webhook. */
+  actions?: string[]
 }
 
 /**
@@ -305,10 +320,11 @@ export type ExtensionMessage =
   | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }
   | { type: 'showSettings'; settings: CardDisplaySettings }
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
+  | { type: 'actionResult'; callbackKey: string; error?: string }
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any> } }
+  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] } }
   | { type: 'moveFeature'; featureId: string; newStatus: string; newOrder: number }
   | { type: 'deleteFeature'; featureId: string }
   | { type: 'updateFeature'; featureId: string; updates: Partial<Feature> }
@@ -336,3 +352,4 @@ export type WebviewMessage =
   | { type: 'setLabel'; name: string; definition: LabelDefinition }
   | { type: 'renameLabel'; oldName: string; newName: string }
   | { type: 'deleteLabel'; name: string }
+  | { type: 'triggerAction'; featureId: string; action: string; callbackKey: string }

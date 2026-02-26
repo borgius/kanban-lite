@@ -308,7 +308,7 @@ export type ExtensionMessage =
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[] } }
+  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any> } }
   | { type: 'moveFeature'; featureId: string; newStatus: string; newOrder: number }
   | { type: 'deleteFeature'; featureId: string }
   | { type: 'updateFeature'; featureId: string; updates: Partial<Feature> }
@@ -331,6 +331,7 @@ export type WebviewMessage =
   | { type: 'createBoard'; name: string }
   | { type: 'permanentDeleteFeature'; featureId: string }
   | { type: 'restoreFeature'; featureId: string }
+  | { type: 'purgeDeletedCards' }
   | { type: 'transferCard'; featureId: string; toBoard: string; targetStatus: string }
   | { type: 'setLabel'; name: string; definition: LabelDefinition }
   | { type: 'renameLabel'; oldName: string; newName: string }

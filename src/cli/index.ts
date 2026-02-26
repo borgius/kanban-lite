@@ -1,7 +1,7 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import type { Feature, Priority } from '../shared/types'
+import type { Feature, Priority, CardSortOption } from '../shared/types'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
@@ -208,6 +208,21 @@ async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
     cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
   }
 
+  const VALID_SORTS: CardSortOption[] = ['created:asc', 'created:desc', 'modified:asc', 'modified:desc']
+  if (typeof flags.sort === 'string') {
+    const sort = flags.sort as CardSortOption
+    if (!VALID_SORTS.includes(sort)) {
+      console.error(red(`Invalid --sort value: "${sort}". Must be one of: ${VALID_SORTS.join(', ')}`))
+      process.exit(1)
+    }
+    const [field, dir] = sort.split(':')
+    cards = [...cards].sort((a, b) => {
+      const aVal = field === 'created' ? a.created : a.modified
+      const bVal = field === 'created' ? b.created : b.modified
+      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    })
+  }
+
   if (flags.json) {
     console.log(JSON.stringify(cards, null, 2))
     return
@@ -300,9 +315,13 @@ async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
     }
   }
 
+  const actions = typeof flags.actions === 'string'
+    ? flags.actions.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : undefined
+
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, boardId })
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId })
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -376,9 +395,12 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
       process.exit(1)
     }
   }
+  if (typeof flags.actions === 'string') {
+    updates.actions = flags.actions.split(',').map((s: string) => s.trim()).filter(Boolean)
+  }
 
   if (Object.keys(updates).length === 0) {
-    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, --label, or --metadata'))
+    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, --label, --metadata, or --actions'))
     process.exit(1)
   }
 
@@ -898,6 +920,32 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
   }
 }
 
+// --- Action Commands ---
+
+async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'trigger'
+
+  switch (subcommand) {
+    case 'trigger': {
+      const cardId = positional[1]
+      const action = positional[2]
+      if (!cardId || !action) {
+        console.error(red('Usage: kl action trigger <cardId> <action> [--board <boardId>]'))
+        process.exit(1)
+      }
+      const boardId = getBoardId(flags)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      await sdk.triggerAction(resolvedId, action, boardId)
+      console.log(green(`Action "${action}" triggered on card ${resolvedId}`))
+      break
+    }
+    default:
+      console.error(red(`Unknown action subcommand: ${subcommand}`))
+      console.error('Available: trigger')
+      process.exit(1)
+  }
+}
+
 // --- Webhook Commands ---
 
 async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
@@ -1332,6 +1380,9 @@ async function main(): Promise<void> {
     case 'labels':
     case 'label':
       await cmdLabels(sdk, positional, flags)
+      break
+    case 'action':
+      await cmdAction(sdk, positional, flags)
       break
     case 'webhooks':
     case 'webhook':

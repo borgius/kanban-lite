@@ -272,8 +272,10 @@ export class KanbanPanel {
           }
           case 'triggerAction': {
             const { featureId, action, callbackKey } = message
+            const triggerSdk = this._getSDK()
+            if (!triggerSdk) break
             try {
-              await this._sdk!.triggerAction(featureId, action)
+              await triggerSdk.triggerAction(featureId, action)
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })

@@ -169,6 +169,7 @@ const ROUTES: Route[] = [
       { name: 'assignee', type: 'string', required: false, default: 'null', description: 'Assigned team member' },
       { name: 'dueDate', type: 'string', required: false, default: 'null', description: 'Due date (ISO 8601)' },
       { name: 'labels', type: 'string[]', required: false, default: '[]', description: 'Labels/tags' },
+      { name: 'metadata', type: 'Record<string, any>', required: false, description: 'Arbitrary user-defined metadata' },
     ],
     example: `curl -X POST http://localhost:3000/api/tasks \\
   -H "Content-Type: application/json" \\
@@ -177,7 +178,8 @@ const ROUTES: Route[] = [
     "status": "todo",
     "priority": "critical",
     "assignee": "alice",
-    "labels": ["bug", "auth"]
+    "labels": ["bug", "auth"],
+    "metadata": { "sprint": 5, "team": "backend" }
   }'`,
     responseStatus: '201 Created',
   },
@@ -187,7 +189,7 @@ const ROUTES: Route[] = [
     method: 'PUT',
     path: '/api/tasks/:id',
     description: '',
-    bodyNote: 'Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`).',
+    bodyNote: 'Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`).',
     example: `curl -X PUT http://localhost:3000/api/tasks/42 \\
   -H "Content-Type: application/json" \\
   -d '{ "priority": "high", "assignee": "bob" }'`,

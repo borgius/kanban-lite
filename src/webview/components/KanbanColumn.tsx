@@ -21,6 +21,7 @@ interface KanbanColumnProps {
   dropTarget: DropTarget | null
   layout: LayoutMode
   isDeletedColumn?: boolean
+  onPurgeColumn?: () => void
 }
 
 export function KanbanColumn({
@@ -38,7 +39,8 @@ export function KanbanColumn({
   draggedFeature,
   dropTarget,
   layout,
-  isDeletedColumn
+  isDeletedColumn,
+  onPurgeColumn
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
@@ -77,7 +79,19 @@ export function KanbanColumn({
         </div>
         <div className="flex items-center gap-0.5">
           {isDeletedColumn ? (
-            <Trash2 size={16} className="text-zinc-500 mr-1" />
+            <button
+              type="button"
+              onClick={() => {
+                if (features.length === 0) return
+                if (window.confirm(`Permanently delete all ${features.length} card${features.length === 1 ? '' : 's'} from disk?`)) {
+                  onPurgeColumn?.()
+                }
+              }}
+              className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              title="Permanently delete all cards"
+            >
+              <Trash2 size={16} className="text-red-500" />
+            </button>
           ) : (
             <>
               <button

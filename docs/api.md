@@ -210,6 +210,7 @@ POST /api/tasks
 | `assignee` | `string` | No | `null` | Assigned team member |
 | `dueDate` | `string` | No | `null` | Due date (ISO 8601) |
 | `labels` | `string[]` | No | `[]` | Labels/tags |
+| `metadata` | `Record<string, any>` | No |  | Arbitrary user-defined metadata |
 
 **Example:**
 
@@ -221,7 +222,8 @@ curl -X POST http://localhost:3000/api/tasks \
     "status": "todo",
     "priority": "critical",
     "assignee": "alice",
-    "labels": ["bug", "auth"]
+    "labels": ["bug", "auth"],
+    "metadata": { "sprint": 5, "team": "backend" }
   }'
 ```
 
@@ -235,7 +237,7 @@ curl -X POST http://localhost:3000/api/tasks \
 PUT /api/tasks/:id
 ```
 
-**Request body:** Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`).
+**Request body:** Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`).
 
 **Example:**
 

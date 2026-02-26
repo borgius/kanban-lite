@@ -80,5 +80,8 @@
   "showBuildWithAI": true,
   "showFileName": false,
   "compactMode": false,
-  "markdownEditorMode": false
+  "markdownEditorMode": false,
+  "showDeletedColumn": true,
+  "port": 3000,
+  "labels": {}
 }

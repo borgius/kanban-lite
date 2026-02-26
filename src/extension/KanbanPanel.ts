@@ -126,6 +126,9 @@ export class KanbanPanel {
           case 'restoreFeature':
             await this._restoreFeature(message.featureId)
             break
+          case 'purgeDeletedCards':
+            await this._purgeDeletedCards()
+            break
           case 'updateFeature':
             await this._updateFeature(message.featureId, message.updates)
             break
@@ -533,6 +536,22 @@ export class KanbanPanel {
       this._sendFeaturesToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to permanently delete feature: ${err}`)
+    }
+  }
+
+  private async _purgeDeletedCards(): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    try {
+      const deletedCards = this._features.filter(f => f.status === 'deleted')
+      for (const card of deletedCards) {
+        await sdk.permanentlyDeleteCard(card.id, this._currentBoardId)
+      }
+      this._features = this._features.filter(f => f.status !== 'deleted')
+      this._sendFeaturesToWebview()
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to purge deleted cards: ${err}`)
     }
   }
 

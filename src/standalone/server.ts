@@ -243,6 +243,21 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
+  async function doPurgeDeletedCards(): Promise<boolean> {
+    try {
+      const deletedCards = features.filter(f => f.status === 'deleted')
+      for (const card of deletedCards) {
+        await sdk.permanentlyDeleteCard(card.id, currentBoardId)
+      }
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      return true
+    } catch (err) {
+      console.error('Failed to purge deleted cards:', err)
+      return false
+    }
+  }
+
   function doAddColumn(name: string, color: string): KanbanColumn {
     const existingColumns = sdk.listColumns(currentBoardId)
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -414,6 +429,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         await doUpdateFeature(restoreId, { status: defaultStatus })
         break
       }
+
+      case 'purgeDeletedCards':
+        await doPurgeDeletedCards()
+        break
 
       case 'updateFeature':
         await doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)

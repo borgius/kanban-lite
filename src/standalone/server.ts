@@ -17,6 +17,7 @@ interface CreateFeatureData {
   assignee: string | null
   dueDate: string | null
   labels: string[]
+  metadata?: Record<string, any>
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -169,6 +170,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         assignee: data.assignee,
         dueDate: data.dueDate,
         labels: data.labels,
+        metadata: data.metadata,
         boardId: currentBoardId,
       })
       await loadFeatures()
@@ -739,6 +741,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           assignee: (body.assignee as string) || null,
           dueDate: (body.dueDate as string) || null,
           labels: (body.labels as string[]) || [],
+          metadata: body.metadata as Record<string, any> | undefined,
           boardId,
         })
         return jsonOk(res, sanitizeFeature(feature), 201)
@@ -859,7 +862,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           priority: (body.priority as Priority) || 'medium',
           assignee: (body.assignee as string) || null,
           dueDate: (body.dueDate as string) || null,
-          labels: (body.labels as string[]) || []
+          labels: (body.labels as string[]) || [],
+          metadata: body.metadata as Record<string, any> | undefined,
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
         const feature = await doCreateFeature(data)

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
 
 function createTempDir(): string {
@@ -704,11 +704,53 @@ describe('KanbanSDK', () => {
 
     it('should throw if card not found', async () => {
       await sdk.init()
-      // Write actionWebhookUrl into .kanban.json
       const { readConfig, writeConfig } = await import('../../shared/config')
       const config = readConfig(sdk.workspaceRoot)
       writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'http://localhost:9999/actions' })
       await expect(sdk.triggerAction('nonexistent', 'retry')).rejects.toThrow('Card not found')
+    })
+
+    it('should POST correct payload to actionWebhookUrl on success', async () => {
+      await sdk.init()
+      const card = await sdk.createCard({ content: '# My Card', actions: ['retry'] })
+
+      const { readConfig, writeConfig } = await import('../../shared/config')
+      const config = readConfig(sdk.workspaceRoot)
+      writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'https://example.com/webhook' })
+
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await sdk.triggerAction(card.id, 'retry')
+
+      expect(mockFetch).toHaveBeenCalledOnce()
+      const [url, init] = mockFetch.mock.calls[0]
+      expect(url).toBe('https://example.com/webhook')
+      expect(init.method).toBe('POST')
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
+      const body = JSON.parse(init.body)
+      expect(body.action).toBe('retry')
+      expect(body.board).toBe('default')
+      expect(body.list).toBe(card.status)
+      expect(body.card.id).toBe(card.id)
+      expect(body.card.filePath).toBeUndefined()
+
+      vi.unstubAllGlobals()
+    })
+
+    it('should throw on non-2xx webhook response', async () => {
+      await sdk.init()
+      const card = await sdk.createCard({ content: '# My Card', actions: ['retry'] })
+
+      const { readConfig, writeConfig } = await import('../../shared/config')
+      const config = readConfig(sdk.workspaceRoot)
+      writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'https://example.com/webhook' })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' }))
+
+      await expect(sdk.triggerAction(card.id, 'retry')).rejects.toThrow('Action webhook responded with 500')
+
+      vi.unstubAllGlobals()
     })
   })
 })

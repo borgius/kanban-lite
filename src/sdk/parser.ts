@@ -50,45 +50,25 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   const frontmatter = frontmatterMatch[1]
   const rest = frontmatterMatch[2] || ''
 
-  const getValue = (key: string): string => {
-    const match = frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'))
-    if (!match) return ''
-    const value = match[1].trim().replace(/^["']|["']$/g, '')
-    return value === 'null' ? '' : value
+  let parsed: Record<string, unknown>
+  try {
+    const loaded = yaml.load(frontmatter, { schema: yaml.JSON_SCHEMA })
+    if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) return null
+    parsed = loaded as Record<string, unknown>
+  } catch {
+    return null
   }
 
-  const getArrayValue = (key: string): string[] => {
-    const match = frontmatter.match(new RegExp(`^${key}:\\s*\\[([^\\]]*)\\]`, 'm'))
-    if (!match) return []
-    return match[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+  const str = (key: string): string => {
+    const val = parsed[key]
+    if (val == null) return ''
+    return String(val)
   }
 
-  const getMetadata = (): Record<string, any> | undefined => {
-    const lines = frontmatter.split('\n')
-    let metaStart = -1
-    for (let j = 0; j < lines.length; j++) {
-      if (/^metadata:\s*$/.test(lines[j])) {
-        metaStart = j + 1
-        break
-      }
-    }
-    if (metaStart === -1) return undefined
-    const indentedLines: string[] = []
-    for (let j = metaStart; j < lines.length; j++) {
-      if (/^\s/.test(lines[j]) || lines[j].trim() === '') {
-        indentedLines.push(lines[j])
-      } else {
-        break
-      }
-    }
-    if (indentedLines.length === 0) return undefined
-    try {
-      const parsed = yaml.load(indentedLines.join('\n'))
-      if (parsed && typeof parsed === 'object') return parsed as Record<string, any>
-      return undefined
-    } catch {
-      return undefined
-    }
+  const arr = (key: string): string[] => {
+    const val = parsed[key]
+    if (!Array.isArray(val)) return []
+    return val.filter(v => v != null).map(String)
   }
 
   // Split rest into card body and comment sections
@@ -111,23 +91,26 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     }
   }
 
-  const meta = getMetadata()
-  const actions = getArrayValue('actions')
+  const actions = arr('actions')
+  const rawMeta = parsed.metadata
+  const meta = rawMeta != null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
+    ? rawMeta as Record<string, unknown>
+    : undefined
 
   return {
-    version: parseInt(getValue('version'), 10) || 0,
-    id: getValue('id') || extractIdFromFilename(filePath),
-    status: (getValue('status') as FeatureStatus) || 'backlog',
-    priority: (getValue('priority') as Priority) || 'medium',
-    assignee: getValue('assignee') || null,
-    dueDate: getValue('dueDate') || null,
-    created: getValue('created') || new Date().toISOString(),
-    modified: getValue('modified') || new Date().toISOString(),
-    completedAt: getValue('completedAt') || null,
-    labels: getArrayValue('labels'),
-    attachments: getArrayValue('attachments'),
+    version: typeof parsed.version === 'number' ? parsed.version : parseInt(str('version'), 10) || 0,
+    id: str('id') || extractIdFromFilename(filePath),
+    status: (str('status') as FeatureStatus) || 'backlog',
+    priority: (str('priority') as Priority) || 'medium',
+    assignee: parsed.assignee != null ? String(parsed.assignee) : null,
+    dueDate: parsed.dueDate != null ? String(parsed.dueDate) : null,
+    created: str('created') || new Date().toISOString(),
+    modified: str('modified') || new Date().toISOString(),
+    completedAt: parsed.completedAt != null ? String(parsed.completedAt) : null,
+    labels: arr('labels'),
+    attachments: arr('attachments'),
     comments,
-    order: getValue('order') || 'a0',
+    order: str('order') || 'a0',
     content: body.trim(),
     ...(meta ? { metadata: meta } : {}),
     ...(actions.length > 0 ? { actions } : {}),
@@ -146,43 +129,27 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
  * @returns The complete markdown string ready to be written to a `.md` file.
  */
 export function serializeFeature(feature: Feature): string {
-  const lines = [
-    '---',
-    `version: ${feature.version ?? CARD_FORMAT_VERSION}`,
-    `id: "${feature.id}"`,
-    `status: "${feature.status}"`,
-    `priority: "${feature.priority}"`,
-    `assignee: ${feature.assignee ? `"${feature.assignee}"` : 'null'}`,
-    `dueDate: ${feature.dueDate ? `"${feature.dueDate}"` : 'null'}`,
-    `created: "${feature.created}"`,
-    `modified: "${feature.modified}"`,
-    `completedAt: ${feature.completedAt ? `"${feature.completedAt}"` : 'null'}`,
-    `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
-    `attachments: [${(feature.attachments || []).map(a => `"${a}"`).join(', ')}]`,
-    `order: "${feature.order}"`,
-  ]
-
-  if (feature.actions && feature.actions.length > 0) {
-    lines.push(`actions: [${feature.actions.map(a => `"${a}"`).join(', ')}]`)
+  const frontmatterObj: Record<string, unknown> = {
+    version: feature.version ?? CARD_FORMAT_VERSION,
+    id: feature.id,
+    status: feature.status,
+    priority: feature.priority,
+    assignee: feature.assignee ?? null,
+    dueDate: feature.dueDate ?? null,
+    created: feature.created,
+    modified: feature.modified,
+    completedAt: feature.completedAt ?? null,
+    labels: feature.labels,
+    attachments: feature.attachments || [],
+    order: feature.order,
+    ...(feature.actions?.length ? { actions: feature.actions } : {}),
+    ...(feature.metadata && Object.keys(feature.metadata).length > 0 ? { metadata: feature.metadata } : {}),
   }
 
-  if (feature.metadata && Object.keys(feature.metadata).length > 0) {
-    const metaYaml = yaml.dump(feature.metadata, { indent: 2, lineWidth: -1 })
-    lines.push('metadata:')
-    for (const line of metaYaml.trimEnd().split('\n')) {
-      lines.push('  ' + line)
-    }
-  }
+  const yamlStr = yaml.dump(frontmatterObj, { lineWidth: -1, quotingType: '"', forceQuotes: true })
+  let result = `---\n${yamlStr}---\n\n${feature.content}`
 
-  lines.push('---')
-  lines.push('')
-
-  const frontmatter = lines.join('\n')
-
-  let result = frontmatter + feature.content
-
-  const comments = feature.comments || []
-  for (const comment of comments) {
+  for (const comment of feature.comments || []) {
     result += '\n\n---\n'
     result += `comment: true\n`
     result += `id: "${comment.id}"\n`

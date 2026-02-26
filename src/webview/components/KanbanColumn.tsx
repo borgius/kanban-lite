@@ -1,9 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import { Plus, MoreVertical, Pencil, Trash2, Check } from 'lucide-react'
 import { FeatureCard } from './FeatureCard'
 import type { Feature, KanbanColumn as KanbanColumnType } from '../../shared/types'
-import type { LayoutMode } from '../store'
+import type { LayoutMode, SortOrder } from '../store'
 import type { DropTarget } from './KanbanBoard'
+
+const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
+  { value: 'order', label: 'Board Order' },
+  { value: 'created:asc', label: 'Created (oldest)' },
+  { value: 'created:desc', label: 'Created (newest)' },
+  { value: 'modified:asc', label: 'Modified (oldest)' },
+  { value: 'modified:desc', label: 'Modified (newest)' },
+]
 
 interface KanbanColumnProps {
   column: KanbanColumnType
@@ -23,6 +31,8 @@ interface KanbanColumnProps {
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
   selectedFeatureId?: string
+  sort: SortOrder
+  onSortChange: (sort: SortOrder) => void
 }
 
 export function KanbanColumn({
@@ -42,7 +52,9 @@ export function KanbanColumn({
   layout,
   isDeletedColumn,
   onPurgeColumn,
-  selectedFeatureId
+  selectedFeatureId,
+  sort,
+  onSortChange
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
@@ -114,7 +126,7 @@ export function KanbanColumn({
                   <MoreVertical size={16} className="text-zinc-500" />
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[140px]">
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[170px]">
                     <button
                       type="button"
                       onClick={() => { setMenuOpen(false); onEditColumn(column.id) }}
@@ -131,6 +143,19 @@ export function KanbanColumn({
                       <Trash2 size={14} />
                       Remove List
                     </button>
+                    <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+                    <div className="px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Sort by</div>
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { onSortChange(opt.value) }}
+                        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                      >
+                        <Check size={14} className={sort === opt.value ? 'text-blue-500' : 'invisible'} />
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

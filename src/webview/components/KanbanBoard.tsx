@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { KanbanColumn } from './KanbanColumn'
 import { useStore } from '../store'
+import type { SortOrder } from '../store'
 import type { Feature, FeatureStatus } from '../../shared/types'
 import { DELETED_COLUMN } from '../../shared/types'
 
@@ -25,6 +26,8 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
   const getFeaturesByStatus = useStore((s) => s.getFeaturesByStatus)
   const layout = useStore((s) => s.layout)
+  const columnSorts = useStore((s) => s.columnSorts)
+  const setColumnSort = useStore((s) => s.setColumnSort)
   const [draggedFeature, setDraggedFeature] = useState<Feature | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
 
@@ -141,6 +144,8 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             dropTarget={dropTarget}
             layout={layout}
             selectedFeatureId={selectedFeatureId}
+            sort={(columnSorts[column.id] || 'order') as SortOrder}
+            onSortChange={(s) => setColumnSort(column.id, s)}
           />
         ))}
         {cardSettings.showDeletedColumn && (
@@ -163,6 +168,8 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             isDeletedColumn
             onPurgeColumn={onPurgeDeletedCards}
             selectedFeatureId={selectedFeatureId}
+            sort={(columnSorts[DELETED_COLUMN.id] || 'order') as SortOrder}
+            onSortChange={(s) => setColumnSort(DELETED_COLUMN.id, s)}
           />
         )}
       </div>

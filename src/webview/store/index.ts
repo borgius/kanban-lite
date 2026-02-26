@@ -16,7 +16,7 @@ interface KanbanState {
   assigneeFilter: string | 'all'
   labelFilter: string | 'all'
   dueDateFilter: DueDateFilter
-  sortOrder: SortOrder
+  columnSorts: Record<string, SortOrder>
   layout: LayoutMode
   workspace: WorkspaceInfo | null
   cardSettings: CardDisplaySettings
@@ -37,7 +37,7 @@ interface KanbanState {
   setAssigneeFilter: (assignee: string | 'all') => void
   setLabelFilter: (label: string | 'all') => void
   setDueDateFilter: (filter: DueDateFilter) => void
-  setSortOrder: (sort: SortOrder) => void
+  setColumnSort: (columnId: string, sort: SortOrder) => void
   setLayout: (layout: LayoutMode) => void
   toggleLayout: () => void
   clearAllFilters: () => void
@@ -116,7 +116,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   assigneeFilter: 'all',
   labelFilter: 'all',
   dueDateFilter: 'all',
-  sortOrder: 'order',
+  columnSorts: {},
   layout: 'horizontal',
   workspace: null,
   cardSettings: {
@@ -149,7 +149,11 @@ export const useStore = create<KanbanState>((set, get) => ({
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),
   setLabelFilter: (label) => set({ labelFilter: label }),
   setDueDateFilter: (filter) => set({ dueDateFilter: filter }),
-  setSortOrder: (sort) => set({ sortOrder: sort }),
+  setColumnSort: (columnId, sort) => set((state) => ({
+    columnSorts: sort === 'order'
+      ? Object.fromEntries(Object.entries(state.columnSorts).filter(([k]) => k !== columnId))
+      : { ...state.columnSorts, [columnId]: sort }
+  })),
   setLayout: (layout) => set({ layout }),
   toggleLayout: () => set((state) => ({ layout: state.layout === 'horizontal' ? 'vertical' : 'horizontal' })),
 
@@ -160,7 +164,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       assigneeFilter: 'all',
       labelFilter: 'all',
       dueDateFilter: 'all',
-      sortOrder: 'order'
+      columnSorts: {}
     }),
 
   addFeature: (feature) =>
@@ -193,8 +197,9 @@ export const useStore = create<KanbanState>((set, get) => ({
       assigneeFilter,
       labelFilter,
       dueDateFilter,
-      sortOrder
+      columnSorts
     } = get()
+    const sortOrder: SortOrder = columnSorts[status] || 'order'
 
     return features
       .filter((f) => {
@@ -302,7 +307,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       assigneeFilter,
       labelFilter,
       dueDateFilter,
-      sortOrder
+      columnSorts
     } = get()
     return (
       searchQuery !== '' ||
@@ -310,7 +315,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       assigneeFilter !== 'all' ||
       labelFilter !== 'all' ||
       dueDateFilter !== 'all' ||
-      sortOrder !== 'order'
+      Object.keys(columnSorts).length > 0
     )
   }
 }))

@@ -1,8 +1,9 @@
+import { readConfig } from '../shared/config'
 import { startServer } from './server'
 
-function parseArgs(args: string[]): { dir: string; port: number; noBrowser: boolean } {
+function parseArgs(args: string[], defaultPort: number): { dir: string; port: number; noBrowser: boolean } {
   let dir = '.kanban'
-  let port = 3000
+  let port = defaultPort
   let noBrowser = false
 
   for (let i = 0; i < args.length; i++) {
@@ -25,7 +26,7 @@ Usage: kanban-md [options]
 
 Options:
   -d, --dir <path>    Features directory (default: .kanban)
-  -p, --port <number> Port to listen on (default: 3000)
+  -p, --port <number> Port to listen on (default: .kanban.json port or 3000)
   --no-browser        Don't open browser automatically
   -h, --help          Show this help message
 
@@ -43,7 +44,9 @@ REST API available at http://localhost:<port>/api
   return { dir, port, noBrowser }
 }
 
-const { dir, port, noBrowser } = parseArgs(process.argv.slice(2))
+// Read config from cwd to get the configured port default
+const configPort = readConfig(process.cwd()).port
+const { dir, port, noBrowser } = parseArgs(process.argv.slice(2), configPort)
 
 const server = startServer(dir, port)
 

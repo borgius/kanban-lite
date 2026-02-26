@@ -376,7 +376,7 @@ describe('Standalone Server Integration', () => {
       expect(fileContent).toContain('status: "todo"')
       expect(fileContent).toContain('priority: "high"')
       expect(fileContent).toContain('# My New Feature')
-      expect(fileContent).toContain('labels: ["frontend"]')
+      expect(fileContent).toContain('- "frontend"')
     })
 
     it('should create feature in its status subfolder', async () => {
@@ -710,7 +710,7 @@ describe('Standalone Server Integration', () => {
       const fileContent = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'backlog', 'update-me.md'), 'utf-8')
       expect(fileContent).toContain('priority: "critical"')
       expect(fileContent).toContain('assignee: "alice"')
-      expect(fileContent).toContain('labels: ["urgent"]')
+      expect(fileContent).toContain('- "urgent"')
     })
 
     it('should set completedAt when status changes to done', async () => {

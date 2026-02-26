@@ -271,7 +271,7 @@ describe('SDK integration - metadata', () => {
     const fileContent = fs.readFileSync(card.filePath, 'utf-8')
     expect(fileContent).toContain('metadata:')
     expect(fileContent).toContain('  sprint: 5')
-    expect(fileContent).toContain('  team: backend')
+    expect(fileContent).toContain('  team: "backend"')
 
     // Verify round-trip through listCards
     const cards = await sdk.listCards()

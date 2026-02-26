@@ -460,6 +460,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
         currentEditingFeatureId = featureId
         const frontmatter: FeatureFrontmatter = {
+          version: feature.version ?? 0,
           id: feature.id, status: feature.status, priority: feature.priority,
           assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
           modified: feature.modified, completedAt: feature.completedAt,
@@ -522,6 +523,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = await doRemoveAttachment(featureId, msg.attachment as string)
         if (feature && currentEditingFeatureId === featureId) {
           const frontmatter: FeatureFrontmatter = {
+            version: feature.version ?? 0,
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
@@ -539,6 +541,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
           const frontmatter: FeatureFrontmatter = {
+            version: feature.version ?? 0,
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
@@ -556,6 +559,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
           const frontmatter: FeatureFrontmatter = {
+            version: feature.version ?? 0,
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
@@ -572,6 +576,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = features.find(f => f.id === msg.featureId)
         if (feature && currentEditingFeatureId === msg.featureId) {
           const frontmatter: FeatureFrontmatter = {
+            version: feature.version ?? 0,
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
@@ -878,7 +883,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         res.end()
         return
       } catch (err) {
-        return jsonError(res, 400, String(err))
+        const msg = String(err)
+        if (msg.includes('Card not found')) return jsonError(res, 404, msg)
+        return jsonError(res, 400, msg)
       }
     }
 
@@ -1020,7 +1027,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         res.end()
         return
       } catch (err) {
-        return jsonError(res, 400, String(err))
+        const msg = String(err)
+        if (msg.includes('Card not found')) return jsonError(res, 404, msg)
+        return jsonError(res, 400, msg)
       }
     }
 
@@ -1325,10 +1334,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const feature = features.find(f => f.id === featureId)
         if (feature && currentEditingFeatureId === featureId) {
           const frontmatter: FeatureFrontmatter = {
+            version: feature.version ?? 0,
             id: feature.id, status: feature.status, priority: feature.priority,
             assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
             modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order
+            labels: feature.labels, attachments: feature.attachments, order: feature.order,
+            metadata: feature.metadata, actions: feature.actions,
           }
           broadcast({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] })
         }
@@ -1439,10 +1450,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           const currentContent = serializeFeature(editingFeature)
           if (currentContent !== lastWrittenContent) {
             const frontmatter: FeatureFrontmatter = {
+              version: editingFeature.version ?? 0,
               id: editingFeature.id, status: editingFeature.status, priority: editingFeature.priority,
               assignee: editingFeature.assignee, dueDate: editingFeature.dueDate, created: editingFeature.created,
               modified: editingFeature.modified, completedAt: editingFeature.completedAt,
-              labels: editingFeature.labels, attachments: editingFeature.attachments, order: editingFeature.order
+              labels: editingFeature.labels, attachments: editingFeature.attachments, order: editingFeature.order,
+              metadata: editingFeature.metadata, actions: editingFeature.actions,
             }
             broadcast({ type: 'featureContent', featureId: editingFeature.id, content: editingFeature.content, frontmatter, comments: editingFeature.comments || [] })
           }

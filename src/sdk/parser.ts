@@ -1,4 +1,5 @@
 import * as path from 'path'
+import * as yaml from 'js-yaml'
 import type { Comment, Feature, FeatureStatus, Priority } from '../shared/types'
 
 function extractIdFromFilename(filePath: string): string {
@@ -61,6 +62,34 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     return match[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
   }
 
+  const getMetadata = (): Record<string, any> | undefined => {
+    const lines = frontmatter.split('\n')
+    let metaStart = -1
+    for (let j = 0; j < lines.length; j++) {
+      if (/^metadata:\s*$/.test(lines[j])) {
+        metaStart = j + 1
+        break
+      }
+    }
+    if (metaStart === -1) return undefined
+    const indentedLines: string[] = []
+    for (let j = metaStart; j < lines.length; j++) {
+      if (/^\s/.test(lines[j])) {
+        indentedLines.push(lines[j])
+      } else {
+        break
+      }
+    }
+    if (indentedLines.length === 0) return undefined
+    try {
+      const parsed = yaml.load(indentedLines.join('\n'))
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, any>
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
   // Split rest into card body and comment sections
   // Comments are separated by --- blocks containing "comment: true"
   const sections = rest.split(/\n---\n/)
@@ -81,6 +110,8 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     }
   }
 
+  const meta = getMetadata()
+
   return {
     id: getValue('id') || extractIdFromFilename(filePath),
     status: (getValue('status') as FeatureStatus) || 'backlog',
@@ -95,6 +126,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     comments,
     order: getValue('order') || 'a0',
     content: body.trim(),
+    ...(meta ? { metadata: meta } : {}),
     filePath
   }
 }
@@ -110,7 +142,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
  * @returns The complete markdown string ready to be written to a `.md` file.
  */
 export function serializeFeature(feature: Feature): string {
-  const frontmatter = [
+  const lines = [
     '---',
     `id: "${feature.id}"`,
     `status: "${feature.status}"`,
@@ -123,9 +155,20 @@ export function serializeFeature(feature: Feature): string {
     `labels: [${feature.labels.map(l => `"${l}"`).join(', ')}]`,
     `attachments: [${(feature.attachments || []).map(a => `"${a}"`).join(', ')}]`,
     `order: "${feature.order}"`,
-    '---',
-    ''
-  ].join('\n')
+  ]
+
+  if (feature.metadata && Object.keys(feature.metadata).length > 0) {
+    const metaYaml = yaml.dump(feature.metadata, { indent: 2, lineWidth: -1 })
+    lines.push('metadata:')
+    for (const line of metaYaml.trimEnd().split('\n')) {
+      lines.push('  ' + line)
+    }
+  }
+
+  lines.push('---')
+  lines.push('')
+
+  const frontmatter = lines.join('\n')
 
   let result = frontmatter + feature.content
 

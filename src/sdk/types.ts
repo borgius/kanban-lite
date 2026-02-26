@@ -20,6 +20,8 @@ export interface CreateCardInput {
   attachments?: string[]
   /** The board identifier when working with multiple boards. */
   boardId?: string
+  /** Arbitrary user-defined metadata to store in the card's frontmatter. */
+  metadata?: Record<string, any>
 }
 
 /**

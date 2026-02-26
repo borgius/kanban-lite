@@ -610,6 +610,7 @@ export class KanbanSDK {
       comments: [],
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
+      ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
       filePath: getFeatureFilePath(boardDir, status, filename)
     }
 

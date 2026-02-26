@@ -64,6 +64,8 @@ export interface Feature {
   order: string
   /** Markdown body content of the card. */
   content: string
+  /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
+  metadata?: Record<string, any>
   /** Absolute path to the card's markdown file on disk. */
   filePath: string
 }
@@ -281,6 +283,8 @@ export interface FeatureFrontmatter {
   attachments: string[]
   /** Fractional index (base-62) for ordering within a column. */
   order: string
+  /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
+  metadata?: Record<string, any>
 }
 
 /**

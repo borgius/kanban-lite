@@ -1,4 +1,4 @@
-// src/webview/lib/markdownTools.ts
+// src/webview/lib/markdownTools.tsx
 import type React from 'react'
 
 export type FormatAction = 'heading' | 'bold' | 'italic' | 'quote' | 'code' | 'link' | 'ul' | 'ol' | 'tasklist'

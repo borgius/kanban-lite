@@ -448,7 +448,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           id: feature.id, status: feature.status, priority: feature.priority,
           assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
           modified: feature.modified, completedAt: feature.completedAt,
-          labels: feature.labels, attachments: feature.attachments, order: feature.order
+          labels: feature.labels, attachments: feature.attachments, order: feature.order,
+          metadata: feature.metadata
         }
         ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
         break

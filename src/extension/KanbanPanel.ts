@@ -613,7 +613,8 @@ export class KanbanPanel {
       completedAt: feature.completedAt,
       labels: feature.labels,
       attachments: feature.attachments,
-      order: feature.order
+      order: feature.order,
+      metadata: feature.metadata
     }
 
     this._panel.webview.postMessage({

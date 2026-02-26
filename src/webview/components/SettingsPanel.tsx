@@ -509,6 +509,7 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
 
 function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
+  const [activeTab, setActiveTab] = useState<'general' | 'defaults' | 'labels'>('general')
 
   useEffect(() => { setLocal(settings) }, [settings])
 
@@ -556,90 +557,123 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
           </button>
         </div>
 
+        {/* Tab Bar */}
+        <div
+          className="flex"
+          style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
+        >
+          {(['general', 'defaults', 'labels'] as const).map(tab => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className="px-4 py-2.5 text-xs font-medium capitalize transition-colors relative"
+              style={{
+                color: activeTab === tab
+                  ? 'var(--vscode-foreground)'
+                  : 'var(--vscode-descriptionForeground)',
+                background: 'transparent',
+              }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {activeTab === tab && (
+                <span
+                  className="absolute bottom-0 left-0 right-0 h-0.5"
+                  style={{ background: 'var(--vscode-button-background)' }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-auto">
-          {workspace && (
+          {activeTab === 'general' && (
             <>
-              <SettingsSection title="Workspace">
-                <SettingsInfo label="Project Path" value={workspace.projectPath} />
-                <SettingsInfo label="Features Directory" value={workspace.featuresDirectory} />
-                <SettingsInfo label="Server Port" value={String(workspace.port)} />
-                <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
+              {workspace && (
+                <>
+                  <SettingsSection title="Workspace">
+                    <SettingsInfo label="Project Path" value={workspace.projectPath} />
+                    <SettingsInfo label="Features Directory" value={workspace.featuresDirectory} />
+                    <SettingsInfo label="Server Port" value={String(workspace.port)} />
+                    <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
+                  </SettingsSection>
+                  <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+                </>
+              )}
+              <SettingsSection title="Card Display">
+                <SettingsToggle
+                  label="Show Priority Badges"
+                  description="Display priority indicators on feature cards"
+                  checked={local.showPriorityBadges}
+                  onChange={v => update({ showPriorityBadges: v })}
+                />
+                <SettingsToggle
+                  label="Show Assignee"
+                  description="Display assigned person on feature cards"
+                  checked={local.showAssignee}
+                  onChange={v => update({ showAssignee: v })}
+                />
+                <SettingsToggle
+                  label="Show Due Date"
+                  description="Display due dates on feature cards"
+                  checked={local.showDueDate}
+                  onChange={v => update({ showDueDate: v })}
+                />
+                <SettingsToggle
+                  label="Show Labels"
+                  description="Display labels on feature cards and in editors"
+                  checked={local.showLabels}
+                  onChange={v => update({ showLabels: v })}
+                />
+                <SettingsToggle
+                  label="Show Filename"
+                  description="Display the source markdown filename on cards"
+                  checked={local.showFileName}
+                  onChange={v => update({ showFileName: v })}
+                />
+                <SettingsToggle
+                  label="Compact Mode"
+                  description="Use compact card layout to show more features"
+                  checked={local.compactMode}
+                  onChange={v => update({ compactMode: v })}
+                />
+                <SettingsToggle
+                  label="Show Deleted Column"
+                  description="Display the Deleted column to manage soft-deleted cards"
+                  checked={local.showDeletedColumn}
+                  onChange={v => update({ showDeletedColumn: v })}
+                />
               </SettingsSection>
-              <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
             </>
           )}
-          <SettingsSection title="Card Display">
-            <SettingsToggle
-              label="Show Priority Badges"
-              description="Display priority indicators on feature cards"
-              checked={local.showPriorityBadges}
-              onChange={v => update({ showPriorityBadges: v })}
-            />
-            <SettingsToggle
-              label="Show Assignee"
-              description="Display assigned person on feature cards"
-              checked={local.showAssignee}
-              onChange={v => update({ showAssignee: v })}
-            />
-            <SettingsToggle
-              label="Show Due Date"
-              description="Display due dates on feature cards"
-              checked={local.showDueDate}
-              onChange={v => update({ showDueDate: v })}
-            />
-            <SettingsToggle
-              label="Show Labels"
-              description="Display labels on feature cards and in editors"
-              checked={local.showLabels}
-              onChange={v => update({ showLabels: v })}
-            />
-            <SettingsToggle
-              label="Show Filename"
-              description="Display the source markdown filename on cards"
-              checked={local.showFileName}
-              onChange={v => update({ showFileName: v })}
-            />
-            <SettingsToggle
-              label="Compact Mode"
-              description="Use compact card layout to show more features"
-              checked={local.compactMode}
-              onChange={v => update({ compactMode: v })}
-            />
-            <SettingsToggle
-              label="Show Deleted Column"
-              description="Display the Deleted column to manage soft-deleted cards"
-              checked={local.showDeletedColumn}
-              onChange={v => update({ showDeletedColumn: v })}
-            />
-          </SettingsSection>
 
-          <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+          {activeTab === 'defaults' && (
+            <SettingsSection title="Defaults">
+              <SettingsDropdown
+                label="Default Priority"
+                value={local.defaultPriority}
+                options={priorityConfig}
+                onChange={v => update({ defaultPriority: v as Priority })}
+              />
+              <SettingsDropdown
+                label="Default Status"
+                value={local.defaultStatus}
+                options={statusConfig}
+                onChange={v => update({ defaultStatus: v as FeatureStatus })}
+              />
+            </SettingsSection>
+          )}
 
-          <SettingsSection title="Defaults">
-            <SettingsDropdown
-              label="Default Priority"
-              value={local.defaultPriority}
-              options={priorityConfig}
-              onChange={v => update({ defaultPriority: v as Priority })}
-            />
-            <SettingsDropdown
-              label="Default Status"
-              value={local.defaultStatus}
-              options={statusConfig}
-              onChange={v => update({ defaultStatus: v as FeatureStatus })}
-            />
-          </SettingsSection>
-
-          <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
-
-          <SettingsSection title="Labels">
-            <LabelsSection
-              onSetLabel={onSetLabel}
-              onRenameLabel={onRenameLabel}
-              onDeleteLabel={onDeleteLabel}
-            />
-          </SettingsSection>
+          {activeTab === 'labels' && (
+            <SettingsSection title="Labels">
+              <LabelsSection
+                onSetLabel={onSetLabel}
+                onRenameLabel={onRenameLabel}
+                onDeleteLabel={onDeleteLabel}
+              />
+            </SettingsSection>
+          )}
         </div>
 
         {/* Footer */}

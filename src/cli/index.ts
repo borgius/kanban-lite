@@ -147,6 +147,9 @@ function formatCardDetail(c: Feature): string {
   if (c.completedAt) {
     lines.push(`  Completed: ${c.completedAt}`)
   }
+  if (c.metadata && Object.keys(c.metadata).length > 0) {
+    lines.push(`  Metadata:  ${JSON.stringify(c.metadata, null, 2).split('\n').join('\n             ')}`)
+  }
   // Show body content (minus the title heading)
   const body = c.content.replace(/^#\s+.+\n?/, '').trim()
   if (body) {
@@ -264,9 +267,19 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
   const labels = typeof flags.label === 'string' ? flags.label.split(',').map(l => l.trim()) : []
   const body = typeof flags.body === 'string' ? flags.body : ''
 
+  let metadata: Record<string, any> | undefined
+  if (typeof flags.metadata === 'string') {
+    try {
+      metadata = JSON.parse(flags.metadata)
+    } catch {
+      console.error(red('Error: --metadata must be valid JSON'))
+      process.exit(1)
+    }
+  }
+
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, boardId })
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, boardId })
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -304,7 +317,7 @@ async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Record<strin
 async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
-    console.error(red('Usage: kl edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...]'))
+    console.error(red('Usage: kl edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...] [--metadata ...]'))
     process.exit(1)
   }
 
@@ -332,9 +345,17 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<strin
   if (typeof flags.assignee === 'string') updates.assignee = flags.assignee
   if (typeof flags.due === 'string') updates.dueDate = flags.due
   if (typeof flags.label === 'string') updates.labels = flags.label.split(',').map(l => l.trim())
+  if (typeof flags.metadata === 'string') {
+    try {
+      updates.metadata = JSON.parse(flags.metadata)
+    } catch {
+      console.error(red('Error: --metadata must be valid JSON'))
+      process.exit(1)
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
-    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, or --label'))
+    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, --label, or --metadata'))
     process.exit(1)
   }
 
@@ -1183,6 +1204,7 @@ ${bold('Add/Edit Options:')}
   --assignee <name>           Assignee
   --due <date>                Due date
   --label <l1,l2>             Labels (comma-separated)
+  --metadata '<json>'         Metadata as JSON string
 
 ${bold('Transfer Options:')}
   --from <board>              Source board (required)

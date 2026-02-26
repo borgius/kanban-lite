@@ -1,6 +1,7 @@
 import * as path from 'path'
 import * as yaml from 'js-yaml'
 import type { Comment, Feature, FeatureStatus, Priority } from '../shared/types'
+import { CARD_FORMAT_VERSION } from '../shared/types'
 
 function extractIdFromFilename(filePath: string): string {
   const basename = path.basename(filePath, '.md')
@@ -114,6 +115,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   const actions = getArrayValue('actions')
 
   return {
+    version: parseInt(getValue('version'), 10) || 0,
     id: getValue('id') || extractIdFromFilename(filePath),
     status: (getValue('status') as FeatureStatus) || 'backlog',
     priority: (getValue('priority') as Priority) || 'medium',
@@ -146,6 +148,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
 export function serializeFeature(feature: Feature): string {
   const lines = [
     '---',
+    `version: ${feature.version ?? CARD_FORMAT_VERSION}`,
     `id: "${feature.id}"`,
     `status: "${feature.status}"`,
     `priority: "${feature.priority}"`,

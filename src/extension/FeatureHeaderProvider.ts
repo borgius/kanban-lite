@@ -275,6 +275,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     }
 
     const frontmatter: FeatureFrontmatter = {
+      version: 0,
       id: getValue('id') || 'unknown',
       status: (getValue('status') as FeatureStatus) || 'backlog',
       priority: (getValue('priority') as Priority) || 'medium',
@@ -294,6 +295,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
   private _getDefaultFrontmatter(): FeatureFrontmatter {
     const now = new Date().toISOString()
     return {
+      version: 0,
       id: 'unknown',
       status: 'backlog',
       priority: 'medium',

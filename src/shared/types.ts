@@ -1,5 +1,8 @@
 // Kanban types
 
+/** Current card frontmatter schema version. Increment when the format changes. */
+export const CARD_FORMAT_VERSION = 1
+
 /**
  * Priority level for a kanban card.
  * Cards are ranked from most urgent (`'critical'`) to least urgent (`'low'`).
@@ -47,6 +50,8 @@ export interface Comment {
  * `.kanban/{status}/` directory structure.
  */
 export interface Feature {
+  /** Card frontmatter schema version. 0 = legacy (pre-versioning). */
+  version: number
   /** Unique identifier for the card (e.g. `'42-build-dashboard'`). */
   id: string
   /** Board this card belongs to. Omitted when only one board exists. */
@@ -274,6 +279,8 @@ export const LABEL_PRESET_COLORS: { name: string; hex: string }[] = [
  * when reading/writing card files.
  */
 export interface FeatureFrontmatter {
+  /** Card frontmatter schema version. 0 = legacy (pre-versioning). */
+  version: number
   /** Unique card identifier. */
   id: string
   /** Current column/status of the card. */

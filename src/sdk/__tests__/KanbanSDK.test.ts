@@ -221,6 +221,18 @@ describe('KanbanSDK', () => {
       const c2 = await sdk.createCard({ content: '# Second', status: 'todo' })
       expect(c2.order > c1.order).toBe(true)
     })
+
+    it('should write version: 1 as the first frontmatter field', async () => {
+      const card = await sdk.createCard({ content: '# Version Test' })
+      const onDisk = fs.readFileSync(card.filePath, 'utf-8')
+      // version must be the very first field after opening ---
+      expect(onDisk).toMatch(/^---\nversion: 1\n/)
+    })
+
+    it('should set version to CARD_FORMAT_VERSION on new cards', async () => {
+      const card = await sdk.createCard({ content: '# Version Card' })
+      expect(card.version).toBe(1)
+    })
   })
 
   describe('updateCard', () => {
@@ -751,6 +763,34 @@ describe('KanbanSDK', () => {
       await expect(sdk.triggerAction(card.id, 'retry')).rejects.toThrow('Action webhook responded with 500')
 
       vi.unstubAllGlobals()
+    })
+  })
+
+  describe('version', () => {
+    it('should parse legacy cards without version field as version 0', async () => {
+      await sdk.init()
+      writeCardFile(`${workspaceDir}/.kanban`, '1-legacy-card.md',
+        `---
+id: "1"
+status: "backlog"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: []
+attachments: []
+order: "a0"
+---
+# Legacy Card
+
+No version field.`,
+        'backlog'
+      )
+      const card = await sdk.getCard('1')
+      expect(card).not.toBeNull()
+      expect(card?.version).toBe(0)
     })
   })
 })

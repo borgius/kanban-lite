@@ -2,7 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Comment, Feature, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId, DELETED_STATUS_ID } from '../shared/types'
+import { getTitleFromContent, generateFeatureFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
 import type { BoardConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
@@ -624,6 +624,7 @@ export class KanbanSDK {
       : null
 
     const card: Feature = {
+      version: CARD_FORMAT_VERSION,
       id: String(numericId),
       boardId: resolvedBoardId,
       status,

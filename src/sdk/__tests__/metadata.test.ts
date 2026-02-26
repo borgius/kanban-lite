@@ -152,6 +152,7 @@ order: "a0"
 describe('serializeFeature - metadata', () => {
   it('should round-trip serialize and parse with metadata', () => {
     const original: Feature = {
+      version: 0,
       id: 'meta-roundtrip',
       status: 'in-progress',
       priority: 'high',
@@ -186,6 +187,7 @@ describe('serializeFeature - metadata', () => {
 
   it('should omit metadata block when metadata is undefined', () => {
     const feature: Feature = {
+      version: 0,
       id: 'no-meta-serialize',
       status: 'backlog',
       priority: 'medium',
@@ -208,6 +210,7 @@ describe('serializeFeature - metadata', () => {
 
   it('should omit metadata block when metadata is empty object', () => {
     const feature: Feature = {
+      version: 0,
       id: 'empty-meta',
       status: 'backlog',
       priority: 'medium',

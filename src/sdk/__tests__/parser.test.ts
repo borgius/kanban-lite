@@ -112,6 +112,7 @@ order: "a0"
 describe('serializeFeature', () => {
   it('should round-trip parse and serialize', () => {
     const original: Feature = {
+      version: 0,
       id: 'round-trip',
       status: 'in-progress',
       priority: 'critical',
@@ -146,6 +147,7 @@ describe('serializeFeature', () => {
 
   it('should serialize null fields correctly', () => {
     const feature: Feature = {
+      version: 0,
       id: 'null-serialize',
       status: 'backlog',
       priority: 'low',
@@ -247,6 +249,7 @@ Second comment with **markdown**.`
 describe('serializeFeature - comments', () => {
   it('should not append comment blocks when comments array is empty', () => {
     const feature: Feature = {
+      version: 0,
       id: 'no-comments',
       status: 'backlog',
       priority: 'medium',
@@ -277,6 +280,7 @@ describe('serializeFeature - comments', () => {
     ]
 
     const feature: Feature = {
+      version: 0,
       id: 'with-comments',
       status: 'todo',
       priority: 'high',
@@ -310,6 +314,7 @@ describe('serializeFeature - comments', () => {
     ]
 
     const original: Feature = {
+      version: 0,
       id: 'round-trip-comments',
       status: 'in-progress',
       priority: 'critical',
@@ -428,6 +433,7 @@ Second comment`
     ]
 
     const original: Feature = {
+      version: 0,
       id: 'hr-roundtrip',
       status: 'todo',
       priority: 'medium',

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
-import { getTitleFromContent } from '../shared/types'
+import { getTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
 import type { Feature, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
 import { serializeFeature } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
@@ -14,6 +14,8 @@ interface CreateFeatureData {
   assignee: string | null
   dueDate: string | null
   labels: string[]
+  metadata?: Record<string, any>
+  actions?: string[]
 }
 
 export class KanbanPanel {
@@ -268,6 +270,16 @@ export class KanbanPanel {
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
             break
           }
+          case 'triggerAction': {
+            const { featureId, action, callbackKey } = message
+            try {
+              await this._sdk!.triggerAction(featureId, action)
+              this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
+            } catch (err) {
+              this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
+            }
+            break
+          }
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break
@@ -489,6 +501,8 @@ export class KanbanPanel {
         assignee: data.assignee ?? undefined,
         dueDate: data.dueDate ?? undefined,
         labels: data.labels,
+        metadata: data.metadata,
+        actions: data.actions,
         boardId: this._currentBoardId
       })
       this._features.push(feature)
@@ -603,6 +617,7 @@ export class KanbanPanel {
     this._currentEditingFeatureId = featureId
 
     const frontmatter: FeatureFrontmatter = {
+      version: CARD_FORMAT_VERSION,
       id: feature.id,
       status: feature.status,
       priority: feature.priority,
@@ -614,7 +629,8 @@ export class KanbanPanel {
       labels: feature.labels,
       attachments: feature.attachments,
       order: feature.order,
-      metadata: feature.metadata
+      metadata: feature.metadata,
+      actions: feature.actions
     }
 
     this._panel.webview.postMessage({

@@ -151,9 +151,9 @@ export function CommentEditor({
               style={{
                 background: 'var(--vscode-input-background)',
                 color: 'var(--vscode-foreground)',
-                minHeight: '72px',
+                minHeight: '120px',
               }}
-              rows={3}
+              rows={5}
             />
           </>
         ) : (
@@ -164,7 +164,7 @@ export function CommentEditor({
               style={{
                 background: 'var(--vscode-input-background)',
                 color: 'var(--vscode-foreground)',
-                minHeight: '72px',
+                minHeight: '120px',
               }}
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
@@ -174,7 +174,7 @@ export function CommentEditor({
               style={{
                 background: 'var(--vscode-input-background)',
                 color: 'var(--vscode-descriptionForeground)',
-                minHeight: '72px',
+                minHeight: '120px',
               }}
             >
               Nothing to preview

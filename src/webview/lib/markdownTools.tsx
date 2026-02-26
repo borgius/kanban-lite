@@ -1,4 +1,5 @@
 // src/webview/lib/markdownTools.tsx
+import { Marked } from 'marked'
 import type React from 'react'
 
 export type FormatAction = 'heading' | 'bold' | 'italic' | 'quote' | 'code' | 'link' | 'ul' | 'ol' | 'tasklist'
@@ -125,4 +126,24 @@ export function ToolbarButton({ icon, title, onClick, separator }: ToolbarButton
       </button>
     </>
   )
+}
+
+export const commentMarked = new Marked({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens)
+      const titleAttr = title ? ` title="${title}"` : ''
+      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
+    }
+  }
+})
+
+export function parseCommentMarkdown(content: string): string {
+  const processed = content.replace(
+    /(?<!\]\(|"|'|<)(https?:\/\/[^\s<>\])"']+)/g,
+    '<$1>'
+  )
+  return commentMarked.parse(processed, { async: false }) as string
 }

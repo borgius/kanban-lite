@@ -1,30 +1,9 @@
 // src/webview/components/CommentEditor.tsx
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Marked } from 'marked'
 import { Bold, Italic, Quote, Code, Link, List, ListOrdered } from 'lucide-react'
-import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
+import { wrapSelection, ToolbarButton, parseCommentMarkdown, type FormatAction } from '../lib/markdownTools'
 
 const AUTHOR_KEY = 'kanban-comment-author'
-
-const commentMarked = new Marked({
-  gfm: true,
-  breaks: true,
-  renderer: {
-    link({ href, title, tokens }) {
-      const text = this.parser.parseInline(tokens)
-      const titleAttr = title ? ` title="${title}"` : ''
-      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
-    }
-  }
-})
-
-function parseCommentMarkdown(content: string): string {
-  const processed = content.replace(
-    /(?<!\]\(|"|'|<)(https?:\/\/[^\s<>\])"']+)/g,
-    '<$1>'
-  )
-  return commentMarked.parse(processed, { async: false }) as string
-}
 
 interface CommentEditorProps {
   initialContent?: string
@@ -43,8 +22,13 @@ export function CommentEditor({
   const [content, setContent] = useState(initialContent)
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const isFirstRender = useRef(true)
 
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
     if (activeTab === 'write') {
       textareaRef.current?.focus()
     }
@@ -69,6 +53,7 @@ export function CommentEditor({
     onSubmit(trimmedAuthor, trimmedContent)
     if (!initialContent) {
       setContent('')
+      setActiveTab('write')
     }
   }
 
@@ -100,6 +85,7 @@ export function CommentEditor({
         value={author}
         onChange={e => setAuthor(e.target.value)}
         placeholder="Your name"
+        aria-label="Comment author name"
         className="w-full rounded px-2 py-1 text-xs outline-none"
         style={{
           background: 'var(--vscode-input-background)',
@@ -171,15 +157,29 @@ export function CommentEditor({
             />
           </>
         ) : (
-          <div
-            className="px-2 py-1.5 text-xs comment-markdown"
-            style={{
-              background: 'var(--vscode-input-background)',
-              color: 'var(--vscode-foreground)',
-              minHeight: '72px',
-            }}
-            dangerouslySetInnerHTML={{ __html: previewHtml || '<span style="opacity:0.5">Nothing to preview</span>' }}
-          />
+          previewHtml ? (
+            // eslint-disable-next-line react/no-danger
+            <div
+              className="px-2 py-1.5 text-xs comment-markdown"
+              style={{
+                background: 'var(--vscode-input-background)',
+                color: 'var(--vscode-foreground)',
+                minHeight: '72px',
+              }}
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          ) : (
+            <div
+              className="px-2 py-1.5 text-xs"
+              style={{
+                background: 'var(--vscode-input-background)',
+                color: 'var(--vscode-descriptionForeground)',
+                minHeight: '72px',
+              }}
+            >
+              Nothing to preview
+            </div>
+          )
         )}
       </div>
 
@@ -205,7 +205,7 @@ export function CommentEditor({
             background: 'var(--vscode-button-background)',
             color: 'var(--vscode-button-foreground)',
           }}
-          title="Submit (Cmd+Enter)"
+          title={`${submitLabel} (Cmd+Enter)`}
         >
           {submitLabel}
         </button>

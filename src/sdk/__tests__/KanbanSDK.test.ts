@@ -23,6 +23,8 @@ function makeCardContent(opts: {
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
+  created?: string
+  modified?: string
 }): string {
   const {
     id,
@@ -32,7 +34,9 @@ function makeCardContent(opts: {
     order = 'a0',
     assignee = null,
     dueDate = null,
-    labels = []
+    labels = [],
+    created = '2025-01-01T00:00:00.000Z',
+    modified = '2025-01-01T00:00:00.000Z',
   } = opts
   return `---
 id: "${id}"
@@ -40,8 +44,8 @@ status: "${status}"
 priority: "${priority}"
 assignee: ${assignee ? `"${assignee}"` : 'null'}
 dueDate: ${dueDate ? `"${dueDate}"` : 'null'}
-created: "2025-01-01T00:00:00.000Z"
-modified: "2025-01-01T00:00:00.000Z"
+created: "${created}"
+modified: "${modified}"
 completedAt: null
 labels: [${labels.map(l => `"${l}"`).join(', ')}]
 order: "${order}"
@@ -113,6 +117,42 @@ describe('KanbanSDK', () => {
       const cards = await sdk.listCards()
       expect(cards.length).toBe(1)
       expect(cards[0].id).toBe('orphan')
+    })
+
+    it('sorts by created:asc', async () => {
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0', created: '2025-01-03T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0', created: '2025-01-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', order: 'c0', created: '2025-01-02T00:00:00.000Z' }), 'backlog')
+
+      const cards = await sdk.listCards(undefined, undefined, undefined, 'created:asc')
+      expect(cards.map(c => c.id)).toEqual(['b', 'c', 'a'])
+    })
+
+    it('sorts by created:desc', async () => {
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0', created: '2025-01-03T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0', created: '2025-01-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', order: 'c0', created: '2025-01-02T00:00:00.000Z' }), 'backlog')
+
+      const cards = await sdk.listCards(undefined, undefined, undefined, 'created:desc')
+      expect(cards.map(c => c.id)).toEqual(['a', 'c', 'b'])
+    })
+
+    it('sorts by modified:asc', async () => {
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0', modified: '2025-03-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0', modified: '2025-01-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', order: 'c0', modified: '2025-02-01T00:00:00.000Z' }), 'backlog')
+
+      const cards = await sdk.listCards(undefined, undefined, undefined, 'modified:asc')
+      expect(cards.map(c => c.id)).toEqual(['b', 'c', 'a'])
+    })
+
+    it('sorts by modified:desc', async () => {
+      writeCardFile(tempDir, 'a.md', makeCardContent({ id: 'a', order: 'a0', modified: '2025-03-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'b.md', makeCardContent({ id: 'b', order: 'b0', modified: '2025-01-01T00:00:00.000Z' }), 'backlog')
+      writeCardFile(tempDir, 'c.md', makeCardContent({ id: 'c', order: 'c0', modified: '2025-02-01T00:00:00.000Z' }), 'backlog')
+
+      const cards = await sdk.listCards(undefined, undefined, undefined, 'modified:desc')
+      expect(cards.map(c => c.id)).toEqual(['a', 'c', 'b'])
     })
   })
 
@@ -632,6 +672,28 @@ describe('KanbanSDK', () => {
       const updated = await sdk.updateCard(card.id, { priority: 'high' })
       expect(updated.comments).toHaveLength(1)
       expect(updated.comments[0].content).toBe('Persistent comment')
+    })
+  })
+
+  describe('actions', () => {
+    it('should persist and reload actions through parser', async () => {
+      await sdk.init()
+      const card = await sdk.createCard({
+        content: '# Action Card',
+        actions: ['retry', 'sendEmail'],
+      })
+      expect(card.actions).toEqual(['retry', 'sendEmail'])
+
+      // Reload to verify round-trip through parser
+      const reloaded = await sdk.getCard(card.id)
+      expect(reloaded?.actions).toEqual(['retry', 'sendEmail'])
+    })
+
+    it('should omit actions from frontmatter when empty or undefined', async () => {
+      await sdk.init()
+      const card = await sdk.createCard({ content: '# No Actions' })
+      const reloaded = await sdk.getCard(card.id)
+      expect(reloaded?.actions).toBeUndefined()
     })
   })
 })

@@ -127,6 +127,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
     order: getValue('order') || 'a0',
     content: body.trim(),
     ...(meta ? { metadata: meta } : {}),
+    ...(getArrayValue('actions').length > 0 ? { actions: getArrayValue('actions') } : {}),
     filePath
   }
 }
@@ -156,6 +157,10 @@ export function serializeFeature(feature: Feature): string {
     `attachments: [${(feature.attachments || []).map(a => `"${a}"`).join(', ')}]`,
     `order: "${feature.order}"`,
   ]
+
+  if (feature.actions && feature.actions.length > 0) {
+    lines.push(`actions: [${feature.actions.map(a => `"${a}"`).join(', ')}]`)
+  }
 
   if (feature.metadata && Object.keys(feature.metadata).length > 0) {
     const metaYaml = yaml.dump(feature.metadata, { indent: 2, lineWidth: -1 })

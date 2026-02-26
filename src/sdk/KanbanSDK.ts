@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Comment, Feature, KanbanColumn, BoardInfo, LabelDefinition } from '../shared/types'
+import type { Comment, Feature, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
 import { getTitleFromContent, generateFeatureFilename, extractNumericId, DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
 import type { BoardConfig } from '../shared/config'
@@ -410,7 +410,8 @@ export class KanbanSDK {
    * - Migrates legacy integer ordering to fractional indexing
    * - Syncs the card ID counter with existing cards
    *
-   * Cards are returned sorted by their fractional order key.
+   * By default cards are returned sorted by their fractional order key (board order).
+   * Pass a {@link CardSortOption} to sort by creation or modification date instead.
    *
    * @param columns - Optional array of status/column IDs to filter by.
    *   When provided, ensures those subdirectories exist on disk.
@@ -418,7 +419,9 @@ export class KanbanSDK {
    * @param metaFilter - Optional map of dot-notation metadata paths to required substrings.
    *   Only cards whose metadata contains all specified values (case-insensitive substring match)
    *   are returned.
-   * @returns A promise resolving to an array of {@link Feature} card objects, sorted by order.
+   * @param sort - Optional sort order. One of `'created:asc'`, `'created:desc'`,
+   *   `'modified:asc'`, `'modified:desc'`. Defaults to fractional board order.
+   * @returns A promise resolving to an array of {@link Feature} card objects.
    *
    * @example
    * ```ts
@@ -430,9 +433,12 @@ export class KanbanSDK {
    *
    * // List cards where metadata.sprint contains 'Q1' and metadata.links.jira contains 'PROJ'
    * const q1Jira = await sdk.listCards(undefined, undefined, { 'sprint': 'Q1', 'links.jira': 'PROJ' })
+   *
+   * // List all cards sorted by creation date, newest first
+   * const newest = await sdk.listCards(undefined, undefined, undefined, 'created:desc')
    * ```
    */
-  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>): Promise<Feature[]> {
+  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Feature[]> {
     await this._ensureMigrated()
     const boardDir = this._boardDir(boardId)
     const resolvedBoardId = this._resolveBoardId(boardId)
@@ -526,6 +532,14 @@ export class KanbanSDK {
     const filtered = metaFilter && Object.keys(metaFilter).length > 0
       ? cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
       : cards
+    if (sort) {
+      const [field, dir] = sort.split(':')
+      return filtered.sort((a, b) => {
+        const aVal = field === 'created' ? a.created : a.modified
+        const bVal = field === 'created' ? b.created : b.modified
+        return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      })
+    }
     return filtered.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
@@ -625,6 +639,7 @@ export class KanbanSDK {
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
+      ...(data.actions && data.actions.length > 0 ? { actions: data.actions } : {}),
       filePath: getFeatureFilePath(boardDir, status, filename)
     }
 

@@ -85,6 +85,7 @@ HTTP server are all built on top of.
     * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
     * [.createCard(data)](#KanbanSDK+createCard) ⇒
     * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
+    * [.triggerAction(cardId, action, boardId)](#KanbanSDK+triggerAction) ⇒
     * [.moveCard(cardId, newStatus, position, boardId)](#KanbanSDK+moveCard) ⇒
     * [.deleteCard(cardId, boardId)](#KanbanSDK+deleteCard) ⇒
     * [.permanentlyDeleteCard(cardId, boardId)](#KanbanSDK+permanentlyDeleteCard) ⇒
@@ -497,6 +498,40 @@ const updated = await sdk.updateCard('42', {
   assignee: 'alice',
   labels: ['urgent', 'backend']
 })
+```
+
+* * *
+
+<a name="KanbanSDK+triggerAction"></a>
+
+#### kanbanSDK.triggerAction(cardId, action, boardId) ⇒
+Triggers a named action for a card by POSTing to the global `actionWebhookUrl`
+configured in `.kanban.json`.
+
+The payload sent to the webhook is:
+```json
+{ "action": "retry", "board": "default", "list": "in-progress", "card": { ...sanitizedCard } }
+```
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving when the webhook responds with 2xx.  
+**Throws**:
+
+- <code>Error</code> If no `actionWebhookUrl` is configured in `.kanban.json`.
+- <code>Error</code> If the card is not found.
+- <code>Error</code> If the webhook responds with a non-2xx status.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card to trigger the action for. |
+| action | The action name string (e.g. `'retry'`, `'sendEmail'`). |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+await sdk.triggerAction('42', 'retry')
+await sdk.triggerAction('42', 'sendEmail', 'bugs')
 ```
 
 * * *
@@ -1176,6 +1211,15 @@ sdk.updateSettings({
 
 
 ## Types
+
+<a name="CARD_FORMAT_VERSION"></a>
+
+### CARD\_FORMAT\_VERSION
+Current card frontmatter schema version. Increment when the format changes.
+
+**Kind**: global variable  
+
+* * *
 
 <a name="DEFAULT_COLUMNS"></a>
 

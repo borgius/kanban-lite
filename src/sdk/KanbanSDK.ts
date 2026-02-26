@@ -714,6 +714,59 @@ export class KanbanSDK {
   }
 
   /**
+   * Triggers a named action for a card by POSTing to the global `actionWebhookUrl`
+   * configured in `.kanban.json`.
+   *
+   * The payload sent to the webhook is:
+   * ```json
+   * { "action": "retry", "board": "default", "list": "in-progress", "card": { ...sanitizedCard } }
+   * ```
+   *
+   * @param cardId - The ID of the card to trigger the action for.
+   * @param action - The action name string (e.g. `'retry'`, `'sendEmail'`).
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving when the webhook responds with 2xx.
+   * @throws {Error} If no `actionWebhookUrl` is configured in `.kanban.json`.
+   * @throws {Error} If the card is not found.
+   * @throws {Error} If the webhook responds with a non-2xx status.
+   *
+   * @example
+   * ```ts
+   * await sdk.triggerAction('42', 'retry')
+   * await sdk.triggerAction('42', 'sendEmail', 'bugs')
+   * ```
+   */
+  async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
+    const config = readConfig(this.workspaceRoot)
+    const { actionWebhookUrl } = config
+    if (!actionWebhookUrl) {
+      throw new Error('No action webhook URL configured. Set actionWebhookUrl in .kanban.json')
+    }
+
+    const card = await this.getCard(cardId, boardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    const resolvedBoardId = card.boardId || this._resolveBoardId(boardId)
+
+    const payload = {
+      action,
+      board: resolvedBoardId,
+      list: card.status,
+      card: sanitizeFeature(card),
+    }
+
+    const response = await fetch(actionWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
+    }
+  }
+
+  /**
    * Moves a card to a different status column and/or position within that column.
    *
    * The card's fractional order key is recalculated based on the target

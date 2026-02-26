@@ -695,5 +695,20 @@ describe('KanbanSDK', () => {
       const reloaded = await sdk.getCard(card.id)
       expect(reloaded?.actions).toBeUndefined()
     })
+
+    it('should throw if no actionWebhookUrl is configured', async () => {
+      await sdk.init()
+      const card = await sdk.createCard({ content: '# Card', actions: ['retry'] })
+      await expect(sdk.triggerAction(card.id, 'retry')).rejects.toThrow('No action webhook URL configured')
+    })
+
+    it('should throw if card not found', async () => {
+      await sdk.init()
+      // Write actionWebhookUrl into .kanban.json
+      const { readConfig, writeConfig } = await import('../../shared/config')
+      const config = readConfig(sdk.workspaceRoot)
+      writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'http://localhost:9999/actions' })
+      await expect(sdk.triggerAction('nonexistent', 'retry')).rejects.toThrow('Card not found')
+    })
   })
 })

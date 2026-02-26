@@ -59,6 +59,7 @@ kl add --title "My first task" --priority high
 - **Labels**: Tag features with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
+- **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
 
@@ -94,6 +95,9 @@ kl list --status todo --priority high
 # Create a card
 kl add --title "Implement search" --priority high --label "frontend,search"
 
+# Create a card with actions
+kl add --title "Deploy service" --actions "retry,rollback,notify"
+
 # Show card details
 kl show implement-search
 
@@ -102,6 +106,12 @@ kl move implement-search in-progress
 
 # Update fields
 kl edit implement-search --assignee alice --due 2026-03-01
+
+# Add actions to an existing card
+kl edit deploy-service --actions "retry,rollback,notify"
+
+# Trigger an action
+kl action trigger deploy-service retry
 
 # Delete a card
 kl delete implement-search
@@ -340,6 +350,92 @@ curl -X POST http://localhost:3000/api/webhooks \
 
 Webhook registrations are stored in `.kanban.json` at the workspace root and persist across server restarts.
 
+## Card Actions
+
+Actions let you attach named triggers to a card — things like `retry`, `deploy`, `rollback`, or `notify`. When triggered, the system sends an HTTP POST to a single global **action webhook URL** configured in `.kanban.json`, with the action name and the full card context. Your webhook handles the actual work.
+
+### How it works
+
+1. **Configure the webhook URL** in `.kanban.json`:
+
+```json
+{
+  "actionWebhookUrl": "https://example.com/kanban-actions"
+}
+```
+
+2. **Add actions to a card** — as a list of simple strings stored in the card's frontmatter:
+
+```yaml
+---
+id: "42-deploy-v2"
+status: "in-progress"
+actions: ["retry", "rollback", "notify-slack"]
+---
+# Deploy v2.0
+```
+
+3. **Trigger an action** from any interface:
+
+- **UI**: Open a card in the editor — a "Run Action" dropdown appears in the header when the card has actions. Click to select and fire.
+- **CLI**: `kl action trigger <cardId> <action>`
+- **REST API**: `POST /api/tasks/:id/actions/:action`
+- **SDK**: `await sdk.triggerAction(cardId, action)`
+- **MCP**: `trigger_action` tool
+
+### Webhook payload
+
+```json
+{
+  "action": "notify-slack",
+  "board": "default",
+  "list": "in-progress",
+  "card": {
+    "id": "42-deploy-v2",
+    "status": "in-progress",
+    "priority": "high",
+    "assignee": "alice",
+    "labels": ["deploy"],
+    "content": "# Deploy v2.0\n...",
+    "actions": ["retry", "rollback", "notify-slack"]
+  }
+}
+```
+
+The webhook receives the full card object (same shape as the SDK `Feature` type, minus `filePath`). Your server responds with any 2xx status to acknowledge; non-2xx responses are treated as errors.
+
+### Managing actions
+
+Actions are plain strings in the `actions` array of the card's YAML frontmatter. Edit them directly in the markdown file, or use any interface:
+
+```bash
+# Add actions when creating a card
+kl add --title "Deploy service" --priority high --actions "retry,rollback,notify-slack"
+
+# Update actions on an existing card
+kl edit 42 --actions "retry,rollback,notify-slack,promote"
+
+# Trigger
+kl action trigger 42 notify-slack
+```
+
+```bash
+# Via REST API
+curl -X POST http://localhost:3000/api/tasks/42/actions/notify-slack
+
+# Create card with actions via API
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# Deploy v2.0", "status": "todo", "actions": ["retry", "rollback"]}'
+```
+
+### Notes
+
+- There is **one global webhook URL** for all actions across all boards. The `action` field in the payload tells your server which action was triggered; the `board` and `list` fields provide context.
+- If `actionWebhookUrl` is not set, triggering an action returns an error.
+- Actions are **fire-and-forget** — no retry logic or delivery guarantees are built in. Implement idempotency and retries in your own webhook handler if needed.
+- Action strings have no special meaning to Kanban Lite; you define the vocabulary.
+
 ## MCP Server
 
 Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -383,6 +479,7 @@ kanban-mcp --dir .kanban
 | `update_card` | Update fields of an existing card |
 | `move_card` | Move a card to a different status column |
 | `delete_card` | Permanently delete a card |
+| `trigger_action` | Trigger a named action on a card, calling the configured action webhook |
 | `list_attachments` | List attachments on a card |
 | `add_attachment` | Attach a file to a card (copies to card directory) |
 | `remove_attachment` | Remove an attachment reference from a card |
@@ -426,6 +523,20 @@ await sdk.moveCard(card.id, 'in-progress')
 await sdk.updateCard(card.id, { assignee: 'alice' })
 await sdk.deleteCard(card.id)
 
+// Cards with actions
+const deployCard = await sdk.createCard({
+  content: '# Deploy v2.0',
+  status: 'todo',
+  priority: 'high',
+  actions: ['retry', 'rollback', 'notify-slack']
+})
+
+// Trigger an action (POSTs to the actionWebhookUrl in .kanban.json)
+await sdk.triggerAction(deployCard.id, 'notify-slack')
+
+// Add/replace actions on an existing card
+await sdk.updateCard(deployCard.id, { actions: ['retry', 'rollback', 'notify-slack', 'promote'] })
+
 // Comments
 await sdk.addComment('card-id', 'alice', 'Looks good!')
 await sdk.updateComment('card-id', 'c1', 'Updated')
@@ -462,6 +573,7 @@ dueDate: "2026-01-25"
 created: "2026-01-25T10:30:00.000Z"
 modified: "2026-01-25T14:20:00.000Z"
 labels: ["feature", "ui"]
+actions: ["retry", "notify-slack"]
 order: 0
 ---
 
@@ -515,7 +627,8 @@ Board configuration is stored in `.kanban.json` at your project root. It support
   "showAssignee": true,
   "showDueDate": true,
   "showLabels": true,
-  "compactMode": false
+  "compactMode": false,
+  "actionWebhookUrl": "https://example.com/kanban-actions"
 }
 ```
 

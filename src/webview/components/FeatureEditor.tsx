@@ -1,8 +1,8 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip, Clock } from 'lucide-react'
 import type { Comment, FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
-import { cn } from '../lib/utils'
+import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { useStore } from '../store'
 import { MarkdownEditor } from './MarkdownEditor'
 
@@ -810,6 +810,30 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
             >
               <Plus size={10} />
             </button>
+          </div>
+        </PropertyRow>
+        <PropertyRow label="Created" icon={<Clock size={13} />}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+              {formatAbsoluteDate(currentFrontmatter.created)}
+            </span>
+            <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
+              title={formatVerboseRelative(currentFrontmatter.created)}
+            >
+              {formatRelativeCompact(currentFrontmatter.created)}
+            </span>
+          </div>
+        </PropertyRow>
+        <PropertyRow label="Modified" icon={<Clock size={13} />}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+              {formatAbsoluteDate(currentFrontmatter.modified)}
+            </span>
+            <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
+              title={formatVerboseRelative(currentFrontmatter.modified)}
+            >
+              {formatRelativeCompact(currentFrontmatter.modified)}
+            </span>
           </div>
         </PropertyRow>
         <div className="px-4 pb-2">

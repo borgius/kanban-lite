@@ -1,8 +1,9 @@
 import { marked } from 'marked'
-import { Calendar, Check, FileText, Paperclip } from 'lucide-react'
+import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Feature, Priority } from '../../shared/types'
 import { useStore } from '../store'
+import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
 
 interface FeatureCardProps {
   feature: Feature
@@ -190,6 +191,13 @@ export function FeatureCard({ feature, onClick, isDragging }: FeatureCardProps) 
             <span>{completedText}</span>
           </div>
         )}
+        <div
+          className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500"
+          title={buildDateTooltip(feature.created, feature.modified)}
+        >
+          <Clock size={12} />
+          <span>{formatRelativeCompact(feature.modified)}</span>
+        </div>
       </div>
     </div>
   )

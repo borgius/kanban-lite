@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import { DELETED_STATUS_ID, type Priority } from '../shared/types'
+import { DELETED_STATUS_ID, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { matchesMetaFilter } from '../sdk/metaUtils'
@@ -135,8 +135,9 @@ async function main(): Promise<void> {
       labelGroup: z.string().optional().describe('Filter by label group name'),
       includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted cards in results'),
       metaFilter: z.record(z.string(), z.string()).optional().describe('Filter by metadata fields using dot-notation keys (e.g. { "links.jira": "PROJ-123" }). Substring match, case-insensitive.'),
+      sort: z.enum(['created:asc', 'created:desc', 'modified:asc', 'modified:desc']).optional().describe('Sort order: created:asc, created:desc, modified:asc, or modified:desc. Defaults to board order.'),
     },
-    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, metaFilter }) => {
+    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, metaFilter, sort }) => {
       let cards = await sdk.listCards(undefined, boardId)
       if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
       if (status) cards = cards.filter(c => c.status === status)
@@ -149,6 +150,14 @@ async function main(): Promise<void> {
       }
       if (metaFilter && Object.keys(metaFilter).length > 0)
         cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
+      if (sort) {
+        const [field, dir] = (sort as CardSortOption).split(':')
+        cards = [...cards].sort((a, b) => {
+          const aVal = field === 'created' ? a.created : a.modified
+          const bVal = field === 'created' ? b.created : b.modified
+          return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+        })
+      }
 
       const summary = cards.map(c => ({
         id: c.id,
@@ -219,8 +228,9 @@ async function main(): Promise<void> {
       dueDate: z.string().optional().describe('Due date (ISO format or YYYY-MM-DD)'),
       labels: z.array(z.string()).optional().describe('Labels/tags'),
       metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (supports nested objects)'),
+      actions: z.array(z.string()).optional().describe('Action names available on this card (e.g. ["retry", "sendEmail"])'),
     },
-    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata }) => {
+    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata, actions }) => {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
       const card = await sdk.createCard({
@@ -231,6 +241,7 @@ async function main(): Promise<void> {
         dueDate: dueDate || null,
         labels: labels || [],
         metadata,
+        actions,
         boardId,
       })
 
@@ -256,8 +267,9 @@ async function main(): Promise<void> {
       labels: z.array(z.string()).optional().describe('New labels (replaces existing)'),
       content: z.string().optional().describe('New markdown content (replaces existing body)'),
       metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (replaces existing)'),
+      actions: z.array(z.string()).optional().describe('Action names available on this card (replaces existing)'),
     },
-    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata }) => {
+    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata, actions }) => {
       // Resolve partial ID
       let resolvedId = cardId
       const card = await sdk.getCard(cardId, boardId)
@@ -287,6 +299,7 @@ async function main(): Promise<void> {
       if (labels) updates.labels = labels
       if (content !== undefined) updates.content = content
       if (metadata !== undefined) updates.metadata = metadata
+      if (actions !== undefined) updates.actions = actions
 
       const updated = await sdk.updateCard(resolvedId, updates, boardId)
 
@@ -416,6 +429,29 @@ async function main(): Promise<void> {
           type: 'text' as const,
           text: `Permanently deleted card: ${resolvedId}`,
         }],
+      }
+    }
+  )
+
+  server.tool(
+    'trigger_action',
+    'Trigger a named action on a card. The action name must match one of the card\'s configured actions. Calls the configured action webhook URL with the action name and card details.',
+    {
+      card_id: z.string().describe('Card ID (partial match supported)'),
+      action: z.string().describe('Action name to trigger'),
+      board_id: z.string().optional().describe('Board ID (omit for default board)'),
+    },
+    async ({ card_id, action, board_id }) => {
+      try {
+        await sdk.triggerAction(card_id, action, board_id)
+        return {
+          content: [{ type: 'text' as const, text: `Action "${action}" triggered successfully on card ${card_id}` }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
       }
     }
   )

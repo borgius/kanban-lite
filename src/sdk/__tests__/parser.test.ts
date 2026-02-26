@@ -336,3 +336,120 @@ describe('serializeFeature - comments', () => {
     expect(parsed?.comments[1]).toEqual(original.comments[1])
   })
 })
+
+describe('parseFeatureFile - horizontal rules in content', () => {
+  const frontmatter = `---
+id: "hr-test"
+status: "todo"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: []
+order: "a0"
+---
+`
+
+  it('should preserve --- HR in content when there are no comments', () => {
+    const content = frontmatter + 'Line 1\n\n---\n\nLine 2'
+
+    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
+    expect(feature).not.toBeNull()
+    expect(feature?.content).toBe('Line 1\n\n---\n\nLine 2')
+    expect(feature?.comments).toEqual([])
+  })
+
+  it('should preserve --- HR in content and parse comments after it', () => {
+    const content = frontmatter + `Line 1
+
+---
+
+Line 2
+
+---
+comment: true
+id: "c1"
+author: "alice"
+created: "2025-06-01T10:00:00.000Z"
+---
+Hello world`
+
+    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
+    expect(feature).not.toBeNull()
+    expect(feature?.content).toBe('Line 1\n\n---\n\nLine 2')
+    expect(feature?.comments).toHaveLength(1)
+    expect(feature?.comments[0].id).toBe('c1')
+    expect(feature?.comments[0].author).toBe('alice')
+    expect(feature?.comments[0].content).toBe('Hello world')
+  })
+
+  it('should handle multiple --- HRs in content with comments after', () => {
+    const content = frontmatter + `Section 1
+
+---
+
+Section 2
+
+---
+
+Section 3
+
+---
+comment: true
+id: "c1"
+author: "alice"
+created: "2025-06-01T10:00:00.000Z"
+---
+First comment
+
+---
+comment: true
+id: "c2"
+author: "bob"
+created: "2025-06-01T11:00:00.000Z"
+---
+Second comment`
+
+    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
+    expect(feature).not.toBeNull()
+    expect(feature?.content).toBe('Section 1\n\n---\n\nSection 2\n\n---\n\nSection 3')
+    expect(feature?.comments).toHaveLength(2)
+    expect(feature?.comments[0].id).toBe('c1')
+    expect(feature?.comments[0].content).toBe('First comment')
+    expect(feature?.comments[1].id).toBe('c2')
+    expect(feature?.comments[1].content).toBe('Second comment')
+  })
+
+  it('should round-trip content with --- HRs and comments', () => {
+    const comments: Comment[] = [
+      { id: 'c1', author: 'alice', created: '2025-06-01T10:00:00.000Z', content: 'A comment' },
+    ]
+
+    const original: Feature = {
+      id: 'hr-roundtrip',
+      status: 'todo',
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      created: '2025-01-01T00:00:00.000Z',
+      modified: '2025-01-01T00:00:00.000Z',
+      completedAt: null,
+      labels: [],
+      attachments: [],
+      comments,
+      order: 'a0',
+      content: 'Before HR\n\n---\n\nAfter HR',
+      filePath: '/tmp/hr-roundtrip.md'
+    }
+
+    const serialized = serializeFeature(original)
+    const parsed = parseFeatureFile(serialized, original.filePath)
+
+    expect(parsed).not.toBeNull()
+    expect(parsed?.content).toBe(original.content)
+    expect(parsed?.comments).toHaveLength(1)
+    expect(parsed?.comments[0]).toEqual(original.comments[0])
+  })
+})

@@ -525,6 +525,12 @@ describe('KanbanSDK', () => {
       expect(updated.comments[0].author).toBe('bob')
     })
 
+    it('should reject empty comment content', async () => {
+      const card = await sdk.createCard({ content: '# Empty Comment Test' })
+      await expect(sdk.addComment(card.id, 'alice', '')).rejects.toThrow('Comment content cannot be empty')
+      await expect(sdk.addComment(card.id, 'alice', '   ')).rejects.toThrow('Comment content cannot be empty')
+    })
+
     it('should throw when adding comment to non-existent card', async () => {
       await expect(sdk.addComment('ghost', 'alice', 'Hello')).rejects.toThrow('Card not found')
     })

@@ -972,6 +972,7 @@ export class KanbanSDK {
    * ```
    */
   async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Feature> {
+    if (!content?.trim()) throw new Error('Comment content cannot be empty')
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 

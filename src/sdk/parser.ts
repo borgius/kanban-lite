@@ -67,20 +67,17 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   let body = sections[0] || ''
   const comments: Comment[] = []
 
-  for (let i = 1; i < sections.length; i += 2) {
-    const header = sections[i]
-    const commentBody = sections[i + 1] || ''
-    if (header?.includes('comment:')) {
-      const comment = parseCommentBlock(header, commentBody)
+  let i = 1
+  while (i < sections.length) {
+    const section = sections[i]
+    if (section?.trimStart().startsWith('comment:')) {
+      const commentBody = sections[i + 1] || ''
+      const comment = parseCommentBlock(section, commentBody)
       if (comment) comments.push(comment)
+      i += 2
     } else {
-      // Not a comment section — it's part of the body content
-      body += `\n---\n${header}`
-      if (sections[i + 1] !== undefined) {
-        body += `\n---\n${sections[i + 1]}`
-        // Skip the next iteration since we consumed i+1
-        i++
-      }
+      body += `\n---\n${section}`
+      i += 1
     }
   }
 

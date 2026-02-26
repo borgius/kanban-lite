@@ -29,6 +29,7 @@ interface FeatureEditorProps {
   onUpdateComment: (commentId: string, content: string) => void
   onDeleteComment: (commentId: string) => void
   onTransferToBoard: (toBoard: string, targetStatus: string) => void
+  onTriggerAction?: (action: string) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -360,6 +361,62 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
   )
 }
 
+interface RunActionsDropdownProps {
+  actions: string[]
+  onTriggerAction: (action: string) => void
+}
+
+function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors vscode-hover-bg"
+        style={{
+          color: 'var(--vscode-foreground)',
+          border: '1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))',
+        }}
+      >
+        <span>Run Action</span>
+        <ChevronDown size={11} className={cn('opacity-60 transition-transform', isOpen && 'rotate-180')} />
+      </button>
+      {isOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close actions menu"
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => setIsOpen(false)}
+          />
+          <div
+            className="absolute top-full right-0 mt-1 z-20 rounded-lg shadow-lg py-1 min-w-[160px]"
+            style={{
+              background: 'var(--vscode-dropdown-background)',
+              border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
+            }}
+          >
+            {actions.map(action => (
+              <button
+                type="button"
+                key={action}
+                onClick={() => { setIsOpen(false); onTriggerAction(action) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                style={{ color: 'var(--vscode-dropdown-foreground)' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                {action}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function MetadataSection({ metadata }: { metadata?: Record<string, any> }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -540,7 +597,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard }: FeatureEditorProps) {
+export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: FeatureEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -699,6 +756,9 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
           )}
         </div>
         <div className="flex items-center gap-2">
+          {currentFrontmatter.actions && currentFrontmatter.actions.length > 0 && onTriggerAction && (
+            <RunActionsDropdown actions={currentFrontmatter.actions} onTriggerAction={onTriggerAction} />
+          )}
           {cardSettings.showBuildWithAI && <AIDropdown onSelect={onStartWithAI} />}
           <button
             onClick={onClose}

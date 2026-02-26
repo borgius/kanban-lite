@@ -250,6 +250,10 @@ function App(): React.JSX.Element {
           })
           break
         }
+        case 'actionResult': {
+          // fire-and-forget: no UI feedback needed for now
+          break
+        }
       }
     }
 
@@ -402,12 +406,27 @@ function App(): React.JSX.Element {
     status: string
     priority: Priority
     content: string
+    assignee: string | null
+    dueDate: string | null
+    labels: string[]
+    actions: string[]
   }): void => {
     vscode.postMessage({
       type: 'createFeature',
       data
     })
   }
+
+  const handleTriggerAction = useCallback((action: string): void => {
+    if (!editingFeature) return
+    const callbackKey = `action-${Date.now()}`
+    vscode.postMessage({
+      type: 'triggerAction',
+      featureId: editingFeature.id,
+      action,
+      callbackKey
+    })
+  }, [editingFeature])
 
   const handleMoveFeature = (
     featureId: string,
@@ -472,6 +491,7 @@ function App(): React.JSX.Element {
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
             onPurgeDeletedCards={handlePurgeDeletedCards}
+            selectedFeatureId={editingFeature?.id}
           />
         </div>
         {editingFeature && (
@@ -496,6 +516,7 @@ function App(): React.JSX.Element {
               onUpdateComment={handleUpdateComment}
               onDeleteComment={handleDeleteComment}
               onTransferToBoard={handleTransferToBoard}
+              onTriggerAction={handleTriggerAction}
             />
           </div>
         )}

@@ -214,8 +214,9 @@ async function main(): Promise<void> {
       assignee: z.string().optional().describe('Assignee name'),
       dueDate: z.string().optional().describe('Due date (ISO format or YYYY-MM-DD)'),
       labels: z.array(z.string()).optional().describe('Labels/tags'),
+      metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (supports nested objects)'),
     },
-    async ({ boardId, title, body, status, priority, assignee, dueDate, labels }) => {
+    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata }) => {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
       const card = await sdk.createCard({
@@ -225,6 +226,7 @@ async function main(): Promise<void> {
         assignee: assignee || null,
         dueDate: dueDate || null,
         labels: labels || [],
+        metadata,
         boardId,
       })
 
@@ -249,8 +251,9 @@ async function main(): Promise<void> {
       dueDate: z.string().optional().describe('New due date'),
       labels: z.array(z.string()).optional().describe('New labels (replaces existing)'),
       content: z.string().optional().describe('New markdown content (replaces existing body)'),
+      metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (replaces existing)'),
     },
-    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content }) => {
+    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata }) => {
       // Resolve partial ID
       let resolvedId = cardId
       const card = await sdk.getCard(cardId, boardId)
@@ -279,6 +282,7 @@ async function main(): Promise<void> {
       if (dueDate !== undefined) updates.dueDate = dueDate || null
       if (labels) updates.labels = labels
       if (content !== undefined) updates.content = content
+      if (metadata !== undefined) updates.metadata = metadata
 
       const updated = await sdk.updateCard(resolvedId, updates, boardId)
 

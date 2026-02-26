@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
-import { X, ChevronDown } from 'lucide-react'
-import type { CardDisplaySettings, Priority, FeatureStatus, WorkspaceInfo } from '../../shared/types'
+import { useState, useEffect, useMemo } from 'react'
+import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
+import type { CardDisplaySettings, Priority, FeatureStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import { LABEL_PRESET_COLORS } from '../../shared/types'
+import { useStore } from '../store'
 import { cn } from '../lib/utils'
 
 const priorityConfig: { value: Priority; label: string; dot: string }[] = [
@@ -24,11 +26,14 @@ interface SettingsPanelProps {
   workspace?: WorkspaceInfo | null
   onClose: () => void
   onSave: (settings: CardDisplaySettings) => void
+  onSetLabel?: (name: string, definition: LabelDefinition) => void
+  onRenameLabel?: (oldName: string, newName: string) => void
+  onDeleteLabel?: (name: string) => void
 }
 
-export function SettingsPanel({ isOpen, settings, workspace, onClose, onSave }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: SettingsPanelProps) {
   if (!isOpen) return null
-  return <SettingsPanelContent settings={settings} workspace={workspace} onClose={onClose} onSave={onSave} />
+  return <SettingsPanelContent settings={settings} workspace={workspace} onClose={onClose} onSave={onSave} onSetLabel={onSetLabel} onRenameLabel={onRenameLabel} onDeleteLabel={onDeleteLabel} />
 }
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -177,7 +182,332 @@ function SettingsDropdown({ label, value, options, onChange }: {
   )
 }
 
-function SettingsPanelContent({ settings, workspace, onClose, onSave }: Omit<SettingsPanelProps, 'isOpen'>) {
+function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [customHex, setCustomHex] = useState('')
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-5 h-5 rounded-full border border-white/20 cursor-pointer shrink-0"
+        style={{ backgroundColor: value }}
+      />
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div
+            className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg p-2 min-w-[180px]"
+            style={{
+              background: 'var(--vscode-dropdown-background)',
+              border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
+            }}
+          >
+            <div className="grid grid-cols-6 gap-1.5 mb-2">
+              {LABEL_PRESET_COLORS.map(c => (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() => { onChange(c.hex); setIsOpen(false) }}
+                  className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
+                  style={{
+                    backgroundColor: c.hex,
+                    borderColor: value === c.hex ? 'white' : 'transparent'
+                  }}
+                  title={c.name}
+                />
+              ))}
+            </div>
+            <div className="flex gap-1">
+              <input
+                type="text"
+                placeholder="#hex"
+                value={customHex}
+                onChange={e => setCustomHex(e.target.value)}
+                className="flex-1 px-2 py-1 text-xs rounded"
+                style={{
+                  background: 'var(--vscode-input-background)',
+                  color: 'var(--vscode-input-foreground)',
+                  border: '1px solid var(--vscode-input-border, transparent)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (/^#[0-9a-fA-F]{6}$/.test(customHex)) {
+                    onChange(customHex)
+                    setIsOpen(false)
+                    setCustomHex('')
+                  }
+                }}
+                className="px-2 py-1 text-xs rounded"
+                style={{
+                  background: 'var(--vscode-button-background)',
+                  color: 'var(--vscode-button-foreground)',
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
+  onSetLabel?: (name: string, definition: LabelDefinition) => void
+  onRenameLabel?: (oldName: string, newName: string) => void
+  onDeleteLabel?: (name: string) => void
+}) {
+  const labelDefs = useStore(s => s.labelDefs)
+  const features = useStore(s => s.features)
+  const [newName, setNewName] = useState('')
+  const [newColor, setNewColor] = useState(LABEL_PRESET_COLORS[0].hex)
+  const [newGroup, setNewGroup] = useState('')
+  const [renamingLabel, setRenamingLabel] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
+
+  // Merge config labels + orphan labels from cards
+  const allLabels = useMemo(() => {
+    const labels = new Map<string, LabelDefinition | undefined>()
+    for (const [name, def] of Object.entries(labelDefs)) {
+      labels.set(name, def)
+    }
+    for (const f of features) {
+      for (const l of f.labels) {
+        if (!labels.has(l)) labels.set(l, undefined)
+      }
+    }
+    return labels
+  }, [labelDefs, features])
+
+  // Group labels
+  const groupedLabels = useMemo(() => {
+    const groups: Record<string, { name: string; def?: LabelDefinition }[]> = {}
+    allLabels.forEach((def, name) => {
+      const group = def?.group || 'Other'
+      if (!groups[group]) groups[group] = []
+      groups[group].push({ name, def })
+    })
+    const sorted: [string, typeof groups[string]][] = Object.entries(groups).sort(([a], [b]) => {
+      if (a === 'Other') return 1
+      if (b === 'Other') return -1
+      return a.localeCompare(b)
+    })
+    return sorted
+  }, [allLabels])
+
+  // Existing group names for autocomplete
+  const existingGroups = useMemo(() => {
+    const groups = new Set<string>()
+    Object.values(labelDefs).forEach(def => {
+      if (def.group) groups.add(def.group)
+    })
+    return Array.from(groups).sort()
+  }, [labelDefs])
+
+  const getCardCount = (labelName: string) =>
+    features.filter(f => f.labels.includes(labelName)).length
+
+  const handleAdd = () => {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    onSetLabel?.(trimmed, { color: newColor, group: newGroup || undefined })
+    setNewName('')
+    setNewColor(LABEL_PRESET_COLORS[0].hex)
+    setNewGroup('')
+  }
+
+  const handleRename = (oldName: string) => {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== oldName) {
+      onRenameLabel?.(oldName, trimmed)
+    }
+    setRenamingLabel(null)
+    setRenameValue('')
+  }
+
+  const handleDelete = (name: string) => {
+    onDeleteLabel?.(name)
+    setConfirmingDelete(null)
+  }
+
+  const inputStyle = {
+    background: 'var(--vscode-input-background)',
+    color: 'var(--vscode-input-foreground)',
+    border: '1px solid var(--vscode-input-border, transparent)',
+  }
+
+  return (
+    <div className="px-4 space-y-3">
+      {groupedLabels.map(([group, labels]) => (
+        <div key={group}>
+          <div
+            className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
+            style={{ color: 'var(--vscode-descriptionForeground)' }}
+          >
+            {group}
+          </div>
+          <div className="space-y-1">
+            {labels.map(({ name, def }) => (
+              <div
+                key={name}
+                className="flex items-center gap-2 px-2 py-1.5 rounded group/label transition-colors"
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <ColorPicker
+                  value={def?.color || '#6b7280'}
+                  onChange={color => onSetLabel?.(name, { ...def, color, group: def?.group })}
+                />
+                {renamingLabel === name ? (
+                  <input
+                    type="text"
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleRename(name)
+                      if (e.key === 'Escape') { setRenamingLabel(null); setRenameValue('') }
+                    }}
+                    onBlur={() => handleRename(name)}
+                    autoFocus
+                    className="flex-1 px-1.5 py-0.5 text-xs rounded min-w-0"
+                    style={inputStyle}
+                  />
+                ) : (
+                  <span className="flex-1 text-xs truncate" style={{ color: 'var(--vscode-foreground)' }}>
+                    {name}
+                  </span>
+                )}
+                {def?.group && renamingLabel !== name && (
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+                    style={{
+                      background: 'var(--vscode-badge-background)',
+                      color: 'var(--vscode-badge-foreground)',
+                    }}
+                  >
+                    {def.group}
+                  </span>
+                )}
+                {confirmingDelete === name ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px]" style={{ color: 'var(--vscode-errorForeground, #f44)' }}>
+                      {getCardCount(name)} card{getCardCount(name) !== 1 ? 's' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(name)}
+                      className="px-1.5 py-0.5 text-[10px] rounded"
+                      style={{
+                        background: 'var(--vscode-inputValidation-errorBackground, #5a1d1d)',
+                        color: 'var(--vscode-errorForeground, #f44)',
+                      }}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(null)}
+                      className="px-1.5 py-0.5 text-[10px] rounded"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/label:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => { setRenamingLabel(name); setRenameValue(name) }}
+                      className="p-1 rounded transition-colors"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--vscode-foreground)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--vscode-descriptionForeground)'}
+                      title="Rename label"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(name)}
+                      className="p-1 rounded transition-colors"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--vscode-errorForeground, #f44)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--vscode-descriptionForeground)'}
+                      title="Delete label"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Add new label form */}
+      <div
+        className="rounded-lg p-2 space-y-2"
+        style={{
+          background: 'var(--vscode-input-background)',
+          border: '1px solid var(--vscode-input-border, transparent)',
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <ColorPicker value={newColor} onChange={setNewColor} />
+          <input
+            type="text"
+            placeholder="New label name..."
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+            className="flex-1 px-1.5 py-1 text-xs rounded bg-transparent min-w-0"
+            style={{
+              color: 'var(--vscode-input-foreground)',
+              outline: 'none',
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Group (optional)"
+            value={newGroup}
+            onChange={e => setNewGroup(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+            list="label-groups"
+            className="flex-1 px-1.5 py-1 text-xs rounded"
+            style={inputStyle}
+          />
+          <datalist id="label-groups">
+            {existingGroups.map(g => <option key={g} value={g} />)}
+          </datalist>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!newName.trim()}
+            className="flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors disabled:opacity-40"
+            style={{
+              background: 'var(--vscode-button-background)',
+              color: 'var(--vscode-button-foreground)',
+            }}
+          >
+            <Plus size={12} />
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
 
   useEffect(() => { setLocal(settings) }, [settings])
@@ -298,6 +628,16 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave }: Omit<Set
               value={local.defaultStatus}
               options={statusConfig}
               onChange={v => update({ defaultStatus: v as FeatureStatus })}
+            />
+          </SettingsSection>
+
+          <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+
+          <SettingsSection title="Labels">
+            <LabelsSection
+              onSetLabel={onSetLabel}
+              onRenameLabel={onRenameLabel}
+              onDeleteLabel={onDeleteLabel}
             />
           </SettingsSection>
         </div>

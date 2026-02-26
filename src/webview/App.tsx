@@ -312,6 +312,10 @@ function App(): React.JSX.Element {
     setEditingFeature(null)
   }
 
+  const handlePurgeDeletedCards = (): void => {
+    vscode.postMessage({ type: 'purgeDeletedCards' })
+  }
+
   const handleOpenFile = (): void => {
     if (!editingFeature) return
     vscode.postMessage({ type: 'openFile', featureId: editingFeature.id })
@@ -467,6 +471,7 @@ function App(): React.JSX.Element {
             onMoveFeature={handleMoveFeature}
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
+            onPurgeDeletedCards={handlePurgeDeletedCards}
           />
         </div>
         {editingFeature && (
@@ -509,6 +514,9 @@ function App(): React.JSX.Element {
         workspace={workspace}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
+        onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
+        onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
       />
 
       <ColumnDialog

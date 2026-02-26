@@ -161,6 +161,10 @@ async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Pr
   const boardId = getBoardId(flags)
   let cards = await sdk.listCards(undefined, boardId)
 
+  if (!flags['include-deleted']) {
+    cards = cards.filter(c => c.status !== 'deleted')
+  }
+
   if (typeof flags.status === 'string') {
     cards = cards.filter(c => c.status === flags.status)
   }
@@ -172,6 +176,10 @@ async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Pr
   }
   if (typeof flags.label === 'string') {
     cards = cards.filter(c => c.labels.includes(flags.label as string))
+  }
+  if (typeof flags['label-group'] === 'string') {
+    const groupLabels = sdk.getLabelsInGroup(flags['label-group'] as string)
+    cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
   }
 
   if (flags.json) {
@@ -347,7 +355,21 @@ async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Record<str
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
   await sdk.deleteCard(resolvedId, boardId)
-  console.log(green(`Deleted: ${resolvedId}`))
+  console.log(green(`Soft-deleted: ${resolvedId} (moved to deleted)`))
+}
+
+async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+  const cardId = positional[0]
+  if (!cardId) {
+    console.error(red('Usage: kl permanent-delete <id>'))
+    process.exit(1)
+  }
+
+  const boardId = getBoardId(flags)
+  const resolvedId = await resolveCardId(sdk, cardId, boardId)
+
+  await sdk.permanentlyDeleteCard(resolvedId, boardId)
+  console.log(green(`Permanently deleted: ${resolvedId}`))
 }
 
 async function cmdInit(sdk: KanbanSDK): Promise<void> {
@@ -744,6 +766,94 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
   }
 }
 
+// --- Label Commands ---
+
+async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+  const subcommand = positional[0] || 'list'
+
+  switch (subcommand) {
+    case 'list': {
+      const labels = sdk.getLabels()
+      if (flags.json) {
+        console.log(JSON.stringify(labels, null, 2))
+      } else {
+        const entries = Object.entries(labels)
+        if (entries.length === 0) {
+          console.log(dim('  No labels defined.'))
+        } else {
+          console.log(`  ${dim('NAME'.padEnd(20))}  ${dim('COLOR'.padEnd(10))}  ${dim('GROUP')}`)
+          console.log(dim('  ' + '-'.repeat(50)))
+          // Sort by group then name
+          entries.sort((a, b) => {
+            const ga = a[1].group || ''
+            const gb = b[1].group || ''
+            if (ga !== gb) return ga.localeCompare(gb)
+            return a[0].localeCompare(b[0])
+          })
+          for (const [name, def] of entries) {
+            console.log(`  ${bold(name.padEnd(20))}  ${def.color.padEnd(10)}  ${def.group || '-'}`)
+          }
+        }
+      }
+      break
+    }
+    case 'set': {
+      const name = positional[1]
+      if (!name) {
+        console.error(red('Usage: kl labels set <name> --color <hex> [--group <group>]'))
+        process.exit(1)
+      }
+      const color = typeof flags.color === 'string' ? flags.color : ''
+      if (!color) {
+        console.error(red('Error: --color is required'))
+        process.exit(1)
+      }
+      const group = typeof flags.group === 'string' ? flags.group : undefined
+      sdk.setLabel(name, { color, group })
+      if (flags.json) {
+        console.log(JSON.stringify({ name, color, group: group || null }, null, 2))
+      } else {
+        console.log(green(`Label set: ${name} (${color}${group ? ', group: ' + group : ''})`))
+      }
+      break
+    }
+    case 'rename': {
+      const oldName = positional[1]
+      const newName = positional[2]
+      if (!oldName || !newName) {
+        console.error(red('Usage: kl labels rename <old> <new>'))
+        process.exit(1)
+      }
+      await sdk.renameLabel(oldName, newName)
+      if (flags.json) {
+        console.log(JSON.stringify({ old: oldName, new: newName }, null, 2))
+      } else {
+        console.log(green(`Renamed label: ${oldName} → ${newName}`))
+      }
+      break
+    }
+    case 'delete':
+    case 'rm': {
+      const name = positional[1]
+      if (!name) {
+        console.error(red('Usage: kl labels delete <name>'))
+        process.exit(1)
+      }
+      sdk.deleteLabel(name)
+      if (flags.json) {
+        console.log(JSON.stringify({ deleted: name }, null, 2))
+      } else {
+        console.log(green(`Deleted label: ${name}`))
+      }
+      break
+    }
+    default:
+      console.error(red(`Unknown labels subcommand: ${subcommand}`))
+      console.error('Available: list, set, rename, delete')
+      process.exit(1)
+  }
+}
+
 // --- Webhook Commands ---
 
 async function cmdWebhooks(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
@@ -839,7 +949,7 @@ async function cmdWebhooks(positional: string[], flags: Record<string, string | 
 
 const SETTINGS_KEYS = [
   'showPriorityBadges', 'showAssignee', 'showDueDate', 'showLabels',
-  'showFileName', 'compactMode', 'defaultPriority', 'defaultStatus'
+  'showFileName', 'compactMode', 'showDeletedColumn', 'defaultPriority', 'defaultStatus'
 ] as const
 
 async function cmdSettings(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
@@ -1030,6 +1140,12 @@ ${bold('Column Commands:')}
   columns update <id>         Update a column (--name, --color)
   columns remove <id>         Remove a column
 
+${bold('Label Commands:')}
+  labels                      List label definitions
+  labels set <name>           Set a label (--color, --group)
+  labels rename <old> <new>   Rename a label (cascades to cards)
+  labels delete <name>        Remove a label definition
+
 ${bold('Webhook Commands:')}
   webhooks                    List registered webhooks
   webhooks add                Register a webhook (--url, --events, --secret)
@@ -1057,6 +1173,7 @@ ${bold('List Filters:')}
   --priority <priority>       Filter by priority (critical, high, medium, low)
   --assignee <name>           Filter by assignee
   --label <label>             Filter by label
+  --label-group <group>       Filter by label group
 
 ${bold('Add/Edit Options:')}
   --title <title>             Card title (required for add)
@@ -1143,6 +1260,10 @@ async function main(): Promise<void> {
     case 'rm':
       await cmdDelete(sdk, positional, flags)
       break
+    case 'permanent-delete':
+    case 'purge':
+      await cmdPermanentDelete(sdk, positional, flags)
+      break
     case 'boards':
     case 'board':
       await cmdBoards(sdk, positional, flags, workspaceRoot)
@@ -1160,6 +1281,10 @@ async function main(): Promise<void> {
     case 'columns':
     case 'cols':
       await cmdColumns(sdk, positional, flags)
+      break
+    case 'labels':
+    case 'label':
+      await cmdLabels(sdk, positional, flags)
       break
     case 'webhooks':
     case 'webhook':

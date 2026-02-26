@@ -417,7 +417,7 @@ export class KanbanSDK {
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
    * @param metaFilter - Optional map of dot-notation metadata paths to required substrings.
    *   Only cards whose metadata contains all specified values (case-insensitive substring match)
-   *   are returned. e.g. `{ 'sprint': 'Q1', 'links.jira': 'PROJ' }`
+   *   are returned.
    * @returns A promise resolving to an array of {@link Feature} card objects, sorted by order.
    *
    * @example

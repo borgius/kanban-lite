@@ -316,3 +316,71 @@ describe('SDK integration - metadata', () => {
     expect(found?.metadata).toBeUndefined()
   })
 })
+
+describe('SDK listCards - metaFilter', () => {
+  let workspaceDir: string
+  let featuresDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-metafilter-'))
+    featuresDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(featuresDir, { recursive: true })
+    const config = createV2Config()
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config, null, 2))
+    sdk = new KanbanSDK(featuresDir)
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('filters cards by flat metadata key substring', async () => {
+    await sdk.createCard({ content: '# A', metadata: { sprint: '2026-Q1' } })
+    await sdk.createCard({ content: '# B', metadata: { sprint: '2026-Q2' } })
+    const result = await sdk.listCards(undefined, undefined, { sprint: 'Q1' })
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toContain('# A')
+  })
+
+  it('filters by nested dot-notation metadata key', async () => {
+    await sdk.createCard({ content: '# C', metadata: { links: { jira: 'PROJ-123' } } })
+    await sdk.createCard({ content: '# D', metadata: { links: { jira: 'OTHER-99' } } })
+    const result = await sdk.listCards(undefined, undefined, { 'links.jira': 'PROJ' })
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toContain('# C')
+  })
+
+  it('applies multiple filter entries as AND', async () => {
+    await sdk.createCard({ content: '# E', metadata: { sprint: 'Q1', team: 'backend' } })
+    await sdk.createCard({ content: '# F', metadata: { sprint: 'Q1', team: 'frontend' } })
+    const result = await sdk.listCards(undefined, undefined, { sprint: 'Q1', team: 'backend' })
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toContain('# E')
+  })
+
+  it('returns no cards when none match the meta filter', async () => {
+    await sdk.createCard({ content: '# G', metadata: { sprint: 'Q3' } })
+    const result = await sdk.listCards(undefined, undefined, { sprint: 'Q1' })
+    expect(result).toHaveLength(0)
+  })
+
+  it('excludes cards without metadata when a filter is present', async () => {
+    await sdk.createCard({ content: '# H' })
+    const result = await sdk.listCards(undefined, undefined, { sprint: 'Q1' })
+    expect(result).toHaveLength(0)
+  })
+
+  it('returns all cards when metaFilter is an empty object', async () => {
+    await sdk.createCard({ content: '# I', metadata: { sprint: 'Q1' } })
+    await sdk.createCard({ content: '# J' })
+    const result = await sdk.listCards(undefined, undefined, {})
+    expect(result).toHaveLength(2)
+  })
+
+  it('is case-insensitive', async () => {
+    await sdk.createCard({ content: '# K', metadata: { team: 'Backend' } })
+    const result = await sdk.listCards(undefined, undefined, { team: 'backend' })
+    expect(result).toHaveLength(1)
+  })
+})

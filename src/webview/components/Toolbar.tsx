@@ -168,7 +168,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search features..."
+          placeholder="Search... (meta.field: value)"
           className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
         />
       </div>

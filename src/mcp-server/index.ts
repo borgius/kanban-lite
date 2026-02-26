@@ -7,6 +7,7 @@ import { KanbanSDK } from '../sdk/KanbanSDK'
 import { DELETED_STATUS_ID, type Priority } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
+import { matchesMetaFilter } from '../sdk/metaUtils'
 
 // --- Resolve features directory ---
 
@@ -124,7 +125,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'list_cards',
-    'List all kanban cards. Optionally filter by status, priority, assignee, or label.',
+    'List all kanban cards. Optionally filter by status, priority, assignee, label, or metadata fields.',
     {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       status: z.string().optional().describe('Filter by status'),
@@ -133,8 +134,9 @@ async function main(): Promise<void> {
       label: z.string().optional().describe('Filter by label'),
       labelGroup: z.string().optional().describe('Filter by label group name'),
       includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted cards in results'),
+      metaFilter: z.record(z.string(), z.string()).optional().describe('Filter by metadata fields using dot-notation keys (e.g. { "links.jira": "PROJ-123" }). Substring match, case-insensitive.'),
     },
-    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted }) => {
+    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, metaFilter }) => {
       let cards = await sdk.listCards(undefined, boardId)
       if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
       if (status) cards = cards.filter(c => c.status === status)
@@ -145,6 +147,8 @@ async function main(): Promise<void> {
         const groupLabels = sdk.getLabelsInGroup(labelGroup)
         cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
       }
+      if (metaFilter && Object.keys(metaFilter).length > 0)
+        cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
 
       const summary = cards.map(c => ({
         id: c.id,

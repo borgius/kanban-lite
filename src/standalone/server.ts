@@ -9,6 +9,7 @@ import { serializeFeature } from '../sdk/parser'
 import { readConfig } from '../shared/config'
 import { sanitizeFeature } from '../sdk/types'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
+import { matchesMetaFilter } from '../sdk/metaUtils'
 
 interface CreateFeatureData {
   status: string
@@ -762,6 +763,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           const groupLabels = sdk.getLabelsInGroup(labelGroup)
           result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
         }
+        const metaFilter: Record<string, string> = {}
+        for (const [param, value] of url.searchParams.entries()) {
+          if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
+        }
+        if (Object.keys(metaFilter).length > 0)
+          result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -890,6 +897,12 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const groupLabels = sdk.getLabelsInGroup(labelGroup)
         result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
       }
+      const metaFilter: Record<string, string> = {}
+      for (const [param, value] of url.searchParams.entries()) {
+        if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
+      }
+      if (Object.keys(metaFilter).length > 0)
+        result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
       return jsonOk(res, result)
     }
 

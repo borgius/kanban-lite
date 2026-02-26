@@ -12,6 +12,7 @@ import { ensureDirectories, ensureStatusSubfolders, getFeatureFilePath, getStatu
 import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
 import { sanitizeFeature } from './types'
 import { migrateFileSystemToMultiBoard } from './migration'
+import { matchesMetaFilter } from './metaUtils'
 
 /**
  * Core SDK for managing kanban boards stored as markdown files.
@@ -414,6 +415,9 @@ export class KanbanSDK {
    * @param columns - Optional array of status/column IDs to filter by.
    *   When provided, ensures those subdirectories exist on disk.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @param metaFilter - Optional map of dot-notation metadata paths to required substrings.
+   *   Only cards whose metadata contains all specified values (case-insensitive substring match)
+   *   are returned. e.g. `{ 'sprint': 'Q1', 'links.jira': 'PROJ' }`
    * @returns A promise resolving to an array of {@link Feature} card objects, sorted by order.
    *
    * @example
@@ -423,9 +427,12 @@ export class KanbanSDK {
    *
    * // List only cards in 'todo' and 'in-progress' columns on the 'bugs' board
    * const filtered = await sdk.listCards(['todo', 'in-progress'], 'bugs')
+   *
+   * // List cards where metadata.sprint contains 'Q1' and metadata.links.jira contains 'PROJ'
+   * const q1Jira = await sdk.listCards(undefined, undefined, { 'sprint': 'Q1', 'links.jira': 'PROJ' })
    * ```
    */
-  async listCards(columns?: string[], boardId?: string): Promise<Feature[]> {
+  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>): Promise<Feature[]> {
     await this._ensureMigrated()
     const boardDir = this._boardDir(boardId)
     const resolvedBoardId = this._resolveBoardId(boardId)
@@ -516,7 +523,10 @@ export class KanbanSDK {
       syncCardIdCounter(this.workspaceRoot, resolvedBoardId, numericIds)
     }
 
-    return cards.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+    const filtered = metaFilter && Object.keys(metaFilter).length > 0
+      ? cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
+      : cards
+    return filtered.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   }
 
   /**

@@ -5,23 +5,34 @@ import type { Feature, Priority } from '../shared/types'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
+import { matchesMetaFilter } from '../sdk/metaUtils'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
+type Flags = Record<string, string | true | string[]>
+
 // --- Arg parsing ---
 
-function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Record<string, string | true> } {
+function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Flags } {
   const args = argv.slice(2)
   const command = args[0] || 'help'
   const positional: string[] = []
-  const flags: Record<string, string | true> = {}
+  const flags: Flags = {}
 
   for (let i = 1; i < args.length; i++) {
     const arg = args[i]
     if (arg.startsWith('--')) {
       const key = arg.slice(2)
       const next = args[i + 1]
-      if (next && !next.startsWith('--')) {
+      if (key === 'meta') {
+        if (!next || next.startsWith('--')) {
+          console.error(red('--meta requires a value in key=value format'))
+          process.exit(1)
+        }
+        const existing = flags.meta
+        flags.meta = Array.isArray(existing) ? [...existing, next] : [next]
+        i++
+      } else if (next && !next.startsWith('--')) {
         flags[key] = next
         i++
       } else {
@@ -37,7 +48,7 @@ function parseArgs(argv: string[]): { command: string; positional: string[]; fla
 
 // --- Board ID helper ---
 
-function getBoardId(flags: Record<string, string | true>): string | undefined {
+function getBoardId(flags: Flags): string | undefined {
   return typeof flags.board === 'string' ? flags.board : undefined
 }
 
@@ -71,7 +82,7 @@ async function findWorkspaceRoot(startDir: string): Promise<string> {
   }
 }
 
-async function resolveFeaturesDir(flags: Record<string, string | true>): Promise<string> {
+async function resolveFeaturesDir(flags: Flags): Promise<string> {
   if (typeof flags.dir === 'string') {
     return path.resolve(flags.dir)
   }
@@ -160,7 +171,7 @@ function formatCardDetail(c: Feature): string {
 
 // --- Card Commands ---
 
-async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Promise<void> {
+async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
   let cards = await sdk.listCards(undefined, boardId)
 
@@ -184,6 +195,18 @@ async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Pr
     const groupLabels = sdk.getLabelsInGroup(flags['label-group'] as string)
     cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
   }
+  if (Array.isArray(flags.meta)) {
+    const metaFilter: Record<string, string> = {}
+    for (const entry of flags.meta) {
+      const eq = entry.indexOf('=')
+      if (eq < 1) {
+        console.error(red(`Invalid --meta format: "${entry}". Expected key=value`))
+        process.exit(1)
+      }
+      metaFilter[entry.slice(0, eq)] = entry.slice(eq + 1)
+    }
+    cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
+  }
 
   if (flags.json) {
     console.log(JSON.stringify(cards, null, 2))
@@ -203,7 +226,7 @@ async function cmdList(sdk: KanbanSDK, flags: Record<string, string | true>): Pr
   console.log(dim(`\n  ${cards.length} card(s)`))
 }
 
-async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Error: card ID required. Usage: kl show <id>'))
@@ -239,7 +262,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Record<strin
   }
 }
 
-async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Promise<void> {
+async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const title = typeof flags.title === 'string' ? flags.title : ''
   if (!title) {
     console.error(red('Error: --title is required. Usage: kl add --title "My card"'))
@@ -290,7 +313,7 @@ async function cmdAdd(sdk: KanbanSDK, flags: Record<string, string | true>): Pro
   }
 }
 
-async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   const newStatus = positional[1]
 
@@ -314,7 +337,7 @@ async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Record<strin
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
-async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...] [--metadata ...]'))
@@ -363,7 +386,7 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Record<strin
   console.log(green(`Updated: ${updated.id}`))
 }
 
-async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl delete <id>'))
@@ -379,7 +402,7 @@ async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Record<str
   console.log(green(`Soft-deleted: ${resolvedId} (moved to deleted)`))
 }
 
-async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl permanent-delete <id>'))
@@ -400,7 +423,7 @@ async function cmdInit(sdk: KanbanSDK): Promise<void> {
 
 // --- Board Commands ---
 
-async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {
@@ -491,7 +514,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Record<str
 
 // --- Transfer Command ---
 
-async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl transfer <card-id> --from <board> --to <board> [--status <status>]'))
@@ -514,7 +537,7 @@ async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Record<s
 
 // --- Attachment Commands ---
 
-async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
   const cardId = positional[1]
   const boardId = getBoardId(flags)
@@ -602,7 +625,7 @@ async function resolveCardId(sdk: KanbanSDK, cardId: string, boardId?: string): 
 
 // --- Comment Commands ---
 
-async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
   const boardId = getBoardId(flags)
 
@@ -719,7 +742,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Record<st
 
 // --- Column Commands ---
 
-async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
   const boardId = getBoardId(flags)
 
@@ -789,7 +812,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Record<st
 
 // --- Label Commands ---
 
-async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Record<string, string | true>): Promise<void> {
+async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {
@@ -877,7 +900,7 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Record<str
 
 // --- Webhook Commands ---
 
-async function cmdWebhooks(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {
@@ -973,7 +996,7 @@ const SETTINGS_KEYS = [
   'showFileName', 'compactMode', 'showDeletedColumn', 'defaultPriority', 'defaultStatus'
 ] as const
 
-async function cmdSettings(positional: string[], flags: Record<string, string | true>, workspaceRoot: string): Promise<void> {
+async function cmdSettings(positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
   const subcommand = positional[0] || 'show'
 
   switch (subcommand) {
@@ -1032,7 +1055,7 @@ async function cmdSettings(positional: string[], flags: Record<string, string | 
 
 // --- Serve Command ---
 
-async function cmdServe(flags: Record<string, string | true>): Promise<void> {
+async function cmdServe(flags: Flags): Promise<void> {
   const dir = typeof flags.dir === 'string' ? flags.dir : '.kanban'
   const config = readConfig(process.cwd())
   const port = typeof flags.port === 'string' ? parseInt(flags.port, 10) : config.port
@@ -1195,6 +1218,8 @@ ${bold('List Filters:')}
   --assignee <name>           Filter by assignee
   --label <label>             Filter by label
   --label-group <group>       Filter by label group
+  --meta key=value            Filter by metadata field, dot-notation supported (repeatable)
+                              e.g. --meta sprint=Q1 --meta links.jira=PROJ-123
 
 ${bold('Add/Edit Options:')}
   --title <title>             Card title (required for add)

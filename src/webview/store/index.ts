@@ -85,6 +85,23 @@ const isOverdue = (date: Date): boolean => {
   return date < today
 }
 
+/**
+ * Parses `meta.path: value` tokens from the search query string.
+ * Returns the extracted meta filters and the remaining plain-text query.
+ *
+ * @example
+ * parseMetaTokens('meta.sprint: Q1 bug fix')
+ * // => { metaFilter: { sprint: 'Q1' }, plainText: 'bug fix' }
+ */
+function parseMetaTokens(query: string): { metaFilter: Record<string, string>; plainText: string } {
+  const metaFilter: Record<string, string> = {}
+  const plainText = query.replace(/meta\.([a-zA-Z0-9_.]+):\s*(\S+)/g, (_full, key, value) => {
+    metaFilter[key] = value
+    return ''
+  }).trim()
+  return { metaFilter, plainText }
+}
+
 export const useStore = create<KanbanState>((set, get) => ({
   features: [],
   columns: [],
@@ -216,15 +233,30 @@ export const useStore = create<KanbanState>((set, get) => ({
           }
         }
 
-        // Search query
+        // Search query - supports meta.field: value tokens and plain text
         if (searchQuery) {
-          const query = searchQuery.toLowerCase()
-          return (
-            f.content.toLowerCase().includes(query) ||
-            f.id.toLowerCase().includes(query) ||
-            (f.assignee && f.assignee.toLowerCase().includes(query)) ||
-            f.labels.some((l) => l.toLowerCase().includes(query))
-          )
+          const { metaFilter, plainText } = parseMetaTokens(searchQuery)
+
+          if (Object.keys(metaFilter).length > 0) {
+            const passes = Object.entries(metaFilter).every(([path, needle]) => {
+              if (!f.metadata) return false
+              const val = path.split('.').reduce((curr: unknown, k) =>
+                curr != null && typeof curr === 'object' ? (curr as Record<string, unknown>)[k] : undefined, f.metadata)
+              return val != null && String(val).toLowerCase().includes(needle.toLowerCase())
+            })
+            if (!passes) return false
+          }
+
+          if (plainText) {
+            const q = plainText.toLowerCase()
+            const textMatch = (
+              f.content.toLowerCase().includes(q) ||
+              f.id.toLowerCase().includes(q) ||
+              f.assignee?.toLowerCase().includes(q) ||
+              f.labels.some((l) => l.toLowerCase().includes(q))
+            )
+            if (!textMatch) return false
+          }
         }
 
         return true

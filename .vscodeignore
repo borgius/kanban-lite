@@ -2,6 +2,7 @@
 .git/**
 node_modules/**
 lib/**
+bin/**
 src/**
 *.map
 .gitignore

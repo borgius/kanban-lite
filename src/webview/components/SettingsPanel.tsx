@@ -182,6 +182,52 @@ function SettingsDropdown({ label, value, options, onChange }: {
   )
 }
 
+function SettingsSlider({ label, description, value, min, max, step, unit, onChange }: {
+  label: string
+  description?: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit?: string
+  onChange: (v: number) => void
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 px-4 py-2 transition-colors"
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-sm" style={{ color: 'var(--vscode-foreground)' }}>{label}</div>
+        {description && (
+          <div className="text-xs mt-0.5" style={{ color: 'var(--vscode-descriptionForeground)' }}>{description}</div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-20 h-1 rounded-full appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, var(--vscode-button-background) ${((value - min) / (max - min)) * 100}%, var(--vscode-badge-background, #6b7280) ${((value - min) / (max - min)) * 100}%)`,
+          }}
+        />
+        <span
+          className="text-xs font-mono w-10 text-right"
+          style={{ color: 'var(--vscode-foreground)' }}
+        >
+          {value}{unit || '%'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const [isOpen, setIsOpen] = useState(false)
   const [customHex, setCustomHex] = useState('')
@@ -643,6 +689,27 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                   description="Display the Deleted column to manage soft-deleted cards"
                   checked={local.showDeletedColumn}
                   onChange={v => update({ showDeletedColumn: v })}
+                />
+              </SettingsSection>
+              <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+              <SettingsSection title="Zoom">
+                <SettingsSlider
+                  label="Board Zoom"
+                  description="Scale text size on the board view"
+                  value={local.boardZoom}
+                  min={75}
+                  max={150}
+                  step={5}
+                  onChange={v => update({ boardZoom: v })}
+                />
+                <SettingsSlider
+                  label="Card Detail Zoom"
+                  description="Scale text size in the card detail panel"
+                  value={local.cardZoom}
+                  min={75}
+                  max={150}
+                  step={5}
+                  onChange={v => update({ cardZoom: v })}
                 />
               </SettingsSection>
             </>

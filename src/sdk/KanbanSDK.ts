@@ -983,24 +983,29 @@ export class KanbanSDK {
   }
 
   /**
-   * Removes a label definition from the workspace configuration.
-   *
-   * This only removes the color/group definition — cards that use this
-   * label keep their label strings. Those labels will render with default
-   * gray styling in the UI.
+   * Removes a label definition from the workspace configuration and cascades
+   * the deletion to all cards by removing the label from their `labels` array.
    *
    * @param name - The label name to remove.
    *
    * @example
    * ```ts
-   * sdk.deleteLabel('bug')
+   * await sdk.deleteLabel('bug')
    * ```
    */
-  deleteLabel(name: string): void {
+  async deleteLabel(name: string): Promise<void> {
     const config = readConfig(this.workspaceRoot)
     if (config.labels) {
       delete config.labels[name]
       writeConfig(this.workspaceRoot, config)
+    }
+
+    // Cascade to all cards
+    const cards = await this.listCards()
+    for (const card of cards) {
+      if (card.labels.includes(name)) {
+        await this.updateCard(card.id, { labels: card.labels.filter(l => l !== name) })
+      }
     }
   }
 
@@ -1450,6 +1455,58 @@ export class KanbanSDK {
     writeConfig(this.workspaceRoot, config)
     this.emitEvent('column.deleted', removed)
     return board.columns
+  }
+
+  /**
+   * Moves all cards in the specified column to the `deleted` (soft-delete) column.
+   *
+   * This is a non-destructive operation — cards are moved to the reserved
+   * `deleted` status and can be restored or permanently deleted later.
+   * The column itself is not removed.
+   *
+   * @param columnId - The ID of the column whose cards should be moved to `deleted`.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the number of cards that were moved.
+   * @throws {Error} If the column is `'deleted'` (no-op protection).
+   *
+   * @example
+   * ```ts
+   * const moved = await sdk.cleanupColumn('blocked')
+   * console.log(`Moved ${moved} cards to deleted`)
+   * ```
+   */
+  async cleanupColumn(columnId: string, boardId?: string): Promise<number> {
+    if (columnId === DELETED_STATUS_ID) return 0
+    const cards = await this.listCards(undefined, boardId)
+    const cardsToMove = cards.filter(c => c.status === columnId)
+    for (const card of cardsToMove) {
+      await this.moveCard(card.id, DELETED_STATUS_ID, 0, boardId)
+    }
+    return cardsToMove.length
+  }
+
+  /**
+   * Permanently deletes all cards currently in the `deleted` column.
+   *
+   * This is equivalent to "empty trash". All soft-deleted cards are
+   * removed from disk. This operation cannot be undone.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the number of cards that were permanently deleted.
+   *
+   * @example
+   * ```ts
+   * const count = await sdk.purgeDeletedCards()
+   * console.log(`Permanently deleted ${count} cards`)
+   * ```
+   */
+  async purgeDeletedCards(boardId?: string): Promise<number> {
+    const cards = await this.listCards(undefined, boardId)
+    const deleted = cards.filter(c => c.status === DELETED_STATUS_ID)
+    for (const card of deleted) {
+      await this.permanentlyDeleteCard(card.id, boardId)
+    }
+    return deleted.length
   }
 
   /**

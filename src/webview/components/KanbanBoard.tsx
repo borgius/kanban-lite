@@ -16,11 +16,12 @@ interface KanbanBoardProps {
   onMoveFeature: (featureId: string, newStatus: string, newOrder: number) => void
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
+  onCleanupColumn: (columnId: string) => void
   onPurgeDeletedCards: () => void
   selectedFeatureId?: string
 }
 
-export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn, onPurgeDeletedCards, selectedFeatureId }: KanbanBoardProps) {
+export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedFeatureId }: KanbanBoardProps) {
   const columns = useStore((s) => s.columns)
   const cardSettings = useStore((s) => s.cardSettings)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
@@ -135,6 +136,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             onAddFeature={onAddFeature}
             onEditColumn={onEditColumn}
             onRemoveColumn={onRemoveColumn}
+            onCleanupColumn={onCleanupColumn}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragOverCard={handleDragOverCard}
@@ -157,6 +159,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
             onAddFeature={onAddFeature}
             onEditColumn={onEditColumn}
             onRemoveColumn={onRemoveColumn}
+            onCleanupColumn={onCleanupColumn}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragOverCard={handleDragOverCard}

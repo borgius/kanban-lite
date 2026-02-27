@@ -20,6 +20,7 @@ interface KanbanColumnProps {
   onAddFeature: (status: string) => void
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
+  onCleanupColumn: (columnId: string) => void
   onDragStart: (e: React.DragEvent, feature: Feature) => void
   onDragOver: (e: React.DragEvent) => void
   onDragOverCard: (e: React.DragEvent, columnId: string, cardIndex: number) => void
@@ -42,6 +43,7 @@ export function KanbanColumn({
   onAddFeature,
   onEditColumn,
   onRemoveColumn,
+  onCleanupColumn,
   onDragStart,
   onDragOver,
   onDragOverCard,
@@ -142,6 +144,14 @@ export function KanbanColumn({
                     >
                       <Trash2 size={14} />
                       Remove List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); onCleanupColumn(column.id) }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-orange-600 dark:text-orange-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Cleanup List
                     </button>
                     <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
                     <div className="px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Sort by</div>

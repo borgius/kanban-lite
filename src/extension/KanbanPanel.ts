@@ -204,6 +204,9 @@ export class KanbanPanel {
           case 'removeColumn':
             await this._removeColumn(message.columnId)
             break
+          case 'cleanupColumn':
+            await this._cleanupColumn(message.columnId)
+            break
           case 'transferCard': {
             const sdk = this._getSDK()
             if (!sdk || !this._currentBoardId) break
@@ -265,7 +268,8 @@ export class KanbanPanel {
           case 'deleteLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            sdk.deleteLabel(message.name)
+            await sdk.deleteLabel(message.name)
+            await this._loadFeatures()
             this._sendFeaturesToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
             break
@@ -560,10 +564,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      const deletedCards = this._features.filter(f => f.status === 'deleted')
-      for (const card of deletedCards) {
-        await sdk.permanentlyDeleteCard(card.id, this._currentBoardId)
-      }
+      await sdk.purgeDeletedCards(this._currentBoardId)
       this._features = this._features.filter(f => f.status !== 'deleted')
       this._sendFeaturesToWebview()
     } catch (err) {
@@ -938,5 +939,18 @@ export class KanbanPanel {
     }
     sdk.removeColumn(columnId, this._currentBoardId)
     this._sendFeaturesToWebview()
+  }
+
+  private async _cleanupColumn(columnId: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    try {
+      await sdk.cleanupColumn(columnId, this._currentBoardId)
+      await this._loadFeatures()
+      this._sendFeaturesToWebview()
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to cleanup list: ${err}`)
+    }
   }
 }

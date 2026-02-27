@@ -260,10 +260,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   async function doPurgeDeletedCards(): Promise<boolean> {
     try {
-      const deletedCards = features.filter(f => f.status === 'deleted')
-      for (const card of deletedCards) {
-        await sdk.permanentlyDeleteCard(card.id, currentBoardId)
-      }
+      await sdk.purgeDeletedCards(currentBoardId)
       await loadFeatures()
       broadcast(buildInitMessage())
       return true
@@ -309,6 +306,21 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       return { removed: true }
     } catch (err) {
       return { removed: false, error: String(err) }
+    }
+  }
+
+  async function doCleanupColumn(columnId: string): Promise<boolean> {
+    try {
+      migrating = true
+      await sdk.cleanupColumn(columnId, currentBoardId)
+      await loadFeatures()
+      broadcast(buildInitMessage())
+      return true
+    } catch (err) {
+      console.error('Failed to cleanup column:', err)
+      return false
+    } finally {
+      migrating = false
     }
   }
 
@@ -518,6 +530,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         await doRemoveColumn(msg.columnId as string)
         break
 
+      case 'cleanupColumn':
+        await doCleanupColumn(msg.columnId as string)
+        break
+
       case 'removeAttachment': {
         const featureId = msg.featureId as string
         const feature = await doRemoveAttachment(featureId, msg.attachment as string)
@@ -643,14 +659,17 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
       case 'renameLabel': {
         await sdk.renameLabel(msg.oldName as string, msg.newName as string)
+        await loadFeatures()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
         break
       }
 
       case 'deleteLabel': {
-        sdk.deleteLabel(msg.name as string)
+        await sdk.deleteLabel(msg.name as string)
+        await loadFeatures()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        broadcast(buildInitMessage())
         break
       }
 
@@ -1291,6 +1310,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const newName = body.newName as string
         if (!newName) return jsonError(res, 400, 'newName is required')
         await sdk.renameLabel(name, newName)
+        await loadFeatures()
+        broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        broadcast(buildInitMessage())
         return jsonOk(res, sdk.getLabels())
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -1301,7 +1323,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (params) {
       try {
         const name = decodeURIComponent(params.name)
-        sdk.deleteLabel(name)
+        await sdk.deleteLabel(name)
+        await loadFeatures()
+        broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
+        broadcast(buildInitMessage())
         return jsonOk(res, { success: true })
       } catch (err) {
         return jsonError(res, 400, String(err))

@@ -730,11 +730,8 @@ sdk.setLabel('docs', { color: '#16a34a' })
 <a name="KanbanSDK+deleteLabel"></a>
 
 #### kanbanSDK.deleteLabel(name)
-Removes a label definition from the workspace configuration.
-
-This only removes the color/group definition — cards that use this
-label keep their label strings. Those labels will render with default
-gray styling in the UI.
+Removes a label definition from the workspace configuration and cascades
+the deletion to all cards by removing the label from their `labels` array.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -744,7 +741,7 @@ gray styling in the UI.
 
 **Example**  
 ```ts
-sdk.deleteLabel('bug')
+await sdk.deleteLabel('bug')
 ```
 
 * * *

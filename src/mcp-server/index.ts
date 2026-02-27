@@ -829,6 +829,24 @@ async function main(): Promise<void> {
     }
   )
 
+  server.tool(
+    'cleanup_column',
+    'Move all cards in a column to the deleted (soft-delete) column. The column itself is kept.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      columnId: z.string().describe('Column ID to clean up'),
+    },
+    async ({ boardId, columnId }) => {
+      const moved = await sdk.cleanupColumn(columnId, boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Moved ${moved} card${moved === 1 ? '' : 's'} from "${columnId}" to deleted`,
+        }],
+      }
+    }
+  )
+
   // --- Label Tools ---
 
   server.tool('list_labels', 'List all label definitions with colors and groups', {
@@ -855,10 +873,10 @@ async function main(): Promise<void> {
     return { content: [{ type: 'text' as const, text: `Label "${oldName}" renamed to "${newName}"` }] }
   })
 
-  server.tool('delete_label', 'Remove a label definition (cards keep the label text)', {
+  server.tool('delete_label', 'Remove a label definition and remove it from all cards', {
     name: z.string().describe('Label name to remove')
   }, async ({ name }) => {
-    sdk.deleteLabel(name)
+    await sdk.deleteLabel(name)
     return { content: [{ type: 'text' as const, text: `Label "${name}" definition removed` }] }
   })
 

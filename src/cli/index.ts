@@ -825,9 +825,19 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
     }
+    case 'cleanup': {
+      const columnId = positional[1]
+      if (!columnId) {
+        console.error(red('Usage: kl columns cleanup <id>'))
+        process.exit(1)
+      }
+      const moved = await sdk.cleanupColumn(columnId, boardId)
+      console.log(green(`Moved ${moved} card${moved === 1 ? '' : 's'} from "${columnId}" to deleted`))
+      break
+    }
     default:
       console.error(red(`Unknown columns subcommand: ${subcommand}`))
-      console.error('Available: list, add, update, remove')
+      console.error('Available: list, add, update, remove, cleanup')
       process.exit(1)
   }
 }
@@ -905,7 +915,7 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         console.error(red('Usage: kl labels delete <name>'))
         process.exit(1)
       }
-      sdk.deleteLabel(name)
+      await sdk.deleteLabel(name)
       if (flags.json) {
         console.log(JSON.stringify({ deleted: name }, null, 2))
       } else {

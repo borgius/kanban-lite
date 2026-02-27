@@ -379,9 +379,25 @@ describe('KanbanSDK', () => {
 
     it('deleteLabel removes label definition from config', async () => {
       sdk.setLabel('bug', { color: '#e11d48' })
-      sdk.deleteLabel('bug')
+      await sdk.deleteLabel('bug')
       const labels = sdk.getLabels()
       expect(labels['bug']).toBeUndefined()
+    })
+
+    it('deleteLabel cascades to all cards removing the label', async () => {
+      writeCardFile(tempDir, '1-card.md', makeCardContent({
+        id: '1-card', status: 'backlog', labels: ['bug', 'frontend']
+      }), 'backlog')
+      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+
+      await sdk.deleteLabel('bug')
+
+      const labels = sdk.getLabels()
+      expect(labels['bug']).toBeUndefined()
+
+      const cards = await sdk.listCards()
+      expect(cards[0].labels).not.toContain('bug')
+      expect(cards[0].labels).toContain('frontend')
     })
 
     it('renameLabel updates config key and cascades to all cards', async () => {

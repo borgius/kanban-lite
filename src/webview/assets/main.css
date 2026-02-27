@@ -438,3 +438,26 @@ input:focus-visible {
 .board-zoom-scope {
   font-size: calc(1em * var(--board-zoom, 1));
 }
+
+/* Settings slider */
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 5rem;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vscode-button-background);
+  border: 2px solid var(--vscode-editor-background);
+  box-shadow: 0 0 0 1px var(--vscode-button-background);
+  cursor: pointer;
+}

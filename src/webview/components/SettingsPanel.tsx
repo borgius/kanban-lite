@@ -192,6 +192,7 @@ function SettingsSlider({ label, description, value, min, max, step, unit, onCha
   unit?: string
   onChange: (v: number) => void
 }) {
+  const pct = ((value - min) / (max - min)) * 100
   return (
     <div
       className="flex items-center justify-between gap-4 px-4 py-2 transition-colors"
@@ -212,13 +213,13 @@ function SettingsSlider({ label, description, value, min, max, step, unit, onCha
           step={step}
           value={value}
           onChange={e => onChange(Number(e.target.value))}
-          className="w-20 h-1 rounded-full appearance-none cursor-pointer"
+          className="settings-slider"
           style={{
-            background: `linear-gradient(to right, var(--vscode-button-background) ${((value - min) / (max - min)) * 100}%, var(--vscode-badge-background, #6b7280) ${((value - min) / (max - min)) * 100}%)`,
+            background: `linear-gradient(to right, var(--vscode-button-background) ${pct}%, var(--vscode-badge-background, #6b7280) ${pct}%)`,
           }}
         />
         <span
-          className="text-xs font-mono w-10 text-right"
+          className="text-xs font-mono w-12 text-right tabular-nums"
           style={{ color: 'var(--vscode-foreground)' }}
         >
           {value}{unit || '%'}

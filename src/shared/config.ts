@@ -395,8 +395,8 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     showDeletedColumn: config.showDeletedColumn,
     defaultPriority: config.defaultPriority,
     defaultStatus: config.defaultStatus,
-    boardZoom: config.boardZoom,
-    cardZoom: config.cardZoom
+    boardZoom: config.boardZoom ?? 100,
+    cardZoom: config.cardZoom ?? 100
   }
 }
 

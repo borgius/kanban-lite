@@ -84,6 +84,10 @@ export interface KanbanConfig {
   markdownEditorMode: boolean
   /** Whether to show the deleted column in the UI. */
   showDeletedColumn: boolean
+  /** Zoom level for the board view (75–150). */
+  boardZoom: number
+  /** Zoom level for the card detail panel (75–150). */
+  cardZoom: number
   /** Port number for the standalone HTTP server. */
   port: number
   /** Registered webhook endpoints for event notifications. */
@@ -145,6 +149,8 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   compactMode: false,
   markdownEditorMode: false,
   showDeletedColumn: false,
+  boardZoom: 100,
+  cardZoom: 100,
   port: 3000,
   labels: {}
 }
@@ -211,6 +217,8 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     compactMode: v1.compactMode,
     markdownEditorMode: v1.markdownEditorMode,
     showDeletedColumn: false,
+    boardZoom: 100,
+    cardZoom: 100,
     port: 3000
   }
 }
@@ -386,7 +394,9 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     markdownEditorMode: config.markdownEditorMode,
     showDeletedColumn: config.showDeletedColumn,
     defaultPriority: config.defaultPriority,
-    defaultStatus: config.defaultStatus
+    defaultStatus: config.defaultStatus,
+    boardZoom: config.boardZoom,
+    cardZoom: config.cardZoom
   }
 }
 
@@ -414,6 +424,8 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     compactMode: settings.compactMode,
     showDeletedColumn: settings.showDeletedColumn,
     defaultPriority: settings.defaultPriority,
-    defaultStatus: settings.defaultStatus
+    defaultStatus: settings.defaultStatus,
+    boardZoom: settings.boardZoom,
+    cardZoom: settings.cardZoom
   }
 }

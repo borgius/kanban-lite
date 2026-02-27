@@ -34,6 +34,8 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     compactMode: false,
     markdownEditorMode: false,
     showDeletedColumn: false,
+    boardZoom: 100,
+    cardZoom: 100,
     port: 3000,
     ...overrides
   }

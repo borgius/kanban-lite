@@ -14,7 +14,7 @@ interface KanbanState {
   searchQuery: string
   priorityFilter: Priority | 'all'
   assigneeFilter: string | 'all'
-  labelFilter: string | 'all'
+  labelFilter: string[]
   dueDateFilter: DueDateFilter
   columnSorts: Record<string, SortOrder>
   layout: LayoutMode
@@ -35,7 +35,7 @@ interface KanbanState {
   setSearchQuery: (query: string) => void
   setPriorityFilter: (priority: Priority | 'all') => void
   setAssigneeFilter: (assignee: string | 'all') => void
-  setLabelFilter: (label: string | 'all') => void
+  setLabelFilter: (labels: string[]) => void
   setDueDateFilter: (filter: DueDateFilter) => void
   setColumnSort: (columnId: string, sort: SortOrder) => void
   setLayout: (layout: LayoutMode) => void
@@ -114,7 +114,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   searchQuery: '',
   priorityFilter: 'all',
   assigneeFilter: 'all',
-  labelFilter: 'all',
+  labelFilter: [],
   dueDateFilter: 'all',
   columnSorts: {},
   layout: 'horizontal',
@@ -130,7 +130,9 @@ export const useStore = create<KanbanState>((set, get) => ({
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium',
-    defaultStatus: 'backlog'
+    defaultStatus: 'backlog',
+    boardZoom: 100,
+    cardZoom: 100
   },
   settingsOpen: false,
   labelDefs: {},
@@ -147,7 +149,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setPriorityFilter: (priority) => set({ priorityFilter: priority }),
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),
-  setLabelFilter: (label) => set({ labelFilter: label }),
+  setLabelFilter: (labels) => set({ labelFilter: labels }),
   setDueDateFilter: (filter) => set({ dueDateFilter: filter }),
   setColumnSort: (columnId, sort) => set((state) => ({
     columnSorts: sort === 'order'
@@ -162,7 +164,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       searchQuery: '',
       priorityFilter: 'all',
       assigneeFilter: 'all',
-      labelFilter: 'all',
+      labelFilter: [],
       dueDateFilter: 'all',
       columnSorts: {}
     }),
@@ -217,18 +219,9 @@ export const useStore = create<KanbanState>((set, get) => ({
           }
         }
 
-        // Label filter
-        if (labelFilter !== 'all') {
-          if (labelFilter.startsWith('group:')) {
-            const group = labelFilter.slice(6)
-            const { labelDefs } = get()
-            const groupLabels = Object.entries(labelDefs)
-              .filter(([, def]) => def.group === group)
-              .map(([name]) => name)
-            if (!f.labels.some(l => groupLabels.includes(l))) return false
-          } else {
-            if (!f.labels.includes(labelFilter)) return false
-          }
+        // Label filter (multiselect)
+        if (labelFilter.length > 0) {
+          if (!f.labels.some(l => labelFilter.includes(l))) return false
         }
 
         // Due date filter
@@ -313,7 +306,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       searchQuery !== '' ||
       priorityFilter !== 'all' ||
       assigneeFilter !== 'all' ||
-      labelFilter !== 'all' ||
+      labelFilter.length > 0 ||
       dueDateFilter !== 'all' ||
       Object.keys(columnSorts).length > 0
     )

@@ -44,10 +44,16 @@ kl add --title "My first task" --priority high
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
+- **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
+- **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
+- **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
+- **Smooth scroll to selection**: Board automatically scrolls to the selected card when switching features
 - **Keyboard shortcuts**:
   - `N` - Create new feature
   - `Esc` - Close dialogs
   - `Cmd/Ctrl + Enter` - Submit create dialog
+  - `Ctrl/Cmd + =` / `Ctrl/Cmd + -` - Zoom board view in / out
+  - `Ctrl/Cmd + Shift + =` / `Ctrl/Cmd + Shift + -` - Zoom card detail in / out
 
 ### Feature Cards
 
@@ -628,11 +634,15 @@ Board configuration is stored in `.kanban.json` at your project root. It support
   "showDueDate": true,
   "showLabels": true,
   "compactMode": false,
+  "boardZoom": 100,
+  "cardZoom": 100,
   "actionWebhookUrl": "https://example.com/kanban-actions"
 }
 ```
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
+
+`boardZoom` and `cardZoom` set the default zoom percentage (75–150) for the board view and card detail panel respectively. They can also be adjusted live in the Settings panel or with `Ctrl/Cmd + =` / `Ctrl/Cmd + -` keyboard shortcuts.
 
 ## AI Agent Integration
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes

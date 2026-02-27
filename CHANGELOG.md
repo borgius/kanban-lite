@@ -5,6 +5,74 @@ All notable changes to the Kanban Lite extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-27
+
+### Added
+- Board and card detail zoom settings with slider UI (75–150%) stored in `.kanban.json`
+- Keyboard shortcuts for adjusting board/card zoom level (Ctrl/Cmd `+`/`-`)
+- CSS custom properties (`--board-zoom`, `--card-zoom`) with `calc()` multipliers for smooth font scaling
+- Smooth scrolling to the selected feature card in the kanban board
+- Sorting options in the column context menu
+- Default zoom level configuration for both board and card detail views
+
+## [2.0.0] - 2026-02-26
+
+### Added
+- Per-card actions (named string labels) that trigger a global `actionWebhookUrl` via `POST` on demand
+- Run Actions dropdown in the card editor and action input in CreateFeatureDialog
+- `triggerAction` method in KanbanSDK with full support across REST API, WebSocket, MCP (`trigger_action` tool), and CLI (`--actions` flag)
+- Comment editor component with Write / Preview tabs and a markdown formatting toolbar
+- GitHub-style comment editing using the new CommentEditor in CommentsSection
+- Settings panel split into three tabs: **General**, **Defaults**, and **Labels**
+- `version` field on card frontmatter schema for format tracking
+- Metadata filtering for card list/search operations across all interfaces
+- Creation and modification date display with hover tooltips on FeatureCard and FeatureEditor
+- Sort order filter for card queries
+
+### Fixed
+- `version` field now included in all FeatureFrontmatter constructions in the server
+
+## [1.9.0] - 2026-02-25
+
+### Added
+- Card metadata support — arbitrary key-value data stored as a native YAML block in frontmatter (`metadata` field)
+- Metadata UI: key-count chip `{N}` on card grid and collapsible tree view in the card detail panel
+- Label definitions with color picker in the Settings panel (create, rename, delete labels)
+- Colored labels rendered on cards, in the editor, create dialog, and toolbar
+- Label group filtering across SDK (`filterCardsByLabelGroup`), CLI (`--label-group`), REST API, and MCP tools
+- SDK label management methods: `getLabels`, `setLabel`, `renameLabel`, `deleteLabel`
+- Soft-delete support: hidden **Deleted** column with per-card restore or permanent delete
+- Purge deleted cards functionality to permanently remove all soft-deleted cards
+- `--metadata` flag for CLI `create` and `edit` commands (accepts JSON string)
+- Metadata support in MCP `create_card` and `update_card` tools
+- Metadata support in REST API create/update routes
+- Workspace info section in the Settings panel showing project path and `.kanban.json` parameters
+- `js-yaml` dependency for robust YAML metadata parsing
+
+### Fixed
+- Comment parser no longer breaks on horizontal rules (`---`) inside comment blocks
+- Blank lines in metadata YAML parsed correctly; scalar edge cases handled
+
+## [1.8.0] - 2026-02-24
+
+### Added
+- Multi-board support: board selector dropdown to switch between boards and create new boards
+- Card transfer between boards via a StatusDropdown with a nested board-and-column tree
+- `transferCard` message type and `BoardInfo.columns` field in the extension/standalone protocol
+- Webhooks system: CRUD operations (`create`, `get`, `update`, `delete`, `list`) stored in `.kanban-webhooks.json`
+- Webhook event delivery on card create/update/delete/move with configurable `url`, `events`, and `secret`
+- Webhook management commands in CLI and MCP server
+- Comments functionality: add, edit, and delete comments on feature cards
+- Markdown rendering for comment content
+- Auto-generated SDK docs (`docs/sdk.md`) and REST API docs (`docs/api.md`) from JSDoc / route metadata
+- `npm run docs` script to regenerate all documentation
+- Theme toggle (light / dark) in the board toolbar
+- Release scripts for versioning, changelog generation, and GitHub release creation
+
+### Fixed
+- SDK export paths updated to support both CommonJS and ESM module formats
+- SDK import paths corrected; server feature loading logic improved
+
 ## [1.7.0] - 2026-02-20
 
 ### Added

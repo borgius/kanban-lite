@@ -250,6 +250,10 @@ export interface CardDisplaySettings {
   defaultPriority: Priority
   /** The default column/status assigned to newly created cards. */
   defaultStatus: string
+  /** Zoom level for the board view as a percentage (75–150). Default 100. */
+  boardZoom: number
+  /** Zoom level for the card detail panel as a percentage (75–150). Default 100. */
+  cardZoom: number
 }
 
 export interface LabelDefinition {

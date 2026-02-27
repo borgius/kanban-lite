@@ -2,7 +2,7 @@
   "name": "kanban-lite",
   "displayName": "Kanban Lite",
   "description": "A kanban board for your codebase. Features stored as markdown.",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "publisher": "borgius",
   "license": "MIT",
   "repository": {

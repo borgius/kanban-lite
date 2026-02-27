@@ -131,6 +131,29 @@ function App(): React.JSX.Element {
         return
       }
 
+      // Ctrl/Cmd +/- for board zoom, Ctrl/Cmd+Shift +/- for card detail zoom
+      if ((e.key === '=' || e.key === '+' || e.key === '-') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        const delta = (e.key === '-') ? -5 : 5
+        const { cardSettings } = useStore.getState()
+        if (e.shiftKey) {
+          const newZoom = Math.max(75, Math.min(150, cardSettings.cardZoom + delta))
+          if (newZoom !== cardSettings.cardZoom) {
+            const next = { ...cardSettings, cardZoom: newZoom }
+            setCardSettings(next)
+            vscode.postMessage({ type: 'saveSettings', settings: next })
+          }
+        } else {
+          const newZoom = Math.max(75, Math.min(150, cardSettings.boardZoom + delta))
+          if (newZoom !== cardSettings.boardZoom) {
+            const next = { ...cardSettings, boardZoom: newZoom }
+            setCardSettings(next)
+            vscode.postMessage({ type: 'saveSettings', settings: next })
+          }
+        }
+        return
+      }
+
       // Ignore if user is typing in an input or contentEditable (e.g. TipTap editor)
       if (
         e.target instanceof HTMLInputElement ||
@@ -178,7 +201,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('mousedown', handleMouseDown)
       if (altDownTimer) clearTimeout(altDownTimer)
     }
-  }, [createFeatureOpen, handleUndoLatest])
+  }, [createFeatureOpen, handleUndoLatest, setCardSettings])
 
   // Listen for VSCode theme changes
   useEffect(() => {

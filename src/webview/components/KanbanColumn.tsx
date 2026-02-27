@@ -129,6 +129,19 @@ export function KanbanColumn({
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg py-1 min-w-[170px]">
+                    <div className="px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Sort by</div>
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { onSortChange(opt.value) }}
+                        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                      >
+                        <Check size={14} className={sort === opt.value ? 'text-blue-500' : 'invisible'} />
+                        {opt.label}
+                      </button>
+                    ))}
+                    <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
                     <button
                       type="button"
                       onClick={() => { setMenuOpen(false); onEditColumn(column.id) }}
@@ -153,19 +166,6 @@ export function KanbanColumn({
                       <Trash2 size={14} />
                       Cleanup List
                     </button>
-                    <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
-                    <div className="px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Sort by</div>
-                    {SORT_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => { onSortChange(opt.value) }}
-                        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
-                      >
-                        <Check size={14} className={sort === opt.value ? 'text-blue-500' : 'invisible'} />
-                        {opt.label}
-                      </button>
-                    ))}
                   </div>
                 )}
               </div>
@@ -190,6 +190,7 @@ export function KanbanColumn({
             )}
             <div
               draggable
+              data-card-id={feature.id}
               onDragStart={(e) => onDragStart(e, feature)}
               onDragOver={(e) => onDragOverCard(e, column.id, index)}
               onDragEnd={onDragEnd}

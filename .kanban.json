@@ -82,6 +82,8 @@
   "compactMode": false,
   "markdownEditorMode": false,
   "showDeletedColumn": true,
+  "boardZoom": 135,
+  "cardZoom": 120,
   "port": 3000,
   "labels": {}
 }

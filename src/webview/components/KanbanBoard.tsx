@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { KanbanColumn } from './KanbanColumn'
 import { useStore } from '../store'
 import type { SortOrder } from '../store'
@@ -22,6 +22,28 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedFeatureId }: KanbanBoardProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!selectedFeatureId) return
+    const container = scrollContainerRef.current
+    if (!container) return
+    // Wait a frame so the panel layout transition has started and the board has shrunk
+    requestAnimationFrame(() => {
+      const cardEl = container.querySelector<HTMLElement>(`[data-card-id="${selectedFeatureId}"]`)
+      if (!cardEl) return
+      const containerRect = container.getBoundingClientRect()
+      const cardRect = cardEl.getBoundingClientRect()
+      // Check if the card is fully visible horizontally inside the scroll container
+      const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= containerRect.right
+      if (!isFullyVisible) {
+        // Scroll so the card's right edge is visible with 10px breathing room
+        const overflow = cardRect.right - containerRect.right
+        container.scrollBy({ left: overflow + 10, behavior: 'smooth' })
+      }
+    })
+  }, [selectedFeatureId])
+
   const columns = useStore((s) => s.columns)
   const cardSettings = useStore((s) => s.cardSettings)
   const getFilteredFeaturesByStatus = useStore((s) => s.getFilteredFeaturesByStatus)
@@ -125,7 +147,7 @@ export function KanbanBoard({ onFeatureClick, onAddFeature, onMoveFeature, onEdi
   const isVertical = layout === 'vertical'
 
   return (
-    <div className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}>
+    <div ref={scrollContainerRef} className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}>
       <div className={isVertical ? "flex flex-col gap-4" : "flex gap-4 h-full min-w-max"}>
         {columns.map((column) => (
           <KanbanColumn

@@ -945,12 +945,18 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
 
+    this._migrating = true
     try {
       await sdk.cleanupColumn(columnId, this._currentBoardId)
-      await this._loadFeatures()
+      // Update in-memory cache: mark all column cards as deleted
+      this._features = this._features.map(f =>
+        f.status === columnId ? { ...f, status: 'deleted' } : f
+      )
       this._sendFeaturesToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to cleanup list: ${err}`)
+    } finally {
+      this._migrating = false
     }
   }
 }

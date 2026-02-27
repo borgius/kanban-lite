@@ -76,6 +76,7 @@ input:focus-visible {
 
 /* Prose (markdown) styling for editor */
 .prose {
+  font-size: calc(1rem * var(--card-zoom, 1));
   line-height: 1.625;
 }
 
@@ -281,7 +282,7 @@ input:focus-visible {
   background: transparent;
   color: var(--vscode-foreground);
   font-family: var(--vscode-editor-font-family, 'SF Mono', Monaco, Menlo, Consolas, monospace);
-  font-size: var(--vscode-editor-font-size, 13px);
+  font-size: calc(var(--vscode-editor-font-size, 13px) * var(--card-zoom, 1));
   line-height: 1.6;
   tab-size: 2;
 }
@@ -330,7 +331,7 @@ input:focus-visible {
 
 /* Comment markdown styling - compact prose for comment bubbles */
 .comment-markdown {
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--card-zoom, 1));
   line-height: 1.5;
 }
 
@@ -431,4 +432,9 @@ input:focus-visible {
 
 .comment-markdown em {
   font-style: italic;
+}
+
+/* Board zoom scaling */
+.board-zoom-scope {
+  font-size: calc(1em * var(--board-zoom, 1));
 }

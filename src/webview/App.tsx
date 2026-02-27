@@ -202,6 +202,13 @@ function App(): React.JSX.Element {
     return () => observer.disconnect()
   }, [setIsDarkMode])
 
+  // Sync zoom CSS custom properties
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--board-zoom', String(cardSettings.boardZoom / 100))
+    root.style.setProperty('--card-zoom', String(cardSettings.cardZoom / 100))
+  }, [cardSettings.boardZoom, cardSettings.cardZoom])
+
   // Listen for messages from extension
   useEffect(() => {
     const handleMessage = (event: MessageEvent<ExtensionMessage>) => {
@@ -387,6 +394,14 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'removeColumn', columnId })
   }
 
+  const handleCleanupColumn = (columnId: string): void => {
+    const col = columns.find(c => c.id === columnId)
+    if (!col) return
+    const featuresInColumn = useStore.getState().features.filter(f => f.status === columnId)
+    if (featuresInColumn.length === 0) return
+    vscode.postMessage({ type: 'cleanupColumn', columnId })
+  }
+
   const handleSaveColumn = (data: { name: string; color: string }): void => {
     if (editingColumn) {
       vscode.postMessage({ type: 'editColumn', columnId: editingColumn.id, updates: data })
@@ -483,19 +498,20 @@ function App(): React.JSX.Element {
         onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className={editingFeature ? 'w-1/2' : 'w-full'}>
+        <div className={`board-zoom-scope ${editingFeature ? 'w-1/2' : 'w-full'}`}>
           <KanbanBoard
             onFeatureClick={handleFeatureClick}
             onAddFeature={handleAddFeatureInColumn}
             onMoveFeature={handleMoveFeature}
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
+            onCleanupColumn={handleCleanupColumn}
             onPurgeDeletedCards={handlePurgeDeletedCards}
             selectedFeatureId={editingFeature?.id}
           />
         </div>
         {editingFeature && (
-          <div className="w-1/2">
+          <div className="w-1/2" style={{ fontSize: `calc(1em * var(--card-zoom, 1))` }}>
             <FeatureEditor
               featureId={editingFeature.id}
               content={editingFeature.content}

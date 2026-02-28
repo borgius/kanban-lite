@@ -1113,6 +1113,16 @@ async function cmdSettings(positional: string[], flags: Flags, workspaceRoot: st
 
 // --- Serve Command ---
 
+async function cmdMcp(flags: Flags): Promise<void> {
+  // Allow --dir flag to override the kanban directory via env var
+  // (MCP server reads KANBAN_DIR from process.env and --dir from process.argv)
+  if (typeof flags.dir === 'string') {
+    process.env.KANBAN_DIR = path.resolve(flags.dir)
+  }
+  // Importing the MCP server module triggers its top-level main() bootstrap
+  await import('../mcp-server/index')
+}
+
 async function cmdServe(flags: Flags): Promise<void> {
   const dir = typeof flags.dir === 'string' ? flags.dir : '.kanban'
   const config = readConfig(process.cwd())
@@ -1260,6 +1270,7 @@ ${bold('Settings Commands:')}
 
 ${bold('Server:')}
   serve                       Start standalone web server with REST API
+  mcp                         Start MCP server over stdio (for AI integrations)
 
 ${bold('Other:')}
   init                        Initialize cards directory
@@ -1330,6 +1341,12 @@ async function main(): Promise<void> {
   // Serve doesn't need SDK
   if (command === 'serve') {
     await cmdServe(flags)
+    return
+  }
+
+  // MCP server doesn't need SDK — bootstrapped via its own main()
+  if (command === 'mcp') {
+    await cmdMcp(flags)
     return
   }
 

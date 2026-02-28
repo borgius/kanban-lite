@@ -172,6 +172,10 @@ kl pwd                                                  # Print workspace root p
 kl serve                                                # Start on port 3000
 kl serve --port 8080 --no-browser                       # Custom port, no auto-open
 
+# Start MCP server (stdio transport for AI agent integrations)
+kl mcp                                                  # Auto-detect directory
+kl mcp --dir .kanban                                    # Explicit directory
+
 # Initialize features directory
 kl init
 
@@ -454,8 +458,9 @@ Add to your `.claude/settings.json`:
 {
   "mcpServers": {
     "kanban": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["kanban-lite", "kanban-mcp"],
+      "args": ["kanban-lite", "mcp"],
       "env": {
         "KANBAN_DIR": "/path/to/your/project/.kanban"
       }
@@ -467,7 +472,9 @@ Add to your `.claude/settings.json`:
 Or run directly:
 
 ```bash
-kanban-mcp --dir .kanban
+kl mcp                          # Auto-detect directory
+kl mcp --dir .kanban            # Explicit directory
+kanban-mcp --dir .kanban        # Via dedicated binary
 ```
 
 ### Available Tools

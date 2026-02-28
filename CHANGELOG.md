@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `kl mcp` CLI command — starts the MCP server over stdio, allowing `kanban-lite` to be used as the `command` in MCP client config (e.g. `npx kanban-lite mcp`)
+
 ### Changed
 - Renamed all internal "Feature" terminology to "Card" across the entire codebase (types, functions, variables, components, CLI, MCP, REST API, extension commands)
 - `FeatureCard` component → `CardItem`, `FeatureEditor` → `CardEditor`, `CreateFeatureDialog` → `CreateCardDialog`, `FeatureHeaderProvider` → `CardHeaderProvider`

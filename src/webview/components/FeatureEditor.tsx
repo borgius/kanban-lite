@@ -3,6 +3,7 @@ import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calen
 import type { Comment, FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
+import { CopyableValue } from '../lib/CopyableValue'
 import { useStore } from '../store'
 import { MarkdownEditor } from './MarkdownEditor'
 
@@ -437,9 +438,13 @@ function MetadataSection({ metadata }: { metadata?: Record<string, any> }) {
       {!expanded && (
         <div className="flex flex-wrap gap-1 mt-1.5">
           {keys.map(key => (
-            <span key={key} className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 font-mono">
+            <button
+              key={key}
+              onClick={() => setExpanded(true)}
+              className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 font-mono hover:bg-zinc-200 dark:hover:bg-zinc-600 cursor-pointer"
+            >
               {key}
-            </span>
+            </button>
           ))}
         </div>
       )}
@@ -463,14 +468,14 @@ function MetadataTree({ data, depth }: { data: Record<string, any>; depth: numbe
               <MetadataTree data={value} depth={depth + 1} />
             </>
           ) : Array.isArray(value) ? (
-            <div>
+            <div className="flex items-baseline gap-1">
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
-              <span className="text-zinc-700 dark:text-zinc-300">[{value.join(', ')}]</span>
+              <CopyableValue value={`[${value.join(', ')}]`} />
             </div>
           ) : (
-            <div>
+            <div className="flex items-baseline gap-1">
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
-              <span className="text-zinc-700 dark:text-zinc-300">{String(value)}</span>
+              <CopyableValue value={String(value)} />
             </div>
           )}
         </div>

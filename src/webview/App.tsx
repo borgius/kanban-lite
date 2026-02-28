@@ -355,6 +355,15 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'openFile', cardId: editingCard.id })
   }
 
+  const handleOpenMetadataFile = (path: string): void => {
+    vscode.postMessage({ type: 'openMetadataFile', path })
+  }
+
+  const handleDownloadCard = (): void => {
+    if (!editingCard) return
+    vscode.postMessage({ type: 'downloadCard', cardId: editingCard.id })
+  }
+
   const handleStartWithAI = (agent: 'claude' | 'codex' | 'opencode', permissionMode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'): void => {
     vscode.postMessage({ type: 'startWithAI', agent, permissionMode })
   }
@@ -547,6 +556,8 @@ function App(): React.JSX.Element {
               onPermanentDelete={handlePermanentDeleteCard}
               onRestore={handleRestoreCard}
               onOpenFile={handleOpenFile}
+              onOpenMetadataFile={handleOpenMetadataFile}
+              onDownloadCard={handleDownloadCard}
               onStartWithAI={handleStartWithAI}
               onAddAttachment={handleAddAttachment}
               onOpenAttachment={handleOpenAttachment}

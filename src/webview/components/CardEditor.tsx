@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip, Clock } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
@@ -22,6 +22,8 @@ interface CardEditorProps {
   onPermanentDelete: () => void
   onRestore: () => void
   onOpenFile: () => void
+  onOpenMetadataFile?: (path: string) => void
+  onDownloadCard: () => void
   onStartWithAI: (agent: AIAgent, permissionMode: PermissionMode) => void
   onAddAttachment: () => void
   onOpenAttachment: (attachment: string) => void
@@ -418,7 +420,109 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
   )
 }
 
-function MetadataSection({ metadata }: { metadata?: Record<string, any> }) {
+/** VS Code logo icon (monochrome, inline SVG) */
+function VSCodeIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 19.88V4.12a1.5 1.5 0 0 0-.85-1.533zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" />
+    </svg>
+  )
+}
+
+function isUrl(v: string): boolean {
+  return /^https?:\/\//i.test(v)
+}
+
+function isFilePath(v: string): boolean {
+  return /^(\/|~\/|\.{1,2}\/|[A-Za-z]:[/\\])/i.test(v)
+}
+
+/** Renders a URL value as a clickable external link with copy icon. */
+function UrlValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+  return (
+    <span className="group/val inline-flex items-center gap-1">
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-0.5 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+        title={value}
+        onClick={e => e.stopPropagation()}
+      >
+        <ExternalLink size={10} className="shrink-0" />
+        <span className="break-all">{value}</span>
+      </a>
+      <button
+        className="opacity-0 group-hover/val:opacity-100 transition-opacity cursor-pointer"
+        onClick={handleCopy}
+        title="Copy URL"
+      >
+        {copied ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
+      </button>
+    </span>
+  )
+}
+
+/** Renders a file path value with a VS Code open button and copy icon. */
+function FilePathValue({ value, onOpenFile }: { value: string; onOpenFile?: (path: string) => void }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+  return (
+    <span className="group/val inline-flex items-center gap-1">
+      {onOpenFile && (
+        <button
+          className="shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
+          onClick={e => { e.stopPropagation(); onOpenFile(value) }}
+          title="Open in VS Code"
+        >
+          <VSCodeIcon size={11} />
+        </button>
+      )}
+      <span className="text-zinc-700 dark:text-zinc-300 break-all">{value}</span>
+      <button
+        className="opacity-0 group-hover/val:opacity-100 transition-opacity cursor-pointer"
+        onClick={handleCopy}
+        title="Copy path"
+      >
+        {copied ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
+      </button>
+    </span>
+  )
+}
+
+function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<string, any>; onOpenMetadataFile?: (path: string) => void }) {
   const [expanded, setExpanded] = useState(false)
 
   if (!metadata || Object.keys(metadata).length === 0) return null
@@ -450,14 +554,14 @@ function MetadataSection({ metadata }: { metadata?: Record<string, any> }) {
       )}
       {expanded && (
         <div className="mt-1.5 text-xs font-mono bg-zinc-50 dark:bg-zinc-900 rounded p-2 border border-zinc-200 dark:border-zinc-700">
-          <MetadataTree data={metadata} depth={0} />
+          <MetadataTree data={metadata} depth={0} onOpenMetadataFile={onOpenMetadataFile} />
         </div>
       )}
     </div>
   )
 }
 
-function MetadataTree({ data, depth }: { data: Record<string, any>; depth: number }) {
+function MetadataTree({ data, depth, onOpenMetadataFile }: { data: Record<string, any>; depth: number; onOpenMetadataFile?: (path: string) => void }) {
   return (
     <div style={{ paddingLeft: depth > 0 ? 12 : 0 }}>
       {Object.entries(data).map(([key, value]) => (
@@ -465,7 +569,7 @@ function MetadataTree({ data, depth }: { data: Record<string, any>; depth: numbe
           {value && typeof value === 'object' && !Array.isArray(value) ? (
             <>
               <span className="text-zinc-500 dark:text-zinc-400">{key}:</span>
-              <MetadataTree data={value} depth={depth + 1} />
+              <MetadataTree data={value} depth={depth + 1} onOpenMetadataFile={onOpenMetadataFile} />
             </>
           ) : Array.isArray(value) ? (
             <div className="flex items-baseline gap-1">
@@ -473,9 +577,15 @@ function MetadataTree({ data, depth }: { data: Record<string, any>; depth: numbe
               <CopyableValue value={`[${value.join(', ')}]`} />
             </div>
           ) : (
-            <div className="flex items-baseline gap-1">
+            <div className="flex items-baseline gap-1 flex-wrap">
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
-              <CopyableValue value={String(value)} />
+              {isUrl(String(value)) ? (
+                <UrlValue value={String(value)} />
+              ) : isFilePath(String(value)) ? (
+                <FilePathValue value={String(value)} onOpenFile={onOpenMetadataFile} />
+              ) : (
+                <CopyableValue value={String(value)} />
+              )}
             </div>
           )}
         </div>
@@ -602,7 +712,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: CardEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -743,10 +853,19 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 onClick={() => { onOpenFile(); onClose(); }}
                 className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
                 style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                title="Open .md file"
+                title="Open in VS Code"
               >
-                <FileText size={16} />
+                <VSCodeIcon size={16} />
                 <span className="text-xs">OPEN</span>
+              </button>
+              <button
+                onClick={onDownloadCard}
+                className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
+                style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
+                title="Download card as Markdown"
+              >
+                <Download size={16} />
+                <span className="text-xs">DOWNLOAD</span>
               </button>
               <button
                 onClick={onDelete}
@@ -902,7 +1021,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           </div>
         </PropertyRow>
         <div className="px-4 pb-2">
-          <MetadataSection metadata={currentFrontmatter.metadata} />
+          <MetadataSection metadata={currentFrontmatter.metadata} onOpenMetadataFile={onOpenMetadataFile} />
         </div>
       </div>
 

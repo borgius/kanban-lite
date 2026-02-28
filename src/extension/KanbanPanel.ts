@@ -177,6 +177,43 @@ export class KanbanPanel {
           case 'openAttachment':
             await this._openAttachment(message.cardId, message.attachment)
             break
+          case 'openMetadataFile': {
+            const rawPath = message.path as string
+            const workspaceRoot = this._getWorkspaceRoot()
+            const resolvedPath = /^([/~]|[A-Za-z]:[/\\])/.test(rawPath)
+              ? rawPath.replace(/^~/, process.env.HOME ?? '')
+              : path.resolve(workspaceRoot ?? '', rawPath)
+            try {
+              const fileUri = vscode.Uri.file(resolvedPath)
+              await vscode.workspace.fs.stat(fileUri)
+              try {
+                const doc = await vscode.workspace.openTextDocument(fileUri)
+                await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+              } catch {
+                await vscode.env.openExternal(fileUri)
+              }
+            } catch {
+              vscode.window.showWarningMessage(`File not found: ${resolvedPath}`)
+            }
+            break
+          }
+          case 'downloadCard': {
+            const dlCard = this._cards.find(f => f.id === message.cardId)
+            if (!dlCard) break
+            const defaultName = path.basename(dlCard.filePath)
+            const workspaceRoot = this._getWorkspaceRoot()
+            const saveUri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(path.join(workspaceRoot ?? '', defaultName)),
+              filters: { 'Markdown': ['md'] },
+              title: 'Download card as Markdown'
+            })
+            if (saveUri) {
+              const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(dlCard.filePath))
+              await vscode.workspace.fs.writeFile(saveUri, fileContent)
+              vscode.window.showInformationMessage(`Card saved to ${saveUri.fsPath}`)
+            }
+            break
+          }
           case 'removeAttachment':
             await this._removeAttachment(message.cardId, message.attachment)
             break

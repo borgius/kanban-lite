@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, MoreVertical, Pencil, Trash2, Check } from 'lucide-react'
-import { FeatureCard } from './FeatureCard'
-import type { Feature, KanbanColumn as KanbanColumnType } from '../../shared/types'
+import { CardItem } from './CardItem'
+import type { Card, KanbanColumn as KanbanColumnType } from '../../shared/types'
 import type { LayoutMode, SortOrder } from '../store'
 import type { DropTarget } from './KanbanBoard'
 
@@ -15,32 +15,32 @@ const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
 
 interface KanbanColumnProps {
   column: KanbanColumnType
-  features: Feature[]
-  onFeatureClick: (feature: Feature) => void
-  onAddFeature: (status: string) => void
+  cards: Card[]
+  onCardClick: (card: Card) => void
+  onAddCard: (status: string) => void
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
   onCleanupColumn: (columnId: string) => void
-  onDragStart: (e: React.DragEvent, feature: Feature) => void
+  onDragStart: (e: React.DragEvent, card: Card) => void
   onDragOver: (e: React.DragEvent) => void
   onDragOverCard: (e: React.DragEvent, columnId: string, cardIndex: number) => void
   onDrop: (e: React.DragEvent, status: string) => void
   onDragEnd: () => void
-  draggedFeature: Feature | null
+  draggedCard: Card | null
   dropTarget: DropTarget | null
   layout: LayoutMode
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
-  selectedFeatureId?: string
+  selectedCardId?: string
   sort: SortOrder
   onSortChange: (sort: SortOrder) => void
 }
 
 export function KanbanColumn({
   column,
-  features,
-  onFeatureClick,
-  onAddFeature,
+  cards,
+  onCardClick,
+  onAddCard,
   onEditColumn,
   onRemoveColumn,
   onCleanupColumn,
@@ -49,12 +49,12 @@ export function KanbanColumn({
   onDragOverCard,
   onDrop,
   onDragEnd,
-  draggedFeature,
+  draggedCard,
   dropTarget,
   layout,
   isDeletedColumn,
   onPurgeColumn,
-  selectedFeatureId,
+  selectedCardId,
   sort,
   onSortChange
 }: KanbanColumnProps) {
@@ -90,7 +90,7 @@ export function KanbanColumn({
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: column.color }} />
           <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{column.name}</h3>
           <span className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded-full">
-            {features.length}
+            {cards.length}
           </span>
         </div>
         <div className="flex items-center gap-0.5">
@@ -98,8 +98,8 @@ export function KanbanColumn({
             <button
               type="button"
               onClick={() => {
-                if (features.length === 0) return
-                if (window.confirm(`Permanently delete all ${features.length} card${features.length === 1 ? '' : 's'} from disk?`)) {
+                if (cards.length === 0) return
+                if (window.confirm(`Permanently delete all ${cards.length} card${cards.length === 1 ? '' : 's'} from disk?`)) {
                   onPurgeColumn?.()
                 }
               }}
@@ -112,7 +112,7 @@ export function KanbanColumn({
             <>
               <button
                 type="button"
-                onClick={() => onAddFeature(column.id)}
+                onClick={() => onAddCard(column.id)}
                 className="p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors"
                 title={`Add to ${column.name}`}
               >
@@ -182,35 +182,35 @@ export function KanbanColumn({
             : "flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]"
         }
       >
-        {features.map((feature, index) => (
-          <div key={feature.id}>
+        {cards.map((card, index) => (
+          <div key={card.id}>
             {/* Drop indicator before this card */}
             {isDropTarget && dropTarget.index === index && (
               <div className="h-0.5 bg-blue-500 rounded-full mx-1 mb-1" />
             )}
             <div
               draggable
-              data-card-id={feature.id}
-              onDragStart={(e) => onDragStart(e, feature)}
+              data-card-id={card.id}
+              onDragStart={(e) => onDragStart(e, card)}
               onDragOver={(e) => onDragOverCard(e, column.id, index)}
               onDragEnd={onDragEnd}
               className={`${isVertical ? "w-64" : ""} ${
-                draggedFeature?.id === feature.id ? "opacity-40" : ""
+                draggedCard?.id === card.id ? "opacity-40" : ""
               }`}
             >
-              <FeatureCard feature={feature} onClick={() => onFeatureClick(feature)} isSelected={feature.id === selectedFeatureId} />
+              <CardItem card={card} onClick={() => onCardClick(card)} isSelected={card.id === selectedCardId} />
             </div>
           </div>
         ))}
 
         {/* Drop indicator at end of list */}
-        {isDropTarget && dropTarget.index === features.length && features.length > 0 && (
+        {isDropTarget && dropTarget.index === cards.length && cards.length > 0 && (
           <div className="h-0.5 bg-blue-500 rounded-full mx-1" />
         )}
 
-        {features.length === 0 && (
+        {cards.length === 0 && (
           <div className={isVertical ? "text-sm text-zinc-400 dark:text-zinc-500 py-4" : "text-center py-8 text-sm text-zinc-400 dark:text-zinc-500"}>
-            No features
+            No cards
           </div>
         )}
       </div>

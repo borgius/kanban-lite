@@ -1,6 +1,6 @@
 import * as path from 'path'
 import * as yaml from 'js-yaml'
-import type { Comment, Feature, FeatureStatus, Priority } from '../shared/types'
+import type { Comment, Card, CardStatus, Priority } from '../shared/types'
 import { CARD_FORMAT_VERSION } from '../shared/types'
 
 function extractIdFromFilename(filePath: string): string {
@@ -30,7 +30,7 @@ function parseCommentBlock(header: string, body: string): Comment | null {
 }
 
 /**
- * Parses a markdown file with YAML frontmatter into a Feature object.
+ * Parses a markdown file with YAML frontmatter into a Card object.
  *
  * The file is expected to have a YAML frontmatter block delimited by `---` at the
  * top, followed by the card body content. Additional `---` delimited blocks after
@@ -40,9 +40,9 @@ function parseCommentBlock(header: string, body: string): Comment | null {
  * @param content - The raw string content of the markdown file.
  * @param filePath - The absolute file path, used to extract the card ID from the filename
  *   if no `id` field is present in the frontmatter.
- * @returns The parsed {@link Feature} object, or `null` if no valid frontmatter block is found.
+ * @returns The parsed {@link Card} object, or `null` if no valid frontmatter block is found.
  */
-export function parseFeatureFile(content: string, filePath: string): Feature | null {
+export function parseCardFile(content: string, filePath: string): Card | null {
   content = content.replace(/\r\n/g, '\n')
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   if (!frontmatterMatch) return null
@@ -100,7 +100,7 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
   return {
     version: typeof parsed.version === 'number' ? parsed.version : parseInt(str('version'), 10) || 0,
     id: str('id') || extractIdFromFilename(filePath),
-    status: (str('status') as FeatureStatus) || 'backlog',
+    status: (str('status') as CardStatus) || 'backlog',
     priority: (str('priority') as Priority) || 'medium',
     assignee: parsed.assignee != null ? String(parsed.assignee) : null,
     dueDate: parsed.dueDate != null ? String(parsed.dueDate) : null,
@@ -119,37 +119,37 @@ export function parseFeatureFile(content: string, filePath: string): Feature | n
 }
 
 /**
- * Serializes a Feature object back to markdown with YAML frontmatter.
+ * Serializes a Card object back to markdown with YAML frontmatter.
  *
  * Produces a string with a `---` delimited YAML frontmatter block containing all
  * card metadata, followed by the card body content. Any comments attached to the
- * feature are appended as additional `---` delimited sections at the end of the file.
+ * card are appended as additional `---` delimited sections at the end of the file.
  *
- * @param feature - The {@link Feature} object to serialize.
+ * @param card - The {@link Card} object to serialize.
  * @returns The complete markdown string ready to be written to a `.md` file.
  */
-export function serializeFeature(feature: Feature): string {
+export function serializeCard(card: Card): string {
   const frontmatterObj: Record<string, unknown> = {
-    version: feature.version ?? CARD_FORMAT_VERSION,
-    id: feature.id,
-    status: feature.status,
-    priority: feature.priority,
-    assignee: feature.assignee ?? null,
-    dueDate: feature.dueDate ?? null,
-    created: feature.created,
-    modified: feature.modified,
-    completedAt: feature.completedAt ?? null,
-    labels: feature.labels,
-    attachments: feature.attachments || [],
-    order: feature.order,
-    ...(feature.actions?.length ? { actions: feature.actions } : {}),
-    ...(feature.metadata && Object.keys(feature.metadata).length > 0 ? { metadata: feature.metadata } : {}),
+    version: card.version ?? CARD_FORMAT_VERSION,
+    id: card.id,
+    status: card.status,
+    priority: card.priority,
+    assignee: card.assignee ?? null,
+    dueDate: card.dueDate ?? null,
+    created: card.created,
+    modified: card.modified,
+    completedAt: card.completedAt ?? null,
+    labels: card.labels,
+    attachments: card.attachments || [],
+    order: card.order,
+    ...(card.actions?.length ? { actions: card.actions } : {}),
+    ...(card.metadata && Object.keys(card.metadata).length > 0 ? { metadata: card.metadata } : {}),
   }
 
   const yamlStr = yaml.dump(frontmatterObj, { lineWidth: -1, quotingType: '"', forceQuotes: true })
-  let result = `---\n${yamlStr}---\n\n${feature.content}`
+  let result = `---\n${yamlStr}---\n\n${card.content}`
 
-  for (const comment of feature.comments || []) {
+  for (const comment of card.comments || []) {
     result += '\n\n---\n'
     result += `comment: true\n`
     result += `id: "${comment.id}"\n`

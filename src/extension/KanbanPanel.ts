@@ -1,13 +1,13 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { getTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
-import type { Feature, Priority, KanbanColumn, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
-import { serializeFeature } from '../sdk/parser'
+import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings } from '../shared/types'
+import { serializeCard } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 
 
-interface CreateFeatureData {
+interface CreateCardData {
   status: string
   priority: Priority
   content: string
@@ -25,11 +25,11 @@ export class KanbanPanel {
   private readonly _panel: vscode.WebviewPanel
   private readonly _extensionUri: vscode.Uri
   private readonly _context: vscode.ExtensionContext
-  private _features: Feature[] = []
+  private _cards: Card[] = []
   private _disposables: vscode.Disposable[] = []
   private _fileWatcher: vscode.FileSystemWatcher | undefined
   private _configWatcher: vscode.FileSystemWatcher | undefined
-  private _currentEditingFeatureId: string | null = null
+  private _currentEditingCardId: string | null = null
   private _currentBoardId: string | undefined = undefined
   private _lastWrittenContent: string = ''
   private _migrating = false
@@ -100,58 +100,58 @@ export class KanbanPanel {
       async (message) => {
         switch (message.type) {
           case 'ready':
-            await this._loadFeatures()
-            this._sendFeaturesToWebview()
+            await this._loadCards()
+            this._sendCardsToWebview()
             break
-          case 'createFeature': {
-            await this._createFeature(message.data)
+          case 'createCard': {
+            await this._createCard(message.data)
             const createRoot = this._getWorkspaceRoot()
             const createCfg = createRoot ? readConfig(createRoot) : DEFAULT_CONFIG
             if (createCfg.markdownEditorMode) {
-              // Open the newly created feature in native editor
-              const created = this._features[this._features.length - 1]
+              // Open the newly created card in native editor
+              const created = this._cards[this._cards.length - 1]
               if (created) {
-                this._openFeatureInNativeEditor(created.id)
+                this._openCardInNativeEditor(created.id)
               }
             }
             break
           }
-          case 'moveFeature':
-            await this._moveFeature(message.featureId, message.newStatus, message.newOrder)
+          case 'moveCard':
+            await this._moveCard(message.cardId, message.newStatus, message.newOrder)
             break
-          case 'deleteFeature':
-            await this._deleteFeature(message.featureId)
+          case 'deleteCard':
+            await this._deleteCard(message.cardId)
             break
-          case 'permanentDeleteFeature':
-            await this._permanentDeleteFeature(message.featureId)
+          case 'permanentDeleteCard':
+            await this._permanentDeleteCard(message.cardId)
             break
-          case 'restoreFeature':
-            await this._restoreFeature(message.featureId)
+          case 'restoreCard':
+            await this._restoreCard(message.cardId)
             break
           case 'purgeDeletedCards':
             await this._purgeDeletedCards()
             break
-          case 'updateFeature':
-            await this._updateFeature(message.featureId, message.updates)
+          case 'updateCard':
+            await this._updateCard(message.cardId, message.updates)
             break
-          case 'openFeature': {
+          case 'openCard': {
             const openRoot = this._getWorkspaceRoot()
             const openCfg = openRoot ? readConfig(openRoot) : DEFAULT_CONFIG
             if (openCfg.markdownEditorMode) {
-              this._openFeatureInNativeEditor(message.featureId)
+              this._openCardInNativeEditor(message.cardId)
             } else {
-              await this._sendFeatureContent(message.featureId)
+              await this._sendCardContent(message.cardId)
             }
             break
           }
-          case 'saveFeatureContent':
-            await this._saveFeatureContent(message.featureId, message.content, message.frontmatter)
+          case 'saveCardContent':
+            await this._saveCardContent(message.cardId, message.content, message.frontmatter)
             break
-          case 'closeFeature':
-            this._currentEditingFeatureId = null
+          case 'closeCard':
+            this._currentEditingCardId = null
             break
           case 'openFile': {
-            const feat = this._features.find(f => f.id === message.featureId)
+            const feat = this._cards.find(f => f.id === message.cardId)
             if (feat) {
               const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feat.filePath))
               await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
@@ -172,22 +172,22 @@ export class KanbanPanel {
             await vscode.commands.executeCommand('workbench.action.focusMenuBar')
             break
           case 'addAttachment':
-            await this._addAttachment(message.featureId)
+            await this._addAttachment(message.cardId)
             break
           case 'openAttachment':
-            await this._openAttachment(message.featureId, message.attachment)
+            await this._openAttachment(message.cardId, message.attachment)
             break
           case 'removeAttachment':
-            await this._removeAttachment(message.featureId, message.attachment)
+            await this._removeAttachment(message.cardId, message.attachment)
             break
           case 'addComment':
-            await this._addComment(message.featureId, message.author, message.content)
+            await this._addComment(message.cardId, message.author, message.content)
             break
           case 'updateComment':
-            await this._updateComment(message.featureId, message.commentId, message.content)
+            await this._updateComment(message.cardId, message.commentId, message.content)
             break
           case 'deleteComment':
-            await this._deleteComment(message.featureId, message.commentId)
+            await this._deleteComment(message.cardId, message.commentId)
             break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
@@ -213,14 +213,14 @@ export class KanbanPanel {
             this._migrating = true
             try {
               await sdk.transferCard(
-                message.featureId,
+                message.cardId,
                 this._currentBoardId,
                 message.toBoard,
                 message.targetStatus
               )
-              this._currentEditingFeatureId = null
-              await this._loadFeatures()
-              this._sendFeaturesToWebview()
+              this._currentEditingCardId = null
+              await this._loadCards()
+              this._sendCardsToWebview()
             } catch (err) {
               vscode.window.showErrorMessage(`Failed to transfer card: ${err}`)
             } finally {
@@ -230,8 +230,8 @@ export class KanbanPanel {
           }
           case 'switchBoard':
             this._currentBoardId = message.boardId
-            await this._loadFeatures()
-            this._sendFeaturesToWebview()
+            await this._loadCards()
+            this._sendCardsToWebview()
             break
           case 'createBoard': {
             if (!this._sdk) break
@@ -240,8 +240,8 @@ export class KanbanPanel {
             try {
               this._sdk.createBoard(boardId, message.name)
               this._currentBoardId = boardId
-              await this._loadFeatures()
-              this._sendFeaturesToWebview()
+              await this._loadCards()
+              this._sendCardsToWebview()
             } catch (err) {
               vscode.window.showErrorMessage(`Failed to create board: ${err}`)
             }
@@ -251,8 +251,8 @@ export class KanbanPanel {
             const sdk = this._getSDK()
             if (!sdk) break
             sdk.setLabel(message.name, message.definition)
-            await this._loadFeatures()
-            this._sendFeaturesToWebview()
+            await this._loadCards()
+            this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
             break
           }
@@ -260,8 +260,8 @@ export class KanbanPanel {
             const sdk = this._getSDK()
             if (!sdk) break
             await sdk.renameLabel(message.oldName, message.newName)
-            await this._loadFeatures()
-            this._sendFeaturesToWebview()
+            await this._loadCards()
+            this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
             break
           }
@@ -269,17 +269,17 @@ export class KanbanPanel {
             const sdk = this._getSDK()
             if (!sdk) break
             await sdk.deleteLabel(message.name)
-            await this._loadFeatures()
-            this._sendFeaturesToWebview()
+            await this._loadCards()
+            this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
             break
           }
           case 'triggerAction': {
-            const { featureId, action, callbackKey } = message
+            const { cardId, action, callbackKey } = message
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await triggerSdk.triggerAction(featureId, action)
+              await triggerSdk.triggerAction(cardId, action)
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
@@ -295,7 +295,7 @@ export class KanbanPanel {
       this._disposables
     )
 
-    // Set up file watcher for feature files
+    // Set up file watcher for card files
     this._setupFileWatcher()
 
     // Watch .kanban.json for config changes
@@ -303,16 +303,16 @@ export class KanbanPanel {
   }
 
   private _setupFileWatcher(): void {
-    // Dispose old watcher if re-setting up (e.g. featuresDirectory changed)
+    // Dispose old watcher if re-setting up (e.g. kanbanDirectory changed)
     if (this._fileWatcher) {
       this._fileWatcher.dispose()
     }
 
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) return
+    const kanbanDir = this._getWorkspaceKanbanDir()
+    if (!kanbanDir) return
 
-    // Watch for changes in the features directory (recursive for board/status subfolders)
-    const pattern = new vscode.RelativePattern(featuresDir, 'boards/**/*.md')
+    // Watch for changes in the kanban directory (recursive for board/status subfolders)
+    const pattern = new vscode.RelativePattern(kanbanDir, 'boards/**/*.md')
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     // Debounce to avoid multiple rapid updates
@@ -322,17 +322,17 @@ export class KanbanPanel {
       if (this._migrating) return
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(async () => {
-        await this._loadFeatures()
-        this._sendFeaturesToWebview()
+        await this._loadCards()
+        this._sendCardsToWebview()
 
-        // If the changed file is the currently-edited feature, check for external changes
-        if (this._currentEditingFeatureId && uri) {
-          const editingFeature = this._features.find(f => f.id === this._currentEditingFeatureId)
-          if (editingFeature && editingFeature.filePath === uri.fsPath) {
-            const currentContent = serializeFeature(editingFeature)
+        // If the changed file is the currently-edited card, check for external changes
+        if (this._currentEditingCardId && uri) {
+          const editingCard = this._cards.find(f => f.id === this._currentEditingCardId)
+          if (editingCard && editingCard.filePath === uri.fsPath) {
+            const currentContent = serializeCard(editingCard)
             if (currentContent !== this._lastWrittenContent) {
               // External change detected — refresh the editor
-              this._sendFeatureContent(this._currentEditingFeatureId)
+              this._sendCardContent(this._currentEditingCardId)
             }
           }
         }
@@ -357,16 +357,16 @@ export class KanbanPanel {
     const pattern = new vscode.RelativePattern(root, CONFIG_FILENAME)
     this._configWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
-    let lastFeaturesDir = this._getWorkspaceFeaturesDir()
+    let lastKanbanDir = this._getWorkspaceKanbanDir()
 
     const handleConfigChange = () => {
-      const newFeaturesDir = this._getWorkspaceFeaturesDir()
-      if (lastFeaturesDir !== newFeaturesDir) {
-        lastFeaturesDir = newFeaturesDir
+      const newKanbanDir = this._getWorkspaceKanbanDir()
+      if (lastKanbanDir !== newKanbanDir) {
+        lastKanbanDir = newKanbanDir
         this._setupFileWatcher()
-        this._loadFeatures().then(() => this._sendFeaturesToWebview())
+        this._loadCards().then(() => this._sendCardsToWebview())
       } else {
-        this._sendFeaturesToWebview()
+        this._sendCardsToWebview()
       }
     }
 
@@ -443,35 +443,35 @@ export class KanbanPanel {
     return workspaceFolders[0].uri.fsPath
   }
 
-  private _getWorkspaceFeaturesDir(): string | null {
+  private _getWorkspaceKanbanDir(): string | null {
     const root = this._getWorkspaceRoot()
     if (!root) return null
     const config = readConfig(root)
-    return path.join(root, config.featuresDirectory)
+    return path.join(root, config.kanbanDirectory)
   }
 
   private _getSDK(): KanbanSDK | null {
-    const featuresDir = this._getWorkspaceFeaturesDir()
-    if (!featuresDir) return null
-    if (!this._sdk || this._sdk.featuresDir !== featuresDir) {
-      this._sdk = new KanbanSDK(featuresDir)
+    const kanbanDir = this._getWorkspaceKanbanDir()
+    if (!kanbanDir) return null
+    if (!this._sdk || this._sdk.kanbanDir !== kanbanDir) {
+      this._sdk = new KanbanSDK(kanbanDir)
     }
     return this._sdk
   }
 
-  private async _loadFeatures(): Promise<void> {
+  private async _loadCards(): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) {
-      this._features = []
+      this._cards = []
       return
     }
 
     try {
       this._migrating = true
       const columns = this._getColumns().map(c => c.id)
-      this._features = await sdk.listCards(columns, this._currentBoardId)
+      this._cards = await sdk.listCards(columns, this._currentBoardId)
     } catch {
-      this._features = []
+      this._cards = []
     } finally {
       this._migrating = false
     }
@@ -481,17 +481,17 @@ export class KanbanPanel {
     this._panel.webview.postMessage({ type: 'triggerCreateDialog' })
   }
 
-  public openFeature(featureId: string): void {
+  public openCard(cardId: string): void {
     const root = this._getWorkspaceRoot()
     const cfg = root ? readConfig(root) : DEFAULT_CONFIG
     if (cfg.markdownEditorMode) {
-      this._openFeatureInNativeEditor(featureId)
+      this._openCardInNativeEditor(cardId)
     } else {
-      this._sendFeatureContent(featureId)
+      this._sendCardContent(cardId)
     }
   }
 
-  private async _createFeature(data: CreateFeatureData): Promise<void> {
+  private async _createCard(data: CreateCardData): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) {
       vscode.window.showErrorMessage('No workspace folder open')
@@ -500,7 +500,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const feature = await sdk.createCard({
+      const card = await sdk.createCard({
         content: data.content,
         status: data.status,
         priority: data.priority,
@@ -511,51 +511,51 @@ export class KanbanPanel {
         actions: data.actions,
         boardId: this._currentBoardId
       })
-      this._features.push(feature)
-      this._sendFeaturesToWebview()
+      this._cards.push(card)
+      this._sendCardsToWebview()
     } finally {
       this._migrating = false
     }
   }
 
-  private async _moveFeature(featureId: string, newStatus: string, newOrder: number): Promise<void> {
+  private async _moveCard(cardId: string, newStatus: string, newOrder: number): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.moveCard(featureId, newStatus, newOrder, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
-      this._sendFeaturesToWebview()
+      const updated = await sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
+      this._sendCardsToWebview()
     } finally {
       this._migrating = false
     }
   }
 
-  private async _deleteFeature(featureId: string): Promise<void> {
+  private async _deleteCard(cardId: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     try {
-      await sdk.deleteCard(featureId, this._currentBoardId)
-      await this._loadFeatures()
-      this._sendFeaturesToWebview()
+      await sdk.deleteCard(cardId, this._currentBoardId)
+      await this._loadCards()
+      this._sendCardsToWebview()
     } catch (err) {
-      vscode.window.showErrorMessage(`Failed to delete feature: ${err}`)
+      vscode.window.showErrorMessage(`Failed to delete card: ${err}`)
     }
   }
 
-  private async _permanentDeleteFeature(featureId: string): Promise<void> {
+  private async _permanentDeleteCard(cardId: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     try {
-      await sdk.permanentlyDeleteCard(featureId, this._currentBoardId)
-      this._features = this._features.filter(f => f.id !== featureId)
-      this._sendFeaturesToWebview()
+      await sdk.permanentlyDeleteCard(cardId, this._currentBoardId)
+      this._cards = this._cards.filter(f => f.id !== cardId)
+      this._sendCardsToWebview()
     } catch (err) {
-      vscode.window.showErrorMessage(`Failed to permanently delete feature: ${err}`)
+      vscode.window.showErrorMessage(`Failed to permanently delete card: ${err}`)
     }
   }
 
@@ -565,97 +565,97 @@ export class KanbanPanel {
 
     try {
       await sdk.purgeDeletedCards(this._currentBoardId)
-      this._features = this._features.filter(f => f.status !== 'deleted')
-      this._sendFeaturesToWebview()
+      this._cards = this._cards.filter(f => f.status !== 'deleted')
+      this._sendCardsToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to purge deleted cards: ${err}`)
     }
   }
 
-  private async _restoreFeature(featureId: string): Promise<void> {
+  private async _restoreCard(cardId: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     try {
       const settings = sdk.getSettings()
-      await sdk.updateCard(featureId, { status: settings.defaultStatus }, this._currentBoardId)
-      await this._loadFeatures()
-      this._sendFeaturesToWebview()
+      await sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId)
+      await this._loadCards()
+      this._sendCardsToWebview()
     } catch (err) {
-      vscode.window.showErrorMessage(`Failed to restore feature: ${err}`)
+      vscode.window.showErrorMessage(`Failed to restore card: ${err}`)
     }
   }
 
-  private async _updateFeature(featureId: string, updates: Partial<Feature>): Promise<void> {
+  private async _updateCard(cardId: string, updates: Partial<Card>): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(featureId, updates, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
-      this._sendFeaturesToWebview()
+      const updated = await sdk.updateCard(cardId, updates, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
+      this._sendCardsToWebview()
     } finally {
       this._migrating = false
     }
   }
 
-  private async _openFeatureInNativeEditor(featureId: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+  private async _openCardInNativeEditor(cardId: string): Promise<void> {
+    const card = this._cards.find(f => f.id === cardId)
+    if (!card) return
 
     // Use a fixed column beside the panel so repeated clicks reuse the same split
     const panelColumn = this._panel.viewColumn ?? vscode.ViewColumn.One
     const targetColumn = panelColumn === vscode.ViewColumn.One ? vscode.ViewColumn.Two : vscode.ViewColumn.Beside
 
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feature.filePath))
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(card.filePath))
     await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
   }
 
-  private async _sendFeatureContent(featureId: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+  private async _sendCardContent(cardId: string): Promise<void> {
+    const card = this._cards.find(f => f.id === cardId)
+    if (!card) return
 
-    this._currentEditingFeatureId = featureId
+    this._currentEditingCardId = cardId
 
-    const frontmatter: FeatureFrontmatter = {
+    const frontmatter: CardFrontmatter = {
       version: CARD_FORMAT_VERSION,
-      id: feature.id,
-      status: feature.status,
-      priority: feature.priority,
-      assignee: feature.assignee,
-      dueDate: feature.dueDate,
-      created: feature.created,
-      modified: feature.modified,
-      completedAt: feature.completedAt,
-      labels: feature.labels,
-      attachments: feature.attachments,
-      order: feature.order,
-      metadata: feature.metadata,
-      actions: feature.actions
+      id: card.id,
+      status: card.status,
+      priority: card.priority,
+      assignee: card.assignee,
+      dueDate: card.dueDate,
+      created: card.created,
+      modified: card.modified,
+      completedAt: card.completedAt,
+      labels: card.labels,
+      attachments: card.attachments,
+      order: card.order,
+      metadata: card.metadata,
+      actions: card.actions
     }
 
     this._panel.webview.postMessage({
-      type: 'featureContent',
-      featureId: feature.id,
-      content: feature.content,
+      type: 'cardContent',
+      cardId: card.id,
+      content: card.content,
       frontmatter,
-      comments: feature.comments || []
+      comments: card.comments || []
     })
   }
 
-  private async _saveFeatureContent(
-    featureId: string,
+  private async _saveCardContent(
+    cardId: string,
     content: string,
-    frontmatter: FeatureFrontmatter
+    frontmatter: CardFrontmatter
   ): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(featureId, {
+      const updated = await sdk.updateCard(cardId, {
         content,
         status: frontmatter.status,
         priority: frontmatter.priority,
@@ -664,19 +664,19 @@ export class KanbanPanel {
         labels: frontmatter.labels,
         attachments: frontmatter.attachments
       }, this._currentBoardId)
-      this._lastWrittenContent = serializeFeature(updated)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
-      this._sendFeaturesToWebview()
+      this._lastWrittenContent = serializeCard(updated)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
+      this._sendCardsToWebview()
     } finally {
       this._migrating = false
     }
   }
 
-  private async _addAttachment(featureId: string): Promise<void> {
+  private async _addAttachment(cardId: string): Promise<void> {
     const sdk = this._getSDK()
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature || !sdk) return
+    const card = this._cards.find(f => f.id === cardId)
+    if (!card || !sdk) return
 
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: true,
@@ -687,27 +687,27 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      let updated = feature
+      let updated = card
       for (const uri of uris) {
-        updated = await sdk.addAttachment(featureId, uri.fsPath, this._currentBoardId)
+        updated = await sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId)
       }
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
 
-      this._sendFeaturesToWebview()
-      if (this._currentEditingFeatureId === featureId) {
-        await this._sendFeatureContent(featureId)
+      this._sendCardsToWebview()
+      if (this._currentEditingCardId === cardId) {
+        await this._sendCardContent(cardId)
       }
     } finally {
       this._migrating = false
     }
   }
 
-  private async _openAttachment(featureId: string, attachment: string): Promise<void> {
-    const feature = this._features.find(f => f.id === featureId)
-    if (!feature) return
+  private async _openAttachment(cardId: string, attachment: string): Promise<void> {
+    const card = this._cards.find(f => f.id === cardId)
+    if (!card) return
 
-    const featureDir = path.dirname(feature.filePath)
+    const featureDir = path.dirname(card.filePath)
     const attachmentPath = path.resolve(featureDir, attachment)
 
     try {
@@ -720,76 +720,76 @@ export class KanbanPanel {
     }
   }
 
-  private async _removeAttachment(featureId: string, attachment: string): Promise<void> {
+  private async _removeAttachment(cardId: string, attachment: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.removeAttachment(featureId, attachment, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
+      const updated = await sdk.removeAttachment(cardId, attachment, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
 
-      this._sendFeaturesToWebview()
-      if (this._currentEditingFeatureId === featureId) {
-        await this._sendFeatureContent(featureId)
+      this._sendCardsToWebview()
+      if (this._currentEditingCardId === cardId) {
+        await this._sendCardContent(cardId)
       }
     } finally {
       this._migrating = false
     }
   }
 
-  private async _addComment(featureId: string, author: string, content: string): Promise<void> {
+  private async _addComment(cardId: string, author: string, content: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.addComment(featureId, author, content, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
+      const updated = await sdk.addComment(cardId, author, content, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
 
-      this._sendFeaturesToWebview()
-      if (this._currentEditingFeatureId === featureId) {
-        await this._sendFeatureContent(featureId)
+      this._sendCardsToWebview()
+      if (this._currentEditingCardId === cardId) {
+        await this._sendCardContent(cardId)
       }
     } finally {
       this._migrating = false
     }
   }
 
-  private async _updateComment(featureId: string, commentId: string, content: string): Promise<void> {
+  private async _updateComment(cardId: string, commentId: string, content: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.updateComment(featureId, commentId, content, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
+      const updated = await sdk.updateComment(cardId, commentId, content, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
 
-      this._sendFeaturesToWebview()
-      if (this._currentEditingFeatureId === featureId) {
-        await this._sendFeatureContent(featureId)
+      this._sendCardsToWebview()
+      if (this._currentEditingCardId === cardId) {
+        await this._sendCardContent(cardId)
       }
     } finally {
       this._migrating = false
     }
   }
 
-  private async _deleteComment(featureId: string, commentId: string): Promise<void> {
+  private async _deleteComment(cardId: string, commentId: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
 
     this._migrating = true
     try {
-      const updated = await sdk.deleteComment(featureId, commentId, this._currentBoardId)
-      const idx = this._features.findIndex(f => f.id === featureId)
-      if (idx !== -1) this._features[idx] = updated
+      const updated = await sdk.deleteComment(cardId, commentId, this._currentBoardId)
+      const idx = this._cards.findIndex(f => f.id === cardId)
+      if (idx !== -1) this._cards[idx] = updated
 
-      this._sendFeaturesToWebview()
-      if (this._currentEditingFeatureId === featureId) {
-        await this._sendFeatureContent(featureId)
+      this._sendCardsToWebview()
+      if (this._currentEditingCardId === cardId) {
+        await this._sendCardContent(cardId)
       }
     } finally {
       this._migrating = false
@@ -800,22 +800,22 @@ export class KanbanPanel {
     agent?: 'claude' | 'codex' | 'opencode',
     permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
   ): Promise<void> {
-    // Find the currently editing feature
-    const feature = this._features.find(f => f.id === this._currentEditingFeatureId)
-    if (!feature) {
-      vscode.window.showErrorMessage('No feature selected')
+    // Find the currently editing card
+    const card = this._cards.find(f => f.id === this._currentEditingCardId)
+    if (!card) {
+      vscode.window.showErrorMessage('No card selected')
       return
     }
 
     // Parse title from the first # heading in content
-    const titleMatch = feature.content.match(/^#\s+(.+)$/m)
-    const title = titleMatch ? titleMatch[1].trim() : getTitleFromContent(feature.content)
+    const titleMatch = card.content.match(/^#\s+(.+)$/m)
+    const title = titleMatch ? titleMatch[1].trim() : getTitleFromContent(card.content)
 
-    const labels = feature.labels.length > 0 ? ` [${feature.labels.join(', ')}]` : ''
-    const description = feature.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+    const labels = card.labels.length > 0 ? ` [${card.labels.join(', ')}]` : ''
+    const description = card.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
     const shortDesc = description.length > 200 ? description.substring(0, 200) + '...' : description
 
-    const prompt = `Implement this feature: "${title}" (${feature.priority} priority)${labels}. ${shortDesc} See full details in: ${feature.filePath}`
+    const prompt = `Implement this card: "${title}" (${card.priority} priority)${labels}. ${shortDesc} See full details in: ${card.filePath}`
 
     // Use provided agent or fall back to config
     const aiRoot = this._getWorkspaceRoot()
@@ -868,7 +868,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     sdk.updateSettings(settings)
-    this._sendFeaturesToWebview()
+    this._sendCardsToWebview()
   }
 
   private _getColumns(): KanbanColumn[] {
@@ -877,7 +877,7 @@ export class KanbanPanel {
     return sdk.listColumns(this._currentBoardId)
   }
 
-  private _sendFeaturesToWebview(): void {
+  private _sendCardsToWebview(): void {
     const sdk = this._getSDK()
     const columns = sdk ? sdk.listColumns(this._currentBoardId) : [...DEFAULT_CONFIG.boards.default.columns]
     const settings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
@@ -886,7 +886,7 @@ export class KanbanPanel {
     const config = root ? readConfig(root) : DEFAULT_CONFIG
     const currentBoard = this._currentBoardId || config.defaultBoard
 
-    // Override showBuildWithAI based on VS Code's AI feature toggle
+    // Override showBuildWithAI based on VS Code's AI card toggle
     const aiDisabled = vscode.workspace.getConfiguration('chat').get<boolean>('disableAIFeatures', false)
     if (aiDisabled) {
       settings.showBuildWithAI = false
@@ -894,7 +894,7 @@ export class KanbanPanel {
 
     this._panel.webview.postMessage({
       type: 'init',
-      features: this._features,
+      cards: this._cards,
       columns,
       settings,
       boards,
@@ -914,22 +914,22 @@ export class KanbanPanel {
       uniqueId = `${id}-${counter++}`
     }
     sdk.addColumn({ id: uniqueId, name: column.name, color: column.color }, this._currentBoardId)
-    this._sendFeaturesToWebview()
+    this._sendCardsToWebview()
   }
 
   private _editColumn(columnId: string, updates: { name: string; color: string }): void {
     const sdk = this._getSDK()
     if (!sdk) return
     sdk.updateColumn(columnId, updates, this._currentBoardId)
-    this._sendFeaturesToWebview()
+    this._sendCardsToWebview()
   }
 
   private _removeColumn(columnId: string): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    const hasFeatures = this._features.some(f => f.status === columnId)
-    if (hasFeatures) {
-      vscode.window.showWarningMessage(`Cannot remove list "${columnId}" because it still contains features. Move or delete them first.`)
+    const hasCards = this._cards.some(f => f.status === columnId)
+    if (hasCards) {
+      vscode.window.showWarningMessage(`Cannot remove list "${columnId}" because it still contains cards. Move or delete them first.`)
       return
     }
     const columns = sdk.listColumns()
@@ -938,7 +938,7 @@ export class KanbanPanel {
       return
     }
     sdk.removeColumn(columnId, this._currentBoardId)
-    this._sendFeaturesToWebview()
+    this._sendCardsToWebview()
   }
 
   private async _cleanupColumn(columnId: string): Promise<void> {
@@ -949,10 +949,10 @@ export class KanbanPanel {
     try {
       await sdk.cleanupColumn(columnId, this._currentBoardId)
       // Update in-memory cache: mark all column cards as deleted
-      this._features = this._features.map(f =>
+      this._cards = this._cards.map(f =>
         f.status === columnId ? { ...f, status: 'deleted' } : f
       )
-      this._sendFeaturesToWebview()
+      this._sendCardsToWebview()
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to cleanup list: ${err}`)
     } finally {

@@ -6,14 +6,14 @@ import * as http from 'http'
 import { WebSocket } from 'ws'
 import { startServer } from '../server'
 
-// Helper: create a temp directory for features
+// Helper: create a temp directory for cards
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-'))
 }
 
-// Helper: write a feature markdown file
+// Helper: write a card markdown file
 // Files are stored under boards/default/{status}/ in the multi-board layout
-function writeFeatureFile(dir: string, filename: string, content: string, subfolder?: string): string {
+function writeCardFile(dir: string, filename: string, content: string, subfolder?: string): string {
   const targetDir = subfolder ? path.join(dir, 'boards', 'default', subfolder) : path.join(dir, 'boards', 'default')
   fs.mkdirSync(targetDir, { recursive: true })
   const filePath = path.join(targetDir, filename)
@@ -21,8 +21,8 @@ function writeFeatureFile(dir: string, filename: string, content: string, subfol
   return filePath
 }
 
-// Helper: create a standard feature file content
-function makeFeatureContent(opts: {
+// Helper: create a standard card file content
+function makeCardContent(opts: {
   id: string
   status?: string
   priority?: string
@@ -36,7 +36,7 @@ function makeFeatureContent(opts: {
     id,
     status = 'backlog',
     priority = 'medium',
-    title = 'Test Feature',
+    title = 'Test Card',
     order = 'a0',
     assignee = null,
     dueDate = null,
@@ -254,13 +254,13 @@ describe('Standalone Server Integration', () => {
   // ── WebSocket: Ready / Init ──
 
   describe('ready message and init response', () => {
-    it('should return features and columns on ready', async () => {
-      // Pre-populate a feature file in its status subfolder
-      writeFeatureFile(tempDir, 'test-feature.md', makeFeatureContent({
-        id: 'test-feature',
+    it('should return cards and columns on ready', async () => {
+      // Pre-populate a card file in its status subfolder
+      writeCardFile(tempDir, 'test-card.md', makeCardContent({
+        id: 'test-card',
         status: 'backlog',
         priority: 'high',
-        title: 'Test Feature'
+        title: 'Test Card'
       }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
@@ -270,14 +270,14 @@ describe('Standalone Server Integration', () => {
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       expect(response.type).toBe('init')
-      expect(Array.isArray(response.features)).toBe(true)
+      expect(Array.isArray(response.cards)).toBe(true)
       expect(Array.isArray(response.columns)).toBe(true)
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('test-feature')
-      expect(features[0].status).toBe('backlog')
-      expect(features[0].priority).toBe('high')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('test-card')
+      expect(cards[0].status).toBe('backlog')
+      expect(cards[0].priority).toBe('high')
 
       const columns = response.columns as Array<Record<string, unknown>>
       expect(columns.length).toBe(5)
@@ -286,21 +286,21 @@ describe('Standalone Server Integration', () => {
       expect(response.settings).toBeDefined()
     })
 
-    it('should return empty features for empty directory', async () => {
+    it('should return empty cards for empty directory', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<unknown>
-      expect(features.length).toBe(0)
+      const cards = response.cards as Array<unknown>
+      expect(cards.length).toBe(0)
     })
 
-    it('should load features from done/ subfolder', async () => {
-      writeFeatureFile(tempDir, 'done-feature.md', makeFeatureContent({
-        id: 'done-feature',
+    it('should load cards from done/ subfolder', async () => {
+      writeCardFile(tempDir, 'done-card.md', makeCardContent({
+        id: 'done-card',
         status: 'done',
-        title: 'Done Feature'
+        title: 'Done Card'
       }), 'done')
 
       server = startServer(tempDir, port, webviewDir)
@@ -308,19 +308,19 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('done-feature')
-      expect(features[0].status).toBe('done')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('done-card')
+      expect(cards[0].status).toBe('done')
     })
 
-    it('should load multiple features sorted by order', async () => {
-      writeFeatureFile(tempDir, 'feature-b.md', makeFeatureContent({
-        id: 'feature-b',
+    it('should load multiple cards sorted by order', async () => {
+      writeCardFile(tempDir, 'card-b.md', makeCardContent({
+        id: 'card-b',
         order: 'b0'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'feature-a.md', makeFeatureContent({
-        id: 'feature-a',
+      writeCardFile(tempDir, 'card-a.md', makeCardContent({
+        id: 'card-a',
         order: 'a0'
       }), 'backlog')
 
@@ -329,17 +329,17 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(2)
-      expect(features[0].id).toBe('feature-a')
-      expect(features[1].id).toBe('feature-b')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(2)
+      expect(cards[0].id).toBe('card-a')
+      expect(cards[1].id).toBe('card-b')
     })
   })
 
-  // ── Create Feature ──
+  // ── Create Card ──
 
-  describe('createFeature', () => {
-    it('should create a feature file on disk', async () => {
+  describe('createCard', () => {
+    it('should create a card file on disk', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
@@ -347,25 +347,25 @@ describe('Standalone Server Integration', () => {
       // Init first
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // Create feature
+      // Create card
       const response = await sendAndReceive(ws, {
-        type: 'createFeature',
+        type: 'createCard',
         data: {
           status: 'todo',
           priority: 'high',
-          content: '# My New Feature\n\nSome description',
+          content: '# My New Card\n\nSome description',
           assignee: null,
           dueDate: null,
           labels: ['frontend']
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].status).toBe('todo')
-      expect(features[0].priority).toBe('high')
-      expect(features[0].content).toBe('# My New Feature\n\nSome description')
-      expect(features[0].labels).toEqual(['frontend'])
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].status).toBe('todo')
+      expect(cards[0].priority).toBe('high')
+      expect(cards[0].content).toBe('# My New Card\n\nSome description')
+      expect(cards[0].labels).toEqual(['frontend'])
 
       // Verify file exists on disk in boards/default/todo/ subfolder
       const todoDir = path.join(tempDir, 'boards', 'default', 'todo')
@@ -375,11 +375,11 @@ describe('Standalone Server Integration', () => {
       const fileContent = fs.readFileSync(path.join(todoDir, files[0]), 'utf-8')
       expect(fileContent).toContain('status: "todo"')
       expect(fileContent).toContain('priority: "high"')
-      expect(fileContent).toContain('# My New Feature')
+      expect(fileContent).toContain('# My New Card')
       expect(fileContent).toContain('- "frontend"')
     })
 
-    it('should create feature in its status subfolder', async () => {
+    it('should create card in its status subfolder', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
@@ -387,7 +387,7 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'createFeature',
+        type: 'createCard',
         data: {
           status: 'done',
           priority: 'low',
@@ -398,10 +398,10 @@ describe('Standalone Server Integration', () => {
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].status).toBe('done')
-      expect(features[0].completedAt).toBeTruthy()
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].status).toBe('done')
+      expect(cards[0].completedAt).toBeTruthy()
 
       // File should be in boards/default/done/ subfolder
       const doneFiles = fs.readdirSync(path.join(tempDir, 'boards', 'default', 'done')).filter(f => f.endsWith('.md'))
@@ -409,7 +409,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should assign correct order when creating in a populated column', async () => {
-      writeFeatureFile(tempDir, 'existing.md', makeFeatureContent({
+      writeCardFile(tempDir, 'existing.md', makeCardContent({
         id: 'existing',
         status: 'backlog',
         order: 'a0'
@@ -422,22 +422,22 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'createFeature',
+        type: 'createCard',
         data: {
           status: 'backlog',
           priority: 'medium',
-          content: '# Second Feature',
+          content: '# Second Card',
           assignee: null,
           dueDate: null,
           labels: []
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      const backlogFeatures = features.filter(f => f.status === 'backlog')
-      expect(backlogFeatures.length).toBe(2)
-      // New feature should come after existing (order > 'a0')
-      expect((backlogFeatures[1].order as string) > (backlogFeatures[0].order as string)).toBe(true)
+      const cards = response.cards as Array<Record<string, unknown>>
+      const backlogCards = cards.filter(f => f.status === 'backlog')
+      expect(backlogCards.length).toBe(2)
+      // New card should come after existing (order > 'a0')
+      expect((backlogCards[1].order as string) > (backlogCards[0].order as string)).toBe(true)
     })
 
     it('should preserve assignee and dueDate', async () => {
@@ -448,29 +448,29 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'createFeature',
+        type: 'createCard',
         data: {
           status: 'todo',
           priority: 'high',
-          content: '# Assigned Feature',
+          content: '# Assigned Card',
           assignee: 'john',
           dueDate: '2024-12-31',
           labels: ['urgent', 'backend']
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].assignee).toBe('john')
-      expect(features[0].dueDate).toBe('2024-12-31')
-      expect(features[0].labels).toEqual(['urgent', 'backend'])
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].assignee).toBe('john')
+      expect(cards[0].dueDate).toBe('2024-12-31')
+      expect(cards[0].labels).toEqual(['urgent', 'backend'])
     })
   })
 
-  // ── Move Feature ──
+  // ── Move Card ──
 
-  describe('moveFeature', () => {
+  describe('moveCard', () => {
     it('should change status and move file to new status folder', async () => {
-      writeFeatureFile(tempDir, 'move-me.md', makeFeatureContent({
+      writeCardFile(tempDir, 'move-me.md', makeCardContent({
         id: 'move-me',
         status: 'backlog',
         title: 'Move Me'
@@ -483,14 +483,14 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'moveFeature',
-        featureId: 'move-me',
+        type: 'moveCard',
+        cardId: 'move-me',
         newStatus: 'in-progress',
         newOrder: 0
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].status).toBe('in-progress')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].status).toBe('in-progress')
 
       // Verify file was moved to boards/default/in-progress/ subfolder
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'move-me.md'))).toBe(false)
@@ -499,7 +499,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should move file to done/ subfolder when status changes to done', async () => {
-      writeFeatureFile(tempDir, 'finish-me.md', makeFeatureContent({
+      writeCardFile(tempDir, 'finish-me.md', makeCardContent({
         id: 'finish-me',
         status: 'review',
         title: 'Finish Me'
@@ -512,15 +512,15 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'moveFeature',
-        featureId: 'finish-me',
+        type: 'moveCard',
+        cardId: 'finish-me',
         newStatus: 'done',
         newOrder: 0
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].status).toBe('done')
-      expect(features[0].completedAt).toBeTruthy()
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].status).toBe('done')
+      expect(cards[0].completedAt).toBeTruthy()
 
       // File should now be in boards/default/done/ subfolder
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'review', 'finish-me.md'))).toBe(false)
@@ -528,7 +528,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should move file from done/ to target status folder', async () => {
-      writeFeatureFile(tempDir, 'reopen-me.md', makeFeatureContent({
+      writeCardFile(tempDir, 'reopen-me.md', makeCardContent({
         id: 'reopen-me',
         status: 'done',
         title: 'Reopen Me'
@@ -541,15 +541,15 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'moveFeature',
-        featureId: 'reopen-me',
+        type: 'moveCard',
+        cardId: 'reopen-me',
         newStatus: 'todo',
         newOrder: 0
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].status).toBe('todo')
-      expect(features[0].completedAt).toBeNull()
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].status).toBe('todo')
+      expect(cards[0].completedAt).toBeNull()
 
       // File should be in boards/default/todo/ subfolder
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'reopen-me.md'))).toBe(false)
@@ -557,17 +557,17 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should compute correct fractional order between neighbors', async () => {
-      writeFeatureFile(tempDir, 'feat-a.md', makeFeatureContent({
+      writeCardFile(tempDir, 'feat-a.md', makeCardContent({
         id: 'feat-a',
         status: 'todo',
         order: 'a0'
       }), 'todo')
-      writeFeatureFile(tempDir, 'feat-c.md', makeFeatureContent({
+      writeCardFile(tempDir, 'feat-c.md', makeCardContent({
         id: 'feat-c',
         status: 'todo',
         order: 'a2'
       }), 'todo')
-      writeFeatureFile(tempDir, 'feat-move.md', makeFeatureContent({
+      writeCardFile(tempDir, 'feat-move.md', makeCardContent({
         id: 'feat-move',
         status: 'backlog',
         order: 'a0'
@@ -581,32 +581,32 @@ describe('Standalone Server Integration', () => {
 
       // Move feat-move to todo column between feat-a (position 0) and feat-c (position 1)
       const response = await sendAndReceive(ws, {
-        type: 'moveFeature',
-        featureId: 'feat-move',
+        type: 'moveCard',
+        cardId: 'feat-move',
         newStatus: 'todo',
         newOrder: 1
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      const todoFeatures = features
+      const cards = response.cards as Array<Record<string, unknown>>
+      const todoCards = cards
         .filter(f => f.status === 'todo')
         .sort((a, b) => (a.order as string) < (b.order as string) ? -1 : 1)
 
-      expect(todoFeatures.length).toBe(3)
-      expect(todoFeatures[0].id).toBe('feat-a')
-      expect(todoFeatures[1].id).toBe('feat-move')
-      expect(todoFeatures[2].id).toBe('feat-c')
+      expect(todoCards.length).toBe(3)
+      expect(todoCards[0].id).toBe('feat-a')
+      expect(todoCards[1].id).toBe('feat-move')
+      expect(todoCards[2].id).toBe('feat-c')
       // Verify order is between a0 and a2
-      expect((todoFeatures[1].order as string) > (todoFeatures[0].order as string)).toBe(true)
-      expect((todoFeatures[1].order as string) < (todoFeatures[2].order as string)).toBe(true)
+      expect((todoCards[1].order as string) > (todoCards[0].order as string)).toBe(true)
+      expect((todoCards[1].order as string) < (todoCards[2].order as string)).toBe(true)
     })
   })
 
-  // ── Delete Feature ──
+  // ── Delete Card ──
 
-  describe('deleteFeature', () => {
-    it('should soft-delete feature by moving to deleted status', async () => {
-      writeFeatureFile(tempDir, 'delete-me.md', makeFeatureContent({
+  describe('deleteCard', () => {
+    it('should soft-delete card by moving to deleted status', async () => {
+      writeCardFile(tempDir, 'delete-me.md', makeCardContent({
         id: 'delete-me',
         title: 'Delete Me'
       }), 'backlog')
@@ -618,13 +618,13 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'deleteFeature',
-        featureId: 'delete-me'
+        type: 'deleteCard',
+        cardId: 'delete-me'
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
+      const cards = response.cards as Array<Record<string, unknown>>
       // Card still exists but with deleted status
-      const deletedCard = features.find((f: Record<string, unknown>) => f.id === 'delete-me')
+      const deletedCard = cards.find((f: Record<string, unknown>) => f.id === 'delete-me')
       expect(deletedCard).toBeTruthy()
       expect(deletedCard!.status).toBe('deleted')
 
@@ -633,9 +633,9 @@ describe('Standalone Server Integration', () => {
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'deleted', 'delete-me.md'))).toBe(true)
     })
 
-    it('should only soft-delete the targeted feature', async () => {
-      writeFeatureFile(tempDir, 'keep-me.md', makeFeatureContent({ id: 'keep-me' }), 'backlog')
-      writeFeatureFile(tempDir, 'remove-me.md', makeFeatureContent({ id: 'remove-me' }), 'backlog')
+    it('should only soft-delete the targeted card', async () => {
+      writeCardFile(tempDir, 'keep-me.md', makeCardContent({ id: 'keep-me' }), 'backlog')
+      writeCardFile(tempDir, 'remove-me.md', makeCardContent({ id: 'remove-me' }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -644,22 +644,22 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'deleteFeature',
-        featureId: 'remove-me'
+        type: 'deleteCard',
+        cardId: 'remove-me'
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(2)
-      const kept = features.find((f: Record<string, unknown>) => f.id === 'keep-me')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(2)
+      const kept = cards.find((f: Record<string, unknown>) => f.id === 'keep-me')
       expect(kept).toBeTruthy()
       expect(kept!.status).toBe('backlog')
-      const removed = features.find((f: Record<string, unknown>) => f.id === 'remove-me')
+      const removed = cards.find((f: Record<string, unknown>) => f.id === 'remove-me')
       expect(removed).toBeTruthy()
       expect(removed!.status).toBe('deleted')
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'backlog', 'keep-me.md'))).toBe(true)
     })
 
-    it('should handle deleting non-existent feature gracefully', async () => {
+    it('should handle deleting non-existent card gracefully', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
@@ -667,7 +667,7 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       // This should not crash
-      ws.send(JSON.stringify({ type: 'deleteFeature', featureId: 'nonexistent' }))
+      ws.send(JSON.stringify({ type: 'deleteCard', cardId: 'nonexistent' }))
       await sleep(200)
 
       // Connection should still be open
@@ -675,11 +675,11 @@ describe('Standalone Server Integration', () => {
     })
   })
 
-  // ── Update Feature ──
+  // ── Update Card ──
 
-  describe('updateFeature', () => {
-    it('should update feature properties and persist', async () => {
-      writeFeatureFile(tempDir, 'update-me.md', makeFeatureContent({
+  describe('updateCard', () => {
+    it('should update card properties and persist', async () => {
+      writeCardFile(tempDir, 'update-me.md', makeCardContent({
         id: 'update-me',
         priority: 'low',
         title: 'Update Me'
@@ -692,8 +692,8 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'updateFeature',
-        featureId: 'update-me',
+        type: 'updateCard',
+        cardId: 'update-me',
         updates: {
           priority: 'critical',
           assignee: 'alice',
@@ -701,10 +701,10 @@ describe('Standalone Server Integration', () => {
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].priority).toBe('critical')
-      expect(features[0].assignee).toBe('alice')
-      expect(features[0].labels).toEqual(['urgent'])
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].priority).toBe('critical')
+      expect(cards[0].assignee).toBe('alice')
+      expect(cards[0].labels).toEqual(['urgent'])
 
       // Verify persisted on disk
       const fileContent = fs.readFileSync(path.join(tempDir, 'boards', 'default', 'backlog', 'update-me.md'), 'utf-8')
@@ -714,7 +714,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should set completedAt when status changes to done', async () => {
-      writeFeatureFile(tempDir, 'complete-me.md', makeFeatureContent({
+      writeCardFile(tempDir, 'complete-me.md', makeCardContent({
         id: 'complete-me',
         status: 'review'
       }), 'review')
@@ -726,21 +726,21 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'updateFeature',
-        featureId: 'complete-me',
+        type: 'updateCard',
+        cardId: 'complete-me',
         updates: { status: 'done' }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features[0].completedAt).toBeTruthy()
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards[0].completedAt).toBeTruthy()
     })
   })
 
-  // ── Open Feature (inline editor) ──
+  // ── Open Card (inline editor) ──
 
-  describe('openFeature', () => {
-    it('should return feature content and frontmatter', async () => {
-      writeFeatureFile(tempDir, 'open-me.md', makeFeatureContent({
+  describe('openCard', () => {
+    it('should return card content and frontmatter', async () => {
+      writeCardFile(tempDir, 'open-me.md', makeCardContent({
         id: 'open-me',
         status: 'in-progress',
         priority: 'high',
@@ -756,12 +756,12 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       const response = await sendAndReceive(ws, {
-        type: 'openFeature',
-        featureId: 'open-me'
-      }, 'featureContent')
+        type: 'openCard',
+        cardId: 'open-me'
+      }, 'cardContent')
 
-      expect(response.type).toBe('featureContent')
-      expect(response.featureId).toBe('open-me')
+      expect(response.type).toBe('cardContent')
+      expect(response.cardId).toBe('open-me')
       expect(response.content).toContain('# Open Me')
 
       const frontmatter = response.frontmatter as Record<string, unknown>
@@ -773,11 +773,11 @@ describe('Standalone Server Integration', () => {
     })
   })
 
-  // ── Save Feature Content ──
+  // ── Save Card Content ──
 
-  describe('saveFeatureContent', () => {
+  describe('saveCardContent', () => {
     it('should save updated content and frontmatter to disk', async () => {
-      writeFeatureFile(tempDir, 'save-me.md', makeFeatureContent({
+      writeCardFile(tempDir, 'save-me.md', makeCardContent({
         id: 'save-me',
         status: 'backlog',
         priority: 'low',
@@ -790,16 +790,16 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      // Open the feature first
+      // Open the card first
       await sendAndReceive(ws, {
-        type: 'openFeature',
-        featureId: 'save-me'
-      }, 'featureContent')
+        type: 'openCard',
+        cardId: 'save-me'
+      }, 'cardContent')
 
       // Save with updated content
       const response = await sendAndReceive(ws, {
-        type: 'saveFeatureContent',
-        featureId: 'save-me',
+        type: 'saveCardContent',
+        cardId: 'save-me',
         content: '# Save Me Updated\n\nNew description here.',
         frontmatter: {
           id: 'save-me',
@@ -815,8 +815,8 @@ describe('Standalone Server Integration', () => {
         }
       }, 'init')
 
-      const features = response.features as Array<Record<string, unknown>>
-      const saved = features.find(f => f.id === 'save-me')!
+      const cards = response.cards as Array<Record<string, unknown>>
+      const saved = cards.find(f => f.id === 'save-me')!
       expect(saved.status).toBe('in-progress')
       expect(saved.priority).toBe('high')
       expect(saved.content).toBe('# Save Me Updated\n\nNew description here.')
@@ -832,7 +832,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should move file to done/ when saved with done status', async () => {
-      writeFeatureFile(tempDir, 'save-done.md', makeFeatureContent({
+      writeCardFile(tempDir, 'save-done.md', makeCardContent({
         id: 'save-done',
         status: 'review',
         title: 'Save Done'
@@ -844,13 +844,13 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
       await sendAndReceive(ws, {
-        type: 'openFeature',
-        featureId: 'save-done'
-      }, 'featureContent')
+        type: 'openCard',
+        cardId: 'save-done'
+      }, 'cardContent')
 
       await sendAndReceive(ws, {
-        type: 'saveFeatureContent',
-        featureId: 'save-done',
+        type: 'saveCardContent',
+        cardId: 'save-done',
         content: '# Save Done\n\nCompleted.',
         frontmatter: {
           id: 'save-done',
@@ -871,9 +871,9 @@ describe('Standalone Server Integration', () => {
     })
   })
 
-  // ── Close Feature ──
+  // ── Close Card ──
 
-  describe('closeFeature', () => {
+  describe('closeCard', () => {
     it('should not crash when closing', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
@@ -881,7 +881,7 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      ws.send(JSON.stringify({ type: 'closeFeature' }))
+      ws.send(JSON.stringify({ type: 'closeCard' }))
       await sleep(100)
 
       expect(ws.readyState).toBe(WebSocket.OPEN)
@@ -897,7 +897,7 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
-      ws.send(JSON.stringify({ type: 'openFile', featureId: 'test' }))
+      ws.send(JSON.stringify({ type: 'openFile', cardId: 'test' }))
       await sleep(100)
       expect(ws.readyState).toBe(WebSocket.OPEN)
     })
@@ -952,21 +952,21 @@ describe('Standalone Server Integration', () => {
       // Listen for the next init broadcast
       const updatePromise = waitForMessage(ws, 'init', 10000)
 
-      writeFeatureFile(tempDir, 'external-feature.md', makeFeatureContent({
-        id: 'external-feature',
+      writeCardFile(tempDir, 'external-card.md', makeCardContent({
+        id: 'external-card',
         status: 'todo',
-        title: 'External Feature'
+        title: 'External Card'
       }), 'todo')
 
       const response = await updatePromise
-      const features = response.features as Array<Record<string, unknown>>
-      const external = features.find(f => f.id === 'external-feature')
+      const cards = response.cards as Array<Record<string, unknown>>
+      const external = cards.find(f => f.id === 'external-card')
       expect(external).toBeDefined()
       expect(external!.status).toBe('todo')
     })
 
     it('should broadcast updates when a file is modified externally', async () => {
-      const filePath = writeFeatureFile(tempDir, 'modify-me.md', makeFeatureContent({
+      const filePath = writeCardFile(tempDir, 'modify-me.md', makeCardContent({
         id: 'modify-me',
         status: 'backlog',
         priority: 'low',
@@ -984,22 +984,22 @@ describe('Standalone Server Integration', () => {
 
       const updatePromise = waitForMessage(ws, 'init', 10000)
 
-      fs.writeFileSync(filePath, makeFeatureContent({
+      fs.writeFileSync(filePath, makeCardContent({
         id: 'modify-me',
         status: 'backlog',
         priority: 'critical',
-        title: 'Modified Feature'
+        title: 'Modified Card'
       }), 'utf-8')
 
       const response = await updatePromise
-      const features = response.features as Array<Record<string, unknown>>
-      const modified = features.find(f => f.id === 'modify-me')
+      const cards = response.cards as Array<Record<string, unknown>>
+      const modified = cards.find(f => f.id === 'modify-me')
       expect(modified).toBeDefined()
       expect(modified!.priority).toBe('critical')
     })
 
     it('should broadcast updates when a file is deleted externally', async () => {
-      const filePath = writeFeatureFile(tempDir, 'vanish-me.md', makeFeatureContent({
+      const filePath = writeCardFile(tempDir, 'vanish-me.md', makeCardContent({
         id: 'vanish-me',
         title: 'Vanish Me'
       }), 'backlog')
@@ -1009,7 +1009,7 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const initResponse = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      expect((initResponse.features as Array<unknown>).length).toBe(1)
+      expect((initResponse.cards as Array<unknown>).length).toBe(1)
 
       // Let chokidar fully initialize
       await sleep(1000)
@@ -1019,8 +1019,8 @@ describe('Standalone Server Integration', () => {
       fs.unlinkSync(filePath)
 
       const response = await updatePromise
-      const features = response.features as Array<unknown>
-      expect(features.length).toBe(0)
+      const cards = response.cards as Array<unknown>
+      expect(cards.length).toBe(0)
     })
   })
 
@@ -1028,7 +1028,7 @@ describe('Standalone Server Integration', () => {
 
   describe('multi-client broadcast', () => {
     it('should broadcast to all connected clients', async () => {
-      writeFeatureFile(tempDir, 'broadcast-test.md', makeFeatureContent({
+      writeCardFile(tempDir, 'broadcast-test.md', makeCardContent({
         id: 'broadcast-test',
         title: 'Broadcast Test'
       }), 'backlog')
@@ -1046,13 +1046,13 @@ describe('Standalone Server Integration', () => {
       // Client 2 listens for update
       const ws2Update = waitForMessage(ws2, 'init', 3000)
 
-      // Client 1 creates a feature
+      // Client 1 creates a card
       ws1.send(JSON.stringify({
-        type: 'createFeature',
+        type: 'createCard',
         data: {
           status: 'backlog',
           priority: 'medium',
-          content: '# Broadcast Feature',
+          content: '# Broadcast Card',
           assignee: null,
           dueDate: null,
           labels: []
@@ -1061,8 +1061,8 @@ describe('Standalone Server Integration', () => {
 
       // Client 2 should receive the broadcast
       const response = await ws2Update
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(2) // original + new
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(2) // original + new
 
       ws1.close()
       ws2.close()
@@ -1074,12 +1074,12 @@ describe('Standalone Server Integration', () => {
 
   describe('legacy order migration', () => {
     it('should migrate integer order values to fractional indices', async () => {
-      writeFeatureFile(tempDir, 'legacy-1.md', makeFeatureContent({
+      writeCardFile(tempDir, 'legacy-1.md', makeCardContent({
         id: 'legacy-1',
         status: 'backlog',
         order: '0'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'legacy-2.md', makeFeatureContent({
+      writeCardFile(tempDir, 'legacy-2.md', makeCardContent({
         id: 'legacy-2',
         status: 'backlog',
         order: '1'
@@ -1090,10 +1090,10 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
+      const cards = response.cards as Array<Record<string, unknown>>
 
       // Orders should no longer be plain integers
-      for (const f of features) {
+      for (const f of cards) {
         expect(/^\d+$/.test(f.order as string)).toBe(false)
       }
 
@@ -1116,7 +1116,7 @@ describe('Standalone Server Integration', () => {
   describe('status/folder reconciliation', () => {
     it('should move root file with status:done to done/ subfolder (migration)', async () => {
       // Place a done-status file in root (mismatched — legacy flat layout)
-      writeFeatureFile(tempDir, 'misplaced-done.md', makeFeatureContent({
+      writeCardFile(tempDir, 'misplaced-done.md', makeCardContent({
         id: 'misplaced-done',
         status: 'done',
         title: 'Misplaced Done'
@@ -1135,7 +1135,7 @@ describe('Standalone Server Integration', () => {
 
     it('should move mismatched file to correct status subfolder', async () => {
       // Place a backlog-status file in done/ (mismatched)
-      writeFeatureFile(tempDir, 'misplaced-active.md', makeFeatureContent({
+      writeCardFile(tempDir, 'misplaced-active.md', makeCardContent({
         id: 'misplaced-active',
         status: 'backlog',
         title: 'Misplaced Active'
@@ -1157,10 +1157,10 @@ describe('Standalone Server Integration', () => {
 
   describe('parsing edge cases', () => {
     it('should skip non-markdown files', async () => {
-      writeFeatureFile(tempDir, 'not-a-feature.txt', 'just some text', 'backlog')
-      writeFeatureFile(tempDir, 'real-feature.md', makeFeatureContent({
-        id: 'real-feature',
-        title: 'Real Feature'
+      writeCardFile(tempDir, 'not-a-card.txt', 'just some text', 'backlog')
+      writeCardFile(tempDir, 'real-card.md', makeCardContent({
+        id: 'real-card',
+        title: 'Real Card'
       }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
@@ -1168,16 +1168,16 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('real-feature')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('real-card')
     })
 
     it('should skip files without valid frontmatter', async () => {
-      writeFeatureFile(tempDir, 'no-frontmatter.md', '# Just a heading\n\nNo frontmatter here.', 'backlog')
-      writeFeatureFile(tempDir, 'valid.md', makeFeatureContent({
+      writeCardFile(tempDir, 'no-frontmatter.md', '# Just a heading\n\nNo frontmatter here.', 'backlog')
+      writeCardFile(tempDir, 'valid.md', makeCardContent({
         id: 'valid',
-        title: 'Valid Feature'
+        title: 'Valid Card'
       }), 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
@@ -1185,27 +1185,27 @@ describe('Standalone Server Integration', () => {
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('valid')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('valid')
     })
 
     it('should handle Windows-style line endings', async () => {
-      const content = makeFeatureContent({
-        id: 'crlf-feature',
-        title: 'CRLF Feature'
+      const content = makeCardContent({
+        id: 'crlf-card',
+        title: 'CRLF Card'
       }).replace(/\n/g, '\r\n')
 
-      writeFeatureFile(tempDir, 'crlf-feature.md', content, 'backlog')
+      writeCardFile(tempDir, 'crlf-card.md', content, 'backlog')
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].id).toBe('crlf-feature')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].id).toBe('crlf-card')
     })
   })
 
@@ -1256,7 +1256,7 @@ describe('Standalone Server Integration', () => {
       expect(settings.defaultPriority).toBe('high')
       expect(settings.defaultStatus).toBe('todo')
 
-      // Verify file on disk (config is at workspace root, i.e. parent of features dir)
+      // Verify file on disk (config is at workspace root, i.e. parent of cards dir)
       const configFile = path.join(path.dirname(tempDir), '.kanban.json')
       expect(fs.existsSync(configFile)).toBe(true)
       const persisted = JSON.parse(fs.readFileSync(configFile, 'utf-8'))
@@ -1265,7 +1265,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should load persisted settings on server restart', async () => {
-      // Write config file at workspace root (parent of features dir)
+      // Write config file at workspace root (parent of cards dir)
       fs.mkdirSync(tempDir, { recursive: true })
       fs.writeFileSync(
         path.join(path.dirname(tempDir), '.kanban.json'),
@@ -1376,12 +1376,12 @@ describe('Standalone Server Integration', () => {
 
   describe('REST API — Tasks', () => {
     it('GET /api/tasks should list tasks', async () => {
-      writeFeatureFile(tempDir, 'api-task-1.md', makeFeatureContent({
+      writeCardFile(tempDir, 'api-task-1.md', makeCardContent({
         id: 'api-task-1',
         status: 'backlog',
         title: 'API Task 1'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'api-task-2.md', makeFeatureContent({
+      writeCardFile(tempDir, 'api-task-2.md', makeCardContent({
         id: 'api-task-2',
         status: 'todo',
         title: 'API Task 2'
@@ -1389,7 +1389,7 @@ describe('Standalone Server Integration', () => {
 
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)
-      // Initialize via WS so server loads features
+      // Initialize via WS so server loads cards
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1403,11 +1403,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks should filter by status', async () => {
-      writeFeatureFile(tempDir, 'filter-1.md', makeFeatureContent({
+      writeCardFile(tempDir, 'filter-1.md', makeCardContent({
         id: 'filter-1',
         status: 'backlog'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'filter-2.md', makeFeatureContent({
+      writeCardFile(tempDir, 'filter-2.md', makeCardContent({
         id: 'filter-2',
         status: 'todo'
       }), 'todo')
@@ -1425,11 +1425,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks should filter by priority', async () => {
-      writeFeatureFile(tempDir, 'pri-high.md', makeFeatureContent({
+      writeCardFile(tempDir, 'pri-high.md', makeCardContent({
         id: 'pri-high',
         priority: 'high'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'pri-low.md', makeFeatureContent({
+      writeCardFile(tempDir, 'pri-low.md', makeCardContent({
         id: 'pri-low',
         priority: 'low'
       }), 'backlog')
@@ -1447,11 +1447,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks should filter by assignee', async () => {
-      writeFeatureFile(tempDir, 'assign-alice.md', makeFeatureContent({
+      writeCardFile(tempDir, 'assign-alice.md', makeCardContent({
         id: 'assign-alice',
         assignee: 'alice'
       }), 'backlog')
-      writeFeatureFile(tempDir, 'assign-bob.md', makeFeatureContent({
+      writeCardFile(tempDir, 'assign-bob.md', makeCardContent({
         id: 'assign-bob',
         assignee: 'bob'
       }), 'backlog')
@@ -1469,11 +1469,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks should filter by label', async () => {
-      writeFeatureFile(tempDir, 'label-fe.md', makeFeatureContent({
+      writeCardFile(tempDir, 'label-fe.md', makeCardContent({
         id: 'label-fe',
         labels: ['frontend']
       }), 'backlog')
-      writeFeatureFile(tempDir, 'label-be.md', makeFeatureContent({
+      writeCardFile(tempDir, 'label-be.md', makeCardContent({
         id: 'label-be',
         labels: ['backend']
       }), 'backlog')
@@ -1491,7 +1491,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks/:id should return a single task', async () => {
-      writeFeatureFile(tempDir, 'single-task.md', makeFeatureContent({
+      writeCardFile(tempDir, 'single-task.md', makeCardContent({
         id: 'single-task',
         status: 'todo',
         priority: 'high',
@@ -1552,7 +1552,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/tasks/:id should update a task', async () => {
-      writeFeatureFile(tempDir, 'update-api.md', makeFeatureContent({
+      writeCardFile(tempDir, 'update-api.md', makeCardContent({
         id: 'update-api',
         status: 'backlog',
         priority: 'low'
@@ -1587,7 +1587,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PATCH /api/tasks/:id/move should move a task', async () => {
-      writeFeatureFile(tempDir, 'move-api.md', makeFeatureContent({
+      writeCardFile(tempDir, 'move-api.md', makeCardContent({
         id: 'move-api',
         status: 'backlog'
       }), 'backlog')
@@ -1612,7 +1612,7 @@ describe('Standalone Server Integration', () => {
     })
 
     it('DELETE /api/tasks/:id should delete a task', async () => {
-      writeFeatureFile(tempDir, 'delete-api.md', makeFeatureContent({
+      writeCardFile(tempDir, 'delete-api.md', makeCardContent({
         id: 'delete-api'
       }), 'backlog')
 
@@ -1918,9 +1918,9 @@ describe('Standalone Server Integration', () => {
 
       // WS client should receive broadcast
       const response = await wsUpdate
-      const features = response.features as Array<Record<string, unknown>>
-      expect(features.length).toBe(1)
-      expect(features[0].content).toContain('Broadcast Test')
+      const cards = response.cards as Array<Record<string, unknown>>
+      expect(cards.length).toBe(1)
+      expect(cards[0].content).toContain('Broadcast Test')
     })
   })
 })

@@ -41,7 +41,7 @@ describe('Webhooks Module', () => {
         { id: 'wh_test2', url: 'https://example.com/hook2', events: ['task.created'], secret: 'mysecret', active: true }
       ]
       // Must use version: 2 to avoid v1 migration which drops webhooks
-      const config = { version: 2, boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', featuresDirectory: '.kanban', webhooks: data }
+      const config = { version: 2, boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', webhooks: data }
       fs.writeFileSync(path.join(tempDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
 
       const webhooks = loadWebhooks(tempDir)

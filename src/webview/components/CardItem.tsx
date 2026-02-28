@@ -1,12 +1,12 @@
 import { marked } from 'marked'
 import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
-import type { Feature, Priority } from '../../shared/types'
+import type { Card, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
 
-interface FeatureCardProps {
-  feature: Feature
+interface CardItemProps {
+  card: Card
   onClick: () => void
   isDragging?: boolean
   isSelected?: boolean
@@ -40,12 +40,12 @@ function renderDescriptionHtml(text: string): string {
   return marked.parse(text, { async: false, gfm: true, breaks: true }) as string
 }
 
-export function FeatureCard({ feature, onClick, isDragging, isSelected }: FeatureCardProps) {
+export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
   const { cardSettings } = useStore()
   const labelDefs = useStore(s => s.labelDefs)
-  const title = getTitleFromContent(feature.content)
-  const description = getDescriptionFromContent(feature.content)
-  const fileName = feature.filePath ? feature.filePath.split('/').pop() || '' : ''
+  const title = getTitleFromContent(card.content)
+  const description = getDescriptionFromContent(card.content)
+  const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
 
   const formatDueDate = (dateStr: string | null) => {
     if (!dateStr) return null
@@ -65,7 +65,7 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
     }
   }
 
-  const dueInfo = feature.status === 'done' ? null : formatDueDate(feature.dueDate)
+  const dueInfo = card.status === 'done' ? null : formatDueDate(card.dueDate)
 
   const formatCompletedAt = (dateStr: string | null) => {
     if (!dateStr) return null
@@ -85,7 +85,7 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
     return `${Math.floor(diffDays / 365)}y ago`
   }
 
-  const completedText = feature.status === 'done' ? formatCompletedAt(feature.completedAt) : null
+  const completedText = card.status === 'done' ? formatCompletedAt(card.completedAt) : null
 
   return (
     <div
@@ -105,9 +105,9 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
             </span>
             {cardSettings.showPriorityBadges && (
               <span
-                className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[feature.priority]}`}
+                className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[card.priority]}`}
               >
-                {priorityLabels[feature.priority]}
+                {priorityLabels[card.priority]}
               </span>
             )}
           </div>
@@ -119,9 +119,9 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
           </h3>
           {cardSettings.showPriorityBadges && !(cardSettings.showFileName && fileName) && (
             <span
-              className={`text-xs font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[feature.priority]}`}
+              className={`text-xs font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[card.priority]}`}
             >
-              {priorityLabels[feature.priority]}
+              {priorityLabels[card.priority]}
             </span>
           )}
         </div>
@@ -136,9 +136,9 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
         )}
 
         {/* Labels */}
-        {cardSettings.showLabels && feature.labels.length > 0 && (
+        {cardSettings.showLabels && card.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {feature.labels.slice(0, 3).map((label) => {
+            {card.labels.slice(0, 3).map((label) => {
               const def = labelDefs[label]
               return (
                 <span
@@ -150,8 +150,8 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
                 </span>
               )
             })}
-            {feature.labels.length > 3 && (
-              <span className="text-xs text-zinc-400">+{feature.labels.length - 3}</span>
+            {card.labels.length > 3 && (
+              <span className="text-xs text-zinc-400">+{card.labels.length - 3}</span>
             )}
           </div>
         )}
@@ -160,24 +160,24 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
       {/* Footer */}
       <div className="flex items-center justify-between text-xs mt-auto">
         <div className="flex items-center gap-1">
-          {cardSettings.showAssignee && feature.assignee && feature.assignee !== 'null' && (
+          {cardSettings.showAssignee && card.assignee && card.assignee !== 'null' && (
             <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
               <span className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-300">
-                {feature.assignee.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
+                {card.assignee.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
               </span>
-              <span>{feature.assignee}</span>
+              <span>{card.assignee}</span>
             </div>
           )}
         </div>
-        {feature.attachments.length > 0 && (
+        {card.attachments.length > 0 && (
           <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
             <Paperclip size={12} />
-            <span>{feature.attachments.length}</span>
+            <span>{card.attachments.length}</span>
           </div>
         )}
-        {feature.metadata && Object.keys(feature.metadata).length > 0 && (
+        {card.metadata && Object.keys(card.metadata).length > 0 && (
           <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
-            <span className="text-[10px] font-mono">{`{${Object.keys(feature.metadata).length}}`}</span>
+            <span className="text-[10px] font-mono">{`{${Object.keys(card.metadata).length}}`}</span>
           </div>
         )}
         {cardSettings.showDueDate && dueInfo && (
@@ -194,10 +194,10 @@ export function FeatureCard({ feature, onClick, isDragging, isSelected }: Featur
         )}
         <div
           className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500"
-          title={buildDateTooltip(feature.created, feature.modified)}
+          title={buildDateTooltip(card.created, card.modified)}
         >
           <Clock size={12} />
-          <span>{formatRelativeCompact(feature.modified)}</span>
+          <span>{formatRelativeCompact(card.modified)}</span>
         </div>
       </div>
     </div>

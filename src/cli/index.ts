@@ -1,7 +1,7 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import type { Feature, Priority, CardSortOption } from '../shared/types'
+import type { Card, Priority, CardSortOption } from '../shared/types'
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
@@ -59,7 +59,7 @@ async function getValidStatuses(sdk: KanbanSDK, boardId?: string): Promise<strin
   return columns.map(c => c.id)
 }
 
-// --- Resolve features directory ---
+// --- Resolve cards directory ---
 
 async function findWorkspaceRoot(startDir: string): Promise<string> {
   let dir = startDir
@@ -82,7 +82,7 @@ async function findWorkspaceRoot(startDir: string): Promise<string> {
   }
 }
 
-async function resolveFeaturesDir(flags: Flags): Promise<string> {
+async function resolveKanbanDir(flags: Flags): Promise<string> {
   if (typeof flags.dir === 'string') {
     return path.resolve(flags.dir)
   }
@@ -130,14 +130,14 @@ function getTitleFromContent(content: string): string {
   return firstLine || 'Untitled'
 }
 
-function formatCardRow(c: Feature): string {
+function formatCardRow(c: Card): string {
   const title = getTitleFromContent(c.content)
   const truncTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
   const assignee = c.assignee || '-'
   return `  ${bold(c.id.slice(0, 30).padEnd(30))}  ${colorStatus(c.status.padEnd(12))}  ${colorPriority(c.priority.padEnd(8))}  ${assignee.padEnd(12)}  ${truncTitle}`
 }
 
-function formatCardDetail(c: Feature): string {
+function formatCardDetail(c: Card): string {
   const title = getTitleFromContent(c.content)
   const lines = [
     `${bold(title)}`,
@@ -368,7 +368,7 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   // Support partial ID match
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
-  const updates: Partial<Feature> = {}
+  const updates: Partial<Card> = {}
   if (typeof flags.status === 'string') {
     const validStatuses = await getValidStatuses(sdk, boardId)
     if (!validStatuses.includes(flags.status)) {
@@ -440,7 +440,7 @@ async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: F
 
 async function cmdInit(sdk: KanbanSDK): Promise<void> {
   await sdk.init()
-  console.log(green(`Initialized: ${sdk.featuresDir}`))
+  console.log(green(`Initialized: ${sdk.kanbanDir}`))
 }
 
 // --- Board Commands ---
@@ -1262,11 +1262,11 @@ ${bold('Server:')}
   serve                       Start standalone web server with REST API
 
 ${bold('Other:')}
-  init                        Initialize features directory
+  init                        Initialize cards directory
   pwd                         Print workspace root path
 
 ${bold('Global Options:')}
-  --dir <path>                Features directory (default: .kanban)
+  --dir <path>                Kanban directory (default: .kanban)
   --board <id>                Target board (default: default board)
   --json                      Output as JSON
 
@@ -1333,9 +1333,9 @@ async function main(): Promise<void> {
     return
   }
 
-  const featuresDir = await resolveFeaturesDir(flags)
-  const workspaceRoot = path.dirname(featuresDir)
-  const sdk = new KanbanSDK(featuresDir, {
+  const kanbanDir = await resolveKanbanDir(flags)
+  const workspaceRoot = path.dirname(kanbanDir)
+  const sdk = new KanbanSDK(kanbanDir, {
     onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
   })
 

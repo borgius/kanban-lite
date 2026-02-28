@@ -4,35 +4,35 @@ import * as fs from 'fs/promises'
 /**
  * Constructs the full file path for a card markdown file.
  *
- * @param featuresDir - The root features directory (e.g., `.kanban`).
+ * @param kanbanDir - The root kanban directory (e.g., `.kanban`).
  * @param status - The status subdirectory name (e.g., `backlog`, `in-progress`).
  * @param filename - The card filename without the `.md` extension.
  * @returns The absolute path to the card file, including the `.md` extension.
  */
-export function getFeatureFilePath(featuresDir: string, status: string, filename: string): string {
-  return path.join(featuresDir, status, `${filename}.md`)
+export function getCardFilePath(kanbanDir: string, status: string, filename: string): string {
+  return path.join(kanbanDir, status, `${filename}.md`)
 }
 
 /**
- * Creates the features directory if it does not already exist.
+ * Creates the kanban directory if it does not already exist.
  *
- * @param featuresDir - The root features directory path to ensure exists.
+ * @param kanbanDir - The root kanban directory path to ensure exists.
  * @returns A promise that resolves when the directory has been created or already exists.
  */
-export async function ensureDirectories(featuresDir: string): Promise<void> {
-  await fs.mkdir(featuresDir, { recursive: true })
+export async function ensureDirectories(kanbanDir: string): Promise<void> {
+  await fs.mkdir(kanbanDir, { recursive: true })
 }
 
 /**
- * Creates subdirectories for each status column under the features directory.
+ * Creates subdirectories for each status column under the kanban directory.
  *
- * @param featuresDir - The root features directory containing status subdirectories.
+ * @param kanbanDir - The root kanban directory containing status subdirectories.
  * @param statuses - An array of status names to create as subdirectories.
  * @returns A promise that resolves when all status subdirectories have been created.
  */
-export async function ensureStatusSubfolders(featuresDir: string, statuses: string[]): Promise<void> {
+export async function ensureStatusSubfolders(kanbanDir: string, statuses: string[]): Promise<void> {
   for (const status of statuses) {
-    await fs.mkdir(path.join(featuresDir, status), { recursive: true })
+    await fs.mkdir(path.join(kanbanDir, status), { recursive: true })
   }
 }
 
@@ -42,19 +42,19 @@ export async function ensureStatusSubfolders(featuresDir: string, statuses: stri
  * co-moves attachment files from the source directory to the target directory.
  *
  * @param currentPath - The current absolute path of the card file.
- * @param featuresDir - The root features directory.
+ * @param kanbanDir - The root kanban directory.
  * @param newStatus - The target status subdirectory to move the card into.
  * @param attachments - Optional array of attachment filenames to co-move alongside the card.
  * @returns A promise that resolves to the new absolute path of the moved card file.
  */
-export async function moveFeatureFile(
+export async function moveCardFile(
   currentPath: string,
-  featuresDir: string,
+  kanbanDir: string,
   newStatus: string,
   attachments?: string[]
 ): Promise<string> {
   const filename = path.basename(currentPath)
-  const targetDir = path.join(featuresDir, newStatus)
+  const targetDir = path.join(kanbanDir, newStatus)
   let targetPath = path.join(targetDir, filename)
 
   if (currentPath === targetPath) return currentPath
@@ -94,7 +94,7 @@ export async function moveFeatureFile(
  * @param newFilename - The new filename without the `.md` extension.
  * @returns A promise that resolves to the new absolute path of the renamed card file.
  */
-export async function renameFeatureFile(currentPath: string, newFilename: string): Promise<string> {
+export async function renameCardFile(currentPath: string, newFilename: string): Promise<string> {
   const dir = path.dirname(currentPath)
   const newPath = path.join(dir, `${newFilename}.md`)
   if (currentPath === newPath) return currentPath
@@ -105,15 +105,15 @@ export async function renameFeatureFile(currentPath: string, newFilename: string
 /**
  * Extracts the status from a card's file path by examining the directory structure.
  *
- * Expects the file to be located at `{featuresDir}/{status}/{filename}.md`. If the
+ * Expects the file to be located at `{kanbanDir}/{status}/{filename}.md`. If the
  * relative path does not match this two-level structure, returns `null`.
  *
  * @param filePath - The absolute path to the card file.
- * @param featuresDir - The root features directory used to compute the relative path.
+ * @param kanbanDir - The root kanban directory used to compute the relative path.
  * @returns The status string extracted from the path, or `null` if the path structure is unexpected.
  */
-export function getStatusFromPath(filePath: string, featuresDir: string): string | null {
-  const relative = path.relative(featuresDir, filePath)
+export function getStatusFromPath(filePath: string, kanbanDir: string): string | null {
+  const relative = path.relative(kanbanDir, filePath)
   const parts = relative.split(path.sep)
   if (parts.length === 2) {
     return parts[0]

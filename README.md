@@ -47,22 +47,22 @@ kl add --title "My first task" --priority high
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
 - **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
 - **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
-- **Smooth scroll to selection**: Board automatically scrolls to the selected card when switching features
+- **Smooth scroll to selection**: Board automatically scrolls to the selected card
 - **Keyboard shortcuts**:
-  - `N` - Create new feature
+  - `N` - Create new card
   - `Esc` - Close dialogs
   - `Cmd/Ctrl + Enter` - Submit create dialog
   - `Ctrl/Cmd + =` / `Ctrl/Cmd + -` - Zoom board view in / out
   - `Ctrl/Cmd + Shift + =` / `Ctrl/Cmd + Shift + -` - Zoom card detail in / out
 
-### Feature Cards
+### Cards
 
 ![Editor View](https://raw.githubusercontent.com/borgius/kanban-lite/main/docs/images/editor-view.png)
 
 - **Priority levels**: Critical, High, Medium, Low (color-coded badges)
-- **Assignees**: Assign team members to features
+- **Assignees**: Assign team members to cards
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)
-- **Labels**: Tag features with multiple labels
+- **Labels**: Tag cards with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
@@ -408,7 +408,7 @@ actions: ["retry", "rollback", "notify-slack"]
 }
 ```
 
-The webhook receives the full card object (same shape as the SDK `Feature` type, minus `filePath`). Your server responds with any 2xx status to acknowledge; non-2xx responses are treated as errors.
+The webhook receives the full card object (same shape as the SDK `Card` type, minus `filePath`). Your server responds with any 2xx status to acknowledge; non-2xx responses are treated as errors.
 
 ### Managing actions
 
@@ -457,7 +457,7 @@ Add to your `.claude/settings.json`:
       "command": "npx",
       "args": ["kanban-lite", "kanban-mcp"],
       "env": {
-        "KANBAN_FEATURES_DIR": "/path/to/your/project/.kanban"
+        "KANBAN_DIR": "/path/to/your/project/.kanban"
       }
     }
   }
@@ -648,7 +648,7 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
 - **Codex**: Suggest, Auto-edit, and Full Auto modes
 - **OpenCode**: Agent integration support
-- AI receives feature context (title, priority, labels, description) for informed assistance
+- AI receives card context (title, priority, labels, description) for informed assistance
 
 ## Development
 

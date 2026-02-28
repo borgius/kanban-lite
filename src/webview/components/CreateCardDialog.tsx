@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar, Zap } from 'lucide-react'
-import type { FeatureStatus, Priority } from '../../shared/types'
+import type { CardStatus, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DatePicker } from './DatePicker'
 import { MarkdownEditor } from './MarkdownEditor'
 
-interface CreateFeatureDialogProps {
+interface CreateCardDialogProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (data: { status: FeatureStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[] }) => void
-  initialStatus?: FeatureStatus
+  onCreate: (data: { status: CardStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[] }) => void
+  initialStatus?: CardStatus
 }
 
 const priorityConfig: { value: Priority; label: string; dot: string }[] = [
@@ -20,7 +20,7 @@ const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'low', label: 'Low', dot: 'bg-green-500' }
 ]
 
-const statusConfig: { value: FeatureStatus; label: string; dot: string }[] = [
+const statusConfig: { value: CardStatus; label: string; dot: string }[] = [
   { value: 'backlog', label: 'Backlog', dot: 'bg-zinc-400' },
   { value: 'todo', label: 'To Do', dot: 'bg-blue-400' },
   { value: 'in-progress', label: 'In Progress', dot: 'bg-amber-400' },
@@ -101,13 +101,13 @@ function AssigneeInput({ value, onChange }: { value: string; onChange: (value: s
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const features = useStore(s => s.features)
+  const cards = useStore(s => s.cards)
 
   const existingAssignees = useMemo(() => {
     const assignees = new Set<string>()
-    features.forEach(f => { if (f.assignee) assignees.add(f.assignee) })
+    cards.forEach(f => { if (f.assignee) assignees.add(f.assignee) })
     return Array.from(assignees).sort()
-  }, [features])
+  }, [cards])
 
   const suggestions = useMemo(() => {
     if (!value.trim()) return existingAssignees
@@ -185,14 +185,14 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
   const [newLabel, setNewLabel] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const features = useStore(s => s.features)
+  const cards = useStore(s => s.cards)
   const labelDefs = useStore(s => s.labelDefs)
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
-    features.forEach(f => f.labels.forEach(l => labelSet.add(l)))
+    cards.forEach(f => f.labels.forEach(l => labelSet.add(l)))
     return Array.from(labelSet).sort()
-  }, [features])
+  }, [cards])
 
   const suggestions = useMemo(() => {
     const available = existingLabels.filter(l => !labels.includes(l))
@@ -367,20 +367,20 @@ function PropertyRow({ label, icon, children }: { label: string; icon: React.Rea
 }
 
 // Wrapper that unmounts and remounts content when dialog opens to reset state
-export function CreateFeatureDialog({ isOpen, ...props }: CreateFeatureDialogProps) {
+export function CreateCardDialog({ isOpen, ...props }: CreateCardDialogProps) {
   if (!isOpen) return null
-  return <CreateFeatureDialogContent isOpen={isOpen} {...props} />
+  return <CreateCardDialogContent isOpen={isOpen} {...props} />
 }
 
-function CreateFeatureDialogContent({
+function CreateCardDialogContent({
   isOpen,
   onClose,
   onCreate,
   initialStatus
-}: CreateFeatureDialogProps) {
+}: CreateCardDialogProps) {
   const { cardSettings } = useStore()
   const [title, setTitle] = useState('')
-  const [status, setStatus] = useState<FeatureStatus>(initialStatus ?? cardSettings.defaultStatus)
+  const [status, setStatus] = useState<CardStatus>(initialStatus ?? cardSettings.defaultStatus)
   const [priority, setPriority] = useState<Priority>(cardSettings.defaultPriority)
   const [assignee, setAssignee] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -450,7 +450,7 @@ function CreateFeatureDialogContent({
         >
           <div className="flex items-center gap-3">
             <h2 className="font-medium" style={{ color: 'var(--vscode-foreground)' }}>
-              Create Feature
+              Create Card
             </h2>
           </div>
           <button
@@ -475,7 +475,7 @@ function CreateFeatureDialogContent({
             <Dropdown
               value={status}
               options={statusConfig.map(s => ({ value: s.value, label: s.label, dot: s.dot }))}
-              onChange={(v) => setStatus(v as FeatureStatus)}
+              onChange={(v) => setStatus(v as CardStatus)}
             />
           </PropertyRow>
           {cardSettings.showPriorityBadges && (
@@ -513,7 +513,7 @@ function CreateFeatureDialogContent({
             ref={inputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Feature title..."
+            placeholder="Card title..."
             className="w-full text-lg font-medium bg-transparent border-none outline-none resize-none mb-4"
             style={{
               color: 'var(--vscode-foreground)',

@@ -2,13 +2,13 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { generateKeyBetween } from 'fractional-indexing'
 import { useStore } from './store'
 import { KanbanBoard } from './components/KanbanBoard'
-import { CreateFeatureDialog } from './components/CreateFeatureDialog'
-import { FeatureEditor } from './components/FeatureEditor'
+import { CreateCardDialog } from './components/CreateCardDialog'
+import { CardEditor } from './components/CardEditor'
 import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
-import type { Comment, Feature, KanbanColumn, Priority, ExtensionMessage, FeatureFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
@@ -27,7 +27,7 @@ function App(): React.JSX.Element {
     workspace,
     cardSettings,
     settingsOpen,
-    setFeatures,
+    setCards,
     setColumns,
     setBoards,
     setCurrentBoard,
@@ -38,8 +38,8 @@ function App(): React.JSX.Element {
     setLabelDefs
   } = useStore()
 
-  const [createFeatureOpen, setCreateFeatureOpen] = useState(false)
-  const [createFeatureStatus, setCreateFeatureStatus] = useState<string>('backlog')
+  const [createCardOpen, setCreateCardOpen] = useState(false)
+  const [createCardStatus, setCreateCardStatus] = useState<string>('backlog')
 
   // Column dialog state
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
@@ -47,16 +47,16 @@ function App(): React.JSX.Element {
 
   // Editor state
   const contentVersionRef = useRef(0)
-  const [editingFeature, setEditingFeature] = useState<{
+  const [editingCard, setEditingCard] = useState<{
     id: string
     content: string
-    frontmatter: FeatureFrontmatter
+    frontmatter: CardFrontmatter
     comments: Comment[]
     contentVersion: number
   } | null>(null)
 
   // Undo delete stack
-  const [pendingDeletes, setPendingDeletes] = useState<{ id: string; feature: Feature; originalStatus: string }[]>([])
+  const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
   const pendingDeletesRef = useRef(pendingDeletes)
   useEffect(() => {
     pendingDeletesRef.current = pendingDeletes
@@ -64,40 +64,40 @@ function App(): React.JSX.Element {
 
   const nextIdRef = useRef(0)
 
-  const handleDeleteFeatureFromCard = useCallback((featureId: string) => {
-    const { features } = useStore.getState()
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return
+  const handleDeleteCard = useCallback((cardId: string) => {
+    const { cards } = useStore.getState()
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return
 
     // Optimistically move to deleted status in local state
-    const originalStatus = feature.status
-    setFeatures(features.map(f => f.id === featureId ? { ...f, status: DELETED_STATUS_ID } : f))
+    const originalStatus = card.status
+    setCards(cards.map(f => f.id === cardId ? { ...f, status: DELETED_STATUS_ID } : f))
 
-    // Close editor if this feature is open
-    if (editingFeature?.id === featureId) {
-      setEditingFeature(null)
+    // Close editor if this card is open
+    if (editingCard?.id === cardId) {
+      setEditingCard(null)
     }
 
     // Push onto the undo stack
     const id = String(nextIdRef.current++)
-    setPendingDeletes(prev => [...prev, { id, feature, originalStatus }])
-  }, [editingFeature, setFeatures])
+    setPendingDeletes(prev => [...prev, { id, card, originalStatus }])
+  }, [editingCard, setCards])
 
   const commitDelete = useCallback((entryId: string) => {
     const entry = pendingDeletesRef.current.find(d => d.id === entryId)
     if (!entry) return
-    vscode.postMessage({ type: 'deleteFeature', featureId: entry.feature.id })
+    vscode.postMessage({ type: 'deleteCard', cardId: entry.card.id })
     setPendingDeletes(prev => prev.filter(d => d.id !== entryId))
   }, [])
 
   const handleUndoDelete = useCallback((entryId: string) => {
     const entry = pendingDeletesRef.current.find(d => d.id === entryId)
     if (!entry) return
-    // Restore the feature to its original status
-    const { features } = useStore.getState()
-    setFeatures(features.map(f => f.id === entry.feature.id ? { ...f, status: entry.originalStatus } : f))
+    // Restore the card to its original status
+    const { cards } = useStore.getState()
+    setCards(cards.map(f => f.id === entry.card.id ? { ...f, status: entry.originalStatus } : f))
     setPendingDeletes(prev => prev.filter(d => d.id !== entryId))
-  }, [setFeatures])
+  }, [setCards])
 
   const handleUndoLatest = useCallback(() => {
     const stack = pendingDeletesRef.current
@@ -170,12 +170,12 @@ function App(): React.JSX.Element {
             return
           }
           e.preventDefault()
-          setCreateFeatureStatus('backlog')
-          setCreateFeatureOpen(true)
+          setCreateCardStatus('backlog')
+          setCreateCardOpen(true)
           break
         case 'Escape':
-          if (createFeatureOpen) {
-            setCreateFeatureOpen(false)
+          if (createCardOpen) {
+            setCreateCardOpen(false)
           }
           break
       }
@@ -201,7 +201,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('mousedown', handleMouseDown)
       if (altDownTimer) clearTimeout(altDownTimer)
     }
-  }, [createFeatureOpen, handleUndoLatest, setCardSettings])
+  }, [createCardOpen, handleUndoLatest, setCardSettings])
 
   // Listen for VSCode theme changes
   useEffect(() => {
@@ -240,25 +240,25 @@ function App(): React.JSX.Element {
 
       switch (message.type) {
         case 'init':
-          setFeatures(message.features)
+          setCards(message.cards)
           setColumns(message.columns)
           if (message.boards) setBoards(message.boards)
           if (message.currentBoard) setCurrentBoard(message.currentBoard)
           if (message.workspace) setWorkspace(message.workspace)
           if (message.settings) {
-            if (message.settings.markdownEditorMode && editingFeature) {
-              setEditingFeature(null)
+            if (message.settings.markdownEditorMode && editingCard) {
+              setEditingCard(null)
             }
             setCardSettings(message.settings)
           }
           if (message.labels) setLabelDefs(message.labels)
           break
-        case 'featuresUpdated':
-          setFeatures(message.features)
+        case 'cardsUpdated':
+          setCards(message.cards)
           break
         case 'triggerCreateDialog':
-          setCreateFeatureStatus('backlog')
-          setCreateFeatureOpen(true)
+          setCreateCardStatus('backlog')
+          setCreateCardOpen(true)
           break
         case 'labelsUpdated':
           setLabelDefs(message.labels)
@@ -267,12 +267,12 @@ function App(): React.JSX.Element {
           setCardSettings(message.settings)
           setSettingsOpen(true)
           break
-        case 'featureContent': {
+        case 'cardContent': {
           const { cardSettings } = useStore.getState()
           if (cardSettings.markdownEditorMode) break
           contentVersionRef.current += 1
-          setEditingFeature({
-            id: message.featureId,
+          setEditingCard({
+            id: message.cardId,
             content: message.content,
             frontmatter: message.frontmatter,
             comments: message.comments || [],
@@ -293,57 +293,57 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setFeatures, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
+  }, [setCards, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
 
-  const handleFeatureClick = (feature: Feature): void => {
-    // Request feature content for inline editing
+  const handleCardClick = (card: Card): void => {
+    // Request card content for inline editing
     vscode.postMessage({
-      type: 'openFeature',
-      featureId: feature.id
+      type: 'openCard',
+      cardId: card.id
     })
   }
 
-  const handleSaveFeature = (content: string, frontmatter: FeatureFrontmatter): void => {
-    if (!editingFeature) return
+  const handleSaveCard = (content: string, frontmatter: CardFrontmatter): void => {
+    if (!editingCard) return
     vscode.postMessage({
-      type: 'saveFeatureContent',
-      featureId: editingFeature.id,
+      type: 'saveCardContent',
+      cardId: editingCard.id,
       content,
       frontmatter
     })
   }
 
   const handleTransferToBoard = (toBoard: string, targetStatus: string): void => {
-    if (!editingFeature) return
+    if (!editingCard) return
     vscode.postMessage({
       type: 'transferCard',
-      featureId: editingFeature.id,
+      cardId: editingCard.id,
       toBoard,
       targetStatus
     })
-    setEditingFeature(null)
+    setEditingCard(null)
   }
 
   const handleCloseEditor = (): void => {
-    setEditingFeature(null)
-    vscode.postMessage({ type: 'closeFeature' })
+    setEditingCard(null)
+    vscode.postMessage({ type: 'closeCard' })
   }
 
-  const handleDeleteFeature = (): void => {
-    if (!editingFeature) return
-    handleDeleteFeatureFromCard(editingFeature.id)
+  const handleDeleteFromEditor = (): void => {
+    if (!editingCard) return
+    handleDeleteCard(editingCard.id)
   }
 
-  const handlePermanentDeleteFeature = (): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'permanentDeleteFeature', featureId: editingFeature.id })
-    setEditingFeature(null)
+  const handlePermanentDeleteCard = (): void => {
+    if (!editingCard) return
+    vscode.postMessage({ type: 'permanentDeleteCard', cardId: editingCard.id })
+    setEditingCard(null)
   }
 
-  const handleRestoreFeature = (): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'restoreFeature', featureId: editingFeature.id })
-    setEditingFeature(null)
+  const handleRestoreCard = (): void => {
+    if (!editingCard) return
+    vscode.postMessage({ type: 'restoreCard', cardId: editingCard.id })
+    setEditingCard(null)
   }
 
   const handlePurgeDeletedCards = (): void => {
@@ -351,8 +351,8 @@ function App(): React.JSX.Element {
   }
 
   const handleOpenFile = (): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'openFile', featureId: editingFeature.id })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'openFile', cardId: editingCard.id })
   }
 
   const handleStartWithAI = (agent: 'claude' | 'codex' | 'opencode', permissionMode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'): void => {
@@ -360,33 +360,33 @@ function App(): React.JSX.Element {
   }
 
   const handleAddAttachment = (): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'addAttachment', featureId: editingFeature.id })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'addAttachment', cardId: editingCard.id })
   }
 
   const handleOpenAttachment = (attachment: string): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'openAttachment', featureId: editingFeature.id, attachment })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'openAttachment', cardId: editingCard.id, attachment })
   }
 
   const handleRemoveAttachment = (attachment: string): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'removeAttachment', featureId: editingFeature.id, attachment })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'removeAttachment', cardId: editingCard.id, attachment })
   }
 
   const handleAddComment = (author: string, content: string): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'addComment', featureId: editingFeature.id, author, content })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'addComment', cardId: editingCard.id, author, content })
   }
 
   const handleUpdateComment = (commentId: string, content: string): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'updateComment', featureId: editingFeature.id, commentId, content })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'updateComment', cardId: editingCard.id, commentId, content })
   }
 
   const handleDeleteComment = (commentId: string): void => {
-    if (!editingFeature) return
-    vscode.postMessage({ type: 'deleteComment', featureId: editingFeature.id, commentId })
+    if (!editingCard) return
+    vscode.postMessage({ type: 'deleteComment', cardId: editingCard.id, commentId })
   }
 
   const handleSaveSettings = (settings: CardDisplaySettings): void => {
@@ -409,9 +409,9 @@ function App(): React.JSX.Element {
   const handleRemoveColumn = (columnId: string): void => {
     const col = columns.find(c => c.id === columnId)
     if (!col) return
-    const featuresInColumn = useStore.getState().features.filter(f => f.status === columnId)
+    const featuresInColumn = useStore.getState().cards.filter(f => f.status === columnId)
     if (featuresInColumn.length > 0) {
-      // Don't remove columns that still have features
+      // Don't remove columns that still have cards
       return
     }
     vscode.postMessage({ type: 'removeColumn', columnId })
@@ -420,7 +420,7 @@ function App(): React.JSX.Element {
   const handleCleanupColumn = (columnId: string): void => {
     const col = columns.find(c => c.id === columnId)
     if (!col) return
-    const featuresInColumn = useStore.getState().features.filter(f => f.status === columnId)
+    const featuresInColumn = useStore.getState().cards.filter(f => f.status === columnId)
     if (featuresInColumn.length === 0) return
     vscode.postMessage({ type: 'cleanupColumn', columnId })
   }
@@ -435,12 +435,12 @@ function App(): React.JSX.Element {
     setEditingColumn(null)
   }
 
-  const handleAddFeatureInColumn = (status: string): void => {
-    setCreateFeatureStatus(status)
-    setCreateFeatureOpen(true)
+  const handleAddCardInColumn = (status: string): void => {
+    setCreateCardStatus(status)
+    setCreateCardOpen(true)
   }
 
-  const handleCreateFeature = (data: {
+  const handleCreateCard = (data: {
     status: string
     priority: Priority
     content: string
@@ -450,34 +450,34 @@ function App(): React.JSX.Element {
     actions: string[]
   }): void => {
     vscode.postMessage({
-      type: 'createFeature',
+      type: 'createCard',
       data
     })
   }
 
   const handleTriggerAction = useCallback((action: string): void => {
-    if (!editingFeature) return
+    if (!editingCard) return
     const callbackKey = `action-${Date.now()}`
     vscode.postMessage({
       type: 'triggerAction',
-      featureId: editingFeature.id,
+      cardId: editingCard.id,
       action,
       callbackKey
     })
-  }, [editingFeature])
+  }, [editingCard])
 
-  const handleMoveFeature = (
-    featureId: string,
+  const handleMoveCard = (
+    cardId: string,
     newStatus: string,
     newOrder: number
   ): void => {
     // Optimistic update: compute fractional index locally before server confirms
-    const { features } = useStore.getState()
-    const feature = features.find(f => f.id === featureId)
-    if (feature) {
-      // Get sorted target column features (excluding the moved feature)
-      const targetColumn = features
-        .filter(f => f.status === newStatus && f.id !== featureId)
+    const { cards } = useStore.getState()
+    const card = cards.find(f => f.id === cardId)
+    if (card) {
+      // Get sorted target column cards (excluding the moved card)
+      const targetColumn = cards
+        .filter(f => f.status === newStatus && f.id !== cardId)
         .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
 
       const clampedOrder = Math.max(0, Math.min(newOrder, targetColumn.length))
@@ -485,18 +485,18 @@ function App(): React.JSX.Element {
       const after = clampedOrder < targetColumn.length ? targetColumn[clampedOrder].order : null
       const newOrderKey = generateKeyBetween(before, after)
 
-      const updated = features.map(f =>
-        f.id === featureId
+      const updated = cards.map(f =>
+        f.id === cardId
           ? { ...f, status: newStatus, order: newOrderKey }
           : f
       )
-      setFeatures(updated)
+      setCards(updated)
     }
 
     // Tell extension to persist
     vscode.postMessage({
-      type: 'moveFeature',
-      featureId,
+      type: 'moveCard',
+      cardId,
       newStatus,
       newOrder
     })
@@ -521,31 +521,31 @@ function App(): React.JSX.Element {
         onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className={`board-zoom-scope ${editingFeature ? 'w-1/2' : 'w-full'}`}>
+        <div className={`board-zoom-scope ${editingCard ? 'w-1/2' : 'w-full'}`}>
           <KanbanBoard
-            onFeatureClick={handleFeatureClick}
-            onAddFeature={handleAddFeatureInColumn}
-            onMoveFeature={handleMoveFeature}
+            onCardClick={handleCardClick}
+            onAddCard={handleAddCardInColumn}
+            onMoveCard={handleMoveCard}
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
             onCleanupColumn={handleCleanupColumn}
             onPurgeDeletedCards={handlePurgeDeletedCards}
-            selectedFeatureId={editingFeature?.id}
+            selectedCardId={editingCard?.id}
           />
         </div>
-        {editingFeature && (
+        {editingCard && (
           <div className="w-1/2" style={{ fontSize: `calc(1em * var(--card-zoom, 1))` }}>
-            <FeatureEditor
-              featureId={editingFeature.id}
-              content={editingFeature.content}
-              frontmatter={editingFeature.frontmatter}
-              comments={editingFeature.comments}
-              contentVersion={editingFeature.contentVersion}
-              onSave={handleSaveFeature}
+            <CardEditor
+              cardId={editingCard.id}
+              content={editingCard.content}
+              frontmatter={editingCard.frontmatter}
+              comments={editingCard.comments}
+              contentVersion={editingCard.contentVersion}
+              onSave={handleSaveCard}
               onClose={handleCloseEditor}
-              onDelete={handleDeleteFeature}
-              onPermanentDelete={handlePermanentDeleteFeature}
-              onRestore={handleRestoreFeature}
+              onDelete={handleDeleteFromEditor}
+              onPermanentDelete={handlePermanentDeleteCard}
+              onRestore={handleRestoreCard}
               onOpenFile={handleOpenFile}
               onStartWithAI={handleStartWithAI}
               onAddAttachment={handleAddAttachment}
@@ -561,11 +561,11 @@ function App(): React.JSX.Element {
         )}
       </div>
 
-      <CreateFeatureDialog
-        isOpen={createFeatureOpen}
-        onClose={() => setCreateFeatureOpen(false)}
-        onCreate={handleCreateFeature}
-        initialStatus={createFeatureStatus}
+      <CreateCardDialog
+        isOpen={createCardOpen}
+        onClose={() => setCreateCardOpen(false)}
+        onCreate={handleCreateCard}
+        initialStatus={createCardStatus}
       />
 
       <SettingsPanel
@@ -590,7 +590,7 @@ function App(): React.JSX.Element {
       {pendingDeletes.map((entry, i) => (
         <UndoToast
           key={entry.id}
-          message={`Deleted "${getTitleFromContent(entry.feature.content)}"`}
+          message={`Deleted "${getTitleFromContent(entry.card.content)}"`}
           onUndo={() => handleUndoDelete(entry.id)}
           onExpire={() => commitDelete(entry.id)}
           duration={5000}

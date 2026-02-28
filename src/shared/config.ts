@@ -59,7 +59,7 @@ export interface KanbanConfig {
   /** ID of the board to use when none is explicitly specified. */
   defaultBoard: string
   /** Directory (relative to workspace root) where card files are stored. */
-  featuresDirectory: string
+  kanbanDirectory: string
   /** AI agent identifier used for the "Build with AI" feature. */
   aiAgent: string
   /** Global default priority for new cards (used as fallback). */
@@ -101,7 +101,7 @@ export interface KanbanConfig {
 // Legacy v1 config (for migration)
 interface KanbanConfigV1 {
   version?: 1
-  featuresDirectory: string
+  kanbanDirectory: string
   defaultPriority: Priority
   defaultStatus: string
   columns: KanbanColumn[]
@@ -136,7 +136,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
     default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] }
   },
   defaultBoard: 'default',
-  featuresDirectory: '.kanban',
+  kanbanDirectory: '.kanban',
   aiAgent: 'claude',
   defaultPriority: 'medium',
   defaultStatus: 'backlog',
@@ -176,7 +176,7 @@ export function configPath(workspaceRoot: string): string {
 
 function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   const v1Defaults: KanbanConfigV1 = {
-    featuresDirectory: '.kanban',
+    kanbanDirectory: '.kanban',
     defaultPriority: 'medium',
     defaultStatus: 'backlog',
     columns: [...DEFAULT_COLUMNS],
@@ -204,7 +204,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
       }
     },
     defaultBoard: 'default',
-    featuresDirectory: v1.featuresDirectory,
+    kanbanDirectory: v1.kanbanDirectory,
     aiAgent: v1.aiAgent,
     defaultPriority: v1.defaultPriority,
     defaultStatus: v1.defaultStatus,

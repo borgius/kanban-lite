@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import type { FeatureStatus, Priority } from '../../shared/types'
+import type { CardStatus, Priority } from '../../shared/types'
 import { useStore } from '../store'
 
 interface QuickAddInputProps {
-  status: FeatureStatus
-  onAdd: (data: { status: FeatureStatus; priority: Priority; content: string }) => void
+  status: CardStatus
+  onAdd: (data: { status: CardStatus; priority: Priority; content: string }) => void
 }
 
 export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
@@ -52,7 +52,7 @@ export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
         className="w-full flex items-center gap-1.5 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
       >
         <Plus size={14} />
-        <span>Add feature</span>
+        <span>Add card</span>
       </button>
     )
   }
@@ -65,7 +65,7 @@ export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
       onChange={(e) => setValue(e.target.value)}
       onBlur={handleSubmit}
       onKeyDown={handleKeyDown}
-      placeholder="Feature title..."
+      placeholder="Card title..."
       className="w-full px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
     />
   )

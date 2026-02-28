@@ -27,7 +27,7 @@ export type CardSortOption = 'created:asc' | 'created:desc' | 'modified:asc' | '
  * String alias representing a column or status identifier.
  * Corresponds to the `id` field of a {@link KanbanColumn} (e.g. `'backlog'`, `'in-progress'`).
  */
-export type FeatureStatus = string
+export type CardStatus = string
 
 /**
  * A comment attached to a kanban card.
@@ -49,7 +49,7 @@ export interface Comment {
  * Cards are persisted as markdown files with YAML frontmatter inside the
  * `.kanban/{status}/` directory structure.
  */
-export interface Feature {
+export interface Card {
   /** Card frontmatter schema version. 0 = legacy (pre-versioning). */
   version: number
   /** Unique identifier for the card (e.g. `'42-build-dashboard'`). */
@@ -57,7 +57,7 @@ export interface Feature {
   /** Board this card belongs to. Omitted when only one board exists. */
   boardId?: string
   /** Current column/status of the card. */
-  status: FeatureStatus
+  status: CardStatus
   /** Priority level of the card. */
   priority: Priority
   /** Assignee name, or `null` if unassigned. */
@@ -128,7 +128,7 @@ export function getTitleFromContent(content: string): string {
  * Creates a filename-safe slug from a title string.
  *
  * The slug is lowercased, stripped of special characters, limited to 50
- * characters, and falls back to `'feature'` if the result would be empty.
+ * characters, and falls back to `'card'` if the result would be empty.
  *
  * @param title - The human-readable title to slugify.
  * @returns A URL/filename-safe slug string.
@@ -148,7 +148,7 @@ export function generateSlug(title: string): string {
     .replace(/\s+/g, '-') // Replace spaces with hyphens
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-|-$/g, '') // Trim hyphens from start/end
-    .slice(0, 50) || 'feature' // Limit length, fallback
+    .slice(0, 50) || 'card' // Limit length, fallback
 }
 
 /**
@@ -162,10 +162,10 @@ export function generateSlug(title: string): string {
  * @returns A filename string in the format `'{id}-{slug}'`.
  *
  * @example
- * generateFeatureFilename(42, 'Build Dashboard')
+ * generateCardFilename(42, 'Build Dashboard')
  * // => '42-build-dashboard'
  */
-export function generateFeatureFilename(id: number, title: string): string {
+export function generateCardFilename(id: number, title: string): string {
   const slug = generateSlug(title)
   return `${id}-${slug}`
 }
@@ -282,7 +282,7 @@ export const LABEL_PRESET_COLORS: { name: string; hex: string }[] = [
  * These fields are parsed from and serialized back to the frontmatter block
  * when reading/writing card files.
  */
-export interface FeatureFrontmatter {
+export interface CardFrontmatter {
   /** Card frontmatter schema version. 0 = legacy (pre-versioning). */
   version: number
   /** Unique card identifier. */
@@ -318,49 +318,49 @@ export interface FeatureFrontmatter {
  */
 export interface WorkspaceInfo {
   projectPath: string
-  featuresDirectory: string
+  kanbanDirectory: string
   port: number
   configVersion: number
 }
 
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; features: Feature[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
-  | { type: 'featuresUpdated'; features: Feature[] }
+  | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
+  | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
-  | { type: 'featureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter; comments: Comment[] }
+  | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[] }
   | { type: 'showSettings'; settings: CardDisplaySettings }
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
   | { type: 'actionResult'; callbackKey: string; error?: string }
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createFeature'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] } }
-  | { type: 'moveFeature'; featureId: string; newStatus: string; newOrder: number }
-  | { type: 'deleteFeature'; featureId: string }
-  | { type: 'updateFeature'; featureId: string; updates: Partial<Feature> }
-  | { type: 'openFeature'; featureId: string }
-  | { type: 'saveFeatureContent'; featureId: string; content: string; frontmatter: FeatureFrontmatter }
-  | { type: 'closeFeature' }
-  | { type: 'openFile'; featureId: string }
-  | { type: 'addAttachment'; featureId: string }
-  | { type: 'openAttachment'; featureId: string; attachment: string }
-  | { type: 'removeAttachment'; featureId: string; attachment: string }
+  | { type: 'createCard'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] } }
+  | { type: 'moveCard'; cardId: string; newStatus: string; newOrder: number }
+  | { type: 'deleteCard'; cardId: string }
+  | { type: 'updateCard'; cardId: string; updates: Partial<Card> }
+  | { type: 'openCard'; cardId: string }
+  | { type: 'saveCardContent'; cardId: string; content: string; frontmatter: CardFrontmatter }
+  | { type: 'closeCard' }
+  | { type: 'openFile'; cardId: string }
+  | { type: 'addAttachment'; cardId: string }
+  | { type: 'openAttachment'; cardId: string; attachment: string }
+  | { type: 'removeAttachment'; cardId: string; attachment: string }
   | { type: 'openSettings' }
   | { type: 'saveSettings'; settings: CardDisplaySettings }
   | { type: 'addColumn'; column: { name: string; color: string } }
   | { type: 'editColumn'; columnId: string; updates: { name: string; color: string } }
   | { type: 'removeColumn'; columnId: string }
-  | { type: 'addComment'; featureId: string; author: string; content: string }
-  | { type: 'updateComment'; featureId: string; commentId: string; content: string }
-  | { type: 'deleteComment'; featureId: string; commentId: string }
+  | { type: 'addComment'; cardId: string; author: string; content: string }
+  | { type: 'updateComment'; cardId: string; commentId: string; content: string }
+  | { type: 'deleteComment'; cardId: string; commentId: string }
   | { type: 'switchBoard'; boardId: string }
   | { type: 'createBoard'; name: string }
-  | { type: 'permanentDeleteFeature'; featureId: string }
-  | { type: 'restoreFeature'; featureId: string }
+  | { type: 'permanentDeleteCard'; cardId: string }
+  | { type: 'restoreCard'; cardId: string }
   | { type: 'purgeDeletedCards' }
-  | { type: 'transferCard'; featureId: string; toBoard: string; targetStatus: string }
+  | { type: 'transferCard'; cardId: string; toBoard: string; targetStatus: string }
   | { type: 'setLabel'; name: string; definition: LabelDefinition }
   | { type: 'renameLabel'; oldName: string; newName: string }
   | { type: 'deleteLabel'; name: string }
-  | { type: 'triggerAction'; featureId: string; action: string; callbackKey: string }
+  | { type: 'triggerAction'; cardId: string; action: string; callbackKey: string }

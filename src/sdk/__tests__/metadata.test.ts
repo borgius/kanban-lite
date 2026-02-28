@@ -2,10 +2,10 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { parseFeatureFile, serializeFeature } from '../parser'
+import { parseCardFile, serializeCard } from '../parser'
 import { KanbanSDK } from '../KanbanSDK'
 import { DEFAULT_COLUMNS } from '../../shared/types'
-import type { Feature } from '../../shared/types'
+import type { Card } from '../../shared/types'
 import type { KanbanConfig } from '../../shared/config'
 
 function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
@@ -21,7 +21,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
       }
     },
     defaultBoard: 'default',
-    featuresDirectory: '.kanban',
+    kanbanDirectory: '.kanban',
     aiAgent: 'claude',
     defaultPriority: 'medium',
     defaultStatus: 'backlog',
@@ -41,7 +41,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
   }
 }
 
-describe('parseFeatureFile - metadata', () => {
+describe('parseCardFile - metadata', () => {
   it('should parse flat metadata from frontmatter', () => {
     const content = `---
 id: "meta-flat"
@@ -64,9 +64,9 @@ metadata:
 
 Some content.`
 
-    const feature = parseFeatureFile(content, '/tmp/meta-flat.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.metadata).toEqual({
+    const card = parseCardFile(content, '/tmp/meta-flat.md')
+    expect(card).not.toBeNull()
+    expect(card?.metadata).toEqual({
       sprint: 5,
       team: 'backend',
       estimate: 3.5
@@ -96,9 +96,9 @@ metadata:
 ---
 # Nested Metadata Card`
 
-    const feature = parseFeatureFile(content, '/tmp/meta-nested.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.metadata).toEqual({
+    const card = parseCardFile(content, '/tmp/meta-nested.md')
+    expect(card).not.toBeNull()
+    expect(card?.metadata).toEqual({
       tags: ['alpha', 'beta'],
       config: {
         retries: 3,
@@ -124,9 +124,9 @@ metadata: "just-a-string"
 ---
 # Scalar Metadata Card`
 
-    const feature = parseFeatureFile(content, '/tmp/meta-scalar.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.metadata).toBeUndefined()
+    const card = parseCardFile(content, '/tmp/meta-scalar.md')
+    expect(card).not.toBeNull()
+    expect(card?.metadata).toBeUndefined()
   })
 
   it('should return undefined metadata when no metadata block exists', () => {
@@ -145,15 +145,15 @@ order: "a0"
 ---
 # No Metadata Card`
 
-    const feature = parseFeatureFile(content, '/tmp/no-meta.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.metadata).toBeUndefined()
+    const card = parseCardFile(content, '/tmp/no-meta.md')
+    expect(card).not.toBeNull()
+    expect(card?.metadata).toBeUndefined()
   })
 })
 
-describe('serializeFeature - metadata', () => {
+describe('serializeCard - metadata', () => {
   it('should round-trip serialize and parse with metadata', () => {
-    const original: Feature = {
+    const original: Card = {
       version: 0,
       id: 'meta-roundtrip',
       status: 'in-progress',
@@ -177,8 +177,8 @@ describe('serializeFeature - metadata', () => {
       filePath: '/tmp/meta-roundtrip.md'
     }
 
-    const serialized = serializeFeature(original)
-    const parsed = parseFeatureFile(serialized, original.filePath)
+    const serialized = serializeCard(original)
+    const parsed = parseCardFile(serialized, original.filePath)
 
     expect(parsed).not.toBeNull()
     expect(parsed?.metadata).toEqual(original.metadata)
@@ -188,7 +188,7 @@ describe('serializeFeature - metadata', () => {
   })
 
   it('should omit metadata block when metadata is undefined', () => {
-    const feature: Feature = {
+    const card: Card = {
       version: 0,
       id: 'no-meta-serialize',
       status: 'backlog',
@@ -206,12 +206,12 @@ describe('serializeFeature - metadata', () => {
       filePath: '/tmp/no-meta.md'
     }
 
-    const serialized = serializeFeature(feature)
+    const serialized = serializeCard(card)
     expect(serialized).not.toContain('metadata:')
   })
 
   it('should omit metadata block when metadata is empty object', () => {
-    const feature: Feature = {
+    const card: Card = {
       version: 0,
       id: 'empty-meta',
       status: 'backlog',
@@ -230,23 +230,23 @@ describe('serializeFeature - metadata', () => {
       filePath: '/tmp/empty-meta.md'
     }
 
-    const serialized = serializeFeature(feature)
+    const serialized = serializeCard(card)
     expect(serialized).not.toContain('metadata:')
   })
 })
 
 describe('SDK integration - metadata', () => {
   let workspaceDir: string
-  let featuresDir: string
+  let kanbanDir: string
   let sdk: KanbanSDK
 
   beforeEach(() => {
     workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-metadata-'))
-    featuresDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(featuresDir, { recursive: true })
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
     const config = createV2Config()
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config, null, 2))
-    sdk = new KanbanSDK(featuresDir)
+    sdk = new KanbanSDK(kanbanDir)
   })
 
   afterEach(() => {
@@ -324,16 +324,16 @@ describe('SDK integration - metadata', () => {
 
 describe('SDK listCards - metaFilter', () => {
   let workspaceDir: string
-  let featuresDir: string
+  let kanbanDir: string
   let sdk: KanbanSDK
 
   beforeEach(() => {
     workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-metafilter-'))
-    featuresDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(featuresDir, { recursive: true })
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
     const config = createV2Config()
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config, null, 2))
-    sdk = new KanbanSDK(featuresDir)
+    sdk = new KanbanSDK(kanbanDir)
   })
 
   afterEach(() => {

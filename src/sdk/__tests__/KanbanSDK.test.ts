@@ -57,7 +57,7 @@ Description here.`
 
 describe('KanbanSDK', () => {
   let workspaceDir: string
-  let tempDir: string // featuresDir (alias kept for minimal test changes)
+  let tempDir: string // kanbanDir (alias kept for minimal test changes)
   let sdk: KanbanSDK
 
   beforeEach(() => {
@@ -72,7 +72,7 @@ describe('KanbanSDK', () => {
   })
 
   describe('init', () => {
-    it('should create the features directory', async () => {
+    it('should create the cards directory', async () => {
       await sdk.init()
       expect(fs.existsSync(tempDir)).toBe(true)
     })
@@ -422,7 +422,7 @@ describe('KanbanSDK', () => {
   describe('Label group filtering', () => {
     it('filterCardsByLabelGroup returns cards with any label from the group', async () => {
       sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
-      sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+      sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
       sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
 
       writeCardFile(tempDir, '1-card.md', makeCardContent({
@@ -432,7 +432,7 @@ describe('KanbanSDK', () => {
         id: '2-card', status: 'backlog', labels: ['high']
       }), 'backlog')
       writeCardFile(tempDir, '3-card.md', makeCardContent({
-        id: '3-card', status: 'backlog', labels: ['feature', 'high']
+        id: '3-card', status: 'backlog', labels: ['card', 'high']
       }), 'backlog')
 
       const typeCards = await sdk.filterCardsByLabelGroup('Type')
@@ -449,11 +449,11 @@ describe('KanbanSDK', () => {
 
     it('getLabelsInGroup returns labels belonging to a group', () => {
       sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
-      sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+      sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
       sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
       sdk.setLabel('docs', { color: '#16a34a' })
 
-      expect(sdk.getLabelsInGroup('Type').sort()).toEqual(['bug', 'feature'])
+      expect(sdk.getLabelsInGroup('Type').sort()).toEqual(['bug', 'card'])
       expect(sdk.getLabelsInGroup('Priority')).toEqual(['high'])
       expect(sdk.getLabelsInGroup('Other')).toEqual([])
     })
@@ -540,7 +540,7 @@ describe('KanbanSDK', () => {
 
     it('should return custom columns from .kanban.json', async () => {
       const config = {
-        featuresDirectory: '.kanban',
+        kanbanDirectory: '.kanban',
         columns: [
           { id: 'new', name: 'New', color: '#ff0000' },
           { id: 'wip', name: 'WIP', color: '#00ff00' },

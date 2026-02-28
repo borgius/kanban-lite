@@ -1,16 +1,16 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Comment, Feature, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
-import { getTitleFromContent, generateFeatureFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../shared/types'
+import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
+import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
 import type { BoardConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import type { Priority } from '../shared/types'
-import { parseFeatureFile, serializeFeature } from './parser'
-import { ensureDirectories, ensureStatusSubfolders, getFeatureFilePath, getStatusFromPath, moveFeatureFile, renameFeatureFile } from './fileUtils'
+import { parseCardFile, serializeCard } from './parser'
+import { ensureDirectories, ensureStatusSubfolders, getCardFilePath, getStatusFromPath, moveCardFile, renameCardFile } from './fileUtils'
 import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
-import { sanitizeFeature } from './types'
+import { sanitizeCard } from './types'
 import { migrateFileSystemToMultiBoard } from './migration'
 import { matchesMetaFilter } from './metaUtils'
 
@@ -39,7 +39,7 @@ export class KanbanSDK {
   /**
    * Creates a new KanbanSDK instance.
    *
-   * @param featuresDir - Absolute path to the `.kanban` features directory.
+   * @param kanbanDir - Absolute path to the `.kanban` kanban directory.
    *   The parent of this directory is treated as the workspace root.
    * @param options - Optional configuration including an event handler callback.
    *
@@ -53,7 +53,7 @@ export class KanbanSDK {
    * })
    * ```
    */
-  constructor(public readonly featuresDir: string, options?: SDKOptions) {
+  constructor(public readonly kanbanDir: string, options?: SDKOptions) {
     this._onEvent = options?.onEvent
   }
 
@@ -72,7 +72,7 @@ export class KanbanSDK {
   }
 
   /**
-   * The workspace root directory (parent of the features directory).
+   * The workspace root directory (parent of the kanban directory).
    *
    * This is the project root where `.kanban.json` configuration lives.
    *
@@ -85,7 +85,7 @@ export class KanbanSDK {
    * ```
    */
   get workspaceRoot(): string {
-    return path.dirname(this.featuresDir)
+    return path.dirname(this.kanbanDir)
   }
 
   // --- Board resolution helpers ---
@@ -97,7 +97,7 @@ export class KanbanSDK {
 
   private _boardDir(boardId?: string): string {
     const resolvedId = this._resolveBoardId(boardId)
-    return path.join(this.featuresDir, 'boards', resolvedId)
+    return path.join(this.kanbanDir, 'boards', resolvedId)
   }
 
   private _isCompletedStatus(status: string, boardId?: string): boolean {
@@ -110,7 +110,7 @@ export class KanbanSDK {
 
   private async _ensureMigrated(): Promise<void> {
     if (this._migrated) return
-    await migrateFileSystemToMultiBoard(this.featuresDir)
+    await migrateFileSystemToMultiBoard(this.kanbanDir)
     this._migrated = true
   }
 
@@ -338,7 +338,7 @@ export class KanbanSDK {
    * @param toBoardId - The ID of the destination board.
    * @param targetStatus - Optional status column in the destination board.
    *   Defaults to the destination board's default status.
-   * @returns A promise resolving to the updated {@link Feature} card object.
+   * @returns A promise resolving to the updated {@link Card} card object.
    * @throws {Error} If either board does not exist.
    * @throws {Error} If the card is not found in the source board.
    *
@@ -349,7 +349,7 @@ export class KanbanSDK {
    * console.log(card.status)  // 'triage'
    * ```
    */
-  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Feature> {
+  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
     const toBoardDir = this._boardDir(toBoardId)
 
     const config = readConfig(this.workspaceRoot)
@@ -390,9 +390,9 @@ export class KanbanSDK {
     const lastOrder = cardsInStatus.length > 0 ? cardsInStatus[cardsInStatus.length - 1].order : null
     card.order = generateKeyBetween(lastOrder, null)
 
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
-    this.emitEvent('task.moved', { ...sanitizeFeature(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
+    this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
     return card
   }
 
@@ -421,7 +421,7 @@ export class KanbanSDK {
    *   are returned.
    * @param sort - Optional sort order. One of `'created:asc'`, `'created:desc'`,
    *   `'modified:asc'`, `'modified:desc'`. Defaults to fractional board order.
-   * @returns A promise resolving to an array of {@link Feature} card objects.
+   * @returns A promise resolving to an array of {@link Card} card objects.
    *
    * @example
    * ```ts
@@ -438,7 +438,7 @@ export class KanbanSDK {
    * const newest = await sdk.listCards(undefined, undefined, undefined, 'created:desc')
    * ```
    */
-  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Feature[]> {
+  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Card[]> {
     await this._ensureMigrated()
     const boardDir = this._boardDir(boardId)
     const resolvedBoardId = this._resolveBoardId(boardId)
@@ -455,7 +455,7 @@ export class KanbanSDK {
         try {
           const card = await this._loadCard(filePath)
           if (card) {
-            await moveFeatureFile(filePath, boardDir, card.status, card.attachments)
+            await moveCardFile(filePath, boardDir, card.status, card.attachments)
           }
         } catch {
           // Skip files that fail to migrate
@@ -466,7 +466,7 @@ export class KanbanSDK {
     }
 
     // Phase 2: Load .md files from ALL subdirectories
-    const cards: Feature[] = []
+    const cards: Card[] = []
     let entries: import('fs').Dirent[]
     try {
       entries = await fs.readdir(boardDir, { withFileTypes: true }) as import('fs').Dirent[]
@@ -495,7 +495,7 @@ export class KanbanSDK {
       const pathStatus = getStatusFromPath(card.filePath, boardDir)
       if (pathStatus !== null && pathStatus !== card.status) {
         try {
-          card.filePath = await moveFeatureFile(card.filePath, boardDir, card.status, card.attachments)
+          card.filePath = await moveCardFile(card.filePath, boardDir, card.status, card.attachments)
         } catch {
           // Will retry on next load
         }
@@ -505,7 +505,7 @@ export class KanbanSDK {
     // Migrate legacy integer order values to fractional indices
     const hasLegacyOrder = cards.some(c => /^\d+$/.test(c.order))
     if (hasLegacyOrder) {
-      const byStatus = new Map<string, Feature[]>()
+      const byStatus = new Map<string, Card[]>()
       for (const c of cards) {
         const list = byStatus.get(c.status) || []
         list.push(c)
@@ -516,7 +516,7 @@ export class KanbanSDK {
         const keys = generateNKeysBetween(null, null, columnCards.length)
         for (let i = 0; i < columnCards.length; i++) {
           columnCards[i].order = keys[i]
-          await fs.writeFile(columnCards[i].filePath, serializeFeature(columnCards[i]), 'utf-8')
+          await fs.writeFile(columnCards[i].filePath, serializeCard(columnCards[i]), 'utf-8')
         }
       }
     }
@@ -551,7 +551,7 @@ export class KanbanSDK {
    *
    * @param cardId - The full or partial ID of the card to retrieve.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the matching {@link Feature} card, or `null` if not found.
+   * @returns A promise resolving to the matching {@link Card} card, or `null` if not found.
    *
    * @example
    * ```ts
@@ -561,7 +561,7 @@ export class KanbanSDK {
    * }
    * ```
    */
-  async getCard(cardId: string, boardId?: string): Promise<Feature | null> {
+  async getCard(cardId: string, boardId?: string): Promise<Card | null> {
     const cards = await this.listCards(undefined, boardId)
     return cards.find(c => c.id === cardId) || null
   }
@@ -584,7 +584,7 @@ export class KanbanSDK {
    * @param data.attachments - Optional array of attachment filenames.
    * @param data.metadata - Optional arbitrary key-value metadata stored in the card's frontmatter.
    * @param data.boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the newly created {@link Feature} card.
+   * @returns A promise resolving to the newly created {@link Card} card.
    *
    * @example
    * ```ts
@@ -598,7 +598,7 @@ export class KanbanSDK {
    * console.log(card.id) // '7'
    * ```
    */
-  async createCard(data: CreateCardInput): Promise<Feature> {
+  async createCard(data: CreateCardInput): Promise<Card> {
     await this._ensureMigrated()
     const resolvedBoardId = this._resolveBoardId(data.boardId)
     const boardDir = this._boardDir(resolvedBoardId)
@@ -611,7 +611,7 @@ export class KanbanSDK {
     const priority = data.priority || board?.defaultPriority || config.defaultPriority || 'medium'
     const title = getTitleFromContent(data.content)
     const numericId = allocateCardId(this.workspaceRoot, resolvedBoardId)
-    const filename = generateFeatureFilename(numericId, title)
+    const filename = generateCardFilename(numericId, title)
     const now = new Date().toISOString()
 
     // Compute order: place at end of target column
@@ -623,7 +623,7 @@ export class KanbanSDK {
       ? cardsInStatus[cardsInStatus.length - 1].order
       : null
 
-    const card: Feature = {
+    const card: Card = {
       version: CARD_FORMAT_VERSION,
       id: String(numericId),
       boardId: resolvedBoardId,
@@ -641,13 +641,13 @@ export class KanbanSDK {
       content: data.content,
       ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
       ...(data.actions && data.actions.length > 0 ? { actions: data.actions } : {}),
-      filePath: getFeatureFilePath(boardDir, status, filename)
+      filePath: getCardFilePath(boardDir, status, filename)
     }
 
     await fs.mkdir(path.dirname(card.filePath), { recursive: true })
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
-    this.emitEvent('task.created', sanitizeFeature(card))
+    this.emitEvent('task.created', sanitizeCard(card))
     return card
   }
 
@@ -661,9 +661,9 @@ export class KanbanSDK {
    * and `completedAt` is updated accordingly.
    *
    * @param cardId - The ID of the card to update.
-   * @param updates - A partial {@link Feature} object with the fields to update.
+   * @param updates - A partial {@link Card} object with the fields to update.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -675,7 +675,7 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateCard(cardId: string, updates: Partial<Feature>, boardId?: string): Promise<Feature> {
+  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -694,23 +694,23 @@ export class KanbanSDK {
     }
 
     // Write updated content
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     // Rename file if title changed (numeric-ID cards only)
     const newTitle = getTitleFromContent(card.content)
     const numericId = extractNumericId(card.id)
     if (numericId !== null && newTitle !== oldTitle) {
-      const newFilename = generateFeatureFilename(numericId, newTitle)
-      card.filePath = await renameFeatureFile(card.filePath, newFilename)
+      const newFilename = generateCardFilename(numericId, newTitle)
+      card.filePath = await renameCardFile(card.filePath, newFilename)
     }
 
     // Move file if status changed
     if (oldStatus !== card.status) {
-      const newPath = await moveFeatureFile(card.filePath, boardDir, card.status, card.attachments)
+      const newPath = await moveCardFile(card.filePath, boardDir, card.status, card.attachments)
       card.filePath = newPath
     }
 
-    this.emitEvent('task.updated', sanitizeFeature(card))
+    this.emitEvent('task.updated', sanitizeCard(card))
     return card
   }
 
@@ -753,7 +753,7 @@ export class KanbanSDK {
       action,
       board: resolvedBoardId,
       list: card.status,
-      card: sanitizeFeature(card),
+      card: sanitizeCard(card),
     }
 
     const response = await fetch(actionWebhookUrl, {
@@ -779,7 +779,7 @@ export class KanbanSDK {
    * @param position - Optional zero-based index within the target column.
    *   Defaults to the end of the column.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -791,7 +791,7 @@ export class KanbanSDK {
    * const done = await sdk.moveCard('42', 'done')
    * ```
    */
-  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Feature> {
+  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
     const cards = await this.listCards(undefined, boardId)
     const card = cards.find(c => c.id === cardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -819,15 +819,15 @@ export class KanbanSDK {
     card.order = generateKeyBetween(before, after)
 
     // Write updated content
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     // Move file if status changed
     if (oldStatus !== newStatus) {
-      const newPath = await moveFeatureFile(card.filePath, boardDir, newStatus, card.attachments)
+      const newPath = await moveCardFile(card.filePath, boardDir, newStatus, card.attachments)
       card.filePath = newPath
     }
 
-    this.emitEvent('task.moved', { ...sanitizeFeature(card), previousStatus: oldStatus })
+    this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus: oldStatus })
     return card
   }
 
@@ -869,7 +869,7 @@ export class KanbanSDK {
   async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
-    const snapshot = sanitizeFeature(card)
+    const snapshot = sanitizeCard(card)
     await fs.unlink(card.filePath)
     this.emitEvent('task.deleted', snapshot)
   }
@@ -882,7 +882,7 @@ export class KanbanSDK {
    *
    * @param status - The status/column ID to filter by (e.g., `'todo'`, `'in-progress'`).
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to an array of {@link Feature} cards in the given status.
+   * @returns A promise resolving to an array of {@link Card} cards in the given status.
    *
    * @example
    * ```ts
@@ -890,7 +890,7 @@ export class KanbanSDK {
    * console.log(`${inProgress.length} cards in progress`)
    * ```
    */
-  async getCardsByStatus(status: string, boardId?: string): Promise<Feature[]> {
+  async getCardsByStatus(status: string, boardId?: string): Promise<Card[]> {
     const cards = await this.listCards(undefined, boardId)
     return cards.filter(c => c.status === status)
   }
@@ -1077,7 +1077,7 @@ export class KanbanSDK {
    *
    * @param group - The group name to filter by.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to an array of matching {@link Feature} cards.
+   * @returns A promise resolving to an array of matching {@link Card} cards.
    *
    * @example
    * ```ts
@@ -1085,7 +1085,7 @@ export class KanbanSDK {
    * // Returns all cards with 'bug', 'feature', or any other 'Type' label
    * ```
    */
-  async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Feature[]> {
+  async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Card[]> {
     const groupLabels = this.getLabelsInGroup(group)
     if (groupLabels.length === 0) return []
     const cards = await this.listCards(undefined, boardId)
@@ -1104,7 +1104,7 @@ export class KanbanSDK {
    * @param cardId - The ID of the card to attach the file to.
    * @param sourcePath - Path to the file to attach. Can be absolute or relative.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -1113,7 +1113,7 @@ export class KanbanSDK {
    * console.log(card.attachments) // ['screenshot.png']
    * ```
    */
-  async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Feature> {
+  async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -1133,7 +1133,7 @@ export class KanbanSDK {
     }
 
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     this.emitEvent('attachment.added', { cardId, attachment: fileName })
     return card
@@ -1148,7 +1148,7 @@ export class KanbanSDK {
    * @param cardId - The ID of the card to remove the attachment from.
    * @param attachment - The attachment filename to remove (e.g., `'screenshot.png'`).
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -1156,13 +1156,13 @@ export class KanbanSDK {
    * const card = await sdk.removeAttachment('42', 'old-screenshot.png')
    * ```
    */
-  async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Feature> {
+  async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
     card.attachments = card.attachments.filter(a => a !== attachment)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     this.emitEvent('attachment.removed', { cardId, attachment })
     return card
@@ -1222,7 +1222,7 @@ export class KanbanSDK {
    * @param author - The name of the comment author.
    * @param content - The comment text content.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card (including the new comment).
+   * @returns A promise resolving to the updated {@link Card} card (including the new comment).
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -1231,7 +1231,7 @@ export class KanbanSDK {
    * console.log(card.comments.length) // 1
    * ```
    */
-  async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Feature> {
+  async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card> {
     if (!content?.trim()) throw new Error('Comment content cannot be empty')
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -1253,7 +1253,7 @@ export class KanbanSDK {
 
     card.comments.push(comment)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     this.emitEvent('comment.created', { ...comment, cardId })
     return card
@@ -1266,7 +1266,7 @@ export class KanbanSDK {
    * @param commentId - The ID of the comment to update (e.g., `'c1'`).
    * @param content - The new content for the comment.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    * @throws {Error} If the comment is not found on the card.
    *
@@ -1275,7 +1275,7 @@ export class KanbanSDK {
    * const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
    * ```
    */
-  async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Feature> {
+  async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -1284,7 +1284,7 @@ export class KanbanSDK {
 
     comment.content = content
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     this.emitEvent('comment.updated', { ...comment, cardId })
     return card
@@ -1296,7 +1296,7 @@ export class KanbanSDK {
    * @param cardId - The ID of the card containing the comment.
    * @param commentId - The ID of the comment to delete (e.g., `'c1'`).
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving to the updated {@link Feature} card.
+   * @returns A promise resolving to the updated {@link Card} card.
    * @throws {Error} If the card is not found.
    *
    * @example
@@ -1304,14 +1304,14 @@ export class KanbanSDK {
    * const card = await sdk.deleteComment('42', 'c2')
    * ```
    */
-  async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Feature> {
+  async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card> {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
     const comment = (card.comments || []).find(c => c.id === commentId)
     card.comments = (card.comments || []).filter(c => c.id !== commentId)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeFeature(card), 'utf-8')
+    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
 
     if (comment) {
       this.emitEvent('comment.deleted', { ...comment, cardId })
@@ -1603,9 +1603,9 @@ export class KanbanSDK {
       .map(e => path.join(dir, e.name))
   }
 
-  private async _loadCard(filePath: string): Promise<Feature | null> {
+  private async _loadCard(filePath: string): Promise<Card | null> {
     const content = await fs.readFile(filePath, 'utf-8')
-    return parseFeatureFile(content, filePath)
+    return parseCardFile(content, filePath)
   }
 
 }

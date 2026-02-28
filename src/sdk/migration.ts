@@ -6,8 +6,8 @@ import * as path from 'path'
  * Moves status subdirectories from .kanban/{status}/ into .kanban/boards/default/{status}/.
  * Idempotent: if boards/ already exists, this is a no-op.
  */
-export async function migrateFileSystemToMultiBoard(featuresDir: string): Promise<void> {
-  const boardsDir = path.join(featuresDir, 'boards')
+export async function migrateFileSystemToMultiBoard(kanbanDir: string): Promise<void> {
+  const boardsDir = path.join(kanbanDir, 'boards')
   const defaultBoardDir = path.join(boardsDir, 'default')
 
   // Check if already migrated
@@ -22,9 +22,9 @@ export async function migrateFileSystemToMultiBoard(featuresDir: string): Promis
 
   let entries: import('fs').Dirent[]
   try {
-    entries = await fs.readdir(featuresDir, { withFileTypes: true }) as import('fs').Dirent[]
+    entries = await fs.readdir(kanbanDir, { withFileTypes: true }) as import('fs').Dirent[]
   } catch {
-    return // featuresDir doesn't exist yet
+    return // kanbanDir doesn't exist yet
   }
 
   // Move each subdirectory that looks like a status folder
@@ -32,7 +32,7 @@ export async function migrateFileSystemToMultiBoard(featuresDir: string): Promis
     if (!entry.isDirectory()) continue
     if (entry.name === 'boards' || entry.name.startsWith('.')) continue
 
-    const src = path.join(featuresDir, entry.name)
+    const src = path.join(kanbanDir, entry.name)
     const dest = path.join(defaultBoardDir, entry.name)
     await fs.rename(src, dest)
   }
@@ -44,7 +44,7 @@ export async function migrateFileSystemToMultiBoard(featuresDir: string): Promis
     await fs.mkdir(backlogDir, { recursive: true })
     for (const file of rootMdFiles) {
       await fs.rename(
-        path.join(featuresDir, file.name),
+        path.join(kanbanDir, file.name),
         path.join(backlogDir, file.name)
       )
     }

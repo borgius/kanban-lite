@@ -19,7 +19,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
       }
     },
     defaultBoard: 'default',
-    featuresDirectory: '.kanban',
+    kanbanDirectory: '.kanban',
     aiAgent: 'claude',
     defaultPriority: 'medium',
     defaultStatus: 'backlog',
@@ -41,17 +41,17 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
 
 describe('Multi-board SDK operations', () => {
   let workspaceDir: string
-  let featuresDir: string
+  let kanbanDir: string
   let sdk: KanbanSDK
 
   beforeEach(() => {
     workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-multi-board-'))
-    featuresDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(featuresDir, { recursive: true })
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
     // Write v2 config
     const config = createV2Config()
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config, null, 2))
-    sdk = new KanbanSDK(featuresDir)
+    sdk = new KanbanSDK(kanbanDir)
   })
 
   afterEach(() => {
@@ -132,7 +132,7 @@ describe('Multi-board SDK operations', () => {
       sdk.createBoard('temp', 'Temporary')
 
       // Create the board directory so deletion can clean it up
-      fs.mkdirSync(path.join(featuresDir, 'boards', 'temp'), { recursive: true })
+      fs.mkdirSync(path.join(kanbanDir, 'boards', 'temp'), { recursive: true })
 
       await sdk.deleteBoard('temp')
 
@@ -439,8 +439,8 @@ describe('Multi-board SDK operations', () => {
       await sdk.createCard({ content: '# Default Task', boardId: 'default' })
       await sdk.createCard({ content: '# Sprint Task', boardId: 'sprint' })
 
-      const defaultBoardDir = path.join(featuresDir, 'boards', 'default')
-      const sprintBoardDir = path.join(featuresDir, 'boards', 'sprint')
+      const defaultBoardDir = path.join(kanbanDir, 'boards', 'default')
+      const sprintBoardDir = path.join(kanbanDir, 'boards', 'sprint')
 
       // Each board dir should have its own card files
       const defaultFiles = fs.readdirSync(path.join(defaultBoardDir, 'backlog')).filter(f => f.endsWith('.md'))

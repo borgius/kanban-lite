@@ -36,7 +36,7 @@ try {
 }
 
 // --- Standalone attachment handling ---
-function handleAddAttachment(featureId: string) {
+function handleAddAttachment(cardId: string) {
   const input = document.createElement('input')
   input.type = 'file'
   input.multiple = true
@@ -67,7 +67,7 @@ function handleAddAttachment(featureId: string) {
       await fetch('/api/upload-attachment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ featureId, files })
+        body: JSON.stringify({ cardId, files })
       })
     } catch (err) {
       console.error('Failed to upload attachment:', err)
@@ -78,8 +78,8 @@ function handleAddAttachment(featureId: string) {
   input.click()
 }
 
-function handleOpenAttachment(featureId: string, attachment: string) {
-  const url = `/api/attachment?featureId=${encodeURIComponent(featureId)}&filename=${encodeURIComponent(attachment)}`
+function handleOpenAttachment(cardId: string, attachment: string) {
+  const url = `/api/attachment?cardId=${encodeURIComponent(cardId)}&filename=${encodeURIComponent(attachment)}`
   window.open(url, '_blank')
 }
 
@@ -89,11 +89,11 @@ function handleOpenAttachment(featureId: string, attachment: string) {
     const msg = message as Record<string, unknown>
     // Intercept attachment messages — handle browser-side in standalone
     if (msg.type === 'addAttachment') {
-      handleAddAttachment(msg.featureId as string)
+      handleAddAttachment(msg.cardId as string)
       return
     }
     if (msg.type === 'openAttachment') {
-      handleOpenAttachment(msg.featureId as string, msg.attachment as string)
+      handleOpenAttachment(msg.cardId as string, msg.attachment as string)
       return
     }
     if (msg.type === 'toggleTheme') {

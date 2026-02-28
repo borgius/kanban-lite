@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Comment, Feature } from '../../shared/types'
-import { parseFeatureFile, serializeFeature } from '../parser'
+import type { Comment, Card } from '../../shared/types'
+import { parseCardFile, serializeCard } from '../parser'
 
-describe('parseFeatureFile', () => {
-  it('should parse a valid feature file', () => {
+describe('parseCardFile', () => {
+  it('should parse a valid card file', () => {
     const content = `---
-id: "test-feature"
+id: "test-card"
 status: "todo"
 priority: "high"
 assignee: "alice"
@@ -17,29 +17,29 @@ labels: ["frontend", "urgent"]
 attachments: ["screenshot.png", "spec.pdf"]
 order: "a0"
 ---
-# Test Feature
+# Test Card
 
 Some description here.`
 
-    const feature = parseFeatureFile(content, '/tmp/test-feature.md')
+    const card = parseCardFile(content, '/tmp/test-card.md')
 
-    expect(feature).not.toBeNull()
-    expect(feature?.id).toBe('test-feature')
-    expect(feature?.status).toBe('todo')
-    expect(feature?.priority).toBe('high')
-    expect(feature?.assignee).toBe('alice')
-    expect(feature?.dueDate).toBe('2025-12-31')
-    expect(feature?.created).toBe('2025-01-01T00:00:00.000Z')
-    expect(feature?.completedAt).toBeNull()
-    expect(feature?.labels).toEqual(['frontend', 'urgent'])
-    expect(feature?.attachments).toEqual(['screenshot.png', 'spec.pdf'])
-    expect(feature?.order).toBe('a0')
-    expect(feature?.content).toBe('# Test Feature\n\nSome description here.')
-    expect(feature?.filePath).toBe('/tmp/test-feature.md')
+    expect(card).not.toBeNull()
+    expect(card?.id).toBe('test-card')
+    expect(card?.status).toBe('todo')
+    expect(card?.priority).toBe('high')
+    expect(card?.assignee).toBe('alice')
+    expect(card?.dueDate).toBe('2025-12-31')
+    expect(card?.created).toBe('2025-01-01T00:00:00.000Z')
+    expect(card?.completedAt).toBeNull()
+    expect(card?.labels).toEqual(['frontend', 'urgent'])
+    expect(card?.attachments).toEqual(['screenshot.png', 'spec.pdf'])
+    expect(card?.order).toBe('a0')
+    expect(card?.content).toBe('# Test Card\n\nSome description here.')
+    expect(card?.filePath).toBe('/tmp/test-card.md')
   })
 
   it('should return null for content without frontmatter', () => {
-    const result = parseFeatureFile('# Just a heading\nNo frontmatter', '/tmp/no-fm.md')
+    const result = parseCardFile('# Just a heading\nNo frontmatter', '/tmp/no-fm.md')
     expect(result).toBeNull()
   })
 
@@ -58,20 +58,20 @@ order: "a0"
 ---
 # Null Test`
 
-    const feature = parseFeatureFile(content, '/tmp/null-test.md')
-    expect(feature?.assignee).toBeNull()
-    expect(feature?.dueDate).toBeNull()
-    expect(feature?.completedAt).toBeNull()
-    expect(feature?.labels).toEqual([])
-    expect(feature?.attachments).toEqual([])
+    const card = parseCardFile(content, '/tmp/null-test.md')
+    expect(card?.assignee).toBeNull()
+    expect(card?.dueDate).toBeNull()
+    expect(card?.completedAt).toBeNull()
+    expect(card?.labels).toEqual([])
+    expect(card?.attachments).toEqual([])
   })
 
   it('should handle Windows-style line endings', () => {
     const content = '---\r\nid: "crlf"\r\nstatus: "todo"\r\npriority: "low"\r\nassignee: null\r\ndueDate: null\r\ncreated: "2025-01-01T00:00:00.000Z"\r\nmodified: "2025-01-01T00:00:00.000Z"\r\ncompletedAt: null\r\nlabels: []\r\norder: "a0"\r\n---\r\n# CRLF Test'
 
-    const feature = parseFeatureFile(content, '/tmp/crlf.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.id).toBe('crlf')
+    const card = parseCardFile(content, '/tmp/crlf.md')
+    expect(card).not.toBeNull()
+    expect(card?.id).toBe('crlf')
   })
 
   it('should fall back to filename for missing id', () => {
@@ -88,8 +88,8 @@ order: "a0"
 ---
 # No ID`
 
-    const feature = parseFeatureFile(content, '/tmp/fallback-name.md')
-    expect(feature?.id).toBe('fallback-name')
+    const card = parseCardFile(content, '/tmp/fallback-name.md')
+    expect(card?.id).toBe('fallback-name')
   })
 
   it('should default status to backlog and priority to medium', () => {
@@ -103,15 +103,15 @@ order: "a0"
 ---
 # Minimal`
 
-    const feature = parseFeatureFile(content, '/tmp/minimal.md')
-    expect(feature?.status).toBe('backlog')
-    expect(feature?.priority).toBe('medium')
+    const card = parseCardFile(content, '/tmp/minimal.md')
+    expect(card?.status).toBe('backlog')
+    expect(card?.priority).toBe('medium')
   })
 })
 
-describe('serializeFeature', () => {
+describe('serializeCard', () => {
   it('should round-trip parse and serialize', () => {
-    const original: Feature = {
+    const original: Card = {
       version: 0,
       id: 'round-trip',
       status: 'in-progress',
@@ -129,8 +129,8 @@ describe('serializeFeature', () => {
       filePath: '/tmp/round-trip.md'
     }
 
-    const serialized = serializeFeature(original)
-    const parsed = parseFeatureFile(serialized, original.filePath)
+    const serialized = serializeCard(original)
+    const parsed = parseCardFile(serialized, original.filePath)
 
     expect(parsed).not.toBeNull()
     expect(parsed?.id).toBe(original.id)
@@ -146,7 +146,7 @@ describe('serializeFeature', () => {
   })
 
   it('should serialize null fields correctly', () => {
-    const feature: Feature = {
+    const card: Card = {
       version: 0,
       id: 'null-serialize',
       status: 'backlog',
@@ -164,7 +164,7 @@ describe('serializeFeature', () => {
       filePath: '/tmp/null.md'
     }
 
-    const serialized = serializeFeature(feature)
+    const serialized = serializeCard(card)
     expect(serialized).toContain('assignee: null')
     expect(serialized).toContain('dueDate: null')
     expect(serialized).toContain('completedAt: null')
@@ -173,7 +173,7 @@ describe('serializeFeature', () => {
   })
 })
 
-describe('parseFeatureFile - comments', () => {
+describe('parseCardFile - comments', () => {
   it('should parse a card with no comments (backward compat)', () => {
     const content = `---
 id: "no-comments"
@@ -191,10 +191,10 @@ order: "a0"
 
 Just content, no comments.`
 
-    const feature = parseFeatureFile(content, '/tmp/no-comments.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.comments).toEqual([])
-    expect(feature?.content).toBe('# No Comments Card\n\nJust content, no comments.')
+    const card = parseCardFile(content, '/tmp/no-comments.md')
+    expect(card).not.toBeNull()
+    expect(card?.comments).toEqual([])
+    expect(card?.content).toBe('# No Comments Card\n\nJust content, no comments.')
   })
 
   it('should parse a card with multiple comments', () => {
@@ -230,25 +230,25 @@ created: "2025-06-01T11:30:00.000Z"
 ---
 Second comment with **markdown**.`
 
-    const feature = parseFeatureFile(content, '/tmp/with-comments.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.content).toBe('# Card With Comments\n\nSome description.')
-    expect(feature?.comments).toHaveLength(2)
+    const card = parseCardFile(content, '/tmp/with-comments.md')
+    expect(card).not.toBeNull()
+    expect(card?.content).toBe('# Card With Comments\n\nSome description.')
+    expect(card?.comments).toHaveLength(2)
 
-    expect(feature?.comments[0].id).toBe('c1')
-    expect(feature?.comments[0].author).toBe('alice')
-    expect(feature?.comments[0].created).toBe('2025-06-01T10:00:00.000Z')
-    expect(feature?.comments[0].content).toBe('First comment here.')
+    expect(card?.comments[0].id).toBe('c1')
+    expect(card?.comments[0].author).toBe('alice')
+    expect(card?.comments[0].created).toBe('2025-06-01T10:00:00.000Z')
+    expect(card?.comments[0].content).toBe('First comment here.')
 
-    expect(feature?.comments[1].id).toBe('c2')
-    expect(feature?.comments[1].author).toBe('bob')
-    expect(feature?.comments[1].content).toBe('Second comment with **markdown**.')
+    expect(card?.comments[1].id).toBe('c2')
+    expect(card?.comments[1].author).toBe('bob')
+    expect(card?.comments[1].content).toBe('Second comment with **markdown**.')
   })
 })
 
-describe('serializeFeature - comments', () => {
+describe('serializeCard - comments', () => {
   it('should not append comment blocks when comments array is empty', () => {
-    const feature: Feature = {
+    const card: Card = {
       version: 0,
       id: 'no-comments',
       status: 'backlog',
@@ -266,7 +266,7 @@ describe('serializeFeature - comments', () => {
       filePath: '/tmp/no-comments.md'
     }
 
-    const serialized = serializeFeature(feature)
+    const serialized = serializeCard(card)
     // Should not contain comment: true
     expect(serialized).not.toContain('comment: true')
     // Content should end with the card body
@@ -279,7 +279,7 @@ describe('serializeFeature - comments', () => {
       { id: 'c2', author: 'bob', created: '2025-06-01T11:00:00.000Z', content: 'Second comment.' },
     ]
 
-    const feature: Feature = {
+    const card: Card = {
       version: 0,
       id: 'with-comments',
       status: 'todo',
@@ -297,7 +297,7 @@ describe('serializeFeature - comments', () => {
       filePath: '/tmp/with-comments.md'
     }
 
-    const serialized = serializeFeature(feature)
+    const serialized = serializeCard(card)
     expect(serialized).toContain('comment: true')
     expect(serialized).toContain('id: "c1"')
     expect(serialized).toContain('author: "alice"')
@@ -313,7 +313,7 @@ describe('serializeFeature - comments', () => {
       { id: 'c2', author: 'bob', created: '2025-06-01T12:00:00.000Z', content: 'Goodbye world' },
     ]
 
-    const original: Feature = {
+    const original: Card = {
       version: 0,
       id: 'round-trip-comments',
       status: 'in-progress',
@@ -331,8 +331,8 @@ describe('serializeFeature - comments', () => {
       filePath: '/tmp/round-trip-comments.md'
     }
 
-    const serialized = serializeFeature(original)
-    const parsed = parseFeatureFile(serialized, original.filePath)
+    const serialized = serializeCard(original)
+    const parsed = parseCardFile(serialized, original.filePath)
 
     expect(parsed).not.toBeNull()
     expect(parsed?.content).toBe(original.content)
@@ -342,7 +342,7 @@ describe('serializeFeature - comments', () => {
   })
 })
 
-describe('parseFeatureFile - horizontal rules in content', () => {
+describe('parseCardFile - horizontal rules in content', () => {
   const frontmatter = `---
 id: "hr-test"
 status: "todo"
@@ -360,10 +360,10 @@ order: "a0"
   it('should preserve --- HR in content when there are no comments', () => {
     const content = frontmatter + 'Line 1\n\n---\n\nLine 2'
 
-    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.content).toBe('Line 1\n\n---\n\nLine 2')
-    expect(feature?.comments).toEqual([])
+    const card = parseCardFile(content, '/tmp/hr-test.md')
+    expect(card).not.toBeNull()
+    expect(card?.content).toBe('Line 1\n\n---\n\nLine 2')
+    expect(card?.comments).toEqual([])
   })
 
   it('should preserve --- HR in content and parse comments after it', () => {
@@ -381,13 +381,13 @@ created: "2025-06-01T10:00:00.000Z"
 ---
 Hello world`
 
-    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.content).toBe('Line 1\n\n---\n\nLine 2')
-    expect(feature?.comments).toHaveLength(1)
-    expect(feature?.comments[0].id).toBe('c1')
-    expect(feature?.comments[0].author).toBe('alice')
-    expect(feature?.comments[0].content).toBe('Hello world')
+    const card = parseCardFile(content, '/tmp/hr-test.md')
+    expect(card).not.toBeNull()
+    expect(card?.content).toBe('Line 1\n\n---\n\nLine 2')
+    expect(card?.comments).toHaveLength(1)
+    expect(card?.comments[0].id).toBe('c1')
+    expect(card?.comments[0].author).toBe('alice')
+    expect(card?.comments[0].content).toBe('Hello world')
   })
 
   it('should handle multiple --- HRs in content with comments after', () => {
@@ -417,14 +417,14 @@ created: "2025-06-01T11:00:00.000Z"
 ---
 Second comment`
 
-    const feature = parseFeatureFile(content, '/tmp/hr-test.md')
-    expect(feature).not.toBeNull()
-    expect(feature?.content).toBe('Section 1\n\n---\n\nSection 2\n\n---\n\nSection 3')
-    expect(feature?.comments).toHaveLength(2)
-    expect(feature?.comments[0].id).toBe('c1')
-    expect(feature?.comments[0].content).toBe('First comment')
-    expect(feature?.comments[1].id).toBe('c2')
-    expect(feature?.comments[1].content).toBe('Second comment')
+    const card = parseCardFile(content, '/tmp/hr-test.md')
+    expect(card).not.toBeNull()
+    expect(card?.content).toBe('Section 1\n\n---\n\nSection 2\n\n---\n\nSection 3')
+    expect(card?.comments).toHaveLength(2)
+    expect(card?.comments[0].id).toBe('c1')
+    expect(card?.comments[0].content).toBe('First comment')
+    expect(card?.comments[1].id).toBe('c2')
+    expect(card?.comments[1].content).toBe('Second comment')
   })
 
   it('should round-trip content with --- HRs and comments', () => {
@@ -432,7 +432,7 @@ Second comment`
       { id: 'c1', author: 'alice', created: '2025-06-01T10:00:00.000Z', content: 'A comment' },
     ]
 
-    const original: Feature = {
+    const original: Card = {
       version: 0,
       id: 'hr-roundtrip',
       status: 'todo',
@@ -450,8 +450,8 @@ Second comment`
       filePath: '/tmp/hr-roundtrip.md'
     }
 
-    const serialized = serializeFeature(original)
-    const parsed = parseFeatureFile(serialized, original.filePath)
+    const serialized = serializeCard(original)
+    const parsed = parseCardFile(serialized, original.filePath)
 
     expect(parsed).not.toBeNull()
     expect(parsed?.content).toBe(original.content)

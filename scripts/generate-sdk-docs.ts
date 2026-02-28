@@ -39,8 +39,8 @@ import { KanbanSDK } from 'kanban-lite/sdk'
 You can also import types and utilities:
 
 \`\`\`typescript
-import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
-import { parseFeatureFile, serializeFeature, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import type { Card, CardStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
+import { parseCardFile, serializeCard, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 \`\`\`
 

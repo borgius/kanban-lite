@@ -3,14 +3,14 @@ import * as path from 'node:path'
 
 import * as vscode from 'vscode'
 
-import type { FeatureStatus, Priority } from '../shared/types'
+import type { CardStatus, Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { startServer } from '../standalone/server'
 import { KanbanPanel } from './KanbanPanel'
 import { SidebarViewProvider } from './SidebarViewProvider'
 
-async function createFeatureFromPrompts(): Promise<void> {
+async function createCardFromPrompts(): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders
   if (!workspaceFolders || workspaceFolders.length === 0) {
     vscode.window.showErrorMessage('No workspace folder open')
@@ -19,8 +19,8 @@ async function createFeatureFromPrompts(): Promise<void> {
 
   // Ask for title
   const title = await vscode.window.showInputBox({
-    prompt: 'Feature title',
-    placeHolder: 'Enter a title for the new feature'
+    prompt: 'Card title',
+    placeHolder: 'Enter a title for the new card'
   })
   if (!title) return
 
@@ -37,7 +37,7 @@ async function createFeatureFromPrompts(): Promise<void> {
   })
   if (!statusPick) return
 
-  const statusMap: Record<string, FeatureStatus> = {
+  const statusMap: Record<string, CardStatus> = {
     'Backlog': 'backlog',
     'To Do': 'todo',
     'In Progress': 'in-progress',
@@ -63,23 +63,23 @@ async function createFeatureFromPrompts(): Promise<void> {
   // Ask for description (optional)
   const description = await vscode.window.showInputBox({
     prompt: 'Description (optional)',
-    placeHolder: 'Enter a description for the feature'
+    placeHolder: 'Enter a description for the card'
   })
 
-  // Create the feature via SDK
+  // Create the card via SDK
   const root = workspaceFolders[0].uri.fsPath
   const kanbanConfig = readConfig(root)
-  const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
-  const sdk = new KanbanSDK(featuresDir)
+  const kanbanDir = path.join(root, kanbanConfig.kanbanDirectory)
+  const sdk = new KanbanSDK(kanbanDir)
 
   const content = `# ${title}${description ? '\n\n' + description : ''}`
-  const feature = await sdk.createCard({ content, status, priority })
+  const card = await sdk.createCard({ content, status, priority })
 
   // Open the created file
-  const document = await vscode.workspace.openTextDocument(feature.filePath)
+  const document = await vscode.workspace.openTextDocument(card.filePath)
   await vscode.window.showTextDocument(document)
 
-  vscode.window.showInformationMessage(`Created feature: ${title}`)
+  vscode.window.showInformationMessage(`Created card: ${title}`)
 }
 
 let standaloneServer: ReturnType<typeof startServer> | undefined
@@ -113,11 +113,11 @@ export function activate(context: vscode.ExtensionContext) {
   if (workspaceFolders) {
     const root = workspaceFolders[0].uri.fsPath
     const kanbanConfig = readConfig(root)
-    const featuresDir = path.join(root, kanbanConfig.featuresDirectory)
+    const kanbanDir = path.join(root, kanbanConfig.kanbanDirectory)
     const webviewDir = path.join(context.extensionPath, 'dist', 'standalone-webview')
 
     findFreePort(3464).then(port => {
-      standaloneServer = startServer(featuresDir, port, webviewDir)
+      standaloneServer = startServer(kanbanDir, port, webviewDir)
       standaloneServer.on('error', () => {
         standaloneServer = undefined
       })
@@ -157,8 +157,8 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('kanban-lite.addFeature', () => {
-      createFeatureFromPrompts()
+    vscode.commands.registerCommand('kanban-lite.addCard', () => {
+      createCardFromPrompts()
     })
   )
 

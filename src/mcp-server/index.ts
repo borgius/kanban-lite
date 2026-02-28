@@ -9,7 +9,7 @@ import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../
 import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
 import { matchesMetaFilter } from '../sdk/metaUtils'
 
-// --- Resolve features directory ---
+// --- Resolve cards directory ---
 
 async function findWorkspaceRoot(startDir: string): Promise<string> {
   let dir = startDir
@@ -28,19 +28,20 @@ async function findWorkspaceRoot(startDir: string): Promise<string> {
   }
 }
 
-async function resolveFeaturesDir(): Promise<string> {
+async function resolveKanbanDir(): Promise<string> {
   // 1. CLI arg --dir
   const dirIndex = process.argv.indexOf('--dir')
   if (dirIndex !== -1 && process.argv[dirIndex + 1]) {
     return path.resolve(process.argv[dirIndex + 1])
   }
-  // 2. Environment variable
-  if (process.env.KANBAN_FEATURES_DIR) {
-    return path.resolve(process.env.KANBAN_FEATURES_DIR)
+  // 2. Environment variable (KANBAN_DIR preferred, KANBAN_FEATURES_DIR kept as alias)
+  const envDir = process.env.KANBAN_DIR || process.env.KANBAN_FEATURES_DIR
+  if (envDir) {
+    return path.resolve(envDir)
   }
   // 3. Auto-detect from cwd
   const root = await findWorkspaceRoot(process.cwd())
-  return path.join(root, '.devtool', 'features')
+  return path.join(root, '.devtool', 'cards')
 }
 
 function getTitleFromContent(content: string): string {
@@ -53,9 +54,9 @@ function getTitleFromContent(content: string): string {
 // --- Main ---
 
 async function main(): Promise<void> {
-  const featuresDir = await resolveFeaturesDir()
-  const workspaceRoot = path.dirname(featuresDir)
-  const sdk = new KanbanSDK(featuresDir, {
+  const kanbanDir = await resolveKanbanDir()
+  const workspaceRoot = path.dirname(kanbanDir)
+  const sdk = new KanbanSDK(kanbanDir, {
     onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
   })
 
@@ -1031,13 +1032,13 @@ async function main(): Promise<void> {
 
   server.tool(
     'get_workspace_info',
-    'Get the workspace root path and features directory.',
+    'Get the workspace root path and cards directory.',
     {},
     async () => {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ workspaceRoot, featuresDir, port: readConfig(workspaceRoot).port }, null, 2),
+          text: JSON.stringify({ workspaceRoot, kanbanDir, port: readConfig(workspaceRoot).port }, null, 2),
         }],
       }
     }

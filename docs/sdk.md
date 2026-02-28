@@ -17,8 +17,8 @@ import { KanbanSDK } from 'kanban-lite/sdk'
 You can also import types and utilities:
 
 ```typescript
-import type { Feature, FeatureStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
-import { parseFeatureFile, serializeFeature, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import type { Card, CardStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
+import { parseCardFile, serializeCard, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 ```
 
@@ -71,7 +71,7 @@ HTTP server are all built on top of.
 **Kind**: global class  
 
 * [KanbanSDK](#KanbanSDK)
-    * [new KanbanSDK(featuresDir, options)](#new_KanbanSDK_new)
+    * [new KanbanSDK(kanbanDir, options)](#new_KanbanSDK_new)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
     * [.emitEvent()](#KanbanSDK+emitEvent)
     * [.init()](#KanbanSDK+init) ⇒
@@ -109,6 +109,8 @@ HTTP server are all built on top of.
     * [.addColumn(column, boardId)](#KanbanSDK+addColumn) ⇒
     * [.updateColumn(columnId, updates, boardId)](#KanbanSDK+updateColumn) ⇒
     * [.removeColumn(columnId, boardId)](#KanbanSDK+removeColumn) ⇒
+    * [.cleanupColumn(columnId, boardId)](#KanbanSDK+cleanupColumn) ⇒
+    * [.purgeDeletedCards(boardId)](#KanbanSDK+purgeDeletedCards) ⇒
     * [.reorderColumns(columnIds, boardId)](#KanbanSDK+reorderColumns) ⇒
     * [.getSettings()](#KanbanSDK+getSettings) ⇒
     * [.updateSettings(settings)](#KanbanSDK+updateSettings)
@@ -118,13 +120,13 @@ HTTP server are all built on top of.
 
 <a name="new_KanbanSDK_new"></a>
 
-#### new KanbanSDK(featuresDir, options)
+#### new KanbanSDK(kanbanDir, options)
 Creates a new KanbanSDK instance.
 
 
 | Param | Description |
 | --- | --- |
-| featuresDir | Absolute path to the `.kanban` features directory.   The parent of this directory is treated as the workspace root. |
+| kanbanDir | Absolute path to the `.kanban` kanban directory.   The parent of this directory is treated as the workspace root. |
 | options | Optional configuration including an event handler callback. |
 
 **Example**  
@@ -139,7 +141,7 @@ const cards = await sdk.listCards()
 <a name="KanbanSDK+workspaceRoot"></a>
 
 #### kanbanSDK.workspaceRoot ⇒
-The workspace root directory (parent of the features directory).
+The workspace root directory (parent of the kanban directory).
 
 This is the project root where `.kanban.json` configuration lives.
 
@@ -334,7 +336,7 @@ the end of the target column. Timestamps (`modified`, `completedAt`)
 are updated accordingly.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card object.  
+**Returns**: A promise resolving to the updated [Card](Card) card object.  
 **Throws**:
 
 - <code>Error</code> If either board does not exist.
@@ -375,7 +377,7 @@ By default cards are returned sorted by their fractional order key (board order)
 Pass a [CardSortOption](CardSortOption) to sort by creation or modification date instead.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Feature](Feature) card objects.  
+**Returns**: A promise resolving to an array of [Card](Card) card objects.  
 
 | Param | Description |
 | --- | --- |
@@ -410,7 +412,7 @@ Supports partial ID matching -- the provided `cardId` is matched against
 all cards on the board.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the matching [Feature](Feature) card, or `null` if not found.  
+**Returns**: A promise resolving to the matching [Card](Card) card, or `null` if not found.  
 
 | Param | Description |
 | --- | --- |
@@ -438,7 +440,7 @@ markdown file with YAML frontmatter. If no status or priority is provided,
 the board's defaults are used.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the newly created [Feature](Feature) card.  
+**Returns**: A promise resolving to the newly created [Card](Card) card.  
 
 | Param | Description |
 | --- | --- |
@@ -479,7 +481,7 @@ If the status changes, the file is moved to the new status subdirectory
 and `completedAt` is updated accordingly.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -488,7 +490,7 @@ and `completedAt` is updated accordingly.
 | Param | Description |
 | --- | --- |
 | cardId | The ID of the card to update. |
-| updates | A partial [Feature](Feature) object with the fields to update. |
+| updates | A partial [Card](Card) object with the fields to update. |
 | boardId | Optional board ID. Defaults to the workspace's default board. |
 
 **Example**  
@@ -546,7 +548,7 @@ position. If the status changes, the underlying file is moved to the
 corresponding subdirectory and `completedAt` is updated accordingly.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -629,7 +631,7 @@ This is a convenience wrapper around [listCards](listCards) that filters
 by a single status value.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of [Feature](Feature) cards in the given status.  
+**Returns**: A promise resolving to an array of [Card](Card) cards in the given status.  
 
 | Param | Description |
 | --- | --- |
@@ -805,7 +807,7 @@ Looks up all labels in the group via [getLabelsInGroup](getLabelsInGroup), then 
 cards to those containing any of those labels.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to an array of matching [Feature](Feature) cards.  
+**Returns**: A promise resolving to an array of matching [Card](Card) cards.  
 
 | Param | Description |
 | --- | --- |
@@ -830,7 +832,7 @@ markdown file) unless it already resides there. The attachment filename
 is added to the card's `attachments` array if not already present.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -859,7 +861,7 @@ This removes the attachment filename from the card's `attachments` array
 but does not delete the physical file from disk.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -939,7 +941,7 @@ The comment is assigned an auto-incrementing ID (e.g., `'c1'`, `'c2'`)
 based on the existing comments. The card's `modified` timestamp is updated.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card (including the new comment).  
+**Returns**: A promise resolving to the updated [Card](Card) card (including the new comment).  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -966,7 +968,7 @@ console.log(card.comments.length) // 1
 Updates the content of an existing comment on a card.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -993,7 +995,7 @@ const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.
 Deletes a comment from a card.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving to the updated [Feature](Feature) card.  
+**Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
 
 - <code>Error</code> If the card is not found.
@@ -1126,6 +1128,58 @@ This operation cannot be undone.
 **Example**  
 ```ts
 const columns = await sdk.removeColumn('blocked', 'default')
+```
+
+* * *
+
+<a name="KanbanSDK+cleanupColumn"></a>
+
+#### kanbanSDK.cleanupColumn(columnId, boardId) ⇒
+Moves all cards in the specified column to the `deleted` (soft-delete) column.
+
+This is a non-destructive operation — cards are moved to the reserved
+`deleted` status and can be restored or permanently deleted later.
+The column itself is not removed.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the number of cards that were moved.  
+**Throws**:
+
+- <code>Error</code> If the column is `'deleted'` (no-op protection).
+
+
+| Param | Description |
+| --- | --- |
+| columnId | The ID of the column whose cards should be moved to `deleted`. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const moved = await sdk.cleanupColumn('blocked')
+console.log(`Moved ${moved} cards to deleted`)
+```
+
+* * *
+
+<a name="KanbanSDK+purgeDeletedCards"></a>
+
+#### kanbanSDK.purgeDeletedCards(boardId) ⇒
+Permanently deletes all cards currently in the `deleted` column.
+
+This is equivalent to "empty trash". All soft-deleted cards are
+removed from disk. This operation cannot be undone.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the number of cards that were permanently deleted.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const count = await sdk.purgeDeletedCards()
+console.log(`Permanently deleted ${count} cards`)
 ```
 
 * * *
@@ -1266,7 +1320,7 @@ getTitleFromContent('Just a line of text')
 Creates a filename-safe slug from a title string.
 
 The slug is lowercased, stripped of special characters, limited to 50
-characters, and falls back to `'feature'` if the result would be empty.
+characters, and falls back to `'card'` if the result would be empty.
 
 **Kind**: global function  
 **Returns**: A URL/filename-safe slug string.  
@@ -1288,9 +1342,9 @@ generateSlug('Hello, World!!!')
 
 * * *
 
-<a name="generateFeatureFilename"></a>
+<a name="generateCardFilename"></a>
 
-### generateFeatureFilename(id, title) ⇒ <code>id</code>
+### generateCardFilename(id, title) ⇒ <code>id</code>
 Generates a card filename from an incremental numeric ID and a title.
 
 The filename is composed of the ID prefix followed by a slugified title
@@ -1306,7 +1360,7 @@ The filename is composed of the ID prefix followed by a slugified title
 
 **Example**  
 ```js
-generateFeatureFilename(42, 'Build Dashboard')
+generateCardFilename(42, 'Build Dashboard')
 // => '42-build-dashboard'
 ```
 
@@ -1340,9 +1394,9 @@ extractNumericId('no-number')
 
 * * *
 
-<a name="sanitizeFeature"></a>
+<a name="sanitizeCard"></a>
 
-### sanitizeFeature(feature) ⇒
+### sanitizeCard(card) ⇒
 Strips the `filePath` property from a card before exposing it
 in webhook payloads or API responses. The file path is an internal
 implementation detail that should not be leaked externally.
@@ -1352,11 +1406,11 @@ implementation detail that should not be leaked externally.
 
 | Param | Description |
 | --- | --- |
-| feature | The card object to sanitize. |
+| card | The card object to sanitize. |
 
 **Example**  
 ```js
-const safe = sanitizeFeature(card)
+const safe = sanitizeCard(card)
 // safe.filePath is undefined
 ```
 
@@ -1598,10 +1652,10 @@ writeConfig('/home/user/my-project', updated)
 
 ## Parser
 
-<a name="parseFeatureFile"></a>
+<a name="parseCardFile"></a>
 
-### parseFeatureFile(content, filePath) ⇒
-Parses a markdown file with YAML frontmatter into a Feature object.
+### parseCardFile(content, filePath) ⇒
+Parses a markdown file with YAML frontmatter into a Card object.
 
 The file is expected to have a YAML frontmatter block delimited by `---` at the
 top, followed by the card body content. Additional `---` delimited blocks after
@@ -1609,7 +1663,7 @@ the body are parsed as comment sections (if they contain `comment: true`),
 otherwise they are treated as part of the body content.
 
 **Kind**: global function  
-**Returns**: The parsed [Feature](Feature) object, or `null` if no valid frontmatter block is found.  
+**Returns**: The parsed [Card](Card) object, or `null` if no valid frontmatter block is found.  
 
 | Param | Description |
 | --- | --- |
@@ -1619,21 +1673,21 @@ otherwise they are treated as part of the body content.
 
 * * *
 
-<a name="serializeFeature"></a>
+<a name="serializeCard"></a>
 
-### serializeFeature(feature) ⇒
-Serializes a Feature object back to markdown with YAML frontmatter.
+### serializeCard(card) ⇒
+Serializes a Card object back to markdown with YAML frontmatter.
 
 Produces a string with a `---` delimited YAML frontmatter block containing all
 card metadata, followed by the card body content. Any comments attached to the
-feature are appended as additional `---` delimited sections at the end of the file.
+card are appended as additional `---` delimited sections at the end of the file.
 
 **Kind**: global function  
 **Returns**: The complete markdown string ready to be written to a `.md` file.  
 
 | Param | Description |
 | --- | --- |
-| feature | The [Feature](Feature) object to serialize. |
+| card | The [Card](Card) object to serialize. |
 
 
 * * *
@@ -1641,9 +1695,9 @@ feature are appended as additional `---` delimited sections at the end of the fi
 
 ## File Utilities
 
-<a name="getFeatureFilePath"></a>
+<a name="getCardFilePath"></a>
 
-### getFeatureFilePath(featuresDir, status, filename) ⇒
+### getCardFilePath(kanbanDir, status, filename) ⇒
 Constructs the full file path for a card markdown file.
 
 **Kind**: global function  
@@ -1651,7 +1705,7 @@ Constructs the full file path for a card markdown file.
 
 | Param | Description |
 | --- | --- |
-| featuresDir | The root features directory (e.g., `.kanban`). |
+| kanbanDir | The root kanban directory (e.g., `.kanban`). |
 | status | The status subdirectory name (e.g., `backlog`, `in-progress`). |
 | filename | The card filename without the `.md` extension. |
 
@@ -1660,38 +1714,38 @@ Constructs the full file path for a card markdown file.
 
 <a name="ensureDirectories"></a>
 
-### ensureDirectories(featuresDir) ⇒
-Creates the features directory if it does not already exist.
+### ensureDirectories(kanbanDir) ⇒
+Creates the kanban directory if it does not already exist.
 
 **Kind**: global function  
 **Returns**: A promise that resolves when the directory has been created or already exists.  
 
 | Param | Description |
 | --- | --- |
-| featuresDir | The root features directory path to ensure exists. |
+| kanbanDir | The root kanban directory path to ensure exists. |
 
 
 * * *
 
 <a name="ensureStatusSubfolders"></a>
 
-### ensureStatusSubfolders(featuresDir, statuses) ⇒
-Creates subdirectories for each status column under the features directory.
+### ensureStatusSubfolders(kanbanDir, statuses) ⇒
+Creates subdirectories for each status column under the kanban directory.
 
 **Kind**: global function  
 **Returns**: A promise that resolves when all status subdirectories have been created.  
 
 | Param | Description |
 | --- | --- |
-| featuresDir | The root features directory containing status subdirectories. |
+| kanbanDir | The root kanban directory containing status subdirectories. |
 | statuses | An array of status names to create as subdirectories. |
 
 
 * * *
 
-<a name="moveFeatureFile"></a>
+<a name="moveCardFile"></a>
 
-### moveFeatureFile(currentPath, featuresDir, newStatus, attachments) ⇒
+### moveCardFile(currentPath, kanbanDir, newStatus, attachments) ⇒
 Moves a card file to a new status directory, handling name collisions by
 appending a numeric suffix (e.g., `card-1.md`, `card-2.md`). Optionally
 co-moves attachment files from the source directory to the target directory.
@@ -1702,16 +1756,16 @@ co-moves attachment files from the source directory to the target directory.
 | Param | Description |
 | --- | --- |
 | currentPath | The current absolute path of the card file. |
-| featuresDir | The root features directory. |
+| kanbanDir | The root kanban directory. |
 | newStatus | The target status subdirectory to move the card into. |
 | attachments | Optional array of attachment filenames to co-move alongside the card. |
 
 
 * * *
 
-<a name="renameFeatureFile"></a>
+<a name="renameCardFile"></a>
 
-### renameFeatureFile(currentPath, newFilename) ⇒
+### renameCardFile(currentPath, newFilename) ⇒
 Renames a card file in place within its current directory.
 
 **Kind**: global function  
@@ -1727,10 +1781,10 @@ Renames a card file in place within its current directory.
 
 <a name="getStatusFromPath"></a>
 
-### getStatusFromPath(filePath, featuresDir) ⇒
+### getStatusFromPath(filePath, kanbanDir) ⇒
 Extracts the status from a card's file path by examining the directory structure.
 
-Expects the file to be located at `{featuresDir}/{status}/{filename}.md`. If the
+Expects the file to be located at `{kanbanDir}/{status}/{filename}.md`. If the
 relative path does not match this two-level structure, returns `null`.
 
 **Kind**: global function  
@@ -1739,7 +1793,7 @@ relative path does not match this two-level structure, returns `null`.
 | Param | Description |
 | --- | --- |
 | filePath | The absolute path to the card file. |
-| featuresDir | The root features directory used to compute the relative path. |
+| kanbanDir | The root kanban directory used to compute the relative path. |
 
 
 * * *

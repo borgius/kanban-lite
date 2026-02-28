@@ -1,12 +1,12 @@
 import { create } from 'zustand'
-import type { Feature, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
 
 interface KanbanState {
-  features: Feature[]
+  cards: Card[]
   columns: KanbanColumn[]
   boards: BoardInfo[]
   currentBoard: string
@@ -25,7 +25,7 @@ interface KanbanState {
 
   setWorkspace: (workspace: WorkspaceInfo) => void
   setLabelDefs: (labels: Record<string, LabelDefinition>) => void
-  setFeatures: (features: Feature[]) => void
+  setCards: (cards: Card[]) => void
   setColumns: (columns: KanbanColumn[]) => void
   setBoards: (boards: BoardInfo[]) => void
   setCurrentBoard: (boardId: string) => void
@@ -42,11 +42,11 @@ interface KanbanState {
   toggleLayout: () => void
   clearAllFilters: () => void
 
-  addFeature: (feature: Feature) => void
-  updateFeature: (id: string, updates: Partial<Feature>) => void
-  removeFeature: (id: string) => void
-  getFeaturesByStatus: (status: string) => Feature[]
-  getFilteredFeaturesByStatus: (status: string) => Feature[]
+  addCard: (card: Card) => void
+  updateCard: (id: string, updates: Partial<Card>) => void
+  removeCard: (id: string) => void
+  getCardsByStatus: (status: string) => Card[]
+  getFilteredCardsByStatus: (status: string) => Card[]
   getUniqueAssignees: () => string[]
   getUniqueLabels: () => string[]
   hasActiveFilters: () => boolean
@@ -106,7 +106,7 @@ function parseMetaTokens(query: string): { metaFilter: Record<string, string>; p
 }
 
 export const useStore = create<KanbanState>((set, get) => ({
-  features: [],
+  cards: [],
   columns: [],
   boards: [],
   currentBoard: 'default',
@@ -139,7 +139,7 @@ export const useStore = create<KanbanState>((set, get) => ({
 
   setWorkspace: (workspace) => set({ workspace }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
-  setFeatures: (features) => set({ features }),
+  setCards: (cards) => set({ cards }),
   setColumns: (columns) => set({ columns }),
   setBoards: (boards) => set({ boards }),
   setCurrentBoard: (boardId) => set({ currentBoard: boardId }),
@@ -169,31 +169,31 @@ export const useStore = create<KanbanState>((set, get) => ({
       columnSorts: {}
     }),
 
-  addFeature: (feature) =>
+  addCard: (card) =>
     set((state) => ({
-      features: [...state.features, feature]
+      cards: [...state.cards, card]
     })),
 
-  updateFeature: (id, updates) =>
+  updateCard: (id, updates) =>
     set((state) => ({
-      features: state.features.map((f) => (f.id === id ? { ...f, ...updates } : f))
+      cards: state.cards.map((f) => (f.id === id ? { ...f, ...updates } : f))
     })),
 
-  removeFeature: (id) =>
+  removeCard: (id) =>
     set((state) => ({
-      features: state.features.filter((f) => f.id !== id)
+      cards: state.cards.filter((f) => f.id !== id)
     })),
 
-  getFeaturesByStatus: (status) => {
-    const { features } = get()
-    return features
+  getCardsByStatus: (status) => {
+    const { cards } = get()
+    return cards
       .filter((f) => f.status === status)
       .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   },
 
-  getFilteredFeaturesByStatus: (status) => {
+  getFilteredCardsByStatus: (status) => {
     const {
-      features,
+      cards,
       searchQuery,
       priorityFilter,
       assigneeFilter,
@@ -203,7 +203,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     } = get()
     const sortOrder: SortOrder = columnSorts[status] || 'order'
 
-    return features
+    return cards
       .filter((f) => {
         if (f.status !== status) return false
 
@@ -276,18 +276,18 @@ export const useStore = create<KanbanState>((set, get) => ({
   },
 
   getUniqueAssignees: () => {
-    const { features } = get()
+    const { cards } = get()
     const assignees = new Set<string>()
-    features.forEach((f) => {
+    cards.forEach((f) => {
       if (f.assignee) assignees.add(f.assignee)
     })
     return Array.from(assignees).sort()
   },
 
   getUniqueLabels: () => {
-    const { features } = get()
+    const { cards } = get()
     const labels = new Set<string>()
-    features.forEach((f) => {
+    cards.forEach((f) => {
       f.labels.forEach((l) => labels.add(l))
     })
     return Array.from(labels).sort()

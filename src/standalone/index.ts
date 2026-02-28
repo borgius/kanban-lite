@@ -25,7 +25,7 @@ function parseArgs(args: string[], defaultPort: number): { dir: string; port: nu
 Usage: kanban-md [options]
 
 Options:
-  -d, --dir <path>    Features directory (default: .kanban)
+  -d, --dir <path>    Kanban directory (default: .kanban)
   -p, --port <number> Port to listen on (default: .kanban.json port or 3000)
   --no-browser        Don't open browser automatically
   -h, --help          Show this help message

@@ -1,15 +1,15 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 import { getTitleFromContent } from '../shared/types'
-import type { FeatureStatus, Priority, KanbanColumn } from '../shared/types'
+import type { CardStatus, Priority, KanbanColumn } from '../shared/types'
 import { readConfig, CONFIG_FILENAME } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { KanbanPanel } from './KanbanPanel'
 
-interface SidebarFeature {
+interface SidebarCard {
   id: string
   title: string
-  status: FeatureStatus
+  status: CardStatus
   priority: Priority
 }
 
@@ -17,7 +17,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'kanban-lite.boardView'
 
   private _view?: vscode.WebviewView
-  private _features: SidebarFeature[] = []
+  private _cards: SidebarCard[] = []
   private _fileWatcher?: vscode.FileSystemWatcher
   private _debounceTimer?: NodeJS.Timeout
   private _disposables: vscode.Disposable[] = []
@@ -63,17 +63,17 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
         case 'openBoard':
           vscode.commands.executeCommand('kanban-lite.open')
           break
-        case 'newFeature':
+        case 'newCard':
           vscode.commands.executeCommand('kanban-lite.open')
           // Wait for the panel to be ready, then trigger create dialog
           setTimeout(() => {
             KanbanPanel.currentPanel?.triggerCreateDialog()
           }, 500)
           break
-        case 'openFeature':
+        case 'openCard':
           vscode.commands.executeCommand('kanban-lite.open')
           setTimeout(() => {
-            KanbanPanel.currentPanel?.openFeature(message.featureId)
+            KanbanPanel.currentPanel?.openCard(message.cardId)
           }, 500)
           break
       }
@@ -118,10 +118,10 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       this._fileWatcher.dispose()
     }
 
-    const featuresDir = this._getFeaturesDir()
-    if (!featuresDir) return
+    const kanbanDir = this._getKanbanDir()
+    if (!kanbanDir) return
 
-    const pattern = new vscode.RelativePattern(featuresDir, '**/*.md')
+    const pattern = new vscode.RelativePattern(kanbanDir, '**/*.md')
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     const handleChange = () => {
@@ -135,11 +135,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _refresh(): Promise<void> {
-    await this._loadFeatures()
+    await this._loadCards()
     if (this._view) {
       this._view.webview.postMessage({
         type: 'update',
-        features: this._features,
+        cards: this._cards,
         columns: this._getColumns()
       })
       this._view.webview.postMessage({
@@ -149,39 +149,39 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private _getFeaturesDir(): string | null {
+  private _getKanbanDir(): string | null {
     const workspaceFolders = vscode.workspace.workspaceFolders
     if (!workspaceFolders || workspaceFolders.length === 0) return null
     const root = workspaceFolders[0].uri.fsPath
     const config = readConfig(root)
-    return path.join(root, config.featuresDirectory)
+    return path.join(root, config.kanbanDirectory)
   }
 
   private _getColumns(): KanbanColumn[] {
-    const featuresDir = this._getFeaturesDir()
-    if (!featuresDir) return []
-    const sdk = new KanbanSDK(featuresDir)
+    const kanbanDir = this._getKanbanDir()
+    if (!kanbanDir) return []
+    const sdk = new KanbanSDK(kanbanDir)
     return sdk.listColumns()
   }
 
-  private async _loadFeatures(): Promise<void> {
-    const featuresDir = this._getFeaturesDir()
-    if (!featuresDir) {
-      this._features = []
+  private async _loadCards(): Promise<void> {
+    const kanbanDir = this._getKanbanDir()
+    if (!kanbanDir) {
+      this._cards = []
       return
     }
 
     try {
-      const sdk = new KanbanSDK(featuresDir)
+      const sdk = new KanbanSDK(kanbanDir)
       const cards = await sdk.listCards()
-      this._features = cards.map(c => ({
+      this._cards = cards.map(c => ({
         id: c.id,
         title: getTitleFromContent(c.content),
         status: c.status,
         priority: c.priority,
       }))
     } catch {
-      this._features = []
+      this._cards = []
     }
   }
 
@@ -291,11 +291,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       font-variant-numeric: tabular-nums;
     }
 
-    .feature-list {
+    .card-list {
       list-style: none;
     }
 
-    .feature-item {
+    .card-item {
       display: flex;
       align-items: center;
       gap: 7px;
@@ -308,18 +308,18 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       text-overflow: ellipsis;
     }
 
-    .feature-item:hover {
+    .card-item:hover {
       background: var(--vscode-list-hoverBackground);
     }
 
-    .feature-dot {
+    .card-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
       flex-shrink: 0;
     }
 
-    .feature-title {
+    .card-title {
       overflow: hidden;
       text-overflow: ellipsis;
     }
@@ -344,9 +344,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm3 4a1 1 0 0 0-1 1v6a1 1 0 0 0 2 0V5a1 1 0 0 0-1-1zm3 0a1 1 0 0 0-1 1v4a1 1 0 0 0 2 0V5a1 1 0 0 0-1-1zm3 0a1 1 0 0 0-1 1v8a1 1 0 0 0 2 0V5a1 1 0 0 0-1-1z"/></svg>
       Open Board
     </button>
-    <button class="btn-secondary" id="newFeature">
+    <button class="btn-secondary" id="newCard">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7h5.5a.5.5 0 0 1 0 1H8.5v5.5a.5.5 0 0 1-1 0V8H2a.5.5 0 0 1 0-1h5.5V1.5A.5.5 0 0 1 8 1z"/></svg>
-      New Feature
+      New Card
     </button>
   </div>
 
@@ -368,20 +368,20 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     (function() {
       const vscode = acquireVsCodeApi();
       let columns = [];
-      let features = [];
+      let cards = [];
 
       document.getElementById('openBoard').addEventListener('click', () => {
         vscode.postMessage({ type: 'openBoard' });
       });
-      document.getElementById('newFeature').addEventListener('click', () => {
-        vscode.postMessage({ type: 'newFeature' });
+      document.getElementById('newCard').addEventListener('click', () => {
+        vscode.postMessage({ type: 'newCard' });
       });
 
       window.addEventListener('message', e => {
         const msg = e.data;
         if (msg.type === 'update') {
           columns = msg.columns;
-          features = msg.features;
+          cards = msg.cards;
           render();
         } else if (msg.type === 'boardOpenChanged') {
           document.getElementById('openBoard').style.display = msg.open ? 'none' : '';
@@ -390,13 +390,13 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
       function render() {
         // Total count
-        document.getElementById('totalCount').textContent = features.length + ' total';
+        document.getElementById('totalCount').textContent = cards.length + ' total';
 
         // Stat rows
         const statRows = document.getElementById('statRows');
         statRows.innerHTML = '';
         for (const col of columns) {
-          const count = features.filter(f => f.status === col.id).length;
+          const count = cards.filter(f => f.status === col.id).length;
           const row = document.createElement('div');
           row.className = 'stat-row';
           row.innerHTML =
@@ -408,12 +408,12 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
           statRows.appendChild(row);
         }
 
-        // Column sections with their features
+        // Column sections with their cards
         const sectionsContainer = document.getElementById('columnSections');
         sectionsContainer.innerHTML = '';
         for (const col of columns) {
-          const colFeatures = features.filter(f => f.status === col.id);
-          if (colFeatures.length === 0) continue;
+          const colCards = cards.filter(f => f.status === col.id);
+          if (colCards.length === 0) continue;
 
           const section = document.createElement('div');
           section.className = 'section';
@@ -424,16 +424,16 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
           section.appendChild(header);
 
           const list = document.createElement('ul');
-          list.className = 'feature-list';
-          for (const f of colFeatures) {
+          list.className = 'card-list';
+          for (const f of colCards) {
             const li = document.createElement('li');
-            li.className = 'feature-item';
+            li.className = 'card-item';
             li.title = f.title;
             li.innerHTML =
-              '<span class="feature-dot" style="background:' + col.color + '"></span>' +
-              '<span class="feature-title">' + escapeHtml(f.title) + '</span>';
+              '<span class="card-dot" style="background:' + col.color + '"></span>' +
+              '<span class="card-title">' + escapeHtml(f.title) + '</span>';
             li.addEventListener('click', () => {
-              vscode.postMessage({ type: 'openFeature', featureId: f.id });
+              vscode.postMessage({ type: 'openCard', cardId: f.id });
             });
             list.appendChild(li);
           }

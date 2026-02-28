@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
-import type { CardDisplaySettings, Priority, FeatureStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import type { CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
 import { LABEL_PRESET_COLORS } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
@@ -12,7 +12,7 @@ const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'low', label: 'Low', dot: 'bg-green-500' }
 ]
 
-const statusConfig: { value: FeatureStatus; label: string; dot: string }[] = [
+const statusConfig: { value: CardStatus; label: string; dot: string }[] = [
   { value: 'backlog', label: 'Backlog', dot: 'bg-zinc-400' },
   { value: 'todo', label: 'To Do', dot: 'bg-blue-400' },
   { value: 'in-progress', label: 'In Progress', dot: 'bg-amber-400' },
@@ -310,7 +310,7 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
   onDeleteLabel?: (name: string) => void
 }) {
   const labelDefs = useStore(s => s.labelDefs)
-  const features = useStore(s => s.features)
+  const cards = useStore(s => s.cards)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(LABEL_PRESET_COLORS[0].hex)
   const [newGroup, setNewGroup] = useState('')
@@ -324,13 +324,13 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
     for (const [name, def] of Object.entries(labelDefs)) {
       labels.set(name, def)
     }
-    for (const f of features) {
+    for (const f of cards) {
       for (const l of f.labels) {
         if (!labels.has(l)) labels.set(l, undefined)
       }
     }
     return labels
-  }, [labelDefs, features])
+  }, [labelDefs, cards])
 
   // Group labels
   const groupedLabels = useMemo(() => {
@@ -358,7 +358,7 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
   }, [labelDefs])
 
   const getCardCount = (labelName: string) =>
-    features.filter(f => f.labels.includes(labelName)).length
+    cards.filter(f => f.labels.includes(labelName)).length
 
   const handleAdd = () => {
     const trimmed = newName.trim()
@@ -641,7 +641,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                 <>
                   <SettingsSection title="Workspace">
                     <SettingsInfo label="Project Path" value={workspace.projectPath} />
-                    <SettingsInfo label="Features Directory" value={workspace.featuresDirectory} />
+                    <SettingsInfo label="Kanban Directory" value={workspace.kanbanDirectory} />
                     <SettingsInfo label="Server Port" value={String(workspace.port)} />
                     <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
                   </SettingsSection>
@@ -651,25 +651,25 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
               <SettingsSection title="Card Display">
                 <SettingsToggle
                   label="Show Priority Badges"
-                  description="Display priority indicators on feature cards"
+                  description="Display priority indicators on card cards"
                   checked={local.showPriorityBadges}
                   onChange={v => update({ showPriorityBadges: v })}
                 />
                 <SettingsToggle
                   label="Show Assignee"
-                  description="Display assigned person on feature cards"
+                  description="Display assigned person on card cards"
                   checked={local.showAssignee}
                   onChange={v => update({ showAssignee: v })}
                 />
                 <SettingsToggle
                   label="Show Due Date"
-                  description="Display due dates on feature cards"
+                  description="Display due dates on card cards"
                   checked={local.showDueDate}
                   onChange={v => update({ showDueDate: v })}
                 />
                 <SettingsToggle
                   label="Show Labels"
-                  description="Display labels on feature cards and in editors"
+                  description="Display labels on card cards and in editors"
                   checked={local.showLabels}
                   onChange={v => update({ showLabels: v })}
                 />
@@ -681,7 +681,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                 />
                 <SettingsToggle
                   label="Compact Mode"
-                  description="Use compact card layout to show more features"
+                  description="Use compact card layout to show more cards"
                   checked={local.compactMode}
                   onChange={v => update({ compactMode: v })}
                 />
@@ -728,7 +728,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                 label="Default Status"
                 value={local.defaultStatus}
                 options={statusConfig}
-                onChange={v => update({ defaultStatus: v as FeatureStatus })}
+                onChange={v => update({ defaultStatus: v as CardStatus })}
               />
             </SettingsSection>
           )}

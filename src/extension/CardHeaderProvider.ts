@@ -1,15 +1,15 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
-import type { FeatureFrontmatter, EditorExtensionMessage, EditorWebviewMessage } from '../shared/editorTypes'
-import type { FeatureStatus, Priority } from '../shared/types'
+import type { CardFrontmatter, EditorExtensionMessage, EditorWebviewMessage } from '../shared/editorTypes'
+import type { CardStatus, Priority } from '../shared/types'
 import { readConfig, CONFIG_FILENAME } from '../shared/config'
 
 /**
- * Provides a webview panel that shows feature metadata (frontmatter) as a header.
+ * Provides a webview panel that shows card metadata (frontmatter) as a header.
  * The actual markdown editing is done by VSCode's native text editor.
  */
-export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'kanban-lite.featureHeader'
+export class CardHeaderProvider implements vscode.WebviewViewProvider {
+  public static readonly viewType = 'kanban-lite.cardHeader'
 
   private _view?: vscode.WebviewView
   private _currentDocument?: vscode.TextDocument
@@ -18,14 +18,14 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
-    const provider = new FeatureHeaderProvider(context.extensionUri)
+    const provider = new CardHeaderProvider(context.extensionUri)
 
     const disposables: vscode.Disposable[] = []
 
     // Register the webview view provider
     disposables.push(
       vscode.window.registerWebviewViewProvider(
-        FeatureHeaderProvider.viewType,
+        CardHeaderProvider.viewType,
         provider,
         {
           webviewOptions: {
@@ -118,7 +118,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
           const description = docContent.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
           const shortDesc = description.length > 200 ? description.substring(0, 200) + '...' : description
 
-          const prompt = `Implement this feature: "${title}" (${fm.priority} priority)${labels}. ${shortDesc} See full details in: ${this._currentDocument.uri.fsPath}`
+          const prompt = `Implement this card: "${title}" (${fm.priority} priority)${labels}. ${shortDesc} See full details in: ${this._currentDocument.uri.fsPath}`
 
           const agent = message.agent || 'claude'
           const permissionMode = message.permissionMode || 'default'
@@ -189,8 +189,8 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     if (!workspaceRoot) return
     const kanbanConfig = readConfig(workspaceRoot)
-    const fullFeaturesDir = path.join(workspaceRoot, kanbanConfig.featuresDirectory)
-    if (uri.fsPath.endsWith('.md') && uri.fsPath.startsWith(fullFeaturesDir + path.sep)) {
+    const fullKanbanDir = path.join(workspaceRoot, kanbanConfig.kanbanDirectory)
+    if (uri.fsPath.endsWith('.md') && uri.fsPath.startsWith(fullKanbanDir + path.sep)) {
       this._currentDocument = editor.document
       this._updateViewForCurrentEditor()
     } else {
@@ -232,7 +232,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async _updateFrontmatter(frontmatter: FeatureFrontmatter): Promise<void> {
+  private async _updateFrontmatter(frontmatter: CardFrontmatter): Promise<void> {
     if (!this._currentDocument) return
 
     const { content } = this._parseDocument(this._currentDocument.getText())
@@ -247,7 +247,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     await vscode.workspace.applyEdit(edit)
   }
 
-  private _parseDocument(text: string): { frontmatter: FeatureFrontmatter; content: string } {
+  private _parseDocument(text: string): { frontmatter: CardFrontmatter; content: string } {
     text = text.replace(/\r\n/g, '\n')
     const frontmatterMatch = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
 
@@ -274,10 +274,10 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
       return match[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
     }
 
-    const frontmatter: FeatureFrontmatter = {
+    const frontmatter: CardFrontmatter = {
       version: 0,
       id: getValue('id') || 'unknown',
-      status: (getValue('status') as FeatureStatus) || 'backlog',
+      status: (getValue('status') as CardStatus) || 'backlog',
       priority: (getValue('priority') as Priority) || 'medium',
       assignee: getValue('assignee') || null,
       dueDate: getValue('dueDate') || null,
@@ -292,7 +292,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     return { frontmatter, content: content.trim() }
   }
 
-  private _getDefaultFrontmatter(): FeatureFrontmatter {
+  private _getDefaultFrontmatter(): CardFrontmatter {
     const now = new Date().toISOString()
     return {
       version: 0,
@@ -310,7 +310,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private _serializeDocument(frontmatter: FeatureFrontmatter, content: string): string {
+  private _serializeDocument(frontmatter: CardFrontmatter, content: string): string {
     const updatedFrontmatter = {
       ...frontmatter,
       modified: new Date().toISOString()
@@ -361,7 +361,7 @@ export class FeatureHeaderProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <link href="${styleUri}" rel="stylesheet">
-  <title>Feature Header</title>
+  <title>Card Header</title>
 </head>
 <body>
   <div id="root"></div>

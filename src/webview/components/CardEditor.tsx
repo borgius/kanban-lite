@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, FileText, Paperclip, Clock } from 'lucide-react'
-import type { Comment, FeatureFrontmatter, Priority, FeatureStatus } from '../../shared/types'
+import type { Comment, CardFrontmatter, Priority, CardStatus } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
@@ -10,13 +10,13 @@ import { MarkdownEditor } from './MarkdownEditor'
 type AIAgent = 'claude' | 'codex' | 'opencode'
 type PermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
-interface FeatureEditorProps {
-  featureId: string
+interface CardEditorProps {
+  cardId: string
   content: string
-  frontmatter: FeatureFrontmatter
+  frontmatter: CardFrontmatter
   comments: Comment[]
   contentVersion?: number
-  onSave: (content: string, frontmatter: FeatureFrontmatter) => void
+  onSave: (content: string, frontmatter: CardFrontmatter) => void
   onClose: () => void
   onDelete: () => void
   onPermanentDelete: () => void
@@ -488,14 +488,14 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   const [newLabel, setNewLabel] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const features = useStore(s => s.features)
+  const allCards = useStore(s => s.cards)
   const labelDefs = useStore(s => s.labelDefs)
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
-    features.forEach(f => f.labels.forEach(l => labelSet.add(l)))
+    allCards.forEach(f => f.labels.forEach(l => labelSet.add(l)))
     return Array.from(labelSet).sort()
-  }, [features])
+  }, [allCards])
 
   const suggestions = useMemo(() => {
     const available = existingLabels.filter(l => !labels.includes(l))
@@ -602,7 +602,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function FeatureEditor({ featureId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: FeatureEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: CardEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -625,11 +625,11 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
     }
   }, [])
 
-  // Set content when a new feature is opened (keyed by featureId)
+  // Set content when a new card is opened (keyed by cardId)
   useEffect(() => {
     setCurrentContent(content)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featureId, contentVersion])
+  }, [cardId, contentVersion])
 
   // Reset frontmatter when prop changes
   useEffect(() => {
@@ -644,7 +644,7 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
     }, 800)
   }, [onSave])
 
-  const handleFrontmatterUpdate = useCallback((updates: Partial<FeatureFrontmatter>) => {
+  const handleFrontmatterUpdate = useCallback((updates: Partial<CardFrontmatter>) => {
     setCurrentFrontmatter(prev => {
       const next = { ...prev, ...updates }
       // Schedule a save with the updated frontmatter
@@ -696,7 +696,7 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
         style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>{featureId}</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>{cardId}</span>
           {isDeleted ? (
             confirmingPermanentDelete ? (
               <div className="flex items-center gap-1.5">
@@ -783,7 +783,7 @@ export function FeatureEditor({ featureId, content, frontmatter, comments, conte
         <PropertyRow label="Status" icon={<CircleDot size={13} />}>
           <StatusDropdown
             value={currentFrontmatter.status}
-            onChange={(v) => handleFrontmatterUpdate({ status: v as FeatureStatus })}
+            onChange={(v) => handleFrontmatterUpdate({ status: v as CardStatus })}
             onTransferToBoard={onTransferToBoard}
           />
         </PropertyRow>

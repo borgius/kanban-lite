@@ -7,7 +7,7 @@ A VSCode extension + standalone server + CLI + MCP server for managing kanban bo
 ```
 src/
   sdk/           # Core SDK (no external dependencies) - KanbanSDK class
-  shared/        # Shared types (Feature, KanbanColumn, CardDisplaySettings) and config module
+  shared/        # Shared types (Card, KanbanColumn, CardDisplaySettings) and config module
   cli/           # CLI tool (built on SDK)
   mcp-server/    # MCP server (built on SDK + config + webhooks)
   extension/     # VSCode extension

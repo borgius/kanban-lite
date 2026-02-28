@@ -3,15 +3,15 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import { generateSlug, type Comment, type Feature, type Priority, type KanbanColumn, type FeatureFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
+import { generateSlug, type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import { serializeFeature } from '../sdk/parser'
+import { serializeCard } from '../sdk/parser'
 import { readConfig } from '../shared/config'
-import { sanitizeFeature } from '../sdk/types'
+import { sanitizeCard } from '../sdk/types'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
 import { matchesMetaFilter } from '../sdk/metaUtils'
 
-interface CreateFeatureData {
+interface CreateCardData {
   status: string
   priority: Priority
   content: string
@@ -34,20 +34,20 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 
-export function startServer(featuresDir: string, port: number, webviewDir?: string): http.Server {
-  const absoluteFeaturesDir = path.resolve(featuresDir)
-  let features: Feature[] = []
+export function startServer(kanbanDir: string, port: number, webviewDir?: string): http.Server {
+  const absoluteKanbanDir = path.resolve(kanbanDir)
+  let cards: Card[] = []
   let migrating = false
-  let currentEditingFeatureId: string | null = null
+  let currentEditingCardId: string | null = null
   let lastWrittenContent = ''
   let currentBoardId: string | undefined
 
   // Resolve webview static files directory
   const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
 
-  // Derive workspace root from features directory
-  const workspaceRoot = path.dirname(absoluteFeaturesDir)
-  const sdk = new KanbanSDK(absoluteFeaturesDir, {
+  // Derive workspace root from cards directory
+  const workspaceRoot = path.dirname(absoluteKanbanDir)
+  const sdk = new KanbanSDK(absoluteKanbanDir, {
     onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
   })
 
@@ -133,10 +133,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 </body>
 </html>`
 
-  // --- Feature loading ---
+  // --- Card loading ---
 
-  async function loadFeatures(): Promise<void> {
-    features = await sdk.listCards(sdk.listColumns(currentBoardId).map(c => c.id), currentBoardId)
+  async function loadCards(): Promise<void> {
+    cards = await sdk.listCards(sdk.listColumns(currentBoardId).map(c => c.id), currentBoardId)
   }
 
   // --- Message building & broadcast ---
@@ -148,14 +148,14 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     settings.markdownEditorMode = false
     return {
       type: 'init',
-      features,
+      cards,
       columns: sdk.listColumns(currentBoardId),
       settings,
       boards: sdk.listBoards(),
       currentBoard: currentBoardId || config.defaultBoard,
       workspace: {
         projectPath: workspaceRoot,
-        featuresDirectory: config.featuresDirectory,
+        kanbanDirectory: config.kanbanDirectory,
         port: config.port,
         configVersion: config.version
       },
@@ -175,10 +175,10 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   // --- Mutation functions ---
   // Shared by both WebSocket handlers and REST API routes.
 
-  async function doCreateFeature(data: CreateFeatureData): Promise<Feature> {
+  async function doCreateCard(data: CreateCardData): Promise<Card> {
     migrating = true
     try {
-      const feature = await sdk.createCard({
+      const card = await sdk.createCard({
         content: data.content,
         status: data.status,
         priority: data.priority,
@@ -189,22 +189,22 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         actions: data.actions,
         boardId: currentBoardId,
       })
-      await loadFeatures()
+      await loadCards()
       broadcast(buildInitMessage())
-      return feature
+      return card
     } finally {
       migrating = false
     }
   }
 
-  async function doMoveFeature(featureId: string, newStatus: string, newOrder: number): Promise<Feature | null> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
+  async function doMoveCard(cardId: string, newStatus: string, newOrder: number): Promise<Card | null> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.moveCard(featureId, newStatus, newOrder, currentBoardId)
-      await loadFeatures()
+      const updated = await sdk.moveCard(cardId, newStatus, newOrder, currentBoardId)
+      await loadCards()
       broadcast(buildInitMessage())
       return updated
     } finally {
@@ -212,15 +212,15 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
-  async function doUpdateFeature(featureId: string, updates: Partial<Feature>): Promise<Feature | null> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
+  async function doUpdateCard(cardId: string, updates: Partial<Card>): Promise<Card | null> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.updateCard(featureId, updates, currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
-      await loadFeatures()
+      const updated = await sdk.updateCard(cardId, updates, currentBoardId)
+      lastWrittenContent = serializeCard(updated)
+      await loadCards()
       broadcast(buildInitMessage())
       return updated
     } finally {
@@ -228,32 +228,32 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
-  async function doDeleteFeature(featureId: string): Promise<boolean> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return false
+  async function doDeleteCard(cardId: string): Promise<boolean> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return false
 
     try {
-      await sdk.deleteCard(featureId, currentBoardId)
-      await loadFeatures()
+      await sdk.deleteCard(cardId, currentBoardId)
+      await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
-      console.error('Failed to delete feature:', err)
+      console.error('Failed to delete card:', err)
       return false
     }
   }
 
-  async function doPermanentDeleteFeature(featureId: string): Promise<boolean> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return false
+  async function doPermanentDeleteCard(cardId: string): Promise<boolean> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return false
 
     try {
-      await sdk.permanentlyDeleteCard(featureId, currentBoardId)
-      await loadFeatures()
+      await sdk.permanentlyDeleteCard(cardId, currentBoardId)
+      await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
-      console.error('Failed to permanently delete feature:', err)
+      console.error('Failed to permanently delete card:', err)
       return false
     }
   }
@@ -261,7 +261,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   async function doPurgeDeletedCards(): Promise<boolean> {
     try {
       await sdk.purgeDeletedCards(currentBoardId)
-      await loadFeatures()
+      await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
@@ -313,7 +313,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     try {
       migrating = true
       await sdk.cleanupColumn(columnId, currentBoardId)
-      await loadFeatures()
+      await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
@@ -329,35 +329,35 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     broadcast(buildInitMessage())
   }
 
-  async function doAddAttachment(featureId: string, filename: string, fileData: Buffer): Promise<boolean> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return false
+  async function doAddAttachment(cardId: string, filename: string, fileData: Buffer): Promise<boolean> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return false
 
     // Write file data to the card's directory
-    const featureDir = path.dirname(feature.filePath)
-    fs.writeFileSync(path.join(featureDir, filename), fileData)
+    const cardDir = path.dirname(card.filePath)
+    fs.writeFileSync(path.join(cardDir, filename), fileData)
 
     // Register attachment via SDK (skips copy since file is already in place)
     migrating = true
     try {
-      const updated = await sdk.addAttachment(featureId, path.join(featureDir, filename), currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
-      await loadFeatures()
+      const updated = await sdk.addAttachment(cardId, path.join(cardDir, filename), currentBoardId)
+      lastWrittenContent = serializeCard(updated)
+      await loadCards()
     } finally {
       migrating = false
     }
     return true
   }
 
-  async function doRemoveAttachment(featureId: string, attachment: string): Promise<Feature | null> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return null
+  async function doRemoveAttachment(cardId: string, attachment: string): Promise<Card | null> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.removeAttachment(featureId, attachment, currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
-      await loadFeatures()
+      const updated = await sdk.removeAttachment(cardId, attachment, currentBoardId)
+      lastWrittenContent = serializeCard(updated)
+      await loadCards()
       broadcast(buildInitMessage())
       return updated
     } finally {
@@ -367,13 +367,13 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   // --- Comment mutation functions ---
 
-  async function doAddComment(featureId: string, author: string, content: string): Promise<Comment | null> {
+  async function doAddComment(cardId: string, author: string, content: string): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.addComment(featureId, author, content, currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
+      const updated = await sdk.addComment(cardId, author, content, currentBoardId)
+      lastWrittenContent = serializeCard(updated)
       const comment = updated.comments[updated.comments.length - 1]
-      await loadFeatures()
+      await loadCards()
       broadcast(buildInitMessage())
       return comment
     } catch {
@@ -383,13 +383,13 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
-  async function doUpdateComment(featureId: string, commentId: string, content: string): Promise<Comment | null> {
+  async function doUpdateComment(cardId: string, commentId: string, content: string): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.updateComment(featureId, commentId, content, currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
+      const updated = await sdk.updateComment(cardId, commentId, content, currentBoardId)
+      lastWrittenContent = serializeCard(updated)
       const comment = (updated.comments || []).find(c => c.id === commentId)
-      await loadFeatures()
+      await loadCards()
       broadcast(buildInitMessage())
       return comment ?? null
     } catch {
@@ -399,17 +399,17 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
   }
 
-  async function doDeleteComment(featureId: string, commentId: string): Promise<boolean> {
-    const feature = features.find(f => f.id === featureId)
-    if (!feature) return false
-    const comment = (feature.comments || []).find(c => c.id === commentId)
+  async function doDeleteComment(cardId: string, commentId: string): Promise<boolean> {
+    const card = cards.find(f => f.id === cardId)
+    if (!card) return false
+    const comment = (card.comments || []).find(c => c.id === commentId)
     if (!comment) return false
 
     migrating = true
     try {
-      const updated = await sdk.deleteComment(featureId, commentId, currentBoardId)
-      lastWrittenContent = serializeFeature(updated)
-      await loadFeatures()
+      const updated = await sdk.deleteComment(cardId, commentId, currentBoardId)
+      lastWrittenContent = serializeCard(updated)
+      await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch {
@@ -427,33 +427,33 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       case 'ready':
         migrating = true
         try {
-          await loadFeatures()
+          await loadCards()
           ws.send(JSON.stringify(buildInitMessage()))
         } finally {
           migrating = false
         }
         break
 
-      case 'createFeature':
-        await doCreateFeature(msg.data as CreateFeatureData)
+      case 'createCard':
+        await doCreateCard(msg.data as CreateCardData)
         break
 
-      case 'moveFeature':
-        await doMoveFeature(msg.featureId as string, msg.newStatus as string, msg.newOrder as number)
+      case 'moveCard':
+        await doMoveCard(msg.cardId as string, msg.newStatus as string, msg.newOrder as number)
         break
 
-      case 'deleteFeature':
-        await doDeleteFeature(msg.featureId as string)
+      case 'deleteCard':
+        await doDeleteCard(msg.cardId as string)
         break
 
-      case 'permanentDeleteFeature':
-        await doPermanentDeleteFeature(msg.featureId as string)
+      case 'permanentDeleteCard':
+        await doPermanentDeleteCard(msg.cardId as string)
         break
 
-      case 'restoreFeature': {
-        const restoreId = msg.featureId as string
+      case 'restoreCard': {
+        const restoreId = msg.cardId as string
         const defaultStatus = sdk.getSettings().defaultStatus
-        await doUpdateFeature(restoreId, { status: defaultStatus })
+        await doUpdateCard(restoreId, { status: defaultStatus })
         break
       }
 
@@ -461,33 +461,33 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         await doPurgeDeletedCards()
         break
 
-      case 'updateFeature':
-        await doUpdateFeature(msg.featureId as string, msg.updates as Partial<Feature>)
+      case 'updateCard':
+        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>)
         break
 
-      case 'openFeature': {
-        const featureId = msg.featureId as string
-        const feature = features.find(f => f.id === featureId)
-        if (!feature) break
+      case 'openCard': {
+        const cardId = msg.cardId as string
+        const card = cards.find(f => f.id === cardId)
+        if (!card) break
 
-        currentEditingFeatureId = featureId
-        const frontmatter: FeatureFrontmatter = {
-          version: feature.version ?? 0,
-          id: feature.id, status: feature.status, priority: feature.priority,
-          assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-          modified: feature.modified, completedAt: feature.completedAt,
-          labels: feature.labels, attachments: feature.attachments, order: feature.order,
-          metadata: feature.metadata, actions: feature.actions
+        currentEditingCardId = cardId
+        const frontmatter: CardFrontmatter = {
+          version: card.version ?? 0,
+          id: card.id, status: card.status, priority: card.priority,
+          assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+          modified: card.modified, completedAt: card.completedAt,
+          labels: card.labels, attachments: card.attachments, order: card.order,
+          metadata: card.metadata, actions: card.actions
         }
-        ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
         break
       }
 
-      case 'saveFeatureContent': {
-        const featureId = msg.featureId as string
+      case 'saveCardContent': {
+        const cardId = msg.cardId as string
         const newContent = msg.content as string
-        const fm = msg.frontmatter as FeatureFrontmatter
-        await doUpdateFeature(featureId, {
+        const fm = msg.frontmatter as CardFrontmatter
+        await doUpdateCard(cardId, {
           content: newContent,
           status: fm.status,
           priority: fm.priority,
@@ -500,8 +500,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
       }
 
-      case 'closeFeature':
-        currentEditingFeatureId = null
+      case 'closeCard':
+        currentEditingCardId = null
         break
 
       case 'openSettings': {
@@ -535,83 +535,83 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         break
 
       case 'removeAttachment': {
-        const featureId = msg.featureId as string
-        const feature = await doRemoveAttachment(featureId, msg.attachment as string)
-        if (feature && currentEditingFeatureId === featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            version: feature.version ?? 0,
-            id: feature.id, status: feature.status, priority: feature.priority,
-            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-            modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order,
-            actions: feature.actions
+        const cardId = msg.cardId as string
+        const card = await doRemoveAttachment(cardId, msg.attachment as string)
+        if (card && currentEditingCardId === cardId) {
+          const frontmatter: CardFrontmatter = {
+            version: card.version ?? 0,
+            id: card.id, status: card.status, priority: card.priority,
+            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+            modified: card.modified, completedAt: card.completedAt,
+            labels: card.labels, attachments: card.attachments, order: card.order,
+            actions: card.actions
           }
-          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
         }
         break
       }
 
       case 'addComment': {
-        const comment = await doAddComment(msg.featureId as string, msg.author as string, msg.content as string)
+        const comment = await doAddComment(msg.cardId as string, msg.author as string, msg.content as string)
         if (!comment) break
-        const feature = features.find(f => f.id === msg.featureId)
-        if (feature && currentEditingFeatureId === msg.featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            version: feature.version ?? 0,
-            id: feature.id, status: feature.status, priority: feature.priority,
-            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-            modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order,
-            actions: feature.actions
+        const card = cards.find(f => f.id === msg.cardId)
+        if (card && currentEditingCardId === msg.cardId) {
+          const frontmatter: CardFrontmatter = {
+            version: card.version ?? 0,
+            id: card.id, status: card.status, priority: card.priority,
+            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+            modified: card.modified, completedAt: card.completedAt,
+            labels: card.labels, attachments: card.attachments, order: card.order,
+            actions: card.actions
           }
-          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
         }
         break
       }
 
       case 'updateComment': {
-        const comment = await doUpdateComment(msg.featureId as string, msg.commentId as string, msg.content as string)
+        const comment = await doUpdateComment(msg.cardId as string, msg.commentId as string, msg.content as string)
         if (!comment) break
-        const feature = features.find(f => f.id === msg.featureId)
-        if (feature && currentEditingFeatureId === msg.featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            version: feature.version ?? 0,
-            id: feature.id, status: feature.status, priority: feature.priority,
-            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-            modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order,
-            actions: feature.actions
+        const card = cards.find(f => f.id === msg.cardId)
+        if (card && currentEditingCardId === msg.cardId) {
+          const frontmatter: CardFrontmatter = {
+            version: card.version ?? 0,
+            id: card.id, status: card.status, priority: card.priority,
+            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+            modified: card.modified, completedAt: card.completedAt,
+            labels: card.labels, attachments: card.attachments, order: card.order,
+            actions: card.actions
           }
-          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
         }
         break
       }
 
       case 'deleteComment': {
-        await doDeleteComment(msg.featureId as string, msg.commentId as string)
-        const feature = features.find(f => f.id === msg.featureId)
-        if (feature && currentEditingFeatureId === msg.featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            version: feature.version ?? 0,
-            id: feature.id, status: feature.status, priority: feature.priority,
-            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-            modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order,
-            actions: feature.actions
+        await doDeleteComment(msg.cardId as string, msg.commentId as string)
+        const card = cards.find(f => f.id === msg.cardId)
+        if (card && currentEditingCardId === msg.cardId) {
+          const frontmatter: CardFrontmatter = {
+            version: card.version ?? 0,
+            id: card.id, status: card.status, priority: card.priority,
+            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+            modified: card.modified, completedAt: card.completedAt,
+            labels: card.labels, attachments: card.attachments, order: card.order,
+            actions: card.actions
           }
-          ws.send(JSON.stringify({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
         }
         break
       }
 
       case 'transferCard': {
-        const featureId = msg.featureId as string
+        const cardId = msg.cardId as string
         const toBoard = msg.toBoard as string
         const targetStatus = msg.targetStatus as string
         migrating = true
         try {
-          await sdk.transferCard(featureId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
-          await loadFeatures()
+          await sdk.transferCard(cardId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
+          await loadCards()
           broadcast(buildInitMessage())
         } catch (err) {
           console.error('Failed to transfer card:', err)
@@ -624,7 +624,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         currentBoardId = msg.boardId as string
         migrating = true
         try {
-          await loadFeatures()
+          await loadCards()
           broadcast(buildInitMessage())
         } finally {
           migrating = false
@@ -639,7 +639,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           currentBoardId = boardId
           migrating = true
           try {
-            await loadFeatures()
+            await loadCards()
             broadcast(buildInitMessage())
           } finally {
             migrating = false
@@ -659,7 +659,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
       case 'renameLabel': {
         await sdk.renameLabel(msg.oldName as string, msg.newName as string)
-        await loadFeatures()
+        await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
         break
@@ -667,16 +667,16 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
       case 'deleteLabel': {
         await sdk.deleteLabel(msg.name as string)
-        await loadFeatures()
+        await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
         break
       }
 
       case 'triggerAction': {
-        const { featureId, action, callbackKey } = msg as { featureId: string; action: string; callbackKey: string }
+        const { cardId, action, callbackKey } = msg as { cardId: string; action: string; callbackKey: string }
         try {
-          await sdk.triggerAction(featureId, action)
+          await sdk.triggerAction(cardId, action)
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
         } catch (err) {
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))
@@ -786,7 +786,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const fromBoard = currentBoardId || config.defaultBoard
         const targetStatus = body.targetStatus as string | undefined
         const card = await sdk.transferCard(id, fromBoard, boardId, targetStatus)
-        return jsonOk(res, sanitizeFeature(card))
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -800,7 +800,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const { boardId } = params
         const boardColumns = sdk.listColumns(boardId)
         const boardTasks = await sdk.listCards(boardColumns.map(c => c.id), boardId)
-        let result = boardTasks.map(sanitizeFeature)
+        let result = boardTasks.map(sanitizeCard)
         if (url.searchParams.get('includeDeleted') !== 'true') {
           result = result.filter(f => f.status !== 'deleted')
         }
@@ -837,7 +837,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const body = await readBody(req)
         const content = (body.content as string) || ''
         if (!content) return jsonError(res, 400, 'content is required')
-        const feature = await sdk.createCard({
+        const card = await sdk.createCard({
           content,
           status: (body.status as string) || 'backlog',
           priority: (body.priority as Priority) || 'medium',
@@ -848,7 +848,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           actions: body.actions as string[] | undefined,
           boardId,
         })
-        return jsonOk(res, sanitizeFeature(feature), 201)
+        return jsonOk(res, sanitizeCard(card), 201)
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -860,7 +860,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const { boardId, id } = params
         const card = await sdk.getCard(id, boardId)
         if (!card) return jsonError(res, 404, 'Task not found')
-        return jsonOk(res, sanitizeFeature(card))
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -871,8 +871,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const { boardId, id } = params
         const body = await readBody(req)
-        const feature = await sdk.updateCard(id, body as Partial<Feature>, boardId)
-        return jsonOk(res, sanitizeFeature(feature))
+        const card = await sdk.updateCard(id, body as Partial<Card>, boardId)
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -886,8 +886,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const newStatus = body.status as string
         const position = body.position as number ?? 0
         if (!newStatus) return jsonError(res, 400, 'status is required')
-        const feature = await sdk.moveCard(id, newStatus, position, boardId)
-        return jsonOk(res, sanitizeFeature(feature))
+        const card = await sdk.moveCard(id, newStatus, position, boardId)
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -913,7 +913,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const { boardId, id } = params
         await sdk.permanentlyDeleteCard(id, boardId)
-        await loadFeatures()
+        await loadCards()
         broadcast(buildInitMessage())
         return jsonOk(res, { deleted: true, permanent: true })
       } catch (err) {
@@ -926,7 +926,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const { boardId, id } = params
         await sdk.deleteCard(id, boardId)
-        await loadFeatures()
+        await loadCards()
         broadcast(buildInitMessage())
         return jsonOk(res, { deleted: true })
       } catch (err) {
@@ -950,8 +950,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
     params = route('GET', '/api/tasks')
     if (params) {
-      await loadFeatures()
-      let result = features.map(sanitizeFeature)
+      await loadCards()
+      let result = cards.map(sanitizeCard)
       if (url.searchParams.get('includeDeleted') !== 'true') {
         result = result.filter(f => f.status !== 'deleted')
       }
@@ -982,7 +982,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (params) {
       try {
         const body = await readBody(req)
-        const data: CreateFeatureData = {
+        const data: CreateCardData = {
           content: (body.content as string) || '',
           status: (body.status as string) || 'backlog',
           priority: (body.priority as Priority) || 'medium',
@@ -993,8 +993,8 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           actions: body.actions as string[] | undefined,
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
-        const feature = await doCreateFeature(data)
-        return jsonOk(res, sanitizeFeature(feature), 201)
+        const card = await doCreateCard(data)
+        return jsonOk(res, sanitizeCard(card), 201)
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1003,9 +1003,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('GET', '/api/tasks/:id')
     if (params) {
       const { id } = params
-      const feature = features.find(f => f.id === id)
-      if (!feature) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, sanitizeFeature(feature))
+      const card = cards.find(f => f.id === id)
+      if (!card) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, sanitizeCard(card))
     }
 
     params = route('PUT', '/api/tasks/:id')
@@ -1013,9 +1013,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const { id } = params
         const body = await readBody(req)
-        const feature = await doUpdateFeature(id, body as Partial<Feature>)
-        if (!feature) return jsonError(res, 404, 'Task not found')
-        return jsonOk(res, sanitizeFeature(feature))
+        const card = await doUpdateCard(id, body as Partial<Card>)
+        if (!card) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1029,9 +1029,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const newStatus = body.status as string
         const position = body.position as number ?? 0
         if (!newStatus) return jsonError(res, 400, 'status is required')
-        const feature = await doMoveFeature(id, newStatus, position)
-        if (!feature) return jsonError(res, 404, 'Task not found')
-        return jsonOk(res, sanitizeFeature(feature))
+        const card = await doMoveCard(id, newStatus, position)
+        if (!card) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1055,7 +1055,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id/permanent')
     if (params) {
       const { id } = params
-      const ok = await doPermanentDeleteFeature(id)
+      const ok = await doPermanentDeleteCard(id)
       if (!ok) return jsonError(res, 404, 'Task not found')
       return jsonOk(res, { deleted: true, permanent: true })
     }
@@ -1063,7 +1063,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id')
     if (params) {
       const { id } = params
-      const ok = await doDeleteFeature(id)
+      const ok = await doDeleteCard(id)
       if (!ok) return jsonError(res, 404, 'Task not found')
       return jsonOk(res, { deleted: true })
     }
@@ -1082,9 +1082,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
           await doAddAttachment(id, file.name, buf)
         }
         broadcast(buildInitMessage())
-        const feature = features.find(f => f.id === id)
-        if (!feature) return jsonError(res, 404, 'Task not found')
-        return jsonOk(res, sanitizeFeature(feature))
+        const card = cards.find(f => f.id === id)
+        if (!card) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1093,11 +1093,11 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('GET', '/api/tasks/:id/attachments/:filename')
     if (params) {
       const { id, filename: attachName } = params
-      const feature = features.find(f => f.id === id)
-      if (!feature) return jsonError(res, 404, 'Task not found')
-      const featureDir = path.dirname(feature.filePath)
-      const attachmentPath = path.resolve(featureDir, attachName)
-      if (!attachmentPath.startsWith(absoluteFeaturesDir)) {
+      const card = cards.find(f => f.id === id)
+      if (!card) return jsonError(res, 404, 'Task not found')
+      const cardDir = path.dirname(card.filePath)
+      const attachmentPath = path.resolve(cardDir, attachName)
+      if (!attachmentPath.startsWith(absoluteKanbanDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' })
         res.end('Forbidden')
         return
@@ -1119,9 +1119,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('DELETE', '/api/tasks/:id/attachments/:filename')
     if (params) {
       const { id, filename: attachName } = params
-      const feature = await doRemoveAttachment(id, attachName)
-      if (!feature) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, sanitizeFeature(feature))
+      const card = await doRemoveAttachment(id, attachName)
+      if (!card) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, sanitizeCard(card))
     }
 
     // ==================== COMMENTS API ====================
@@ -1129,9 +1129,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     params = route('GET', '/api/tasks/:id/comments')
     if (params) {
       const { id } = params
-      const feature = features.find(f => f.id === id)
-      if (!feature) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, feature.comments || [])
+      const card = cards.find(f => f.id === id)
+      if (!card) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, card.comments || [])
     }
 
     params = route('POST', '/api/tasks/:id/comments')
@@ -1310,7 +1310,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
         const newName = body.newName as string
         if (!newName) return jsonError(res, 400, 'newName is required')
         await sdk.renameLabel(name, newName)
-        await loadFeatures()
+        await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
         return jsonOk(res, sdk.getLabels())
@@ -1324,7 +1324,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       try {
         const name = decodeURIComponent(params.name)
         await sdk.deleteLabel(name)
-        await loadFeatures()
+        await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
         return jsonOk(res, { success: true })
@@ -1346,27 +1346,27 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     if (method === 'POST' && pathname === '/api/upload-attachment') {
       try {
         const body = await readBody(req)
-        const featureId = body.featureId as string
+        const cardId = body.cardId as string
         const files = body.files as { name: string; data: string }[]
-        if (!featureId || !Array.isArray(files)) return jsonError(res, 400, 'Missing featureId or files')
+        if (!cardId || !Array.isArray(files)) return jsonError(res, 400, 'Missing cardId or files')
 
         for (const file of files) {
           const buf = Buffer.from(file.data, 'base64')
-          await doAddAttachment(featureId, file.name, buf)
+          await doAddAttachment(cardId, file.name, buf)
         }
 
         broadcast(buildInitMessage())
-        const feature = features.find(f => f.id === featureId)
-        if (feature && currentEditingFeatureId === featureId) {
-          const frontmatter: FeatureFrontmatter = {
-            version: feature.version ?? 0,
-            id: feature.id, status: feature.status, priority: feature.priority,
-            assignee: feature.assignee, dueDate: feature.dueDate, created: feature.created,
-            modified: feature.modified, completedAt: feature.completedAt,
-            labels: feature.labels, attachments: feature.attachments, order: feature.order,
-            metadata: feature.metadata, actions: feature.actions,
+        const card = cards.find(f => f.id === cardId)
+        if (card && currentEditingCardId === cardId) {
+          const frontmatter: CardFrontmatter = {
+            version: card.version ?? 0,
+            id: card.id, status: card.status, priority: card.priority,
+            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
+            modified: card.modified, completedAt: card.completedAt,
+            labels: card.labels, attachments: card.attachments, order: card.order,
+            metadata: card.metadata, actions: card.actions,
           }
-          broadcast({ type: 'featureContent', featureId: feature.id, content: feature.content, frontmatter, comments: feature.comments || [] })
+          broadcast({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] })
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true }))
@@ -1378,16 +1378,16 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
     }
 
     if (method === 'GET' && pathname === '/api/attachment') {
-      const featureId = url.searchParams.get('featureId')
+      const cardId = url.searchParams.get('cardId')
       const filename = url.searchParams.get('filename')
-      if (!featureId || !filename) {
-        res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('Missing featureId or filename'); return
+      if (!cardId || !filename) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('Missing cardId or filename'); return
       }
-      const feature = features.find(f => f.id === featureId)
-      if (!feature) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Feature not found'); return }
-      const featureDir = path.dirname(feature.filePath)
-      const attachmentPath = path.resolve(featureDir, filename)
-      if (!attachmentPath.startsWith(absoluteFeaturesDir)) {
+      const card = cards.find(f => f.id === cardId)
+      if (!card) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Card not found'); return }
+      const cardDir = path.dirname(card.filePath)
+      const attachmentPath = path.resolve(cardDir, filename)
+      if (!attachmentPath.startsWith(absoluteKanbanDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end('Forbidden'); return
       }
       const ext = path.extname(filename)
@@ -1448,9 +1448,9 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-  fs.mkdirSync(absoluteFeaturesDir, { recursive: true })
+  fs.mkdirSync(absoluteKanbanDir, { recursive: true })
 
-  const watcher = chokidar.watch(absoluteFeaturesDir, {
+  const watcher = chokidar.watch(absoluteKanbanDir, {
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 100 }
   })
@@ -1463,26 +1463,26 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
       if (migrating) return
       migrating = true
       try {
-        await loadFeatures()
+        await loadCards()
         broadcast(buildInitMessage())
       } finally {
         migrating = false
       }
 
-      if (currentEditingFeatureId && changedPath) {
-        const editingFeature = features.find(f => f.id === currentEditingFeatureId)
-        if (editingFeature && editingFeature.filePath === changedPath) {
-          const currentContent = serializeFeature(editingFeature)
+      if (currentEditingCardId && changedPath) {
+        const editingCard = cards.find(f => f.id === currentEditingCardId)
+        if (editingCard && editingCard.filePath === changedPath) {
+          const currentContent = serializeCard(editingCard)
           if (currentContent !== lastWrittenContent) {
-            const frontmatter: FeatureFrontmatter = {
-              version: editingFeature.version ?? 0,
-              id: editingFeature.id, status: editingFeature.status, priority: editingFeature.priority,
-              assignee: editingFeature.assignee, dueDate: editingFeature.dueDate, created: editingFeature.created,
-              modified: editingFeature.modified, completedAt: editingFeature.completedAt,
-              labels: editingFeature.labels, attachments: editingFeature.attachments, order: editingFeature.order,
-              metadata: editingFeature.metadata, actions: editingFeature.actions,
+            const frontmatter: CardFrontmatter = {
+              version: editingCard.version ?? 0,
+              id: editingCard.id, status: editingCard.status, priority: editingCard.priority,
+              assignee: editingCard.assignee, dueDate: editingCard.dueDate, created: editingCard.created,
+              modified: editingCard.modified, completedAt: editingCard.completedAt,
+              labels: editingCard.labels, attachments: editingCard.attachments, order: editingCard.order,
+              metadata: editingCard.metadata, actions: editingCard.actions,
             }
-            broadcast({ type: 'featureContent', featureId: editingFeature.id, content: editingFeature.content, frontmatter, comments: editingFeature.comments || [] })
+            broadcast({ type: 'cardContent', cardId: editingCard.id, content: editingCard.content, frontmatter, comments: editingCard.comments || [] })
           }
         }
       }
@@ -1501,7 +1501,7 @@ export function startServer(featuresDir: string, port: number, webviewDir?: stri
   server.listen(port, () => {
     console.log(`Kanban board running at http://localhost:${port}`)
     console.log(`API available at http://localhost:${port}/api`)
-    console.log(`Features directory: ${absoluteFeaturesDir}`)
+    console.log(`Kanban directory: ${absoluteKanbanDir}`)
   })
 
   return server

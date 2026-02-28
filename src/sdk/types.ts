@@ -1,4 +1,4 @@
-import type { Feature, Priority } from '../shared/types'
+import type { Card, Priority } from '../shared/types'
 
 /**
  * Input data for creating a new kanban card.
@@ -86,14 +86,14 @@ export interface SDKOptions {
  * in webhook payloads or API responses. The file path is an internal
  * implementation detail that should not be leaked externally.
  *
- * @param feature - The card object to sanitize.
+ * @param card - The card object to sanitize.
  * @returns A copy of the card without the `filePath` field.
  *
  * @example
- * const safe = sanitizeFeature(card)
+ * const safe = sanitizeCard(card)
  * // safe.filePath is undefined
  */
-export function sanitizeFeature(feature: Feature): Omit<Feature, 'filePath'> {
-  const { filePath: _, ...rest } = feature
+export function sanitizeCard(card: Card): Omit<Card, 'filePath'> {
+  const { filePath: _, ...rest } = card
   return rest
 }

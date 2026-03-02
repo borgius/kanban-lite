@@ -1,4 +1,10 @@
 import type { Card, Priority } from '../shared/types'
+import type { StorageEngine, StorageEngineType } from './storage/types'
+
+export type { StorageEngine, StorageEngineType } from './storage/types'
+export { MarkdownStorageEngine } from './storage/markdown'
+export { SqliteStorageEngine } from './storage/sqlite'
+export { createStorageEngine, readBootstrapConfig } from './storage/index'
 
 /**
  * Input data for creating a new kanban card.
@@ -61,6 +67,7 @@ export type SDKEventType =
   | 'board.created'
   | 'board.updated'
   | 'board.deleted'
+  | 'storage.migrated'
 
 /**
  * Callback invoked by the SDK after every mutating operation.
@@ -79,6 +86,22 @@ export interface SDKOptions {
    * Useful for triggering webhooks, logging, or other side effects.
    */
   onEvent?: SDKEventHandler
+  /**
+   * Provide a fully constructed {@link StorageEngine} to use. Takes precedence
+   * over `storageEngine` and `sqlitePath` when supplied.
+   */
+  storage?: StorageEngine
+  /**
+   * Override the storage engine type. Falls back to the value in `.kanban.json`
+   * (`storageEngine` field), then to `'markdown'` if unset.
+   */
+  storageEngine?: StorageEngineType
+  /**
+   * Path to the SQLite database file (only relevant when `storageEngine` is
+   * `'sqlite'`). If relative, resolved from the workspace root. Defaults to
+   * `.kanban/kanban.db`.
+   */
+  sqlitePath?: string
 }
 
 /**

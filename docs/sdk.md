@@ -72,7 +72,9 @@ HTTP server are all built on top of.
 
 * [KanbanSDK](#KanbanSDK)
     * [new KanbanSDK(kanbanDir, options)](#new_KanbanSDK_new)
+    * [.storageEngine](#KanbanSDK+storageEngine)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
+    * [.close()](#KanbanSDK+close)
     * [.emitEvent()](#KanbanSDK+emitEvent)
     * [.init()](#KanbanSDK+init) ⇒
     * [.listBoards()](#KanbanSDK+listBoards) ⇒
@@ -114,6 +116,8 @@ HTTP server are all built on top of.
     * [.reorderColumns(columnIds, boardId)](#KanbanSDK+reorderColumns) ⇒
     * [.getSettings()](#KanbanSDK+getSettings) ⇒
     * [.updateSettings(settings)](#KanbanSDK+updateSettings)
+    * [.migrateToSqlite(dbPath)](#KanbanSDK+migrateToSqlite) ⇒
+    * [.migrateToMarkdown()](#KanbanSDK+migrateToMarkdown) ⇒
 
 
 * * *
@@ -127,7 +131,7 @@ Creates a new KanbanSDK instance.
 | Param | Description |
 | --- | --- |
 | kanbanDir | Absolute path to the `.kanban` kanban directory.   The parent of this directory is treated as the workspace root. |
-| options | Optional configuration including an event handler callback. |
+| options | Optional configuration including an event handler callback   and storage engine selection. |
 
 **Example**  
 ```ts
@@ -135,6 +139,16 @@ const sdk = new KanbanSDK('/path/to/project/.kanban')
 await sdk.init()
 const cards = await sdk.listCards()
 ```
+
+* * *
+
+<a name="KanbanSDK+storageEngine"></a>
+
+#### kanbanSDK.storageEngine
+The active storage engine powering this SDK instance.
+Returns `'markdown'` or `'sqlite'`.
+
+**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -152,6 +166,16 @@ This is the project root where `.kanban.json` configuration lives.
 const sdk = new KanbanSDK('/home/user/my-project/.kanban')
 console.log(sdk.workspaceRoot) // '/home/user/my-project'
 ```
+
+* * *
+
+<a name="KanbanSDK+close"></a>
+
+#### kanbanSDK.close()
+Closes the storage engine and releases any held resources (e.g. database
+connections). Call this when the SDK instance is no longer needed.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -1256,6 +1280,65 @@ sdk.updateSettings({
   showDueDate: false,
   showLabels: true
 })
+```
+
+* * *
+
+<a name="KanbanSDK+migrateToSqlite"></a>
+
+#### kanbanSDK.migrateToSqlite(dbPath) ⇒
+Migrates all card data from the current storage engine to SQLite.
+
+Cards are scanned from every board using the active engine, then written
+to a new [SqliteStorageEngine](SqliteStorageEngine). After all data has been copied the
+workspace `.kanban.json` is updated with `storageEngine: 'sqlite'` and
+`sqlitePath` so that subsequent SDK instances use the new engine.
+
+The existing markdown files are **not** deleted; they serve as a manual
+backup until the caller explicitly removes them.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The total number of cards migrated.  
+**Throws**:
+
+- <code>Error</code> If the current engine is already `'sqlite'`.
+
+
+| Param | Description |
+| --- | --- |
+| dbPath | Path to the SQLite database file. Relative paths are   resolved from the workspace root. Defaults to `'.kanban/kanban.db'`. |
+
+**Example**  
+```ts
+const count = await sdk.migrateToSqlite()
+console.log(`Migrated ${count} cards to SQLite`)
+```
+
+* * *
+
+<a name="KanbanSDK+migrateToMarkdown"></a>
+
+#### kanbanSDK.migrateToMarkdown() ⇒
+Migrates all card data from the current SQLite engine back to markdown files.
+
+Cards are scanned from every board in the SQLite database and written as
+individual `.md` files under `.kanban/boards/<boardId>/<status>/`. After
+migration the workspace `.kanban.json` is updated to remove the
+`storageEngine`/`sqlitePath` overrides so the default markdown engine is
+used by subsequent SDK instances.
+
+The SQLite database file is **not** deleted; it serves as a manual backup.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The total number of cards migrated.  
+**Throws**:
+
+- <code>Error</code> If the current engine is already `'markdown'`.
+
+**Example**  
+```ts
+const count = await sdk.migrateToMarkdown()
+console.log(`Migrated ${count} cards to markdown`)
 ```
 
 * * *

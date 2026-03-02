@@ -1032,14 +1032,87 @@ async function main(): Promise<void> {
 
   server.tool(
     'get_workspace_info',
-    'Get the workspace root path and cards directory.',
+    'Get the workspace root path, cards directory, and active storage engine.',
     {},
     async () => {
+      const cfg = readConfig(workspaceRoot)
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ workspaceRoot, kanbanDir, port: readConfig(workspaceRoot).port }, null, 2),
+          text: JSON.stringify({
+            workspaceRoot,
+            kanbanDir,
+            port: cfg.port,
+            storageEngine: sdk.storageEngine.type,
+            sqlitePath: cfg.sqlitePath ?? null
+          }, null, 2),
         }],
+      }
+    }
+  )
+
+  // --- Storage Tools ---
+
+  server.tool(
+    'get_storage_status',
+    'Get the current storage engine type and configuration.',
+    {},
+    async () => {
+      const cfg = readConfig(workspaceRoot)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            storageEngine: sdk.storageEngine.type,
+            sqlitePath: cfg.sqlitePath ?? null,
+          }, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'migrate_to_sqlite',
+    'Migrate all card data from the current markdown storage to a SQLite database. Updates .kanban.json automatically.',
+    {
+      sqlitePath: z.string().optional().describe('Path to SQLite database file (default: .kanban/kanban.db). Relative to workspace root.'),
+    },
+    async ({ sqlitePath }) => {
+      try {
+        const count = await sdk.migrateToSqlite(sqlitePath)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ ok: true, count, storageEngine: 'sqlite' }, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  server.tool(
+    'migrate_to_markdown',
+    'Migrate all card data from SQLite back to individual markdown files. Updates .kanban.json automatically.',
+    {},
+    async () => {
+      try {
+        const count = await sdk.migrateToMarkdown()
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ ok: true, count, storageEngine: 'markdown' }, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
       }
     }
   )

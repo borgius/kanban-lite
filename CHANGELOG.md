@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pluggable storage engine**: new `StorageEngine` interface (`src/sdk/storage/types.ts`) decouples all card I/O from the SDK business logic
+- **SQLite storage engine**: `SqliteStorageEngine` stores cards and comments in a single `.kanban/kanban.db` file using `better-sqlite3`; config (boards, columns, labels, webhooks) always stays in `.kanban.json`
+- **Markdown storage engine**: `MarkdownStorageEngine` wraps the existing file-based I/O, unchanged default behavior
+- **Storage engine configuration**: `storageEngine` (`"markdown"` | `"sqlite"`) and `sqlitePath` fields in `.kanban.json`
+- **KanbanSDK.migrateToSqlite(dbPath?)**: migrates all markdown cards to SQLite and updates `.kanban.json`
+- **KanbanSDK.migrateToMarkdown()**: migrates all SQLite cards back to markdown files and updates `.kanban.json`
+- **KanbanSDK.close()**: releases storage engine resources (e.g. closes SQLite DB connection)
+- **KanbanSDK.storageEngine** getter: exposes the active `StorageEngine` instance
+- **CLI storage commands**: `kl storage status`, `kl storage migrate-to-sqlite [--sqlite-path <path>]`, `kl storage migrate-to-markdown`
+- **REST API storage endpoints**: `GET /api/storage`, `POST /api/storage/migrate-to-sqlite`, `POST /api/storage/migrate-to-markdown`; `/api/workspace` now includes `storageEngine` and `sqlitePath`
+- **MCP storage tools**: `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
+- **Storage engine tests**: `storage-markdown.test.ts` (10 tests), `storage-sqlite.test.ts` (15 tests), `storage-migration.test.ts` (5 tests)
+
+### Changed
+- `src/standalone/server.ts`: chokidar file watcher is skipped when the active storage engine is `sqlite` (no `.md` files to watch)
 - **Multi-select cards**: Cmd/Ctrl+click to toggle individual cards, Shift+click to select a range, "Select All" in column menu
 - **Bulk actions bar**: floating toolbar when multiple cards are selected with Move to, Priority, Assign, Labels, and Delete actions
 - Multi-card drag & drop to move selected cards to another column

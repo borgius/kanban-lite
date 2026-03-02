@@ -168,6 +168,11 @@ kl settings update --compactMode true                   # Update a setting
 # Workspace
 kl pwd                                                  # Print workspace root path
 
+# Storage engine
+kl storage status                                       # Show current engine
+kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db  # Migrate to SQLite
+kl storage migrate-to-markdown                          # Migrate back to markdown
+
 # Start web server
 kl serve                                                # Start on port 3000
 kl serve --port 8080 --no-browser                       # Custom port, no auto-open
@@ -272,7 +277,10 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/workspace` | Get workspace root path |
+| `GET` | `/api/workspace` | Get workspace root path and storage engine |
+| `GET` | `/api/storage` | Get current storage engine type and config |
+| `POST` | `/api/storage/migrate-to-sqlite` | Migrate cards to SQLite (`{ sqlitePath? }`) |
+| `POST` | `/api/storage/migrate-to-markdown` | Migrate cards back to markdown files |
 
 #### Comments
 
@@ -510,7 +518,10 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_webhook` | Register a new webhook |
 | `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
-| `get_workspace_info` | Get workspace root path and features directory |
+| `get_workspace_info` | Get workspace root path, storage engine, and features directory |
+| `get_storage_status` | Get current storage engine type and configuration |
+| `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
+| `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |
 
 All card, column, comment, and attachment tools accept an optional `boardId` parameter to target a specific board.
 
@@ -612,6 +623,64 @@ Yes, good idea. I'll add that as a follow-up.
 ```
 
 Comments are stored as additional YAML documents in the same file, keeping everything in one place and version-controllable.
+
+## Storage Engines
+
+By default cards are stored as markdown files. You can optionally switch to a **SQLite** backend to keep all card data in a single database file — useful for programmatic access or performance at scale.
+
+The active engine is configured in `.kanban.json`:
+
+```json
+{
+  "storageEngine": "sqlite",
+  "sqlitePath": ".kanban/kanban.db"
+}
+```
+
+| Engine | Default | Card storage | Config storage |
+|--------|---------|--------------|----------------|
+| `markdown` | ✓ | `.kanban/boards/<board>/<status>/*.md` | `.kanban.json` |
+| `sqlite` | | `.kanban/kanban.db` (configurable) | `.kanban.json` |
+
+In both cases `.kanban.json` remains the source of truth for board config, columns, labels, settings, and webhooks.
+
+### Migrating between engines
+
+**CLI:**
+```bash
+# Check current engine
+kl storage status
+
+# Migrate to SQLite
+kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db
+
+# Migrate back to markdown
+kl storage migrate-to-markdown
+```
+
+**REST API:**
+```bash
+curl -X POST http://localhost:3000/api/storage/migrate-to-sqlite \
+  -H 'Content-Type: application/json' \
+  -d '{"sqlitePath": ".kanban/kanban.db"}'
+```
+
+**SDK:**
+```ts
+const sdk = new KanbanSDK('.kanban')
+await sdk.init()
+
+// Migrate to SQLite
+const count = await sdk.migrateToSqlite('.kanban/kanban.db')
+console.log(`Migrated ${count} cards to SQLite`)
+
+// Or migrate back
+await sdk.migrateToMarkdown()
+```
+
+Existing files / the database are **not deleted** during migration — they serve as a manual backup until you remove them.
+
+**MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
 
 ## Configuration
 

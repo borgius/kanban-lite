@@ -1,4 +1,3 @@
-import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
@@ -7,11 +6,11 @@ import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCa
 import type { BoardConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import type { Priority } from '../shared/types'
-import { parseCardFile, serializeCard } from './parser'
-import { ensureDirectories, ensureStatusSubfolders, getCardFilePath, getStatusFromPath, moveCardFile, renameCardFile } from './fileUtils'
+import { getCardFilePath } from './fileUtils'
 import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
 import { sanitizeCard } from './types'
-import { migrateFileSystemToMultiBoard } from './migration'
+import type { StorageEngine } from './storage/types'
+import { createStorageEngine } from './storage'
 import { matchesMetaFilter } from './metaUtils'
 
 /**
@@ -35,13 +34,15 @@ import { matchesMetaFilter } from './metaUtils'
 export class KanbanSDK {
   private _migrated = false
   private _onEvent?: SDKEventHandler
+  private _storage: StorageEngine
 
   /**
    * Creates a new KanbanSDK instance.
    *
    * @param kanbanDir - Absolute path to the `.kanban` kanban directory.
    *   The parent of this directory is treated as the workspace root.
-   * @param options - Optional configuration including an event handler callback.
+   * @param options - Optional configuration including an event handler callback
+   *   and storage engine selection.
    *
    * @example
    * ```ts
@@ -51,10 +52,35 @@ export class KanbanSDK {
    * const sdk = new KanbanSDK('/home/user/my-project/.kanban', {
    *   onEvent: (event, data) => fireWebhooks(root, event, data)
    * })
+   *
+   * // Force SQLite storage
+   * const sdk = new KanbanSDK('/home/user/my-project/.kanban', {
+   *   storageEngine: 'sqlite'
+   * })
    * ```
    */
   constructor(public readonly kanbanDir: string, options?: SDKOptions) {
     this._onEvent = options?.onEvent
+    this._storage = options?.storage ?? createStorageEngine(kanbanDir, {
+      storageEngine: options?.storageEngine,
+      sqlitePath: options?.sqlitePath,
+    })
+  }
+
+  /**
+   * The active storage engine powering this SDK instance.
+   * Returns `'markdown'` or `'sqlite'`.
+   */
+  get storageEngine(): StorageEngine {
+    return this._storage
+  }
+
+  /**
+   * Closes the storage engine and releases any held resources (e.g. database
+   * connections). Call this when the SDK instance is no longer needed.
+   */
+  close(): void {
+    this._storage.close()
   }
 
   /**
@@ -110,7 +136,7 @@ export class KanbanSDK {
 
   private async _ensureMigrated(): Promise<void> {
     if (this._migrated) return
-    await migrateFileSystemToMultiBoard(this.kanbanDir)
+    await this._storage.migrate()
     this._migrated = true
   }
 
@@ -130,10 +156,10 @@ export class KanbanSDK {
    * ```
    */
   async init(): Promise<void> {
-    await this._ensureMigrated()
+    await this._storage.init()
+    this._migrated = true
     const boardDir = this._boardDir()
-    await ensureDirectories(boardDir)
-    await ensureStatusSubfolders(boardDir, [DELETED_STATUS_ID])
+    await this._storage.ensureBoardDirs(boardDir, [DELETED_STATUS_ID])
   }
 
   // --- Board management ---
@@ -252,13 +278,9 @@ export class KanbanSDK {
       throw new Error(`Cannot delete board "${boardId}": ${cards.length} card(s) still exist`)
     }
 
-    // Remove board directory
+    // Remove board data from storage
     const boardDir = this._boardDir(boardId)
-    try {
-      await fs.rm(boardDir, { recursive: true })
-    } catch {
-      // Directory might not exist
-    }
+    await this._storage.deleteBoardData(boardDir, boardId)
 
     delete config.boards[boardId]
     writeConfig(this.workspaceRoot, config)
@@ -365,22 +387,24 @@ export class KanbanSDK {
     const toBoard = config.boards[toBoardId]
     const newStatus = targetStatus || toBoard.defaultStatus || toBoard.columns[0]?.id || 'backlog'
 
-    // Ensure target directory exists
-    const targetDir = path.join(toBoardDir, newStatus)
-    await fs.mkdir(targetDir, { recursive: true })
+    // Ensure target directory exists (no-op for SQLite)
+    await this._storage.ensureBoardDirs(toBoardDir, [newStatus])
 
-    // Move file
-    const oldPath = card.filePath
-    const filename = path.basename(oldPath)
-    const newPath = path.join(targetDir, filename)
-    await fs.rename(oldPath, newPath)
+    // Remove card from source board storage
+    await this._storage.deleteCard(card)
 
     // Update card metadata
     card.status = newStatus
     card.boardId = toBoardId
-    card.filePath = newPath
     card.modified = new Date().toISOString()
     card.completedAt = this._isCompletedStatus(newStatus, toBoardId) ? new Date().toISOString() : null
+
+    // Update filePath for markdown engine
+    if (this._storage.type === 'markdown') {
+      card.filePath = path.join(toBoardDir, newStatus, path.basename(card.filePath))
+    } else {
+      card.filePath = ''
+    }
 
     // Recompute order for target column
     const targetCards = await this.listCards(undefined, toBoardId)
@@ -390,7 +414,7 @@ export class KanbanSDK {
     const lastOrder = cardsInStatus.length > 0 ? cardsInStatus[cardsInStatus.length - 1].order : null
     card.order = generateKeyBetween(lastOrder, null)
 
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
     return card
@@ -443,64 +467,10 @@ export class KanbanSDK {
     const boardDir = this._boardDir(boardId)
     const resolvedBoardId = this._resolveBoardId(boardId)
 
-    await ensureDirectories(boardDir)
-    if (columns) {
-      await ensureStatusSubfolders(boardDir, columns)
-    }
+    await this._storage.ensureBoardDirs(boardDir, columns)
 
-    // Phase 1: Migrate flat root .md files into their status subfolder
-    try {
-      const rootFiles = await this._readMdFiles(boardDir)
-      for (const filePath of rootFiles) {
-        try {
-          const card = await this._loadCard(filePath)
-          if (card) {
-            await moveCardFile(filePath, boardDir, card.status, card.attachments)
-          }
-        } catch {
-          // Skip files that fail to migrate
-        }
-      }
-    } catch {
-      // Skip
-    }
-
-    // Phase 2: Load .md files from ALL subdirectories
-    const cards: Card[] = []
-    let entries: import('fs').Dirent[]
-    try {
-      entries = await fs.readdir(boardDir, { withFileTypes: true }) as import('fs').Dirent[]
-    } catch {
-      return []
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const subdir = path.join(boardDir, entry.name)
-      try {
-        const mdFiles = await this._readMdFiles(subdir)
-        for (const filePath of mdFiles) {
-          const card = await this._loadCard(filePath)
-          if (card) {
-            card.boardId = resolvedBoardId
-            cards.push(card)
-          }
-        }
-      } catch {
-        // Skip unreadable directories
-      }
-    }
-
-    // Phase 3: Reconcile status ↔ folder mismatches
-    for (const card of cards) {
-      const pathStatus = getStatusFromPath(card.filePath, boardDir)
-      if (pathStatus !== null && pathStatus !== card.status) {
-        try {
-          card.filePath = await moveCardFile(card.filePath, boardDir, card.status, card.attachments)
-        } catch {
-          // Will retry on next load
-        }
-      }
-    }
+    // Load all cards from the storage engine
+    const cards = await this._storage.scanCards(boardDir, resolvedBoardId)
 
     // Migrate legacy integer order values to fractional indices
     const hasLegacyOrder = cards.some(c => /^\d+$/.test(c.order))
@@ -516,7 +486,7 @@ export class KanbanSDK {
         const keys = generateNKeysBetween(null, null, columnCards.length)
         for (let i = 0; i < columnCards.length; i++) {
           columnCards[i].order = keys[i]
-          await fs.writeFile(columnCards[i].filePath, serializeCard(columnCards[i]), 'utf-8')
+          await this._storage.writeCard(columnCards[i])
         }
       }
     }
@@ -602,7 +572,7 @@ export class KanbanSDK {
     await this._ensureMigrated()
     const resolvedBoardId = this._resolveBoardId(data.boardId)
     const boardDir = this._boardDir(resolvedBoardId)
-    await ensureDirectories(boardDir)
+    await this._storage.ensureBoardDirs(boardDir)
 
     const config = readConfig(this.workspaceRoot)
     const board = config.boards[resolvedBoardId]
@@ -641,11 +611,12 @@ export class KanbanSDK {
       content: data.content,
       ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
       ...(data.actions && data.actions.length > 0 ? { actions: data.actions } : {}),
-      filePath: getCardFilePath(boardDir, status, filename)
+      filePath: this._storage.type === 'markdown'
+        ? getCardFilePath(boardDir, status, filename)
+        : ''
     }
 
-    await fs.mkdir(path.dirname(card.filePath), { recursive: true })
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('task.created', sanitizeCard(card))
     return card
@@ -694,20 +665,21 @@ export class KanbanSDK {
     }
 
     // Write updated content
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
-    // Rename file if title changed (numeric-ID cards only)
+    // Rename file if title changed (numeric-ID cards, markdown engine only)
     const newTitle = getTitleFromContent(card.content)
     const numericId = extractNumericId(card.id)
     if (numericId !== null && newTitle !== oldTitle) {
       const newFilename = generateCardFilename(numericId, newTitle)
-      card.filePath = await renameCardFile(card.filePath, newFilename)
+      const newPath = await this._storage.renameCard(card, newFilename)
+      if (newPath) card.filePath = newPath
     }
 
-    // Move file if status changed
+    // Move card if status changed
     if (oldStatus !== card.status) {
-      const newPath = await moveCardFile(card.filePath, boardDir, card.status, card.attachments)
-      card.filePath = newPath
+      const newPath = await this._storage.moveCard(card, boardDir, card.status)
+      if (newPath) card.filePath = newPath
     }
 
     this.emitEvent('task.updated', sanitizeCard(card))
@@ -818,13 +790,13 @@ export class KanbanSDK {
     const after = pos < targetColumnCards.length ? targetColumnCards[pos].order : null
     card.order = generateKeyBetween(before, after)
 
-    // Write updated content
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    // Write updated content (order + timestamps)
+    await this._storage.writeCard(card)
 
-    // Move file if status changed
+    // Move to new status directory (no-op for SQLite)
     if (oldStatus !== newStatus) {
-      const newPath = await moveCardFile(card.filePath, boardDir, newStatus, card.attachments)
-      card.filePath = newPath
+      const newPath = await this._storage.moveCard(card, boardDir, newStatus)
+      if (newPath) card.filePath = newPath
     }
 
     this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus: oldStatus })
@@ -870,7 +842,7 @@ export class KanbanSDK {
     const card = await this.getCard(cardId, boardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     const snapshot = sanitizeCard(card)
-    await fs.unlink(card.filePath)
+    await this._storage.deleteCard(card)
     this.emitEvent('task.deleted', snapshot)
   }
 
@@ -1118,14 +1090,9 @@ export class KanbanSDK {
     if (!card) throw new Error(`Card not found: ${cardId}`)
 
     const fileName = path.basename(sourcePath)
-    const cardDir = path.dirname(card.filePath)
-    const destPath = path.join(cardDir, fileName)
 
-    // Copy file if it's not already in the card's directory
-    const sourceDir = path.dirname(path.resolve(sourcePath))
-    if (sourceDir !== cardDir) {
-      await fs.copyFile(path.resolve(sourcePath), destPath)
-    }
+    // Copy file into the card's attachment directory
+    await this._storage.copyAttachment(sourcePath, card)
 
     // Add to attachments if not already present
     if (!card.attachments.includes(fileName)) {
@@ -1133,7 +1100,7 @@ export class KanbanSDK {
     }
 
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('attachment.added', { cardId, attachment: fileName })
     return card
@@ -1162,7 +1129,7 @@ export class KanbanSDK {
 
     card.attachments = card.attachments.filter(a => a !== attachment)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('attachment.removed', { cardId, attachment })
     return card
@@ -1253,7 +1220,7 @@ export class KanbanSDK {
 
     card.comments.push(comment)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('comment.created', { ...comment, cardId })
     return card
@@ -1284,7 +1251,7 @@ export class KanbanSDK {
 
     comment.content = content
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     this.emitEvent('comment.updated', { ...comment, cardId })
     return card
@@ -1311,7 +1278,7 @@ export class KanbanSDK {
     const comment = (card.comments || []).find(c => c.id === commentId)
     card.comments = (card.comments || []).filter(c => c.id !== commentId)
     card.modified = new Date().toISOString()
-    await fs.writeFile(card.filePath, serializeCard(card), 'utf-8')
+    await this._storage.writeCard(card)
 
     if (comment) {
       this.emitEvent('comment.deleted', { ...comment, cardId })
@@ -1594,18 +1561,118 @@ export class KanbanSDK {
     this.emitEvent('settings.updated', settings)
   }
 
-  // --- Private helpers ---
+  // ---------------------------------------------------------------------------
+  // Storage migration
+  // ---------------------------------------------------------------------------
 
-  private async _readMdFiles(dir: string): Promise<string[]> {
-    const entries = await fs.readdir(dir, { withFileTypes: true })
-    return entries
-      .filter(e => e.isFile() && e.name.endsWith('.md'))
-      .map(e => path.join(dir, e.name))
+  /**
+   * Migrates all card data from the current storage engine to SQLite.
+   *
+   * Cards are scanned from every board using the active engine, then written
+   * to a new {@link SqliteStorageEngine}. After all data has been copied the
+   * workspace `.kanban.json` is updated with `storageEngine: 'sqlite'` and
+   * `sqlitePath` so that subsequent SDK instances use the new engine.
+   *
+   * The existing markdown files are **not** deleted; they serve as a manual
+   * backup until the caller explicitly removes them.
+   *
+   * @param dbPath - Path to the SQLite database file. Relative paths are
+   *   resolved from the workspace root. Defaults to `'.kanban/kanban.db'`.
+   * @returns The total number of cards migrated.
+   * @throws {Error} If the current engine is already `'sqlite'`.
+   *
+   * @example
+   * ```ts
+   * const count = await sdk.migrateToSqlite()
+   * console.log(`Migrated ${count} cards to SQLite`)
+   * ```
+   */
+  async migrateToSqlite(dbPath?: string): Promise<number> {
+    if (this._storage.type === 'sqlite') {
+      throw new Error('Storage engine is already sqlite')
+    }
+    await this._ensureMigrated()
+
+    const resolvedDbPath = dbPath ?? '.kanban/kanban.db'
+    const absDbPath = path.resolve(this.workspaceRoot, resolvedDbPath)
+
+    const { SqliteStorageEngine } = await import('./storage/sqlite')
+    const sqliteEngine = new SqliteStorageEngine(this._storage.kanbanDir, absDbPath)
+    await sqliteEngine.init()
+
+    const config = readConfig(this.workspaceRoot)
+    const boardIds = Object.keys(config.boards)
+
+    let count = 0
+    for (const boardId of boardIds) {
+      const boardDir = path.join(this._storage.kanbanDir, 'boards', boardId)
+      const cards = await this._storage.scanCards(boardDir, boardId)
+      for (const card of cards) {
+        await sqliteEngine.writeCard({ ...card, filePath: '' })
+        count++
+      }
+    }
+
+    sqliteEngine.close()
+
+    writeConfig(this.workspaceRoot, { ...config, storageEngine: 'sqlite', sqlitePath: resolvedDbPath })
+    this.emitEvent('storage.migrated', { from: 'markdown', to: 'sqlite', count })
+    return count
   }
 
-  private async _loadCard(filePath: string): Promise<Card | null> {
-    const content = await fs.readFile(filePath, 'utf-8')
-    return parseCardFile(content, filePath)
+  /**
+   * Migrates all card data from the current SQLite engine back to markdown files.
+   *
+   * Cards are scanned from every board in the SQLite database and written as
+   * individual `.md` files under `.kanban/boards/<boardId>/<status>/`. After
+   * migration the workspace `.kanban.json` is updated to remove the
+   * `storageEngine`/`sqlitePath` overrides so the default markdown engine is
+   * used by subsequent SDK instances.
+   *
+   * The SQLite database file is **not** deleted; it serves as a manual backup.
+   *
+   * @returns The total number of cards migrated.
+   * @throws {Error} If the current engine is already `'markdown'`.
+   *
+   * @example
+   * ```ts
+   * const count = await sdk.migrateToMarkdown()
+   * console.log(`Migrated ${count} cards to markdown`)
+   * ```
+   */
+  async migrateToMarkdown(): Promise<number> {
+    if (this._storage.type === 'markdown') {
+      throw new Error('Storage engine is already markdown')
+    }
+    await this._ensureMigrated()
+
+    const { MarkdownStorageEngine } = await import('./storage/markdown')
+    const mdEngine = new MarkdownStorageEngine(this._storage.kanbanDir)
+    await mdEngine.init()
+
+    const config = readConfig(this.workspaceRoot)
+    const boardIds = Object.keys(config.boards)
+
+    let count = 0
+    for (const boardId of boardIds) {
+      const boardDir = path.join(this._storage.kanbanDir, 'boards', boardId)
+      const cards = await this._storage.scanCards(boardDir, boardId)
+      for (const card of cards) {
+        const numericId = Number(card.id) || 0
+        const title = getTitleFromContent(card.content) || card.id
+        const filename = generateCardFilename(numericId, title)
+        const filePath = getCardFilePath(boardDir, card.status, filename)
+        await mdEngine.writeCard({ ...card, filePath })
+        count++
+      }
+    }
+
+    mdEngine.close()
+
+    const { storageEngine: _se, sqlitePath: _sp, ...restConfig } = config as typeof config & { storageEngine?: string; sqlitePath?: string }
+    writeConfig(this.workspaceRoot, restConfig as typeof config)
+    this.emitEvent('storage.migrated', { from: 'sqlite', to: 'markdown', count })
+    return count
   }
 
 }

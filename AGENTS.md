@@ -1,6 +1,6 @@
 # Kanban Markdown - Development Guide
 
-A VSCode extension + standalone server + CLI + MCP server for managing kanban boards stored as markdown files.
+A VSCode extension + standalone server + CLI + MCP server for managing kanban boards stored as markdown files (default) or SQLite.
 
 ## Architecture
 
@@ -18,6 +18,10 @@ src/
 ## Key Files
 
 - `src/sdk/KanbanSDK.ts` - Core card/column CRUD operations
+- `src/sdk/storage/types.ts` - StorageEngine interface and BootstrapConfig
+- `src/sdk/storage/markdown.ts` - MarkdownStorageEngine (default)
+- `src/sdk/storage/sqlite.ts` - SqliteStorageEngine (better-sqlite3)
+- `src/sdk/storage/index.ts` - Storage engine factory + readBootstrapConfig
 - `src/sdk/parser.ts` - Markdown frontmatter parsing and serialization
 - `src/shared/types.ts` - All TypeScript types and enums
 - `src/shared/config.ts` - `.kanban.json` config read/write, settings conversion
@@ -54,10 +58,22 @@ Never implement a feature directly in an interface layer without the SDK method 
 
 ## Data Storage
 
-- Cards: `.kanban/{status}/card-name-YYYY-MM-DD.md` (markdown with YAML frontmatter)
-- Config: `.kanban.json` (columns, display settings, label definitions)
+- Cards (markdown engine): `.kanban/boards/<boardId>/<status>/card-name-YYYY-MM-DD.md`
+- Cards (sqlite engine): `.kanban/kanban.db` (configurable via `sqlitePath` in `.kanban.json`)
+- Config: `.kanban.json` (boards, columns, display settings, label definitions)
 - Webhooks: `.kanban-webhooks.json`
-- SDK board config: `.kanban/board.json` (used by SDK for column management)
+
+## Storage Engines
+
+The `StorageEngine` interface (`src/sdk/storage/types.ts`) abstracts all card I/O. Only card data (cards, comments) is engine-dependent — workspace config always lives in `.kanban.json`.
+
+- **MarkdownStorageEngine** — default; full backward compatibility
+- **SqliteStorageEngine** — single DB file; no chokidar watcher needed in server.ts
+- Factory: `createStorageEngine(kanbanDir, options?)` in `src/sdk/storage/index.ts`
+- Bootstrap: `readBootstrapConfig(workspaceRoot)` reads only `storageEngine`/`sqlitePath` before engine creation (chicken-and-egg resolution)
+- SDK migration methods: `migrateToSqlite(dbPath?)` and `migrateToMarkdown()`
+- `filePath` is set to `''` for SQLite cards; `sanitizeCard()` strips it from API responses
+- **Caution**: JSDoc backticks inside `/** ... */` TypeScript interface comments may contain patterns like `**/` which prematurely close the comment block (e.g. glob patterns). Use prose descriptions instead.
 
 ## Card Metadata
 

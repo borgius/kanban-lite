@@ -1313,7 +1313,59 @@ ${bold('Webhook Options:')}
 ${bold('Serve Options:')}
   --port <number>             Port to listen on (default: 3000)
   --no-browser                Don't open browser automatically
+
+${bold('Storage Commands:')}
+  storage status              Show current storage engine
+  storage migrate-to-sqlite   Migrate cards to SQLite (--sqlite-path <path>)
+  storage migrate-to-markdown Migrate cards back to markdown files
 `)
+}
+
+// --- Storage ---
+
+async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
+  const sub = positional[0] || 'status'
+
+  if (sub === 'status') {
+    const type = sdk.storageEngine.type
+    const cfg = readConfig(workspaceRoot)
+    if (flags.json) {
+      console.log(JSON.stringify({ storageEngine: type, sqlitePath: cfg.sqlitePath ?? null }))
+    } else {
+      console.log(`Storage engine: ${bold(type)}`)
+      if (cfg.sqlitePath) console.log(`SQLite path:    ${cfg.sqlitePath}`)
+    }
+    return
+  }
+
+  if (sub === 'migrate-to-sqlite') {
+    const dbPath = typeof flags['sqlite-path'] === 'string' ? flags['sqlite-path'] : undefined
+    console.log('Migrating cards to SQLite…')
+    const count = await sdk.migrateToSqlite(dbPath)
+    if (flags.json) {
+      console.log(JSON.stringify({ ok: true, count, storageEngine: 'sqlite' }))
+    } else {
+      console.log(green(`✓ Migrated ${count} card(s) to SQLite`))
+      const cfg = readConfig(workspaceRoot)
+      console.log(`  Database: ${cfg.sqlitePath ?? '.kanban/kanban.db'}`)
+    }
+    return
+  }
+
+  if (sub === 'migrate-to-markdown') {
+    console.log('Migrating cards to markdown…')
+    const count = await sdk.migrateToMarkdown()
+    if (flags.json) {
+      console.log(JSON.stringify({ ok: true, count, storageEngine: 'markdown' }))
+    } else {
+      console.log(green(`✓ Migrated ${count} card(s) to markdown`))
+    }
+    return
+  }
+
+  console.error(red(`Unknown storage sub-command: ${sub}`))
+  console.error('Usage: kl storage <status|migrate-to-sqlite|migrate-to-markdown>')
+  process.exit(1)
 }
 
 // --- Main ---
@@ -1428,6 +1480,9 @@ async function main(): Promise<void> {
       break
     case 'init':
       await cmdInit(sdk)
+      break
+    case 'storage':
+      await cmdStorage(sdk, positional, flags, workspaceRoot)
       break
     default:
       console.error(red(`Unknown command: ${command}`))

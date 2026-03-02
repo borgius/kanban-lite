@@ -1343,7 +1343,43 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     params = route('GET', '/api/workspace')
     if (params) {
       const wsConfig = readConfig(workspaceRoot)
-      return jsonOk(res, { path: workspaceRoot, port: wsConfig.port })
+      return jsonOk(res, {
+        path: workspaceRoot,
+        port: wsConfig.port,
+        storageEngine: sdk.storageEngine.type,
+        sqlitePath: wsConfig.sqlitePath
+      })
+    }
+
+    params = route('GET', '/api/storage')
+    if (params) {
+      const wsConfig = readConfig(workspaceRoot)
+      return jsonOk(res, {
+        type: sdk.storageEngine.type,
+        sqlitePath: wsConfig.sqlitePath
+      })
+    }
+
+    params = route('POST', '/api/storage/migrate-to-sqlite')
+    if (params) {
+      try {
+        const body = await readBody(req)
+        const dbPath = typeof body.sqlitePath === 'string' ? body.sqlitePath : undefined
+        const count = await sdk.migrateToSqlite(dbPath)
+        return jsonOk(res, { ok: true, count, storageEngine: 'sqlite' })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/storage/migrate-to-markdown')
+    if (params) {
+      try {
+        const count = await sdk.migrateToMarkdown()
+        return jsonOk(res, { ok: true, count, storageEngine: 'markdown' })
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== LEGACY API (backwards compat) ====================
@@ -1450,15 +1486,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   })
 
   // --- File watcher ---
+  // Only watch for markdown file changes when using the markdown storage engine.
+  // SQLite-backed boards are updated in-process and need no filesystem watching.
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
   fs.mkdirSync(absoluteKanbanDir, { recursive: true })
-
-  const watcher = chokidar.watch(absoluteKanbanDir, {
-    ignoreInitial: true,
-    awaitWriteFinish: { stabilityThreshold: 100 }
-  })
 
   const handleFileChange = (changedPath?: string) => {
     if (changedPath && !changedPath.endsWith('.md')) return
@@ -1494,14 +1527,26 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }, 100)
   }
 
-  watcher.on('change', handleFileChange)
-  watcher.on('add', handleFileChange)
-  watcher.on('unlink', handleFileChange)
+  if (sdk.storageEngine.type === 'markdown') {
+    const watcher = chokidar.watch(absoluteKanbanDir, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 100 }
+    })
 
-  server.on('close', () => {
-    watcher.close()
-    wss.close()
-  })
+    watcher.on('change', handleFileChange)
+    watcher.on('add', handleFileChange)
+    watcher.on('unlink', handleFileChange)
+
+    server.on('close', () => {
+      watcher.close()
+      wss.close()
+    })
+  } else {
+    server.on('close', () => {
+      sdk.close()
+      wss.close()
+    })
+  }
 
   server.listen(port, () => {
     console.log(`Kanban board running at http://localhost:${port}`)

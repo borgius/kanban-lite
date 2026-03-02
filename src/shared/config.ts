@@ -96,6 +96,18 @@ export interface KanbanConfig {
   labels?: Record<string, LabelDefinition>
   /** Optional URL to POST to when a card action is triggered. */
   actionWebhookUrl?: string
+  /**
+   * Storage engine to use for this workspace.
+   * - `'markdown'` (default) — cards stored as individual `.md` files
+   * - `'sqlite'` — all data stored in a single SQLite database file
+   */
+  storageEngine?: 'markdown' | 'sqlite'
+  /**
+   * Path to the SQLite database file when `storageEngine` is `'sqlite'`.
+   * Relative paths are resolved from the workspace root.
+   * @default '.kanban/kanban.db'
+   */
+  sqlitePath?: string
 }
 
 // Legacy v1 config (for migration)

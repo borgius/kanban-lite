@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2, Check } from 'lucide-react'
+import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare } from 'lucide-react'
 import { CardItem } from './CardItem'
 import type { Card, KanbanColumn as KanbanColumnType } from '../../shared/types'
 import type { LayoutMode, SortOrder } from '../store'
@@ -16,7 +16,7 @@ const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
 interface KanbanColumnProps {
   column: KanbanColumnType
   cards: Card[]
-  onCardClick: (card: Card) => void
+  onCardClick: (card: Card, e: React.MouseEvent) => void
   onAddCard: (status: string) => void
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
@@ -32,6 +32,8 @@ interface KanbanColumnProps {
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
   selectedCardId?: string
+  selectedCardIds: string[]
+  onSelectAll: (status: string) => void
   sort: SortOrder
   onSortChange: (sort: SortOrder) => void
 }
@@ -55,6 +57,8 @@ export function KanbanColumn({
   isDeletedColumn,
   onPurgeColumn,
   selectedCardId,
+  selectedCardIds,
+  onSelectAll,
   sort,
   onSortChange
 }: KanbanColumnProps) {
@@ -166,6 +170,15 @@ export function KanbanColumn({
                       <Trash2 size={14} />
                       Cleanup List
                     </button>
+                    <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); onSelectAll(column.id) }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      <CheckSquare size={14} />
+                      Select All
+                    </button>
                   </div>
                 )}
               </div>
@@ -198,7 +211,7 @@ export function KanbanColumn({
                 draggedCard?.id === card.id ? "opacity-40" : ""
               }`}
             >
-              <CardItem card={card} onClick={() => onCardClick(card)} isSelected={card.id === selectedCardId} />
+              <CardItem card={card} onClick={(e) => onCardClick(card, e)} isSelected={selectedCardIds.includes(card.id) || card.id === selectedCardId} />
             </div>
           </div>
         ))}

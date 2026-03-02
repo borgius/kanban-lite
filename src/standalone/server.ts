@@ -466,6 +466,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>)
         break
 
+      case 'bulkUpdateCard':
+        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>)
+        break
+
       case 'openCard': {
         const cardId = msg.cardId as string
         const card = cards.find(f => f.id === cardId)

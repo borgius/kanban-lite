@@ -378,7 +378,7 @@ function CreateCardDialogContent({
   onCreate,
   initialStatus
 }: CreateCardDialogProps) {
-  const { cardSettings } = useStore()
+  const cardSettings = useStore(s => s.cardSettings)
   const [title, setTitle] = useState('')
   const [status, setStatus] = useState<CardStatus>(initialStatus ?? cardSettings.defaultStatus)
   const [priority, setPriority] = useState<Priority>(cardSettings.defaultPriority)

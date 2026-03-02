@@ -8,6 +8,7 @@ import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
+import { BulkActionsBar } from './components/BulkActionsBar'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 
@@ -27,6 +28,7 @@ function App(): React.JSX.Element {
     workspace,
     cardSettings,
     settingsOpen,
+    selectedCardIds,
     setCards,
     setColumns,
     setBoards,
@@ -35,7 +37,11 @@ function App(): React.JSX.Element {
     setWorkspace,
     setCardSettings,
     setSettingsOpen,
-    setLabelDefs
+    setLabelDefs,
+    toggleSelectCard,
+    selectCardRange,
+    selectAllInColumn,
+    clearSelection
   } = useStore()
 
   const [createCardOpen, setCreateCardOpen] = useState(false)
@@ -176,6 +182,8 @@ function App(): React.JSX.Element {
         case 'Escape':
           if (createCardOpen) {
             setCreateCardOpen(false)
+          } else if (useStore.getState().selectedCardIds.length > 0) {
+            clearSelection()
           }
           break
       }
@@ -201,7 +209,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('mousedown', handleMouseDown)
       if (altDownTimer) clearTimeout(altDownTimer)
     }
-  }, [createCardOpen, handleUndoLatest, setCardSettings])
+  }, [createCardOpen, handleUndoLatest, setCardSettings, clearSelection])
 
   // Listen for VSCode theme changes
   useEffect(() => {
@@ -295,7 +303,40 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('message', handleMessage)
   }, [setCards, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
 
-  const handleCardClick = (card: Card): void => {
+  const handleCardClick = (card: Card, e: React.MouseEvent): void => {
+    // Cmd/Ctrl+click → toggle this card in multi-selection
+    if (e.metaKey || e.ctrlKey) {
+      const current = useStore.getState().selectedCardIds
+      const next = [...current]
+      // If an editor card is open, include it in the multi-selection
+      if (editingCard && !next.includes(editingCard.id)) {
+        next.push(editingCard.id)
+      }
+      // Toggle the clicked card
+      const idx = next.indexOf(card.id)
+      if (idx >= 0) {
+        next.splice(idx, 1)
+      } else {
+        next.push(card.id)
+      }
+      useStore.setState({ selectedCardIds: next, lastClickedCardId: card.id })
+      if (editingCard) setEditingCard(null)
+      return
+    }
+    // Shift+click → range select
+    if (e.shiftKey) {
+      // If editor is open, use it as anchor for range selection
+      if (editingCard && !useStore.getState().lastClickedCardId) {
+        const current = useStore.getState().selectedCardIds
+        const next = current.includes(editingCard.id) ? [...current] : [...current, editingCard.id]
+        useStore.setState({ selectedCardIds: next, lastClickedCardId: editingCard.id })
+      }
+      selectCardRange(card.id)
+      if (editingCard) setEditingCard(null)
+      return
+    }
+    // Normal click → single select, clear multi-selection, open editor
+    clearSelection()
     // Request card content for inline editing
     vscode.postMessage({
       type: 'openCard',
@@ -449,6 +490,71 @@ function App(): React.JSX.Element {
     setCreateCardOpen(true)
   }
 
+  // --- Bulk action handlers ---
+  const handleBulkMoveToColumn = useCallback((columnId: string): void => {
+    const ids = Array.from(useStore.getState().selectedCardIds)
+    for (const cardId of ids) {
+      vscode.postMessage({ type: 'moveCard', cardId, newStatus: columnId, newOrder: -1 })
+    }
+    // Optimistic update
+    const { cards } = useStore.getState()
+    setCards(cards.map(c => ids.includes(c.id) ? { ...c, status: columnId } : c))
+    clearSelection()
+  }, [setCards, clearSelection])
+
+  const handleBulkSetPriority = useCallback((priority: Priority): void => {
+    const ids = Array.from(useStore.getState().selectedCardIds)
+    for (const cardId of ids) {
+      vscode.postMessage({ type: 'bulkUpdateCard', cardId, updates: { priority } })
+    }
+    const { cards } = useStore.getState()
+    setCards(cards.map(c => ids.includes(c.id) ? { ...c, priority } : c))
+    clearSelection()
+  }, [setCards, clearSelection])
+
+  const handleBulkSetAssignee = useCallback((assignee: string | null): void => {
+    const ids = Array.from(useStore.getState().selectedCardIds)
+    for (const cardId of ids) {
+      vscode.postMessage({ type: 'bulkUpdateCard', cardId, updates: { assignee } })
+    }
+    const { cards } = useStore.getState()
+    setCards(cards.map(c => ids.includes(c.id) ? { ...c, assignee } : c))
+    clearSelection()
+  }, [setCards, clearSelection])
+
+  const handleBulkAddLabels = useCallback((labels: string[]): void => {
+    const ids = Array.from(useStore.getState().selectedCardIds)
+    const { cards } = useStore.getState()
+    for (const cardId of ids) {
+      const card = cards.find(c => c.id === cardId)
+      if (!card) continue
+      const merged = Array.from(new Set([...card.labels, ...labels]))
+      vscode.postMessage({ type: 'bulkUpdateCard', cardId, updates: { labels: merged } })
+    }
+    setCards(cards.map(c => {
+      if (!ids.includes(c.id)) return c
+      return { ...c, labels: Array.from(new Set([...c.labels, ...labels])) }
+    }))
+    clearSelection()
+  }, [setCards, clearSelection])
+
+  const handleBulkDelete = useCallback((): void => {
+    const ids = Array.from(useStore.getState().selectedCardIds)
+    for (const cardId of ids) {
+      handleDeleteCard(cardId)
+    }
+    clearSelection()
+  }, [handleDeleteCard, clearSelection])
+
+  const handleBulkMoveCards = useCallback((cardIds: string[], newStatus: string): void => {
+    for (const cardId of cardIds) {
+      vscode.postMessage({ type: 'moveCard', cardId, newStatus, newOrder: -1 })
+    }
+    const { cards } = useStore.getState()
+    setCards(cards.map(c => cardIds.includes(c.id) ? { ...c, status: newStatus } : c))
+    clearSelection()
+  }, [setCards, clearSelection])
+
   const handleCreateCard = (data: {
     status: string
     priority: Priority
@@ -530,19 +636,22 @@ function App(): React.JSX.Element {
         onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className={`board-zoom-scope ${editingCard ? 'w-1/2' : 'w-full'}`}>
+        <div className={`board-zoom-scope ${editingCard && selectedCardIds.length === 0 ? 'w-1/2' : 'w-full'}`}>
           <KanbanBoard
             onCardClick={handleCardClick}
             onAddCard={handleAddCardInColumn}
             onMoveCard={handleMoveCard}
+            onMoveCards={handleBulkMoveCards}
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
             onCleanupColumn={handleCleanupColumn}
             onPurgeDeletedCards={handlePurgeDeletedCards}
             selectedCardId={editingCard?.id}
+            selectedCardIds={selectedCardIds}
+            onSelectAll={selectAllInColumn}
           />
         </div>
-        {editingCard && (
+        {editingCard && selectedCardIds.length === 0 && (
           <div className="w-1/2" style={{ fontSize: `calc(1em * var(--card-zoom, 1))` }}>
             <CardEditor
               cardId={editingCard.id}
@@ -571,6 +680,18 @@ function App(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {selectedCardIds.length > 1 && (
+        <BulkActionsBar
+          selectedCount={selectedCardIds.length}
+          onClearSelection={clearSelection}
+          onMoveToColumn={handleBulkMoveToColumn}
+          onSetPriority={handleBulkSetPriority}
+          onSetAssignee={handleBulkSetAssignee}
+          onAddLabels={handleBulkAddLabels}
+          onDelete={handleBulkDelete}
+        />
+      )}
 
       <CreateCardDialog
         isOpen={createCardOpen}

@@ -134,6 +134,9 @@ export class KanbanPanel {
           case 'updateCard':
             await this._updateCard(message.cardId, message.updates)
             break
+          case 'bulkUpdateCard':
+            await this._updateCard(message.cardId, message.updates)
+            break
           case 'openCard': {
             const openRoot = this._getWorkspaceRoot()
             const openCfg = openRoot ? readConfig(openRoot) : DEFAULT_CONFIG

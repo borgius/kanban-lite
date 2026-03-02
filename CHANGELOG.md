@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-select cards**: Cmd/Ctrl+click to toggle individual cards, Shift+click to select a range, "Select All" in column menu
+- **Bulk actions bar**: floating toolbar when multiple cards are selected with Move to, Priority, Assign, Labels, and Delete actions
+- Multi-card drag & drop to move selected cards to another column
 - `kl mcp` CLI command — starts the MCP server over stdio, allowing `kanban-lite` to be used as the `command` in MCP client config (e.g. `npx kanban-lite mcp`)
 
 ### Changed

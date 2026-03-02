@@ -23,6 +23,11 @@ interface KanbanState {
   settingsOpen: boolean
   labelDefs: Record<string, LabelDefinition>
 
+  /** Multi-select: array of selected card IDs */
+  selectedCardIds: string[]
+  /** Multi-select: last clicked card ID for shift-range selection */
+  lastClickedCardId: string | null
+
   setWorkspace: (workspace: WorkspaceInfo) => void
   setLabelDefs: (labels: Record<string, LabelDefinition>) => void
   setCards: (cards: Card[]) => void
@@ -50,6 +55,13 @@ interface KanbanState {
   getUniqueAssignees: () => string[]
   getUniqueLabels: () => string[]
   hasActiveFilters: () => boolean
+
+  /** Multi-select actions */
+  toggleSelectCard: (cardId: string) => void
+  selectCardRange: (cardId: string) => void
+  selectAllInColumn: (status: string) => void
+  clearSelection: () => void
+  setSelectedCardIds: (ids: string[]) => void
 }
 
 const getInitialDarkMode = (): boolean => {
@@ -136,6 +148,8 @@ export const useStore = create<KanbanState>((set, get) => ({
   },
   settingsOpen: false,
   labelDefs: {},
+  selectedCardIds: [] as string[],
+  lastClickedCardId: null,
 
   setWorkspace: (workspace) => set({ workspace }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
@@ -310,5 +324,49 @@ export const useStore = create<KanbanState>((set, get) => ({
       dueDateFilter !== 'all' ||
       Object.keys(columnSorts).length > 0
     )
-  }
+  },
+
+  toggleSelectCard: (cardId) => set((state) => {
+    const has = state.selectedCardIds.includes(cardId)
+    const next = has
+      ? state.selectedCardIds.filter(id => id !== cardId)
+      : [...state.selectedCardIds, cardId]
+    return { selectedCardIds: next, lastClickedCardId: cardId }
+  }),
+
+  selectCardRange: (cardId) => set((state) => {
+    if (!state.lastClickedCardId) {
+      return { selectedCardIds: [cardId], lastClickedCardId: cardId }
+    }
+    // Find both cards in the visible card list across all columns
+    const allVisible: Card[] = []
+    for (const col of state.columns) {
+      allVisible.push(...get().getFilteredCardsByStatus(col.id))
+    }
+    const startIdx = allVisible.findIndex(c => c.id === state.lastClickedCardId)
+    const endIdx = allVisible.findIndex(c => c.id === cardId)
+    if (startIdx === -1 || endIdx === -1) {
+      return { selectedCardIds: [cardId], lastClickedCardId: cardId }
+    }
+    const lo = Math.min(startIdx, endIdx)
+    const hi = Math.max(startIdx, endIdx)
+    const existing = new Set(state.selectedCardIds)
+    for (let i = lo; i <= hi; i++) {
+      existing.add(allVisible[i].id)
+    }
+    return { selectedCardIds: Array.from(existing), lastClickedCardId: cardId }
+  }),
+
+  selectAllInColumn: (status) => set((state) => {
+    const colCards = get().getFilteredCardsByStatus(status)
+    const existing = new Set(state.selectedCardIds)
+    for (const c of colCards) {
+      existing.add(c.id)
+    }
+    return { selectedCardIds: Array.from(existing) }
+  }),
+
+  clearSelection: () => set({ selectedCardIds: [], lastClickedCardId: null }),
+
+  setSelectedCardIds: (ids) => set({ selectedCardIds: ids })
 }))

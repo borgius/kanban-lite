@@ -7,7 +7,7 @@ import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
 
 interface CardItemProps {
   card: Card
-  onClick: () => void
+  onClick: (e: React.MouseEvent) => void
   isDragging?: boolean
   isSelected?: boolean
 }
@@ -41,7 +41,7 @@ function renderDescriptionHtml(text: string): string {
 }
 
 export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
-  const { cardSettings } = useStore()
+  const cardSettings = useStore(s => s.cardSettings)
   const labelDefs = useStore(s => s.labelDefs)
   const title = getTitleFromContent(card.content)
   const description = getDescriptionFromContent(card.content)

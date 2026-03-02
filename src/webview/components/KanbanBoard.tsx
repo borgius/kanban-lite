@@ -11,17 +11,20 @@ export interface DropTarget {
 }
 
 interface KanbanBoardProps {
-  onCardClick: (card: Card) => void
+  onCardClick: (card: Card, e: React.MouseEvent) => void
   onAddCard: (status: string) => void
   onMoveCard: (cardId: string, newStatus: string, newOrder: number) => void
+  onMoveCards: (cardIds: string[], newStatus: string) => void
   onEditColumn: (columnId: string) => void
   onRemoveColumn: (columnId: string) => void
   onCleanupColumn: (columnId: string) => void
   onPurgeDeletedCards: () => void
   selectedCardId?: string
+  selectedCardIds: string[]
+  onSelectAll: (status: string) => void
 }
 
-export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedCardId }: KanbanBoardProps) {
+export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedCardId, selectedCardIds, onSelectAll }: KanbanBoardProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,8 +60,13 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, 
   const handleDragStart = useCallback((e: React.DragEvent, card: Card) => {
     setDraggedCard(card)
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', card.id)
-  }, [])
+    // If multi-selected, store all IDs; otherwise just the single card
+    if (selectedCardIds.length > 1 && selectedCardIds.includes(card.id)) {
+      e.dataTransfer.setData('text/plain', JSON.stringify(selectedCardIds))
+    } else {
+      e.dataTransfer.setData('text/plain', card.id)
+    }
+  }, [selectedCardIds])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -86,6 +94,14 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, 
     (e: React.DragEvent, columnId: string) => {
       e.preventDefault()
       if (!draggedCard) return
+
+      // Multi-card drop: if the dragged card is part of a multi-selection, move all selected cards
+      if (selectedCardIds.length > 1 && selectedCardIds.includes(draggedCard.id)) {
+        onMoveCards([...selectedCardIds], columnId)
+        setDraggedCard(null)
+        setDropTarget(null)
+        return
+      }
 
       const filteredCards = getFilteredCardsByStatus(columnId as CardStatus)
       let filteredInsertIndex: number
@@ -136,7 +152,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, 
       setDraggedCard(null)
       setDropTarget(null)
     },
-    [draggedCard, dropTarget, getFilteredCardsByStatus, getCardsByStatus, onMoveCard]
+    [draggedCard, dropTarget, selectedCardIds, getFilteredCardsByStatus, getCardsByStatus, onMoveCard, onMoveCards]
   )
 
   const handleDragEnd = useCallback(() => {
@@ -168,6 +184,8 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, 
             dropTarget={dropTarget}
             layout={layout}
             selectedCardId={selectedCardId}
+            selectedCardIds={selectedCardIds}
+            onSelectAll={onSelectAll}
             sort={(columnSorts[column.id] || 'order') as SortOrder}
             onSortChange={(s) => setColumnSort(column.id, s)}
           />
@@ -193,6 +211,8 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onEditColumn, 
             isDeletedColumn
             onPurgeColumn={onPurgeDeletedCards}
             selectedCardId={selectedCardId}
+            selectedCardIds={selectedCardIds}
+            onSelectAll={onSelectAll}
             sort={(columnSorts[DELETED_COLUMN.id] || 'order') as SortOrder}
             onSortChange={(s) => setColumnSort(DELETED_COLUMN.id, s)}
           />

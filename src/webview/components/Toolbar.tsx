@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, Tag } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
+import { LabelPicker } from './LabelPicker'
 import type { Priority } from '../../shared/types'
 
 const priorities: { value: Priority | 'all'; label: string }[] = [
@@ -23,45 +24,49 @@ const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
 export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard, onCreateBoard }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void }) {
-  const {
-    searchQuery,
-    setSearchQuery,
-    priorityFilter,
-    setPriorityFilter,
-    assigneeFilter,
-    setAssigneeFilter,
-    labelFilter,
-    setLabelFilter,
-    dueDateFilter,
-    setDueDateFilter,
-    clearAllFilters,
-    getUniqueAssignees,
-    getUniqueLabels,
-    hasActiveFilters,
-    layout,
-    toggleLayout,
-    isDarkMode,
-    cardSettings,
-    boards,
-    currentBoard
-  } = useStore()
-
+  const searchQuery = useStore(s => s.searchQuery)
+  const setSearchQuery = useStore(s => s.setSearchQuery)
+  const priorityFilter = useStore(s => s.priorityFilter)
+  const setPriorityFilter = useStore(s => s.setPriorityFilter)
+  const assigneeFilter = useStore(s => s.assigneeFilter)
+  const setAssigneeFilter = useStore(s => s.setAssigneeFilter)
+  const labelFilter = useStore(s => s.labelFilter)
+  const setLabelFilter = useStore(s => s.setLabelFilter)
+  const dueDateFilter = useStore(s => s.dueDateFilter)
+  const setDueDateFilter = useStore(s => s.setDueDateFilter)
+  const clearAllFilters = useStore(s => s.clearAllFilters)
+  const layout = useStore(s => s.layout)
+  const toggleLayout = useStore(s => s.toggleLayout)
+  const isDarkMode = useStore(s => s.isDarkMode)
+  const cardSettings = useStore(s => s.cardSettings)
+  const boards = useStore(s => s.boards)
+  const currentBoard = useStore(s => s.currentBoard)
   const labelDefs = useStore(s => s.labelDefs)
+  const cards = useStore(s => s.cards)
 
-  const assignees = getUniqueAssignees()
-  const labels = getUniqueLabels()
-  const filtersActive = hasActiveFilters()
+  const assignees = useMemo(() => {
+    const s = new Set<string>()
+    cards.forEach(c => { if (c.assignee) s.add(c.assignee) })
+    return Array.from(s).sort()
+  }, [cards])
 
-  const groupedLabels = useMemo(() => {
-    const groups: Record<string, string[]> = {}
-    labels.forEach(label => {
-      const def = labelDefs[label]
-      const group = def?.group || 'Other'
-      if (!groups[group]) groups[group] = []
-      groups[group].push(label)
-    })
-    return groups
-  }, [labels, labelDefs])
+  const labels = useMemo(() => {
+    const s = new Set<string>()
+    cards.forEach(c => c.labels.forEach(l => s.add(l)))
+    return Array.from(s).sort()
+  }, [cards])
+
+  const filtersActive = useMemo(() => {
+    const columnSorts = useStore.getState().columnSorts
+    return (
+      searchQuery !== '' ||
+      priorityFilter !== 'all' ||
+      assigneeFilter !== 'all' ||
+      labelFilter.length > 0 ||
+      dueDateFilter !== 'all' ||
+      Object.values(columnSorts).some(s => s !== 'order')
+    )
+  }, [searchQuery, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
 
   const [boardDropdownOpen, setBoardDropdownOpen] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
@@ -70,19 +75,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
   const newBoardInputRef = useRef<HTMLInputElement>(null)
 
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false)
-  const [labelSearch, setLabelSearch] = useState('')
   const labelDropdownRef = useRef<HTMLDivElement>(null)
-
-  const filteredGroupedLabels = useMemo(() => {
-    if (!labelSearch) return groupedLabels
-    const q = labelSearch.toLowerCase()
-    const result: Record<string, string[]> = {}
-    Object.entries(groupedLabels).forEach(([group, groupLabels]) => {
-      const matched = groupLabels.filter(l => l.toLowerCase().includes(q))
-      if (matched.length > 0) result[group] = matched
-    })
-    return result
-  }, [groupedLabels, labelSearch])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -102,7 +95,6 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
     const handleClickOutside = (e: MouseEvent) => {
       if (labelDropdownRef.current && !labelDropdownRef.current.contains(e.target as Node)) {
         setLabelDropdownOpen(false)
-        setLabelSearch('')
       }
     }
     if (labelDropdownOpen) {
@@ -256,80 +248,13 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
             <ChevronDown size={14} className={`text-zinc-400 transition-transform ${labelDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
           {labelDropdownOpen && (
-            <div className="absolute top-full left-0 mt-1 min-w-[200px] max-h-72 overflow-y-auto bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
-              {/* Search */}
-              <div className="px-2 pb-1">
-                <input
-                  type="text"
-                  value={labelSearch}
-                  onChange={(e) => setLabelSearch(e.target.value)}
-                  placeholder="Filter labels..."
-                  autoFocus
-                  className="w-full px-2 py-1 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
-                />
-              </div>
-              {/* All Labels option */}
-              {!labelSearch && (
-                <button
-                  type="button"
-                  onClick={() => setLabelFilter([])}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors ${
-                    labelFilter.length === 0 ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-zinc-900 dark:text-zinc-100'
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
-                    labelFilter.length === 0 ? 'border-blue-500 bg-blue-500' : 'border-zinc-300 dark:border-zinc-500'
-                  }`}>
-                    {labelFilter.length === 0 && <Check size={10} className="text-white" />}
-                  </div>
-                  <span>All Labels</span>
-                </button>
-              )}
-              {/* Grouped labels */}
-              {Object.entries(filteredGroupedLabels).map(([group, groupLabels]) => (
-                <div key={group}>
-                  {Object.keys(filteredGroupedLabels).length > 1 && (
-                    <div className="px-3 pt-1.5 pb-0.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
-                      {group}
-                    </div>
-                  )}
-                  {groupLabels.map((l) => {
-                    const def = labelDefs[l]
-                    const checked = labelFilter.includes(l)
-                    return (
-                      <button
-                        key={l}
-                        type="button"
-                        onClick={() => {
-                          if (checked) {
-                            setLabelFilter(labelFilter.filter(x => x !== l))
-                          } else {
-                            setLabelFilter([...labelFilter, l])
-                          }
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
-                      >
-                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
-                          checked ? 'border-blue-500 bg-blue-500' : 'border-zinc-300 dark:border-zinc-500'
-                        }`}>
-                          {checked && <Check size={10} className="text-white" />}
-                        </div>
-                        {def?.color && (
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: def.color }}
-                          />
-                        )}
-                        <span className="truncate">{l}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
-              {Object.keys(filteredGroupedLabels).length === 0 && (
-                <div className="px-3 py-2 text-sm text-zinc-400 dark:text-zinc-500">No labels found</div>
-              )}
-            </div>
+            <LabelPicker
+              labels={labels}
+              labelDefs={labelDefs}
+              selected={labelFilter}
+              onChange={setLabelFilter}
+              showAllOption
+            />
           )}
         </div>
       )}

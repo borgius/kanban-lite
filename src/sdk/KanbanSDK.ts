@@ -1155,6 +1155,28 @@ export class KanbanSDK {
     return card.attachments
   }
 
+  /**
+   * Returns the absolute path to the attachment directory for a card.
+   *
+   * For the markdown engine this is `{column_dir}/attachments/`.
+   * For the SQLite engine this is `.kanban/boards/{boardId}/attachments/{cardId}/`.
+   *
+   * @param cardId - The ID of the card.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the absolute directory path, or `null` if the card is not found.
+   *
+   * @example
+   * ```ts
+   * const dir = await sdk.getAttachmentDir('42')
+   * // '/workspace/.kanban/boards/default/backlog/attachments'
+   * ```
+   */
+  async getAttachmentDir(cardId: string, boardId?: string): Promise<string | null> {
+    const card = await this.getCard(cardId, boardId)
+    if (!card) return null
+    return this._storage.getCardDir(card)
+  }
+
   // --- Comment management ---
 
   /**

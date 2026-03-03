@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Attachments subfolder**: attachments for the markdown storage engine are now stored in an `attachments/` subdirectory inside each column folder (e.g. `.kanban/boards/default/backlog/attachments/`) instead of alongside the card `.md` files
+- **Browser-viewable attachments**: PDFs and other binary attachments now open with the OS/browser default viewer in the VS Code extension; the standalone server now serves PDF, JPEG, GIF, WebP, CSV, plain-text, and XML attachments with correct `Content-Type` headers so browsers render them inline in a new tab
+- **KanbanSDK.getAttachmentDir(cardId, boardId?)**: new public SDK method that returns the absolute path to the attachment directory for a card (delegates to the active storage engine)
 - **Pluggable storage engine**: new `StorageEngine` interface (`src/sdk/storage/types.ts`) decouples all card I/O from the SDK business logic
 - **SQLite storage engine**: `SqliteStorageEngine` stores cards and comments in a single `.kanban/kanban.db` file using `better-sqlite3`; config (boards, columns, labels, webhooks) always stays in `.kanban.json`
 - **Markdown storage engine**: `MarkdownStorageEngine` wraps the existing file-based I/O, unchanged default behavior

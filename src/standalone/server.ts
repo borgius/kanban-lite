@@ -28,8 +28,16 @@ const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
+  '.xml': 'text/xml',
+  '.csv': 'text/csv',
   '.map': 'application/json'
 }
 
@@ -334,8 +342,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
 
-    // Write file data to the card's directory
-    const cardDir = path.dirname(card.filePath)
+    // Write file data to the card's attachment directory
+    const cardDir = sdk.storageEngine.getCardDir(card)
+    fs.mkdirSync(cardDir, { recursive: true })
     fs.writeFileSync(path.join(cardDir, filename), fileData)
 
     // Register attachment via SDK (skips copy since file is already in place)
@@ -1100,7 +1109,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const { id, filename: attachName } = params
       const card = cards.find(f => f.id === id)
       if (!card) return jsonError(res, 404, 'Task not found')
-      const cardDir = path.dirname(card.filePath)
+      const cardDir = sdk.storageEngine.getCardDir(card)
       const attachmentPath = path.resolve(cardDir, attachName)
       if (!attachmentPath.startsWith(absoluteKanbanDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' })
@@ -1426,7 +1435,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
       const card = cards.find(f => f.id === cardId)
       if (!card) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Card not found'); return }
-      const cardDir = path.dirname(card.filePath)
+      const cardDir = sdk.storageEngine.getCardDir(card)
       const attachmentPath = path.resolve(cardDir, filename)
       if (!attachmentPath.startsWith(absoluteKanbanDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end('Forbidden'); return

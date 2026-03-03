@@ -161,16 +161,17 @@ export class MarkdownStorageEngine implements StorageEngine {
   // --- Attachments ---
 
   getCardDir(card: Card): string {
-    return path.dirname(card.filePath)
+    return path.join(path.dirname(card.filePath), 'attachments')
   }
 
   async copyAttachment(sourcePath: string, card: Card): Promise<void> {
     const filename = path.basename(sourcePath)
-    const cardDir = this.getCardDir(card)
-    const destPath = path.join(cardDir, filename)
-    const sourceDir = path.dirname(path.resolve(sourcePath))
-    if (sourceDir !== cardDir) {
-      await fs.copyFile(path.resolve(sourcePath), destPath)
+    const attachmentDir = this.getCardDir(card)
+    await fs.mkdir(attachmentDir, { recursive: true })
+    const destPath = path.join(attachmentDir, filename)
+    const resolvedSource = path.resolve(sourcePath)
+    if (path.dirname(resolvedSource) !== attachmentDir) {
+      await fs.copyFile(resolvedSource, destPath)
     }
   }
 

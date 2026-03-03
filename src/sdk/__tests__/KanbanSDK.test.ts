@@ -470,8 +470,8 @@ describe('KanbanSDK', () => {
       const updated = await sdk.addAttachment('card', srcFile)
       expect(updated.attachments).toContain('test-attach.txt')
 
-      // Verify file was copied to the status subfolder
-      const destPath = path.join(tempDir, 'boards', 'default', 'backlog', 'test-attach.txt')
+      // Verify file was copied to the attachments subfolder inside the status dir
+      const destPath = path.join(tempDir, 'boards', 'default', 'backlog', 'attachments', 'test-attach.txt')
       expect(fs.existsSync(destPath)).toBe(true)
 
       fs.unlinkSync(srcFile)

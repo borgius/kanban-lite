@@ -744,18 +744,31 @@ export class KanbanPanel {
   }
 
   private async _openAttachment(cardId: string, attachment: string): Promise<void> {
+    const sdk = this._getSDK()
     const card = this._cards.find(f => f.id === cardId)
     if (!card) return
 
-    const featureDir = path.dirname(card.filePath)
-    const attachmentPath = path.resolve(featureDir, attachment)
+    // Resolve attachment directory via SDK (handles both markdown and SQLite paths)
+    const attachmentDir = sdk
+      ? (await sdk.getAttachmentDir(cardId, this._currentBoardId) ?? path.join(path.dirname(card.filePath), 'attachments'))
+      : path.join(path.dirname(card.filePath), 'attachments')
+
+    const attachmentPath = path.resolve(attachmentDir, attachment)
+
+    const ext = path.extname(attachment).toLowerCase()
+    // Text-based files open as VS Code editor tabs; everything else opens externally
+    // (PDF, images, etc. open via the OS default viewer or browser)
+    const isTextFile = ['.json', '.txt', '.md', '.html', '.xml', '.csv', '.ts', '.js', '.py', '.yaml', '.yml', '.toml', '.log'].includes(ext)
 
     try {
       await vscode.workspace.fs.stat(vscode.Uri.file(attachmentPath))
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(attachmentPath))
-      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+      if (isTextFile) {
+        const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(attachmentPath))
+        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+      } else {
+        await vscode.env.openExternal(vscode.Uri.file(attachmentPath))
+      }
     } catch {
-      // For binary files or files that can't be opened as text, reveal in OS
       await vscode.env.openExternal(vscode.Uri.file(attachmentPath))
     }
   }

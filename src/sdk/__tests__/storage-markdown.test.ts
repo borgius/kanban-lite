@@ -167,7 +167,7 @@ describe('MarkdownStorageEngine', () => {
       const card = makeCard({
         filePath: path.join(boardDir, 'backlog', '1-test-card.md'),
       })
-      expect(engine.getCardDir(card)).toBe(path.join(boardDir, 'backlog'))
+      expect(engine.getCardDir(card)).toBe(path.join(boardDir, 'backlog', 'attachments'))
     })
   })
 })

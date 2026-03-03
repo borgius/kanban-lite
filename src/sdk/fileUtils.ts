@@ -72,11 +72,14 @@ export async function moveCardFile(
 
   if (attachments && attachments.length > 0) {
     const sourceDir = path.dirname(currentPath)
+    const sourceAttachmentsDir = path.join(sourceDir, 'attachments')
+    const destAttachmentsDir = path.join(targetDir, 'attachments')
     for (const attachment of attachments) {
-      const srcAttach = path.join(sourceDir, attachment)
-      const destAttach = path.join(targetDir, attachment)
+      const srcAttach = path.join(sourceAttachmentsDir, attachment)
+      const destAttach = path.join(destAttachmentsDir, attachment)
       try {
         await fs.access(srcAttach)
+        await fs.mkdir(destAttachmentsDir, { recursive: true })
         await fs.rename(srcAttach, destAttach)
       } catch {
         // Best effort -- skip failed attachment moves

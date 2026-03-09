@@ -858,7 +858,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           ) : (
             <>
               <button
-                onClick={() => { onOpenFile(); onClose(); }}
+                onClick={onOpenFile}
                 className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
                 style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
                 title="Open in VS Code"

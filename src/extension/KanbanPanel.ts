@@ -1,8 +1,10 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import * as fs from 'fs'
+import * as os from 'os'
 import { getTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
 import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings } from '../shared/types'
-import { serializeCard } from '../sdk/parser'
+import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 
@@ -35,6 +37,10 @@ export class KanbanPanel {
   private _migrating = false
   private _onDisposeCallbacks: (() => void)[] = []
   private _sdk: KanbanSDK | null = null
+  private _tempFileWatcher: vscode.FileSystemWatcher | undefined
+  private _tempFilePath: string | undefined
+  private _tempFileCardId: string | undefined
+  private _tempFileWriting = false
 
   public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     const column = vscode.window.activeTextEditor
@@ -138,6 +144,10 @@ export class KanbanPanel {
             await this._updateCard(message.cardId, message.updates)
             break
           case 'openCard': {
+            // Clean up any SQLite temp file from a previously-opened card
+            if (this._tempFileCardId && this._tempFileCardId !== message.cardId) {
+              this._cleanupTempFile()
+            }
             const openRoot = this._getWorkspaceRoot()
             const openCfg = openRoot ? readConfig(openRoot) : DEFAULT_CONFIG
             if (openCfg.markdownEditorMode) {
@@ -152,12 +162,17 @@ export class KanbanPanel {
             break
           case 'closeCard':
             this._currentEditingCardId = null
+            this._cleanupTempFile()
             break
           case 'openFile': {
             const feat = this._cards.find(f => f.id === message.cardId)
             if (feat) {
-              const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feat.filePath))
-              await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+              if (feat.filePath) {
+                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feat.filePath))
+                await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
+              } else {
+                await this._openCardInTempFile(feat)
+              }
             }
             break
           }
@@ -437,6 +452,8 @@ export class KanbanPanel {
     }
     this._onDisposeCallbacks = []
 
+    this._cleanupTempFile()
+
     this._panel.dispose()
 
     while (this._disposables.length) {
@@ -648,6 +665,82 @@ export class KanbanPanel {
     } finally {
       this._migrating = false
     }
+  }
+
+  private _cleanupTempFile(): void {
+    if (this._tempFileWatcher) {
+      this._tempFileWatcher.dispose()
+      this._tempFileWatcher = undefined
+    }
+    if (this._tempFilePath) {
+      try { fs.unlinkSync(this._tempFilePath) } catch { /* ignore */ }
+      this._tempFilePath = undefined
+    }
+    this._tempFileCardId = undefined
+  }
+
+  private async _openCardInTempFile(card: Card): Promise<void> {
+    // Clean up any previous temp file
+    this._cleanupTempFile()
+
+    const tmpPath = path.join(os.tmpdir(), `kanban-card-${card.id}.md`)
+    this._tempFileWriting = true
+    try {
+      fs.writeFileSync(tmpPath, serializeCard(card), 'utf-8')
+    } finally {
+      this._tempFileWriting = false
+    }
+    this._tempFilePath = tmpPath
+    this._tempFileCardId = card.id
+
+    const panelColumn = this._panel.viewColumn ?? vscode.ViewColumn.One
+    const targetColumn = panelColumn === vscode.ViewColumn.One ? vscode.ViewColumn.Two : vscode.ViewColumn.Beside
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(tmpPath))
+    await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
+
+    // Watch the temp file for changes and sync back to the DB
+    let debounce: NodeJS.Timeout | undefined
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(os.tmpdir(), path.basename(tmpPath))
+    )
+    const handleChange = () => {
+      if (this._tempFileWriting) return
+      if (debounce) clearTimeout(debounce)
+      debounce = setTimeout(async () => {
+        const cardId = this._tempFileCardId
+        const filePath = this._tempFilePath
+        if (!cardId || !filePath) return
+        const sdk = this._getSDK()
+        if (!sdk) return
+        try {
+          const raw = fs.readFileSync(filePath, 'utf-8')
+          const parsed = parseCardFile(raw, `${cardId}.md`)
+          if (!parsed) return
+          this._migrating = true
+          try {
+            const updated = await sdk.updateCard(cardId, {
+              content: parsed.content,
+              status: parsed.status,
+              priority: parsed.priority,
+              assignee: parsed.assignee,
+              dueDate: parsed.dueDate,
+              labels: parsed.labels,
+              metadata: parsed.metadata
+            }, this._currentBoardId)
+            const idx = this._cards.findIndex(f => f.id === cardId)
+            if (idx !== -1) this._cards[idx] = updated
+            this._sendCardsToWebview()
+            if (this._currentEditingCardId === cardId) {
+              await this._sendCardContent(cardId)
+            }
+          } finally {
+            this._migrating = false
+          }
+        } catch { /* ignore parse/update errors */ }
+      }, 300)
+    }
+    watcher.onDidChange(handleChange)
+    this._tempFileWatcher = watcher
   }
 
   private async _openCardInNativeEditor(cardId: string): Promise<void> {

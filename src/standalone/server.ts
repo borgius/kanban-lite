@@ -1,11 +1,12 @@
 import * as http from 'http'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
 import { generateSlug, type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import { serializeCard } from '../sdk/parser'
+import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig } from '../shared/config'
 import { sanitizeCard } from '../sdk/types'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
@@ -49,6 +50,22 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   let currentEditingCardId: string | null = null
   let lastWrittenContent = ''
   let currentBoardId: string | undefined
+  let tempFilePath: string | undefined
+  let tempFileCardId: string | undefined
+  let tempFileWatcher: ReturnType<typeof chokidar.watch> | undefined
+  let tempFileWriting = false
+
+  function cleanupTempFile() {
+    if (tempFileWatcher) {
+      tempFileWatcher.close()
+      tempFileWatcher = undefined
+    }
+    if (tempFilePath) {
+      try { fs.unlinkSync(tempFilePath) } catch { /* ignore */ }
+      tempFilePath = undefined
+    }
+    tempFileCardId = undefined
+  }
 
   // Resolve webview static files directory
   const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
@@ -525,6 +542,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const card = cards.find(f => f.id === cardId)
         if (!card) break
 
+        // Clean up any temp file from a previously-opened card
+        if (tempFileCardId && tempFileCardId !== cardId) {
+          cleanupTempFile()
+        }
+
         currentEditingCardId = cardId
         const frontmatter: CardFrontmatter = {
           version: card.version ?? 0,
@@ -559,6 +581,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
       case 'closeCard':
         currentEditingCardId = null
+        cleanupTempFile()
         break
 
       case 'openSettings': {
@@ -774,7 +797,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         break
       }
 
-      // VSCode-specific actions — no-ops in standalone
+      // VSCode-specific actions — no-ops in standalone (openFile handled via REST)
       case 'openFile':
       case 'focusMenuBar':
       case 'startWithAI':
@@ -1177,6 +1200,75 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
+      }
+    }
+
+    // ==================== OPEN IN VSCODE ====================
+
+    params = route('GET', '/api/card-file')
+    if (params) {
+      const cardId = url.searchParams.get('cardId')
+      if (!cardId) return jsonError(res, 400, 'cardId is required')
+      const openCard = cards.find(c => c.id === cardId)
+      if (!openCard) return jsonError(res, 404, 'Card not found')
+
+      // Clean up any previous temp file for a different card
+      if (tempFileCardId && tempFileCardId !== cardId) cleanupTempFile()
+
+      if (openCard.filePath) {
+        // Markdown engine — return the real file path
+        return jsonOk(res, { path: openCard.filePath })
+      } else {
+        // SQLite engine — write a temp file and watch for changes to sync back
+        if (tempFileCardId === cardId && tempFilePath) {
+          // Already watching this card's temp file — refresh content and reuse
+          tempFileWriting = true
+          try { fs.writeFileSync(tempFilePath, serializeCard(openCard), 'utf-8') } finally { tempFileWriting = false }
+          return jsonOk(res, { path: tempFilePath })
+        }
+        const tmpPath = path.join(os.tmpdir(), `kanban-card-${openCard.id}.md`)
+        tempFileWriting = true
+        try { fs.writeFileSync(tmpPath, serializeCard(openCard), 'utf-8') } finally { tempFileWriting = false }
+        tempFilePath = tmpPath
+        tempFileCardId = openCard.id
+        let debounce: ReturnType<typeof setTimeout> | undefined
+        const watcher = chokidar.watch(tmpPath, { ignoreInitial: true })
+        watcher.on('change', () => {
+          if (tempFileWriting) return
+          if (debounce) clearTimeout(debounce)
+          debounce = setTimeout(async () => {
+            const cid = tempFileCardId
+            const fp = tempFilePath
+            if (!cid || !fp) return
+            try {
+              const raw = fs.readFileSync(fp, 'utf-8')
+              const parsed = parseCardFile(raw, `${cid}.md`)
+              if (!parsed) return
+              migrating = true
+              try {
+                const updated = await sdk.updateCard(cid, {
+                  content: parsed.content,
+                  status: parsed.status,
+                  priority: parsed.priority,
+                  assignee: parsed.assignee,
+                  dueDate: parsed.dueDate,
+                  labels: parsed.labels,
+                  metadata: parsed.metadata
+                }, currentBoardId)
+                const idx = cards.findIndex(c => c.id === cid)
+                if (idx !== -1) cards[idx] = updated
+                broadcast({ type: 'cardsUpdated', cards: cards.map(sanitizeCard) })
+                if (currentEditingCardId === cid) {
+                  broadcast({ type: 'cardContent', cardId: updated.id, content: updated.content, frontmatter: updated })
+                }
+              } finally {
+                migrating = false
+              }
+            } catch { /* ignore */ }
+          }, 300)
+        })
+        tempFileWatcher = watcher
+        return jsonOk(res, { path: tmpPath })
       }
     }
 

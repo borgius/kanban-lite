@@ -88,6 +88,22 @@ function handleOpenAttachment(cardId: string, attachment: string) {
   postMessage(message: unknown) {
     const msg = message as Record<string, unknown>
     // Intercept attachment messages — handle browser-side in standalone
+    if (msg.type === 'openFile') {
+      const cardId = msg.cardId as string
+      fetch(`/api/card-file?cardId=${encodeURIComponent(cardId)}`)
+        .then(r => r.json())
+        .then((result: { ok: boolean; data?: { path: string } }) => {
+          const filePath = result?.data?.path
+          if (!filePath) { console.error('card-file: missing path in response', result); return }
+          const a = document.createElement('a')
+          a.href = `vscode://file/${filePath}`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        })
+        .catch(err => console.error('Failed to open card in VS Code:', err))
+      return
+    }
     if (msg.type === 'addAttachment') {
       handleAddAttachment(msg.cardId as string)
       return

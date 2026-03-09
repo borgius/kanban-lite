@@ -452,7 +452,7 @@ export class SqliteStorageEngine implements StorageEngine {
         card.order || 'a0',
         card.content || '',
         card.metadata && Object.keys(card.metadata).length > 0 ? JSON.stringify(card.metadata) : null,
-        card.actions && card.actions.length > 0 ? JSON.stringify(card.actions) : null,
+        card.actions && (Array.isArray(card.actions) ? card.actions.length > 0 : Object.keys(card.actions).length > 0) ? JSON.stringify(card.actions) : null,
       )
       deleteComments.run(card.id, boardId)
       for (const comment of card.comments || []) {
@@ -523,7 +523,7 @@ export class SqliteStorageEngine implements StorageEngine {
       content: row.content,
       comments,
       ...(row.metadata ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
-      ...(row.actions ? { actions: JSON.parse(row.actions) as string[] } : {}),
+      ...(row.actions ? { actions: JSON.parse(row.actions) as string[] | Record<string, string> } : {}),
       filePath: '',
     }
   }

@@ -369,12 +369,16 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
 }
 
 interface RunActionsDropdownProps {
-  actions: string[]
+  actions: string[] | Record<string, string>
   onTriggerAction: (action: string) => void
 }
 
 function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
+
+  const entries: { key: string; label: string }[] = Array.isArray(actions)
+    ? actions.map(a => ({ key: a, label: a }))
+    : Object.entries(actions).map(([k, v]) => ({ key: k, label: v }))
 
   return (
     <div className="relative">
@@ -398,23 +402,23 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="absolute top-full right-0 mt-1 z-20 rounded-lg shadow-lg py-1 min-w-[160px]"
+            className="absolute top-full right-0 mt-1 z-20 rounded-lg shadow-lg py-1"
             style={{
               background: 'var(--vscode-dropdown-background)',
               border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
             }}
           >
-            {actions.map(action => (
+            {entries.map(({ key, label }) => (
               <button
                 type="button"
-                key={action}
-                onClick={() => { setIsOpen(false); onTriggerAction(action) }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                key={key}
+                onClick={() => { setIsOpen(false); onTriggerAction(key) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors whitespace-nowrap"
                 style={{ color: 'var(--vscode-dropdown-foreground)' }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
-                {action}
+                {label}
               </button>
             ))}
           </div>
@@ -884,7 +888,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           )}
         </div>
         <div className="flex items-center gap-2">
-          {currentFrontmatter.actions && currentFrontmatter.actions.length > 0 && onTriggerAction && (
+          {currentFrontmatter.actions && (Array.isArray(currentFrontmatter.actions) ? currentFrontmatter.actions.length > 0 : Object.keys(currentFrontmatter.actions).length > 0) && onTriggerAction && (
             <RunActionsDropdown actions={currentFrontmatter.actions} onTriggerAction={onTriggerAction} />
           )}
           {cardSettings.showBuildWithAI && <AIDropdown onSelect={onStartWithAI} />}

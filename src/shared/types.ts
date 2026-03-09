@@ -99,8 +99,8 @@ export interface Card {
   content: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
   metadata?: Record<string, any>
-  /** Named action strings that can be triggered via the action webhook. */
-  actions?: string[]
+  /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
+  actions?: string[] | Record<string, string>
   /** Absolute path to the card's markdown file on disk. */
   filePath: string
 }
@@ -334,8 +334,8 @@ export interface CardFrontmatter {
   order: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
   metadata?: Record<string, any>
-  /** Named action strings that can be triggered via the action webhook. */
-  actions?: string[]
+  /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
+  actions?: string[] | Record<string, string>
 }
 
 /**
@@ -361,7 +361,7 @@ export type ExtensionMessage =
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createCard'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] } }
+  | { type: 'createCard'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] | Record<string, string> } }
   | { type: 'moveCard'; cardId: string; newStatus: string; newOrder: number }
   | { type: 'deleteCard'; cardId: string }
   | { type: 'updateCard'; cardId: string; updates: Partial<Card> }

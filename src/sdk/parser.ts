@@ -91,7 +91,16 @@ export function parseCardFile(content: string, filePath: string): Card | null {
     }
   }
 
-  const actions = arr('actions')
+  const rawActions = parsed['actions']
+  const actions: string[] | Record<string, string> | undefined = (() => {
+    if (Array.isArray(rawActions)) return rawActions.filter(v => v != null).map(String)
+    if (rawActions != null && typeof rawActions === 'object' && !Array.isArray(rawActions)) {
+      const obj: Record<string, string> = {}
+      for (const [k, v] of Object.entries(rawActions as Record<string, unknown>)) obj[k] = String(v ?? k)
+      return obj
+    }
+    return undefined
+  })()
   const rawMeta = parsed.metadata
   const meta = rawMeta != null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
     ? rawMeta as Record<string, unknown>
@@ -113,7 +122,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
     order: str('order') || 'a0',
     content: body.trim(),
     ...(meta ? { metadata: meta } : {}),
-    ...(actions.length > 0 ? { actions } : {}),
+    ...(actions && (Array.isArray(actions) ? actions.length > 0 : Object.keys(actions).length > 0) ? { actions } : {}),
     filePath
   }
 }
@@ -142,7 +151,7 @@ export function serializeCard(card: Card): string {
     labels: card.labels,
     attachments: card.attachments || [],
     order: card.order,
-    ...(card.actions?.length ? { actions: card.actions } : {}),
+    ...(card.actions && (Array.isArray(card.actions) ? card.actions.length > 0 : Object.keys(card.actions).length > 0) ? { actions: card.actions } : {}),
     ...(card.metadata && Object.keys(card.metadata).length > 0 ? { metadata: card.metadata } : {}),
   }
 

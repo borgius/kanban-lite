@@ -398,15 +398,17 @@ Actions let you attach named triggers to a card — things like `retry`, `deploy
 }
 ```
 
-2. **Add actions to a card** — as a list of simple strings stored in the card's frontmatter:
+2. **Add actions to a card** — either as an array of action keys, or an object mapping action keys to display titles:
 
 ```yaml
----
-id: "42-deploy-v2"
-status: "in-progress"
+# Array form — action key is used as the button label
 actions: ["retry", "rollback", "notify-slack"]
----
-# Deploy v2.0
+
+# Object form — keys are the action names sent to the webhook, values are the UI labels
+actions:
+  retry: "Retry deployment"
+  rollback: "Roll back to v1"
+  notify-slack: "Notify Slack"
 ```
 
 3. **Trigger an action** from any interface:
@@ -431,7 +433,7 @@ actions: ["retry", "rollback", "notify-slack"]
     "assignee": "alice",
     "labels": ["deploy"],
     "content": "# Deploy v2.0\n...",
-    "actions": ["retry", "rollback", "notify-slack"]
+    "actions": ["retry", "rollback", "notify-slack"]  // or {"retry": "Retry deployment", ...}
   }
 }
 ```
@@ -440,7 +442,7 @@ The webhook receives the full card object (same shape as the SDK `Card` type, mi
 
 ### Managing actions
 
-Actions are plain strings in the `actions` array of the card's YAML frontmatter. Edit them directly in the markdown file, or use any interface:
+Actions are stored in the `actions` field of the card's YAML frontmatter — either as a plain string array or as a key→title object. Edit them directly in the markdown file, or use any interface:
 
 ```bash
 # Add actions when creating a card

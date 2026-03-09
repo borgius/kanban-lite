@@ -574,7 +574,7 @@ function App(): React.JSX.Element {
     assignee: string | null
     dueDate: string | null
     labels: string[]
-    actions: string[]
+    actions: string[] | Record<string, string>
   }): void => {
     vscode.postMessage({
       type: 'createCard',

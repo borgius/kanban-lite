@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Card actions**: `actions` field now accepts either an array of action keys (`string[]`) or an object mapping action keys to display titles (`Record<string, string>`). The "Run Action" dropdown shows the title when the object form is used; the action key is always what's sent to the webhook. Fully backward-compatible — existing array-form cards are unchanged.
+
 ### Added
 - **Card logs**: Append timestamped log entries to any card, stored as a `<cardId>.log` text file auto-added as an attachment. Each entry has timestamp (auto-generated), source label (defaults to `"default"`), markdown text, and optional structured data object (stored as compact JSON). Supports markdown formatting (bold, italic, emoji) in log text.
 - **SDK**: `listLogs(cardId, boardId?)`, `addLog(cardId, text, options?, boardId?)`, `clearLogs(cardId, boardId?)` methods on `KanbanSDK`

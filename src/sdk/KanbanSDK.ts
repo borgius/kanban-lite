@@ -614,7 +614,7 @@ export class KanbanSDK {
       order: generateKeyBetween(lastOrder, null),
       content: data.content,
       ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
-      ...(data.actions && data.actions.length > 0 ? { actions: data.actions } : {}),
+      ...(data.actions && (Array.isArray(data.actions) ? data.actions.length > 0 : Object.keys(data.actions).length > 0) ? { actions: data.actions } : {}),
       filePath: this._storage.type === 'markdown'
         ? getCardFilePath(boardDir, status, filename)
         : ''

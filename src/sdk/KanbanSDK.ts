@@ -418,6 +418,9 @@ export class KanbanSDK {
     await this._storage.writeCard(card)
 
     this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
+    if (previousStatus !== newStatus) {
+      await this.addLog(card.id, `Status changed: \`${previousStatus}\` → \`${newStatus}\``, { source: 'system' }, toBoardId).catch(() => {})
+    }
     return card
   }
 
@@ -684,6 +687,9 @@ export class KanbanSDK {
     }
 
     this.emitEvent('task.updated', sanitizeCard(card))
+    if (oldStatus !== card.status) {
+      await this.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${card.status}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+    }
     return card
   }
 
@@ -738,6 +744,7 @@ export class KanbanSDK {
     if (!response.ok) {
       throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
     }
+    await this.addLog(cardId, `Action triggered: \`${action}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
   }
 
   /**
@@ -801,6 +808,9 @@ export class KanbanSDK {
     }
 
     this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus: oldStatus })
+    if (oldStatus !== newStatus) {
+      await this.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${newStatus}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+    }
     return card
   }
 

@@ -271,6 +271,14 @@ export interface CardDisplaySettings {
   boardZoom: number
   /** Zoom level for the card detail panel as a percentage (75–150). Default 100. */
   cardZoom: number
+  /** Persisted log panel filter preferences. */
+  logsFilter?: {
+    limit: number | 'all'
+    order: 'asc' | 'desc'
+    /** Sources hidden from the log view (stored as array, default includes 'system'). */
+    disabledSources: string[]
+    show: { timestamp: boolean; source: boolean; objects: boolean }
+  }
 }
 
 export interface LabelDefinition {

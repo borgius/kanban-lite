@@ -20,10 +20,12 @@ interface MarkdownEditorProps {
   onDeleteComment?: (commentId: string) => void
   logs?: LogEntry[]
   onClearLogs?: () => void
+  logsFilter?: import('../../shared/types').CardDisplaySettings['logsFilter']
+  onLogsFilterChange?: (filter: NonNullable<import('../../shared/types').CardDisplaySettings['logsFilter']>) => void
 }
 
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange }: MarkdownEditorProps) {
   const isEditMode = mode === 'edit'
   const writeLabel = isEditMode ? 'Edit' : 'Write'
   const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments' | 'logs'>(isEditMode ? 'preview' : 'write')
@@ -231,6 +233,8 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
           <LogsSection
             logs={logs}
             onClearLogs={onClearLogs}
+            logsFilter={logsFilter}
+            onLogsFilterChange={onLogsFilterChange}
           />
         )}
       </div>

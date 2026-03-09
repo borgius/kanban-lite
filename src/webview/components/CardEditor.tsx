@@ -35,6 +35,8 @@ interface CardEditorProps {
   onTriggerAction?: (action: string) => void
   logs?: LogEntry[]
   onClearLogs?: () => void
+  logsFilter?: import('../../shared/types').CardDisplaySettings['logsFilter']
+  onLogsFilterChange?: (filter: NonNullable<import('../../shared/types').CardDisplaySettings['logsFilter']>) => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -714,7 +716,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -1040,6 +1042,8 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         onDeleteComment={onDeleteComment}
         logs={logs}
         onClearLogs={onClearLogs}
+        logsFilter={logsFilter}
+        onLogsFilterChange={onLogsFilterChange}
       />
     </div>
   )

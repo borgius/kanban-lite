@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Trash2, ChevronDown, Check, ChevronUp } from 'lucide-react'
 import { parseCommentMarkdown } from '../lib/markdownTools'
 import type { LogEntry } from '../../shared/types'
@@ -193,19 +193,28 @@ function CheckboxItem({
   )
 }
 
+interface LogsFilterState {
+  limit: number | 'all'
+  order: 'asc' | 'desc'
+  disabledSources: string[]
+  show: { timestamp: boolean; source: boolean; objects: boolean }
+}
+
 interface LogsSectionProps {
   logs: LogEntry[]
   onClearLogs: () => void
+  logsFilter?: LogsFilterState
+  onLogsFilterChange?: (filter: LogsFilterState) => void
 }
 
-export function LogsSection({ logs, onClearLogs }: LogsSectionProps) {
-  const [limit, setLimit] = useState<LogLimit>('all')
-  const [order, setOrder] = useState<LogOrder>('desc')
-  const [sourceFilter, setSourceFilter] = useState<string>('all')
-  const [show, setShow] = useState<ShowOptions>({
+export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange }: LogsSectionProps) {
+  const [limit, setLimit] = useState<LogLimit>(() => (logsFilter?.limit as LogLimit) ?? 'all')
+  const [order, setOrder] = useState<LogOrder>(() => logsFilter?.order ?? 'desc')
+  const [disabledSources, setDisabledSources] = useState<Set<string>>(() => new Set(logsFilter?.disabledSources ?? ['system']))
+  const [show, setShow] = useState<ShowOptions>(() => logsFilter?.show ?? {
     timestamp: true,
     source: true,
-    objects: true,
+    objects: false,
   })
 
   // Get unique sources from the logs
@@ -218,8 +227,8 @@ export function LogsSection({ logs, onClearLogs }: LogsSectionProps) {
   // Apply filters
   const filteredLogs = useMemo(() => {
     let result = logs
-    if (sourceFilter !== 'all') {
-      result = result.filter(e => e.source === sourceFilter)
+    if (disabledSources.size > 0) {
+      result = result.filter(e => !disabledSources.has(e.source))
     }
     // Order
     result = [...result]
@@ -229,9 +238,19 @@ export function LogsSection({ logs, onClearLogs }: LogsSectionProps) {
       result = result.slice(0, limit)
     }
     return result
-  }, [logs, sourceFilter, order, limit])
+  }, [logs, disabledSources, order, limit])
 
   const limitOptions: LogLimit[] = [10, 25, 50, 100, 'all']
+
+  // Persist filter changes
+  useEffect(() => {
+    onLogsFilterChange?.({
+      limit,
+      order,
+      disabledSources: Array.from(disabledSources),
+      show,
+    })
+  }, [limit, order, disabledSources, show]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-full">
@@ -273,13 +292,24 @@ export function LogsSection({ logs, onClearLogs }: LogsSectionProps) {
           <DropdownItem label="Oldest first" active={order === 'asc'} onClick={() => setOrder('asc')} />
         </DropdownButton>
 
-        {/* Source filter */}
-        {sources.length > 1 && (
-          <DropdownButton label={<>Source: {sourceFilter}</>}>
-            <DropdownItem label="all" active={sourceFilter === 'all'} onClick={() => setSourceFilter('all')} />
-            {sources.map(s => (
-              <DropdownItem key={s} label={s} active={sourceFilter === s} onClick={() => setSourceFilter(s)} />
-            ))}
+        {/* Sources filter (multi-select; system hidden by default) */}
+        {sources.length > 0 && (
+          <DropdownButton label={`Sources (${sources.filter(s => !disabledSources.has(s)).length}/${sources.length})`}>
+            <div onClick={(e) => e.stopPropagation()}>
+              {sources.map(s => (
+                <CheckboxItem
+                  key={s}
+                  label={s}
+                  checked={!disabledSources.has(s)}
+                  onChange={checked => setDisabledSources(prev => {
+                    const next = new Set(prev)
+                    if (checked) next.delete(s)
+                    else next.add(s)
+                    return next
+                  })}
+                />
+              ))}
+            </div>
           </DropdownButton>
         )}
 

@@ -280,14 +280,15 @@ function App(): React.JSX.Element {
           const { cardSettings } = useStore.getState()
           if (cardSettings.markdownEditorMode) break
           contentVersionRef.current += 1
-          setEditingCard({
+          setEditingCard(prev => ({
             id: message.cardId,
             content: message.content,
             frontmatter: message.frontmatter,
             comments: message.comments || [],
-            logs: message.logs || [],
+            // Preserve existing logs when server omits them (e.g. on status change broadcast)
+            logs: message.logs !== undefined ? message.logs : (prev?.id === message.cardId ? prev.logs : []),
             contentVersion: contentVersionRef.current
-          })
+          }))
           break
         }
         case 'actionResult': {
@@ -689,6 +690,12 @@ function App(): React.JSX.Element {
               onTriggerAction={handleTriggerAction}
               logs={editingCard.logs}
               onClearLogs={handleClearLogs}
+              logsFilter={cardSettings.logsFilter}
+              onLogsFilterChange={(filter) => {
+                const next = { ...cardSettings, logsFilter: filter }
+                setCardSettings(next)
+                vscode.postMessage({ type: 'saveSettings', settings: next })
+              }}
             />
           </div>
         )}

@@ -56,7 +56,18 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   // Derive workspace root from cards directory
   const workspaceRoot = path.dirname(absoluteKanbanDir)
   const sdk = new KanbanSDK(absoluteKanbanDir, {
-    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
+    onEvent: (event, data) => {
+      fireWebhooks(workspaceRoot, event, data)
+      // Push fresh logs to all clients when a log entry is added for the currently viewed card
+      if (event === 'log.added') {
+        const { cardId } = data as { cardId: string }
+        if (cardId === currentEditingCardId) {
+          sdk.listLogs(cardId, currentBoardId).then(logs => {
+            broadcast({ type: 'logsUpdated', cardId, logs })
+          }).catch(() => {})
+        }
+      }
+    }
   })
 
   // --- Helpers ---

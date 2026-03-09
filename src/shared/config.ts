@@ -96,6 +96,13 @@ export interface KanbanConfig {
   labels?: Record<string, LabelDefinition>
   /** Optional URL to POST to when a card action is triggered. */
   actionWebhookUrl?: string
+  /** Persisted log panel filter preferences. */
+  logsFilter?: {
+    limit: number | 'all'
+    order: 'asc' | 'desc'
+    disabledSources: string[]
+    show: { timestamp: boolean; source: boolean; objects: boolean }
+  }
   /**
    * Storage engine to use for this workspace.
    * - `'markdown'` (default) — cards stored as individual `.md` files
@@ -408,7 +415,8 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     defaultPriority: config.defaultPriority,
     defaultStatus: config.defaultStatus,
     boardZoom: config.boardZoom ?? 100,
-    cardZoom: config.cardZoom ?? 100
+    cardZoom: config.cardZoom ?? 100,
+    logsFilter: config.logsFilter
   }
 }
 
@@ -438,6 +446,7 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     defaultPriority: settings.defaultPriority,
     defaultStatus: settings.defaultStatus,
     boardZoom: settings.boardZoom,
-    cardZoom: settings.cardZoom
+    cardZoom: settings.cardZoom,
+    logsFilter: settings.logsFilter
   }
 }

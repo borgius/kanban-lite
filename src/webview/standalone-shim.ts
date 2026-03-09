@@ -104,6 +104,22 @@ function handleOpenAttachment(cardId: string, attachment: string) {
         .catch(err => console.error('Failed to open card in VS Code:', err))
       return
     }
+    if (msg.type === 'openMetadataFile') {
+      const rawPath = msg.path as string
+      fetch(`/api/resolve-path?path=${encodeURIComponent(rawPath)}`)
+        .then(r => r.json())
+        .then((result: { ok: boolean; data?: { path: string } }) => {
+          const filePath = result?.data?.path
+          if (!filePath) { console.error('resolve-path: missing path in response', result); return }
+          const a = document.createElement('a')
+          a.href = `vscode://file/${filePath}`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        })
+        .catch(err => console.error('Failed to open metadata file in VS Code:', err))
+      return
+    }
     if (msg.type === 'addAttachment') {
       handleAddAttachment(msg.cardId as string)
       return

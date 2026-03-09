@@ -282,9 +282,11 @@ export class KanbanPanel {
                 message.toBoard,
                 message.targetStatus
               )
-              this._currentEditingCardId = null
+              // Switch to the destination board and re-open the card there
+              this._currentBoardId = message.toBoard
               await this._loadCards()
               this._sendCardsToWebview()
+              this.openCard(message.cardId)
             } catch (err) {
               vscode.window.showErrorMessage(`Failed to transfer card: ${err}`)
             } finally {

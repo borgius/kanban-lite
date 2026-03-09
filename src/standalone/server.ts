@@ -1205,6 +1205,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     // ==================== OPEN IN VSCODE ====================
 
+    params = route('GET', '/api/resolve-path')
+    if (params) {
+      const rawPath = url.searchParams.get('path') ?? ''
+      if (!rawPath) return jsonError(res, 400, 'path is required')
+      const resolved = /^([/~]|[A-Za-z]:[/\\])/.test(rawPath)
+        ? rawPath.replace(/^~/, process.env.HOME ?? os.homedir())
+        : path.resolve(workspaceRoot, rawPath)
+      return jsonOk(res, { path: resolved })
+    }
+
     params = route('GET', '/api/card-file')
     if (params) {
       const cardId = url.searchParams.get('cardId')

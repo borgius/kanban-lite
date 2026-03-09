@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { marked } from 'marked'
-import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle } from 'lucide-react'
-import type { Comment } from '../../shared/types'
+import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
+import type { Comment, LogEntry } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
+import { LogsSection } from './LogsSection'
 import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
 
 interface MarkdownEditorProps {
@@ -17,13 +18,15 @@ interface MarkdownEditorProps {
   onAddComment?: (author: string, content: string) => void
   onUpdateComment?: (commentId: string, content: string) => void
   onDeleteComment?: (commentId: string) => void
+  logs?: LogEntry[]
+  onClearLogs?: () => void
 }
 
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs }: MarkdownEditorProps) {
   const isEditMode = mode === 'edit'
   const writeLabel = isEditMode ? 'Edit' : 'Write'
-  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments'>(isEditMode ? 'preview' : 'write')
+  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments' | 'logs'>(isEditMode ? 'preview' : 'write')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const previewHtml = useMemo(() => {
@@ -139,6 +142,36 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             )}
           </button>
         )}
+        {logs && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('logs')}
+            className="px-3 py-2 text-xs font-medium transition-colors relative flex items-center gap-1.5"
+            style={{
+              color: activeTab === 'logs' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
+            }}
+          >
+            <ScrollText size={12} />
+            Logs
+            {logs.length > 0 && (
+              <span
+                className="text-[10px] px-1 rounded-full"
+                style={{
+                  background: 'var(--vscode-badge-background)',
+                  color: 'var(--vscode-badge-foreground)',
+                }}
+              >
+                {logs.length}
+              </span>
+            )}
+            {activeTab === 'logs' && (
+              <span
+                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
+                style={{ background: 'var(--vscode-focusBorder)' }}
+              />
+            )}
+          </button>
+        )}
 
         {/* Toolbar - only visible on Write tab */}
         {activeTab === 'write' && (
@@ -192,6 +225,12 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             onAddComment={onAddComment}
             onUpdateComment={onUpdateComment}
             onDeleteComment={onDeleteComment}
+          />
+        )}
+        {activeTab === 'logs' && logs && onClearLogs && (
+          <LogsSection
+            logs={logs}
+            onClearLogs={onClearLogs}
           />
         )}
       </div>

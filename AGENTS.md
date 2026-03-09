@@ -62,6 +62,7 @@ Never implement a feature directly in an interface layer without the SDK method 
 - Cards (sqlite engine): `.kanban/kanban.db` (configurable via `sqlitePath` in `.kanban.json`)
 - Config: `.kanban.json` (boards, columns, display settings, label definitions)
 - Webhooks: `.kanban-webhooks.json`
+- Logs: `.kanban/boards/<boardId>/<status>/attachments/<cardId>.log` (auto-attached text file)
 
 ## Storage Engines
 
@@ -111,3 +112,18 @@ metadata:
 - `completedAt` is auto-managed when status changes to/from `done`
 - `modified` timestamp is auto-updated on any change
 - The standalone server uses synchronous `fs` operations; the SDK uses async `fs/promises`
+
+## Agent execution rules (cost control):
+
+1. Do NOT scan or summarize the entire repository.
+2. Only open and modify the specific file(s) listed in the task plan.
+3. Do NOT rewrite large files from scratch.
+4. Make minimal surgical edits only where required.
+5. Do NOT refactor unrelated code.
+6. Do NOT change formatting, imports, or structure unless strictly necessary.
+7. Do NOT add new dependencies.
+8. Do NOT generate placeholder code or duplicate existing logic.
+9. Keep reasoning concise and implementation focused.
+10. If a task can be implemented by editing constants or inserting small functions, do that instead of restructuring the file.
+
+Goal: complete the tasks with the smallest possible code changes and minimal token usage.

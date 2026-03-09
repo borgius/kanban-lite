@@ -103,10 +103,17 @@ HTTP server are all built on top of.
     * [.addAttachment(cardId, sourcePath, boardId)](#KanbanSDK+addAttachment) ⇒
     * [.removeAttachment(cardId, attachment, boardId)](#KanbanSDK+removeAttachment) ⇒
     * [.listAttachments(cardId, boardId)](#KanbanSDK+listAttachments) ⇒
+    * [.getAttachmentDir(cardId, boardId)](#KanbanSDK+getAttachmentDir) ⇒
     * [.listComments(cardId, boardId)](#KanbanSDK+listComments) ⇒
     * [.addComment(cardId, author, content, boardId)](#KanbanSDK+addComment) ⇒
     * [.updateComment(cardId, commentId, content, boardId)](#KanbanSDK+updateComment) ⇒
     * [.deleteComment(cardId, commentId, boardId)](#KanbanSDK+deleteComment) ⇒
+    * [.getLogFilePath(cardId, boardId)](#KanbanSDK+getLogFilePath) ⇒
+    * [._parseLogLine()](#KanbanSDK+_parseLogLine)
+    * [._serializeLogEntry()](#KanbanSDK+_serializeLogEntry)
+    * [.listLogs(cardId, boardId)](#KanbanSDK+listLogs) ⇒
+    * [.addLog(cardId, text, options, boardId)](#KanbanSDK+addLog) ⇒
+    * [.clearLogs(cardId, boardId)](#KanbanSDK+clearLogs) ⇒
     * [.listColumns(boardId)](#KanbanSDK+listColumns) ⇒
     * [.addColumn(column, boardId)](#KanbanSDK+addColumn) ⇒
     * [.updateColumn(columnId, updates, boardId)](#KanbanSDK+updateColumn) ⇒
@@ -929,6 +936,30 @@ const files = await sdk.listAttachments('42')
 
 * * *
 
+<a name="KanbanSDK+getAttachmentDir"></a>
+
+#### kanbanSDK.getAttachmentDir(cardId, boardId) ⇒
+Returns the absolute path to the attachment directory for a card.
+
+For the markdown engine this is `{column_dir}/attachments/`.
+For the SQLite engine this is `.kanban/boards/{boardId}/attachments/{cardId}/`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the absolute directory path, or `null` if the card is not found.  
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const dir = await sdk.getAttachmentDir('42')
+// '/workspace/.kanban/boards/default/backlog/attachments'
+```
+
+* * *
+
 <a name="KanbanSDK+listComments"></a>
 
 #### kanbanSDK.listComments(cardId, boardId) ⇒
@@ -1034,6 +1065,140 @@ Deletes a comment from a card.
 **Example**  
 ```ts
 const card = await sdk.deleteComment('42', 'c2')
+```
+
+* * *
+
+<a name="KanbanSDK+getLogFilePath"></a>
+
+#### kanbanSDK.getLogFilePath(cardId, boardId) ⇒
+Returns the absolute path to the log file for a card.
+
+The log file is stored alongside the card's markdown file (or in the
+card's attachment directory for SQLite) as `<cardId>.log`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the log file path, or `null` if the card is not found.  
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+
+* * *
+
+<a name="KanbanSDK+_parseLogLine"></a>
+
+#### kanbanSDK.\_parseLogLine()
+Parses a single log line into a [LogEntry](LogEntry).
+
+Expected format: `timestamp [source] text {json}`
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+_serializeLogEntry"></a>
+
+#### kanbanSDK.\_serializeLogEntry()
+Serializes a [LogEntry](LogEntry) into a single log line.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+listLogs"></a>
+
+#### kanbanSDK.listLogs(cardId, boardId) ⇒
+Lists all log entries for a card.
+
+Reads the card's `.log` file and parses each line into a [LogEntry](LogEntry).
+Returns an empty array if no log file exists.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to an array of [LogEntry](LogEntry) objects.  
+**Throws**:
+
+- <code>Error</code> If the card is not found.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card whose logs to list. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const logs = await sdk.listLogs('42')
+for (const entry of logs) {
+  console.log(`[${entry.source}] ${entry.text}`)
+}
+```
+
+* * *
+
+<a name="KanbanSDK+addLog"></a>
+
+#### kanbanSDK.addLog(cardId, text, options, boardId) ⇒
+Adds a log entry to a card.
+
+Appends a new line to the card's `.log` file. If the file does not exist,
+it is created and automatically added to the card's attachments array.
+The timestamp defaults to the current time if not provided.
+The source defaults to `'default'` if not provided.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the created [LogEntry](LogEntry).  
+**Throws**:
+
+- <code>Error</code> If the card is not found.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card to add the log to. |
+| text | The log message text. Supports inline markdown. |
+| options | Optional log entry parameters. |
+| options.source | Source/origin label. Defaults to `'default'`. |
+| options.timestamp | ISO 8601 timestamp. Defaults to current time. |
+| options.object | Optional structured data to attach as JSON. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const entry = await sdk.addLog('42', 'Build started')
+const entry2 = await sdk.addLog('42', 'Deploy complete', {
+  source: 'ci',
+  object: { version: '1.2.3', duration: 42 }
+})
+```
+
+* * *
+
+<a name="KanbanSDK+clearLogs"></a>
+
+#### kanbanSDK.clearLogs(cardId, boardId) ⇒
+Clears all log entries for a card by deleting the `.log` file.
+
+The log file is removed from disk and from the card's attachments array.
+New log entries will recreate the file automatically.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise that resolves when the logs have been cleared.  
+**Throws**:
+
+- <code>Error</code> If the card is not found.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card whose logs to clear. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+await sdk.clearLogs('42')
 ```
 
 * * *

@@ -479,6 +479,55 @@ DELETE /api/tasks/:id/attachments/:filename
 
 ---
 
+## Logs
+
+### List Logs
+
+```
+GET /api/tasks/:id/logs
+```
+
+Returns all log entries for the card.
+
+---
+
+### Add Log
+
+```
+POST /api/tasks/:id/logs
+```
+
+Append a log entry to the card.
+
+**Request body:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `text` | `string` | Yes |  | Log message text (supports markdown) |
+| `source` | `string` | No | `"default"` | Source/origin label |
+| `object` | `object` | No |  | Structured data object (stored as JSON) |
+| `timestamp` | `string` | No |  | ISO 8601 timestamp (auto-generated if omitted) |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/tasks/42/logs \
+  -H 'Content-Type: application/json' \
+  -d '{ "text": "Build passed", "source": "ci", "object": { "version": "1.0" } }'
+```
+
+---
+
+### Clear Logs
+
+```
+DELETE /api/tasks/:id/logs
+```
+
+Remove all log entries for the card.
+
+---
+
 ## Settings
 
 ### Get Settings
@@ -551,7 +600,7 @@ POST /api/webhooks
 | `events` | `string[]` | No | `["*"]` | Events to subscribe to |
 | `secret` | `string` | No |  | HMAC-SHA256 signing secret |
 
-**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`
+**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`
 
 **Example:**
 

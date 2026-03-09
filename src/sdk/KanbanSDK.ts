@@ -1,6 +1,7 @@
 import * as path from 'path'
+import * as fs from 'fs/promises'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption } from '../shared/types'
+import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
 import type { BoardConfig } from '../shared/config'
@@ -1306,6 +1307,202 @@ export class KanbanSDK {
       this.emitEvent('comment.deleted', { ...comment, cardId })
     }
     return card
+  }
+
+  // --- Log management ---
+
+  /**
+   * Returns the absolute path to the log file for a card.
+   *
+   * The log file is stored alongside the card's markdown file (or in the
+   * card's attachment directory for SQLite) as `<cardId>.log`.
+   *
+   * @param cardId - The ID of the card.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the log file path, or `null` if the card is not found.
+   */
+  async getLogFilePath(cardId: string, boardId?: string): Promise<string | null> {
+    const card = await this.getCard(cardId, boardId)
+    if (!card) return null
+    const dir = this._storage.getCardDir(card)
+    return path.join(dir, `${card.id}.log`)
+  }
+
+  /**
+   * Parses a single log line into a {@link LogEntry}.
+   *
+   * Expected format: `timestamp [source] text {json}`
+   */
+  private _parseLogLine(line: string): LogEntry | null {
+    const trimmed = line.trim()
+    if (!trimmed) return null
+    const match = trimmed.match(/^(\S+)\s+\[([^\]]+)\]\s+(.+)$/)
+    if (!match) return null
+    const [, timestamp, source, rest] = match
+    // Try to extract trailing JSON object
+    const jsonMatch = rest.match(/^(.*?)\s+(\{.+\})\s*$/)
+    if (jsonMatch) {
+      try {
+        const obj = JSON.parse(jsonMatch[2])
+        return { timestamp, source, text: jsonMatch[1], object: obj }
+      } catch {
+        // Not valid JSON, treat entire rest as text
+      }
+    }
+    return { timestamp, source, text: rest }
+  }
+
+  /**
+   * Serializes a {@link LogEntry} into a single log line.
+   */
+  private _serializeLogEntry(entry: LogEntry): string {
+    let line = `${entry.timestamp} [${entry.source}] ${entry.text}`
+    if (entry.object && Object.keys(entry.object).length > 0) {
+      line += ` ${JSON.stringify(entry.object)}`
+    }
+    return line
+  }
+
+  /**
+   * Lists all log entries for a card.
+   *
+   * Reads the card's `.log` file and parses each line into a {@link LogEntry}.
+   * Returns an empty array if no log file exists.
+   *
+   * @param cardId - The ID of the card whose logs to list.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to an array of {@link LogEntry} objects.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const logs = await sdk.listLogs('42')
+   * for (const entry of logs) {
+   *   console.log(`[${entry.source}] ${entry.text}`)
+   * }
+   * ```
+   */
+  async listLogs(cardId: string, boardId?: string): Promise<LogEntry[]> {
+    const logPath = await this.getLogFilePath(cardId, boardId)
+    if (!logPath) throw new Error(`Card not found: ${cardId}`)
+    try {
+      const content = await fs.readFile(logPath, 'utf-8')
+      const entries: LogEntry[] = []
+      for (const line of content.split('\n')) {
+        const entry = this._parseLogLine(line)
+        if (entry) entries.push(entry)
+      }
+      return entries
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Adds a log entry to a card.
+   *
+   * Appends a new line to the card's `.log` file. If the file does not exist,
+   * it is created and automatically added to the card's attachments array.
+   * The timestamp defaults to the current time if not provided.
+   * The source defaults to `'default'` if not provided.
+   *
+   * @param cardId - The ID of the card to add the log to.
+   * @param text - The log message text. Supports inline markdown.
+   * @param options - Optional log entry parameters.
+   * @param options.source - Source/origin label. Defaults to `'default'`.
+   * @param options.timestamp - ISO 8601 timestamp. Defaults to current time.
+   * @param options.object - Optional structured data to attach as JSON.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise resolving to the created {@link LogEntry}.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * const entry = await sdk.addLog('42', 'Build started')
+   * const entry2 = await sdk.addLog('42', 'Deploy complete', {
+   *   source: 'ci',
+   *   object: { version: '1.2.3', duration: 42 }
+   * })
+   * ```
+   */
+  async addLog(
+    cardId: string,
+    text: string,
+    options?: { source?: string; timestamp?: string; object?: Record<string, any> },
+    boardId?: string
+  ): Promise<LogEntry> {
+    if (!text?.trim()) throw new Error('Log text cannot be empty')
+    const card = await this.getCard(cardId, boardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    const entry: LogEntry = {
+      timestamp: options?.timestamp || new Date().toISOString(),
+      source: options?.source || 'default',
+      text: text.trim(),
+      ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
+    }
+
+    const dir = this._storage.getCardDir(card)
+    const logFileName = `${card.id}.log`
+    const logPath = path.join(dir, logFileName)
+
+    // Ensure directory exists
+    await fs.mkdir(dir, { recursive: true })
+
+    // Append entry line
+    const line = this._serializeLogEntry(entry) + '\n'
+    await fs.appendFile(logPath, line, 'utf-8')
+
+    // Auto-add log file as attachment if not already present
+    if (!card.attachments.includes(logFileName)) {
+      card.attachments.push(logFileName)
+      card.modified = new Date().toISOString()
+      await this._storage.writeCard(card)
+    }
+
+    this.emitEvent('log.added', { cardId, entry })
+    return entry
+  }
+
+  /**
+   * Clears all log entries for a card by deleting the `.log` file.
+   *
+   * The log file is removed from disk and from the card's attachments array.
+   * New log entries will recreate the file automatically.
+   *
+   * @param cardId - The ID of the card whose logs to clear.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves when the logs have been cleared.
+   * @throws {Error} If the card is not found.
+   *
+   * @example
+   * ```ts
+   * await sdk.clearLogs('42')
+   * ```
+   */
+  async clearLogs(cardId: string, boardId?: string): Promise<void> {
+    const card = await this.getCard(cardId, boardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+
+    const logFileName = `${card.id}.log`
+    const dir = this._storage.getCardDir(card)
+    const logPath = path.join(dir, logFileName)
+
+    // Delete the file
+    try {
+      await fs.unlink(logPath)
+    } catch {
+      // File may not exist — that's fine
+    }
+
+    // Remove from attachments
+    if (card.attachments.includes(logFileName)) {
+      card.attachments = card.attachments.filter(a => a !== logFileName)
+      card.modified = new Date().toISOString()
+      await this._storage.writeCard(card)
+    }
+
+    this.emitEvent('log.cleared', { cardId })
   }
 
   // --- Column management (board-scoped) ---

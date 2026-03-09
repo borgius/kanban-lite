@@ -363,6 +363,38 @@ const ROUTES: Route[] = [
     description: '',
   },
 
+  // ===================== Logs =====================
+  {
+    section: 'Logs',
+    subsection: 'List Logs',
+    method: 'GET',
+    path: '/api/tasks/:id/logs',
+    description: 'Returns all log entries for the card.',
+  },
+  {
+    section: 'Logs',
+    subsection: 'Add Log',
+    method: 'POST',
+    path: '/api/tasks/:id/logs',
+    description: 'Append a log entry to the card.',
+    bodyFields: [
+      { name: 'text', type: 'string', required: true, description: 'Log message text (supports markdown)' },
+      { name: 'source', type: 'string', required: false, default: '"default"', description: 'Source/origin label' },
+      { name: 'object', type: 'object', required: false, description: 'Structured data object (stored as JSON)' },
+      { name: 'timestamp', type: 'string', required: false, description: 'ISO 8601 timestamp (auto-generated if omitted)' },
+    ],
+    example: `curl -X POST http://localhost:3000/api/tasks/42/logs \\
+  -H 'Content-Type: application/json' \\
+  -d '{ "text": "Build passed", "source": "ci", "object": { "version": "1.0" } }'`,
+  },
+  {
+    section: 'Logs',
+    subsection: 'Clear Logs',
+    method: 'DELETE',
+    path: '/api/tasks/:id/logs',
+    description: 'Remove all log entries for the card.',
+  },
+
   // ===================== Settings =====================
   {
     section: 'Settings',
@@ -417,7 +449,7 @@ const ROUTES: Route[] = [
       { name: 'events', type: 'string[]', required: false, default: '["*"]', description: 'Events to subscribe to' },
       { name: 'secret', type: 'string', required: false, description: 'HMAC-SHA256 signing secret' },
     ],
-    notes: '**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`',
+    notes: '**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`',
     example: `curl -X POST http://localhost:3000/api/webhooks \\
   -H "Content-Type: application/json" \\
   -d '{

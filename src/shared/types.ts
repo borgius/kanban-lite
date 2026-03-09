@@ -30,6 +30,23 @@ export type CardSortOption = 'created:asc' | 'created:desc' | 'modified:asc' | '
 export type CardStatus = string
 
 /**
+ * A single log entry attached to a kanban card.
+ *
+ * Logs are stored in a dedicated `<cardId>.log` text file.
+ * Each line has the format: `timestamp [source] text {json}`
+ */
+export interface LogEntry {
+  /** ISO 8601 timestamp of when the log was created. */
+  timestamp: string
+  /** Source/origin of the log entry (e.g. `'default'`, `'system'`, `'ci'`). */
+  source: string
+  /** Human-readable log message text. Supports inline markdown (bold, italic, emoji). */
+  text: string
+  /** Optional structured data object, stored as compacted JSON. */
+  object?: Record<string, any>
+}
+
+/**
  * A comment attached to a kanban card.
  */
 export interface Comment {
@@ -328,10 +345,11 @@ export type ExtensionMessage =
   | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
-  | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[] }
+  | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[]; logs?: LogEntry[] }
   | { type: 'showSettings'; settings: CardDisplaySettings }
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
   | { type: 'actionResult'; callbackKey: string; error?: string }
+  | { type: 'logsUpdated'; cardId: string; logs: import('./types').LogEntry[] }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -364,3 +382,6 @@ export type WebviewMessage =
   | { type: 'renameLabel'; oldName: string; newName: string }
   | { type: 'deleteLabel'; name: string }
   | { type: 'triggerAction'; cardId: string; action: string; callbackKey: string }
+  | { type: 'addLog'; cardId: string; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
+  | { type: 'clearLogs'; cardId: string }
+  | { type: 'getLogs'; cardId: string }

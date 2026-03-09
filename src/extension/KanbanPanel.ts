@@ -229,6 +229,15 @@ export class KanbanPanel {
           case 'deleteComment':
             await this._deleteComment(message.cardId, message.commentId)
             break
+          case 'addLog':
+            await this._addLog(message.cardId, message.text, message.source, message.object, message.timestamp)
+            break
+          case 'clearLogs':
+            await this._clearLogs(message.cardId)
+            break
+          case 'getLogs':
+            await this._sendLogs(message.cardId)
+            break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
             break
@@ -681,7 +690,8 @@ export class KanbanPanel {
       cardId: card.id,
       content: card.content,
       frontmatter,
-      comments: card.comments || []
+      comments: card.comments || [],
+      logs: await this._getLogsForCard(card.id)
     })
   }
 
@@ -847,6 +857,47 @@ export class KanbanPanel {
     } finally {
       this._migrating = false
     }
+  }
+
+  private async _getLogsForCard(cardId: string): Promise<import('../shared/types').LogEntry[]> {
+    const sdk = this._getSDK()
+    if (!sdk) return []
+    try {
+      return await sdk.listLogs(cardId, this._currentBoardId)
+    } catch {
+      return []
+    }
+  }
+
+  private async _addLog(cardId: string, text: string, source?: string, object?: Record<string, any>, timestamp?: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    try {
+      await sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId)
+      await this._sendLogs(cardId)
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to add log: ${err.message}`)
+    }
+  }
+
+  private async _clearLogs(cardId: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    try {
+      await sdk.clearLogs(cardId, this._currentBoardId)
+      await this._sendLogs(cardId)
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to clear logs: ${err.message}`)
+    }
+  }
+
+  private async _sendLogs(cardId: string): Promise<void> {
+    const logs = await this._getLogsForCard(cardId)
+    this._panel.webview.postMessage({
+      type: 'logsUpdated',
+      cardId,
+      logs
+    })
   }
 
   private async _startWithAI(

@@ -750,6 +750,132 @@ async function main(): Promise<void> {
     }
   )
 
+  // --- Log Tools ---
+
+  server.tool(
+    'list_logs',
+    'List all log entries for a kanban card. Logs are stored in a dedicated .log file.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId, boardId)
+      if (!card) {
+        const all = await sdk.listCards(undefined, boardId)
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      const logs = await sdk.listLogs(resolvedId, boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(logs, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'add_log',
+    'Add a log entry to a kanban card. The log is appended to the card\'s .log file.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      text: z.string().describe('Log message text (supports markdown: bold, italic, emoji)'),
+      source: z.string().optional().describe('Source/origin label (defaults to "default")'),
+      object: z.record(z.string(), z.any()).optional().describe('Optional structured data object stored as JSON'),
+    },
+    async ({ boardId, cardId, text, source, object }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId, boardId)
+      if (!card) {
+        const all = await sdk.listCards(undefined, boardId)
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      const entry = await sdk.addLog(resolvedId, text, { source, object }, boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(entry, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'clear_logs',
+    'Clear all log entries for a kanban card by deleting the .log file. New logs will recreate it.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId, boardId)
+      if (!card) {
+        const all = await sdk.listCards(undefined, boardId)
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      try {
+        await sdk.clearLogs(resolvedId, boardId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Cleared all logs for card ${resolvedId}`,
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
   // --- Column Tools ---
 
   server.tool(

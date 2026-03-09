@@ -429,6 +429,36 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
+  // --- Log mutation functions ---
+
+  async function doAddLog(cardId: string, text: string, source?: string, object?: Record<string, any>, timestamp?: string) {
+    migrating = true
+    try {
+      const entry = await sdk.addLog(cardId, text, { source, timestamp, object }, currentBoardId)
+      await loadCards()
+      broadcast(buildInitMessage())
+      return entry
+    } catch {
+      return null
+    } finally {
+      migrating = false
+    }
+  }
+
+  async function doClearLogs(cardId: string): Promise<boolean> {
+    migrating = true
+    try {
+      await sdk.clearLogs(cardId, currentBoardId)
+      await loadCards()
+      broadcast(buildInitMessage())
+      return true
+    } catch {
+      return false
+    } finally {
+      migrating = false
+    }
+  }
+
   // --- WebSocket message handling ---
 
   async function handleMessage(ws: WebSocket, message: unknown): Promise<void> {
@@ -493,7 +523,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           labels: card.labels, attachments: card.attachments, order: card.order,
           metadata: card.metadata, actions: card.actions
         }
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+        let logs: import('../shared/types').LogEntry[] = []
+        try { logs = await sdk.listLogs(cardId, currentBoardId) } catch {}
+        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [], logs }))
         break
       }
 
@@ -614,6 +646,39 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
             actions: card.actions
           }
           ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+        }
+        break
+      }
+
+      case 'addLog': {
+        const entry = await doAddLog(
+          msg.cardId as string,
+          msg.text as string,
+          msg.source as string | undefined,
+          msg.object as Record<string, any> | undefined,
+          msg.timestamp as string | undefined,
+        )
+        if (entry && currentEditingCardId === msg.cardId) {
+          try {
+            const logs = await sdk.listLogs(msg.cardId as string, currentBoardId)
+            ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs }))
+          } catch { /* ignore */ }
+        }
+        break
+      }
+
+      case 'clearLogs': {
+        await doClearLogs(msg.cardId as string)
+        ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
+        break
+      }
+
+      case 'getLogs': {
+        try {
+          const logs = await sdk.listLogs(msg.cardId as string, currentBoardId)
+          ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs }))
+        } catch {
+          ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
         }
         break
       }
@@ -1186,6 +1251,48 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const ok = await doDeleteComment(id, commentId)
       if (!ok) return jsonError(res, 404, 'Comment not found')
       return jsonOk(res, { deleted: true })
+    }
+
+    // ==================== LOGS API ====================
+
+    params = route('GET', '/api/tasks/:id/logs')
+    if (params) {
+      const { id } = params
+      try {
+        const logs = await sdk.listLogs(id, currentBoardId)
+        return jsonOk(res, logs)
+      } catch {
+        return jsonError(res, 404, 'Task not found')
+      }
+    }
+
+    params = route('POST', '/api/tasks/:id/logs')
+    if (params) {
+      try {
+        const { id } = params
+        const body = await readBody(req)
+        const text = body.text as string
+        if (!text) return jsonError(res, 400, 'text is required')
+        const entry = await doAddLog(
+          id,
+          text,
+          body.source as string | undefined,
+          body.object as Record<string, any> | undefined,
+          body.timestamp as string | undefined,
+        )
+        if (!entry) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, entry, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/tasks/:id/logs')
+    if (params) {
+      const { id } = params
+      const ok = await doClearLogs(id)
+      if (!ok) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, { cleared: true })
     }
 
     // ==================== COLUMNS API ====================

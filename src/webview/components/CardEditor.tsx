@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink } from 'lucide-react'
-import type { Comment, CardFrontmatter, Priority, CardStatus } from '../../shared/types'
+import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
@@ -33,6 +33,8 @@ interface CardEditorProps {
   onDeleteComment: (commentId: string) => void
   onTransferToBoard: (toBoard: string, targetStatus: string) => void
   onTriggerAction?: (action: string) => void
+  logs?: LogEntry[]
+  onClearLogs?: () => void
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -712,7 +714,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs }: CardEditorProps) {
   const { cardSettings } = useStore()
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
@@ -1036,6 +1038,8 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         onAddComment={onAddComment}
         onUpdateComment={onUpdateComment}
         onDeleteComment={onDeleteComment}
+        logs={logs}
+        onClearLogs={onClearLogs}
       />
     </div>
   )

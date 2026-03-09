@@ -42,6 +42,9 @@ Use **MCP tools** when available (native LLM integration). Fall back to **CLI** 
 | List attachments | `list_attachments` | `kl attach <id>` | via card object |
 | Add attachment | `add_attachment` | `kl attach add <id> <path>` | `POST /api/tasks/:id/attachments` |
 | Remove attachment | `remove_attachment` | `kl attach remove <id> <name>` | `DELETE /api/tasks/:id/attachments/:name` |
+| List logs | `list_logs` | `kl log list <id>` | `GET /api/tasks/:id/logs` |
+| Add log | `add_log` | `kl log add <id> --text "..."` | `POST /api/tasks/:id/logs` |
+| Clear logs | `clear_logs` | `kl log clear <id>` | `DELETE /api/tasks/:id/logs` |
 | Get settings | `get_settings` | `kl settings` | `GET /api/settings` |
 | Update settings | `update_settings` | `kl settings update` | `PUT /api/settings` |
 | List webhooks | `list_webhooks` | `kl webhooks` | `GET /api/webhooks` |

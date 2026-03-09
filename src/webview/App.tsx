@@ -9,7 +9,7 @@ import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
-import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 
 // Declare vscode API type
@@ -58,6 +58,7 @@ function App(): React.JSX.Element {
     content: string
     frontmatter: CardFrontmatter
     comments: Comment[]
+    logs: LogEntry[]
     contentVersion: number
   } | null>(null)
 
@@ -284,12 +285,17 @@ function App(): React.JSX.Element {
             content: message.content,
             frontmatter: message.frontmatter,
             comments: message.comments || [],
+            logs: message.logs || [],
             contentVersion: contentVersionRef.current
           })
           break
         }
         case 'actionResult': {
           // fire-and-forget: no UI feedback needed for now
+          break
+        }
+        case 'logsUpdated': {
+          setEditingCard(prev => prev && prev.id === message.cardId ? { ...prev, logs: message.logs } : prev)
           break
         }
       }
@@ -437,6 +443,11 @@ function App(): React.JSX.Element {
   const handleDeleteComment = (commentId: string): void => {
     if (!editingCard) return
     vscode.postMessage({ type: 'deleteComment', cardId: editingCard.id, commentId })
+  }
+
+  const handleClearLogs = (): void => {
+    if (!editingCard) return
+    vscode.postMessage({ type: 'clearLogs', cardId: editingCard.id })
   }
 
   const handleSaveSettings = (settings: CardDisplaySettings): void => {
@@ -676,6 +687,8 @@ function App(): React.JSX.Element {
               onDeleteComment={handleDeleteComment}
               onTransferToBoard={handleTransferToBoard}
               onTriggerAction={handleTriggerAction}
+              logs={editingCard.logs}
+              onClearLogs={handleClearLogs}
             />
           </div>
         )}

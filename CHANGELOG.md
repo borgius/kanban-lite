@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Card logs**: Append timestamped log entries to any card, stored as a `<cardId>.log` text file auto-added as an attachment. Each entry has timestamp (auto-generated), source label (defaults to `"default"`), markdown text, and optional structured data object (stored as compact JSON). Supports markdown formatting (bold, italic, emoji) in log text.
+- **SDK**: `listLogs(cardId, boardId?)`, `addLog(cardId, text, options?, boardId?)`, `clearLogs(cardId, boardId?)` methods on `KanbanSDK`
+- **REST API**: `GET /api/tasks/:id/logs`, `POST /api/tasks/:id/logs`, `DELETE /api/tasks/:id/logs`
+- **CLI**: `kl log list <id>`, `kl log add <id> --text <msg> [--source <src>] [--object <json>]`, `kl log clear <id>`
+- **MCP**: `list_logs`, `add_log`, `clear_logs` tools
+- **UI**: Logs tab in card editor with toolbar (clear, limit, order, source filter, show/hide toggles for timestamp/source/objects), YAML-rendered objects
 - **Attachments subfolder**: attachments for the markdown storage engine are now stored in an `attachments/` subdirectory inside each column folder (e.g. `.kanban/boards/default/backlog/attachments/`) instead of alongside the card `.md` files
 - **Browser-viewable attachments**: PDFs and other binary attachments now open with the OS/browser default viewer in the VS Code extension; the standalone server now serves PDF, JPEG, GIF, WebP, CSV, plain-text, and XML attachments with correct `Content-Type` headers so browsers render them inline in a new tab
 - **KanbanSDK.getAttachmentDir(cardId, boardId?)**: new public SDK method that returns the absolute path to the attachment directory for a card (delegates to the active storage engine)

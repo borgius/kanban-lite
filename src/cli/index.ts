@@ -762,6 +762,93 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
   }
 }
 
+// --- Log Commands ---
+
+async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'list'
+  const boardId = getBoardId(flags)
+
+  if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'clear') {
+    // If first positional looks like a card ID, treat it as "list <cardId>"
+    const resolvedId = await resolveCardId(sdk, subcommand, boardId)
+    const logs = await sdk.listLogs(resolvedId, boardId)
+    if (flags.json) {
+      console.log(JSON.stringify(logs, null, 2))
+    } else if (logs.length === 0) {
+      console.log(dim('  No logs.'))
+    } else {
+      for (const entry of logs) {
+        const objStr = entry.object ? `  ${dim(JSON.stringify(entry.object))}` : ''
+        console.log(`  ${dim(entry.timestamp)}  ${cyan(`[${entry.source}]`)}  ${entry.text}${objStr}`)
+      }
+    }
+    return
+  }
+
+  const cardId = positional[1]
+
+  switch (subcommand) {
+    case 'list': {
+      if (!cardId) {
+        console.error(red('Usage: kl log list <card-id>'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const logs = await sdk.listLogs(resolvedId, boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(logs, null, 2))
+      } else if (logs.length === 0) {
+        console.log(dim('  No logs.'))
+      } else {
+        for (const entry of logs) {
+          const objStr = entry.object ? `  ${dim(JSON.stringify(entry.object))}` : ''
+          console.log(`  ${dim(entry.timestamp)}  ${cyan(`[${entry.source}]`)}  ${entry.text}${objStr}`)
+        }
+      }
+      break
+    }
+    case 'add': {
+      if (!cardId) {
+        console.error(red('Usage: kl log add <card-id> --text <message> [--source <src>] [--object <json>]'))
+        process.exit(1)
+      }
+      const text = typeof flags.text === 'string' ? flags.text : (typeof flags.body === 'string' ? flags.body : '')
+      if (!text) {
+        console.error(red('Error: --text is required'))
+        process.exit(1)
+      }
+      const source = typeof flags.source === 'string' ? flags.source : undefined
+      let obj: Record<string, any> | undefined
+      if (typeof flags.object === 'string') {
+        try {
+          obj = JSON.parse(flags.object)
+        } catch {
+          console.error(red('Error: --object must be valid JSON'))
+          process.exit(1)
+        }
+      }
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const entry = await sdk.addLog(resolvedId, text, { source, object: obj }, boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(entry, null, 2))
+      } else {
+        console.log(green(`Added log to card ${resolvedId}`))
+      }
+      break
+    }
+    case 'clear': {
+      if (!cardId) {
+        console.error(red('Usage: kl log clear <card-id>'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      await sdk.clearLogs(resolvedId, boardId)
+      console.log(green(`Cleared logs for card ${resolvedId}`))
+      break
+    }
+  }
+}
+
 // --- Column Commands ---
 
 async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
@@ -1246,6 +1333,11 @@ ${bold('Comment Commands:')}
   comment edit <id> <cid>     Edit a comment (--body)
   comment remove <id> <cid>   Remove a comment
 
+${bold('Log Commands:')}
+  log list <id>               List log entries on a card
+  log add <id>                Add a log entry (--text, --source, --object)
+  log clear <id>              Clear all log entries
+
 ${bold('Column Commands:')}
   columns                     List columns
   columns add                 Add a column (--id, --name, --color)
@@ -1304,6 +1396,11 @@ ${bold('Transfer Options:')}
   --from <board>              Source board (required)
   --to <board>                Destination board (required)
   --status <status>           Target status in destination board
+
+${bold('Log Options:')}
+  --text <text>               Log message text (required for log add, supports markdown)
+  --source <label>            Source/origin label (default: "default")
+  --object '<json>'           Structured data object as JSON string
 
 ${bold('Webhook Options:')}
   --url <url>                 Webhook target URL (required for add)
@@ -1451,6 +1548,10 @@ async function main(): Promise<void> {
     case 'comment':
     case 'comments':
       await cmdComment(sdk, positional, flags)
+      break
+    case 'log':
+    case 'logs':
+      await cmdLog(sdk, positional, flags)
       break
     case 'columns':
     case 'cols':

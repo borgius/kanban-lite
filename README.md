@@ -65,6 +65,7 @@ kl add --title "My first task" --priority high
 - **Labels**: Tag cards with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
+- **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
@@ -133,6 +134,13 @@ kl comment add implement-search --author alice \
   --body "Looks good, needs tests"                      # Add a comment
 kl comment edit implement-search c1 --body "Updated"    # Edit a comment
 kl comment remove implement-search c1                   # Remove a comment
+
+# Logs
+kl log list implement-search                             # List log entries
+kl log add implement-search --text "Build passed"         # Add a log entry
+kl log add implement-search --text "Deployed" \
+  --source ci --object '{"version":"1.0"}'               # With source and data
+kl log clear implement-search                            # Clear all logs
 
 # Boards
 kl boards                                               # List boards
@@ -290,6 +298,14 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 | `POST` | `/api/tasks/:id/comments` | Add a comment (`{ author, content }`) |
 | `PUT` | `/api/tasks/:id/comments/:commentId` | Update a comment (`{ content }`) |
 | `DELETE` | `/api/tasks/:id/comments/:commentId` | Delete a comment |
+
+#### Logs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tasks/:id/logs` | List log entries on a card |
+| `POST` | `/api/tasks/:id/logs` | Add a log entry (`{ text, source?, object?, timestamp? }`) |
+| `DELETE` | `/api/tasks/:id/logs` | Clear all log entries |
 
 #### Attachments
 
@@ -508,6 +524,9 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_comment` | Add a comment to a card |
 | `update_comment` | Edit a comment's content |
 | `delete_comment` | Remove a comment from a card |
+| `list_logs` | List log entries on a card |
+| `add_log` | Add a log entry to a card |
+| `clear_logs` | Clear all log entries from a card |
 | `list_columns` | List all board columns |
 | `add_column` | Add a new column to the board |
 | `update_column` | Update a column's name or color |

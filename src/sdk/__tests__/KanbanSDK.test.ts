@@ -809,4 +809,99 @@ No version field.`,
       expect(card?.version).toBe(0)
     })
   })
+
+  describe('listLogs', () => {
+    it('should return empty array when no log file exists', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      const logs = await sdk.listLogs('1')
+      expect(logs).toEqual([])
+    })
+
+    it('should parse log entries from file', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      const logDir = path.join(tempDir, 'boards', 'default', 'backlog', 'attachments')
+      fs.mkdirSync(logDir, { recursive: true })
+      fs.writeFileSync(path.join(logDir, '1.log'), '2026-03-09T12:00:00.000Z [default] Hello world\n2026-03-09T13:00:00.000Z [ci] Build passed {"version":"1.0"}\n')
+      const logs = await sdk.listLogs('1')
+      expect(logs).toHaveLength(2)
+      expect(logs[0]).toEqual({ timestamp: '2026-03-09T12:00:00.000Z', source: 'default', text: 'Hello world' })
+      expect(logs[1]).toEqual({ timestamp: '2026-03-09T13:00:00.000Z', source: 'ci', text: 'Build passed', object: { version: '1.0' } })
+    })
+
+    it('should throw if card not found', async () => {
+      await expect(sdk.listLogs('nonexistent')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('addLog', () => {
+    it('should add a log entry with defaults', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      const entry = await sdk.addLog('1', 'Test log message')
+      expect(entry.source).toBe('default')
+      expect(entry.text).toBe('Test log message')
+      expect(entry.timestamp).toBeTruthy()
+      expect(entry.object).toBeUndefined()
+    })
+
+    it('should add log with custom source and object', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      const entry = await sdk.addLog('1', 'Deploy complete', {
+        source: 'ci',
+        object: { version: '2.0', duration: 120 },
+      })
+      expect(entry.source).toBe('ci')
+      expect(entry.text).toBe('Deploy complete')
+      expect(entry.object).toEqual({ version: '2.0', duration: 120 })
+    })
+
+    it('should auto-add log file as attachment', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      await sdk.addLog('1', 'First log')
+      const card = await sdk.getCard('1')
+      expect(card?.attachments).toContain('1.log')
+    })
+
+    it('should append multiple entries', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      await sdk.addLog('1', 'Line 1')
+      await sdk.addLog('1', 'Line 2')
+      const logs = await sdk.listLogs('1')
+      expect(logs).toHaveLength(2)
+      expect(logs[0].text).toBe('Line 1')
+      expect(logs[1].text).toBe('Line 2')
+    })
+
+    it('should throw on empty text', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      await expect(sdk.addLog('1', '')).rejects.toThrow('Log text cannot be empty')
+    })
+
+    it('should throw if card not found', async () => {
+      await expect(sdk.addLog('nonexistent', 'test')).rejects.toThrow('Card not found')
+    })
+  })
+
+  describe('clearLogs', () => {
+    it('should delete the log file and remove from attachments', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      await sdk.addLog('1', 'Some log')
+      let card = await sdk.getCard('1')
+      expect(card?.attachments).toContain('1.log')
+
+      await sdk.clearLogs('1')
+      card = await sdk.getCard('1')
+      expect(card?.attachments).not.toContain('1.log')
+      const logs = await sdk.listLogs('1')
+      expect(logs).toEqual([])
+    })
+
+    it('should not throw if no log file exists', async () => {
+      writeCardFile(tempDir, '1-test.md', makeCardContent({ id: '1', status: 'backlog' }), 'backlog')
+      await expect(sdk.clearLogs('1')).resolves.not.toThrow()
+    })
+
+    it('should throw if card not found', async () => {
+      await expect(sdk.clearLogs('nonexistent')).rejects.toThrow('Card not found')
+    })
+  })
 })

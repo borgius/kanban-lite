@@ -67,6 +67,8 @@ export type SDKEventType =
   | 'board.created'
   | 'board.updated'
   | 'board.deleted'
+  | 'log.added'
+  | 'log.cleared'
   | 'storage.migrated'
 
 /**

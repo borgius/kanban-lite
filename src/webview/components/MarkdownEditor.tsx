@@ -6,6 +6,7 @@ import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
 import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
+import { useStore, type CardTab } from '../store'
 
 interface MarkdownEditorProps {
   value: string
@@ -28,7 +29,17 @@ interface MarkdownEditorProps {
 export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange }: MarkdownEditorProps) {
   const isEditMode = mode === 'edit'
   const writeLabel = isEditMode ? 'Edit' : 'Write'
-  const [activeTab, setActiveTab] = useState<'write' | 'preview' | 'comments' | 'logs'>(isEditMode ? 'preview' : 'write')
+
+  // In edit mode, sync active tab with the global store (enables URL-based tab restore).
+  // In create mode, use local state.
+  const storeActiveCardTab = useStore(s => s.activeCardTab)
+  const setStoreActiveCardTab = useStore(s => s.setActiveCardTab)
+  const [localTab, setLocalTab] = useState<CardTab>('write')
+  const activeTab: CardTab = isEditMode ? storeActiveCardTab : localTab
+  const setActiveTab = (tab: CardTab) => {
+    if (isEditMode) setStoreActiveCardTab(tab)
+    else setLocalTab(tab)
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const previewHtml = useMemo(() => {

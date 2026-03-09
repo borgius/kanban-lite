@@ -3,15 +3,22 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
-// In dev mode, serve standalone.html as the default page
+// In dev mode, serve standalone.html for all non-asset requests (SPA routing)
 function standaloneHtmlPlugin(): Plugin {
   return {
     name: 'standalone-html',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
-        if (req.url === '/' || req.url === '/index.html') {
-          req.url = '/standalone.html'
+        const url = req.url || '/'
+        // Skip API paths, WebSocket connections, and static asset requests
+        if (
+          url.startsWith('/api') ||
+          url.startsWith('/ws') ||
+          /\.[a-z0-9]{1,6}(\?|$)/i.test(url)
+        ) {
+          return next()
         }
+        req.url = '/standalone.html'
         next()
       })
     }

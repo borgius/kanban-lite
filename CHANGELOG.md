@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **URL routing** (standalone mode): The standalone web server now reflects navigation state in the browser URL using [TanStack Router](https://tanstack.com/router/latest). URL format: `/<boardId>/<cardId>/<tabId>?priority=&labels=&assignee=&dueDate=&q=`. Reloading the browser restores the same board, open card, active tab, and all active filters. Browser history entries are created for board/card/tab changes; filter-only changes use `history.replaceState`.
+
 ### Changed
 - **Card actions**: `actions` field now accepts either an array of action keys (`string[]`) or an object mapping action keys to display titles (`Record<string, string>`). The "Run Action" dropdown shows the title when the object form is used; the action key is always what's sent to the webhook. Fully backward-compatible — existing array-form cards are unchanged.
 

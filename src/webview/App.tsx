@@ -41,7 +41,9 @@ function App(): React.JSX.Element {
     toggleSelectCard,
     selectCardRange,
     selectAllInColumn,
-    clearSelection
+    clearSelection,
+    setActiveCardId,
+    setActiveCardTab
   } = useStore()
 
   const [createCardOpen, setCreateCardOpen] = useState(false)
@@ -61,6 +63,11 @@ function App(): React.JSX.Element {
     logs: LogEntry[]
     contentVersion: number
   } | null>(null)
+
+  // Keep store in sync so URLSync (router) can read/update the active card
+  useEffect(() => {
+    setActiveCardId(editingCard?.id ?? null)
+  }, [editingCard?.id, setActiveCardId])
 
   // Undo delete stack
   const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
@@ -374,6 +381,7 @@ function App(): React.JSX.Element {
 
   const handleCloseEditor = (): void => {
     setEditingCard(null)
+    setActiveCardTab('preview') // reset so next card opens on preview tab
     vscode.postMessage({ type: 'closeCard' })
   }
 

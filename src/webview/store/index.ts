@@ -4,6 +4,7 @@ import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, Work
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
+export type CardTab = 'write' | 'preview' | 'comments' | 'logs'
 
 interface KanbanState {
   cards: Card[]
@@ -23,11 +24,18 @@ interface KanbanState {
   settingsOpen: boolean
   labelDefs: Record<string, LabelDefinition>
 
+  /** ID of the currently open card in the editor (null if none) */
+  activeCardId: string | null
+  /** Active tab in the card editor */
+  activeCardTab: CardTab
+
   /** Multi-select: array of selected card IDs */
   selectedCardIds: string[]
   /** Multi-select: last clicked card ID for shift-range selection */
   lastClickedCardId: string | null
 
+  setActiveCardId: (id: string | null) => void
+  setActiveCardTab: (tab: CardTab) => void
   setWorkspace: (workspace: WorkspaceInfo) => void
   setLabelDefs: (labels: Record<string, LabelDefinition>) => void
   setCards: (cards: Card[]) => void
@@ -148,9 +156,13 @@ export const useStore = create<KanbanState>((set, get) => ({
   },
   settingsOpen: false,
   labelDefs: {},
+  activeCardId: null,
+  activeCardTab: 'preview' as CardTab,
   selectedCardIds: [] as string[],
   lastClickedCardId: null,
 
+  setActiveCardId: (id) => set({ activeCardId: id }),
+  setActiveCardTab: (tab) => set({ activeCardTab: tab }),
   setWorkspace: (workspace) => set({ workspace }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
   setCards: (cards) => set({ cards }),

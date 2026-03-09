@@ -904,4 +904,90 @@ No version field.`,
       await expect(sdk.clearLogs('nonexistent')).rejects.toThrow('Card not found')
     })
   })
+
+  describe('getBoardLogFilePath', () => {
+    it('should return path ending in board.log inside board dir', () => {
+      const p = sdk.getBoardLogFilePath()
+      expect(p).toMatch(/board\.log$/)
+      expect(p).toContain('boards')
+    })
+
+    it('should include the boardId when specified', () => {
+      const p = sdk.getBoardLogFilePath('my-board')
+      expect(p).toContain('my-board')
+      expect(p).toMatch(/board\.log$/)
+    })
+  })
+
+  describe('listBoardLogs', () => {
+    it('should return empty array when no log file exists', async () => {
+      const logs = await sdk.listBoardLogs()
+      expect(logs).toEqual([])
+    })
+
+    it('should return parsed entries after addBoardLog', async () => {
+      await sdk.addBoardLog('hello board', { source: 'test' })
+      const logs = await sdk.listBoardLogs()
+      expect(logs).toHaveLength(1)
+      expect(logs[0].text).toBe('hello board')
+      expect(logs[0].source).toBe('test')
+    })
+  })
+
+  describe('addBoardLog', () => {
+    it('should append an entry to board.log', async () => {
+      const entry = await sdk.addBoardLog('first entry')
+      expect(entry.text).toBe('first entry')
+      expect(entry.source).toBe('sdk')
+      expect(typeof entry.timestamp).toBe('string')
+
+      const logs = await sdk.listBoardLogs()
+      expect(logs).toHaveLength(1)
+    })
+
+    it('should use provided source and timestamp', async () => {
+      const ts = '2024-06-01T00:00:00.000Z'
+      const entry = await sdk.addBoardLog('msg', { source: 'cli', timestamp: ts })
+      expect(entry.source).toBe('cli')
+      expect(entry.timestamp).toBe(ts)
+    })
+
+    it('should append object when provided', async () => {
+      await sdk.addBoardLog('with obj', { object: { key: 'val' } })
+      const logs = await sdk.listBoardLogs()
+      expect(logs[0].object).toEqual({ key: 'val' })
+    })
+
+    it('should emit board.log.added event', async () => {
+      const events: unknown[] = []
+      const eventSdk = new KanbanSDK(tempDir, { onEvent: (_type, data) => events.push(data) })
+      await eventSdk.addBoardLog('event test')
+      expect(events).toHaveLength(1)
+    })
+
+    it('should accumulate multiple entries', async () => {
+      await sdk.addBoardLog('a')
+      await sdk.addBoardLog('b')
+      await sdk.addBoardLog('c')
+      const logs = await sdk.listBoardLogs()
+      expect(logs).toHaveLength(3)
+      expect(logs.map(l => l.text)).toEqual(['a', 'b', 'c'])
+    })
+  })
+
+  describe('clearBoardLogs', () => {
+    it('should delete the board.log file', async () => {
+      await sdk.addBoardLog('entry')
+      let logs = await sdk.listBoardLogs()
+      expect(logs).toHaveLength(1)
+
+      await sdk.clearBoardLogs()
+      logs = await sdk.listBoardLogs()
+      expect(logs).toEqual([])
+    })
+
+    it('should not throw if no log file exists', async () => {
+      await expect(sdk.clearBoardLogs()).resolves.not.toThrow()
+    })
+  })
 })

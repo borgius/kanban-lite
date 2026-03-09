@@ -94,7 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_card       ON comments (card_id, board_i
  * All kanban data — cards, comments, boards, columns, labels, webhooks,
  * and display settings — is stored in a single SQLite database file.
  * Attachment files are still stored on disk under
- * `.kanban/boards/{boardId}/attachments/{cardId}/`.
+ * `.kanban/boards/{boardId}/{status}/attachments/`.
  *
  * Uses `better-sqlite3` for synchronous, low-overhead database access.
  *
@@ -373,13 +373,12 @@ export class SqliteStorageEngine implements StorageEngine {
     // The attachment directory is created lazily in copyAttachment().
   }
 
-  async deleteBoardData(_boardDir: string, boardId: string): Promise<void> {
+  async deleteBoardData(boardDir: string, boardId: string): Promise<void> {
     this.db.prepare('DELETE FROM comments WHERE board_id = ?').run(boardId)
     this.db.prepare('DELETE FROM cards WHERE board_id = ?').run(boardId)
-    // Remove attachment directory
-    const attachDir = this._attachmentBaseDir(boardId)
+    // Remove the board directory (contains all status/attachments/ subdirs)
     try {
-      await fs.rm(attachDir, { recursive: true })
+      await fs.rm(boardDir, { recursive: true })
     } catch {
       // may not exist
     }
@@ -485,7 +484,7 @@ export class SqliteStorageEngine implements StorageEngine {
   // --- Attachments ---
 
   getCardDir(card: Card): string {
-    return path.join(this._attachmentBaseDir(card.boardId || 'default'), card.id)
+    return path.join(this.kanbanDir, 'boards', card.boardId || 'default', card.status, 'attachments')
   }
 
   async copyAttachment(sourcePath: string, card: Card): Promise<void> {
@@ -500,10 +499,6 @@ export class SqliteStorageEngine implements StorageEngine {
   }
 
   // --- Private helpers ---
-
-  private _attachmentBaseDir(boardId: string): string {
-    return path.join(this.kanbanDir, 'boards', boardId, 'attachments')
-  }
 
   private _rowToCard(row: CardRow, comments: Comment[]): Card {
     return {

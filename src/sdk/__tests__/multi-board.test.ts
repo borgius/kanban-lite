@@ -290,6 +290,34 @@ describe('Multi-board SDK operations', () => {
       expect(transferred.filePath).toContain(path.join('boards', 'sprint', 'in-progress'))
     })
 
+    it('should move attachment files to the destination board', async () => {
+      sdk.createBoard('sprint', 'Sprint')
+
+      const card = await sdk.createCard({
+        content: '# Card With Attachment',
+        status: 'backlog',
+        boardId: 'default'
+      })
+
+      // Create a source file and attach it to the card
+      const srcFile = path.join(workspaceDir, 'file.txt')
+      fs.writeFileSync(srcFile, 'hello')
+      await sdk.addAttachment(card.id, srcFile, 'default')
+
+      // Verify it landed in the source board's attachment directory
+      const srcAttachDir = path.join(kanbanDir, 'boards', 'default', 'backlog', 'attachments')
+      expect(fs.existsSync(path.join(srcAttachDir, 'file.txt'))).toBe(true)
+
+      const transferred = await sdk.transferCard(card.id, 'default', 'sprint')
+
+      // Attachment should exist in destination board dir
+      const dstAttachDir = path.join(kanbanDir, 'boards', 'sprint', 'backlog', 'attachments')
+      expect(fs.existsSync(path.join(dstAttachDir, 'file.txt'))).toBe(true)
+      // Attachment should no longer be at the source
+      expect(fs.existsSync(path.join(srcAttachDir, 'file.txt'))).toBe(false)
+      expect(transferred.attachments).toContain('file.txt')
+    })
+
     it('should throw for non-existent source board', async () => {
       await expect(sdk.transferCard('1', 'nonexistent', 'default')).rejects.toThrow('Board not found')
     })

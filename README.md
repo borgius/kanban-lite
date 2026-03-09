@@ -142,6 +142,13 @@ kl log add implement-search --text "Deployed" \
   --source ci --object '{"version":"1.0"}'               # With source and data
 kl log clear implement-search                            # Clear all logs
 
+# Board Logs
+kl board-log list                                        # List board-level log entries
+kl board-log add --text "Deployment complete"            # Add a board log entry
+kl board-log add --text "Pipeline passed" \
+  --source ci --object '{"build":"42"}'                    # With source and data
+kl board-log clear                                       # Clear all board logs
+
 # Boards
 kl boards                                               # List boards
 kl boards add --id bugs --name "Bug Tracker"            # Create a board
@@ -302,10 +309,18 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 #### Logs
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+|--------|----------|--------------|
 | `GET` | `/api/tasks/:id/logs` | List log entries on a card |
 | `POST` | `/api/tasks/:id/logs` | Add a log entry (`{ text, source?, object?, timestamp? }`) |
 | `DELETE` | `/api/tasks/:id/logs` | Clear all log entries |
+
+#### Board Logs
+
+| Method | Endpoint | Description |
+|--------|----------|--------------|
+| `GET` | `/api/boards/:boardId/logs` | List board-level log entries |
+| `POST` | `/api/boards/:boardId/logs` | Add a board log entry (`{ text, source?, object?, timestamp? }`) |
+| `DELETE` | `/api/boards/:boardId/logs` | Clear all board log entries |
 
 #### Attachments
 
@@ -529,6 +544,9 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `list_logs` | List log entries on a card |
 | `add_log` | Add a log entry to a card |
 | `clear_logs` | Clear all log entries from a card |
+| `list_board_logs` | List board-level log entries |
+| `add_board_log` | Add a board-level log entry |
+| `clear_board_logs` | Clear all board-level log entries |
 | `list_columns` | List all board columns |
 | `add_column` | Add a new column to the board |
 | `update_column` | Update a column's name or color |

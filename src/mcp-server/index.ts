@@ -457,6 +457,60 @@ async function main(): Promise<void> {
     }
   )
 
+  // --- Board Action Tools ---
+
+  server.tool(
+    'list_board_actions',
+    'List all named actions defined on a board.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ boardId }) => {
+      const actions = sdk.getBoardActions(boardId)
+      return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+    }
+  )
+
+  server.tool(
+    'add_board_action',
+    'Add or update a named action on a board. Actions appear in the board toolbar and fire webhooks when triggered.',
+    {
+      boardId: z.string().describe('Board ID'),
+      key: z.string().describe('Unique action key identifier'),
+      title: z.string().describe('Human-readable display title for the action'),
+    },
+    async ({ boardId, key, title }) => {
+      const actions = sdk.addBoardAction(boardId, key, title)
+      return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+    }
+  )
+
+  server.tool(
+    'remove_board_action',
+    'Remove a named action from a board.',
+    {
+      boardId: z.string().describe('Board ID'),
+      key: z.string().describe('Action key to remove'),
+    },
+    async ({ boardId, key }) => {
+      const actions = sdk.removeBoardAction(boardId, key)
+      return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+    }
+  )
+
+  server.tool(
+    'trigger_board_action',
+    'Fire a named board action, emitting a board.action webhook event.',
+    {
+      boardId: z.string().describe('Board ID'),
+      actionKey: z.string().describe('Key of the action to trigger'),
+    },
+    async ({ boardId, actionKey }) => {
+      await sdk.triggerBoardAction(boardId, actionKey)
+      return { content: [{ type: 'text', text: `Board action "${actionKey}" fired on board "${boardId}".` }] }
+    }
+  )
+
   // --- Attachment Tools ---
 
   server.tool(
@@ -865,6 +919,76 @@ async function main(): Promise<void> {
           content: [{
             type: 'text' as const,
             text: `Cleared all logs for card ${resolvedId}`,
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // --- Board Log Tools ---
+
+  server.tool(
+    'list_board_logs',
+    'List all board-level log entries from the board.log file.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ boardId }) => {
+      const logs = await sdk.listBoardLogs(boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(logs, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
+    'add_board_log',
+    'Append a new entry to the board-level log file.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      text: z.string().describe('Log message text'),
+      source: z.string().optional().describe('Source label (e.g. "api", "mcp", "cli")'),
+      object: z.record(z.string(), z.unknown()).optional().describe('Optional structured JSON object to attach'),
+    },
+    async ({ boardId, text, source, object }) => {
+      try {
+        const entry = await sdk.addBoardLog(text, { source, object: object as Record<string, unknown> | undefined }, boardId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(entry, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  server.tool(
+    'clear_board_logs',
+    'Clear all board-level log entries by deleting the board.log file.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ boardId }) => {
+      try {
+        await sdk.clearBoardLogs(boardId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'Board logs cleared.',
           }],
         }
       } catch (err) {

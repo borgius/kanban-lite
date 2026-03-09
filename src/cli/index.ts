@@ -534,6 +534,72 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
   }
 }
 
+// --- Board Actions Command ---
+
+async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'list'
+  const boardId = typeof flags.board === 'string' ? flags.board : undefined
+
+  switch (subcommand) {
+    case 'list': {
+      const actions = sdk.getBoardActions(boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(actions, null, 2))
+      } else {
+        const entries = Object.entries(actions)
+        if (entries.length === 0) {
+          console.log(dim('  No actions defined.'))
+        } else {
+          for (const [key, title] of entries) {
+            console.log(`  ${bold(key.padEnd(20))}  ${title}`)
+          }
+        }
+      }
+      break
+    }
+    case 'add': {
+      const key = typeof flags.key === 'string' ? flags.key : ''
+      const title = typeof flags.title === 'string' ? flags.title : ''
+      if (!boardId || !key || !title) {
+        console.error(red('Usage: kl board-actions add --board <id> --key <key> --title <title>'))
+        process.exit(1)
+      }
+      const result = sdk.addBoardAction(boardId, key, title)
+      if (flags.json) {
+        console.log(JSON.stringify(result, null, 2))
+      } else {
+        console.log(green(`Added action "${key}" to board ${boardId}`))
+      }
+      break
+    }
+    case 'remove':
+    case 'rm': {
+      const key = typeof flags.key === 'string' ? flags.key : (positional[1] ?? '')
+      if (!boardId || !key) {
+        console.error(red('Usage: kl board-actions remove --board <id> <key>'))
+        process.exit(1)
+      }
+      sdk.removeBoardAction(boardId, key)
+      console.log(green(`Removed action "${key}" from board ${boardId}`))
+      break
+    }
+    case 'fire':
+    case 'trigger': {
+      const key = typeof flags.key === 'string' ? flags.key : (positional[1] ?? '')
+      if (!boardId || !key) {
+        console.error(red('Usage: kl board-actions fire --board <id> <key>'))
+        process.exit(1)
+      }
+      await sdk.triggerBoardAction(boardId, key)
+      console.log(green(`Fired board action "${key}" on board ${boardId}`))
+      break
+    }
+    default:
+      console.error(red(`Unknown board-actions subcommand: ${subcommand}`))
+      process.exit(1)
+  }
+}
+
 // --- Transfer Command ---
 
 async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
@@ -845,6 +911,63 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
       await sdk.clearLogs(resolvedId, boardId)
       console.log(green(`Cleared logs for card ${resolvedId}`))
       break
+    }
+  }
+}
+
+// --- Board Log Commands ---
+
+async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'list'
+  const boardId = getBoardId(flags)
+
+  switch (subcommand) {
+    case 'list': {
+      const logs = await sdk.listBoardLogs(boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(logs, null, 2))
+      } else if (logs.length === 0) {
+        console.log(dim('  No board logs.'))
+      } else {
+        for (const entry of logs) {
+          const objStr = entry.object ? `  ${dim(JSON.stringify(entry.object))}` : ''
+          console.log(`  ${dim(entry.timestamp)}  ${cyan(`[${entry.source}]`)}  ${entry.text}${objStr}`)
+        }
+      }
+      break
+    }
+    case 'add': {
+      const text = typeof flags.text === 'string' ? flags.text : (typeof flags.body === 'string' ? flags.body : '')
+      if (!text) {
+        console.error(red('Error: --text is required'))
+        process.exit(1)
+      }
+      const source = typeof flags.source === 'string' ? flags.source : undefined
+      let obj: Record<string, any> | undefined
+      if (typeof flags.object === 'string') {
+        try {
+          obj = JSON.parse(flags.object)
+        } catch {
+          console.error(red('Error: --object must be valid JSON'))
+          process.exit(1)
+        }
+      }
+      const entry = await sdk.addBoardLog(text, { source, object: obj }, boardId)
+      if (flags.json) {
+        console.log(JSON.stringify(entry, null, 2))
+      } else {
+        console.log(green('Added board log entry'))
+      }
+      break
+    }
+    case 'clear': {
+      await sdk.clearBoardLogs(boardId)
+      console.log(green('Cleared board logs'))
+      break
+    }
+    default: {
+      console.error(red(`Unknown subcommand: ${subcommand}`))
+      process.exit(1)
     }
   }
 }
@@ -1338,6 +1461,11 @@ ${bold('Log Commands:')}
   log add <id>                Add a log entry (--text, --source, --object)
   log clear <id>              Clear all log entries
 
+${bold('Board Log Commands:')}
+  board-log list              List board-level log entries
+  board-log add               Add a board log entry (--text, --source, --object)
+  board-log clear             Clear all board log entries
+
 ${bold('Column Commands:')}
   columns                     List columns
   columns add                 Add a column (--id, --name, --color)
@@ -1539,6 +1667,10 @@ async function main(): Promise<void> {
     case 'board':
       await cmdBoards(sdk, positional, flags, workspaceRoot)
       break
+    case 'board-actions':
+    case 'board-action':
+      await cmdBoardActions(sdk, positional, flags)
+      break
     case 'transfer':
       await cmdTransfer(sdk, positional, flags)
       break
@@ -1552,6 +1684,10 @@ async function main(): Promise<void> {
     case 'log':
     case 'logs':
       await cmdLog(sdk, positional, flags)
+      break
+    case 'board-log':
+    case 'board-logs':
+      await cmdBoardLog(sdk, positional, flags)
       break
     case 'columns':
     case 'cols':

@@ -82,6 +82,10 @@ HTTP server are all built on top of.
     * [.deleteBoard(boardId)](#KanbanSDK+deleteBoard) ⇒
     * [.getBoard(boardId)](#KanbanSDK+getBoard) ⇒
     * [.updateBoard(boardId, updates)](#KanbanSDK+updateBoard) ⇒
+    * [.getBoardActions(boardId)](#KanbanSDK+getBoardActions) ⇒
+    * [.addBoardAction(boardId, key, title)](#KanbanSDK+addBoardAction) ⇒
+    * [.removeBoardAction(boardId, key)](#KanbanSDK+removeBoardAction) ⇒
+    * [.triggerBoardAction(boardId, actionKey)](#KanbanSDK+triggerBoardAction)
     * [.transferCard(cardId, fromBoardId, toBoardId, targetStatus)](#KanbanSDK+transferCard) ⇒
     * [.listCards(columns, boardId, metaFilter, sort)](#KanbanSDK+listCards) ⇒
     * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
@@ -114,6 +118,10 @@ HTTP server are all built on top of.
     * [.listLogs(cardId, boardId)](#KanbanSDK+listLogs) ⇒
     * [.addLog(cardId, text, options, boardId)](#KanbanSDK+addLog) ⇒
     * [.clearLogs(cardId, boardId)](#KanbanSDK+clearLogs) ⇒
+    * [.getBoardLogFilePath(boardId)](#KanbanSDK+getBoardLogFilePath) ⇒
+    * [.listBoardLogs(boardId)](#KanbanSDK+listBoardLogs) ⇒
+    * [.addBoardLog(text, options, boardId)](#KanbanSDK+addBoardLog) ⇒
+    * [.clearBoardLogs(boardId)](#KanbanSDK+clearBoardLogs) ⇒
     * [.listColumns(boardId)](#KanbanSDK+listColumns) ⇒
     * [.addColumn(column, boardId)](#KanbanSDK+addColumn) ⇒
     * [.updateColumn(columnId, updates, boardId)](#KanbanSDK+updateColumn) ⇒
@@ -352,6 +360,87 @@ const updated = sdk.updateBoard('bugs', {
   defaultPriority: 'high'
 })
 ```
+
+* * *
+
+<a name="KanbanSDK+getBoardActions"></a>
+
+#### kanbanSDK.getBoardActions(boardId) ⇒
+Returns the named actions defined on a board.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A map of action key to display title.  
+**Throws**:
+
+- <code>Error</code> If the board does not exist.
+
+
+| Param | Description |
+| --- | --- |
+| boardId | Board ID. Defaults to the active board when omitted. |
+
+
+* * *
+
+<a name="KanbanSDK+addBoardAction"></a>
+
+#### kanbanSDK.addBoardAction(boardId, key, title) ⇒
+Adds or updates a named action on a board.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The updated actions map.  
+**Throws**:
+
+- <code>Error</code> If the board does not exist.
+
+
+| Param | Description |
+| --- | --- |
+| boardId | Board ID. |
+| key | Unique action key (used as identifier). |
+| title | Human-readable display title for the action. |
+
+
+* * *
+
+<a name="KanbanSDK+removeBoardAction"></a>
+
+#### kanbanSDK.removeBoardAction(boardId, key) ⇒
+Removes a named action from a board.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The updated actions map.  
+**Throws**:
+
+- <code>Error</code> If the board does not exist.
+- <code>Error</code> If the action key is not found on the board.
+
+
+| Param | Description |
+| --- | --- |
+| boardId | Board ID. |
+| key | The action key to remove. |
+
+
+* * *
+
+<a name="KanbanSDK+triggerBoardAction"></a>
+
+#### kanbanSDK.triggerBoardAction(boardId, actionKey)
+Fires the `board.action` webhook event for a named board action.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Throws**:
+
+- <code>Error</code> If the board does not exist.
+- <code>Error</code> If the action key is not defined on the board.
+
+
+| Param | Description |
+| --- | --- |
+| boardId | The board that owns the action. |
+| actionKey | The key of the action to trigger. |
+
 
 * * *
 
@@ -1199,6 +1288,96 @@ New log entries will recreate the file automatically.
 **Example**  
 ```ts
 await sdk.clearLogs('42')
+```
+
+* * *
+
+<a name="KanbanSDK+getBoardLogFilePath"></a>
+
+#### kanbanSDK.getBoardLogFilePath(boardId) ⇒
+Returns the absolute path to the board-level log file for a given board.
+
+The board log file is located at `.kanban/boards/<boardId>/board.log`,
+at the same level as the column folders.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The absolute path to `board.log` for the specified board.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const logPath = sdk.getBoardLogFilePath()
+// '/workspace/.kanban/boards/default/board.log'
+```
+
+* * *
+
+<a name="KanbanSDK+listBoardLogs"></a>
+
+#### kanbanSDK.listBoardLogs(boardId) ⇒
+Lists all log entries from the board-level log file.
+
+Returns an empty array if the log file does not exist yet.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise that resolves to an array of [LogEntry](LogEntry) objects, oldest first.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const logs = await sdk.listBoardLogs()
+// [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'api', text: 'Card created' }]
+```
+
+* * *
+
+<a name="KanbanSDK+addBoardLog"></a>
+
+#### kanbanSDK.addBoardLog(text, options, boardId) ⇒
+Appends a new log entry to the board-level log file.
+
+Creates the log file if it does not yet exist.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise that resolves to the created [LogEntry](LogEntry).  
+
+| Param | Description |
+| --- | --- |
+| text | The human-readable log message. |
+| options | Optional entry metadata: source label, ISO timestamp override, and structured object. |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+const entry = await sdk.addBoardLog('Board archived', { source: 'cli' })
+```
+
+* * *
+
+<a name="KanbanSDK+clearBoardLogs"></a>
+
+#### kanbanSDK.clearBoardLogs(boardId) ⇒
+Clears all log entries for a board by deleting the board-level `board.log` file.
+
+New log entries will recreate the file automatically.
+No error is thrown if the file does not exist.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise that resolves when the logs have been cleared.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Optional board ID. Defaults to the workspace's default board. |
+
+**Example**  
+```ts
+await sdk.clearBoardLogs()
 ```
 
 * * *

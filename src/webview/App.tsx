@@ -11,6 +11,7 @@ import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
+import { LogsSection } from './components/LogsSection'
 
 // Declare vscode API type
 declare const acquireVsCodeApi: () => {
@@ -63,6 +64,10 @@ function App(): React.JSX.Element {
     logs: LogEntry[]
     contentVersion: number
   } | null>(null)
+
+  // Board logs panel state
+  const [boardLogsOpen, setBoardLogsOpen] = useState(false)
+  const [boardLogs, setBoardLogs] = useState<LogEntry[]>([])
 
   // Keep store in sync so URLSync (router) can read/update the active card
   useEffect(() => {
@@ -302,8 +307,16 @@ function App(): React.JSX.Element {
           // fire-and-forget: no UI feedback needed for now
           break
         }
+        case 'boardActionResult': {
+          // fire-and-forget: no UI feedback needed for now
+          break
+        }
         case 'logsUpdated': {
           setEditingCard(prev => prev && prev.id === message.cardId ? { ...prev, logs: message.logs } : prev)
+          break
+        }
+        case 'boardLogsUpdated': {
+          setBoardLogs(message.logs)
           break
         }
       }
@@ -459,6 +472,19 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'clearLogs', cardId: editingCard.id })
   }
 
+  const handleOpenBoardLogs = (): void => {
+    if (boardLogsOpen) {
+      setBoardLogsOpen(false)
+    } else {
+      setBoardLogsOpen(true)
+      vscode.postMessage({ type: 'getBoardLogs' })
+    }
+  }
+
+  const handleClearBoardLogs = (): void => {
+    vscode.postMessage({ type: 'clearBoardLogs' })
+  }
+
   const handleSaveSettings = (settings: CardDisplaySettings): void => {
     vscode.postMessage({ type: 'saveSettings', settings })
   }
@@ -601,6 +627,11 @@ function App(): React.JSX.Element {
     })
   }, [editingCard])
 
+  const handleTriggerBoardAction = useCallback((boardId: string, actionKey: string): void => {
+    const callbackKey = `board-action-${Date.now()}`
+    vscode.postMessage({ type: 'triggerBoardAction', boardId, actionKey, callbackKey })
+  }, [])
+
   const handleMoveCard = (
     cardId: string,
     newStatus: string,
@@ -654,9 +685,12 @@ function App(): React.JSX.Element {
         onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })}
         onSwitchBoard={(boardId) => vscode.postMessage({ type: 'switchBoard', boardId })}
         onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}
+        onOpenBoardLogs={handleOpenBoardLogs}
+        boardLogsOpen={boardLogsOpen}
+        onTriggerBoardAction={handleTriggerBoardAction}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className={`board-zoom-scope ${editingCard && selectedCardIds.length === 0 ? 'w-1/2' : 'w-full'}`}>
+        <div className={`board-zoom-scope ${(editingCard && selectedCardIds.length === 0) || boardLogsOpen ? 'w-1/2' : 'w-full'}`}>
           <KanbanBoard
             onCardClick={handleCardClick}
             onAddCard={handleAddCardInColumn}
@@ -671,6 +705,26 @@ function App(): React.JSX.Element {
             onSelectAll={selectAllInColumn}
           />
         </div>
+        {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (
+          <div className="w-1/2 flex flex-col border-l border-zinc-200 dark:border-zinc-700 bg-[var(--vscode-editor-background)]">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Board Logs</span>
+              <button
+                onClick={() => setBoardLogsOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                title="Close board logs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <LogsSection
+                logs={boardLogs}
+                onClearLogs={handleClearBoardLogs}
+              />
+            </div>
+          </div>
+        )}
         {editingCard && selectedCardIds.length === 0 && (
           <div className="w-1/2" style={{ fontSize: `calc(1em * var(--card-zoom, 1))` }}>
             <CardEditor

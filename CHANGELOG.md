@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Board logs**: Each board now has its own log file at `.kanban/boards/<boardId>/board.log` for board-level audit trail entries. Board logs share the same `LogEntry` format as card logs (timestamp, source, text, optional JSON object) but are not tied to any card.
+- **SDK**: `getBoardLogFilePath(boardId?)`, `listBoardLogs(boardId?)`, `addBoardLog(text, options?, boardId?)`, `clearBoardLogs(boardId?)` methods on `KanbanSDK`. Emits `board.log.added` and `board.log.cleared` events.
+- **REST API**: `GET /api/boards/:boardId/logs`, `POST /api/boards/:boardId/logs`, `DELETE /api/boards/:boardId/logs`
+- **CLI**: `kl board-log list`, `kl board-log add --text <msg> [--source <src>] [--object <json>]`, `kl board-log clear`
+- **MCP**: `list_board_logs`, `add_board_log`, `clear_board_logs` tools
+- **UI**: Board logs button (scroll icon) in the toolbar that opens a side panel reusing the existing `LogsSection` component; supports clear and real-time updates via WebSocket
+
+### Added
+- **Board actions**: Boards can now define named actions in `.kanban.json` as `boards.<id>.actions: Record<string, string>` (key → display title). Actions appear in an "Actions" dropdown in the board toolbar and fire `board.action` webhook events (payload: `boardId`, `action` key, `title`) when triggered.
+- **SDK**: `getBoardActions(boardId?)`, `addBoardAction(boardId, key, title)`, `removeBoardAction(boardId, key)`, `triggerBoardAction(boardId, actionKey)` methods on `KanbanSDK`
+- **REST API**: `GET/POST /api/boards/:boardId/actions`, `PUT /api/boards/:boardId/actions/:key`, `DELETE /api/boards/:boardId/actions/:key`, `POST /api/boards/:boardId/actions/:key/trigger`
+- **CLI**: `kl board-actions [list|add|remove|fire] --board <id> [--key <key>] [--title <title>]`
+- **MCP**: `list_board_actions`, `add_board_action`, `remove_board_action`, `trigger_board_action` tools
+- **UI**: "Actions" dropdown button (⚡) in board toolbar; only visible when the current board has actions defined
+
+### Added
 - **URL routing** (standalone mode): The standalone web server now reflects navigation state in the browser URL using [TanStack Router](https://tanstack.com/router/latest). URL format: `/<boardId>/<cardId>/<tabId>?priority=&labels=&assignee=&dueDate=&q=`. Reloading the browser restores the same board, open card, active tab, and all active filters. Browser history entries are created for board/card/tab changes; filter-only changes use `history.replaceState`.
 
 ### Changed

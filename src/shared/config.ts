@@ -42,6 +42,8 @@ export interface BoardConfig {
   defaultStatus: string
   /** Default priority for newly created cards on this board. */
   defaultPriority: Priority
+  /** Named board-level actions available in the toolbar. Map of action key to display title. */
+  actions?: Record<string, string>
 }
 
 /**

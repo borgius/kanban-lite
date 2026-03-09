@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, Tag } from 'lucide-react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import { LabelPicker } from './LabelPicker'
 import type { Priority } from '../../shared/types'
@@ -23,7 +23,7 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard, onCreateBoard }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void }) {
+export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
   const priorityFilter = useStore(s => s.priorityFilter)
@@ -77,6 +77,12 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false)
   const labelDropdownRef = useRef<HTMLDivElement>(null)
 
+  const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false)
+  const actionsDropdownRef = useRef<HTMLDivElement>(null)
+
+  const currentBoardActions = useMemo(() => boards.find(b => b.id === currentBoard)?.actions ?? {}, [boards, currentBoard])
+  const boardActionEntries = useMemo(() => Object.entries(currentBoardActions), [currentBoardActions])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -102,6 +108,18 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [labelDropdownOpen])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsDropdownRef.current && !actionsDropdownRef.current.contains(e.target as Node)) {
+        setActionsDropdownOpen(false)
+      }
+    }
+    if (actionsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [actionsDropdownOpen])
 
   useEffect(() => {
     if (creatingBoard && newBoardInputRef.current) {
@@ -323,10 +341,53 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
         <Settings size={16} />
       </button>
 
-      {/* Keyboard hint */}
-      <div className="ml-auto text-xs text-zinc-400">
-        Press <kbd className="px-1.5 py-0.5 bg-zinc-200 dark:bg-zinc-700 rounded">n</kbd> to add
-      </div>
+      {/* Board Actions Dropdown */}
+      {boardActionEntries.length > 0 && onTriggerBoardAction && (
+        <div className="relative ml-auto" ref={actionsDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setActionsDropdownOpen(!actionsDropdownOpen)}
+            className="flex items-center gap-1.5 px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+            title="Board actions"
+          >
+            <Zap size={14} className="text-amber-500" />
+            <span>Actions</span>
+            <ChevronDown size={14} className={`text-zinc-400 transition-transform ${actionsDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {actionsDropdownOpen && (
+            <div className="absolute top-full right-0 mt-1 min-w-[180px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
+              {boardActionEntries.map(([key, title]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setActionsDropdownOpen(false)
+                    onTriggerBoardAction(currentBoard, key)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+                >
+                  <Zap size={12} className="text-amber-500 shrink-0" />
+                  <span className="truncate">{title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Board Logs */}
+      {onOpenBoardLogs && (
+        <button
+          onClick={onOpenBoardLogs}
+          className={`flex items-center gap-1 px-2 py-1.5 text-sm rounded-md transition-colors ${
+            boardLogsOpen
+              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          }`}
+          title="Board logs"
+        >
+          <ScrollText size={16} />
+        </button>
+      )}
     </div>
   )
 }

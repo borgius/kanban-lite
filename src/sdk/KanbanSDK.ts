@@ -183,7 +183,8 @@ export class KanbanSDK {
       id,
       name: board.name,
       description: board.description,
-      columns: board.columns
+      columns: board.columns,
+      actions: board.actions
     }))
   }
 
@@ -348,6 +349,85 @@ export class KanbanSDK {
   }
 
   /**
+   * Returns the named actions defined on a board.
+   *
+   * @param boardId - Board ID. Defaults to the active board when omitted.
+   * @returns A map of action key to display title.
+   * @throws {Error} If the board does not exist.
+   */
+  getBoardActions(boardId?: string): Record<string, string> {
+    const config = readConfig(this.workspaceRoot)
+    const resolvedId = boardId || config.defaultBoard
+    const board = config.boards[resolvedId]
+    if (!board) throw new Error(`Board not found: ${resolvedId}`)
+    return board.actions ?? {}
+  }
+
+  /**
+   * Adds or updates a named action on a board.
+   *
+   * @param boardId - Board ID.
+   * @param key - Unique action key (used as identifier).
+   * @param title - Human-readable display title for the action.
+   * @returns The updated actions map.
+   * @throws {Error} If the board does not exist.
+   */
+  addBoardAction(boardId: string, key: string, title: string): Record<string, string> {
+    const config = readConfig(this.workspaceRoot)
+    const board = config.boards[boardId]
+    if (!board) throw new Error(`Board not found: ${boardId}`)
+    board.actions ??= {}
+    board.actions[key] = title
+    writeConfig(this.workspaceRoot, config)
+    this.emitEvent('board.updated', { id: boardId, ...board })
+    return board.actions
+  }
+
+  /**
+   * Removes a named action from a board.
+   *
+   * @param boardId - Board ID.
+   * @param key - The action key to remove.
+   * @returns The updated actions map.
+   * @throws {Error} If the board does not exist.
+   * @throws {Error} If the action key is not found on the board.
+   */
+  removeBoardAction(boardId: string, key: string): Record<string, string> {
+    const config = readConfig(this.workspaceRoot)
+    const board = config.boards[boardId]
+    if (!board) throw new Error(`Board not found: ${boardId}`)
+    if (!board.actions || !(key in board.actions)) {
+      throw new Error(`Action "${key}" not found on board "${boardId}"`)
+    }
+    delete board.actions[key]
+    if (Object.keys(board.actions).length === 0) delete board.actions
+    writeConfig(this.workspaceRoot, config)
+    this.emitEvent('board.updated', { id: boardId, ...board })
+    return board.actions ?? {}
+  }
+
+  /**
+   * Fires the `board.action` webhook event for a named board action.
+   *
+   * @param boardId - The board that owns the action.
+   * @param actionKey - The key of the action to trigger.
+   * @throws {Error} If the board does not exist.
+   * @throws {Error} If the action key is not defined on the board.
+   */
+  async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
+    const config = readConfig(this.workspaceRoot)
+    const resolvedId = boardId || config.defaultBoard
+    const board = config.boards[resolvedId]
+    if (!board) throw new Error(`Board not found: ${resolvedId}`)
+    const actions = board.actions ?? {}
+    if (!(actionKey in actions)) {
+      throw new Error(`Action "${actionKey}" not defined on board "${resolvedId}"`)
+    }
+    const actionTitle = actions[actionKey]
+    this.emitEvent('board.action', { boardId: resolvedId, action: actionKey, title: actionTitle })
+  }
+
+  /**
    * Transfers a card from one board to another.
    *
    * The card file is physically moved to the target board's directory. If a
@@ -391,6 +471,9 @@ export class KanbanSDK {
     // Ensure target directory exists (no-op for SQLite)
     await this._storage.ensureBoardDirs(toBoardDir, [newStatus])
 
+    // Capture source attachment directory before mutating the card
+    const srcAttachDir = this._storage.getCardDir(card)
+
     // Remove card from source board storage
     await this._storage.deleteCard(card)
 
@@ -416,6 +499,21 @@ export class KanbanSDK {
     card.order = generateKeyBetween(lastOrder, null)
 
     await this._storage.writeCard(card)
+
+    // Move attachment files (including auto-attached log) to the new location
+    if (card.attachments.length > 0) {
+      const dstAttachDir = this._storage.getCardDir(card)
+      if (srcAttachDir !== dstAttachDir) {
+        await fs.mkdir(dstAttachDir, { recursive: true })
+        await Promise.all(
+          card.attachments.map(async (filename) => {
+            const src = path.join(srcAttachDir, filename)
+            const dst = path.join(dstAttachDir, filename)
+            await fs.rename(src, dst).catch(() => {})
+          })
+        )
+      }
+    }
 
     this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
     if (previousStatus !== newStatus) {
@@ -1513,6 +1611,118 @@ export class KanbanSDK {
     }
 
     this.emitEvent('log.cleared', { cardId })
+  }
+
+  // --- Board-level log management ---
+
+  /**
+   * Returns the absolute path to the board-level log file for a given board.
+   *
+   * The board log file is located at `.kanban/boards/<boardId>/board.log`,
+   * at the same level as the column folders.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns The absolute path to `board.log` for the specified board.
+   *
+   * @example
+   * ```ts
+   * const logPath = sdk.getBoardLogFilePath()
+   * // '/workspace/.kanban/boards/default/board.log'
+   * ```
+   */
+  getBoardLogFilePath(boardId?: string): string {
+    return path.join(this._boardDir(boardId), 'board.log')
+  }
+
+  /**
+   * Lists all log entries from the board-level log file.
+   *
+   * Returns an empty array if the log file does not exist yet.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves to an array of {@link LogEntry} objects, oldest first.
+   *
+   * @example
+   * ```ts
+   * const logs = await sdk.listBoardLogs()
+   * // [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'api', text: 'Card created' }]
+   * ```
+   */
+  async listBoardLogs(boardId?: string): Promise<LogEntry[]> {
+    const logPath = this.getBoardLogFilePath(boardId)
+    let content: string
+    try {
+      content = await fs.readFile(logPath, 'utf-8')
+    } catch {
+      return []
+    }
+    const entries: LogEntry[] = []
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const entry = this._parseLogLine(trimmed)
+      if (entry) entries.push(entry)
+    }
+    return entries
+  }
+
+  /**
+   * Appends a new log entry to the board-level log file.
+   *
+   * Creates the log file if it does not yet exist.
+   *
+   * @param text - The human-readable log message.
+   * @param options - Optional entry metadata: source label, ISO timestamp override, and structured object.
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves to the created {@link LogEntry}.
+   *
+   * @example
+   * ```ts
+   * const entry = await sdk.addBoardLog('Board archived', { source: 'cli' })
+   * ```
+   */
+  async addBoardLog(
+    text: string,
+    options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
+    boardId?: string
+  ): Promise<LogEntry> {
+    const entry: LogEntry = {
+      timestamp: options?.timestamp ?? new Date().toISOString(),
+      source: options?.source ?? 'sdk',
+      text,
+      ...(options?.object ? { object: options.object } : {}),
+    }
+    const logPath = this.getBoardLogFilePath(boardId)
+    // Ensure board directory exists
+    await fs.mkdir(path.dirname(logPath), { recursive: true })
+    const line = this._serializeLogEntry(entry) + '\n'
+    await fs.appendFile(logPath, line, 'utf-8')
+    this.emitEvent('board.log.added', { boardId, entry })
+    return entry
+  }
+
+  /**
+   * Clears all log entries for a board by deleting the board-level `board.log` file.
+   *
+   * New log entries will recreate the file automatically.
+   * No error is thrown if the file does not exist.
+   *
+   * @param boardId - Optional board ID. Defaults to the workspace's default board.
+   * @returns A promise that resolves when the logs have been cleared.
+   *
+   * @example
+   * ```ts
+   * await sdk.clearBoardLogs()
+   * ```
+   */
+  async clearBoardLogs(boardId?: string): Promise<void> {
+    const logPath = this.getBoardLogFilePath(boardId)
+    try {
+      await fs.unlink(logPath)
+    } catch {
+      // File may not exist — that's fine
+    }
+    this.emitEvent('board.log.cleared', { boardId })
   }
 
   // --- Column management (board-scoped) ---

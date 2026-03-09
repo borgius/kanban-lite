@@ -253,6 +253,15 @@ export class KanbanPanel {
           case 'getLogs':
             await this._sendLogs(message.cardId)
             break
+          case 'addBoardLog':
+            await this._addBoardLog(message.text, message.source, message.object, message.timestamp)
+            break
+          case 'clearBoardLogs':
+            await this._clearBoardLogs()
+            break
+          case 'getBoardLogs':
+            await this._sendBoardLogs()
+            break
           case 'startWithAI':
             await this._startWithAI(message.agent, message.permissionMode)
             break
@@ -349,6 +358,18 @@ export class KanbanPanel {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
+            }
+            break
+          }
+          case 'triggerBoardAction': {
+            const { boardId, actionKey, callbackKey } = message
+            const triggerSdk = this._getSDK()
+            if (!triggerSdk) break
+            try {
+              await triggerSdk.triggerBoardAction(boardId, actionKey)
+              this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey })
+            } catch (err) {
+              this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey, error: String(err) })
             }
             break
           }
@@ -993,6 +1014,40 @@ export class KanbanPanel {
       cardId,
       logs
     })
+  }
+
+  private async _addBoardLog(text: string, source?: string, object?: Record<string, any>, timestamp?: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    try {
+      await sdk.addBoardLog(text, { source, object, timestamp }, this._currentBoardId)
+      await this._sendBoardLogs()
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to add board log: ${err.message}`)
+    }
+  }
+
+  private async _clearBoardLogs(): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    try {
+      await sdk.clearBoardLogs(this._currentBoardId)
+      await this._sendBoardLogs()
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to clear board logs: ${err.message}`)
+    }
+  }
+
+  private async _sendBoardLogs(): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+    const boardId = this._currentBoardId ?? ''
+    try {
+      const logs = await sdk.listBoardLogs(this._currentBoardId)
+      this._panel.webview.postMessage({ type: 'boardLogsUpdated', boardId, logs })
+    } catch {
+      this._panel.webview.postMessage({ type: 'boardLogsUpdated', boardId, logs: [] })
+    }
   }
 
   private async _startWithAI(

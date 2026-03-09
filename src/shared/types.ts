@@ -116,6 +116,8 @@ export interface BoardInfo {
   /** Optional description of the board's purpose. */
   description?: string
   columns?: KanbanColumn[]
+  /** Named board-level actions available in the toolbar. Map of action key to display title. */
+  actions?: Record<string, string>
 }
 
 /**
@@ -357,7 +359,9 @@ export type ExtensionMessage =
   | { type: 'showSettings'; settings: CardDisplaySettings }
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
   | { type: 'actionResult'; callbackKey: string; error?: string }
+  | { type: 'boardActionResult'; callbackKey: string; error?: string }
   | { type: 'logsUpdated'; cardId: string; logs: import('./types').LogEntry[] }
+  | { type: 'boardLogsUpdated'; boardId: string; logs: import('./types').LogEntry[] }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -390,6 +394,10 @@ export type WebviewMessage =
   | { type: 'renameLabel'; oldName: string; newName: string }
   | { type: 'deleteLabel'; name: string }
   | { type: 'triggerAction'; cardId: string; action: string; callbackKey: string }
+  | { type: 'triggerBoardAction'; boardId: string; actionKey: string; callbackKey: string }
   | { type: 'addLog'; cardId: string; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
   | { type: 'clearLogs'; cardId: string }
   | { type: 'getLogs'; cardId: string }
+  | { type: 'addBoardLog'; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
+  | { type: 'clearBoardLogs' }
+  | { type: 'getBoardLogs' }

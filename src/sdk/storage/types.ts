@@ -182,7 +182,7 @@ export interface StorageEngine {
    * Returns the directory where attachment files for a card are stored.
    *
    * For markdown: `path.dirname(card.filePath)` (same dir as the `.md` file).
-   * For SQLite: `{kanbanDir}/boards/{boardId}/attachments/{cardId}`.
+   * For SQLite: `{kanbanDir}/boards/{boardId}/{status}/attachments/`.
    *
    * @param card - The card whose attachment directory to resolve.
    * @returns Absolute path to the attachment directory.

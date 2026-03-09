@@ -395,6 +395,38 @@ const ROUTES: Route[] = [
     description: 'Remove all log entries for the card.',
   },
 
+  // ===================== Board Logs =====================
+  {
+    section: 'Board Logs',
+    subsection: 'List Board Logs',
+    method: 'GET',
+    path: '/api/boards/:boardId/logs',
+    description: 'Returns all board-level log entries.',
+  },
+  {
+    section: 'Board Logs',
+    subsection: 'Add Board Log',
+    method: 'POST',
+    path: '/api/boards/:boardId/logs',
+    description: 'Append a log entry to the board.',
+    bodyFields: [
+      { name: 'text', type: 'string', required: true, description: 'Log message text' },
+      { name: 'source', type: 'string', required: false, default: '"sdk"', description: 'Source/origin label' },
+      { name: 'object', type: 'object', required: false, description: 'Structured data object (stored as JSON)' },
+      { name: 'timestamp', type: 'string', required: false, description: 'ISO 8601 timestamp (auto-generated if omitted)' },
+    ],
+    example: `curl -X POST http://localhost:3000/api/boards/default/logs \\
+  -H 'Content-Type: application/json' \\
+  -d '{ "text": "Deployment complete", "source": "ci" }'`,
+  },
+  {
+    section: 'Board Logs',
+    subsection: 'Clear Board Logs',
+    method: 'DELETE',
+    path: '/api/boards/:boardId/logs',
+    description: 'Remove all board-level log entries.',
+  },
+
   // ===================== Settings =====================
   {
     section: 'Settings',

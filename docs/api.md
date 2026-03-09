@@ -528,6 +528,55 @@ Remove all log entries for the card.
 
 ---
 
+## Board Logs
+
+### List Board Logs
+
+```
+GET /api/boards/:boardId/logs
+```
+
+Returns all board-level log entries.
+
+---
+
+### Add Board Log
+
+```
+POST /api/boards/:boardId/logs
+```
+
+Append a log entry to the board.
+
+**Request body:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `text` | `string` | Yes |  | Log message text |
+| `source` | `string` | No | `"sdk"` | Source/origin label |
+| `object` | `object` | No |  | Structured data object (stored as JSON) |
+| `timestamp` | `string` | No |  | ISO 8601 timestamp (auto-generated if omitted) |
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/boards/default/logs \
+  -H 'Content-Type: application/json' \
+  -d '{ "text": "Deployment complete", "source": "ci" }'
+```
+
+---
+
+### Clear Board Logs
+
+```
+DELETE /api/boards/:boardId/logs
+```
+
+Remove all board-level log entries.
+
+---
+
 ## Settings
 
 ### Get Settings

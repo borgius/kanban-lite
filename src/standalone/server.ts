@@ -7,7 +7,7 @@ import chokidar from 'chokidar'
 import { generateSlug, type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeCard, parseCardFile } from '../sdk/parser'
-import { readConfig } from '../shared/config'
+import { readConfig, writeConfig } from '../shared/config'
 import { sanitizeCard } from '../sdk/types'
 import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
 import { matchesMetaFilter } from '../sdk/metaUtils'
@@ -717,6 +717,42 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         break
       }
 
+      case 'addBoardLog': {
+        try {
+          const entry = await sdk.addBoardLog(
+            msg.text as string,
+            {
+              source: msg.source as string | undefined,
+              object: msg.object as Record<string, unknown> | undefined,
+              timestamp: msg.timestamp as string | undefined,
+            },
+            currentBoardId || undefined,
+          )
+          const logs = await sdk.listBoardLogs(currentBoardId || undefined)
+          ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs }))
+          broadcast(buildInitMessage())
+          void entry
+        } catch { /* ignore */ }
+        break
+      }
+
+      case 'clearBoardLogs': {
+        await sdk.clearBoardLogs(currentBoardId || undefined)
+        ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs: [] }))
+        broadcast(buildInitMessage())
+        break
+      }
+
+      case 'getBoardLogs': {
+        try {
+          const logs = await sdk.listBoardLogs(currentBoardId || undefined)
+          ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs }))
+        } catch {
+          ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs: [] }))
+        }
+        break
+      }
+
       case 'transferCard': {
         const cardId = msg.cardId as string
         const toBoard = msg.toBoard as string
@@ -793,6 +829,17 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
         } catch (err) {
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))
+        }
+        break
+      }
+
+      case 'triggerBoardAction': {
+        const { boardId, actionKey, callbackKey } = msg as { boardId: string; actionKey: string; callbackKey: string }
+        try {
+          await sdk.triggerBoardAction(boardId, actionKey)
+          ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey }))
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey, error: String(err) }))
         }
         break
       }
@@ -886,6 +933,72 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         return jsonOk(res, { deleted: true })
       } catch (err) {
         return jsonError(res, 400, String(err))
+      }
+    }
+
+    // ==================== BOARD ACTIONS API ====================
+
+    params = route('GET', '/api/boards/:boardId/actions')
+    if (params) {
+      try {
+        return jsonOk(res, sdk.getBoardActions(params.boardId))
+      } catch (err) {
+        return jsonError(res, 404, String(err))
+      }
+    }
+
+    params = route('POST', '/api/boards/:boardId/actions')
+    if (params) {
+      try {
+        const { boardId } = params
+        const body = await readBody(req)
+        const actions = body.actions as Record<string, string>
+        const config = readConfig(workspaceRoot)
+        const board = config.boards[boardId]
+        if (!board) return jsonError(res, 404, `Board not found: ${boardId}`)
+        board.actions = actions
+        writeConfig(workspaceRoot, config)
+        return jsonOk(res, actions)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/boards/:boardId/actions/:key')
+    if (params) {
+      try {
+        const { boardId, key } = params
+        const body = await readBody(req)
+        const title = body.title as string
+        return jsonOk(res, sdk.addBoardAction(boardId, key, title))
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/boards/:boardId/actions/:key')
+    if (params) {
+      try {
+        const { boardId, key } = params
+        sdk.removeBoardAction(boardId, key)
+        res.writeHead(204)
+        res.end()
+        return
+      } catch (err) {
+        return jsonError(res, 404, String(err))
+      }
+    }
+
+    params = route('POST', '/api/boards/:boardId/actions/:key/trigger')
+    if (params) {
+      try {
+        const { boardId, key } = params
+        await sdk.triggerBoardAction(boardId, key)
+        res.writeHead(204)
+        res.end()
+        return
+      } catch (err) {
+        return jsonError(res, 404, String(err))
       }
     }
 
@@ -1405,6 +1518,42 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const { id } = params
       const ok = await doClearLogs(id)
       if (!ok) return jsonError(res, 404, 'Task not found')
+      return jsonOk(res, { cleared: true })
+    }
+
+    // ==================== BOARD LOGS API ====================
+
+    params = route('GET', '/api/boards/:boardId/logs')
+    if (params) {
+      const bId = params.boardId as string
+      const logs = await sdk.listBoardLogs(bId)
+      return jsonOk(res, logs)
+    }
+
+    params = route('POST', '/api/boards/:boardId/logs')
+    if (params) {
+      try {
+        const bId = params.boardId as string
+        const body = await readBody(req)
+        const text = body.text as string
+        if (!text) return jsonError(res, 400, 'text is required')
+        const entry = await sdk.addBoardLog(text, {
+          source: body.source as string | undefined,
+          object: body.object as Record<string, unknown> | undefined,
+          timestamp: body.timestamp as string | undefined,
+        }, bId)
+        broadcast(buildInitMessage())
+        return jsonOk(res, entry, 201)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('DELETE', '/api/boards/:boardId/logs')
+    if (params) {
+      const bId = params.boardId as string
+      await sdk.clearBoardLogs(bId)
+      broadcast(buildInitMessage())
       return jsonOk(res, { cleared: true })
     }
 

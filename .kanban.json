@@ -3,6 +3,9 @@
   "boards": {
     "default": {
       "name": "Default",
+      "actions": {
+        "test": "This is a test action"
+      },
       "columns": [
         {
           "id": "backlog",

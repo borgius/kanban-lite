@@ -204,11 +204,11 @@ describe('SqliteStorageEngine', () => {
 
   describe('getCardDir', () => {
     it('returns the attachments directory for the card', () => {
-      const card = makeCard({ boardId: 'default', id: '1' })
+      const card = makeCard({ boardId: 'default', id: '1', status: 'backlog' })
       const dir = engine.getCardDir(card)
       expect(dir).toContain('attachments')
       expect(dir).toContain('default')
-      expect(dir).toContain('1')
+      expect(dir).toContain('backlog')
     })
   })
 })

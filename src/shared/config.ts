@@ -25,9 +25,8 @@ export interface Webhook {
 /**
  * Configuration for a single kanban board.
  *
- * Each board has its own set of columns, card ID counter, and default
- * status/priority values. Boards are stored as entries in the
- * {@link KanbanConfig.boards} record.
+ * Each board has its own set of columns and default status/priority values.
+ * Boards are stored as entries in the {@link KanbanConfig.boards} record.
  */
 export interface BoardConfig {
   /** Human-readable name of the board. */
@@ -36,7 +35,12 @@ export interface BoardConfig {
   description?: string
   /** Ordered list of columns displayed on this board. */
   columns: KanbanColumn[]
-  /** Next auto-increment card ID to allocate for this board. */
+  /**
+   * @deprecated Card IDs are now allocated from the workspace-level
+   * `nextCardId` counter to ensure uniqueness across all boards.
+   * This field is kept for backward compatibility with existing config files
+   * and is no longer incremented during card creation.
+   */
   nextCardId: number
   /** Default column/status for newly created cards on this board. */
   defaultStatus: string
@@ -98,6 +102,12 @@ export interface KanbanConfig {
   labels?: Record<string, LabelDefinition>
   /** Optional URL to POST to when a card action is triggered. */
   actionWebhookUrl?: string
+  /**
+   * Global auto-increment card ID counter shared across all boards.
+   * Ensures every card gets a unique numeric ID regardless of which board
+   * it is created on.
+   */
+  nextCardId: number
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'
@@ -161,6 +171,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   aiAgent: 'claude',
   defaultPriority: 'medium',
   defaultStatus: 'backlog',
+  nextCardId: 1,
   showPriorityBadges: true,
   showAssignee: true,
   showDueDate: true,
@@ -229,6 +240,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     aiAgent: v1.aiAgent,
     defaultPriority: v1.defaultPriority,
     defaultStatus: v1.defaultStatus,
+    nextCardId: v1.nextCardId,
     showPriorityBadges: v1.showPriorityBadges,
     showAssignee: v1.showAssignee,
     showDueDate: v1.showDueDate,
@@ -272,6 +284,12 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
     // Ensure boards object exists with at least default board
     if (!config.boards || Object.keys(config.boards).length === 0) {
       config.boards = defaults.boards
+    }
+    // Migrate: if global nextCardId is missing, derive it from per-board counters
+    if (!config.nextCardId || config.nextCardId < 1) {
+      const boardMaxes = Object.values(config.boards as Record<string, BoardConfig>)
+        .map((b) => b.nextCardId || 1)
+      config.nextCardId = Math.max(...boardMaxes)
     }
     return config
   } catch {
@@ -353,12 +371,11 @@ export function getBoardConfig(workspaceRoot: string, boardId?: string): BoardCo
 export function allocateCardId(workspaceRoot: string, boardId?: string): number {
   const config = readConfig(workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
-  const board = config.boards[resolvedId]
-  if (!board) {
+  if (!config.boards[resolvedId]) {
     throw new Error(`Board '${resolvedId}' not found`)
   }
-  const id = board.nextCardId
-  board.nextCardId = id + 1
+  const id = config.nextCardId
+  config.nextCardId = id + 1
   writeConfig(workspaceRoot, config)
   return id
 }
@@ -382,11 +399,8 @@ export function syncCardIdCounter(workspaceRoot: string, boardId: string, existi
   if (existingIds.length === 0) return
   const maxId = Math.max(...existingIds)
   const config = readConfig(workspaceRoot)
-  const resolvedId = boardId || config.defaultBoard
-  const board = config.boards[resolvedId]
-  if (!board) return
-  if (board.nextCardId <= maxId) {
-    board.nextCardId = maxId + 1
+  if (config.nextCardId <= maxId) {
+    config.nextCardId = maxId + 1
     writeConfig(workspaceRoot, config)
   }
 }

@@ -35,6 +35,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     boardZoom: 100,
     cardZoom: 100,
     port: 3000,
+    nextCardId: 1,
     ...overrides
   }
 }
@@ -327,8 +328,8 @@ describe('Multi-board SDK operations', () => {
     })
   })
 
-  describe('per-board card IDs', () => {
-    it('should assign independent numeric IDs per board', async () => {
+  describe('cross-board card ID uniqueness', () => {
+    it('should assign globally unique IDs across boards', async () => {
       sdk.createBoard('sprint', 'Sprint')
 
       const defaultCard = await sdk.createCard({
@@ -340,9 +341,8 @@ describe('Multi-board SDK operations', () => {
         boardId: 'sprint'
       })
 
-      // Both boards start at ID 1, so both should get "1" as their first card ID
-      expect(defaultCard.id).toBe('1')
-      expect(sprintCard.id).toBe('1')
+      // IDs should be unique across boards
+      expect(defaultCard.id).not.toBe(sprintCard.id)
 
       // They should be in different directories
       expect(defaultCard.filePath).toContain(path.join('boards', 'default'))

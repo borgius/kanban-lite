@@ -30,7 +30,8 @@ const BASE_CONFIG = {
   kanbanDirectory: '.kanban',
   aiAgent: 'claude',
   defaultPriority: 'medium',
-  defaultStatus: 'backlog'
+  defaultStatus: 'backlog',
+  nextCardId: 1
 }
 
 describe('Board Actions', () => {

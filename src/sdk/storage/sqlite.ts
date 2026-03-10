@@ -200,6 +200,7 @@ export class SqliteStorageEngine implements StorageEngine {
       this._setWorkspaceKey('boardZoom', String(def.boardZoom))
       this._setWorkspaceKey('cardZoom', String(def.cardZoom))
       this._setWorkspaceKey('port', String(def.port))
+      this._setWorkspaceKey('nextCardId', String(def.nextCardId ?? 1))
       this._setWorkspaceKey('storageEngine', 'sqlite')
       this._setWorkspaceKey('sqlitePath', this.dbPath)
     }
@@ -247,6 +248,7 @@ export class SqliteStorageEngine implements StorageEngine {
       aiAgent: ws.aiAgent || 'claude',
       defaultPriority: (ws.defaultPriority || 'medium') as Priority,
       defaultStatus: ws.defaultStatus || 'backlog',
+      nextCardId: Number(ws.nextCardId) || this._computeGlobalNextCardId(),
       showPriorityBadges: this._bool(ws.showPriorityBadges, true),
       showAssignee: this._bool(ws.showAssignee, true),
       showDueDate: this._bool(ws.showDueDate, true),
@@ -335,6 +337,9 @@ export class SqliteStorageEngine implements StorageEngine {
       this._setWorkspaceKey('boardZoom', String(config.boardZoom))
       this._setWorkspaceKey('cardZoom', String(config.cardZoom))
       this._setWorkspaceKey('port', String(config.port))
+      if (config.nextCardId !== undefined) {
+        this._setWorkspaceKey('nextCardId', String(config.nextCardId))
+      }
       if (config.actionWebhookUrl !== undefined) {
         this._setWorkspaceKey('actionWebhookUrl', config.actionWebhookUrl)
       }
@@ -347,23 +352,30 @@ export class SqliteStorageEngine implements StorageEngine {
 
   allocateCardId(boardId: string): number {
     const allocate = this.db.transaction((bid: string) => {
-      const row = this.db.prepare('SELECT next_card_id FROM boards WHERE id = ?').get(bid) as { next_card_id: number } | undefined
-      if (!row) throw new Error(`Board '${bid}' not found`)
-      const id = row.next_card_id
-      this.db.prepare('UPDATE boards SET next_card_id = ? WHERE id = ?').run(id + 1, bid)
-      return id
+      const boardRow = this.db.prepare('SELECT id FROM boards WHERE id = ?').get(bid) as { id: string } | undefined
+      if (!boardRow) throw new Error(`Board '${bid}' not found`)
+      const ws = this._readAllWorkspaceKeys()
+      const current = Number(ws.nextCardId) || this._computeGlobalNextCardId()
+      this._setWorkspaceKey('nextCardId', String(current + 1))
+      return current
     })
     return allocate(boardId) as number
   }
 
-  syncCardIdCounter(boardId: string, existingIds: number[]): void {
+  syncCardIdCounter(_boardId: string, existingIds: number[]): void {
     if (existingIds.length === 0) return
     const maxId = Math.max(...existingIds)
-    const row = this.db.prepare('SELECT next_card_id FROM boards WHERE id = ?').get(boardId) as { next_card_id: number } | undefined
-    if (!row) return
-    if (row.next_card_id <= maxId) {
-      this.db.prepare('UPDATE boards SET next_card_id = ? WHERE id = ?').run(maxId + 1, boardId)
+    const ws = this._readAllWorkspaceKeys()
+    const current = Number(ws.nextCardId) || 1
+    if (current <= maxId) {
+      this._setWorkspaceKey('nextCardId', String(maxId + 1))
     }
+  }
+
+  /** Computes the next card ID from the max of all per-board counters (migration fallback). */
+  private _computeGlobalNextCardId(): number {
+    const rows = this.db.prepare('SELECT next_card_id FROM boards').all() as { next_card_id: number }[]
+    return rows.length > 0 ? Math.max(...rows.map((r) => r.next_card_id)) : 1
   }
 
   // --- Board management ---

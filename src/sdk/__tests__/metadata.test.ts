@@ -37,6 +37,7 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     boardZoom: 100,
     cardZoom: 100,
     port: 3000,
+    nextCardId: 1,
     ...overrides
   }
 }

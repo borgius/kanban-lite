@@ -13,6 +13,7 @@ import { sanitizeCard } from './types'
 import type { StorageEngine } from './storage/types'
 import { createStorageEngine } from './storage'
 import { matchesMetaFilter } from './metaUtils'
+import { fireWebhooks } from './webhooks'
 
 /**
  * Core SDK for managing kanban boards stored as markdown files.
@@ -95,6 +96,8 @@ export class KanbanSDK {
       } catch (err) {
         console.error(`SDK event handler error for ${event}:`, err)
       }
+    } else {
+      fireWebhooks(this.workspaceRoot, event, data)
     }
   }
 

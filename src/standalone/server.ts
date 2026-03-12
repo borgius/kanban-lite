@@ -1905,14 +1905,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   }
 
   if (sdk.storageEngine.type === 'markdown') {
+    let watcherReady = false
     const watcher = chokidar.watch(absoluteKanbanDir, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 100 }
     })
 
-    watcher.on('change', handleFileChange)
-    watcher.on('add', handleFileChange)
-    watcher.on('unlink', handleFileChange)
+    watcher.on('ready', () => { watcherReady = true })
+    watcher.on('change', (p) => watcherReady && handleFileChange(p))
+    watcher.on('add', (p) => watcherReady && handleFileChange(p))
+    watcher.on('unlink', (p) => watcherReady && handleFileChange(p))
 
     server.on('close', () => {
       watcher.close()

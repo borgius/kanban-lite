@@ -1039,34 +1039,36 @@ describe('Standalone Server Integration', () => {
       const ws1 = await connectWs(port)
       const ws2 = await connectWs(port)
 
-      // Init both clients
-      await sendAndReceive(ws1, { type: 'ready' }, 'init')
-      await sendAndReceive(ws2, { type: 'ready' }, 'init')
+      try {
+        // Init both clients
+        await sendAndReceive(ws1, { type: 'ready' }, 'init')
+        await sendAndReceive(ws2, { type: 'ready' }, 'init')
 
-      // Client 2 listens for update
-      const ws2Update = waitForMessage(ws2, 'init', 3000)
+        // Client 2 listens for update
+        const ws2Update = waitForMessage(ws2, 'init', 3000)
 
-      // Client 1 creates a card
-      ws1.send(JSON.stringify({
-        type: 'createCard',
-        data: {
-          status: 'backlog',
-          priority: 'medium',
-          content: '# Broadcast Card',
-          assignee: null,
-          dueDate: null,
-          labels: []
-        }
-      }))
+        // Client 1 creates a card
+        ws1.send(JSON.stringify({
+          type: 'createCard',
+          data: {
+            status: 'backlog',
+            priority: 'medium',
+            content: '# Broadcast Card',
+            assignee: null,
+            dueDate: null,
+            labels: []
+          }
+        }))
 
-      // Client 2 should receive the broadcast
-      const response = await ws2Update
-      const cards = response.cards as Array<Record<string, unknown>>
-      expect(cards.length).toBe(2) // original + new
-
-      ws1.close()
-      ws2.close()
-      await sleep(50)
+        // Client 2 should receive the broadcast
+        const response = await ws2Update
+        const cards = response.cards as Array<Record<string, unknown>>
+        expect(cards.length).toBe(2) // original + new
+      } finally {
+        ws1.close()
+        ws2.close()
+        await sleep(50)
+      }
     })
   })
 

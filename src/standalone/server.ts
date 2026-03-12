@@ -1408,11 +1408,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
       const ext = path.extname(attachName)
       const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+      const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
       fs.readFile(attachmentPath, (err, data) => {
         if (err) { res.writeHead(404); res.end('File not found'); return }
         res.writeHead(200, {
           'Content-Type': contentType,
-          'Content-Disposition': `inline; filename="${attachName}"`,
+          'Content-Disposition': `${disposition}; filename="${attachName}"`,
           'Access-Control-Allow-Origin': '*'
         })
         res.end(data)
@@ -1810,9 +1811,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
       const ext = path.extname(filename)
       const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+      const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
       fs.readFile(attachmentPath, (err, data) => {
         if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('File not found'); return }
-        res.writeHead(200, { 'Content-Type': contentType, 'Content-Disposition': `inline; filename="${filename}"` })
+        res.writeHead(200, { 'Content-Type': contentType, 'Content-Disposition': `${disposition}; filename="${filename}"` })
         res.end(data)
       })
       return

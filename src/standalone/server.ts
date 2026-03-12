@@ -4,12 +4,12 @@ import * as os from 'os'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import { generateSlug, type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
+import { type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, writeConfig } from '../shared/config'
 import { sanitizeCard } from '../sdk/types'
-import { fireWebhooks, loadWebhooks, createWebhook, deleteWebhook, updateWebhook } from './webhooks'
+import { fireWebhooks } from './webhooks'
 import { matchesMetaFilter } from '../sdk/metaUtils'
 
 interface CreateCardData {
@@ -308,15 +308,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   }
 
   function doAddColumn(name: string, color: string): KanbanColumn {
-    const existingColumns = sdk.listColumns(currentBoardId)
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    let uniqueId = id
-    let counter = 1
-    while (existingColumns.some(c => c.id === uniqueId)) {
-      uniqueId = `${id}-${counter++}`
-    }
-    const column: KanbanColumn = { id: uniqueId, name, color }
-    sdk.addColumn(column, currentBoardId)
+    const columns = sdk.addColumn({ id: '', name, color }, currentBoardId)
+    const column = columns[columns.length - 1]
     broadcast(buildInitMessage())
     return column
   }
@@ -782,10 +775,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
       case 'createBoard': {
         const boardName = msg.name as string
-        const boardId = generateSlug(boardName) || 'board'
         try {
-          sdk.createBoard(boardId, boardName)
-          currentBoardId = boardId
+          const createdBoard = sdk.createBoard('', boardName)
+          currentBoardId = createdBoard.id
           migrating = true
           try {
             await loadCards()
@@ -953,12 +945,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const { boardId } = params
         const body = await readBody(req)
         const actions = body.actions as Record<string, string>
-        const config = readConfig(workspaceRoot)
-        const board = config.boards[boardId]
-        if (!board) return jsonError(res, 404, `Board not found: ${boardId}`)
-        board.actions = actions
-        writeConfig(workspaceRoot, config)
-        return jsonOk(res, actions)
+        const existing = sdk.getBoardActions(boardId)
+        // Remove actions no longer present
+        for (const key of Object.keys(existing)) {
+          if (!(key in actions)) sdk.removeBoardAction(boardId, key)
+        }
+        // Add/update new actions
+        for (const [key, title] of Object.entries(actions)) {
+          sdk.addBoardAction(boardId, key, title)
+        }
+        return jsonOk(res, sdk.getBoardActions(boardId))
       } catch (err) {
         return jsonError(res, 400, String(err))
       }
@@ -1025,7 +1021,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       try {
         const { boardId } = params
         const boardColumns = sdk.listColumns(boardId)
-        const boardTasks = await sdk.listCards(boardColumns.map(c => c.id), boardId)
+        const metaFilter: Record<string, string> = {}
+        for (const [param, value] of url.searchParams.entries()) {
+          if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
+        }
+        const sortParam = url.searchParams.get('sort') as CardSortOption | null
+        const boardTasks = await sdk.listCards(
+          boardColumns.map(c => c.id), boardId,
+          Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
+          sortParam || undefined
+        )
         let result = boardTasks.map(sanitizeCard)
         if (url.searchParams.get('includeDeleted') !== 'true') {
           result = result.filter(f => f.status !== 'deleted')
@@ -1043,13 +1048,6 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           const groupLabels = sdk.getLabelsInGroup(labelGroup)
           result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
         }
-        const metaFilter: Record<string, string> = {}
-        for (const [param, value] of url.searchParams.entries()) {
-          if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
-        }
-        if (Object.keys(metaFilter).length > 0)
-          result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
-        result = applySortParam(result, url.searchParams.get('sort'))
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -1176,6 +1174,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('GET', '/api/tasks')
     if (params) {
+      const metaFilter2: Record<string, string> = {}
+      for (const [param, value] of url.searchParams.entries()) {
+        if (param.startsWith('meta.')) metaFilter2[param.slice(5)] = value
+      }
+      const sortParam2 = url.searchParams.get('sort') as CardSortOption | null
       await loadCards()
       let result = cards.map(sanitizeCard)
       if (url.searchParams.get('includeDeleted') !== 'true') {
@@ -1194,13 +1197,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const groupLabels = sdk.getLabelsInGroup(labelGroup)
         result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
       }
-      const metaFilter: Record<string, string> = {}
-      for (const [param, value] of url.searchParams.entries()) {
-        if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
-      }
-      if (Object.keys(metaFilter).length > 0)
-        result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter))
-      result = applySortParam(result, url.searchParams.get('sort'))
+      if (Object.keys(metaFilter2).length > 0)
+        result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter2))
+      result = applySortParam(result, sortParam2)
       return jsonOk(res, result)
     }
 
@@ -1624,7 +1623,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('GET', '/api/webhooks')
     if (params) {
-      return jsonOk(res, loadWebhooks(workspaceRoot))
+      return jsonOk(res, sdk.listWebhooks())
     }
 
     params = route('POST', '/api/webhooks')
@@ -1638,7 +1637,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         if (!events || !Array.isArray(events) || events.length === 0) {
           return jsonError(res, 400, 'events array is required')
         }
-        const webhook = createWebhook(workspaceRoot, { url: webhookUrl, events, secret })
+        const webhook = sdk.createWebhook({ url: webhookUrl, events, secret })
         return jsonOk(res, webhook, 201)
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -1650,7 +1649,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       try {
         const { id } = params
         const body = await readBody(req)
-        const webhook = updateWebhook(workspaceRoot, id, body as Partial<{ url: string; events: string[]; secret: string; active: boolean }>)
+        const webhook = sdk.updateWebhook(id, body as Partial<{ url: string; events: string[]; secret: string; active: boolean }>)
         if (!webhook) return jsonError(res, 404, 'Webhook not found')
         return jsonOk(res, webhook)
       } catch (err) {
@@ -1661,7 +1660,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     params = route('DELETE', '/api/webhooks/:id')
     if (params) {
       const { id } = params
-      const ok = deleteWebhook(workspaceRoot, id)
+      const ok = sdk.deleteWebhook(id)
       if (!ok) return jsonError(res, 404, 'Webhook not found')
       return jsonOk(res, { deleted: true })
     }

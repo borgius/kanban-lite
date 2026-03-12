@@ -2,9 +2,9 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
-import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../shared/types'
+import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug } from '../shared/types'
 import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
-import type { BoardConfig } from '../shared/config'
+import type { BoardConfig, Webhook } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import type { Priority } from '../shared/types'
 import { getCardFilePath } from './fileUtils'
@@ -13,7 +13,7 @@ import { sanitizeCard } from './types'
 import type { StorageEngine } from './storage/types'
 import { createStorageEngine } from './storage'
 import { matchesMetaFilter } from './metaUtils'
-import { fireWebhooks } from './webhooks'
+import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
 
 /**
  * Core SDK for managing kanban boards stored as markdown files.
@@ -223,6 +223,13 @@ export class KanbanSDK {
     defaultPriority?: Priority
   }): BoardInfo {
     const config = readConfig(this.workspaceRoot)
+    if (!id) {
+      const base = generateSlug(name) || 'board'
+      let uniqueId = base
+      let counter = 1
+      while (config.boards[uniqueId]) { uniqueId = `${base}-${counter++}` }
+      id = uniqueId
+    }
     if (config.boards[id]) {
       throw new Error(`Board already exists: ${id}`)
     }
@@ -1777,6 +1784,13 @@ export class KanbanSDK {
     const resolvedId = boardId || config.defaultBoard
     const board = config.boards[resolvedId]
     if (!board) throw new Error(`Board not found: ${resolvedId}`)
+    if (!column.id) {
+      const base = generateSlug(column.name) || 'column'
+      let uniqueId = base
+      let counter = 1
+      while (board.columns.some(c => c.id === uniqueId)) { uniqueId = `${base}-${counter++}` }
+      column = { ...column, id: uniqueId }
+    }
     if (column.id === DELETED_STATUS_ID) throw new Error(`"${DELETED_STATUS_ID}" is a reserved column ID`)
     if (board.columns.some(c => c.id === column.id)) {
       throw new Error(`Column already exists: ${column.id}`)
@@ -2115,6 +2129,64 @@ export class KanbanSDK {
     writeConfig(this.workspaceRoot, restConfig as typeof config)
     this.emitEvent('storage.migrated', { from: 'sqlite', to: 'markdown', count })
     return count
+  }
+
+  /**
+   * Sets the default board for the workspace.
+   *
+   * @param boardId - The ID of the board to set as the default.
+   * @throws {Error} If the board does not exist.
+   *
+   * @example
+   * ```ts
+   * sdk.setDefaultBoard('sprint-2')
+   * ```
+   */
+  setDefaultBoard(boardId: string): void {
+    const config = readConfig(this.workspaceRoot)
+    if (!config.boards[boardId]) throw new Error(`Board not found: ${boardId}`)
+    config.defaultBoard = boardId
+    writeConfig(this.workspaceRoot, config)
+  }
+
+  /**
+   * Lists all registered webhooks.
+   *
+   * @returns Array of {@link Webhook} objects.
+   */
+  listWebhooks(): Webhook[] {
+    return loadWebhooks(this.workspaceRoot)
+  }
+
+  /**
+   * Creates and persists a new webhook.
+   *
+   * @param webhookConfig - The webhook configuration.
+   * @returns The newly created {@link Webhook}.
+   */
+  createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Webhook {
+    return _createWebhook(this.workspaceRoot, webhookConfig)
+  }
+
+  /**
+   * Deletes a webhook by its ID.
+   *
+   * @param id - The webhook ID to delete.
+   * @returns `true` if deleted, `false` if not found.
+   */
+  deleteWebhook(id: string): boolean {
+    return _deleteWebhook(this.workspaceRoot, id)
+  }
+
+  /**
+   * Updates an existing webhook's configuration.
+   *
+   * @param id - The webhook ID to update.
+   * @param updates - Partial webhook fields to merge.
+   * @returns The updated {@link Webhook}, or `null` if not found.
+   */
+  updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Webhook | null {
+    return _updateWebhook(this.workspaceRoot, id, updates)
   }
 
 }

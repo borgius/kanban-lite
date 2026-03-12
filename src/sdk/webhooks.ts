@@ -1,7 +1,7 @@
 import * as crypto from 'crypto'
 import * as http from 'http'
 import * as https from 'https'
-import { readConfig } from '../shared/config'
+import { readConfig, writeConfig } from '../shared/config'
 import type { Webhook } from '../shared/config'
 import type { SDKEventType } from './types'
 
@@ -99,4 +99,94 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     req.write(payload)
     req.end()
   })
+}
+
+// --- Webhook CRUD (canonical implementations) ---
+
+/**
+ * Loads all registered webhooks from the workspace `.kanban.json` config.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @returns Array of {@link Webhook} objects, or an empty array if none are registered.
+ */
+export function loadWebhooks(workspaceRoot: string): Webhook[] {
+  const config = readConfig(workspaceRoot)
+  return config.webhooks || []
+}
+
+/**
+ * Persists the full webhooks array to the workspace `.kanban.json` config.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param webhooks - The complete array of webhooks to save.
+ */
+export function saveWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
+  const config = readConfig(workspaceRoot)
+  config.webhooks = webhooks
+  writeConfig(workspaceRoot, config)
+}
+
+/**
+ * Creates and persists a new webhook registration.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param webhookConfig - The webhook configuration.
+ * @returns The newly created {@link Webhook} object with its generated ID.
+ */
+export function createWebhook(
+  workspaceRoot: string,
+  webhookConfig: { url: string; events: string[]; secret?: string }
+): Webhook {
+  const webhooks = loadWebhooks(workspaceRoot)
+  const webhook: Webhook = {
+    id: 'wh_' + crypto.randomBytes(8).toString('hex'),
+    url: webhookConfig.url,
+    events: webhookConfig.events,
+    secret: webhookConfig.secret,
+    active: true
+  }
+  webhooks.push(webhook)
+  saveWebhooks(workspaceRoot, webhooks)
+  return webhook
+}
+
+/**
+ * Deletes a webhook by its ID.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param id - The webhook ID to delete.
+ * @returns `true` if the webhook was found and deleted, `false` otherwise.
+ */
+export function deleteWebhook(workspaceRoot: string, id: string): boolean {
+  const webhooks = loadWebhooks(workspaceRoot)
+  const filtered = webhooks.filter(w => w.id !== id)
+  if (filtered.length === webhooks.length) return false
+  saveWebhooks(workspaceRoot, filtered)
+  return true
+}
+
+/**
+ * Updates an existing webhook's configuration.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param id - The webhook ID to update.
+ * @param updates - Partial webhook fields to merge.
+ * @returns The updated {@link Webhook}, or `null` if not found.
+ */
+export function updateWebhook(
+  workspaceRoot: string,
+  id: string,
+  updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>
+): Webhook | null {
+  const webhooks = loadWebhooks(workspaceRoot)
+  const webhook = webhooks.find(w => w.id === id)
+  if (!webhook) return null
+
+  if (updates.url !== undefined) webhook.url = updates.url
+  if (updates.events !== undefined) webhook.events = updates.events
+  if (updates.secret !== undefined) webhook.secret = updates.secret
+  if (updates.active !== undefined) webhook.active = updates.active
+
+  saveWebhooks(workspaceRoot, webhooks)
+  return webhook
 }

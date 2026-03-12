@@ -177,9 +177,8 @@ export class KanbanPanel {
             break
           }
           case 'openSettings': {
-            const settingsRoot = this._getWorkspaceRoot()
-            const settingsCfg = settingsRoot ? readConfig(settingsRoot) : { ...DEFAULT_CONFIG }
-            const openSettings = configToSettings(settingsCfg)
+            const sdk = this._getSDK()
+            const openSettings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
             this._panel.webview.postMessage({ type: 'showSettings', settings: openSettings })
             break
           }
@@ -310,11 +309,9 @@ export class KanbanPanel {
             break
           case 'createBoard': {
             if (!this._sdk) break
-            const { generateSlug } = await import('../shared/types')
-            const boardId = generateSlug(message.name) || 'board'
             try {
-              this._sdk.createBoard(boardId, message.name)
-              this._currentBoardId = boardId
+              const createdBoard = this._sdk.createBoard('', message.name)
+              this._currentBoardId = createdBoard.id
               await this._loadCards()
               this._sendCardsToWebview()
             } catch (err) {
@@ -1160,14 +1157,7 @@ export class KanbanPanel {
   private _addColumn(column: { name: string; color: string }): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    const id = column.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    let uniqueId = id
-    let counter = 1
-    const existing = sdk.listColumns()
-    while (existing.some(c => c.id === uniqueId)) {
-      uniqueId = `${id}-${counter++}`
-    }
-    sdk.addColumn({ id: uniqueId, name: column.name, color: column.color }, this._currentBoardId)
+    sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId)
     this._sendCardsToWebview()
   }
 
@@ -1181,18 +1171,11 @@ export class KanbanPanel {
   private _removeColumn(columnId: string): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    const hasCards = this._cards.some(f => f.status === columnId)
-    if (hasCards) {
-      vscode.window.showWarningMessage(`Cannot remove list "${columnId}" because it still contains cards. Move or delete them first.`)
-      return
-    }
-    const columns = sdk.listColumns()
-    if (columns.length <= 1) {
-      vscode.window.showWarningMessage('Cannot remove the last list.')
-      return
-    }
-    sdk.removeColumn(columnId, this._currentBoardId)
-    this._sendCardsToWebview()
+    sdk.removeColumn(columnId, this._currentBoardId).then(() => {
+      this._sendCardsToWebview()
+    }).catch((err: Error) => {
+      vscode.window.showWarningMessage(err.message)
+    })
   }
 
   private async _cleanupColumn(columnId: string): Promise<void> {

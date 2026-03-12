@@ -2,10 +2,9 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { Card, Priority, CardSortOption } from '../shared/types'
-import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
-import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
+import { getTitleFromContent } from '../shared/types'
+import { readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
-import { matchesMetaFilter } from '../sdk/metaUtils'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
@@ -123,13 +122,6 @@ function colorPriority(priority: string): string {
 
 // --- Formatters ---
 
-function getTitleFromContent(content: string): string {
-  const match = content.match(/^#\s+(.+)$/m)
-  if (match) return match[1].trim()
-  const firstLine = content.split('\n').map(l => l.trim()).find(l => l.length > 0)
-  return firstLine || 'Untitled'
-}
-
 function formatCardRow(c: Card): string {
   const title = getTitleFromContent(c.content)
   const truncTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
@@ -173,7 +165,32 @@ function formatCardDetail(c: Card): string {
 
 async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
-  let cards = await sdk.listCards(undefined, boardId)
+
+  const metaFilter: Record<string, string> | undefined = Array.isArray(flags.meta) ? (() => {
+    const mf: Record<string, string> = {}
+    for (const entry of flags.meta as string[]) {
+      const eq = entry.indexOf('=')
+      if (eq < 1) {
+        console.error(red(`Invalid --meta format: "${entry}". Expected key=value`))
+        process.exit(1)
+      }
+      mf[entry.slice(0, eq)] = entry.slice(eq + 1)
+    }
+    return Object.keys(mf).length > 0 ? mf : undefined
+  })() : undefined
+
+  const VALID_SORTS: CardSortOption[] = ['created:asc', 'created:desc', 'modified:asc', 'modified:desc']
+  let sortOpt: CardSortOption | undefined
+  if (typeof flags.sort === 'string') {
+    const sort = flags.sort as CardSortOption
+    if (!VALID_SORTS.includes(sort)) {
+      console.error(red(`Invalid --sort value: "${sort}". Must be one of: ${VALID_SORTS.join(', ')}`))
+      process.exit(1)
+    }
+    sortOpt = sort
+  }
+
+  let cards = await sdk.listCards(undefined, boardId, metaFilter, sortOpt)
 
   if (!flags['include-deleted']) {
     cards = cards.filter(c => c.status !== 'deleted')
@@ -194,33 +211,6 @@ async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   if (typeof flags['label-group'] === 'string') {
     const groupLabels = sdk.getLabelsInGroup(flags['label-group'] as string)
     cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
-  }
-  if (Array.isArray(flags.meta)) {
-    const metaFilter: Record<string, string> = {}
-    for (const entry of flags.meta) {
-      const eq = entry.indexOf('=')
-      if (eq < 1) {
-        console.error(red(`Invalid --meta format: "${entry}". Expected key=value`))
-        process.exit(1)
-      }
-      metaFilter[entry.slice(0, eq)] = entry.slice(eq + 1)
-    }
-    cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
-  }
-
-  const VALID_SORTS: CardSortOption[] = ['created:asc', 'created:desc', 'modified:asc', 'modified:desc']
-  if (typeof flags.sort === 'string') {
-    const sort = flags.sort as CardSortOption
-    if (!VALID_SORTS.includes(sort)) {
-      console.error(red(`Invalid --sort value: "${sort}". Must be one of: ${VALID_SORTS.join(', ')}`))
-      process.exit(1)
-    }
-    const [field, dir] = sort.split(':')
-    cards = [...cards].sort((a, b) => {
-      const aVal = field === 'created' ? a.created : a.modified
-      const bVal = field === 'created' ? b.created : b.modified
-      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-    })
   }
 
   if (flags.json) {
@@ -517,13 +507,12 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         console.log(config.defaultBoard)
         break
       }
-      const config = readConfig(workspaceRoot)
-      if (!config.boards[boardId]) {
-        console.error(red(`Board not found: ${boardId}`))
+      try {
+        sdk.setDefaultBoard(boardId)
+      } catch (err) {
+        console.error(red(String(err)))
         process.exit(1)
       }
-      config.defaultBoard = boardId
-      writeConfig(workspaceRoot, config)
       console.log(green(`Default board set to: ${boardId}`))
       break
     }
@@ -1168,12 +1157,12 @@ async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
 
 // --- Webhook Commands ---
 
-async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
+async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {
     case 'list': {
-      const webhooks = loadWebhooks(workspaceRoot)
+      const webhooks = sdk.listWebhooks()
       if (flags.json) {
         console.log(JSON.stringify(webhooks, null, 2))
       } else if (webhooks.length === 0) {
@@ -1197,7 +1186,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: st
       }
       const events = typeof flags.events === 'string' ? flags.events.split(',').map(e => e.trim()) : ['*']
       const secret = typeof flags.secret === 'string' ? flags.secret : undefined
-      const webhook = createWebhook(workspaceRoot, { url, events, secret })
+      const webhook = sdk.createWebhook({ url, events, secret })
       if (flags.json) {
         console.log(JSON.stringify(webhook, null, 2))
       } else {
@@ -1215,7 +1204,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: st
         console.error(red('Usage: kl webhooks remove <id>'))
         process.exit(1)
       }
-      const removed = deleteWebhook(workspaceRoot, webhookId)
+      const removed = sdk.deleteWebhook(webhookId)
       if (removed) {
         console.log(green(`Removed webhook: ${webhookId}`))
       } else {
@@ -1235,7 +1224,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, workspaceRoot: st
       if (typeof flags.events === 'string') updates.events = flags.events.split(',').map(e => e.trim())
       if (typeof flags.secret === 'string') updates.secret = flags.secret
       if (typeof flags.active === 'string') updates.active = flags.active === 'true'
-      const updated = updateWebhook(workspaceRoot, webhookId, updates)
+      const updated = sdk.updateWebhook(webhookId, updates)
       if (!updated) {
         console.error(red(`Webhook not found: ${webhookId}`))
         process.exit(1)
@@ -1264,14 +1253,13 @@ const SETTINGS_KEYS = [
   'showFileName', 'compactMode', 'showDeletedColumn', 'defaultPriority', 'defaultStatus'
 ] as const
 
-async function cmdSettings(positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
+async function cmdSettings(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {
   const subcommand = positional[0] || 'show'
 
   switch (subcommand) {
     case 'show':
     case 'list': {
-      const config = readConfig(workspaceRoot)
-      const settings = configToSettings(config)
+      const settings = sdk.getSettings()
       if (flags.json) {
         console.log(JSON.stringify(settings, null, 2))
       } else {
@@ -1285,8 +1273,7 @@ async function cmdSettings(positional: string[], flags: Flags, workspaceRoot: st
     }
     case 'update':
     case 'set': {
-      const config = readConfig(workspaceRoot)
-      const settings = configToSettings(config)
+      const settings = sdk.getSettings()
       let changed = false
       const settingsAny = settings as unknown as Record<string, unknown>
       for (const key of SETTINGS_KEYS) {
@@ -1307,10 +1294,10 @@ async function cmdSettings(positional: string[], flags: Flags, workspaceRoot: st
         console.error(`Available: ${SETTINGS_KEYS.join(', ')}`)
         process.exit(1)
       }
-      writeConfig(workspaceRoot, settingsToConfig(config, settings))
+      sdk.updateSettings(settings)
       console.log(green('Settings updated.'))
       if (flags.json) {
-        console.log(JSON.stringify(configToSettings(readConfig(workspaceRoot)), null, 2))
+        console.log(JSON.stringify(sdk.getSettings(), null, 2))
       }
       break
     }
@@ -1629,9 +1616,7 @@ async function main(): Promise<void> {
 
   const kanbanDir = await resolveKanbanDir(flags)
   const workspaceRoot = path.dirname(kanbanDir)
-  const sdk = new KanbanSDK(kanbanDir, {
-    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
-  })
+  const sdk = new KanbanSDK(kanbanDir)
 
   switch (command) {
     case 'list':
@@ -1703,10 +1688,10 @@ async function main(): Promise<void> {
     case 'webhooks':
     case 'webhook':
     case 'wh':
-      await cmdWebhooks(positional, flags, workspaceRoot)
+      await cmdWebhooks(positional, flags, sdk)
       break
     case 'settings':
-      await cmdSettings(positional, flags, workspaceRoot)
+      await cmdSettings(positional, flags, sdk)
       break
     case 'pwd':
       if (flags.json) {

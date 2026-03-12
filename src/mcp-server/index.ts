@@ -4,10 +4,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import { DELETED_STATUS_ID, type Priority, type CardSortOption } from '../shared/types'
-import { readConfig, writeConfig, configToSettings, settingsToConfig } from '../shared/config'
-import { loadWebhooks, createWebhook, deleteWebhook, updateWebhook, fireWebhooks } from '../standalone/webhooks'
-import { matchesMetaFilter } from '../sdk/metaUtils'
+import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
+import { readConfig } from '../shared/config'
+import { fireWebhooks } from '../sdk/webhooks'
 
 // --- Resolve cards directory ---
 
@@ -41,14 +40,7 @@ async function resolveKanbanDir(): Promise<string> {
   }
   // 3. Auto-detect from cwd
   const root = await findWorkspaceRoot(process.cwd())
-  return path.join(root, '.devtool', 'cards')
-}
-
-function getTitleFromContent(content: string): string {
-  const match = content.match(/^#\s+(.+)$/m)
-  if (match) return match[1].trim()
-  const firstLine = content.split('\n').map(l => l.trim()).find(l => l.length > 0)
-  return firstLine || 'Untitled'
+  return path.join(root, '.kanban')
 }
 
 // --- Main ---
@@ -139,7 +131,11 @@ async function main(): Promise<void> {
       sort: z.enum(['created:asc', 'created:desc', 'modified:asc', 'modified:desc']).optional().describe('Sort order: created:asc, created:desc, modified:asc, or modified:desc. Defaults to board order.'),
     },
     async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, metaFilter, sort }) => {
-      let cards = await sdk.listCards(undefined, boardId)
+      let cards = await sdk.listCards(
+        undefined, boardId,
+        metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
+        sort || undefined
+      )
       if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
       if (status) cards = cards.filter(c => c.status === status)
       if (priority) cards = cards.filter(c => c.priority === priority)
@@ -148,16 +144,6 @@ async function main(): Promise<void> {
       if (labelGroup) {
         const groupLabels = sdk.getLabelsInGroup(labelGroup)
         cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
-      }
-      if (metaFilter && Object.keys(metaFilter).length > 0)
-        cards = cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
-      if (sort) {
-        const [field, dir] = (sort as CardSortOption).split(':')
-        cards = [...cards].sort((a, b) => {
-          const aVal = field === 'created' ? a.created : a.modified
-          const bVal = field === 'created' ? b.created : b.modified
-          return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-        })
       }
 
       const summary = cards.map(c => ({
@@ -1138,8 +1124,7 @@ async function main(): Promise<void> {
     'Get the current kanban board display settings.',
     {},
     async () => {
-      const config = readConfig(workspaceRoot)
-      const settings = configToSettings(config)
+      const settings = sdk.getSettings()
       return {
         content: [{
           type: 'text' as const,
@@ -1164,20 +1149,18 @@ async function main(): Promise<void> {
       defaultStatus: z.string().optional().describe('Default status for new cards'),
     },
     async (updates) => {
-      const config = readConfig(workspaceRoot)
-      const settings = configToSettings(config)
+      const settings = sdk.getSettings()
       const merged = { ...settings }
       for (const [key, value] of Object.entries(updates)) {
         if (value !== undefined) {
           (merged as unknown as Record<string, unknown>)[key] = value
         }
       }
-      writeConfig(workspaceRoot, settingsToConfig(config, merged))
-      const updated = configToSettings(readConfig(workspaceRoot))
+      sdk.updateSettings(merged)
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify(updated, null, 2),
+          text: JSON.stringify(sdk.getSettings(), null, 2),
         }],
       }
     }
@@ -1190,7 +1173,7 @@ async function main(): Promise<void> {
     'List all registered webhooks.',
     {},
     async () => {
-      const webhooks = loadWebhooks(workspaceRoot)
+      const webhooks = sdk.listWebhooks()
       return {
         content: [{
           type: 'text' as const,
@@ -1209,7 +1192,7 @@ async function main(): Promise<void> {
       secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
     },
     async ({ url, events, secret }) => {
-      const webhook = createWebhook(workspaceRoot, {
+      const webhook = sdk.createWebhook({
         url,
         events: events || ['*'],
         secret,
@@ -1230,7 +1213,7 @@ async function main(): Promise<void> {
       webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
     },
     async ({ webhookId }) => {
-      const removed = deleteWebhook(workspaceRoot, webhookId)
+      const removed = sdk.deleteWebhook(webhookId)
       if (!removed) {
         return {
           content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],
@@ -1262,7 +1245,7 @@ async function main(): Promise<void> {
       if (events !== undefined) updates.events = events
       if (secret !== undefined) updates.secret = secret
       if (active !== undefined) updates.active = active
-      const updated = updateWebhook(workspaceRoot, webhookId, updates)
+      const updated = sdk.updateWebhook(webhookId, updates)
       if (!updated) {
         return {
           content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],

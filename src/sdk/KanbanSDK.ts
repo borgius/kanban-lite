@@ -1,19 +1,22 @@
 import * as path from 'path'
-import * as fs from 'fs/promises'
-import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
-import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug } from '../shared/types'
-import { readConfig, writeConfig, configToSettings, settingsToConfig, allocateCardId, syncCardIdCounter, getBoardConfig } from '../shared/config'
+import type { CardDisplaySettings, Priority } from '../shared/types'
+import { DELETED_STATUS_ID } from '../shared/types'
+import { readConfig } from '../shared/config'
 import type { BoardConfig, Webhook } from '../shared/config'
-import type { CardDisplaySettings } from '../shared/types'
-import type { Priority } from '../shared/types'
-import { getCardFilePath } from './fileUtils'
 import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
-import { sanitizeCard } from './types'
 import type { StorageEngine } from './storage/types'
 import { createStorageEngine } from './storage'
-import { matchesMetaFilter } from './metaUtils'
 import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
+import * as Boards from './modules/boards'
+import * as Cards from './modules/cards'
+import * as Labels from './modules/labels'
+import * as Attachments from './modules/attachments'
+import * as Comments from './modules/comments'
+import * as Logs from './modules/logs'
+import * as Columns from './modules/columns'
+import * as Settings from './modules/settings'
+import * as Migration from './modules/migration'
 
 /**
  * Core SDK for managing kanban boards stored as markdown files.
@@ -36,7 +39,7 @@ import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebh
 export class KanbanSDK {
   private _migrated = false
   private _onEvent?: SDKEventHandler
-  private _storage: StorageEngine
+  /** @internal */ _storage: StorageEngine
 
   /**
    * Creates a new KanbanSDK instance.
@@ -89,7 +92,8 @@ export class KanbanSDK {
    * Emits an event to the registered handler, if one exists.
    * Called internally after every successful mutating operation.
    */
-  private emitEvent(event: SDKEventType, data: unknown): void {
+  /** @internal */
+  emitEvent(event: SDKEventType, data: unknown): void {
     if (this._onEvent) {
       try {
         this._onEvent(event, data)
@@ -120,17 +124,20 @@ export class KanbanSDK {
 
   // --- Board resolution helpers ---
 
-  private _resolveBoardId(boardId?: string): string {
+  /** @internal */
+  _resolveBoardId(boardId?: string): string {
     const config = readConfig(this.workspaceRoot)
     return boardId || config.defaultBoard
   }
 
-  private _boardDir(boardId?: string): string {
+  /** @internal */
+  _boardDir(boardId?: string): string {
     const resolvedId = this._resolveBoardId(boardId)
     return path.join(this.kanbanDir, 'boards', resolvedId)
   }
 
-  private _isCompletedStatus(status: string, boardId?: string): boolean {
+  /** @internal */
+  _isCompletedStatus(status: string, boardId?: string): boolean {
     const config = readConfig(this.workspaceRoot)
     const resolvedId = boardId || config.defaultBoard
     const board = config.boards[resolvedId]
@@ -138,7 +145,8 @@ export class KanbanSDK {
     return board.columns[board.columns.length - 1].id === status
   }
 
-  private async _ensureMigrated(): Promise<void> {
+  /** @internal */
+  async _ensureMigrated(): Promise<void> {
     if (this._migrated) return
     await this._storage.migrate()
     this._migrated = true
@@ -181,14 +189,7 @@ export class KanbanSDK {
    * ```
    */
   listBoards(): BoardInfo[] {
-    const config = readConfig(this.workspaceRoot)
-    return Object.entries(config.boards).map(([id, board]) => ({
-      id,
-      name: board.name,
-      description: board.description,
-      columns: board.columns,
-      actions: board.actions
-    }))
+    return Boards.listBoards(this)
   }
 
   /**
@@ -222,39 +223,7 @@ export class KanbanSDK {
     defaultStatus?: string
     defaultPriority?: Priority
   }): BoardInfo {
-    const config = readConfig(this.workspaceRoot)
-    if (!id) {
-      const base = generateSlug(name) || 'board'
-      let uniqueId = base
-      let counter = 1
-      while (config.boards[uniqueId]) { uniqueId = `${base}-${counter++}` }
-      id = uniqueId
-    }
-    if (config.boards[id]) {
-      throw new Error(`Board already exists: ${id}`)
-    }
-
-    const columns = options?.columns || [...config.boards[config.defaultBoard]?.columns || [
-      { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-      { id: 'todo', name: 'To Do', color: '#3b82f6' },
-      { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-      { id: 'review', name: 'Review', color: '#8b5cf6' },
-      { id: 'done', name: 'Done', color: '#22c55e' }
-    ]]
-
-    config.boards[id] = {
-      name,
-      description: options?.description,
-      columns,
-      nextCardId: 1,
-      defaultStatus: options?.defaultStatus || columns[0]?.id || 'backlog',
-      defaultPriority: options?.defaultPriority || config.defaultPriority
-    }
-    writeConfig(this.workspaceRoot, config)
-
-    const boardInfo = { id, name, description: options?.description }
-    this.emitEvent('board.created', boardInfo)
-    return boardInfo
+    return Boards.createBoard(this, id, name, options)
   }
 
   /**
@@ -276,27 +245,7 @@ export class KanbanSDK {
    * ```
    */
   async deleteBoard(boardId: string): Promise<void> {
-    const config = readConfig(this.workspaceRoot)
-    if (!config.boards[boardId]) {
-      throw new Error(`Board not found: ${boardId}`)
-    }
-    if (config.defaultBoard === boardId) {
-      throw new Error(`Cannot delete the default board: ${boardId}`)
-    }
-
-    // Check if board has cards
-    const cards = await this.listCards(undefined, boardId)
-    if (cards.length > 0) {
-      throw new Error(`Cannot delete board "${boardId}": ${cards.length} card(s) still exist`)
-    }
-
-    // Remove board data from storage
-    const boardDir = this._boardDir(boardId)
-    await this._storage.deleteBoardData(boardDir, boardId)
-
-    delete config.boards[boardId]
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('board.deleted', { id: boardId })
+    return Boards.deleteBoard(this, boardId)
   }
 
   /**
@@ -313,7 +262,7 @@ export class KanbanSDK {
    * ```
    */
   getBoard(boardId: string): BoardConfig {
-    return getBoardConfig(this.workspaceRoot, boardId)
+    return Boards.getBoard(this, boardId)
   }
 
   /**
@@ -341,21 +290,7 @@ export class KanbanSDK {
    * ```
    */
   updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>): BoardConfig {
-    const config = readConfig(this.workspaceRoot)
-    const board = config.boards[boardId]
-    if (!board) {
-      throw new Error(`Board not found: ${boardId}`)
-    }
-
-    if (updates.name !== undefined) board.name = updates.name
-    if (updates.description !== undefined) board.description = updates.description
-    if (updates.columns !== undefined) board.columns = updates.columns
-    if (updates.defaultStatus !== undefined) board.defaultStatus = updates.defaultStatus
-    if (updates.defaultPriority !== undefined) board.defaultPriority = updates.defaultPriority
-
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('board.updated', { id: boardId, ...board })
-    return board
+    return Boards.updateBoard(this, boardId, updates)
   }
 
   /**
@@ -366,11 +301,7 @@ export class KanbanSDK {
    * @throws {Error} If the board does not exist.
    */
   getBoardActions(boardId?: string): Record<string, string> {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    return board.actions ?? {}
+    return Boards.getBoardActions(this, boardId)
   }
 
   /**
@@ -383,14 +314,7 @@ export class KanbanSDK {
    * @throws {Error} If the board does not exist.
    */
   addBoardAction(boardId: string, key: string, title: string): Record<string, string> {
-    const config = readConfig(this.workspaceRoot)
-    const board = config.boards[boardId]
-    if (!board) throw new Error(`Board not found: ${boardId}`)
-    board.actions ??= {}
-    board.actions[key] = title
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('board.updated', { id: boardId, ...board })
-    return board.actions
+    return Boards.addBoardAction(this, boardId, key, title)
   }
 
   /**
@@ -403,17 +327,7 @@ export class KanbanSDK {
    * @throws {Error} If the action key is not found on the board.
    */
   removeBoardAction(boardId: string, key: string): Record<string, string> {
-    const config = readConfig(this.workspaceRoot)
-    const board = config.boards[boardId]
-    if (!board) throw new Error(`Board not found: ${boardId}`)
-    if (!board.actions || !(key in board.actions)) {
-      throw new Error(`Action "${key}" not found on board "${boardId}"`)
-    }
-    delete board.actions[key]
-    if (Object.keys(board.actions).length === 0) delete board.actions
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('board.updated', { id: boardId, ...board })
-    return board.actions ?? {}
+    return Boards.removeBoardAction(this, boardId, key)
   }
 
   /**
@@ -425,16 +339,7 @@ export class KanbanSDK {
    * @throws {Error} If the action key is not defined on the board.
    */
   async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    const actions = board.actions ?? {}
-    if (!(actionKey in actions)) {
-      throw new Error(`Action "${actionKey}" not defined on board "${resolvedId}"`)
-    }
-    const actionTitle = actions[actionKey]
-    this.emitEvent('board.action', { boardId: resolvedId, action: actionKey, title: actionTitle })
+    return Boards.triggerBoardAction(this, boardId, actionKey)
   }
 
   /**
@@ -463,73 +368,7 @@ export class KanbanSDK {
    * ```
    */
   async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
-    const toBoardDir = this._boardDir(toBoardId)
-
-    const config = readConfig(this.workspaceRoot)
-    if (!config.boards[fromBoardId]) throw new Error(`Board not found: ${fromBoardId}`)
-    if (!config.boards[toBoardId]) throw new Error(`Board not found: ${toBoardId}`)
-
-    // Find card in source board
-    const card = await this.getCard(cardId, fromBoardId)
-    if (!card) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
-    const previousStatus = card.status
-
-    // Determine target status
-    const toBoard = config.boards[toBoardId]
-    const newStatus = targetStatus || toBoard.defaultStatus || toBoard.columns[0]?.id || 'backlog'
-
-    // Ensure target directory exists (no-op for SQLite)
-    await this._storage.ensureBoardDirs(toBoardDir, [newStatus])
-
-    // Capture source attachment directory before mutating the card
-    const srcAttachDir = this._storage.getCardDir(card)
-
-    // Remove card from source board storage
-    await this._storage.deleteCard(card)
-
-    // Update card metadata
-    card.status = newStatus
-    card.boardId = toBoardId
-    card.modified = new Date().toISOString()
-    card.completedAt = this._isCompletedStatus(newStatus, toBoardId) ? new Date().toISOString() : null
-
-    // Update filePath for markdown engine
-    if (this._storage.type === 'markdown') {
-      card.filePath = path.join(toBoardDir, newStatus, path.basename(card.filePath))
-    } else {
-      card.filePath = ''
-    }
-
-    // Recompute order for target column
-    const targetCards = await this.listCards(undefined, toBoardId)
-    const cardsInStatus = targetCards
-      .filter(c => c.status === newStatus && c.id !== cardId)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-    const lastOrder = cardsInStatus.length > 0 ? cardsInStatus[cardsInStatus.length - 1].order : null
-    card.order = generateKeyBetween(lastOrder, null)
-
-    await this._storage.writeCard(card)
-
-    // Move attachment files (including auto-attached log) to the new location
-    if (card.attachments.length > 0) {
-      const dstAttachDir = this._storage.getCardDir(card)
-      if (srcAttachDir !== dstAttachDir) {
-        await fs.mkdir(dstAttachDir, { recursive: true })
-        await Promise.all(
-          card.attachments.map(async (filename) => {
-            const src = path.join(srcAttachDir, filename)
-            const dst = path.join(dstAttachDir, filename)
-            await fs.rename(src, dst).catch(() => {})
-          })
-        )
-      }
-    }
-
-    this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
-    if (previousStatus !== newStatus) {
-      await this.addLog(card.id, `Status changed: \`${previousStatus}\` → \`${newStatus}\``, { source: 'system' }, toBoardId).catch(() => {})
-    }
-    return card
+    return Boards.transferCard(this, cardId, fromBoardId, toBoardId, targetStatus)
   }
 
   // --- Card CRUD ---
@@ -575,54 +414,7 @@ export class KanbanSDK {
    * ```
    */
   async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Card[]> {
-    await this._ensureMigrated()
-    const boardDir = this._boardDir(boardId)
-    const resolvedBoardId = this._resolveBoardId(boardId)
-
-    await this._storage.ensureBoardDirs(boardDir, columns)
-
-    // Load all cards from the storage engine
-    const cards = await this._storage.scanCards(boardDir, resolvedBoardId)
-
-    // Migrate legacy integer order values to fractional indices
-    const hasLegacyOrder = cards.some(c => /^\d+$/.test(c.order))
-    if (hasLegacyOrder) {
-      const byStatus = new Map<string, Card[]>()
-      for (const c of cards) {
-        const list = byStatus.get(c.status) || []
-        list.push(c)
-        byStatus.set(c.status, list)
-      }
-      for (const columnCards of byStatus.values()) {
-        columnCards.sort((a, b) => parseInt(a.order) - parseInt(b.order))
-        const keys = generateNKeysBetween(null, null, columnCards.length)
-        for (let i = 0; i < columnCards.length; i++) {
-          columnCards[i].order = keys[i]
-          await this._storage.writeCard(columnCards[i])
-        }
-      }
-    }
-
-    // Sync ID counter with existing cards
-    const numericIds = cards
-      .map(c => parseInt(c.id, 10))
-      .filter(n => !Number.isNaN(n))
-    if (numericIds.length > 0) {
-      syncCardIdCounter(this.workspaceRoot, resolvedBoardId, numericIds)
-    }
-
-    const filtered = metaFilter && Object.keys(metaFilter).length > 0
-      ? cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
-      : cards
-    if (sort) {
-      const [field, dir] = sort.split(':')
-      return filtered.sort((a, b) => {
-        const aVal = field === 'created' ? a.created : a.modified
-        const bVal = field === 'created' ? b.created : b.modified
-        return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-      })
-    }
-    return filtered.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+    return Cards.listCards(this, columns, boardId, metaFilter, sort)
   }
 
   /**
@@ -644,8 +436,7 @@ export class KanbanSDK {
    * ```
    */
   async getCard(cardId: string, boardId?: string): Promise<Card | null> {
-    const cards = await this.listCards(undefined, boardId)
-    return cards.find(c => c.id === cardId) || null
+    return Cards.getCard(this, cardId, boardId)
   }
 
   /**
@@ -681,57 +472,7 @@ export class KanbanSDK {
    * ```
    */
   async createCard(data: CreateCardInput): Promise<Card> {
-    await this._ensureMigrated()
-    const resolvedBoardId = this._resolveBoardId(data.boardId)
-    const boardDir = this._boardDir(resolvedBoardId)
-    await this._storage.ensureBoardDirs(boardDir)
-
-    const config = readConfig(this.workspaceRoot)
-    const board = config.boards[resolvedBoardId]
-
-    const status = data.status || board?.defaultStatus || config.defaultStatus || 'backlog'
-    const priority = data.priority || board?.defaultPriority || config.defaultPriority || 'medium'
-    const title = getTitleFromContent(data.content)
-    const numericId = allocateCardId(this.workspaceRoot, resolvedBoardId)
-    const filename = generateCardFilename(numericId, title)
-    const now = new Date().toISOString()
-
-    // Compute order: place at end of target column
-    const cards = await this.listCards(undefined, resolvedBoardId)
-    const cardsInStatus = cards
-      .filter(c => c.status === status)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-    const lastOrder = cardsInStatus.length > 0
-      ? cardsInStatus[cardsInStatus.length - 1].order
-      : null
-
-    const card: Card = {
-      version: CARD_FORMAT_VERSION,
-      id: String(numericId),
-      boardId: resolvedBoardId,
-      status,
-      priority,
-      assignee: data.assignee ?? null,
-      dueDate: data.dueDate ?? null,
-      created: now,
-      modified: now,
-      completedAt: this._isCompletedStatus(status, resolvedBoardId) ? now : null,
-      labels: data.labels || [],
-      attachments: data.attachments || [],
-      comments: [],
-      order: generateKeyBetween(lastOrder, null),
-      content: data.content,
-      ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
-      ...(data.actions && (Array.isArray(data.actions) ? data.actions.length > 0 : Object.keys(data.actions).length > 0) ? { actions: data.actions } : {}),
-      filePath: this._storage.type === 'markdown'
-        ? getCardFilePath(boardDir, status, filename)
-        : ''
-    }
-
-    await this._storage.writeCard(card)
-
-    this.emitEvent('task.created', sanitizeCard(card))
-    return card
+    return Cards.createCard(this, data)
   }
 
   /**
@@ -759,46 +500,7 @@ export class KanbanSDK {
    * ```
    */
   async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const resolvedBoardId = card.boardId || this._resolveBoardId(boardId)
-    const boardDir = this._boardDir(resolvedBoardId)
-    const oldStatus = card.status
-    const oldTitle = getTitleFromContent(card.content)
-
-    // Merge updates (exclude filePath/id/boardId from being overwritten)
-    const { filePath: _fp, id: _id, boardId: _bid, ...safeUpdates } = updates
-    Object.assign(card, safeUpdates)
-    card.modified = new Date().toISOString()
-
-    if (oldStatus !== card.status) {
-      card.completedAt = this._isCompletedStatus(card.status, resolvedBoardId) ? new Date().toISOString() : null
-    }
-
-    // Write updated content
-    await this._storage.writeCard(card)
-
-    // Rename file if title changed (numeric-ID cards, markdown engine only)
-    const newTitle = getTitleFromContent(card.content)
-    const numericId = extractNumericId(card.id)
-    if (numericId !== null && newTitle !== oldTitle) {
-      const newFilename = generateCardFilename(numericId, newTitle)
-      const newPath = await this._storage.renameCard(card, newFilename)
-      if (newPath) card.filePath = newPath
-    }
-
-    // Move card if status changed
-    if (oldStatus !== card.status) {
-      const newPath = await this._storage.moveCard(card, boardDir, card.status)
-      if (newPath) card.filePath = newPath
-    }
-
-    this.emitEvent('task.updated', sanitizeCard(card))
-    if (oldStatus !== card.status) {
-      await this.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${card.status}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
-    }
-    return card
+    return Cards.updateCard(this, cardId, updates, boardId)
   }
 
   /**
@@ -825,34 +527,7 @@ export class KanbanSDK {
    * ```
    */
   async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
-    const config = readConfig(this.workspaceRoot)
-    const { actionWebhookUrl } = config
-    if (!actionWebhookUrl) {
-      throw new Error('No action webhook URL configured. Set actionWebhookUrl in .kanban.json')
-    }
-
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const resolvedBoardId = card.boardId || this._resolveBoardId(boardId)
-
-    const payload = {
-      action,
-      board: resolvedBoardId,
-      list: card.status,
-      card: sanitizeCard(card),
-    }
-
-    const response = await fetch(actionWebhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
-    }
-    await this.addLog(cardId, `Action triggered: \`${action}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+    return Cards.triggerAction(this, cardId, action, boardId)
   }
 
   /**
@@ -880,46 +555,7 @@ export class KanbanSDK {
    * ```
    */
   async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
-    const cards = await this.listCards(undefined, boardId)
-    const card = cards.find(c => c.id === cardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const resolvedBoardId = card.boardId || this._resolveBoardId(boardId)
-    const boardDir = this._boardDir(resolvedBoardId)
-    const oldStatus = card.status
-    card.status = newStatus
-    card.modified = new Date().toISOString()
-
-    if (oldStatus !== newStatus) {
-      card.completedAt = this._isCompletedStatus(newStatus, resolvedBoardId) ? new Date().toISOString() : null
-    }
-
-    // Compute new fractional order
-    const targetColumnCards = cards
-      .filter(c => c.status === newStatus && c.id !== cardId)
-      .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
-
-    const pos = position !== undefined
-      ? Math.max(0, Math.min(position, targetColumnCards.length))
-      : targetColumnCards.length
-    const before = pos > 0 ? targetColumnCards[pos - 1].order : null
-    const after = pos < targetColumnCards.length ? targetColumnCards[pos].order : null
-    card.order = generateKeyBetween(before, after)
-
-    // Write updated content (order + timestamps)
-    await this._storage.writeCard(card)
-
-    // Move to new status directory (no-op for SQLite)
-    if (oldStatus !== newStatus) {
-      const newPath = await this._storage.moveCard(card, boardDir, newStatus)
-      if (newPath) card.filePath = newPath
-    }
-
-    this.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus: oldStatus })
-    if (oldStatus !== newStatus) {
-      await this.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${newStatus}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
-    }
-    return card
+    return Cards.moveCard(this, cardId, newStatus, position, boardId)
   }
 
   /**
@@ -937,10 +573,7 @@ export class KanbanSDK {
    * ```
    */
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-    if (card.status === DELETED_STATUS_ID) return
-    await this.updateCard(cardId, { status: DELETED_STATUS_ID }, boardId)
+    return Cards.deleteCard(this, cardId, boardId)
   }
 
   /**
@@ -958,11 +591,7 @@ export class KanbanSDK {
    * ```
    */
   async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-    const snapshot = sanitizeCard(card)
-    await this._storage.deleteCard(card)
-    this.emitEvent('task.deleted', snapshot)
+    return Cards.permanentlyDeleteCard(this, cardId, boardId)
   }
 
   /**
@@ -982,8 +611,7 @@ export class KanbanSDK {
    * ```
    */
   async getCardsByStatus(status: string, boardId?: string): Promise<Card[]> {
-    const cards = await this.listCards(undefined, boardId)
-    return cards.filter(c => c.status === status)
+    return Cards.getCardsByStatus(this, status, boardId)
   }
 
   /**
@@ -1001,12 +629,7 @@ export class KanbanSDK {
    * ```
    */
   async getUniqueAssignees(boardId?: string): Promise<string[]> {
-    const cards = await this.listCards(undefined, boardId)
-    const assignees = new Set<string>()
-    for (const c of cards) {
-      if (c.assignee) assignees.add(c.assignee)
-    }
-    return [...assignees].sort()
+    return Cards.getUniqueAssignees(this, boardId)
   }
 
   /**
@@ -1022,12 +645,7 @@ export class KanbanSDK {
    * ```
    */
   async getUniqueLabels(boardId?: string): Promise<string[]> {
-    const cards = await this.listCards(undefined, boardId)
-    const labels = new Set<string>()
-    for (const c of cards) {
-      for (const l of c.labels) labels.add(l)
-    }
-    return [...labels].sort()
+    return Cards.getUniqueLabels(this, boardId)
   }
 
   // --- Label definition management ---
@@ -1047,8 +665,7 @@ export class KanbanSDK {
    * ```
    */
   getLabels(): Record<string, LabelDefinition> {
-    const config = readConfig(this.workspaceRoot)
-    return config.labels || {}
+    return Labels.getLabels(this)
   }
 
   /**
@@ -1067,10 +684,7 @@ export class KanbanSDK {
    * ```
    */
   setLabel(name: string, definition: LabelDefinition): void {
-    const config = readConfig(this.workspaceRoot)
-    if (!config.labels) config.labels = {}
-    config.labels[name] = definition
-    writeConfig(this.workspaceRoot, config)
+    Labels.setLabel(this, name, definition)
   }
 
   /**
@@ -1085,19 +699,7 @@ export class KanbanSDK {
    * ```
    */
   async deleteLabel(name: string): Promise<void> {
-    const config = readConfig(this.workspaceRoot)
-    if (config.labels) {
-      delete config.labels[name]
-      writeConfig(this.workspaceRoot, config)
-    }
-
-    // Cascade to all cards
-    const cards = await this.listCards()
-    for (const card of cards) {
-      if (card.labels.includes(name)) {
-        await this.updateCard(card.id, { labels: card.labels.filter(l => l !== name) })
-      }
-    }
+    return Labels.deleteLabel(this, name)
   }
 
   /**
@@ -1117,21 +719,7 @@ export class KanbanSDK {
    * ```
    */
   async renameLabel(oldName: string, newName: string): Promise<void> {
-    const config = readConfig(this.workspaceRoot)
-    if (config.labels && config.labels[oldName]) {
-      config.labels[newName] = config.labels[oldName]
-      delete config.labels[oldName]
-      writeConfig(this.workspaceRoot, config)
-    }
-
-    // Cascade to all cards
-    const cards = await this.listCards()
-    for (const card of cards) {
-      if (card.labels.includes(oldName)) {
-        const newLabels = card.labels.map(l => l === oldName ? newName : l)
-        await this.updateCard(card.id, { labels: newLabels })
-      }
-    }
+    return Labels.renameLabel(this, oldName, newName)
   }
 
   /**
@@ -1153,11 +741,7 @@ export class KanbanSDK {
    * ```
    */
   getLabelsInGroup(group: string): string[] {
-    const labels = this.getLabels()
-    return Object.entries(labels)
-      .filter(([, def]) => def.group === group)
-      .map(([name]) => name)
-      .sort()
+    return Labels.getLabelsInGroup(this, group)
   }
 
   /**
@@ -1177,10 +761,7 @@ export class KanbanSDK {
    * ```
    */
   async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Card[]> {
-    const groupLabels = this.getLabelsInGroup(group)
-    if (groupLabels.length === 0) return []
-    const cards = await this.listCards(undefined, boardId)
-    return cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
+    return Labels.filterCardsByLabelGroup(this, group, boardId)
   }
 
   // --- Attachment management ---
@@ -1205,24 +786,7 @@ export class KanbanSDK {
    * ```
    */
   async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const fileName = path.basename(sourcePath)
-
-    // Copy file into the card's attachment directory
-    await this._storage.copyAttachment(sourcePath, card)
-
-    // Add to attachments if not already present
-    if (!card.attachments.includes(fileName)) {
-      card.attachments.push(fileName)
-    }
-
-    card.modified = new Date().toISOString()
-    await this._storage.writeCard(card)
-
-    this.emitEvent('attachment.added', { cardId, attachment: fileName })
-    return card
+    return Attachments.addAttachment(this, cardId, sourcePath, boardId)
   }
 
   /**
@@ -1243,15 +807,7 @@ export class KanbanSDK {
    * ```
    */
   async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    card.attachments = card.attachments.filter(a => a !== attachment)
-    card.modified = new Date().toISOString()
-    await this._storage.writeCard(card)
-
-    this.emitEvent('attachment.removed', { cardId, attachment })
-    return card
+    return Attachments.removeAttachment(this, cardId, attachment, boardId)
   }
 
   /**
@@ -1269,9 +825,7 @@ export class KanbanSDK {
    * ```
    */
   async listAttachments(cardId: string, boardId?: string): Promise<string[]> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-    return card.attachments
+    return Attachments.listAttachments(this, cardId, boardId)
   }
 
   /**
@@ -1291,9 +845,7 @@ export class KanbanSDK {
    * ```
    */
   async getAttachmentDir(cardId: string, boardId?: string): Promise<string | null> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) return null
-    return this._storage.getCardDir(card)
+    return Attachments.getAttachmentDir(this, cardId, boardId)
   }
 
   // --- Comment management ---
@@ -1315,9 +867,7 @@ export class KanbanSDK {
    * ```
    */
   async listComments(cardId: string, boardId?: string): Promise<Comment[]> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-    return card.comments || []
+    return Comments.listComments(this, cardId, boardId)
   }
 
   /**
@@ -1340,31 +890,7 @@ export class KanbanSDK {
    * ```
    */
   async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card> {
-    if (!content?.trim()) throw new Error('Comment content cannot be empty')
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    if (!card.comments) card.comments = []
-
-    // Generate next comment ID
-    const maxId = card.comments.reduce((max, c) => {
-      const num = parseInt(c.id.replace('c', ''), 10)
-      return Number.isNaN(num) ? max : Math.max(max, num)
-    }, 0)
-
-    const comment: Comment = {
-      id: `c${maxId + 1}`,
-      author,
-      created: new Date().toISOString(),
-      content
-    }
-
-    card.comments.push(comment)
-    card.modified = new Date().toISOString()
-    await this._storage.writeCard(card)
-
-    this.emitEvent('comment.created', { ...comment, cardId })
-    return card
+    return Comments.addComment(this, cardId, author, content, boardId)
   }
 
   /**
@@ -1384,18 +910,7 @@ export class KanbanSDK {
    * ```
    */
   async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const comment = (card.comments || []).find(c => c.id === commentId)
-    if (!comment) throw new Error(`Comment not found: ${commentId}`)
-
-    comment.content = content
-    card.modified = new Date().toISOString()
-    await this._storage.writeCard(card)
-
-    this.emitEvent('comment.updated', { ...comment, cardId })
-    return card
+    return Comments.updateComment(this, cardId, commentId, content, boardId)
   }
 
   /**
@@ -1413,18 +928,7 @@ export class KanbanSDK {
    * ```
    */
   async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const comment = (card.comments || []).find(c => c.id === commentId)
-    card.comments = (card.comments || []).filter(c => c.id !== commentId)
-    card.modified = new Date().toISOString()
-    await this._storage.writeCard(card)
-
-    if (comment) {
-      this.emitEvent('comment.deleted', { ...comment, cardId })
-    }
-    return card
+    return Comments.deleteComment(this, cardId, commentId, boardId)
   }
 
   // --- Log management ---
@@ -1440,45 +944,7 @@ export class KanbanSDK {
    * @returns A promise resolving to the log file path, or `null` if the card is not found.
    */
   async getLogFilePath(cardId: string, boardId?: string): Promise<string | null> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) return null
-    const dir = this._storage.getCardDir(card)
-    return path.join(dir, `${card.id}.log`)
-  }
-
-  /**
-   * Parses a single log line into a {@link LogEntry}.
-   *
-   * Expected format: `timestamp [source] text {json}`
-   */
-  private _parseLogLine(line: string): LogEntry | null {
-    const trimmed = line.trim()
-    if (!trimmed) return null
-    const match = trimmed.match(/^(\S+)\s+\[([^\]]+)\]\s+(.+)$/)
-    if (!match) return null
-    const [, timestamp, source, rest] = match
-    // Try to extract trailing JSON object
-    const jsonMatch = rest.match(/^(.*?)\s+(\{.+\})\s*$/)
-    if (jsonMatch) {
-      try {
-        const obj = JSON.parse(jsonMatch[2])
-        return { timestamp, source, text: jsonMatch[1], object: obj }
-      } catch {
-        // Not valid JSON, treat entire rest as text
-      }
-    }
-    return { timestamp, source, text: rest }
-  }
-
-  /**
-   * Serializes a {@link LogEntry} into a single log line.
-   */
-  private _serializeLogEntry(entry: LogEntry): string {
-    let line = `${entry.timestamp} [${entry.source}] ${entry.text}`
-    if (entry.object && Object.keys(entry.object).length > 0) {
-      line += ` ${JSON.stringify(entry.object)}`
-    }
-    return line
+    return Logs.getLogFilePath(this, cardId, boardId)
   }
 
   /**
@@ -1501,19 +967,7 @@ export class KanbanSDK {
    * ```
    */
   async listLogs(cardId: string, boardId?: string): Promise<LogEntry[]> {
-    const logPath = await this.getLogFilePath(cardId, boardId)
-    if (!logPath) throw new Error(`Card not found: ${cardId}`)
-    try {
-      const content = await fs.readFile(logPath, 'utf-8')
-      const entries: LogEntry[] = []
-      for (const line of content.split('\n')) {
-        const entry = this._parseLogLine(line)
-        if (entry) entries.push(entry)
-      }
-      return entries
-    } catch {
-      return []
-    }
+    return Logs.listLogs(this, cardId, boardId)
   }
 
   /**
@@ -1549,37 +1003,7 @@ export class KanbanSDK {
     options?: { source?: string; timestamp?: string; object?: Record<string, any> },
     boardId?: string
   ): Promise<LogEntry> {
-    if (!text?.trim()) throw new Error('Log text cannot be empty')
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const entry: LogEntry = {
-      timestamp: options?.timestamp || new Date().toISOString(),
-      source: options?.source || 'default',
-      text: text.trim(),
-      ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
-    }
-
-    const dir = this._storage.getCardDir(card)
-    const logFileName = `${card.id}.log`
-    const logPath = path.join(dir, logFileName)
-
-    // Ensure directory exists
-    await fs.mkdir(dir, { recursive: true })
-
-    // Append entry line
-    const line = this._serializeLogEntry(entry) + '\n'
-    await fs.appendFile(logPath, line, 'utf-8')
-
-    // Auto-add log file as attachment if not already present
-    if (!card.attachments.includes(logFileName)) {
-      card.attachments.push(logFileName)
-      card.modified = new Date().toISOString()
-      await this._storage.writeCard(card)
-    }
-
-    this.emitEvent('log.added', { cardId, entry })
-    return entry
+    return Logs.addLog(this, cardId, text, options, boardId)
   }
 
   /**
@@ -1599,28 +1023,7 @@ export class KanbanSDK {
    * ```
    */
   async clearLogs(cardId: string, boardId?: string): Promise<void> {
-    const card = await this.getCard(cardId, boardId)
-    if (!card) throw new Error(`Card not found: ${cardId}`)
-
-    const logFileName = `${card.id}.log`
-    const dir = this._storage.getCardDir(card)
-    const logPath = path.join(dir, logFileName)
-
-    // Delete the file
-    try {
-      await fs.unlink(logPath)
-    } catch {
-      // File may not exist — that's fine
-    }
-
-    // Remove from attachments
-    if (card.attachments.includes(logFileName)) {
-      card.attachments = card.attachments.filter(a => a !== logFileName)
-      card.modified = new Date().toISOString()
-      await this._storage.writeCard(card)
-    }
-
-    this.emitEvent('log.cleared', { cardId })
+    return Logs.clearLogs(this, cardId, boardId)
   }
 
   // --- Board-level log management ---
@@ -1641,7 +1044,7 @@ export class KanbanSDK {
    * ```
    */
   getBoardLogFilePath(boardId?: string): string {
-    return path.join(this._boardDir(boardId), 'board.log')
+    return Logs.getBoardLogFilePath(this, boardId)
   }
 
   /**
@@ -1659,21 +1062,7 @@ export class KanbanSDK {
    * ```
    */
   async listBoardLogs(boardId?: string): Promise<LogEntry[]> {
-    const logPath = this.getBoardLogFilePath(boardId)
-    let content: string
-    try {
-      content = await fs.readFile(logPath, 'utf-8')
-    } catch {
-      return []
-    }
-    const entries: LogEntry[] = []
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const entry = this._parseLogLine(trimmed)
-      if (entry) entries.push(entry)
-    }
-    return entries
+    return Logs.listBoardLogs(this, boardId)
   }
 
   /**
@@ -1696,19 +1085,7 @@ export class KanbanSDK {
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
     boardId?: string
   ): Promise<LogEntry> {
-    const entry: LogEntry = {
-      timestamp: options?.timestamp ?? new Date().toISOString(),
-      source: options?.source ?? 'sdk',
-      text,
-      ...(options?.object ? { object: options.object } : {}),
-    }
-    const logPath = this.getBoardLogFilePath(boardId)
-    // Ensure board directory exists
-    await fs.mkdir(path.dirname(logPath), { recursive: true })
-    const line = this._serializeLogEntry(entry) + '\n'
-    await fs.appendFile(logPath, line, 'utf-8')
-    this.emitEvent('board.log.added', { boardId, entry })
-    return entry
+    return Logs.addBoardLog(this, text, options, boardId)
   }
 
   /**
@@ -1726,13 +1103,7 @@ export class KanbanSDK {
    * ```
    */
   async clearBoardLogs(boardId?: string): Promise<void> {
-    const logPath = this.getBoardLogFilePath(boardId)
-    try {
-      await fs.unlink(logPath)
-    } catch {
-      // File may not exist — that's fine
-    }
-    this.emitEvent('board.log.cleared', { boardId })
+    return Logs.clearBoardLogs(this, boardId)
   }
 
   // --- Column management (board-scoped) ---
@@ -1750,10 +1121,7 @@ export class KanbanSDK {
    * ```
    */
   listColumns(boardId?: string): KanbanColumn[] {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    return board?.columns || []
+    return Columns.listColumns(this, boardId)
   }
 
   /**
@@ -1780,25 +1148,7 @@ export class KanbanSDK {
    * ```
    */
   addColumn(column: KanbanColumn, boardId?: string): KanbanColumn[] {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    if (!column.id) {
-      const base = generateSlug(column.name) || 'column'
-      let uniqueId = base
-      let counter = 1
-      while (board.columns.some(c => c.id === uniqueId)) { uniqueId = `${base}-${counter++}` }
-      column = { ...column, id: uniqueId }
-    }
-    if (column.id === DELETED_STATUS_ID) throw new Error(`"${DELETED_STATUS_ID}" is a reserved column ID`)
-    if (board.columns.some(c => c.id === column.id)) {
-      throw new Error(`Column already exists: ${column.id}`)
-    }
-    board.columns.push(column)
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('column.created', column)
-    return board.columns
+    return Columns.addColumn(this, column, boardId)
   }
 
   /**
@@ -1825,17 +1175,7 @@ export class KanbanSDK {
    * ```
    */
   updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string): KanbanColumn[] {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    const col = board.columns.find(c => c.id === columnId)
-    if (!col) throw new Error(`Column not found: ${columnId}`)
-    if (updates.name !== undefined) col.name = updates.name
-    if (updates.color !== undefined) col.color = updates.color
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('column.updated', col)
-    return board.columns
+    return Columns.updateColumn(this, columnId, updates, boardId)
   }
 
   /**
@@ -1858,26 +1198,7 @@ export class KanbanSDK {
    * ```
    */
   async removeColumn(columnId: string, boardId?: string): Promise<KanbanColumn[]> {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    if (columnId === DELETED_STATUS_ID) throw new Error(`Cannot remove the reserved "${DELETED_STATUS_ID}" column`)
-    const idx = board.columns.findIndex(c => c.id === columnId)
-    if (idx === -1) throw new Error(`Column not found: ${columnId}`)
-
-    // Check if any cards use this column
-    const cards = await this.listCards(undefined, resolvedId)
-    const cardsInColumn = cards.filter(c => c.status === columnId)
-    if (cardsInColumn.length > 0) {
-      throw new Error(`Cannot remove column "${columnId}": ${cardsInColumn.length} card(s) still in this column`)
-    }
-
-    const removed = board.columns[idx]
-    board.columns.splice(idx, 1)
-    writeConfig(this.workspaceRoot, config)
-    this.emitEvent('column.deleted', removed)
-    return board.columns
+    return Columns.removeColumn(this, columnId, boardId)
   }
 
   /**
@@ -1899,13 +1220,7 @@ export class KanbanSDK {
    * ```
    */
   async cleanupColumn(columnId: string, boardId?: string): Promise<number> {
-    if (columnId === DELETED_STATUS_ID) return 0
-    const cards = await this.listCards(undefined, boardId)
-    const cardsToMove = cards.filter(c => c.status === columnId)
-    for (const card of cardsToMove) {
-      await this.moveCard(card.id, DELETED_STATUS_ID, 0, boardId)
-    }
-    return cardsToMove.length
+    return Columns.cleanupColumn(this, columnId, boardId)
   }
 
   /**
@@ -1924,12 +1239,7 @@ export class KanbanSDK {
    * ```
    */
   async purgeDeletedCards(boardId?: string): Promise<number> {
-    const cards = await this.listCards(undefined, boardId)
-    const deleted = cards.filter(c => c.status === DELETED_STATUS_ID)
-    for (const card of deleted) {
-      await this.permanentlyDeleteCard(card.id, boardId)
-    }
-    return deleted.length
+    return Columns.purgeDeletedCards(this, boardId)
   }
 
   /**
@@ -1954,23 +1264,7 @@ export class KanbanSDK {
    * ```
    */
   reorderColumns(columnIds: string[], boardId?: string): KanbanColumn[] {
-    const config = readConfig(this.workspaceRoot)
-    const resolvedId = boardId || config.defaultBoard
-    const board = config.boards[resolvedId]
-    if (!board) throw new Error(`Board not found: ${resolvedId}`)
-    const colMap = new Map(board.columns.map(c => [c.id, c]))
-
-    // Validate all IDs exist
-    for (const id of columnIds) {
-      if (!colMap.has(id)) throw new Error(`Column not found: ${id}`)
-    }
-    if (columnIds.length !== board.columns.length) {
-      throw new Error('Must include all column IDs when reordering')
-    }
-
-    board.columns = columnIds.map(id => colMap.get(id) as KanbanColumn)
-    writeConfig(this.workspaceRoot, config)
-    return board.columns
+    return Columns.reorderColumns(this, columnIds, boardId)
   }
 
   // --- Settings management (global) ---
@@ -1990,7 +1284,7 @@ export class KanbanSDK {
    * ```
    */
   getSettings(): CardDisplaySettings {
-    return configToSettings(readConfig(this.workspaceRoot))
+    return Settings.getSettings(this)
   }
 
   /**
@@ -2012,9 +1306,7 @@ export class KanbanSDK {
    * ```
    */
   updateSettings(settings: CardDisplaySettings): void {
-    const config = readConfig(this.workspaceRoot)
-    writeConfig(this.workspaceRoot, settingsToConfig(config, settings))
-    this.emitEvent('settings.updated', settings)
+    Settings.updateSettings(this, settings)
   }
 
   // ---------------------------------------------------------------------------
@@ -2044,36 +1336,7 @@ export class KanbanSDK {
    * ```
    */
   async migrateToSqlite(dbPath?: string): Promise<number> {
-    if (this._storage.type === 'sqlite') {
-      throw new Error('Storage engine is already sqlite')
-    }
-    await this._ensureMigrated()
-
-    const resolvedDbPath = dbPath ?? '.kanban/kanban.db'
-    const absDbPath = path.resolve(this.workspaceRoot, resolvedDbPath)
-
-    const { SqliteStorageEngine } = await import('./storage/sqlite')
-    const sqliteEngine = new SqliteStorageEngine(this._storage.kanbanDir, absDbPath)
-    await sqliteEngine.init()
-
-    const config = readConfig(this.workspaceRoot)
-    const boardIds = Object.keys(config.boards)
-
-    let count = 0
-    for (const boardId of boardIds) {
-      const boardDir = path.join(this._storage.kanbanDir, 'boards', boardId)
-      const cards = await this._storage.scanCards(boardDir, boardId)
-      for (const card of cards) {
-        await sqliteEngine.writeCard({ ...card, filePath: '' })
-        count++
-      }
-    }
-
-    sqliteEngine.close()
-
-    writeConfig(this.workspaceRoot, { ...config, storageEngine: 'sqlite', sqlitePath: resolvedDbPath })
-    this.emitEvent('storage.migrated', { from: 'markdown', to: 'sqlite', count })
-    return count
+    return Migration.migrateToSqlite(this, dbPath)
   }
 
   /**
@@ -2097,38 +1360,7 @@ export class KanbanSDK {
    * ```
    */
   async migrateToMarkdown(): Promise<number> {
-    if (this._storage.type === 'markdown') {
-      throw new Error('Storage engine is already markdown')
-    }
-    await this._ensureMigrated()
-
-    const { MarkdownStorageEngine } = await import('./storage/markdown')
-    const mdEngine = new MarkdownStorageEngine(this._storage.kanbanDir)
-    await mdEngine.init()
-
-    const config = readConfig(this.workspaceRoot)
-    const boardIds = Object.keys(config.boards)
-
-    let count = 0
-    for (const boardId of boardIds) {
-      const boardDir = path.join(this._storage.kanbanDir, 'boards', boardId)
-      const cards = await this._storage.scanCards(boardDir, boardId)
-      for (const card of cards) {
-        const numericId = Number(card.id) || 0
-        const title = getTitleFromContent(card.content) || card.id
-        const filename = generateCardFilename(numericId, title)
-        const filePath = getCardFilePath(boardDir, card.status, filename)
-        await mdEngine.writeCard({ ...card, filePath })
-        count++
-      }
-    }
-
-    mdEngine.close()
-
-    const { storageEngine: _se, sqlitePath: _sp, ...restConfig } = config as typeof config & { storageEngine?: string; sqlitePath?: string }
-    writeConfig(this.workspaceRoot, restConfig as typeof config)
-    this.emitEvent('storage.migrated', { from: 'sqlite', to: 'markdown', count })
-    return count
+    return Migration.migrateToMarkdown(this)
   }
 
   /**
@@ -2143,10 +1375,7 @@ export class KanbanSDK {
    * ```
    */
   setDefaultBoard(boardId: string): void {
-    const config = readConfig(this.workspaceRoot)
-    if (!config.boards[boardId]) throw new Error(`Board not found: ${boardId}`)
-    config.defaultBoard = boardId
-    writeConfig(this.workspaceRoot, config)
+    Settings.setDefaultBoard(this, boardId)
   }
 
   /**

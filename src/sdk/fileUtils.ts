@@ -1,5 +1,54 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
+import * as fsSync from 'fs'
+
+/**
+ * Synchronously walks up from `startDir` looking for a workspace root — a
+ * directory that contains `.git`, `package.json`, or `.kanban.json`. Falls
+ * back to `startDir` if the filesystem root is reached without a match.
+ *
+ * @param startDir - Directory to start scanning from.
+ * @returns The detected workspace root, or `startDir` on no match.
+ */
+export function findWorkspaceRootSync(startDir: string): string {
+  let dir = startDir
+  while (true) {
+    if (
+      fsSync.existsSync(path.join(dir, '.git')) ||
+      fsSync.existsSync(path.join(dir, 'package.json')) ||
+      fsSync.existsSync(path.join(dir, '.kanban.json'))
+    ) {
+      return dir
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) return startDir
+    dir = parent
+  }
+}
+
+/**
+ * Resolves the kanban directory without an explicit path by walking up from
+ * `startDir` (defaults to `process.cwd()`) to locate the workspace root, then
+ * reading `kanbanDirectory` from `.kanban.json` (defaults to `'.kanban'`).
+ *
+ * @param startDir - Optional directory to start scanning from. Defaults to `process.cwd()`.
+ * @returns The absolute path to the kanban directory.
+ */
+export function resolveKanbanDir(startDir?: string): string {
+  const root = findWorkspaceRootSync(startDir ?? process.cwd())
+  const configFile = path.join(root, '.kanban.json')
+  if (fsSync.existsSync(configFile)) {
+    try {
+      const raw = JSON.parse(fsSync.readFileSync(configFile, 'utf-8')) as Record<string, unknown>
+      if (typeof raw.kanbanDirectory === 'string') {
+        return path.resolve(root, raw.kanbanDirectory)
+      }
+    } catch {
+      // fall through to default
+    }
+  }
+  return path.join(root, '.kanban')
+}
 
 /**
  * Constructs the full file path for a card markdown file.

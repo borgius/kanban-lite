@@ -8,6 +8,7 @@ import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from 
 import type { StorageEngine } from './storage/types'
 import { createStorageEngine } from './storage'
 import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
+import { resolveKanbanDir } from './fileUtils'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
 import * as Labels from './modules/labels'
@@ -42,15 +43,28 @@ export class KanbanSDK {
   /** @internal */ _storage: StorageEngine
 
   /**
+   * Absolute path to the `.kanban` kanban directory.
+   * The parent of this directory is treated as the workspace root.
+   */
+  public readonly kanbanDir: string
+
+  /**
    * Creates a new KanbanSDK instance.
    *
    * @param kanbanDir - Absolute path to the `.kanban` kanban directory.
-   *   The parent of this directory is treated as the workspace root.
+   *   When omitted, the directory is auto-detected by walking up from
+   *   `process.cwd()` to find the workspace root (via `.git`, `package.json`,
+   *   or `.kanban.json`), then reading `kanbanDirectory` from `.kanban.json`
+   *   (defaults to `'.kanban'`).
    * @param options - Optional configuration including an event handler callback
    *   and storage engine selection.
    *
    * @example
    * ```ts
+   * // Auto-detect from process.cwd()
+   * const sdk = new KanbanSDK()
+   *
+   * // Explicit path
    * const sdk = new KanbanSDK('/home/user/my-project/.kanban')
    *
    * // With event handler for webhooks
@@ -64,9 +78,10 @@ export class KanbanSDK {
    * })
    * ```
    */
-  constructor(public readonly kanbanDir: string, options?: SDKOptions) {
+  constructor(kanbanDir?: string, options?: SDKOptions) {
+    this.kanbanDir = kanbanDir ?? resolveKanbanDir()
     this._onEvent = options?.onEvent
-    this._storage = options?.storage ?? createStorageEngine(kanbanDir, {
+    this._storage = options?.storage ?? createStorageEngine(this.kanbanDir, {
       storageEngine: options?.storageEngine,
       sqlitePath: options?.sqlitePath,
     })

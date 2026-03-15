@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
 import type { CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
-import { LABEL_PRESET_COLORS } from '../../shared/types'
+import { LABEL_PRESET_COLORS, DELETED_STATUS_ID } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 
@@ -10,14 +10,6 @@ const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'high', label: 'High', dot: 'bg-orange-500' },
   { value: 'medium', label: 'Medium', dot: 'bg-yellow-500' },
   { value: 'low', label: 'Low', dot: 'bg-green-500' }
-]
-
-const statusConfig: { value: CardStatus; label: string; dot: string }[] = [
-  { value: 'backlog', label: 'Backlog', dot: 'bg-zinc-400' },
-  { value: 'todo', label: 'To Do', dot: 'bg-blue-400' },
-  { value: 'in-progress', label: 'In Progress', dot: 'bg-amber-400' },
-  { value: 'review', label: 'Review', dot: 'bg-purple-400' },
-  { value: 'done', label: 'Done', dot: 'bg-emerald-400' }
 ]
 
 interface SettingsPanelProps {
@@ -116,7 +108,7 @@ function SettingsInfo({ label, value }: { label: string; value: string }) {
 function SettingsDropdown({ label, value, options, onChange }: {
   label: string
   value: string
-  options: { value: string; label: string; dot?: string }[]
+  options: { value: string; label: string; dot?: string; dotColor?: string }[]
   onChange: (value: string) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -137,6 +129,7 @@ function SettingsDropdown({ label, value, options, onChange }: {
           style={{ color: 'var(--vscode-foreground)' }}
         >
           {current?.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', current.dot)} />}
+          {!current?.dot && current?.dotColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: current.dotColor }} />}
           <span>{current?.label}</span>
           <ChevronDown size={12} style={{ color: 'var(--vscode-descriptionForeground)' }} />
         </button>
@@ -171,6 +164,7 @@ function SettingsDropdown({ label, value, options, onChange }: {
                   }}
                 >
                   {option.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', option.dot)} />}
+                  {!option.dot && option.dotColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: option.dotColor }} />}
                   <span className="flex-1 text-left">{option.label}</span>
                 </button>
               ))}
@@ -558,6 +552,11 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTab] = useState<'general' | 'defaults' | 'labels'>('general')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const columns = useStore(s => s.columns)
+  const statusOptions = useMemo(
+    () => columns.filter(c => c.id !== DELETED_STATUS_ID).map(c => ({ value: c.id, label: c.name, dotColor: c.color })),
+    [columns]
+  )
 
   useEffect(() => { setLocal(settings) }, [settings])
 
@@ -579,13 +578,13 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div
-        className="relative h-full w-1/2 max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200"
+        className="relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200"
         style={{
           background: 'var(--vscode-editor-background)',
-          borderLeft: '1px solid var(--vscode-panel-border)',
+          border: '1px solid var(--vscode-panel-border)',
         }}
       >
         {/* Header */}
@@ -745,7 +744,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
               <SettingsDropdown
                 label="Default Status"
                 value={local.defaultStatus}
-                options={statusConfig}
+                options={statusOptions}
                 onChange={v => update({ defaultStatus: v as CardStatus })}
               />
             </SettingsSection>

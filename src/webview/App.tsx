@@ -9,6 +9,7 @@ import { UndoToast } from './components/UndoToast'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
+import { ShortcutHelp } from './components/ShortcutHelp'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
@@ -44,6 +45,7 @@ function App(): React.JSX.Element {
 
   const [createCardOpen, setCreateCardOpen] = useState(false)
   const [createCardStatus, setCreateCardStatus] = useState<string>('backlog')
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
 
   // Column dialog state
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
@@ -187,8 +189,15 @@ function App(): React.JSX.Element {
           setCreateCardStatus('backlog')
           setCreateCardOpen(true)
           break
+        case '?':
+          if (e.ctrlKey || e.metaKey || e.altKey) return
+          e.preventDefault()
+          setShortcutHelpOpen(open => !open)
+          break
         case 'Escape':
-          if (createCardOpen) {
+          if (shortcutHelpOpen) {
+            setShortcutHelpOpen(false)
+          } else if (createCardOpen) {
             setCreateCardOpen(false)
           } else if (useStore.getState().selectedCardIds.length > 0) {
             clearSelection()
@@ -217,7 +226,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('mousedown', handleMouseDown)
       if (altDownTimer) clearTimeout(altDownTimer)
     }
-  }, [createCardOpen, handleUndoLatest, setCardSettings, clearSelection])
+  }, [createCardOpen, shortcutHelpOpen, handleUndoLatest, setCardSettings, clearSelection])
 
   // Listen for VSCode theme changes
   useEffect(() => {
@@ -663,6 +672,10 @@ function App(): React.JSX.Element {
     })
   }
 
+  const handleQuickAdd = useCallback((data: { status: string; priority: Priority; content: string }): void => {
+    handleCreateCard({ ...data, assignee: null, dueDate: null, labels: [], actions: [] })
+  }, [])
+
   // Show loading if no columns yet
   if (columns.length === 0) {
     return (
@@ -687,9 +700,10 @@ function App(): React.JSX.Element {
         onOpenBoardLogs={handleOpenBoardLogs}
         boardLogsOpen={boardLogsOpen}
         onTriggerBoardAction={handleTriggerBoardAction}
+        onOpenShortcutHelp={() => setShortcutHelpOpen(open => !open)}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className={`board-zoom-scope ${(editingCard && selectedCardIds.length === 0) || boardLogsOpen ? 'w-1/2' : 'w-full'}`}>
+        <div className="board-zoom-scope w-full">
           <KanbanBoard
             onCardClick={handleCardClick}
             onAddCard={handleAddCardInColumn}
@@ -702,30 +716,45 @@ function App(): React.JSX.Element {
             selectedCardId={editingCard?.id}
             selectedCardIds={selectedCardIds}
             onSelectAll={selectAllInColumn}
+            onQuickAdd={handleQuickAdd}
           />
         </div>
         {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (
-          <div className="w-1/2 flex flex-col border-l border-zinc-200 dark:border-zinc-700 bg-[var(--vscode-editor-background)]">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Board Logs</span>
-              <button
-                onClick={() => setBoardLogsOpen(false)}
-                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                title="Close board logs"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto">
-              <LogsSection
-                logs={boardLogs}
-                onClearLogs={handleClearBoardLogs}
-              />
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />
+            <div
+              className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200"
+              style={{ background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+            >
+              <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
+                <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board Logs</span>
+                <button
+                  onClick={() => setBoardLogsOpen(false)}
+                  className="p-1.5 rounded transition-colors"
+                  style={{ color: 'var(--vscode-descriptionForeground)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  title="Close board logs"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <LogsSection
+                  logs={boardLogs}
+                  onClearLogs={handleClearBoardLogs}
+                />
+              </div>
             </div>
           </div>
         )}
         {editingCard && selectedCardIds.length === 0 && (
-          <div className="w-1/2" style={{ fontSize: `calc(1em * var(--card-zoom, 1))` }}>
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />
+            <div
+              className="relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200"
+              style={{ fontSize: `calc(1em * var(--card-zoom, 1))`, background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+            >
             <CardEditor
               cardId={editingCard.id}
               content={editingCard.content}
@@ -758,6 +787,7 @@ function App(): React.JSX.Element {
                 vscode.postMessage({ type: 'saveSettings', settings: next })
               }}
             />
+            </div>
           </div>
         )}
       </div>
@@ -810,6 +840,8 @@ function App(): React.JSX.Element {
           index={i}
         />
       ))}
+
+      <ShortcutHelp isOpen={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </div>
   )
 }

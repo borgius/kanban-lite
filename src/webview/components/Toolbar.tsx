@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal, MoreHorizontal } from 'lucide-react'
-import { useStore, type DueDateFilter } from '../store'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal, MoreHorizontal, Keyboard, Star, BookmarkPlus } from 'lucide-react'
+import { useStore, type DueDateFilter, type SavedView } from '../store'
 import { LabelPicker } from './LabelPicker'
+import { BoardSwitcher } from './BoardSwitcher'
 import type { Priority } from '../../shared/types'
 
 const priorities: { value: Priority | 'all'; label: string }[] = [
@@ -23,7 +24,23 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void }) {
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-full">
+      <span className="max-w-[180px] truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200 flex-shrink-0"
+        aria-label={`Remove ${label} filter`}
+      >
+        <X size={12} />
+      </button>
+    </span>
+  )
+}
+
+export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction, onOpenShortcutHelp }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void; onOpenShortcutHelp?: () => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
   const priorityFilter = useStore(s => s.priorityFilter)
@@ -43,6 +60,11 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const currentBoard = useStore(s => s.currentBoard)
   const labelDefs = useStore(s => s.labelDefs)
   const cards = useStore(s => s.cards)
+  const starredBoards = useStore(s => s.starredBoards)
+  const toggleStarBoard = useStore(s => s.toggleStarBoard)
+  const savedViews = useStore(s => s.savedViews)
+  const saveCurrentView = useStore(s => s.saveCurrentView)
+  const removeView = useStore(s => s.removeView)
 
   const assignees = useMemo(() => {
     const s = new Set<string>()
@@ -68,10 +90,10 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     )
   }, [searchQuery, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
 
-  const [boardDropdownOpen, setBoardDropdownOpen] = useState(false)
+  const [boardSwitcherOpen, setBoardSwitcherOpen] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [newBoardName, setNewBoardName] = useState('')
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const boardSwitcherRef = useRef<HTMLDivElement>(null)
   const newBoardInputRef = useRef<HTMLInputElement>(null)
 
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false)
@@ -82,6 +104,11 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false)
   const actionsDropdownRef = useRef<HTMLDivElement>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [viewsDropdownOpen, setViewsDropdownOpen] = useState(false)
+  const viewsDropdownRef = useRef<HTMLDivElement>(null)
+  const [savingView, setSavingView] = useState(false)
+  const [newViewName, setNewViewName] = useState('')
+  const newViewInputRef = useRef<HTMLInputElement>(null)
 
   const currentBoardActions = useMemo(() => boards.find(b => b.id === currentBoard)?.actions ?? {}, [boards, currentBoard])
   const boardActionEntries = useMemo(() => Object.entries(currentBoardActions), [currentBoardActions])
@@ -96,17 +123,17 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setBoardDropdownOpen(false)
+      if (boardSwitcherRef.current && !boardSwitcherRef.current.contains(e.target as Node)) {
+        setBoardSwitcherOpen(false)
         setCreatingBoard(false)
         setNewBoardName('')
       }
     }
-    if (boardDropdownOpen) {
+    if (boardSwitcherOpen || creatingBoard) {
       document.addEventListener('mousedown', handleClickOutside)
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [boardDropdownOpen])
+  }, [boardSwitcherOpen, creatingBoard])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -145,12 +172,49 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   }, [actionsDropdownOpen])
 
   useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewsDropdownRef.current && !viewsDropdownRef.current.contains(e.target as Node)) {
+        setViewsDropdownOpen(false)
+      }
+    }
+    if (viewsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [viewsDropdownOpen])
+
+  useEffect(() => {
+    if (savingView && newViewInputRef.current) {
+      newViewInputRef.current.focus()
+    }
+  }, [savingView])
+
+  useEffect(() => {
     if (creatingBoard && newBoardInputRef.current) {
       newBoardInputRef.current.focus()
     }
   }, [creatingBoard])
 
   const currentBoardName = boards.find(b => b.id === currentBoard)?.name || currentBoard
+  const isCurrentBoardStarred = starredBoards.includes(currentBoard)
+
+  const handleSaveView = useCallback(() => {
+    const name = newViewName.trim()
+    if (!name) return
+    saveCurrentView(name)
+    setNewViewName('')
+    setSavingView(false)
+    setViewsDropdownOpen(false)
+  }, [newViewName, saveCurrentView])
+
+  const applyView = useCallback((view: SavedView) => {
+    const store = useStore.getState()
+    store.setSearchQuery(view.searchQuery)
+    store.setPriorityFilter(view.priorityFilter)
+    store.setAssigneeFilter(view.assigneeFilter)
+    store.setLabelFilter(view.labelFilter)
+    store.setDueDateFilter(view.dueDateFilter)
+  }, [])
 
   const handleCreateBoard = () => {
     const name = newBoardName.trim()
@@ -158,64 +222,90 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     onCreateBoard(name)
     setNewBoardName('')
     setCreatingBoard(false)
-    setBoardDropdownOpen(false)
   }
 
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault()
+        setBoardSwitcherOpen(open => !open)
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [])
+
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 flex-wrap">
+    <div className="flex flex-col border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50">
+    <div className="flex items-center gap-2 px-4 py-2 flex-wrap">
       {/* Board Selector */}
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative flex items-center gap-0.5" ref={boardSwitcherRef}>
         <button
           type="button"
-          onClick={() => setBoardDropdownOpen(!boardDropdownOpen)}
+          onClick={() => setBoardSwitcherOpen(!boardSwitcherOpen)}
           className="flex items-center gap-1.5 px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+          title="Switch board (b)"
         >
           <span className="max-w-[120px] truncate">{currentBoardName}</span>
-          <ChevronDown size={14} className={`text-zinc-400 transition-transform ${boardDropdownOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown size={14} className={`text-zinc-400 transition-transform ${boardSwitcherOpen ? 'rotate-180' : ''}`} />
         </button>
-        {boardDropdownOpen && (
-          <div className="absolute top-full left-0 mt-1 min-w-[180px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
-            {boards.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => {
-                  onSwitchBoard(b.id)
-                  setBoardDropdownOpen(false)
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
-              >
-                <Check size={14} className={b.id === currentBoard ? 'text-blue-500' : 'invisible'} />
-                <span className="truncate">{b.name}</span>
-              </button>
-            ))}
-            <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
-            {creatingBoard ? (
-              <div className="px-3 py-1.5">
-                <input
-                  ref={newBoardInputRef}
-                  type="text"
-                  value={newBoardName}
-                  onChange={(e) => setNewBoardName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateBoard()
-                    if (e.key === 'Escape') { setCreatingBoard(false); setNewBoardName('') }
-                  }}
-                  placeholder="Board name..."
-                  className="w-full px-2 py-1 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
-                />
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCreatingBoard(true)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400 transition-colors"
-              >
-                <Plus size={14} />
-                <span>New Board</span>
-              </button>
-            )}
+        <button
+          type="button"
+          onClick={() => toggleStarBoard(currentBoard)}
+          className="p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+          title={isCurrentBoardStarred ? 'Unstar board' : 'Star board'}
+        >
+          <Star size={14} className={isCurrentBoardStarred ? 'fill-amber-400 text-amber-400' : 'text-zinc-400'} />
+        </button>
+        {creatingBoard ? (
+          <div className="flex items-center gap-1 ml-1">
+            <input
+              ref={newBoardInputRef}
+              type="text"
+              value={newBoardName}
+              onChange={(e) => setNewBoardName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateBoard()
+                if (e.key === 'Escape') { setCreatingBoard(false); setNewBoardName('') }
+              }}
+              placeholder="Board name..."
+              className="w-28 px-2 py-1 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+            />
+            <button
+              type="button"
+              onClick={handleCreateBoard}
+              className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+            >
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCreatingBoard(false); setNewBoardName('') }}
+              className="p-1 text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              <X size={14} />
+            </button>
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreatingBoard(true)}
+            className="p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+            title="Create new board"
+          >
+            <Plus size={14} className="text-zinc-400" />
+          </button>
+        )}
+        {boardSwitcherOpen && (
+          <BoardSwitcher
+            boards={boards}
+            currentBoard={currentBoard}
+            starredBoards={starredBoards}
+            onSelect={(boardId) => { onSwitchBoard(boardId); setBoardSwitcherOpen(false) }}
+            onClose={() => setBoardSwitcherOpen(false)}
+          />
         )}
       </div>
 
@@ -353,6 +443,91 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         </button>
       )}
 
+      {/* Saved Views */}
+      <div className="relative" ref={viewsDropdownRef}>
+        <button
+          type="button"
+          onClick={() => setViewsDropdownOpen(!viewsDropdownOpen)}
+          className={`flex items-center gap-1.5 px-2 py-1.5 text-sm border rounded-md transition-colors ${
+            savedViews.length > 0
+              ? 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30'
+              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+          }`}
+          title="Saved views"
+        >
+          <BookmarkPlus size={14} />
+          <span>Views{savedViews.length > 0 ? ` (${savedViews.length})` : ''}</span>
+        </button>
+        {viewsDropdownOpen && (
+          <div className="absolute top-full left-0 mt-1 min-w-[220px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
+            {savedViews.length > 0 && (
+              <>
+                <div className="px-3 py-1 text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Saved views</div>
+                {savedViews.map(view => (
+                  <div key={view.id} className="flex items-center gap-1 px-2">
+                    <button
+                      type="button"
+                      onClick={() => { applyView(view); setViewsDropdownOpen(false) }}
+                      className="flex-1 text-sm text-left py-1.5 px-1 text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 truncate transition-colors"
+                    >
+                      {view.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeView(view.id)}
+                      className="p-1 text-zinc-400 hover:text-red-500 transition-colors shrink-0"
+                      title="Remove view"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+                <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+              </>
+            )}
+            {savingView ? (
+              <div className="px-3 py-1.5 flex items-center gap-1">
+                <input
+                  ref={newViewInputRef}
+                  type="text"
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveView()
+                    if (e.key === 'Escape') { setSavingView(false); setNewViewName('') }
+                  }}
+                  placeholder="View name..."
+                  className="flex-1 px-2 py-1 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveView}
+                  className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSavingView(false); setNewViewName('') }}
+                  className="p-1 text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSavingView(true)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left text-blue-600 dark:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+              >
+                <BookmarkPlus size={14} />
+                <span>Save current filters</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Add List */}
       <button
         onClick={onAddColumn}
@@ -363,7 +538,29 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <span>Add List</span>
       </button>
 
-      {/* Board Menu — layout, theme, settings, logs */}
+      {/* Keyboard shortcuts help */}
+      {onOpenShortcutHelp && (
+        <button
+          type="button"
+          onClick={onOpenShortcutHelp}
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard size={16} />
+        </button>
+      )}
+
+      {/* Layout Toggle — promoted from board menu */}
+      <button
+        type="button"
+        onClick={toggleLayout}
+        className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+        title={layout === 'horizontal' ? 'Switch to row layout' : 'Switch to column layout'}
+      >
+        {layout === 'horizontal' ? <Rows size={16} /> : <Columns size={16} />}
+      </button>
+
+      {/* Board Menu — theme, settings, logs */}
       <div className="relative" ref={boardMenuRef}>
         <button
           type="button"
@@ -375,14 +572,6 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         </button>
         {boardMenuOpen && (
           <div className="absolute top-full right-0 mt-1 min-w-[200px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
-            <button
-              type="button"
-              onClick={() => { toggleLayout(); setBoardMenuOpen(false) }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
-            >
-              {layout === 'horizontal' ? <Rows size={14} className="shrink-0 text-zinc-400" /> : <Columns size={14} className="shrink-0 text-zinc-400" />}
-              <span>{layout === 'horizontal' ? 'Switch to Rows' : 'Switch to Columns'}</span>
-            </button>
             <button
               type="button"
               onClick={() => { onToggleTheme(); setBoardMenuOpen(false) }}
@@ -450,6 +639,26 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
           )}
         </div>
       )}
+    </div>
+    {filtersActive && (
+      <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+        {searchQuery && (
+          <FilterChip label={`Search: "${searchQuery}"`} onRemove={() => setSearchQuery('')} />
+        )}
+        {priorityFilter !== 'all' && (
+          <FilterChip label={`Priority: ${priorities.find(p => p.value === priorityFilter)?.label ?? priorityFilter}`} onRemove={() => setPriorityFilter('all')} />
+        )}
+        {assigneeFilter !== 'all' && (
+          <FilterChip label={`Assignee: ${assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`} onRemove={() => setAssigneeFilter('all')} />
+        )}
+        {labelFilter.map(label => (
+          <FilterChip key={label} label={`Label: ${label}`} onRemove={() => setLabelFilter(labelFilter.filter(l => l !== label))} />
+        ))}
+        {dueDateFilter !== 'all' && (
+          <FilterChip label={`Due: ${dueDateOptions.find(d => d.value === dueDateFilter)?.label ?? dueDateFilter}`} onRemove={() => setDueDateFilter('all')} />
+        )}
+      </div>
+    )}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { Columns } from 'lucide-react'
 import { KanbanColumn } from './KanbanColumn'
 import { useStore } from '../store'
 import type { SortOrder } from '../store'
-import type { Card, CardStatus } from '../../shared/types'
+import type { Card, CardStatus, Priority } from '../../shared/types'
 import { DELETED_COLUMN } from '../../shared/types'
 
 export interface DropTarget {
@@ -22,9 +23,10 @@ interface KanbanBoardProps {
   selectedCardId?: string
   selectedCardIds: string[]
   onSelectAll: (status: string) => void
+  onQuickAdd?: (data: { status: CardStatus; priority: Priority; content: string }) => void
 }
 
-export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedCardId, selectedCardIds, onSelectAll }: KanbanBoardProps) {
+export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedCardId, selectedCardIds, onSelectAll, onQuickAdd }: KanbanBoardProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -165,6 +167,15 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   return (
     <div ref={scrollContainerRef} className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}>
       <div className={isVertical ? "flex flex-col gap-4" : "flex gap-4 h-full min-w-max"}>
+        {columns.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-3 py-20 text-zinc-400 dark:text-zinc-500">
+            <Columns size={40} className="opacity-30" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No lists yet</p>
+              <p className="text-[12px] mt-1 text-zinc-400 dark:text-zinc-500">Click "Add List" in the toolbar to create your first column</p>
+            </div>
+          </div>
+        )}
         {columns.map((column) => (
           <KanbanColumn
             key={column.id}
@@ -188,6 +199,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             onSelectAll={onSelectAll}
             sort={(columnSorts[column.id] || 'order') as SortOrder}
             onSortChange={(s) => setColumnSort(column.id, s)}
+            onQuickAdd={onQuickAdd}
           />
         ))}
         {cardSettings.showDeletedColumn && (

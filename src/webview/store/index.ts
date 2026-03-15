@@ -6,6 +6,16 @@ export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
 export type CardTab = 'write' | 'preview' | 'comments' | 'logs'
 
+export interface SavedView {
+  id: string
+  name: string
+  searchQuery: string
+  priorityFilter: Priority | 'all'
+  assigneeFilter: string | 'all'
+  labelFilter: string[]
+  dueDateFilter: DueDateFilter
+}
+
 interface KanbanState {
   cards: Card[]
   columns: KanbanColumn[]
@@ -33,6 +43,15 @@ interface KanbanState {
   selectedCardIds: string[]
   /** Multi-select: last clicked card ID for shift-range selection */
   lastClickedCardId: string | null
+
+  /** Starred board IDs (UI-only, not persisted to disk) */
+  starredBoards: string[]
+  /** Named saved views capturing the current filter state */
+  savedViews: SavedView[]
+
+  toggleStarBoard: (boardId: string) => void
+  saveCurrentView: (name: string) => void
+  removeView: (id: string) => void
 
   setActiveCardId: (id: string | null) => void
   setActiveCardTab: (tab: CardTab) => void
@@ -160,6 +179,32 @@ export const useStore = create<KanbanState>((set, get) => ({
   activeCardTab: 'preview' as CardTab,
   selectedCardIds: [] as string[],
   lastClickedCardId: null,
+  starredBoards: [] as string[],
+  savedViews: [] as SavedView[],
+
+  toggleStarBoard: (boardId) => set((state) => ({
+    starredBoards: state.starredBoards.includes(boardId)
+      ? state.starredBoards.filter(id => id !== boardId)
+      : [...state.starredBoards, boardId]
+  })),
+
+  saveCurrentView: (name) => set((state) => {
+    const id = `view-${Date.now()}`
+    const view: SavedView = {
+      id,
+      name,
+      searchQuery: state.searchQuery,
+      priorityFilter: state.priorityFilter,
+      assigneeFilter: state.assigneeFilter,
+      labelFilter: [...state.labelFilter],
+      dueDateFilter: state.dueDateFilter,
+    }
+    return { savedViews: [...state.savedViews, view] }
+  }),
+
+  removeView: (id) => set((state) => ({
+    savedViews: state.savedViews.filter(v => v.id !== id)
+  })),
 
   setActiveCardId: (id) => set({ activeCardId: id }),
   setActiveCardTab: (tab) => set({ activeCardTab: tab }),

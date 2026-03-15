@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { X, ChevronDown, User, Tag, Check, CircleDot, Signal, Calendar, Zap } from 'lucide-react'
 import type { CardStatus, Priority } from '../../shared/types'
+import { DELETED_STATUS_ID } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DatePicker } from './DatePicker'
@@ -20,17 +21,9 @@ const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'low', label: 'Low', dot: 'bg-green-500' }
 ]
 
-const statusConfig: { value: CardStatus; label: string; dot: string }[] = [
-  { value: 'backlog', label: 'Backlog', dot: 'bg-zinc-400' },
-  { value: 'todo', label: 'To Do', dot: 'bg-blue-400' },
-  { value: 'in-progress', label: 'In Progress', dot: 'bg-amber-400' },
-  { value: 'review', label: 'Review', dot: 'bg-purple-400' },
-  { value: 'done', label: 'Done', dot: 'bg-emerald-400' }
-]
-
 interface DropdownProps {
   value: string
-  options: { value: string; label: string; dot?: string }[]
+  options: { value: string; label: string; dot?: string; dotColor?: string }[]
   onChange: (value: string) => void
   className?: string
 }
@@ -52,6 +45,7 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
         {current?.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', current.dot)} />}
+        {!current?.dot && current?.dotColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: current.dotColor }} />}
         <span>{current?.label}</span>
         <ChevronDown size={12} style={{ color: 'var(--vscode-descriptionForeground)' }} className="ml-0.5" />
       </button>
@@ -86,6 +80,7 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
                 }}
               >
                 {option.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', option.dot)} />}
+                {!option.dot && option.dotColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: option.dotColor }} />}
                 <span className="flex-1 text-left">{option.label}</span>
                 {option.value === value && <Check size={12} style={{ color: 'var(--vscode-focusBorder)' }} className="shrink-0" />}
               </button>
@@ -379,6 +374,11 @@ function CreateCardDialogContent({
   initialStatus
 }: CreateCardDialogProps) {
   const cardSettings = useStore(s => s.cardSettings)
+  const columns = useStore(s => s.columns)
+  const statusOptions = useMemo(
+    () => columns.filter(c => c.id !== DELETED_STATUS_ID).map(c => ({ value: c.id, label: c.name, dotColor: c.color })),
+    [columns]
+  )
   const [title, setTitle] = useState('')
   const [status, setStatus] = useState<CardStatus>(initialStatus ?? cardSettings.defaultStatus)
   const [priority, setPriority] = useState<Priority>(cardSettings.defaultPriority)
@@ -434,13 +434,13 @@ function CreateCardDialogContent({
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30" onClick={handleCancel} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={handleCancel} />
       <div
-        className="relative h-full w-1/2 shadow-xl flex flex-col animate-in slide-in-from-right duration-200"
+        className="relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200"
         style={{
           background: 'var(--vscode-editor-background)',
-          borderLeft: '1px solid var(--vscode-panel-border)',
+          border: '1px solid var(--vscode-panel-border)',
         }}
       >
         {/* Header */}
@@ -474,7 +474,7 @@ function CreateCardDialogContent({
           <PropertyRow label="Status" icon={<CircleDot size={13} />}>
             <Dropdown
               value={status}
-              options={statusConfig.map(s => ({ value: s.value, label: s.label, dot: s.dot }))}
+              options={statusOptions}
               onChange={(v) => setStatus(v as CardStatus)}
             />
           </PropertyRow>

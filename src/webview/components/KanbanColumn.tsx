@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare } from 'lucide-react'
+import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare, LayoutList } from 'lucide-react'
 import { CardItem } from './CardItem'
-import type { Card, KanbanColumn as KanbanColumnType } from '../../shared/types'
+import { QuickAddInput } from './QuickAddInput'
+import type { Card, KanbanColumn as KanbanColumnType, CardStatus, Priority } from '../../shared/types'
 import type { LayoutMode, SortOrder } from '../store'
 import type { DropTarget } from './KanbanBoard'
 
@@ -36,6 +37,7 @@ interface KanbanColumnProps {
   onSelectAll: (status: string) => void
   sort: SortOrder
   onSortChange: (sort: SortOrder) => void
+  onQuickAdd?: (data: { status: CardStatus; priority: Priority; content: string }) => void
 }
 
 export function KanbanColumn({
@@ -60,7 +62,8 @@ export function KanbanColumn({
   selectedCardIds,
   onSelectAll,
   sort,
-  onSortChange
+  onSortChange,
+  onQuickAdd
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
@@ -222,11 +225,29 @@ export function KanbanColumn({
         )}
 
         {cards.length === 0 && (
-          <div className={isVertical ? "text-sm text-zinc-400 dark:text-zinc-500 py-4" : "text-center py-8 text-sm text-zinc-400 dark:text-zinc-500"}>
-            No cards
+          <div className={isVertical ? "flex items-center gap-2 py-4 px-1 text-zinc-400 dark:text-zinc-500" : "flex flex-col items-center gap-1.5 py-8 text-zinc-400 dark:text-zinc-500"}>
+            <LayoutList size={isVertical ? 14 : 20} className="shrink-0 opacity-50" />
+            <span className={isVertical ? "text-sm" : "text-sm text-center"}>
+              No cards yet
+            </span>
+            {!isVertical && (
+              <span className="text-[11px] text-center text-zinc-300 dark:text-zinc-600 max-w-[120px]">
+                Drag cards here or click + to add one
+              </span>
+            )}
           </div>
         )}
       </div>
+
+      {/* Inline quick add — only for real (non-deleted) columns */}
+      {!isDeletedColumn && onQuickAdd && (
+        <div className="px-2 pb-2">
+          <QuickAddInput
+            status={column.id as CardStatus}
+            onAdd={onQuickAdd}
+          />
+        </div>
+      )}
     </div>
   )
 }

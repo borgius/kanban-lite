@@ -725,6 +725,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentFrontmatterRef = useRef(currentFrontmatter)
@@ -902,11 +903,20 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         </div>
       </div>
 
-      {/* Metadata */}
+      {/* Properties */}
       <div
         className="flex flex-col py-0.5"
         style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
       >
+        <div
+          className="px-4 pt-2 pb-1"
+          style={{ borderBottom: '1px solid var(--vscode-panel-border, transparent)' }}
+        >
+          <span
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: 'var(--vscode-descriptionForeground)' }}
+          >Details</span>
+        </div>
         <PropertyRow label="Status" icon={<CircleDot size={13} />}>
           <StatusDropdown
             value={currentFrontmatter.status}
@@ -1004,33 +1014,50 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
             </button>
           </div>
         </PropertyRow>
-        <PropertyRow label="Created" icon={<Clock size={13} />}>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
-              {formatAbsoluteDate(currentFrontmatter.created)}
-            </span>
-            <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
-              title={formatVerboseRelative(currentFrontmatter.created)}
-            >
-              {formatRelativeCompact(currentFrontmatter.created)}
-            </span>
-          </div>
-        </PropertyRow>
-        <PropertyRow label="Modified" icon={<Clock size={13} />}>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
-              {formatAbsoluteDate(currentFrontmatter.modified)}
-            </span>
-            <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
-              title={formatVerboseRelative(currentFrontmatter.modified)}
-            >
-              {formatRelativeCompact(currentFrontmatter.modified)}
-            </span>
-          </div>
-        </PropertyRow>
-        <div className="px-4 pb-2">
-          <MetadataSection metadata={currentFrontmatter.metadata} onOpenMetadataFile={onOpenMetadataFile} />
-        </div>
+        {/* Advanced toggle */}
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(v => !v)}
+          className="flex items-center gap-1.5 px-4 py-1.5 w-full text-left transition-colors"
+          style={{ color: 'var(--vscode-descriptionForeground)' }}
+        >
+          <ChevronDown
+            size={11}
+            className={`opacity-60 transition-transform ${showAdvanced ? '' : '-rotate-90'}`}
+          />
+          <span className="text-[10px] font-semibold uppercase tracking-widest">Advanced</span>
+        </button>
+        {showAdvanced && (
+          <>
+            <PropertyRow label="Created" icon={<Clock size={13} />}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+                  {formatAbsoluteDate(currentFrontmatter.created)}
+                </span>
+                <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
+                  title={formatVerboseRelative(currentFrontmatter.created)}
+                >
+                  {formatRelativeCompact(currentFrontmatter.created)}
+                </span>
+              </div>
+            </PropertyRow>
+            <PropertyRow label="Modified" icon={<Clock size={13} />}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+                  {formatAbsoluteDate(currentFrontmatter.modified)}
+                </span>
+                <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}
+                  title={formatVerboseRelative(currentFrontmatter.modified)}
+                >
+                  {formatRelativeCompact(currentFrontmatter.modified)}
+                </span>
+              </div>
+            </PropertyRow>
+            <div className="px-4 pb-2">
+              <MetadataSection metadata={currentFrontmatter.metadata} onOpenMetadataFile={onOpenMetadataFile} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Editor */}

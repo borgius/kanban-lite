@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal } from 'lucide-react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal, MoreHorizontal } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import { LabelPicker } from './LabelPicker'
 import type { Priority } from '../../shared/types'
@@ -77,6 +77,8 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const [labelDropdownOpen, setLabelDropdownOpen] = useState(false)
   const labelDropdownRef = useRef<HTMLDivElement>(null)
 
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false)
+  const boardMenuRef = useRef<HTMLDivElement>(null)
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false)
   const actionsDropdownRef = useRef<HTMLDivElement>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -117,6 +119,18 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [labelDropdownOpen])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (boardMenuRef.current && !boardMenuRef.current.contains(e.target as Node)) {
+        setBoardMenuOpen(false)
+      }
+    }
+    if (boardMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [boardMenuOpen])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -349,34 +363,61 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <span>Add List</span>
       </button>
 
-      {/* Layout Toggle */}
-      <button
-        onClick={toggleLayout}
-        className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
-        title={layout === 'horizontal' ? 'Switch to vertical layout' : 'Switch to horizontal layout'}
-      >
-        {layout === 'horizontal' ? <Rows size={16} /> : <Columns size={16} />}
-      </button>
+      {/* Board Menu — layout, theme, settings, logs */}
+      <div className="relative" ref={boardMenuRef}>
+        <button
+          type="button"
+          onClick={() => setBoardMenuOpen(!boardMenuOpen)}
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+          title="Board options"
+        >
+          <MoreHorizontal size={16} />
+        </button>
+        {boardMenuOpen && (
+          <div className="absolute top-full right-0 mt-1 min-w-[200px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
+            <button
+              type="button"
+              onClick={() => { toggleLayout(); setBoardMenuOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+            >
+              {layout === 'horizontal' ? <Rows size={14} className="shrink-0 text-zinc-400" /> : <Columns size={14} className="shrink-0 text-zinc-400" />}
+              <span>{layout === 'horizontal' ? 'Switch to Rows' : 'Switch to Columns'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { onToggleTheme(); setBoardMenuOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+            >
+              {isDarkMode ? <Sun size={14} className="shrink-0 text-zinc-400" /> : <Moon size={14} className="shrink-0 text-zinc-400" />}
+              <span>{isDarkMode ? 'Light Theme' : 'Dark Theme'}</span>
+            </button>
+            <div className="border-t border-zinc-100 dark:border-zinc-700 my-1" />
+            <button
+              type="button"
+              onClick={() => { onOpenSettings(); setBoardMenuOpen(false) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+            >
+              <Settings size={14} className="shrink-0 text-zinc-400" />
+              <span>Settings</span>
+            </button>
+            {onOpenBoardLogs && (
+              <>
+                <div className="border-t border-zinc-100 dark:border-zinc-700 my-1" />
+                <button
+                  type="button"
+                  onClick={() => { onOpenBoardLogs(); setBoardMenuOpen(false) }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors ${boardLogsOpen ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-900 dark:text-zinc-100'}`}
+                >
+                  <ScrollText size={14} className={`shrink-0 ${boardLogsOpen ? 'text-blue-500' : 'text-zinc-400'}`} />
+                  <span>Board Logs</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
-      {/* Theme Toggle */}
-      <button
-        onClick={onToggleTheme}
-        className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
-        title={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-      >
-        {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
-
-      {/* Settings */}
-      <button
-        onClick={onOpenSettings}
-        className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
-        title="Open settings"
-      >
-        <Settings size={16} />
-      </button>
-
-      {/* Board Actions Dropdown */}
+      {/* Board Actions Dropdown — always rightmost */}
       {boardActionEntries.length > 0 && onTriggerBoardAction && (
         <div className="relative ml-auto" ref={actionsDropdownRef}>
           <button
@@ -408,20 +449,6 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
             </div>
           )}
         </div>
-      )}
-      {/* Board Logs */}
-      {onOpenBoardLogs && (
-        <button
-          onClick={onOpenBoardLogs}
-          className={`flex items-center gap-1 px-2 py-1.5 text-sm rounded-md transition-colors ${
-            boardLogsOpen
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-          }`}
-          title="Board logs"
-        >
-          <ScrollText size={16} />
-        </button>
       )}
     </div>
   )

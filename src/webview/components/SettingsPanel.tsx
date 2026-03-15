@@ -557,6 +557,7 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
 function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTab] = useState<'general' | 'defaults' | 'labels'>('general')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => { setLocal(settings) }, [settings])
 
@@ -637,17 +638,6 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
         <div className="flex-1 overflow-auto">
           {activeTab === 'general' && (
             <>
-              {workspace && (
-                <>
-                  <SettingsSection title="Workspace">
-                    <SettingsInfo label="Project Path" value={workspace.projectPath} />
-                    <SettingsInfo label="Kanban Directory" value={workspace.kanbanDirectory} />
-                    <SettingsInfo label="Server Port" value={String(workspace.port)} />
-                    <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
-                  </SettingsSection>
-                  <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
-                </>
-              )}
               <SettingsSection title="Card Display">
                 <SettingsToggle
                   label="Show Priority Badges"
@@ -713,6 +703,34 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                   onChange={v => update({ cardZoom: v })}
                 />
               </SettingsSection>
+            {workspace && (
+              <>
+                <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+                <div
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer"
+                  onClick={() => setAdvancedOpen(o => !o)}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    Advanced
+                  </h3>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+                    style={{ color: 'var(--vscode-descriptionForeground)' }}
+                  />
+                </div>
+                {advancedOpen && (
+                  <>
+                    <SettingsInfo label="Project Path" value={workspace.projectPath} />
+                    <SettingsInfo label="Kanban Directory" value={workspace.kanbanDirectory} />
+                    <SettingsInfo label="Server Port" value={String(workspace.port)} />
+                    <SettingsInfo label="Config Version" value={String(workspace.configVersion)} />
+                  </>
+                )}
+              </>
+            )}
             </>
           )}
 

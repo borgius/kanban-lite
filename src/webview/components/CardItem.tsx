@@ -90,7 +90,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border ${isSelected ? 'border-blue-500 dark:border-blue-400 ring-1 ring-blue-500 dark:ring-blue-400' : 'border-zinc-200 dark:border-zinc-700'} ${cardSettings.compactMode ? 'p-2 min-h-[4.5rem]' : 'p-3 min-h-[7rem]'} cursor-pointer hover:shadow-md transition-shadow ${
+      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border ${isSelected ? 'border-blue-500 dark:border-blue-400 ring-1 ring-blue-500 dark:ring-blue-400' : 'border-zinc-200 dark:border-zinc-700'} ${cardSettings.compactMode ? 'p-2 min-h-[4.5rem]' : 'p-3 min-h-[5.5rem]'} cursor-pointer hover:shadow-md transition-shadow ${
         isDragging ? 'shadow-lg opacity-90' : ''
       }`}
     >
@@ -130,7 +130,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
         {/* eslint-disable-next-line react/no-danger */}
         {description && !cardSettings.compactMode && (
           <div
-            className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-2 card-inline-markdown"
+            className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1 mb-1.5 card-inline-markdown"
             dangerouslySetInnerHTML={{ __html: renderDescriptionHtml(description) }}
           />
         )}
@@ -138,7 +138,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
         {/* Labels */}
         {cardSettings.showLabels && card.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {card.labels.slice(0, 3).map((label) => {
+            {card.labels.slice(0, 2).map((label) => {
               const def = labelDefs[label]
               return (
                 <span
@@ -150,8 +150,8 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
                 </span>
               )
             })}
-            {card.labels.length > 3 && (
-              <span className="text-xs text-zinc-400">+{card.labels.length - 3}</span>
+            {card.labels.length > 2 && (
+              <span className="text-xs text-zinc-400">+{card.labels.length - 2}</span>
             )}
           </div>
         )}

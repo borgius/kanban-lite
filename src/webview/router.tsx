@@ -29,10 +29,10 @@ import { useStore, type CardTab, type DueDateFilter } from './store'
 import type { Priority } from '../shared/types'
 
 // ---------------------------------------------------------------------------
-// vscode API (standalone shim provides this)
+// vscode API (singleton so acquireVsCodeApi is called exactly once per page)
 // ---------------------------------------------------------------------------
-declare const acquireVsCodeApi: () => { postMessage: (msg: unknown) => void }
-const vscode = acquireVsCodeApi()
+import { getVsCodeApi } from './vsCodeApi'
+const vscode = getVsCodeApi()
 
 // ---------------------------------------------------------------------------
 // Types

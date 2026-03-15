@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap } from 'lucide-react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal } from 'lucide-react'
 import { useStore, type DueDateFilter } from '../store'
 import { LabelPicker } from './LabelPicker'
 import type { Priority } from '../../shared/types'
@@ -23,7 +23,7 @@ const dueDateOptions: { value: DueDateFilter; label: string }[] = [
 const selectClassName =
   'text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100'
 
-export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction }: { onOpenSettings: () => void; onAddColumn: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void }) {
+export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
   const priorityFilter = useStore(s => s.priorityFilter)
@@ -79,9 +79,18 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
 
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false)
   const actionsDropdownRef = useRef<HTMLDivElement>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const currentBoardActions = useMemo(() => boards.find(b => b.id === currentBoard)?.actions ?? {}, [boards, currentBoard])
   const boardActionEntries = useMemo(() => Object.entries(currentBoardActions), [currentBoardActions])
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (priorityFilter !== 'all') count += 1
+    if (assigneeFilter !== 'all') count += 1
+    if (labelFilter.length > 0) count += 1
+    if (dueDateFilter !== 'all') count += 1
+    return count
+  }, [priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -206,13 +215,39 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search... (meta.field: value)"
+          placeholder="Search cards, people, labels..."
+          title="Search cards by text. Advanced metadata search also works with meta.field: value"
           className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
         />
       </div>
 
+      {/* Primary action */}
+      <button
+        onClick={onCreateCard}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
+        title="Create a new card"
+      >
+        <Plus size={16} />
+        <span>New Card</span>
+      </button>
+
+      {/* Filters Toggle */}
+      <button
+        type="button"
+        onClick={() => setFiltersOpen(open => !open)}
+        className={`flex items-center gap-1.5 px-2 py-1.5 text-sm border rounded-md transition-colors ${
+          filtersOpen || activeFilterCount > 0
+            ? 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30'
+            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+        }`}
+        title="Show or hide filters"
+      >
+        <SlidersHorizontal size={14} />
+        <span>{activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}</span>
+      </button>
+
       {/* Priority Filter */}
-      {cardSettings.showPriorityBadges && (
+      {filtersOpen && cardSettings.showPriorityBadges && (
         <select
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value as Priority | 'all')}
@@ -227,7 +262,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
       )}
 
       {/* Assignee Filter */}
-      {cardSettings.showAssignee && (
+      {filtersOpen && cardSettings.showAssignee && (
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
@@ -244,7 +279,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
       )}
 
       {/* Label Filter */}
-      {cardSettings.showLabels && (
+      {filtersOpen && cardSettings.showLabels && (
         <div className="relative" ref={labelDropdownRef}>
           <button
             type="button"
@@ -278,7 +313,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onToggleTheme, onSwitchBo
       )}
 
       {/* Due Date Filter */}
-      {cardSettings.showDueDate && (
+      {filtersOpen && cardSettings.showDueDate && (
         <select
           value={dueDateFilter}
           onChange={(e) => setDueDateFilter(e.target.value as DueDateFilter)}

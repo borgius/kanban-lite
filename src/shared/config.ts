@@ -183,7 +183,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showDeletedColumn: false,
   boardZoom: 100,
   cardZoom: 100,
-  port: 3000,
+  port: 2954,
   labels: {}
 }
 
@@ -252,7 +252,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showDeletedColumn: false,
     boardZoom: 100,
     cardZoom: 100,
-    port: 3000
+    port: 2954
   }
 }
 

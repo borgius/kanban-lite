@@ -1,5 +1,8 @@
 // WebSocket bridge that provides acquireVsCodeApi() for standalone mode.
 // Must be imported BEFORE App.tsx so the global is available at module load time.
+// When loaded inside VS Code the native acquireVsCodeApi is already injected —
+// skip this entire shim so we never overwrite the real API.
+if (!('acquireVsCodeApi' in window)) {
 
 const ws = new WebSocket(`ws://${window.location.host}/ws`)
 const pendingMessages: string[] = []
@@ -167,3 +170,5 @@ if (document.body) {
 } else {
   document.addEventListener('DOMContentLoaded', () => applyTheme(darkMq.matches))
 }
+
+} // end: !acquireVsCodeApi guard

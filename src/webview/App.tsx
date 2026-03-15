@@ -13,14 +13,9 @@ import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFront
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
 
-// Declare vscode API type
-declare const acquireVsCodeApi: () => {
-  postMessage: (message: unknown) => void
-  getState: () => unknown
-  setState: (state: unknown) => void
-}
+import { getVsCodeApi } from './vsCodeApi'
 
-const vscode = acquireVsCodeApi()
+const vscode = getVsCodeApi()
 
 function App(): React.JSX.Element {
 
@@ -682,6 +677,10 @@ function App(): React.JSX.Element {
       <Toolbar
         onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })}
         onAddColumn={handleAddColumn}
+        onCreateCard={() => {
+          setCreateCardStatus(cardSettings.defaultStatus || 'backlog')
+          setCreateCardOpen(true)
+        }}
         onToggleTheme={() => vscode.postMessage({ type: 'toggleTheme' })}
         onSwitchBoard={(boardId) => vscode.postMessage({ type: 'switchBoard', boardId })}
         onCreateBoard={(name) => vscode.postMessage({ type: 'createBoard', name })}

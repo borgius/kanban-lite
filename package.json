@@ -122,7 +122,7 @@
     "watch:webview": "vite build --watch",
     "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch",
     "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --banner:js=\"#!/usr/bin/env node\" --watch",
-    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 3001 --no-browser",
+    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 2954 --no-browser",
     "dev:standalone-vite": "vite dev --config vite.standalone.config.ts",
     "dev": "npm run build:standalone-server && concurrently \"npm run watch:extension\" \"npm run watch:webview\" \"npm run watch:standalone-server\" \"npm run dev:standalone-server\" \"npm run dev:standalone-vite\"",
     "test": "vitest run",

@@ -76,6 +76,7 @@
   "aiAgent": "claude",
   "defaultPriority": "medium",
   "defaultStatus": "backlog",
+  "nextCardId": 229,
   "showPriorityBadges": true,
   "showAssignee": true,
   "showDueDate": true,

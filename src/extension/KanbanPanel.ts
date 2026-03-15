@@ -488,13 +488,11 @@ export class KanbanPanel {
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview)
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'index.js')
-    )
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'style.css')
-    )
+  private _getHtmlForWebview(_webview: vscode.Webview): string {
+    // Read the configured port so the webview loads from the running standalone server.
+    const root = this._getWorkspaceRoot()
+    const port = root ? readConfig(root).port : 2954
+    const base = `http://localhost:${port}`
 
     const nonce = this._getNonce()
 
@@ -503,13 +501,13 @@ export class KanbanPanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}';">
-  <link href="${styleUri}" rel="stylesheet">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${base} ws://localhost:${port}; style-src ${base} 'unsafe-inline'; script-src ${base} 'nonce-${nonce}'; img-src ${base} data: blob:; font-src ${base};">
+  <link href="${base}/style.css" rel="stylesheet">
   <title>Kanban Board</title>
 </head>
 <body>
   <div id="root"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${base}/index.js"></script>
 </body>
 </html>`
   }

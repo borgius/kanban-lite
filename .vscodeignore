@@ -28,6 +28,7 @@ CONTRIBUTING.md
 skills-lock.json
 README.md
 dist/standalone.js
+dist/webview/**
 dist/cli.js
 dist/mcp-server.js
 dist/sdk/**

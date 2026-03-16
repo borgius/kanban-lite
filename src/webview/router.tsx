@@ -16,6 +16,7 @@
 
 import { useEffect, useRef } from 'react'
 import {
+  createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
@@ -280,6 +281,7 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
+  history: 'acquireVsCodeApi' in window ? createMemoryHistory({ initialEntries: ['/'] }) : undefined,
   defaultPreload: 'intent',
 })
 

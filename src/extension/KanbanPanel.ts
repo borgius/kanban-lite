@@ -63,7 +63,7 @@ export class KanbanPanel {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
+          vscode.Uri.joinPath(extensionUri, 'dist', 'standalone-webview')
         ]
       }
     )
@@ -94,7 +94,7 @@ export class KanbanPanel {
     this._panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
+        vscode.Uri.joinPath(extensionUri, 'dist', 'standalone-webview')
       ]
     }
 
@@ -493,10 +493,10 @@ export class KanbanPanel {
 
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'index.js')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'standalone-webview', 'index.js')
     )
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'style.css')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'standalone-webview', 'style.css')
     )
     const nonce = this._getNonce()
 

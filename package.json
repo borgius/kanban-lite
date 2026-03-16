@@ -105,7 +105,7 @@
   "scripts": {
     "publish:all": "vsce publish && ovsx publish",
     "vscode:prepublish": "npm run build",
-    "build": "npm run build:extension && npm run build:webview && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
+    "build": "npm run build:extension && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
     "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.cjs --format=cjs --platform=node --external:better-sqlite3 && esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.mjs --format=esm --platform=node --external:better-sqlite3 && tsc -p tsconfig.sdk.json",
     "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --banner:js=\"#!/usr/bin/env node\"",
     "cli": "tsx src/cli/index.ts",

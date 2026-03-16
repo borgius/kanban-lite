@@ -171,7 +171,8 @@ export const useStore = create<KanbanState>((set, get) => ({
     defaultPriority: 'medium',
     defaultStatus: 'backlog',
     boardZoom: 100,
-    cardZoom: 100
+    cardZoom: 100,
+    panelMode: 'drawer' as const
   },
   settingsOpen: false,
   labelDefs: {},

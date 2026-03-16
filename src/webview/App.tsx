@@ -719,43 +719,59 @@ function App(): React.JSX.Element {
             onQuickAdd={handleQuickAdd}
           />
         </div>
-        {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />
-            <div
-              className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200"
-              style={{ background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
-            >
-              <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
-                <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board Logs</span>
-                <button
-                  onClick={() => setBoardLogsOpen(false)}
-                  className="p-1.5 rounded transition-colors"
-                  style={{ color: 'var(--vscode-descriptionForeground)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  title="Close board logs"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="flex-1 overflow-auto">
-                <LogsSection
-                  logs={boardLogs}
-                  onClearLogs={handleClearBoardLogs}
-                />
+        {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (() => {
+          const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
+          return (
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+              <div className={`absolute inset-0 ${isDrawer ? 'bg-black/30' : 'bg-black/50'}`} onClick={() => setBoardLogsOpen(false)} />
+              <div
+                className={isDrawer
+                  ? 'relative h-full w-1/2 max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200'
+                  : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
+                style={isDrawer
+                  ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                  : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+              >
+                <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board Logs</span>
+                  <button
+                    onClick={() => setBoardLogsOpen(false)}
+                    className="p-1.5 rounded transition-colors"
+                    style={{ color: 'var(--vscode-descriptionForeground)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    title="Close board logs"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <LogsSection
+                    logs={boardLogs}
+                    onClearLogs={handleClearBoardLogs}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        {editingCard && selectedCardIds.length === 0 && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />
-            <div
-              className="relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200"
-              style={{ fontSize: `calc(1em * var(--card-zoom, 1))`, background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
-            >
-            <CardEditor
+          )
+        })()}
+        {editingCard && selectedCardIds.length === 0 && (() => {
+          const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
+          return (
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+              <div className={`absolute inset-0 ${isDrawer ? 'bg-black/30' : 'bg-black/50'}`} onClick={handleCloseEditor} />
+              <div
+                className={isDrawer
+                  ? 'relative h-full w-1/2 flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200'
+                  : 'relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200'}
+                style={{
+                  fontSize: `calc(1em * var(--card-zoom, 1))`,
+                  ...(isDrawer
+                    ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                    : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' })
+                }}
+              >
+                <CardEditor
               cardId={editingCard.id}
               content={editingCard.content}
               frontmatter={editingCard.frontmatter}
@@ -789,7 +805,8 @@ function App(): React.JSX.Element {
             />
             </div>
           </div>
-        )}
+          )
+        })()}
       </div>
 
       {selectedCardIds.length > 1 && (

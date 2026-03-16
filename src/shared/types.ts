@@ -273,6 +273,8 @@ export interface CardDisplaySettings {
   boardZoom: number
   /** Zoom level for the card detail panel as a percentage (75–150). Default 100. */
   cardZoom: number
+  /** Whether panels open as a centered popup or a right-side drawer. Default 'drawer'. */
+  panelMode?: 'popup' | 'drawer'
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'

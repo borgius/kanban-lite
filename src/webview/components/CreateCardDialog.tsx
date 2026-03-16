@@ -434,13 +434,17 @@ function CreateCardDialogContent({
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={handleCancel} />
+    <div className={`fixed inset-0 z-50 flex ${(cardSettings.panelMode ?? 'drawer') === 'drawer' ? 'justify-end' : 'items-center justify-center p-4'}`}>
+      <div className={`absolute inset-0 ${(cardSettings.panelMode ?? 'drawer') === 'drawer' ? 'bg-black/30' : 'bg-black/50'}`} onClick={handleCancel} />
       <div
-        className="relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200"
+        className={(cardSettings.panelMode ?? 'drawer') === 'drawer'
+          ? 'relative h-full w-1/2 shadow-xl flex flex-col animate-in slide-in-from-right duration-200'
+          : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={{
           background: 'var(--vscode-editor-background)',
-          border: '1px solid var(--vscode-panel-border)',
+          ...((cardSettings.panelMode ?? 'drawer') === 'drawer'
+            ? { borderLeft: '1px solid var(--vscode-panel-border)' }
+            : { border: '1px solid var(--vscode-panel-border)' }),
         }}
       >
         {/* Header */}

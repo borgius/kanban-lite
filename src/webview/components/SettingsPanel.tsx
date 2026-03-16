@@ -577,15 +577,18 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [onClose])
 
+  const isDrawer = (local.panelMode ?? 'drawer') === 'drawer'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+    <div className={`fixed inset-0 z-50 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+      <div className={`absolute inset-0 ${isDrawer ? 'bg-black/30' : 'bg-black/50'}`} onClick={onClose} />
       <div
-        className="relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200"
-        style={{
-          background: 'var(--vscode-editor-background)',
-          border: '1px solid var(--vscode-panel-border)',
-        }}
+        className={isDrawer
+          ? 'relative h-full w-1/2 max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200'
+          : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
+        style={isDrawer
+          ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+          : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
       >
         {/* Header */}
         <div
@@ -679,6 +682,18 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                   description="Display the Deleted column to manage soft-deleted cards"
                   checked={local.showDeletedColumn}
                   onChange={v => update({ showDeletedColumn: v })}
+                />
+              </SettingsSection>
+              <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
+              <SettingsSection title="Layout">
+                <SettingsDropdown
+                  label="Panel Style"
+                  value={local.panelMode ?? 'drawer'}
+                  options={[
+                    { value: 'drawer', label: 'Right-side Drawer' },
+                    { value: 'popup', label: 'Centered Popup' },
+                  ]}
+                  onChange={v => update({ panelMode: v as 'popup' | 'drawer' })}
                 />
               </SettingsSection>
               <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />

@@ -116,8 +116,15 @@ export function activate(context: vscode.ExtensionContext) {
     const kanbanDir = path.join(root, kanbanConfig.kanbanDirectory)
     const webviewDir = path.join(context.extensionPath, 'dist', 'standalone-webview')
 
+    // Set port synchronously so panels created before the server starts use the right port
+    KanbanPanel.serverPort = kanbanConfig.port
+
     findFreePort(kanbanConfig.port).then(port => {
-      KanbanPanel.serverPort = port
+      if (port !== kanbanConfig.port) {
+        // Configured port was busy; update and refresh any already-open panel
+        KanbanPanel.serverPort = port
+        KanbanPanel.currentPanel?.refresh()
+      }
       standaloneServer = startServer(kanbanDir, port, webviewDir)
       standaloneServer.on('error', () => {
         standaloneServer = undefined

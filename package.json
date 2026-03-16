@@ -105,7 +105,7 @@
   "scripts": {
     "publish:all": "vsce publish && ovsx publish",
     "vscode:prepublish": "npm run build",
-    "build": "npm run build:extension && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
+    "build": "npm run build:extension && npm run build:webview && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
     "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.cjs --format=cjs --platform=node --external:better-sqlite3 && esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.mjs --format=esm --platform=node --external:better-sqlite3 && tsc -p tsconfig.sdk.json",
     "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --banner:js=\"#!/usr/bin/env node\"",
     "cli": "tsx src/cli/index.ts",
@@ -117,7 +117,7 @@
     "build:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --banner:js=\"#!/usr/bin/env node\"",
     "build:standalone-webview": "vite build --config vite.standalone.config.ts",
     "standalone": "npm run build:standalone && node dist/standalone.js",
-    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:standalone-webview\"",
+    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:webview\"",
     "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
     "watch:webview": "vite build --watch",
     "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch",

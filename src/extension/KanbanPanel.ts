@@ -63,7 +63,6 @@ export class KanbanPanel {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'dist'),
           vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
         ]
       }
@@ -82,6 +81,10 @@ export class KanbanPanel {
     KanbanPanel.currentPanel = new KanbanPanel(panel, extensionUri, context)
   }
 
+  public refresh(): void {
+    this._update()
+  }
+
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     this._panel = panel
     this._extensionUri = extensionUri
@@ -91,7 +94,6 @@ export class KanbanPanel {
     this._panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(extensionUri, 'dist'),
         vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
       ]
     }
@@ -489,10 +491,13 @@ export class KanbanPanel {
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview)
   }
 
-  private _getHtmlForWebview(_webview: vscode.Webview): string {
-    const port = KanbanPanel.serverPort
-    const base = `http://localhost:${port}`
-
+  private _getHtmlForWebview(webview: vscode.Webview): string {
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'index.js')
+    )
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'style.css')
+    )
     const nonce = this._getNonce()
 
     return `<!DOCTYPE html>
@@ -500,13 +505,13 @@ export class KanbanPanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${base} ws://localhost:${port}; style-src ${base} 'unsafe-inline'; script-src ${base} 'nonce-${nonce}'; img-src ${base} data: blob:; font-src ${base};">
-  <link href="${base}/style.css" rel="stylesheet">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource};">
+  <link href="${styleUri}" rel="stylesheet">
   <title>Kanban Board</title>
 </head>
 <body>
   <div id="root"></div>
-  <script type="module" nonce="${nonce}" src="${base}/index.js"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`
   }

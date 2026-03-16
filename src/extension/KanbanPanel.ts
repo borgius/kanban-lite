@@ -23,6 +23,7 @@ interface CreateCardData {
 export class KanbanPanel {
   public static readonly viewType = 'kanban-lite.panel'
   public static currentPanel: KanbanPanel | undefined
+  public static serverPort: number = 2954
 
   private readonly _panel: vscode.WebviewPanel
   private readonly _extensionUri: vscode.Uri
@@ -489,9 +490,7 @@ export class KanbanPanel {
   }
 
   private _getHtmlForWebview(_webview: vscode.Webview): string {
-    // Read the configured port so the webview loads from the running standalone server.
-    const root = this._getWorkspaceRoot()
-    const port = root ? readConfig(root).port : 2954
+    const port = KanbanPanel.serverPort
     const base = `http://localhost:${port}`
 
     const nonce = this._getNonce()

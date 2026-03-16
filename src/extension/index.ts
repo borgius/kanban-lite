@@ -116,7 +116,8 @@ export function activate(context: vscode.ExtensionContext) {
     const kanbanDir = path.join(root, kanbanConfig.kanbanDirectory)
     const webviewDir = path.join(context.extensionPath, 'dist', 'standalone-webview')
 
-    findFreePort(3464).then(port => {
+    findFreePort(kanbanConfig.port).then(port => {
+      KanbanPanel.serverPort = port
       standaloneServer = startServer(kanbanDir, port, webviewDir)
       standaloneServer.on('error', () => {
         standaloneServer = undefined

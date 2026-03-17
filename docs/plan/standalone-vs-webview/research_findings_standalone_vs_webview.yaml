@@ -1,0 +1,482 @@
+plan_id: standalone-vs-webview
+objective: Understand the purpose and coupling of src/standalone vs src/webview, and assess feasibility of consolidation.
+focus_area: src/standalone vs src/webview architectural distinction
+created_at: "2026-03-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - src/standalone is a Node.js HTTP + WebSocket server (server-side, esbuild/CJS); src/webview is a React SPA (browser-side, Vite/ESM). They run in different runtimes and are bundled by different tools — separation is correct and intentional.
+  - The VS Code extension and the standalone web server BOTH serve the same built artifact (dist/standalone-webview), built from standalone-main.tsx. The standalone-shim.ts self-disables when native acquireVsCodeApi is detected, making one binary serve both contexts.
+  - src/webview has NO imports from src/standalone; src/standalone has NO imports from src/webview. Their only source-level contract is src/shared/types.ts (shared TypeScript types).
+  - main.tsx + vite.config.ts (building to dist/webview/) are NOT called by the main build script — this appears to be a dead / legacy entry point. The active UI entry point is standalone-main.tsx → dist/standalone-webview/.
+  - Merging is impossible, unnecessary, and would be architecturally harmful. The separation is the feature.
+
+research_metadata:
+  methodology: "Parallel file reads (read_file), grep_search for cross-directory import patterns, package.json scripts analysis, build config comparison"
+  scope: "All entry points, build configs, shared contracts, extension host loading code; full files for small modules, first 100 lines for large files"
+  confidence: high
+  coverage: 95
+
+# ---------------------------------------------------------------------------
+# FILES ANALYZED
+# ---------------------------------------------------------------------------
+files_analyzed:
+
+  - file: "standalone/index.ts"
+    path: "src/standalone/index.ts"
+    purpose: "CLI entry point for the standalone Node.js web server. Parses --dir, --port, --no-browser args; reads config for port default; calls startServer(); optionally opens browser via 'open'; registers SIGINT/SIGTERM handlers for graceful shutdown."
+    key_elements:
+      - element: parseArgs
+        type: function
+        location: "src/standalone/index.ts:4"
+        description: Parses process.argv for --dir, --port, --no-browser, --help flags.
+      - element: startServer call
+        type: pattern
+        location: "src/standalone/index.ts:50"
+        description: Sole consumer of startServer() from server.ts.
+    language: TypeScript
+    lines: 65
+
+  - file: "standalone/server.ts"
+    path: "src/standalone/server.ts"
+    purpose: "Core Node.js HTTP + WebSocket server. Exposes full REST API (/api/*) for cards, columns, settings, webhooks, labels, logs, attachments. Also serves static webview files from a configurable directory (default: dist/standalone-webview adjacent to the bundle). WebSocket at /ws enables real-time push to the browser."
+    key_elements:
+      - element: startServer
+        type: function
+        location: "src/standalone/server.ts:46"
+        description: "Factory that creates the http.Server. Accepts kanbanDir, port, and optional webviewDir override. Uses KanbanSDK for all data access. Uses chokidar for file-system watching."
+      - element: resolvedWebviewDir
+        type: variable
+        location: "src/standalone/server.ts:71"
+        description: "Resolves to webviewDir arg or path.join(__dirname, 'standalone-webview'). This is where built React assets are served from."
+      - element: WebSocketServer
+        type: class-usage
+        location: "src/standalone/server.ts:~6"
+        description: "ws library WebSocket server attached to the HTTP server. Enables bidirectional message passing with the browser UI."
+      - element: fireWebhooks
+        type: function-call
+        location: "src/standalone/server.ts:~80"
+        description: "Calls outbound webhooks on SDK events (imported from ./webhooks)."
+    language: TypeScript
+    lines: "~1900"
+
+  - file: "webview/standalone-main.tsx"
+    path: "src/webview/standalone-main.tsx"
+    purpose: "Standalone browser mode React entry point. Imports standalone-shim FIRST (before any App code), then main.css, standalone-theme.css, then mounts the app via TanStack RouterProvider."
+    key_elements:
+      - element: "import './standalone-shim'"
+        type: pattern
+        location: "src/webview/standalone-main.tsx:1"
+        description: "Critical: shim must load before any acquireVsCodeApi() call occurs. Provides WebSocket-backed polyfill of the VS Code API in browser context."
+      - element: RouterProvider
+        type: component
+        location: "src/webview/standalone-main.tsx:9"
+        description: "Uses TanStack Router for URL-based navigation (board/card/tab in the URL). Not present in extension mode."
+    language: TSX
+    lines: 14
+
+  - file: "webview/main.tsx"
+    path: "src/webview/main.tsx"
+    purpose: "VS Code extension mode React entry point. Renders <App /> directly (no router). Built by vite.config.ts to dist/webview/ — NOT called by the main build script and NOT used by any runtime path. Appears to be a legacy/dev-only entry point."
+    key_elements:
+      - element: "renders <App />"
+        type: pattern
+        location: "src/webview/main.tsx:7"
+        description: "No router, no shim — assumes native acquireVsCodeApi is injected by VS Code WebviewPanel."
+    language: TSX
+    lines: 10
+
+  - file: "webview/standalone-shim.ts"
+    path: "src/webview/standalone-shim.ts"
+    purpose: "WebSocket bridge that polyfills acquireVsCodeApi() for browser/standalone mode. Conditionally runs ONLY when acquireVsCodeApi is not already in window (i.e., when NOT inside a real VS Code WebviewPanel). Provides postMessage/getState/setState interface matching the VS Code API shape."
+    key_elements:
+      - element: "if (!('acquireVsCodeApi' in window))"
+        type: pattern
+        location: "src/webview/standalone-shim.ts:5"
+        description: "Guard: entire shim is a no-op when running inside VS Code. This single flag enables one bundle to serve both runtimes."
+      - element: "new WebSocket(`ws://${window.location.host}/ws`)"
+        type: pattern
+        location: "src/webview/standalone-shim.ts:7"
+        description: "Opens WebSocket to the standalone server. Proxied to localhost:2954 in Vite dev mode."
+      - element: handleAddAttachment
+        type: function
+        location: "src/webview/standalone-shim.ts:41"
+        description: "Browser-side file upload: intercepts attachment messages, encodes files as base64, POSTs to /api/upload-attachment."
+      - element: acquireVsCodeApi (synthetic)
+        type: function
+        location: "src/webview/standalone-shim.ts:~130"
+        description: "Returns an object with postMessage (sends over WS), getState (reads sessionStorage), setState (writes sessionStorage)."
+    language: TypeScript
+    lines: "~170"
+
+  - file: "webview/vsCodeApi.ts"
+    path: "src/webview/vsCodeApi.ts"
+    purpose: "Singleton accessor for acquireVsCodeApi(). Ensures the function is called exactly once per page (required by the real VS Code API). Works transparently in both VS Code and standalone modes because the shim also supports repeated calls."
+    key_elements:
+      - element: getVsCodeApi
+        type: function
+        location: "src/webview/vsCodeApi.ts:14"
+        description: "Returns cached API object; calls acquireVsCodeApi() on first access only."
+    language: TypeScript
+    lines: 17
+
+  - file: "webview/router.tsx"
+    path: "src/webview/router.tsx"
+    purpose: "TanStack Router configuration for standalone web mode. Implements URL schema /<boardId>/<cardId>/<tabId>?priority=&labels=&.... URLSync component bridges URL ↔ Zustand store. Renders <App /> at the root route."
+    key_elements:
+      - element: URLSync
+        type: component
+        location: "src/webview/router.tsx:~90"
+        description: "On mount reads URL to initialize store; afterwards syncs store changes back to URL. Used only in standalone mode."
+    language: TSX
+    lines: "~200"
+
+  - file: "vite.config.ts"
+    path: "vite.config.ts"
+    purpose: "Vite build config for the VS Code extension's legacy webview bundle. Root: src/webview, entry: main.tsx, output: dist/webview/. NOT called by the main build script."
+    key_elements:
+      - element: "input: { index: ...main.tsx }"
+        type: variable
+        location: "vite.config.ts:12"
+        description: "Builds main.tsx (no shim, no router) to dist/webview."
+    language: TypeScript
+    lines: 33
+
+  - file: "vite.standalone.config.ts"
+    path: "vite.standalone.config.ts"
+    purpose: "Vite build config for the standalone (and actual VS Code extension) webview bundle. Root: src/webview, entry: standalone-main.tsx, output: dist/standalone-webview/. Called by build:standalone-webview in main build. Also configures dev proxies for /api and /ws to localhost:2954."
+    key_elements:
+      - element: standaloneHtmlPlugin
+        type: function
+        location: "vite.standalone.config.ts:7"
+        description: "Dev-server middleware: rewrites all non-asset, non-API requests to /standalone.html (SPA fallback)."
+      - element: "proxy: { '/ws': ..., '/api': ... }"
+        type: pattern
+        location: "vite.standalone.config.ts:34"
+        description: "Dev mode proxies both WebSocket and REST API calls to the standalone server running on port 2954."
+      - element: "input: { index: ...standalone-main.tsx }"
+        type: variable
+        location: "vite.standalone.config.ts:43"
+        description: "Builds standalone-main.tsx (with shim + router) to dist/standalone-webview."
+    language: TypeScript
+    lines: 62
+
+  - file: "extension/KanbanPanel.ts"
+    path: "src/extension/KanbanPanel.ts"
+    purpose: "VS Code extension host code. Creates and manages a WebviewPanel. Critically, it loads its HTML content from dist/standalone-webview (NOT dist/webview), meaning the extension uses the standalone-webview build artifact, not the plain webview one."
+    key_elements:
+      - element: "_getHtmlForWebview"
+        type: function
+        location: "src/extension/KanbanPanel.ts:501"
+        description: "Injects dist/standalone-webview/index.js and style.css into a VS Code Webview with a strict CSP. The loaded bundle contains standalone-shim, which self-disables because acquireVsCodeApi is already in window."
+      - element: "localResourceRoots: dist/standalone-webview"
+        type: pattern
+        location: "src/extension/KanbanPanel.ts:64"
+        description: "VS Code restricts webview resources to this directory — confirms standalone-webview is the canonical output."
+    language: TypeScript
+    lines: "~550"
+
+  - file: "shared/types.ts"
+    path: "src/shared/types.ts"
+    purpose: "Shared TypeScript type definitions and constants used by ALL layers: standalone server, webview React code, SDK, extension host. This is the primary coupling contract between standalone and webview."
+    key_elements:
+      - element: "Priority, CardStatus, Card, KanbanColumn, Comment, LogEntry, ExtensionMessage, etc."
+        type: type
+        location: "src/shared/types.ts:1-60"
+        description: "Domain model types consumed by both server.ts and all webview components."
+    language: TypeScript
+    lines: "~300"
+
+  - file: "package.json (scripts)"
+    path: "package.json"
+    purpose: "Build orchestration. Key distinction: main build script calls build:standalone-webview but NOT build:webview. Two separate Vite builds exist but only one is production-active."
+    key_elements:
+      - element: "build"
+        type: script
+        location: "package.json:108"
+        description: "build:extension && build:standalone-webview && build:cli && build:mcp && build:sdk. Does NOT include build:webview."
+      - element: "build:standalone-server"
+        type: script
+        location: "package.json:114"
+        description: "esbuild src/standalone/index.ts → dist/standalone.js (CJS, Node.js, shebang). This is the CLI binary."
+      - element: "build:standalone-webview"
+        type: script
+        location: "package.json:115"
+        description: "vite build --config vite.standalone.config.ts → dist/standalone-webview/. This is the UI bundle."
+      - element: "dev:standalone-vite"
+        type: script
+        location: "package.json:125"
+        description: "Vite dev server with HMR for the standalone UI, proxying /api and /ws to the server on port 2954."
+    language: JSON
+    lines: "~160"
+
+# ---------------------------------------------------------------------------
+# PATTERNS FOUND
+# ---------------------------------------------------------------------------
+patterns_found:
+
+  - category: architecture
+    pattern: "Single UI bundle for dual runtime"
+    description: "One Vite bundle (dist/standalone-webview) is loaded in both the VS Code WebviewPanel and the standalone browser. The standalone-shim.ts provides a conditional polyfill that adapts the VS Code API contract to a WebSocket connection when not running inside VS Code."
+    examples:
+      - file: "src/webview/standalone-shim.ts"
+        location: "standalone-shim.ts:5"
+        snippet: "if (!('acquireVsCodeApi' in window)) { ... }"
+      - file: "src/extension/KanbanPanel.ts"
+        location: "KanbanPanel.ts:502"
+        snippet: "vscode.Uri.joinPath(this._extensionUri, 'dist', 'standalone-webview', 'index.js')"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Shim-based API polyfill pattern"
+    description: "The webview always uses getVsCodeApi() which calls acquireVsCodeApi(). In VS Code the native function is injected by the WebviewPanel; in the browser the shim provides an equivalent that relays over WebSocket. The React component code is unaware of which runtime it is in."
+    examples:
+      - file: "src/webview/vsCodeApi.ts"
+        location: "vsCodeApi.ts:14"
+        snippet: "export function getVsCodeApi() { if (!_api) _api = acquireVsCodeApi(); return _api }"
+    prevalence: common
+
+  - category: structure
+    pattern: "Runtime boundary enforced by build tooling"
+    description: "src/standalone is bundled by esbuild as CJS for Node.js. src/webview is bundled by Vite as ESM for the browser. No TypeScript path alias crosses this boundary; shared types flow through src/shared/ only."
+    examples:
+      - file: "package.json"
+        location: "package.json:114"
+        snippet: "\"build:standalone-server\": \"esbuild src/standalone/index.ts ... --format=cjs --platform=node\""
+      - file: "package.json"
+        location: "package.json:115"
+        snippet: "\"build:standalone-webview\": \"vite build --config vite.standalone.config.ts\""
+    prevalence: common
+
+  - category: architecture
+    pattern: "Dead build path: vite.config.ts / main.tsx / dist/webview"
+    description: "main.tsx and vite.config.ts exist and produce dist/webview/, but this script (build:webview) is not called by the main build script and the VS Code extension loads from dist/standalone-webview/. This path appears to be legacy or development-only and can be removed without impact."
+    examples:
+      - file: "package.json"
+        location: "package.json:108"
+        snippet: "\"build\": \"npm run build:extension && npm run build:standalone-webview && build:cli && ...\""
+      - file: "src/extension/KanbanPanel.ts"
+        location: "KanbanPanel.ts:64"
+        snippet: "localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'standalone-webview')]"
+    prevalence: rare
+
+  - category: naming
+    pattern: "standalone- prefix for browser-mode overrides"
+    description: "Files that exist only for the browser/standalone build use the 'standalone-' prefix: standalone-main.tsx, standalone-shim.ts, standalone.html, standalone-theme.css. The corresponding VS Code-only files lack this prefix."
+    examples:
+      - file: "src/webview/standalone-main.tsx"
+        location: "standalone-main.tsx:1"
+        snippet: "import './standalone-shim'"
+    prevalence: common
+
+# ---------------------------------------------------------------------------
+# RELATED ARCHITECTURE
+# ---------------------------------------------------------------------------
+related_architecture:
+  components_relevant_to_domain:
+    - component: "src/sdk/KanbanSDK.ts"
+      responsibility: "All data access logic (cards, columns, settings, webhooks, labels, logs)"
+      location: "src/sdk/"
+      relationship_to_domain: "src/standalone/server.ts depends on this; src/webview does NOT — webview only communicates with the server via REST/WebSocket messages"
+
+    - component: "src/shared/types.ts"
+      responsibility: "Shared TypeScript type definitions and message contracts"
+      location: "src/shared/types.ts"
+      relationship_to_domain: "Both src/standalone/server.ts and src/webview components import from here — this is the ONLY source-level coupling"
+
+    - component: "src/standalone/webhooks.ts"
+      responsibility: "Outbound webhook firing on SDK events"
+      location: "src/standalone/webhooks.ts"
+      relationship_to_domain: "Used only by server.ts; no webview dependency"
+
+    - component: "dist/standalone-webview/"
+      responsibility: "Production-built static assets served by the HTTP server AND loaded by the VS Code extension"
+      location: "dist/standalone-webview/"
+      relationship_to_domain: "Runtime output that connects standalone server (file server) to webview (browser consumer)"
+
+  interfaces_used_by_domain:
+    - interface: "acquireVsCodeApi / shim API"
+      location: "src/webview/vsCodeApi.ts, src/webview/standalone-shim.ts"
+      usage_pattern: "Webview calls postMessage(); VS Code injects real API, standalone server receives over WebSocket"
+
+    - interface: "REST API (/api/*)"
+      location: "src/standalone/server.ts"
+      usage_pattern: "Browser webview calls fetch('/api/...') for operations not handled via WebSocket messages (e.g., attachment upload)"
+
+    - interface: "WebSocket (/ws)"
+      location: "src/standalone/server.ts, src/webview/standalone-shim.ts"
+      usage_pattern: "Bidirectional message passing between server and browser, replacing VS Code's postMessage channel in standalone mode"
+
+  data_flow_involving_domain: |
+    VS CODE MODE:
+      Extension Host (KanbanPanel.ts) ←postMessage→ WebviewPanel
+      WebviewPanel loads dist/standalone-webview/index.js
+      standalone-shim.ts: skipped (acquireVsCodeApi already present)
+      App.tsx ←getVsCodeApi().postMessage→ KanbanPanel.ts ←KanbanSDK→ .kanban/ files
+
+    STANDALONE MODE:
+      CLI (standalone/index.ts) → startServer() → http.Server on :port
+      Browser loads http://localhost:port → server serves dist/standalone-webview/index.html
+      standalone-shim.ts: active, opens WebSocket to /ws
+      App.tsx ←getVsCodeApi().postMessage→ WebSocket→ server.ts ←KanbanSDK→ .kanban/ files
+      Additional REST calls: fetch('/api/...') for file uploads, direct reads
+
+  key_relationships_to_domain:
+    - from: "src/standalone/server.ts"
+      to: "src/shared/types.ts"
+      relationship: imports
+    - from: "src/webview/App.tsx"
+      to: "src/shared/types.ts"
+      relationship: imports
+    - from: "src/webview/standalone-main.tsx"
+      to: "src/webview/standalone-shim.ts"
+      relationship: imports
+    - from: "src/extension/KanbanPanel.ts"
+      to: "dist/standalone-webview/"
+      relationship: "loads as webview content (runtime)"
+    - from: "src/standalone/server.ts"
+      to: "dist/standalone-webview/"
+      relationship: "serves as static files (runtime)"
+
+# ---------------------------------------------------------------------------
+# RELATED TECHNOLOGY STACK
+# ---------------------------------------------------------------------------
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript (server-side, Node.js)
+    - TypeScript/TSX (browser-side, React)
+
+  frameworks_used_in_domain:
+    - name: React 18
+      usage_in_domain: "UI framework for src/webview SPA"
+    - name: TanStack Router
+      usage_in_domain: "Client-side URL routing in standalone mode (router.tsx)"
+    - name: Zustand
+      usage_in_domain: "UI state management in src/webview/store"
+
+  libraries_used_in_domain:
+    - name: ws
+      purpose_in_domain: "WebSocket server in src/standalone/server.ts"
+    - name: chokidar
+      purpose_in_domain: "File-system watching in server.ts for live reload"
+    - name: open
+      purpose_in_domain: "Opens browser automatically when server starts (optional import)"
+    - name: Vite + @vitejs/plugin-react
+      purpose_in_domain: "Bundles src/webview into browser-ready assets"
+    - name: esbuild
+      purpose_in_domain: "Bundles src/standalone into Node.js CJS binary"
+
+# ---------------------------------------------------------------------------
+# RELATED CONVENTIONS
+# ---------------------------------------------------------------------------
+related_conventions:
+  naming_patterns_in_domain: |
+    - standalone-* prefix for files that differ between VS Code and browser modes
+    - server.ts for the HTTP/WS layer, index.ts for the CLI entry point
+    - *-shim.ts for polyfill/adapter files
+  structure_of_domain: |
+    src/standalone/ = server-side Node.js only (no browser APIs)
+    src/webview/ = browser-side React only (no Node.js APIs)
+    src/shared/ = shared type contracts (imported by both)
+    The split maps exactly to runtime boundaries.
+  error_handling_in_domain: |
+    server.ts uses try/catch around file operations and SDK calls; returns JSON error responses.
+    standalone-shim.ts swallows WebSocket errors silently (UX continuity).
+  documentation_in_domain: |
+    No JSDoc on webview components (inline code is self-documenting).
+    server.ts lacks JSDoc — business logic is documented at the SDK layer.
+
+# ---------------------------------------------------------------------------
+# RELATED DEPENDENCIES
+# ---------------------------------------------------------------------------
+related_dependencies:
+  internal:
+    - component: "src/shared/types.ts"
+      relationship_to_domain: "Shared by both standalone and webview; only shared file"
+      direction: inbound
+    - component: "src/shared/config.ts"
+      relationship_to_domain: "Used by standalone/index.ts and server.ts; NOT used by webview"
+      direction: inbound
+    - component: "src/sdk/KanbanSDK.ts"
+      relationship_to_domain: "Used by standalone/server.ts only; webview never imports SDK directly"
+      direction: inbound
+  external:
+    - name: ws
+      purpose_for_domain: WebSocket server (standalone only)
+    - name: chokidar
+      purpose_for_domain: File watching (standalone only)
+
+# ---------------------------------------------------------------------------
+# CONSOLIDATION ASSESSMENT
+# ---------------------------------------------------------------------------
+# This section captures factual findings relevant to the consolidation question.
+# No recommendations — pure structural analysis.
+consolidation_analysis:
+
+  can_be_merged: false
+
+  reason_why_not_merged: |
+    1. DIFFERENT RUNTIMES: src/standalone runs in Node.js (uses fs, http, path, os, process, ws).
+       src/webview runs in a browser (uses DOM, WebSocket browser API, sessionStorage, fetch).
+       These APIs do not overlap and cannot share a bundle.
+
+    2. DIFFERENT BUNDLERS: esbuild (CJS, --platform=node) for standalone; Vite (ESM, browser targets)
+       for webview. Switching either would require significant build changes.
+
+    3. NO IMPORT COUPLING: Neither directory imports from the other at the source level.
+       Coupling is purely at runtime (served files + WebSocket protocol).
+
+    4. ALREADY CONSOLIDATED AT THE ARTIFACT LEVEL: Both the VS Code extension and the standalone
+       server use the SAME built artifact (dist/standalone-webview). The dual-runtime behavior
+       is already elegantly solved via standalone-shim.ts's conditional polyfill.
+       There is no "split" to close — it is already unified at the output level.
+
+  what_consolidation_would_actually_mean: |
+    A merge would mean combining a Node.js HTTP server with a React SPA into one directory.
+    This is not a code organisation problem — it would be mixing runtime environments, which
+    is architecturally incoherent.
+
+    The actual open question is whether the DEAD PATHS can be cleaned up:
+    - main.tsx, index.html, and vite.config.ts produce dist/webview/ which nothing uses.
+    - Removing these files would simplify the repo without any functional impact.
+
+  what_they_share:
+    - "src/shared/types.ts: shared TypeScript types (Card, Priority, KanbanColumn, Comment, etc.)"
+    - "src/shared/config.ts: kanban config schema (used by server.ts; config reading only)"
+    - "Protocol contract: the message types sent over postMessage/WebSocket are implicitly typed via ExtensionMessage in shared/types.ts"
+
+  key_risks_to_consolidation:
+    - risk: "Runtime incompatibility"
+      description: "Node.js fs/http/os modules cannot run in a browser. Browser DOM/sessionStorage/fetch cannot run in Node.js without polyfills. These are hard constraints."
+    - risk: "Build tooling mismatch"
+      description: "esbuild CJS for server vs Vite ESM for browser. Switching to a monorepo bundler (e.g., Turbopack) would need significant scaffolding for no gain."
+    - risk: "CSP breakage"
+      description: "VS Code WebviewPanel enforces strict CSP. Any changes to the bundle entry point risk breaking the nonce-based script injection in KanbanPanel._getHtmlForWebview."
+    - risk: "Loss of standalone-webview/dist dual-use"
+      description: "The current design is that one Vite build output serves BOTH the browser (via HTTP static serving) and VS Code (via webviewUri). Merging directories would break this elegant reuse."
+
+# ---------------------------------------------------------------------------
+# OPEN QUESTIONS
+# ---------------------------------------------------------------------------
+open_questions:
+  - question: "Is main.tsx / vite.config.ts / dist/webview/ dead code or is it used in an undocumented workflow?"
+    context: "build:webview script exists but is not called by the main build. KanbanPanel.ts loads from dist/standalone-webview/. No test or package.json script references dist/webview/."
+
+  - question: "Does the webview's App.tsx message protocol (ExtensionMessage types) fully match what server.ts sends over WebSocket?"
+    context: "The protocol coupling between server.ts WebSocket messages and App.tsx message handlers is implicit — there is no shared schema validated at build time. A type mismatch would only be caught at runtime."
+
+  - question: "Is there a TanStack Router / URL-state feature only available in standalone mode that should also be available in VS Code extension mode?"
+    context: "router.tsx is imported in standalone-main.tsx but not main.tsx. Deep-linking and URL state are standalone-only features."
+
+# ---------------------------------------------------------------------------
+# GAPS
+# ---------------------------------------------------------------------------
+gaps:
+  - area: "Full server.ts REST API surface"
+    description: "Only the first 100 lines of server.ts were read. The full ~1900-line file contains all API route handlers. The exact list of WebSocket message types sent from server to webview was not fully enumerated."
+    impact: "Does not affect the architectural conclusion; would matter for protocol coupling analysis."
+
+  - area: "App.tsx message handler inventory"
+    description: "src/webview/App.tsx handles incoming postMessage/WebSocket messages. The full set of message types was not enumerated (only type imports were confirmed)."
+    impact: "Low — structural coupling is already proven via shared/types.ts."

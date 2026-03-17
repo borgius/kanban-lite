@@ -1,0 +1,587 @@
+plan_id: column-dnd-reorder
+objective: Understand how to implement column drag-and-drop reordering in kanban-light
+focus_area: src/webview/components, src/sdk, src/shared, src/extension, src/standalone, src/mcp-server, src/cli
+created_at: "2026-03-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - KanbanColumn type (src/shared/types.ts:217) has only 3 fields (id, name, color); column order is implicit array position in .kanban.json boards[id].columns array
+  - sdk.reorderColumns(columnIds[], boardId?) ALREADY EXISTS at src/sdk/KanbanSDK.ts:1281 and src/sdk/modules/columns.ts:118
+  - Card DnD uses native HTML5 drag-and-drop (no external library) implemented entirely in src/webview/components/KanbanBoard.tsx
+  - WebviewMessage union and KanbanPanel.ts message handler do NOT yet have a reorderColumns message type — this is the primary gap
+  - REST API, MCP, and CLI are also missing reorder_columns / PUT /api/columns/reorder / kl columns reorder commands
+
+research_metadata:
+  methodology: "Hybrid retrieval: targeted grep_search + read_file; relationship discovery via message type tracing (WebviewMessage -> KanbanPanel -> SDK)"
+  scope: "All files touched by column operations: types, SDK, extension panel, webview components/store/App, standalone server, MCP server, CLI"
+  confidence: high
+  coverage: 95
+
+files_analyzed:
+  - file: KanbanColumn.tsx
+    path: src/webview/components/KanbanColumn.tsx
+    purpose: Renders a single column with header, card list, sort menu, column actions (add/edit/remove)
+    key_elements:
+      - element: KanbanColumnProps
+        type: interface
+        location: "src/webview/components/KanbanColumn.tsx:17"
+        description: |
+          Props include onDragStart/onDragOver/onDragOverCard/onDrop/onDragEnd for CARD drag,
+          but NO column-level drag props (no onColumnDragStart, no draggable column header).
+      - element: column header div
+        type: pattern
+        location: "src/webview/components/KanbanColumn.tsx:123"
+        description: |
+          Plain <div> with color dot + name + card count badge. The column header is NOT draggable.
+          The outer container div handles onDragOver and onDrop for card drops only.
+      - element: outer container div
+        type: pattern
+        location: "src/webview/components/KanbanColumn.tsx:113"
+        description: |
+          Has onDragOver={onDragOver} and onDrop={(e) => onDrop(e, column.id)} —
+          these are card-only drop handlers, not column-level handlers.
+    language: TypeScript/React
+    lines: ~350
+
+  - file: KanbanBoard.tsx
+    path: src/webview/components/KanbanBoard.tsx
+    purpose: Renders all columns, owns all card drag-and-drop state and handlers
+    key_elements:
+      - element: DropTarget
+        type: interface
+        location: "src/webview/components/KanbanBoard.tsx:9"
+        description: "{ columnId: string; index: number } — tracks drop position for card insertion"
+      - element: draggedCard / dropTarget state
+        type: variable
+        location: "src/webview/components/KanbanBoard.tsx:60-61"
+        description: "useState<Card | null> and useState<DropTarget | null> — track active card drag"
+      - element: handleDragStart
+        type: function
+        location: "src/webview/components/KanbanBoard.tsx:63"
+        description: "Sets draggedCard, stores card ID(s) in dataTransfer text/plain"
+      - element: handleDragOver
+        type: function
+        location: "src/webview/components/KanbanBoard.tsx:74"
+        description: "Simple preventDefault on column drop zone"
+      - element: handleDragOverCard
+        type: function
+        location: "src/webview/components/KanbanBoard.tsx:79"
+        description: "Calculates insert index based on mouse Y position relative to card midpoint"
+      - element: handleDrop
+        type: function
+        location: "src/webview/components/KanbanBoard.tsx:97"
+        description: |
+          Handles both single-card and multi-card drops. Translates filtered-view index to
+          unfiltered index, then calls onMoveCard(cardId, columnId, unfilteredInsertIndex).
+      - element: column mapping
+        type: pattern
+        location: "src/webview/components/KanbanBoard.tsx:172"
+        description: |
+          {columns.map((column) => <KanbanColumn ... />)} — columns rendered in order from store.
+          NO drag state or handlers for the column elements themselves.
+    language: TypeScript/React
+    lines: ~220
+
+  - file: App.tsx
+    path: src/webview/App.tsx
+    purpose: Top-level webview component; owns column dialog state and posts all WebviewMessages
+    key_elements:
+      - element: handleAddColumn
+        type: function
+        location: "src/webview/App.tsx:496"
+        description: "Opens ColumnDialog with editingColumn=null"
+      - element: handleEditColumn
+        type: function
+        location: "src/webview/App.tsx:501"
+        description: "Finds column by ID, opens ColumnDialog in edit mode"
+      - element: handleRemoveColumn
+        type: function
+        location: "src/webview/App.tsx:509"
+        description: "Guards against non-empty columns, then postMessage({ type: 'removeColumn', columnId })"
+      - element: handleSaveColumn
+        type: function
+        location: "src/webview/App.tsx:529"
+        description: "Posts editColumn or addColumn message; no reorderColumns message exists here"
+      - element: handleMoveCard
+        type: function
+        location: "src/webview/App.tsx:644"
+        description: "Posts { type: 'moveCard', cardId, newStatus, newOrder } — the card DnD finalizer"
+    language: TypeScript/React
+    lines: ~800
+
+  - file: store/index.ts
+    path: src/webview/store/index.ts
+    purpose: Zustand store for all webview state; columns array is a top-level field
+    key_elements:
+      - element: columns
+        type: variable
+        location: "src/webview/store/index.ts:22"
+        description: "KanbanColumn[] — current column array. Initialized from 'init' message."
+      - element: setColumns
+        type: function
+        location: "src/webview/store/index.ts:56"
+        description: "Setter for columns array; used for optimistic updates and init hydration"
+    language: TypeScript
+    lines: ~350
+
+  - file: types.ts
+    path: src/shared/types.ts
+    purpose: All shared TypeScript types including KanbanColumn, ExtensionMessage, WebviewMessage
+    key_elements:
+      - element: KanbanColumn
+        type: interface
+        location: "src/shared/types.ts:217"
+        description: |
+          Only 3 fields: id (string), name (string), color (string).
+          NO 'order' field. Position is determined entirely by array index in BoardConfig.columns.
+      - element: DEFAULT_COLUMNS
+        type: variable
+        location: "src/shared/types.ts:234"
+        description: "5 default columns in order: backlog, todo, in-progress, review, done"
+      - element: WebviewMessage (addColumn)
+        type: union member
+        location: "src/shared/types.ts:383"
+        description: "{ type: 'addColumn'; column: { name: string; color: string } }"
+      - element: WebviewMessage (editColumn)
+        type: union member
+        location: "src/shared/types.ts:384"
+        description: "{ type: 'editColumn'; columnId: string; updates: { name: string; color: string } }"
+      - element: WebviewMessage (removeColumn)
+        type: union member
+        location: "src/shared/types.ts:385"
+        description: "{ type: 'removeColumn'; columnId: string }"
+      - element: MISSING reorderColumns message
+        type: gap
+        location: "src/shared/types.ts:370-410"
+        description: |
+          No { type: 'reorderColumns'; columnIds: string[] } in the WebviewMessage union.
+          This is the primary missing piece for the extension path.
+    language: TypeScript
+    lines: ~420
+
+  - file: config.ts
+    path: src/shared/config.ts
+    purpose: KanbanConfig and BoardConfig types; read/write .kanban.json
+    key_elements:
+      - element: BoardConfig.columns
+        type: field
+        location: "src/shared/config.ts:36"
+        description: |
+          KanbanColumn[] — ordered list of columns displayed on this board.
+          The array order IS the display order. Mutated by reorderColumns in SDK.
+    language: TypeScript
+    lines: ~180
+
+  - file: columns.ts (SDK module)
+    path: src/sdk/modules/columns.ts
+    purpose: All column CRUD logic; backing implementation for KanbanSDK column methods
+    key_elements:
+      - element: listColumns
+        type: function
+        location: "src/sdk/modules/columns.ts:11"
+        description: "Returns board.columns array"
+      - element: addColumn
+        type: function
+        location: "src/sdk/modules/columns.ts:20"
+        description: "Pushes to board.columns, writes config, emits column.created event"
+      - element: updateColumn
+        type: function
+        location: "src/sdk/modules/columns.ts:47"
+        description: "Mutates col.name/color in-place, writes config, emits column.updated event"
+      - element: removeColumn
+        type: function
+        location: "src/sdk/modules/columns.ts:67"
+        description: "Splices from board.columns after checking empty, emits column.deleted event"
+      - element: reorderColumns
+        type: function
+        location: "src/sdk/modules/columns.ts:118"
+        description: |
+          Accepts columnIds: string[] — must include ALL column IDs, no extras.
+          Rebuilds board.columns by mapping from columnIds -> colMap.get(id).
+          Writes config to disk. Does NOT emit any event (no column.reordered event).
+          Synchronous (not async).
+    language: TypeScript
+    lines: ~145
+
+  - file: KanbanSDK.ts
+    path: src/sdk/KanbanSDK.ts
+    purpose: Public SDK class; delegates to modules
+    key_elements:
+      - element: addColumn
+        type: method
+        location: "src/sdk/KanbanSDK.ts:1165"
+        description: "Synchronous. Returns updated KanbanColumn[]"
+      - element: updateColumn
+        type: method
+        location: "src/sdk/KanbanSDK.ts:1192"
+        description: "Synchronous. Returns updated KanbanColumn[]"
+      - element: removeColumn
+        type: method
+        location: "src/sdk/KanbanSDK.ts:1215"
+        description: "ASYNC (Promise<KanbanColumn[]>) — must check card count"
+      - element: reorderColumns
+        type: method
+        location: "src/sdk/KanbanSDK.ts:1281"
+        description: |
+          reorderColumns(columnIds: string[], boardId?: string): KanbanColumn[]
+          Synchronous. Throws if missing/unknown columns.
+    language: TypeScript
+    lines: ~1400
+
+  - file: KanbanPanel.ts
+    path: src/extension/KanbanPanel.ts
+    purpose: VS Code WebviewPanel; handles all WebviewMessages from webview, calls SDK
+    key_elements:
+      - element: addColumn handler
+        type: pattern
+        location: "src/extension/KanbanPanel.ts:273"
+        description: "case 'addColumn': calls _addColumn(message.column)"
+      - element: editColumn handler
+        type: pattern
+        location: "src/extension/KanbanPanel.ts:276"
+        description: "case 'editColumn': calls _editColumn(message.columnId, message.updates)"
+      - element: removeColumn handler
+        type: pattern
+        location: "src/extension/KanbanPanel.ts:279"
+        description: "case 'removeColumn': calls _removeColumn(message.columnId)"
+      - element: cleanupColumn handler
+        type: pattern
+        location: "src/extension/KanbanPanel.ts:282"
+        description: "case 'cleanupColumn': calls _cleanupColumn(message.columnId)"
+      - element: _addColumn private method
+        type: function
+        location: "src/extension/KanbanPanel.ts:1159"
+        description: "Calls sdk.addColumn(), then _sendCardsToWebview() to push updated state"
+      - element: _editColumn private method
+        type: function
+        location: "src/extension/KanbanPanel.ts:1166"
+        description: "Calls sdk.updateColumn(), then _sendCardsToWebview()"
+      - element: _removeColumn private method
+        type: function
+        location: "src/extension/KanbanPanel.ts:1173"
+        description: "Calls sdk.removeColumn() (async), then _sendCardsToWebview()"
+      - element: MISSING reorderColumns case
+        type: gap
+        location: "src/extension/KanbanPanel.ts:270-290"
+        description: "No 'reorderColumns' case in the message switch. SDK method exists but is unwired."
+    language: TypeScript
+    lines: ~1210
+
+  - file: server.ts
+    path: src/standalone/server.ts
+    purpose: HTTP server; all REST API routes
+    key_elements:
+      - element: GET /api/columns
+        type: route
+        location: "src/standalone/server.ts:1562"
+        description: "Lists columns for currentBoardId"
+      - element: POST /api/columns
+        type: route
+        location: "src/standalone/server.ts:1567"
+        description: "Creates a new column via doAddColumn(name, color)"
+      - element: PUT /api/columns/:id
+        type: route
+        location: "src/standalone/server.ts:1581"
+        description: "Updates name/color of column by ID"
+      - element: DELETE /api/columns/:id
+        type: route
+        location: "src/standalone/server.ts:1594"
+        description: "Removes column (fails if non-empty)"
+      - element: MISSING reorder endpoint
+        type: gap
+        location: "src/standalone/server.ts:1562-1600"
+        description: "No PUT/PATCH /api/columns/reorder route. Must be added for API parity."
+    language: TypeScript
+    lines: ~1800
+
+  - file: mcp-server/index.ts
+    path: src/mcp-server/index.ts
+    purpose: MCP server; all tool definitions
+    key_elements:
+      - element: list_columns tool
+        type: tool
+        location: "src/mcp-server/index.ts:992"
+        description: "Lists all columns for a board"
+      - element: add_column tool
+        type: tool
+        location: "src/mcp-server/index.ts:1009"
+        description: "Adds a column with id/name/color"
+      - element: update_column tool
+        type: tool
+        location: "src/mcp-server/index.ts:1029"
+        description: "Updates name and/or color of a column"
+      - element: remove_column tool
+        type: tool
+        location: "src/mcp-server/index.ts:1052"
+        description: "Removes an empty column"
+      - element: MISSING reorder_columns tool
+        type: gap
+        location: "src/mcp-server/index.ts:989-1070"
+        description: "No reorder_columns MCP tool. Must be added for interface parity."
+    language: TypeScript
+    lines: ~1400
+
+  - file: cli/index.ts
+    path: src/cli/index.ts
+    purpose: CLI tool; all subcommands
+    key_elements:
+      - element: cmdColumns function
+        type: function
+        location: "src/cli/index.ts:964"
+        description: |
+          Subcommands: list, add, update, remove/rm, cleanup.
+          No 'reorder' subcommand. Default is 'list'.
+      - element: MISSING reorder subcommand
+        type: gap
+        location: "src/cli/index.ts:964-1040"
+        description: "No 'reorder' case in the columns switch. Must be added for interface parity."
+    language: TypeScript
+    lines: ~1500
+
+patterns_found:
+  - category: architecture
+    pattern: Native HTML5 Drag and Drop for card reordering
+    description: |
+      No external DnD library (no @dnd-kit, no react-dnd, no react-beautiful-dnd).
+      Uses React.DragEvent (onDragStart, onDragOver, onDrop, onDragEnd) on DOM elements.
+      draggedCard and dropTarget states live in KanbanBoard.tsx.
+      Card ID is stored in dataTransfer.setData('text/plain', ...).
+      Drop position is calculated from mouse Y vs card midpoint getBoundingClientRect.
+    examples:
+      - file: src/webview/components/KanbanBoard.tsx
+        location: "63-175"
+        snippet: |
+          const [draggedCard, setDraggedCard] = useState<Card | null>(null)
+          const handleDragStart = (e, card) => { setDraggedCard(card); e.dataTransfer.setData(...) }
+          const handleDrop = (e, columnId) => { ... onMoveCard(draggedCard.id, columnId, index) }
+    prevalence: common
+
+  - category: architecture
+    pattern: WebviewMessage -> KanbanPanel -> SDK -> _sendCardsToWebview
+    description: |
+      All user actions in the webview post a typed WebviewMessage.
+      KanbanPanel.ts has a switch over message.type.
+      Each case calls a private _method() that invokes the SDK.
+      After SDK mutation, _sendCardsToWebview() re-hydrates the webview with the full init payload.
+    examples:
+      - file: src/extension/KanbanPanel.ts
+        location: "273-283"
+        snippet: |
+          case 'addColumn': await this._addColumn(message.column); break
+          case 'editColumn': await this._editColumn(message.columnId, message.updates); break
+          case 'removeColumn': await this._removeColumn(message.columnId); break
+    prevalence: common
+
+  - category: structure
+    pattern: Column ordering via array position
+    description: |
+      KanbanColumn has no numeric or fractional 'order' field.
+      Order is implicit: the index in the BoardConfig.columns array.
+      reorderColumns rebuilds the array in the desired order and writes .kanban.json.
+    examples:
+      - file: src/sdk/modules/columns.ts
+        location: "118-138"
+        snippet: |
+          board.columns = columnIds.map(id => colMap.get(id) as KanbanColumn)
+          writeConfig(ctx.workspaceRoot, config)
+    prevalence: common
+
+  - category: architecture
+    pattern: Optimistic updates for card moves
+    description: |
+      Card moves in App.tsx update local store state immediately before posting the message.
+      Column changes currently rely on _sendCardsToWebview() for round-trip refresh (not optimistic).
+    examples:
+      - file: src/webview/App.tsx
+        location: "644-680"
+        snippet: |
+          setCards(cards.map(c => c.id === cardId ? { ...c, status: newStatus } : c))
+          vscode.postMessage({ type: 'moveCard', ... })
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: KanbanBoard.tsx
+      responsibility: Owns card DnD state; renders all KanbanColumn components
+      location: src/webview/components/KanbanBoard.tsx
+      relationship_to_domain: Column DnD state needs to live here (alongside card DnD)
+
+    - component: KanbanColumn.tsx
+      responsibility: Renders one column; currently receives card DnD callbacks only
+      location: src/webview/components/KanbanColumn.tsx
+      relationship_to_domain: Column header needs draggable=true and column-level drag handlers
+
+    - component: KanbanSDK.reorderColumns
+      responsibility: Reorders board.columns array and persists to .kanban.json
+      location: src/sdk/KanbanSDK.ts:1281 / src/sdk/modules/columns.ts:118
+      relationship_to_domain: Already implemented; just needs to be wired up
+
+    - component: KanbanPanel.ts
+      responsibility: Message bridge between webview and SDK
+      location: src/extension/KanbanPanel.ts
+      relationship_to_domain: Needs 'reorderColumns' case and private _reorderColumns() method
+
+    - component: WebviewMessage union
+      responsibility: Type contract for all messages from webview to extension
+      location: src/shared/types.ts:377
+      relationship_to_domain: Needs { type: 'reorderColumns'; columnIds: string[] } added
+
+  interfaces_used_by_domain:
+    - interface: React.DragEvent
+      location: src/webview/components/KanbanBoard.tsx
+      usage_pattern: |
+        e.dataTransfer.setData('text/plain', ...) on drag start.
+        e.preventDefault() on drag over.
+        e.dataTransfer.getData('text/plain') or local state on drop.
+
+    - interface: KanbanSDK.reorderColumns
+      location: src/sdk/KanbanSDK.ts:1281
+      usage_pattern: |
+        sdk.reorderColumns(columnIds: string[], boardId?: string): KanbanColumn[]
+        Synchronous. Must pass ALL column IDs. Throws on unknown/missing IDs.
+
+  data_flow_involving_domain: |
+    Column order is stored as array order in .kanban.json -> read by SDK -> sent in
+    'init' message columns[] field -> stored in Zustand columns[] -> rendered in
+    KanbanBoard.tsx via columns.map(). Reorder would flow: column header drag gesture ->
+    KanbanBoard state update -> optimistic setColumns() -> postMessage reorderColumns ->
+    KanbanPanel -> sdk.reorderColumns() -> _sendCardsToWebview() (confirmation refresh).
+
+  key_relationships_to_domain:
+    - from: App.tsx
+      to: KanbanBoard.tsx
+      relationship: passes onMoveCard / onEditColumn / onRemoveColumn props; needs onReorderColumns
+    - from: KanbanBoard.tsx
+      to: KanbanColumn.tsx
+      relationship: passes drag handlers as props; needs new column-drag props
+    - from: App.tsx
+      to: vscode.postMessage
+      relationship: fires WebviewMessage; needs new 'reorderColumns' message type
+    - from: KanbanPanel.ts
+      to: KanbanSDK
+      relationship: calls sdk.reorderColumns() (already exists, not yet wired)
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - React (TSX)
+  frameworks_used_in_domain:
+    - name: React 18
+      usage_in_domain: Component rendering, hooks (useState, useCallback, useRef)
+    - name: Zustand
+      usage_in_domain: Webview state store; columns[] and setColumns are both present
+  libraries_used_in_domain:
+    - name: fractional-indexing
+      purpose_in_domain: Used for card ordering within columns; NOT needed for column ordering (columns use array index)
+    - name: "Native HTML5 DnD (no library)"
+      purpose_in_domain: Card reordering within and across columns. Column DnD can follow the same pattern.
+
+related_conventions:
+  naming_patterns_in_domain: |
+    Handlers in App.tsx: handleAddColumn, handleEditColumn, handleRemoveColumn.
+    Private methods in KanbanPanel.ts: _addColumn, _editColumn, _removeColumn.
+    Message types in WebviewMessage: addColumn, editColumn, removeColumn.
+    SDK methods: addColumn, updateColumn, removeColumn, reorderColumns.
+    MCP tools: add_column, update_column, remove_column  (snake_case).
+    CLI subcommands: add, update, remove, cleanup  (lowercase verb).
+    Pattern: handleReorderColumns / _reorderColumns / reorderColumns / reorder_columns / reorder
+  structure_of_domain: |
+    SDK -> shared/types + shared/config -> extension/KanbanPanel + standalone/server ->
+    mcp-server/index + cli/index -> webview/App -> webview/components/KanbanBoard ->
+    webview/components/KanbanColumn
+  error_handling_in_domain: |
+    SDK throws synchronous errors; KanbanPanel wraps removeColumn in .catch().
+    Extension shows vscode.window.showWarningMessage / showErrorMessage on SDK errors.
+    REST API returns jsonError(res, 400, String(err)) on SDK throws.
+  documentation_in_domain: |
+    All SDK methods have JSDoc. After adding reorderColumns wiring, run `npm run docs`
+    to regenerate docs/sdk.md. For the REST API endpoint, update route metadata in
+    scripts/generate-api-docs.ts. Add CHANGELOG entry under [Unreleased].
+
+related_dependencies:
+  internal:
+    - component: src/shared/config.ts (readConfig/writeConfig)
+      relationship_to_domain: reorderColumns reads the config, mutates board.columns, writes back
+      direction: outbound
+    - component: src/sdk/SDKContext (emitEvent)
+      relationship_to_domain: reorderColumns does NOT currently emit a column.reordered event (gap)
+      direction: outbound
+  external:
+    - name: "None (native browser DnD API)"
+      purpose_for_domain: Column DnD can reuse the same native HTML5 drag events already used for cards
+
+open_questions:
+  - question: Should column DnD use dataTransfer type 'column' or rely purely on local React state?
+    context: |
+      Card DnD uses dataTransfer.setData('text/plain', cardId). If column drag uses the same
+      key, a card drop handler could fire on a column-level drop accidentally. Using a separate
+      dataTransfer type ('application/kanban-column') or purely local React state (draggedColumnId)
+      avoids this ambiguity. Local state is simpler and already proven by card DnD.
+
+  - question: Should column reorder be optimistic (update store before the round-trip)?
+    context: |
+      Card moves are optimistic (local state updated immediately). Column reorders could follow
+      the same pattern: setColumns(reordered) before postMessage, then let the init refresh confirm.
+      This avoids a perceptible flicker when the column snaps back to old order momentarily.
+
+  - question: Should sdk.reorderColumns emit a 'column.reordered' webhook event?
+    context: |
+      Other SDK column mutations emit events (column.created, column.updated, column.deleted)
+      but reorderColumns (src/sdk/modules/columns.ts:118) does not call ctx.emitEvent().
+      Consistency would require adding this, though it may not be needed for the initial feature.
+
+  - question: How should horizontal-scroll interaction work during column drag?
+    context: |
+      KanbanBoard renders columns in a horizontally scrollable container. Dragging a column
+      near the left/right edge should ideally auto-scroll. Native HTML5 DnD does not
+      auto-scroll horizontal containers without custom logic (mousemove + scrollBy).
+
+gaps:
+  - area: WebviewMessage type
+    description: "{ type: 'reorderColumns'; columnIds: string[] } missing from union in src/shared/types.ts:377"
+    impact: "Without this, the extension will never receive a column-reorder instruction from the webview"
+
+  - area: KanbanPanel.ts message handler
+    description: "No 'reorderColumns' case in the switch statement (src/extension/KanbanPanel.ts:270)"
+    impact: "Even if the message is sent, it will be silently ignored"
+
+  - area: KanbanPanel._reorderColumns private method
+    description: "No private wrapper that calls sdk.reorderColumns() then _sendCardsToWebview()"
+    impact: "Follows mandatory pattern for all column mutations"
+
+  - area: KanbanBoard.tsx column drag state
+    description: |
+      No draggedColumnId, draggedColumnIndex, or columnDropIndex state.
+      No handleColumnDragStart / handleColumnDragOver / handleColumnDrop handlers.
+    impact: "Blocking — column DnD gesture cannot be detected without these"
+
+  - area: KanbanColumn.tsx draggable header
+    description: |
+      Column header div at line 123 is not draggable.
+      No onDragStart prop passed to it for column-level dragging.
+    impact: "Blocking — user cannot initiate a column drag"
+
+  - area: App.tsx handleReorderColumns
+    description: |
+      No handleReorderColumns callback that calls setColumns() optimistically and
+      postMessage({ type: 'reorderColumns', columnIds }).
+    impact: "Missing the final step connecting UI gesture to persistence"
+
+  - area: REST API — PUT /api/columns/reorder
+    description: |
+      No endpoint in src/standalone/server.ts:1562-1600 to POST/PUT column order.
+      Required for API parity (AGENTS.md mandates all interfaces stay in sync).
+    impact: "API clients cannot reorder columns"
+
+  - area: MCP — reorder_columns tool
+    description: "No tool in src/mcp-server/index.ts:989-1070"
+    impact: "MCP clients cannot reorder columns"
+
+  - area: CLI — columns reorder subcommand
+    description: "No 'reorder' case in cmdColumns switch at src/cli/index.ts:1010"
+    impact: "CLI users cannot reorder columns"
+
+  - area: column.reordered webhook event
+    description: "src/sdk/modules/columns.ts:118 does not call ctx.emitEvent('column.reordered', ...)"
+    impact: "Low — webhook subscribers won't be notified of reorders; minor consistency gap"

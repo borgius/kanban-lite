@@ -20,13 +20,15 @@ interface KanbanBoardProps {
   onRemoveColumn: (columnId: string) => void
   onCleanupColumn: (columnId: string) => void
   onPurgeDeletedCards: () => void
+  onReorderColumns: (columnIds: string[]) => void
   selectedCardId?: string
   selectedCardIds: string[]
   onSelectAll: (status: string) => void
   onQuickAdd?: (data: { status: CardStatus; priority: Priority; content: string }) => void
+  onTriggerAction?: (cardId: string, action: string) => void
 }
 
-export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, selectedCardId, selectedCardIds, onSelectAll, onQuickAdd }: KanbanBoardProps) {
+export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, onEditColumn, onRemoveColumn, onCleanupColumn, onPurgeDeletedCards, onReorderColumns, selectedCardId, selectedCardIds, onSelectAll, onQuickAdd, onTriggerAction }: KanbanBoardProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -58,6 +60,8 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   const setColumnSort = useStore((s) => s.setColumnSort)
   const [draggedCard, setDraggedCard] = useState<Card | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null)
+  const [dropColumnIndex, setDropColumnIndex] = useState<number | null>(null)
 
   const handleDragStart = useCallback((e: React.DragEvent, card: Card) => {
     setDraggedCard(card)
@@ -162,6 +166,50 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     setDropTarget(null)
   }, [])
 
+  const handleColumnDragStart = useCallback((e: React.DragEvent, columnId: string) => {
+    setDraggedColumnId(columnId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('application/x-column-id', columnId)
+  }, [])
+
+  const handleColumnDragOver = useCallback((e: React.DragEvent, colIdx: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const insertIndex = e.clientX < rect.left + rect.width / 2 ? colIdx : colIdx + 1
+    setDropColumnIndex(prev => prev === insertIndex ? prev : insertIndex)
+  }, [])
+
+  const handleColumnDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (!draggedColumnId || dropColumnIndex === null) {
+      setDraggedColumnId(null)
+      setDropColumnIndex(null)
+      return
+    }
+    const colIds = columns.map(c => c.id)
+    const fromIdx = colIds.indexOf(draggedColumnId)
+    if (fromIdx === -1) {
+      setDraggedColumnId(null)
+      setDropColumnIndex(null)
+      return
+    }
+    const newIds = [...colIds]
+    newIds.splice(fromIdx, 1)
+    const adjustedIdx = dropColumnIndex > fromIdx ? dropColumnIndex - 1 : dropColumnIndex
+    newIds.splice(adjustedIdx, 0, draggedColumnId)
+    if (newIds.join() !== colIds.join()) {
+      onReorderColumns(newIds)
+    }
+    setDraggedColumnId(null)
+    setDropColumnIndex(null)
+  }, [columns, draggedColumnId, dropColumnIndex, onReorderColumns])
+
+  const handleColumnDragEnd = useCallback(() => {
+    setDraggedColumnId(null)
+    setDropColumnIndex(null)
+  }, [])
+
   const isVertical = layout === 'vertical'
 
   return (
@@ -176,10 +224,11 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             </div>
           </div>
         )}
-        {columns.map((column) => (
+        {columns.map((column, colIdx) => (
           <KanbanColumn
             key={column.id}
             column={column}
+            columnIndex={colIdx}
             cards={getFilteredCardsByStatus(column.id as CardStatus)}
             onCardClick={onCardClick}
             onAddCard={onAddCard}
@@ -193,6 +242,12 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             onDragEnd={handleDragEnd}
             draggedCard={draggedCard}
             dropTarget={dropTarget}
+            draggedColumnId={draggedColumnId}
+            dropColumnIndex={dropColumnIndex}
+            onColumnDragStart={handleColumnDragStart}
+            onColumnDragOver={handleColumnDragOver}
+            onColumnDrop={handleColumnDrop}
+            onColumnDragEnd={handleColumnDragEnd}
             layout={layout}
             selectedCardId={selectedCardId}
             selectedCardIds={selectedCardIds}
@@ -200,12 +255,14 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             sort={(columnSorts[column.id] || 'order') as SortOrder}
             onSortChange={(s) => setColumnSort(column.id, s)}
             onQuickAdd={onQuickAdd}
+            onTriggerAction={onTriggerAction}
           />
         ))}
         {cardSettings.showDeletedColumn && (
           <KanbanColumn
             key={DELETED_COLUMN.id}
             column={DELETED_COLUMN}
+            columnIndex={columns.length}
             cards={getFilteredCardsByStatus(DELETED_COLUMN.id as CardStatus)}
             onCardClick={onCardClick}
             onAddCard={onAddCard}
@@ -219,6 +276,12 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             onDragEnd={handleDragEnd}
             draggedCard={draggedCard}
             dropTarget={dropTarget}
+            draggedColumnId={draggedColumnId}
+            dropColumnIndex={dropColumnIndex}
+            onColumnDragStart={handleColumnDragStart}
+            onColumnDragOver={handleColumnDragOver}
+            onColumnDrop={handleColumnDrop}
+            onColumnDragEnd={handleColumnDragEnd}
             layout={layout}
             isDeletedColumn
             onPurgeColumn={onPurgeDeletedCards}

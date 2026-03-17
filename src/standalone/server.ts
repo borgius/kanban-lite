@@ -1578,6 +1578,21 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
     }
 
+    params = route('PUT', '/api/columns/reorder')
+    if (params) {
+      try {
+        const boardId = url.searchParams.get('boardId') ?? undefined
+        const body = await readBody(req)
+        const { columnIds } = body as { columnIds: string[] }
+        if (!Array.isArray(columnIds)) return jsonError(res, 400, 'columnIds must be an array')
+        const columns = sdk.reorderColumns(columnIds, boardId)
+        broadcast(buildInitMessage())
+        return jsonOk(res, columns)
+      } catch (err) {
+        return jsonError(res, 500, String(err))
+      }
+    }
+
     params = route('PUT', '/api/columns/:id')
     if (params) {
       try {

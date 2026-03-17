@@ -279,6 +279,12 @@ export class KanbanPanel {
           case 'removeColumn':
             await this._removeColumn(message.columnId)
             break
+          case 'reorderColumns': {
+            if (!this._sdk) break
+            this._sdk.reorderColumns(message.columnIds, message.boardId)
+            this._sendCardsToWebview()
+            break
+          }
           case 'cleanupColumn':
             await this._cleanupColumn(message.columnId)
             break

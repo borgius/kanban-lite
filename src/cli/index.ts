@@ -1034,9 +1034,19 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
       console.log(green(`Moved ${moved} card${moved === 1 ? '' : 's'} from "${columnId}" to deleted`))
       break
     }
+    case 'reorder': {
+      const columnIds = positional.slice(1)
+      if (columnIds.length === 0) {
+        console.error(red('Usage: kl columns reorder <id1> <id2> ...'))
+        process.exit(1)
+      }
+      await sdk.reorderColumns(columnIds, boardId)
+      console.log(green('Columns reordered.'))
+      break
+    }
     default:
       console.error(red(`Unknown columns subcommand: ${subcommand}`))
-      console.error('Available: list, add, update, remove, cleanup')
+      console.error('Available: list, add, update, remove, cleanup, reorder')
       process.exit(1)
   }
 }

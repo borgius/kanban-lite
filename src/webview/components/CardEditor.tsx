@@ -721,7 +721,8 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 }
 
 export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
-  const { cardSettings } = useStore()
+  const { cardSettings, boards, currentBoard } = useStore()
+  const pinnedMetadataKeys = boards.find(b => b.id === currentBoard)?.metadata ?? []
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
@@ -1014,6 +1015,28 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
             </button>
           </div>
         </PropertyRow>
+        {pinnedMetadataKeys.map(key => {
+          const rawVal = currentFrontmatter.metadata?.[key]
+          if (rawVal === undefined || rawVal === null) return null
+          const strVal = String(rawVal)
+          return (
+            <PropertyRow key={key} label={key} icon={<ExternalLink size={13} />}>
+              {isUrl(strVal) ? (
+                <a
+                  href={strVal}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs hover:underline truncate"
+                  style={{ color: 'var(--vscode-textLink-foreground)' }}
+                >
+                  {strVal}
+                </a>
+              ) : (
+                <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
+              )}
+            </PropertyRow>
+          )
+        })}
         {/* Advanced toggle */}
         <button
           type="button"

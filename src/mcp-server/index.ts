@@ -1067,6 +1067,24 @@ async function main(): Promise<void> {
   )
 
   server.tool(
+    'reorder_columns',
+    'Reorder columns on a board by providing the full ordered list of column IDs.',
+    {
+      columnIds: z.array(z.string()).describe('Complete ordered list of all column IDs for the board.'),
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ columnIds, boardId }) => {
+      const columns = sdk.reorderColumns(columnIds, boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(columns, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
     'cleanup_column',
     'Move all cards in a column to the deleted (soft-delete) column. The column itself is kept.',
     {

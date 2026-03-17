@@ -525,6 +525,13 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'cleanupColumn', columnId })
   }
 
+  const handleReorderColumns = useCallback((columnIds: string[]): void => {
+    // Optimistic update
+    const current = useStore.getState().columns
+    setColumns(columnIds.map(id => current.find(c => c.id === id)).filter((c): c is KanbanColumn => c != null))
+    vscode.postMessage({ type: 'reorderColumns', columnIds })
+  }, [setColumns])
+
   const handleSaveColumn = (data: { name: string; color: string }): void => {
     if (editingColumn) {
       vscode.postMessage({ type: 'editColumn', columnId: editingColumn.id, updates: data })
@@ -631,6 +638,11 @@ function App(): React.JSX.Element {
     })
   }, [editingCard])
 
+  const handleTriggerActionForCard = useCallback((cardId: string, action: string): void => {
+    const callbackKey = `action-${Date.now()}`
+    vscode.postMessage({ type: 'triggerAction', cardId, action, callbackKey })
+  }, [])
+
   const handleTriggerBoardAction = useCallback((boardId: string, actionKey: string): void => {
     const callbackKey = `board-action-${Date.now()}`
     vscode.postMessage({ type: 'triggerBoardAction', boardId, actionKey, callbackKey })
@@ -712,18 +724,20 @@ function App(): React.JSX.Element {
             onEditColumn={handleEditColumn}
             onRemoveColumn={handleRemoveColumn}
             onCleanupColumn={handleCleanupColumn}
+            onReorderColumns={handleReorderColumns}
             onPurgeDeletedCards={handlePurgeDeletedCards}
             selectedCardId={editingCard?.id}
             selectedCardIds={selectedCardIds}
             onSelectAll={selectAllInColumn}
             onQuickAdd={handleQuickAdd}
+            onTriggerAction={handleTriggerActionForCard}
           />
         </div>
         {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (() => {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
           return (
             <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
-              <div className={`absolute inset-0 ${isDrawer ? 'bg-black/30' : 'bg-black/50'}`} onClick={() => setBoardLogsOpen(false)} />
+              {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />}
               <div
                 className={isDrawer
                   ? 'relative h-full w-1/2 max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200'
@@ -759,7 +773,7 @@ function App(): React.JSX.Element {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
           return (
             <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
-              <div className={`absolute inset-0 ${isDrawer ? 'bg-black/30' : 'bg-black/50'}`} onClick={handleCloseEditor} />
+              {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />}
               <div
                 className={isDrawer
                   ? 'relative h-full w-1/2 flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200'

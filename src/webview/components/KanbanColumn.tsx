@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare, LayoutList } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare, LayoutList, Zap } from 'lucide-react'
 import { CardItem } from './CardItem'
 import { QuickAddInput } from './QuickAddInput'
 import type { Card, KanbanColumn as KanbanColumnType, CardStatus, Priority } from '../../shared/types'
@@ -16,6 +16,7 @@ const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
 
 interface KanbanColumnProps {
   column: KanbanColumnType
+  columnIndex: number
   cards: Card[]
   onCardClick: (card: Card, e: React.MouseEvent) => void
   onAddCard: (status: string) => void
@@ -29,6 +30,12 @@ interface KanbanColumnProps {
   onDragEnd: () => void
   draggedCard: Card | null
   dropTarget: DropTarget | null
+  draggedColumnId: string | null
+  dropColumnIndex: number | null
+  onColumnDragStart: (e: React.DragEvent, columnId: string) => void
+  onColumnDragOver: (e: React.DragEvent, colIdx: number) => void
+  onColumnDrop: (e: React.DragEvent) => void
+  onColumnDragEnd: () => void
   layout: LayoutMode
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
@@ -38,10 +45,12 @@ interface KanbanColumnProps {
   sort: SortOrder
   onSortChange: (sort: SortOrder) => void
   onQuickAdd?: (data: { status: CardStatus; priority: Priority; content: string }) => void
+  onTriggerAction?: (cardId: string, action: string) => void
 }
 
 export function KanbanColumn({
   column,
+  columnIndex,
   cards,
   onCardClick,
   onAddCard,
@@ -55,6 +64,12 @@ export function KanbanColumn({
   onDragEnd,
   draggedCard,
   dropTarget,
+  draggedColumnId,
+  dropColumnIndex,
+  onColumnDragStart,
+  onColumnDragOver,
+  onColumnDrop,
+  onColumnDragEnd,
   layout,
   isDeletedColumn,
   onPurgeColumn,
@@ -63,12 +78,41 @@ export function KanbanColumn({
   onSelectAll,
   sort,
   onSortChange,
-  onQuickAdd
+  onQuickAdd,
+  onTriggerAction
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
+  const isColumnDropBefore = !isVertical && !isDeletedColumn && dropColumnIndex === columnIndex && draggedColumnId !== column.id
+  const isColumnDropAfter = !isVertical && !isDeletedColumn && dropColumnIndex === columnIndex + 1 && draggedColumnId !== column.id
+  const isBeingDragged = draggedColumnId === column.id
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Compute deduplicated actions from relevant cards:
+  // use column-selected cards if any are selected, otherwise use all column cards
+  const columnSelectedCardIds = useMemo(
+    () => selectedCardIds.filter(id => cards.some(c => c.id === id)),
+    [selectedCardIds, cards]
+  )
+  const relevantCards = columnSelectedCardIds.length > 0
+    ? cards.filter(c => columnSelectedCardIds.includes(c.id))
+    : cards
+  const columnActionEntries = useMemo(() => {
+    const map: Record<string, { label: string; cardIds: string[] }> = {}
+    for (const card of relevantCards) {
+      if (!card.actions) continue
+      const pairs: [string, string][] = Array.isArray(card.actions)
+        ? card.actions.map(a => [a, a])
+        : Object.entries(card.actions as Record<string, string>)
+      for (const [key, label] of pairs) {
+        if (!map[key]) map[key] = { label, cardIds: [] }
+        map[key].cardIds.push(card.id)
+      }
+    }
+    return Object.entries(map)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relevantCards])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -84,15 +128,27 @@ export function KanbanColumn({
   return (
     <div
       className={
-        isVertical
-          ? "flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
-          : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
+        [
+          isVertical
+            ? "flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
+            : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg",
+          isBeingDragged ? "opacity-40" : "",
+          isColumnDropBefore ? "border-l-2 border-blue-500" : "",
+          isColumnDropAfter ? "border-r-2 border-blue-500" : "",
+        ].filter(Boolean).join(' ')
       }
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, column.id)}
     >
       {/* Column Header */}
-      <div className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+      <div
+        className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing"
+        draggable={!isDeletedColumn}
+        onDragStart={(e) => { if (!isDeletedColumn) onColumnDragStart(e, column.id) }}
+        onDragOver={(e) => { e.stopPropagation(); if (!isDeletedColumn) onColumnDragOver(e, columnIndex) }}
+        onDrop={(e) => { e.stopPropagation(); onColumnDrop(e) }}
+        onDragEnd={onColumnDragEnd}
+      >
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: column.color }} />
           <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{column.name}</h3>
@@ -182,6 +238,27 @@ export function KanbanColumn({
                       <CheckSquare size={14} />
                       Select All
                     </button>
+                    {columnActionEntries.length > 0 && onTriggerAction && (
+                      <>
+                        <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+                        <div className="px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Actions</div>
+                        {columnActionEntries.map(([key, { label, cardIds }]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              setMenuOpen(false)
+                              cardIds.forEach(cardId => onTriggerAction!(cardId, key))
+                            }}
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                          >
+                            <Zap size={14} className="text-amber-500 flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{label}</span>
+                            <span className="text-xs text-zinc-400 dark:text-zinc-500 bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded-full flex-shrink-0">{cardIds.length}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

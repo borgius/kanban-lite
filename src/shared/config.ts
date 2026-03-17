@@ -48,6 +48,8 @@ export interface BoardConfig {
   defaultPriority: Priority
   /** Named board-level actions available in the toolbar. Map of action key to display title. */
   actions?: Record<string, string>
+  /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
+  metadata?: string[]
 }
 
 /**

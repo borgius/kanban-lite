@@ -435,7 +435,7 @@ function CreateCardDialogContent({
 
   return (
     <div className={`fixed inset-0 z-50 flex ${(cardSettings.panelMode ?? 'drawer') === 'drawer' ? 'justify-end' : 'items-center justify-center p-4'}`}>
-      <div className={`absolute inset-0 ${(cardSettings.panelMode ?? 'drawer') === 'drawer' ? 'bg-black/30' : 'bg-black/50'}`} onClick={handleCancel} />
+      {(cardSettings.panelMode ?? 'drawer') !== 'drawer' && <div className="absolute inset-0 bg-black/50" onClick={handleCancel} />}
       <div
         className={(cardSettings.panelMode ?? 'drawer') === 'drawer'
           ? 'relative h-full w-1/2 shadow-xl flex flex-col animate-in slide-in-from-right duration-200'

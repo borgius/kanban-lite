@@ -118,6 +118,8 @@ export interface BoardInfo {
   columns?: KanbanColumn[]
   /** Named board-level actions available in the toolbar. Map of action key to display title. */
   actions?: Record<string, string>
+  /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
+  metadata?: string[]
 }
 
 /**
@@ -383,6 +385,7 @@ export type WebviewMessage =
   | { type: 'addColumn'; column: { name: string; color: string } }
   | { type: 'editColumn'; columnId: string; updates: { name: string; color: string } }
   | { type: 'removeColumn'; columnId: string }
+  | { type: 'reorderColumns'; columnIds: string[]; boardId?: string }
   | { type: 'addComment'; cardId: string; author: string; content: string }
   | { type: 'updateComment'; cardId: string; commentId: string; content: string }
   | { type: 'deleteComment'; cardId: string; commentId: string }

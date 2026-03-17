@@ -1,0 +1,376 @@
+plan_id: board-metadata-fields
+objective: >
+  Add `metadata: string[]` to BoardConfig in .kanban.json.
+  When set (e.g., boards.default.metadata=["jobUrl"]), listed metadata fields
+  are displayed in the card detail view BEFORE the "ADVANCED" collapsible panel
+  (after the last property row), with URL values rendered as clickable links.
+focus_area: types / config / card-detail-view / store / sdk / api-cli-mcp
+created_at: "2026-03-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - BoardConfig lives in src/shared/config.ts (~L29-53); has no pinnedMetadata/visibleMetadata field yet.
+  - BoardInfo (types.ts ~L115-122) is the slimmed type sent to the webview — it already carries `id, name, description, columns, actions`; needs `metadata?: string[]` added here too.
+  - Store (src/webview/store/index.ts) holds `boards: BoardInfo[]` and `currentBoard: string`; no board-config getter exists — components read boards from store directly.
+  - CardEditor.tsx accesses `boards` and `currentBoard` from store (L174-175); the ADVANCED collapsible (showAdvanced state, L728) contains Created/Modified rows and the full MetadataSection tree at L1017-1065.
+  - updateBoard() SDK method (src/sdk/modules/boards.ts ~L115-137) does partial-update but does NOT yet handle the `metadata` field; same gap in API route PUT /api/boards/:boardId.
+  - No visibleMetadata / pinnedMetadata patterns exist anywhere in the codebase.
+
+research_metadata:
+  methodology: >
+    Hybrid retrieval: sequential read_file for key files (types.ts, config.ts,
+    store/index.ts, CardEditor.tsx, sdk/modules/boards.ts & settings.ts,
+    extension/KanbanPanel.ts, standalone/server.ts, mcp-server/index.ts);
+    grep_search for symbol patterns (ADVANCED, metadata, boardConfig, Modified,
+    updateBoard, update_settings, visibleMetadata).
+  scope: All files relevant to board config, card detail view, and settings pipelines.
+  confidence: high
+  coverage: 95
+
+files_analyzed:
+  - file: config.ts
+    path: src/shared/config.ts
+    purpose: Defines BoardConfig & KanbanConfig types; readConfig/writeConfig; configToSettings/settingsToConfig; getBoardConfig/allocateCardId.
+    key_elements:
+      - element: BoardConfig
+        type: interface
+        location: "src/shared/config.ts:29-53"
+        description: >
+          Per-board config stored under KanbanConfig.boards[id].
+          Fields: name, description?, columns, nextCardId (deprecated), defaultStatus,
+          defaultPriority, actions?. NO metadata/pinnedMetadata field yet.
+      - element: KanbanConfig
+        type: interface
+        location: "src/shared/config.ts:56-130"
+        description: Root .kanban.json schema (v2). Global workspace settings + boards map.
+      - element: DEFAULT_BOARD_CONFIG
+        type: variable
+        location: "src/shared/config.ts:~146-151"
+        description: Baseline BoardConfig used when migrating or creating new configs.
+      - element: readConfig
+        type: function
+        location: "src/shared/config.ts:~270-305"
+        description: Reads .kanban.json, merges with defaults, migrates v1→v2.
+      - element: writeConfig
+        type: function
+        location: "src/shared/config.ts:~315-325"
+        description: Persists config as pretty-printed JSON.
+      - element: getBoardConfig
+        type: function
+        location: "src/shared/config.ts:~355-372"
+        description: Returns BoardConfig for a specific boardId (or default board).
+      - element: configToSettings
+        type: function
+        location: "src/shared/config.ts:~420-440"
+        description: >
+          Extracts CardDisplaySettings from KanbanConfig. Does NOT include
+          board-level fields like BoardConfig.metadata.
+      - element: settingsToConfig
+        type: function
+        location: "src/shared/config.ts:~455-475"
+        description: Merges CardDisplaySettings back into KanbanConfig.
+    language: TypeScript
+    lines: ~490
+
+  - file: types.ts
+    path: src/shared/types.ts
+    purpose: Shared TypeScript types used across SDK, webview, CLI, extension.
+    key_elements:
+      - element: BoardInfo
+        type: interface
+        location: "src/shared/types.ts:~115-122"
+        description: >
+          Slimmed board summary sent to the webview via `init` message.
+          Fields: id, name, description?, columns?, actions?.
+          Does NOT yet include metadata?: string[].
+      - element: CardFrontmatter
+        type: interface
+        location: "src/shared/types.ts:~313-347"
+        description: Per-card YAML frontmatter. Has metadata?: Record<string, any>.
+      - element: CardDisplaySettings
+        type: interface
+        location: "src/shared/types.ts:~258-280"
+        description: Global display preferences (showPriorityBadges, compactMode, etc). Board-level metadata field is NOT in here.
+      - element: ExtensionMessage (init)
+        type: type
+        location: "src/shared/types.ts:~357"
+        description: >
+          The `init` message payload includes `boards?: BoardInfo[]`.
+          This is the bridge between extension/server and the webview.
+    language: TypeScript
+    lines: ~390
+
+  - file: store/index.ts
+    path: src/webview/store/index.ts
+    purpose: Zustand store. Single source of truth for all webview state.
+    key_elements:
+      - element: KanbanState.boards
+        type: variable
+        location: "src/webview/store/index.ts:~22"
+        description: "Array of BoardInfo[]. Populated on `init` message."
+      - element: KanbanState.currentBoard
+        type: variable
+        location: "src/webview/store/index.ts:~23"
+        description: Current board ID string.
+      - element: KanbanState.cardSettings
+        type: variable
+        location: "src/webview/store/index.ts:~30"
+        description: CardDisplaySettings object. Does NOT carry board-level config.
+      - element: setBoards
+        type: function
+        location: "src/webview/store/index.ts:~66"
+        description: Sets the boards array in store state.
+    language: TypeScript
+    lines: ~250
+
+  - file: CardEditor.tsx
+    path: src/webview/components/CardEditor.tsx
+    purpose: Card detail panel — renders all card fields, actions, ADVANCED section.
+    key_elements:
+      - element: CardEditorProps
+        type: interface
+        location: "src/webview/components/CardEditor.tsx:13-43"
+        description: >
+          Props for the main CardEditor component. Does NOT currently accept
+          a `boardMetadata` or `pinnedFields` prop — board config is accessed
+          from the store directly.
+      - element: boards / currentBoard (store access)
+        type: variable
+        location: "src/webview/components/CardEditor.tsx:174-175"
+        description: >
+          `const boards = useStore(s => s.boards)` and
+          `const currentBoard = useStore(s => s.currentBoard)`.
+          Used to build the "Transfer to board" list.
+          NOT currently used to read board-level metadata config.
+      - element: showAdvanced state
+        type: variable
+        location: "src/webview/components/CardEditor.tsx:728"
+        description: "Boolean useState controlling visibility of ADVANCED section."
+      - element: ADVANCED toggle button
+        type: JSX
+        location: "src/webview/components/CardEditor.tsx:1017-1029"
+        description: >
+          Chevron + "ADVANCED" label button. Clicking toggles showAdvanced.
+          This is the insertion point: pinned metadata rows should appear
+          immediately BEFORE this button (after the last regular PropertyRow).
+      - element: Created / Modified PropertyRow
+        type: JSX
+        location: "src/webview/components/CardEditor.tsx:1032-1054"
+        description: >
+          Inside {showAdvanced && <>...</>}.
+          Created at L1032-1042, Modified at L1044-1054.
+          These are INSIDE the collapsible — NOT before it.
+      - element: MetadataSection
+        type: function
+        location: "src/webview/components/CardEditor.tsx:533-570"
+        description: >
+          Renders the full metadata key-value tree inside the ADVANCED section
+          (L1060-1065). Takes `metadata?: Record<string, any>` and
+          `onOpenMetadataFile?`. Separately, this component uses MetadataTree
+          for nested display.
+      - element: MetadataTree
+        type: function
+        location: "src/webview/components/CardEditor.tsx:572-595"
+        description: Recursive renderer for nested metadata objects. Detects file paths for FilePathValue clickable links; URL detection would follow a similar pattern.
+      - element: FilePathValue
+        type: JSX pattern
+        location: "src/webview/components/CardEditor.tsx:~593"
+        description: Renders a file path as a clickable link. Analogous pattern needed for URL values.
+    language: TypeScript/TSX
+    lines: ~1100
+
+  - file: boards.ts (SDK module)
+    path: src/sdk/modules/boards.ts
+    purpose: Board CRUD SDK methods — listBoards, createBoard, deleteBoard, getBoard, updateBoard.
+    key_elements:
+      - element: listBoards
+        type: function
+        location: "src/sdk/modules/boards.ts:17-26"
+        description: >
+          Maps config.boards entries to BoardInfo[].
+          Returns: { id, name, description, columns, actions }.
+          Does NOT currently include metadata from BoardConfig.
+      - element: updateBoard
+        type: function
+        location: "src/sdk/modules/boards.ts:~115-137"
+        description: >
+          Partial update for board fields. Currently handles:
+          name, description, columns, defaultStatus, defaultPriority.
+          Does NOT handle a `metadata` field yet.
+    language: TypeScript
+    lines: ~200
+
+  - file: settings.ts (SDK module)
+    path: src/sdk/modules/settings.ts
+    purpose: Global display settings read/write.
+    key_elements:
+      - element: getSettings
+        type: function
+        location: "src/sdk/modules/settings.ts:9-11"
+        description: "Returns CardDisplaySettings via configToSettings(readConfig(...)). Does NOT include board-level config."
+      - element: updateSettings
+        type: function
+        location: "src/sdk/modules/settings.ts:16-20"
+        description: "Writes CardDisplaySettings back via settingsToConfig. Board-level metadata is NOT in this pipeline."
+    language: TypeScript
+    lines: ~30
+
+  - file: KanbanPanel.ts
+    path: src/extension/KanbanPanel.ts
+    purpose: VSCode extension panel; orchestrates webview ↔ extension messaging.
+    key_elements:
+      - element: _sendCardsToWebview
+        type: function
+        location: "src/extension/KanbanPanel.ts:1139-1168"
+        description: >
+          Calls sdk.listBoards() → boards array, then posts `init` message with
+          { type:'init', cards, columns, settings, boards, currentBoard, labels }.
+          The `boards` field of type BoardInfo[] is what the webview receives.
+          Any new field on BoardInfo will automatically flow through here.
+    language: TypeScript
+    lines: ~1200
+
+  - file: server.ts
+    path: src/standalone/server.ts
+    purpose: HTTP server; REST API routes for cards, columns, settings, boards.
+    key_elements:
+      - element: PUT /api/boards/:boardId
+        type: route
+        location: "src/standalone/server.ts:908-918"
+        description: >
+          Calls sdk.updateBoard(boardId, body). Accepts arbitrary body fields
+          as Partial<BoardConfig>. Will automatically accept `metadata` once
+          updateBoard() handles it.
+      - element: GET /api/boards/:boardId
+        type: route
+        location: "src/standalone/server.ts:~900-907"
+        description: Returns sdk.getBoard(boardId) which is the raw BoardConfig.
+    language: TypeScript
+    lines: ~1100
+
+  - file: index.ts (MCP server)
+    path: src/mcp-server/index.ts
+    purpose: MCP tool definitions wrapping the SDK.
+    key_elements:
+      - element: update_settings tool
+        type: tool
+        location: "src/mcp-server/index.ts:1156-1189"
+        description: >
+          Exposes global CardDisplaySettings fields (showPriorityBadges, etc.).
+          Board-level metadata is NOT exposed here; would need a separate
+          `update_board` tool or extending the existing board tools.
+      - element: list_boards tool
+        type: tool
+        location: "src/mcp-server/index.ts:~60-70"
+        description: Calls sdk.listBoards() and returns BoardInfo[].
+    language: TypeScript
+    lines: ~1300
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: BoardConfig (config.ts)
+      responsibility: Persisted board-level config in .kanban.json under boards[id]
+      location: src/shared/config.ts:29-53
+      relationship_to_domain: Source of truth — needs new `metadata?: string[]` field
+    - component: BoardInfo (types.ts)
+      responsibility: Slimmed DTO sent from extension/server to webview
+      location: src/shared/types.ts:115-122
+      relationship_to_domain: Bridge type — needs `metadata?: string[]` added to flow to webview
+    - component: KanbanState.boards
+      responsibility: In-memory BoardInfo[] in Zustand store
+      location: src/webview/store/index.ts:22
+      relationship_to_domain: Read by CardEditor to get board-level config
+    - component: listBoards (SDK)
+      responsibility: Builds BoardInfo[] from KanbanConfig
+      location: src/sdk/modules/boards.ts:17-26
+      relationship_to_domain: Must include metadata in the returned BoardInfo objects
+    - component: _sendCardsToWebview (extension)
+      responsibility: Posts init message with boards to webview
+      location: src/extension/KanbanPanel.ts:1139-1168
+      relationship_to_domain: Transparent — no change needed once BoardInfo carries the field
+    - component: MetadataTree / MetadataSection
+      responsibility: Renders nested metadata as a tree with file-path links
+      location: src/webview/components/CardEditor.tsx:533-595
+      relationship_to_domain: Reference pattern for URL-link rendering in the new pinned rows
+  interfaces_used_by_domain:
+    - interface: BoardConfig
+      location: src/shared/config.ts
+      usage_pattern: Read via readConfig/getBoardConfig; written via writeConfig
+    - interface: BoardInfo
+      location: src/shared/types.ts
+      usage_pattern: Sent in ExtensionMessage.init.boards; stored in Zustand KanbanState.boards
+  data_flow_involving_domain: >
+    .kanban.json → readConfig → BoardConfig → getBoardConfig / listBoards → BoardInfo
+    → ExtensionMessage(init).boards → Zustand store (setBoards) → CardEditor (useStore boards)
+    → render pinned metadata rows before ADVANCED toggle.
+  key_relationships_to_domain:
+    - from: KanbanPanel.ts
+      to: BoardInfo[]
+      relationship: calls sdk.listBoards(), posts result in init message
+    - from: listBoards (SDK)
+      to: BoardConfig
+      relationship: reads from readConfig(workspaceRoot).boards record
+    - from: CardEditor.tsx
+      to: KanbanState.boards / currentBoard
+      relationship: reads via useStore to find current board info
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - TSX (React)
+  frameworks_used_in_domain:
+    - name: React (hooks)
+      usage_in_domain: CardEditor functional component with useState, useMemo, useCallback
+    - name: Zustand
+      usage_in_domain: Global store in src/webview/store/index.ts
+  libraries_used_in_domain:
+    - name: lucide-react
+      purpose_in_domain: Clock icon used in PropertyRow for Created/Modified fields
+    - name: zod
+      purpose_in_domain: Schema validation in MCP tool definitions
+
+related_conventions:
+  naming_patterns_in_domain: >
+    Optional fields on interfaces use `?`. BoardConfig fields are camelCase.
+    New feature field should be `metadata?: string[]` on both BoardConfig and BoardInfo
+    (mirrors the existing `actions?: Record<string,string>` pattern).
+  structure_of_domain: >
+    SDK → config.ts types → interface layers (extension/server/mcp).
+    Feature addition order per AGENTS.md: SDK first, then API, CLI, MCP.
+  error_handling_in_domain: sdk.updateBoard throws Error on missing board; caught by server route.
+  documentation_in_domain: JSDoc required on all new fields per AGENTS.md.
+
+related_dependencies:
+  internal:
+    - component: src/shared/config.ts (BoardConfig, getBoardConfig, writeConfig)
+      relationship_to_domain: Must add `metadata?: string[]` to BoardConfig interface
+      direction: outbound
+    - component: src/shared/types.ts (BoardInfo)
+      relationship_to_domain: Must add `metadata?: string[]` to BoardInfo interface
+      direction: outbound
+    - component: src/sdk/modules/boards.ts (listBoards, updateBoard)
+      relationship_to_domain: listBoards must include metadata; updateBoard must handle it
+      direction: outbound
+    - component: src/webview/store/index.ts
+      relationship_to_domain: No change needed — stores BoardInfo[] transparently
+      direction: inbound
+    - component: src/webview/components/CardEditor.tsx
+      relationship_to_domain: Reads board metadata from store; renders pinned rows before ADVANCED
+      direction: inbound
+
+open_questions:
+  - question: Should the new `metadata` label in the pinned row be the raw key name or prettified (e.g., "jobUrl" → "Job Url")?
+    context: No existing convention for prettifying board-defined metadata field labels; existing MetadataTree renders raw key names.
+  - question: For URL detection, what heuristic? startsWith("http") or a broader regex?
+    context: MetadataTree currently checks for file paths (absolute path patterns); URL detection would be a parallel branch.
+  - question: Should pinned metadata rows be skipped silently if the key is absent from card.metadata, or show a "—" placeholder?
+    context: Affects UX when a board defines metadata=["jobUrl"] but individual cards don't have that key set.
+
+gaps:
+  - area: CLI update-board command
+    description: Did not fully read src/cli/index.ts for update-board subcommand shape.
+    impact: Minor — updateBoard SDK method is the reference; CLI will follow the same pattern.
+  - area: Standalone server init message for boards
+    description: Standalone server sends boards to webview differently than the extension — not fully verified.
+    impact: Low — the standalone App.tsx init path likely mirrors the extension flow but should be confirmed.

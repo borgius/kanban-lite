@@ -21,7 +21,8 @@ export function listBoards(ctx: SDKContext): BoardInfo[] {
     name: board.name,
     description: board.description,
     columns: board.columns,
-    actions: board.actions
+    actions: board.actions,
+    metadata: board.metadata
   }))
 }
 
@@ -125,6 +126,7 @@ export function updateBoard(
   if (updates.columns !== undefined) board.columns = updates.columns
   if (updates.defaultStatus !== undefined) board.defaultStatus = updates.defaultStatus
   if (updates.defaultPriority !== undefined) board.defaultPriority = updates.defaultPriority
+  if (updates.metadata !== undefined) board.metadata = updates.metadata
 
   writeConfig(ctx.workspaceRoot, config)
   ctx.emitEvent('board.updated', { id: boardId, ...board })

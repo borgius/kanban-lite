@@ -1,0 +1,474 @@
+plan_id: column-dnd-reorder
+objective: Add drag-and-drop column reordering — wire the existing sdk.reorderColumns() to the webview UI (HTML5 DnD), extension message handler, REST API, MCP tool, and CLI subcommand.
+created_at: "2026-03-17"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  sdk.reorderColumns(columnIds[], boardId?) already exists and is fully functional.
+  The sole gap is UI-to-persistence wiring across five layers: WebviewMessage type,
+  KanbanPanel handler, REST endpoint, MCP tool, and CLI command — plus native HTML5
+  DnD on the column header mirroring the existing card DnD pattern.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: Column DnD interferes with card DnD — dragOver on a column header triggers card drop logic
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Use a dedicated dataTransfer key (e.g. 'application/x-column-id') distinct from the card
+        key ('text/plain'). In card drop handlers, guard with dataTransfer.types check so column
+        drags are ignored by card handlers and vice versa.
+    - scenario: Optimistic column reorder in App.tsx diverges from persisted order on SDK error
+      likelihood: low
+      impact: low
+      mitigation: |
+        On postMessage response failure the next _sendCardsToWebview() from KanbanPanel will
+        push the authoritative column array back to the webview, self-healing state.
+  assumptions:
+    - sdk.reorderColumns is synchronous and throws on invalid columnIds — no async handling needed
+    - Column order is fully determined by array index in BoardConfig.columns; no separate order field exists
+    - Existing card DnD tests and behaviour must remain unchanged
+    - No new npm dependencies are permitted (use native HTML5 DnD)
+
+implementation_specification:
+  code_structure: |
+    Minimal surgical edits across 8 files following the dependency wave order defined in AGENTS.md
+    (types → extension/server/mcp/cli → webview). No new files. No new dependencies.
+  affected_areas:
+    - src/shared/types.ts (WebviewMessage union)
+    - src/extension/KanbanPanel.ts (message switch)
+    - src/standalone/server.ts (REST routes)
+    - src/mcp-server/index.ts (tool definitions)
+    - src/cli/index.ts (column subcommand)
+    - src/webview/App.tsx (handler + prop threading)
+    - src/webview/components/KanbanBoard.tsx (DnD state + handlers)
+    - src/webview/components/KanbanColumn.tsx (draggable header + drop indicator)
+  component_details:
+    - component: WebviewMessage type (types.ts)
+      responsibility: Declare the reorderColumns message shape so all layers share one type
+      interfaces:
+        - "{ type: 'reorderColumns'; columnIds: string[]; boardId?: string }"
+    - component: KanbanPanel message handler
+      responsibility: Receive reorderColumns message, call sdk.reorderColumns(), push updated state
+      interfaces:
+        - "case 'reorderColumns': sdk.reorderColumns(columnIds, boardId); _sendCardsToWebview()"
+    - component: REST endpoint PUT /api/columns/reorder
+      responsibility: Accept columnIds array, delegate to sdk.reorderColumns(), return updated columns
+      interfaces:
+        - "PUT /api/columns/reorder — body: { columnIds: string[], boardId?: string } → 200 { columns: KanbanColumn[] }"
+    - component: MCP tool reorder_columns
+      responsibility: Expose column reordering as an MCP tool
+      interfaces:
+        - "reorder_columns(columnIds: string[], boardId?: string) → KanbanColumn[]"
+    - component: CLI column reorder subcommand
+      responsibility: Accept ordered column IDs as positional args, call sdk.reorderColumns()
+      interfaces:
+        - "kl column reorder <id1> <id2> ... [--board <boardId>]"
+    - component: App.tsx handleReorderColumns
+      responsibility: Optimistically reorder columns in Zustand store, then postMessage
+      interfaces:
+        - "handleReorderColumns(columnIds: string[]): void"
+    - component: KanbanBoard.tsx column DnD
+      responsibility: Own draggedColumnId / dropColumnIndex state, compute new order on drop
+      interfaces:
+        - "onReorderColumns prop: (columnIds: string[]) => void"
+    - component: KanbanColumn.tsx draggable header
+      responsibility: Make column header draggable, show drop indicator between columns
+      interfaces:
+        - "onColumnDragStart, onColumnDragOver, onColumnDrop, isDragTarget props"
+  dependencies:
+    - component: KanbanPanel.ts handler
+      relationship: Depends on WebviewMessage type (t1-types must complete first)
+    - component: App.tsx handler
+      relationship: Depends on WebviewMessage type (t1-types must complete first)
+    - component: KanbanBoard.tsx
+      relationship: Calls handleReorderColumns from App.tsx; depends on t6-app prop contract
+    - component: KanbanColumn.tsx
+      relationship: Receives column DnD props from KanbanBoard.tsx; depends on t7-board
+  integration_points:
+    - KanbanPanel.ts switch handles 'reorderColumns' and calls existing _sendCardsToWebview()
+    - server.ts PUT /api/columns/reorder placed before PUT /api/columns/:id to avoid route shadowing
+    - KanbanBoard.tsx passes onReorderColumns down to App.tsx the same way onMoveCard is threaded
+
+contracts:
+  - from_task: t1-types
+    to_task: t2-extension
+    interface: "WebviewMessage union includes { type: 'reorderColumns'; columnIds: string[]; boardId?: string }"
+    format: TypeScript discriminated union member in src/shared/types.ts
+  - from_task: t1-types
+    to_task: t6-app
+    interface: "Same WebviewMessage type used in vscode.postMessage call"
+    format: TypeScript discriminated union member in src/shared/types.ts
+  - from_task: t6-app
+    to_task: t7-board
+    interface: "onReorderColumns: (columnIds: string[]) => void prop passed to KanbanBoard"
+    format: React prop / function signature
+  - from_task: t7-board
+    to_task: t8-column
+    interface: "onColumnDragStart, onColumnDragOver, onColumnDrop, isDragTarget props passed to KanbanColumn"
+    format: React prop set added to KanbanColumnProps interface
+
+tasks:
+  # ─────────── WAVE 1 — Shared Types ───────────
+  - id: t1-types
+    title: Add reorderColumns to WebviewMessage union type
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 3
+    focus_area: src/shared/types.ts
+    description: |
+      In src/shared/types.ts, append a new member to the WebviewMessage discriminated union:
+        | { type: 'reorderColumns'; columnIds: string[]; boardId?: string }
+      Place it after the existing removeColumn member (around line 385).
+      This is the only wave-1 change; all other tasks depend on this type being present.
+    context_files:
+      src/shared/types.ts: "WebviewMessage union, lines 370-410; KanbanColumn interface at line 217"
+    tech_stack:
+      - TypeScript
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - The new union member is visible when destructuring a WebviewMessage in KanbanPanel.ts
+    acceptance_criteria:
+      - WebviewMessage union contains { type: 'reorderColumns'; columnIds: string[]; boardId?: string }
+      - No other types.ts changes are made
+    failure_modes:
+      - scenario: Pipe character placement breaks existing union parsing
+        likelihood: low
+        impact: low
+        mitigation: Follow exact existing union formatting — pipe on new line before the member
+
+  # ─────────── WAVE 2 — Backend / Extension ───────────
+  - id: t2-extension
+    title: Handle reorderColumns message in KanbanPanel.ts
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - t1-types
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 8
+    focus_area: src/extension/KanbanPanel.ts
+    description: |
+      In the message handler switch (around line 270-290), add a new case:
+        case 'reorderColumns': {
+          this._sdk.reorderColumns(message.columnIds, message.boardId);
+          this._sendCardsToWebview();
+          break;
+        }
+      Mirror the pattern of the addColumn/editColumn cases directly above rather than delegating
+      to a private method (the logic is one line; no separate helper needed).
+    context_files:
+      src/extension/KanbanPanel.ts: "message switch cases 'addColumn'/'editColumn'/'removeColumn' at lines 273-285; _sendCardsToWebview usage"
+    tech_stack:
+      - TypeScript
+      - VS Code API
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - Posting { type: 'reorderColumns', columnIds: ['todo','backlog'] } from the webview reorders the board
+    acceptance_criteria:
+      - case 'reorderColumns' present and calls this._sdk.reorderColumns then this._sendCardsToWebview()
+      - No private helper method added (inline is sufficient)
+    failure_modes:
+      - scenario: boardId is undefined when single-board mode — sdk.reorderColumns must tolerate undefined
+        likelihood: low
+        impact: low
+        mitigation: sdk.reorderColumns already accepts boardId? as optional; no guard needed
+
+  - id: t3-server
+    title: Add PUT /api/columns/reorder REST endpoint
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - t1-types
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 18
+    focus_area: src/standalone/server.ts
+    description: |
+      Insert a new route BEFORE the existing PUT /api/columns/:id route (line ~1581) to avoid
+      Express matching "reorder" as a column :id parameter:
+
+        app.put('/api/columns/reorder', (req, res) => {
+          try {
+            const { columnIds, boardId } = req.body as { columnIds: string[]; boardId?: string };
+            if (!Array.isArray(columnIds) || columnIds.length === 0) {
+              return res.status(400).json({ error: 'columnIds must be a non-empty array' });
+            }
+            const columns = sdk.reorderColumns(columnIds, boardId);
+            res.json({ columns });
+          } catch (err) {
+            res.status(500).json({ error: (err as Error).message });
+          }
+        });
+
+      Follow the existing error-handling pattern used by PUT /api/columns/:id.
+    context_files:
+      src/standalone/server.ts: "PUT /api/columns/:id route at lines 1581-1593; GET/POST /api/columns pattern"
+    tech_stack:
+      - TypeScript
+      - Express
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - curl -X PUT .../api/columns/reorder -d '{"columnIds":["a","b"]}' returns 200 with updated columns array
+      - PUT /api/columns/:id still works (not shadowed)
+    acceptance_criteria:
+      - Route is registered before PUT /api/columns/:id
+      - Returns 400 for missing/empty columnIds
+      - Returns 200 { columns: KanbanColumn[] } on success
+    failure_modes:
+      - scenario: Route order places /reorder after /:id causing Express to treat "reorder" as a column ID
+        likelihood: medium
+        impact: high
+        mitigation: Explicitly insert the new route before the PUT /:id line
+
+  - id: t4-mcp
+    title: Add reorder_columns MCP tool
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - t1-types
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 20
+    focus_area: src/mcp-server/index.ts
+    description: |
+      Add a new tool definition following the pattern of the existing list_columns / add_column tools.
+      Tool name: reorder_columns
+      Parameters:
+        - columnIds: array of strings (required) — full ordered list of column IDs
+        - boardId: string (optional)
+      Handler calls sdk.reorderColumns(columnIds, boardId) and returns the updated KanbanColumn[].
+      Add to the tools array and the corresponding handler switch/map.
+    context_files:
+      src/mcp-server/index.ts: "add_column and update_column tool definitions and handlers"
+    tech_stack:
+      - TypeScript
+      - MCP SDK
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - reorder_columns tool appears in MCP tool list
+    acceptance_criteria:
+      - Tool name is exactly reorder_columns
+      - columnIds is a required array parameter; boardId is optional string
+      - Returns updated columns array on success
+    failure_modes:
+      - scenario: SDK throws if columnIds is missing some existing IDs — error must bubble as MCP error response
+        likelihood: low
+        impact: low
+        mitigation: Wrap in try/catch and return { isError: true, content: [{ type: 'text', text: err.message }] }
+
+  - id: t5-cli
+    title: Add column reorder CLI subcommand
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - t1-types
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 15
+    focus_area: src/cli/index.ts
+    description: |
+      Under the existing 'column' commander subcommand group, add:
+        .command('reorder <ids...>')
+        .description('Reorder columns by providing all column IDs in desired order')
+        .option('--board <boardId>', 'Board ID')
+        .action((ids: string[], opts) => {
+          const columns = sdk.reorderColumns(ids, opts.board);
+          console.log('Columns reordered:', columns.map(c => c.id).join(' → '));
+        })
+      Follow the pattern of the existing 'column add' and 'column remove' subcommands.
+    context_files:
+      src/cli/index.ts: "column subcommands (add/remove/update) for pattern reference"
+    tech_stack:
+      - TypeScript
+      - Commander.js
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - kl column reorder backlog todo in-progress prints updated order
+    acceptance_criteria:
+      - Subcommand is 'column reorder' with variadic <ids...> positional arg
+      - --board option threads boardId to sdk.reorderColumns
+      - Prints confirmation with new column order
+
+  # ─────────── WAVE 3 — Webview UI ───────────
+  - id: t6-app
+    title: Add handleReorderColumns handler in App.tsx
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - t1-types
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 12
+    focus_area: src/webview/App.tsx
+    description: |
+      Add a useCallback handler after handleRemoveColumn (line ~509):
+
+        const handleReorderColumns = useCallback((columnIds: string[]) => {
+          setColumns(prev => columnIds.map(id => prev.find(c => c.id === id)!));
+          vscode.postMessage({ type: 'reorderColumns', columnIds, boardId: activeBoard });
+        }, [activeBoard]);
+
+      Then thread the prop down to KanbanBoard:
+        <KanbanBoard ... onReorderColumns={handleReorderColumns} />
+
+      Also update the KanbanBoardProps interface (or the inline prop type) to accept
+      onReorderColumns: (columnIds: string[]) => void.
+    context_files:
+      src/webview/App.tsx: "handleRemoveColumn at line 509; handleMoveCard prop threading at line 644; KanbanBoard usage"
+      src/webview/store/index.ts: "setColumns at line 56"
+    tech_stack:
+      - TypeScript
+      - React
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - Draggging a column and dropping it posts a reorderColumns message visible in the VS Code webview dev console
+    acceptance_criteria:
+      - handleReorderColumns optimistically updates setColumns before postMessage
+      - boardId is included in postMessage payload
+      - onReorderColumns prop is passed to KanbanBoard
+    failure_modes:
+      - scenario: prev.find() returns undefined for an unknown ID causing array to have undefined holes
+        likelihood: low
+        impact: medium
+        mitigation: The IDs always come from the existing columns array itself (DnD only reorders, never adds) so this cannot occur in normal flow
+
+  - id: t7-board
+    title: Add column DnD state and handlers in KanbanBoard.tsx
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - t6-app
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 60
+    focus_area: src/webview/components/KanbanBoard.tsx
+    description: |
+      Add column-level drag-and-drop state and handlers alongside the existing card DnD:
+
+      1. State:
+           const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
+           const [dropColumnIndex, setDropColumnIndex] = useState<number | null>(null);
+
+      2. Handlers:
+           handleColumnDragStart(e, columnId): sets draggedColumnId, uses
+             e.dataTransfer.setData('application/x-column-id', columnId)
+             (distinct key from card DnD which uses 'text/plain')
+           handleColumnDragOver(e, index): e.preventDefault(); setDropColumnIndex(index)
+           handleColumnDrop(e, index): reads dataTransfer, computes new columnIds order,
+             resets draggedColumnId/dropColumnIndex, calls onReorderColumns(newOrder)
+           handleColumnDragEnd(): resets draggedColumnId and dropColumnIndex to null
+
+      3. Column rendering in the columns.map():
+           Pass the new handlers + isDragTarget={dropColumnIndex === i} to each KanbanColumn.
+
+      4. Add onReorderColumns to KanbanBoardProps interface.
+
+      Ensure existing card DnD handlers are NOT modified. Guard card drop handlers with
+      dataTransfer.types check: if types contains 'application/x-column-id', return early.
+    context_files:
+      src/webview/components/KanbanBoard.tsx: "full file — card DnD state at lines 60-61, handleDragStart at 63, handleDrop at 97, column mapping at 172"
+    tech_stack:
+      - TypeScript
+      - React
+      - HTML5 DnD API
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - Dragging column A over column B shows drop indicator; dropping fires onReorderColumns with correct order
+      - Card DnD continues to work without regression
+    acceptance_criteria:
+      - draggedColumnId and dropColumnIndex state added
+      - handleColumnDragStart / handleColumnDragOver / handleColumnDrop / handleColumnDragEnd implemented
+      - Uses 'application/x-column-id' dataTransfer key (not 'text/plain')
+      - Card drop guards against column drag events
+      - onReorderColumns prop added to KanbanBoardProps
+    failure_modes:
+      - scenario: Column drag events bubble into card drop zone causing double-handler invocation
+        likelihood: medium
+        impact: medium
+        mitigation: Use dataTransfer.types.includes('application/x-column-id') guard in card handlers to exit early
+
+  - id: t8-column
+    title: Make column header draggable with drop indicator in KanbanColumn.tsx
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - t7-board
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 30
+    focus_area: src/webview/components/KanbanColumn.tsx
+    description: |
+      1. Add new props to KanbanColumnProps (after existing drag props):
+           onColumnDragStart?: (e: DragEvent<HTMLDivElement>, columnId: string) => void;
+           onColumnDragOver?: (e: DragEvent<HTMLDivElement>, index: number) => void;
+           onColumnDrop?: (e: DragEvent<HTMLDivElement>, index: number) => void;
+           onColumnDragEnd?: () => void;
+           isDragTarget?: boolean;
+           columnIndex?: number;
+
+      2. On the column header div (line ~123):
+           Add draggable={true}
+           Add onDragStart={(e) => onColumnDragStart?.(e, column.id)}
+           Add cursor-grab class when not dragging, cursor-grabbing when draggedColumnId === column.id
+
+      3. On the outer container div (line ~113):
+           Add onDragOver={(e) => onColumnDragOver?.(e, columnIndex ?? 0)}
+           Add onDrop={(e) => onColumnDrop?.(e, columnIndex ?? 0)}
+           Add onDragEnd={onColumnDragEnd}
+
+      4. Visual drop indicator: when isDragTarget is true, render a 2px vertical blue line
+         on the left edge of the column container (e.g. border-l-2 border-blue-500 Tailwind class
+         toggled conditionally). Keep it subtle — only visible during an active column drag.
+    context_files:
+      src/webview/components/KanbanColumn.tsx: "KanbanColumnProps interface at line 17; column header div at line 123; outer container div at line 113"
+    tech_stack:
+      - TypeScript
+      - React
+      - Tailwind CSS
+    test_coverage: null
+    verification:
+      - npx tsc --noEmit reports zero errors
+      - Column header shows grab cursor; vertical blue indicator appears on drag-over
+      - Existing column add/edit/delete actions still function
+    acceptance_criteria:
+      - Column header div has draggable={true} and onDragStart wired
+      - Outer container has onDragOver and onDrop wired for column-level events
+      - isDragTarget prop applies a visible drop indicator (border-l-2 border-blue-500 or equivalent)
+      - No changes to existing card-level onDragOver / onDrop handlers
+    failure_modes:
+      - scenario: draggable=true on header causes text selection to break in column name
+        likelihood: low
+        impact: low
+        mitigation: Add user-select: none (select-none Tailwind) to the header div when draggable

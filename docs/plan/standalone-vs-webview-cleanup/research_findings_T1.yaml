@@ -1,0 +1,143 @@
+plan_id: standalone-vs-webview-cleanup
+task_id: T1
+objective: |
+  Verify that src/webview/main.tsx, src/webview/index.html, and vite.config.ts are safe to delete,
+  and that build:webview / watch:webview npm scripts can be safely removed/renamed.
+focus_area: legacy-webview-build-path
+created_at: "2026-03-17"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - All three files (src/webview/main.tsx, src/webview/index.html, vite.config.ts) are SAFE TO DELETE.
+    Zero runtime references to dist/webview/ exist in src/ or .github/ CI workflows.
+  - build:webview and watch:webview scripts are SAFE TO REMOVE. Neither is in the main build chain.
+  - CRITICAL: watch aggregate script MUST be updated atomically: replace watch:webview → watch:standalone-webview.
+  - NON-BLOCKING SURPRISE: CONTRIBUTING.md line 53 mentions `npm run build:webview` — docs-only, no runtime impact, should be updated.
+  - NON-BLOCKING NOTE: .vscodeignore line 31 has `dist/webview/**` — harmless after deletion, optional cleanup.
+
+research_metadata:
+  methodology: "grep_search (dist/webview, main.tsx, build:webview, watch:webview), read_file (vite.config.ts, vitest.config.ts, src/webview/main.tsx, package.json scripts), find + grep on .github/"
+  scope: "Full workspace including src/, .github/, package.json, configuration files"
+  confidence: high
+  coverage: 100
+
+# ─── VERIFICATION RESULTS ───────────────────────────────────────────────────
+
+verification:
+
+  safe_to_delete_main_tsx:
+    verdict: YES
+    reason: |
+      src/webview/main.tsx is a 9-line bare React entry point (createRoot → <App />)
+      with no shared logic not already in standalone-main.tsx.
+      Its ONLY external reference is the <script> tag in src/webview/index.html (also being deleted).
+      No src/ file, no CI workflow, and no test file imports or references main.tsx by name
+      outside of the two files being deleted (index.html) and vite.config.ts.
+
+  safe_to_delete_index_html:
+    verdict: YES
+    reason: |
+      src/webview/index.html is the HTML shell for the legacy build. Its only <script> references main.tsx.
+      No runtime code (KanbanPanel.ts, standalone server, tests) loads it.
+      It is only matched in vite.config.ts search results and plan docs.
+
+  safe_to_delete_vite_config_ts:
+    verdict: YES
+    reason: |
+      vite.config.ts exclusively targets src/webview/main.tsx → dist/webview/.
+      vitest.config.ts imports from vitest/config (not vite/config), carries its own resolve.alias,
+      and has NO extends, mergeConfig, or import of vite.config.ts.
+      No src/ file imports it. The only consumers were build:webview (vite build) and
+      watch:webview (vite build --watch), both being removed in T4.
+
+  dist_webview_references_in_src:
+    count: 0
+    note: "grep for 'dist/webview' in src/** returned zero matches. Only matches outside src/ were docs/plan/ YAML artifacts, .vscodeignore (line 31: dist/webview/**), and vite.config.ts itself."
+
+  dist_webview_in_github_ci:
+    count: 0
+    ci_files_found:
+      - .github/workflows_/release.yml
+      - .github/workflows_/ci.yml
+    note: "Neither CI file references build:webview, watch:webview, dist/webview, main.tsx, or vite.config.ts."
+
+  main_tsx_references_outside_deletion_set:
+    count: 0
+    note: "main.tsx is referenced in src/webview/index.html (being deleted) and vite.config.ts (being deleted). vite.standalone.config.ts references standalone-main.tsx, not main.tsx."
+
+# ─── EXACT SCRIPT CONTENTS (for T4) ────────────────────────────────────────
+
+package_json_scripts:
+
+  build_webview:
+    key: "build:webview"
+    value: "vite build"
+    in_main_build_chain: false
+    note: "Absent from the build: script aggregation. Never called by vscode:prepublish indirectly."
+
+  watch_webview:
+    key: "watch:webview"
+    value: "vite build --watch"
+
+  watch_current:
+    key: "watch"
+    value: "concurrently \"npm run watch:extension\" \"npm run watch:webview\""
+    required_replacement: "concurrently \"npm run watch:extension\" \"npm run watch:standalone-webview\""
+    note: |
+      watch:standalone-webview already exists in package.json:
+        "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch"
+      The atomic replacement in T4 is safe.
+
+# ─── FILE CONTENTS CONFIRMED ─────────────────────────────────────────────────
+
+files_confirmed:
+
+  vite_config_ts:
+    path: vite.config.ts
+    lines: 37
+    entry: "src/webview/main.tsx"
+    outDir: "dist/webview"
+    imports_from_vitest: false
+    extended_by: []
+
+  vitest_config_ts:
+    path: vitest.config.ts
+    lines: 14
+    imports: ["vitest/config"]
+    extends_vite_config: false
+    has_merge_config: false
+    has_reference_to_vite_config_ts: false
+
+  main_tsx:
+    path: src/webview/main.tsx
+    lines: 9
+    logic_unique_to_this_file: false
+    shared_logic_absent_in_standalone_main: false
+    imports:
+      - "./assets/main.css"
+      - "react (StrictMode)"
+      - "react-dom/client (createRoot)"
+      - "./App"
+    note: "standalone-main.tsx adds StandaloneShim + router. main.tsx is a strict subset with no additive logic."
+
+# ─── SURPRISES AND BLOCKERS ──────────────────────────────────────────────────
+
+surprises:
+  - id: S1
+    severity: non-blocking
+    description: "CONTRIBUTING.md line 53 mentions `npm run build:webview`"
+    exact_text: "- **Webview** is bundled with Vite (`npm run build:webview`)"
+    impact: "Docs-only. Will not break any runtime or CI flow. Should be updated to reference build:standalone-webview."
+    action_required: "Update CONTRIBUTING.md in T4 or a follow-up task."
+
+  - id: S2
+    severity: non-blocking
+    description: ".vscodeignore line 31 lists `dist/webview/**`"
+    impact: "Harmless after deletion since the output dir will no longer be produced. Optional cleanup."
+    action_required: "Optional: remove the dist/webview/** line from .vscodeignore in T4."
+
+blockers: []
+
+open_questions: []
+gaps: []

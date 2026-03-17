@@ -580,15 +580,16 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
   const isDrawer = (local.panelMode ?? 'drawer') === 'drawer'
 
   return (
-    <div className={`fixed inset-0 z-50 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+    <div className={`fixed inset-0 z-50 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
       {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={onClose} />}
       <div
         className={isDrawer
-          ? 'relative h-full w-1/2 max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200'
+          ? 'relative h-full w-1/2 max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={isDrawer
           ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
           : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+        {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
       >
         {/* Header */}
         <div

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Legacy webview build path**: Deleted `src/webview/main.tsx`, `src/webview/index.html`, and `vite.config.ts` — these produced `dist/webview/` which was unused since the dual-runtime `standalone-shim.ts` design was introduced. The active build path (`vite.standalone.config.ts` → `dist/standalone-webview/`) is unchanged.
+- **npm scripts**: Removed `build:webview` and `watch:webview`; the `watch` aggregate script now uses `watch:standalone-webview`.
+
 ### Added
 - **Board logs**: Each board now has its own log file at `.kanban/boards/<boardId>/board.log` for board-level audit trail entries. Board logs share the same `LogEntry` format as card logs (timestamp, source, text, optional JSON object) but are not tied to any card.
 - **SDK**: `getBoardLogFilePath(boardId?)`, `listBoardLogs(boardId?)`, `addBoardLog(text, options?, boardId?)`, `clearBoardLogs(boardId?)` methods on `KanbanSDK`. Emits `board.log.added` and `board.log.cleared` events.

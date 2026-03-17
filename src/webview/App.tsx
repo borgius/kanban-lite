@@ -736,15 +736,16 @@ function App(): React.JSX.Element {
         {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (() => {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
           return (
-            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full w-1/2 max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200'
+                  ? 'relative h-full w-1/2 max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
                 style={isDrawer
                   ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                   : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+                {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
                 <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
                   <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board Logs</span>
@@ -772,11 +773,11 @@ function App(): React.JSX.Element {
         {editingCard && selectedCardIds.length === 0 && (() => {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
           return (
-            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end' : 'items-center justify-center p-4'}`}>
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full w-1/2 flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200'
+                  ? 'relative h-full w-1/2 flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200'}
                 style={{
                   fontSize: `calc(1em * var(--card-zoom, 1))`,
@@ -784,6 +785,7 @@ function App(): React.JSX.Element {
                     ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                     : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' })
                 }}
+                {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
                 <CardEditor
               cardId={editingCard.id}

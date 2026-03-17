@@ -1,0 +1,383 @@
+plan_id: standalone-vs-webview-cleanup
+objective: |
+  Remove the legacy dist/webview/ build path that is no longer used. Delete src/webview/main.tsx,
+  src/webview/index.html, and vite.config.ts; remove the build:webview and watch:webview npm scripts;
+  update the watch aggregate script to use watch:standalone-webview. Nothing currently loads dist/webview/.
+created_at: "2026-03-17"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  The active UI pipeline is vite.standalone.config.ts → dist/standalone-webview/, loaded by both the
+  VS Code extension host and the standalone Node.js server. The legacy vite.config.ts → dist/webview/
+  path is entirely dead: the extension host (KanbanPanel.ts), the standalone server, and vitest all have
+  zero references to it. Cleanup is safe and purely subtractive: delete 2 source files + 1 config file,
+  remove 2 npm scripts, update 1 npm script (watch uses watch:webview today; replace with
+  watch:standalone-webview), and record in CHANGELOG.md. No new code is introduced.
+
+open_questions:
+  - Does KanbanPanel.ts reference dist/webview/ or dist/standalone-webview/? (T1 confirms before deletion.)
+  - Are there any CI workflow files (.github/workflows/) that call build:webview directly? (T1 greps those too.)
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: KanbanPanel.ts silently loads from dist/webview/ at runtime — extension breaks after deletion.
+      likelihood: low
+      impact: critical
+      mitigation: |
+        T1 explicitly greps src/extension/KanbanPanel.ts and src/extension/index.ts for dist/webview.
+        T2/T3/T4 are blocked by T1; if a reference is found, an unplanned sub-task resolves it first.
+    - scenario: watch npm script breaks because watch:webview is removed but the watch aggregate still calls it.
+      likelihood: medium
+      impact: low
+      mitigation: |
+        T4 updates the watch script in the same edit that removes watch:webview, replacing it with
+        watch:standalone-webview atomically. Both changes land in one package.json commit.
+    - scenario: vitest resolves vite.config.ts as implicit Vite config base and errors after deletion.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        vitest.config.ts imports from vitest/config (not vite/config) and carries its own resolve.alias.
+        It has no extends or mergeConfig call. Confirmed in research. T6 runs npm run test to validate.
+    - scenario: A CI workflow file calls `npm run build:webview` directly, causing pipeline breakage.
+      likelihood: low
+      impact: medium
+      mitigation: T1 greps .github/ and any CI config files before T4 removes the script.
+  assumptions:
+    - vitest.config.ts does not import or extend vite.config.ts (confirmed in research_findings).
+    - The main build script calls build:standalone-webview, not build:webview (confirmed in research).
+    - vscode:prepublish calls build, which does not include build:webview (confirmed in package.json).
+    - dist/webview/ is not a committed directory in the repository.
+
+implementation_specification:
+  code_structure: |
+    Pure deletion and in-place script cleanup. No new files, no new logic, no refactors.
+    Only three files are deleted and one file (package.json) is surgically edited.
+  affected_areas:
+    - vite.config.ts (root-level, deleted)
+    - src/webview/main.tsx (deleted)
+    - src/webview/index.html (deleted)
+    - package.json scripts block (build:webview removed, watch:webview removed, watch updated)
+    - CHANGELOG.md (new Removed entries added)
+  component_details:
+    - component: vite.config.ts
+      responsibility: |
+        Legacy Vite config targeting dist/webview/. Entry point is src/webview/main.tsx.
+        Backed only by build:webview and watch:webview scripts — both being removed in T4.
+      interfaces:
+        - No imports by vitest.config.ts or any src/ file.
+        - Implicitly used by `vite build` (no --config flag) calls.
+    - component: src/webview/main.tsx
+      responsibility: |
+        10-line legacy React entry point. Renders <App /> with no router and no standalone-shim.
+        Predates the dual-runtime standalone-shim.ts design.
+      interfaces:
+        - Imported only via <script type="module" src="./main.tsx"> in src/webview/index.html.
+    - component: src/webview/index.html
+      responsibility: |
+        HTML shell for the legacy build. References main.tsx as its module script.
+        Used only by vite.config.ts as its implicit HTML root.
+      interfaces:
+        - Referenced only by vite.config.ts root configuration.
+    - component: package.json scripts
+      responsibility: |
+        Remove build:webview ("vite build") and watch:webview ("vite build --watch").
+        Update watch from "... watch:webview" to "... watch:standalone-webview".
+      interfaces:
+        - watch:standalone-webview already exists in package.json; no new script needed.
+  dependencies:
+    - component: T2/T3/T4
+      relationship: All depend on T1 confirming zero hidden runtime references before any deletion.
+    - component: T5
+      relationship: Depends on T2/T3/T4 completing to write accurate changelog entries.
+    - component: T6
+      relationship: Depends on all source changes (T2–T5) being applied before build runs.
+  integration_points:
+    - watch aggregate script must call watch:standalone-webview after watch:webview is removed.
+    - Extension host (KanbanPanel.ts) must continue loading from dist/standalone-webview/ — no change needed.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: Confirmation that src/webview/main.tsx has zero callers outside src/webview/index.html
+    format: grep evidence (pass = zero results in src/extension/, src/standalone/, src/shared/)
+  - from_task: T1
+    to_task: T3
+    interface: Confirmation that vite.config.ts is not imported, extended, or referenced outside build:webview and watch:webview
+    format: grep evidence (pass = zero results in vitest.config.ts and all src/ files)
+  - from_task: T1
+    to_task: T4
+    interface: Complete list of all npm scripts and CI files that call plain `vite build` (no --config)
+    format: "Expected list: [build:webview, watch:webview]; watch references watch:webview"
+  - from_task: T2
+    to_task: T5
+    interface: Deleted files list for CHANGELOG entry
+    format: '["src/webview/main.tsx", "src/webview/index.html"]'
+  - from_task: T3
+    to_task: T5
+    interface: Deleted config file for CHANGELOG entry
+    format: '["vite.config.ts"]'
+  - from_task: T4
+    to_task: T5
+    interface: Removed and updated scripts for CHANGELOG entry
+    format: '{removed: ["build:webview", "watch:webview"], updated: {watch: "now calls watch:standalone-webview"}}'
+  - from_task: T5
+    to_task: T6
+    interface: All source deletions and changelog complete; workspace ready for build run
+    format: Signal (all wave-1-through-3 tasks status=completed)
+
+tasks:
+  - id: T1
+    title: Verify no hidden runtime references to dist/webview or vite.config.ts
+    description: |
+      Grep the full workspace for any reference to dist/webview, vite.config (explicit string), or
+      loading of index.html / main.tsx from the legacy path. Specifically check:
+        1. src/extension/KanbanPanel.ts — any `dist/webview` in the webview URI construction.
+        2. src/extension/index.ts — any `dist/webview` path join or require.
+        3. All other src/ files — grep for 'dist/webview' and 'vite.config'.
+        4. .github/ (or any CI config) — grep for `build:webview` script calls.
+        5. package.json — confirm watch:standalone-webview already exists (so T4 can reference it).
+      Confirm the complete removal set is exactly:
+        - Files to delete: vite.config.ts, src/webview/main.tsx, src/webview/index.html
+        - Scripts to remove: build:webview, watch:webview
+        - Script to update: watch (replace watch:webview → watch:standalone-webview)
+    wave: 1
+    agent: gem-researcher
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - src/extension/KanbanPanel.ts: Check for dist/webview path references in webview URI construction
+      - src/extension/index.ts: Check for dist/webview references
+      - package.json: Confirm watch:standalone-webview exists and build:webview is not in main build chain
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 0
+    focus_area: Runtime reference confirmation before any deletion
+    verification:
+      - grep for 'dist/webview' in src/extension/ returns zero results
+      - grep for 'vite.config' in src/ (excluding vite.config.ts itself) returns zero results
+      - package.json scripts confirm watch:standalone-webview already defined
+      - No CI workflow file calls npm run build:webview directly
+    acceptance_criteria:
+      - All references to dist/webview within src/ are catalogued — expected result is zero runtime references
+      - Complete removal set validated as described above
+      - T2/T3/T4 unblocked (no surprises found)
+    failure_modes:
+      - scenario: KanbanPanel.ts found to construct a URI pointing at dist/webview/
+        likelihood: low
+        impact: critical
+        mitigation: |
+          Block T2/T3/T4. Create unplanned sub-task to update KanbanPanel.ts to use
+          dist/standalone-webview/ instead. Only after that fix is merged do T2/T3/T4 proceed.
+
+  - id: T2
+    title: Delete src/webview/main.tsx and src/webview/index.html
+    description: |
+      Delete both legacy webview entry files from the repository:
+        - src/webview/main.tsx  (10 lines — renders <App /> with no router, no standalone-shim)
+        - src/webview/index.html  (11 lines — HTML shell referencing main.tsx)
+      Both are confirmed dead by research. No file outside this deleted pair references either of them.
+      Use `git rm` to stage the deletions for tracking.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files: {}
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 21
+    focus_area: Legacy source file deletion
+    tech_stack:
+      - git rm (file system deletion with git tracking)
+    test_coverage: null
+    verification:
+      - src/webview/main.tsx does not exist on disk
+      - src/webview/index.html does not exist on disk
+      - No remaining file in src/ references main.tsx or index.html
+    acceptance_criteria:
+      - Both files deleted and staged via git rm
+      - src/webview/ directory still contains the active files (standalone-main.tsx, standalone.html, standalone-shim.ts, App.tsx, etc.)
+    failure_modes:
+      - scenario: Accidental deletion of standalone-main.tsx or standalone.html instead of main.tsx / index.html
+        likelihood: low
+        impact: critical
+        mitigation: Verify exact filenames before running git rm; check that standalone-main.tsx still exists after deletion.
+
+  - id: T3
+    title: Delete vite.config.ts
+    description: |
+      Delete the root-level vite.config.ts. This config (37 lines) targets dist/webview/ with
+      src/webview/main.tsx as its sole input. It is the implicit config backing the build:webview
+      ("vite build") and watch:webview ("vite build --watch") scripts, both removed in T4.
+      vitest.config.ts is confirmed to be fully standalone — it imports defineConfig from vitest/config
+      and has its own resolve.alias; it does not reference vite.config.ts in any way.
+      Use `git rm` to delete.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files: {}
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 37
+    focus_area: Legacy build config deletion
+    tech_stack:
+      - git rm
+    test_coverage: null
+    verification:
+      - vite.config.ts does not exist at project root
+      - vitest.config.ts still resolves without error (no dependency on vite.config.ts)
+    acceptance_criteria:
+      - vite.config.ts deleted and staged via git rm
+      - vite.standalone.config.ts untouched (the active config)
+    failure_modes:
+      - scenario: vite.standalone.config.ts accidentally deleted instead of vite.config.ts
+        likelihood: low
+        impact: critical
+        mitigation: Confirm exact filename before git rm; verify vite.standalone.config.ts still exists after deletion.
+
+  - id: T4
+    title: Remove dead npm scripts and fix the watch aggregate in package.json
+    description: |
+      Make three surgical edits to the package.json scripts block (lines ~115–123):
+        1. Remove the "build:webview" entry:
+             "build:webview": "vite build"
+        2. Remove the "watch:webview" entry:
+             "watch:webview": "vite build --watch"
+        3. Update the "watch" entry — replace watch:webview with watch:standalone-webview:
+             BEFORE: "concurrently \"npm run watch:extension\" \"npm run watch:webview\""
+             AFTER:  "concurrently \"npm run watch:extension\" \"npm run watch:standalone-webview\""
+      The main build script (build) does NOT call build:webview; vscode:prepublish calls build.
+      watch:standalone-webview ("vite build --config vite.standalone.config.ts --watch") already exists.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      - package.json: Full scripts block for precise line-targeted edits
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 4
+    focus_area: package.json scripts cleanup
+    tech_stack:
+      - JSON / text editing (replace_string_in_file)
+    test_coverage: null
+    verification:
+      - package.json does not contain a "build:webview" key
+      - package.json does not contain a "watch:webview" key
+      - watch script references watch:standalone-webview, not watch:webview
+      - JSON is valid after edits (no trailing commas or syntax errors)
+    acceptance_criteria:
+      - npm run build succeeds (build:webview was never in the main build chain)
+      - npm run watch resolves to watch:extension + watch:standalone-webview
+      - vscode:prepublish chain unaffected
+    failure_modes:
+      - scenario: Trailing comma left in JSON after script removal causes parse error
+        likelihood: low
+        impact: medium
+        mitigation: Verify JSON validity with `node -e "require('./package.json')"` after edit.
+
+  - id: T5
+    title: Add CHANGELOG.md entry for the dead-code removal
+    description: |
+      Insert a new entry under the ## [Unreleased] section (top of CHANGELOG.md) documenting
+      all removals from T2, T3, and T4. Follow the existing format with ### Removed subsection.
+
+      Entry content:
+        ### Removed
+        - Deleted legacy webview entry point `src/webview/main.tsx` and its HTML shell
+          `src/webview/index.html`, superseded by the `standalone-main.tsx` dual-runtime design.
+        - Deleted `vite.config.ts` (legacy build configuration targeting the now-unused `dist/webview/` output).
+        - Removed `build:webview` and `watch:webview` npm scripts (previously ran legacy `vite build`
+          with no --config flag).
+        - Updated `watch` npm script to use `watch:standalone-webview` instead of the removed
+          `watch:webview`.
+    wave: 3
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - T2
+      - T3
+      - T4
+    context_files:
+      - CHANGELOG.md: Top section to locate existing [Unreleased] block or latest version header
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 10
+    focus_area: CHANGELOG dead-code removal entry
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - Deleted source files (src/webview/main.tsx, src/webview/index.html)
+      - Deleted config (vite.config.ts)
+      - Removed npm scripts (build:webview, watch:webview)
+      - Updated npm script (watch → watch:standalone-webview)
+    verification:
+      - CHANGELOG.md contains a ### Removed subsection in the [Unreleased] or current version block
+      - All four bullet points from the entry content above are present
+      - Existing CHANGELOG content below the insertion point is unmodified
+    acceptance_criteria:
+      - Changelog accurately reflects all changes from T2, T3, T4
+      - No README.md changes needed (removal of dead code is not a user-facing feature change)
+    failure_modes: []
+
+  - id: T6
+    title: Build and test verification
+    description: |
+      After all source changes are applied (T2–T5), run the full build and test suite to confirm
+      nothing regressed:
+        1. npm run build     — full production build (extension + standalone-webview + cli + mcp + sdk).
+           Expected: exits 0; dist/standalone-webview/, dist/extension.js, dist/cli.js,
+           dist/mcp-server.js, dist/sdk/ all produced.
+        2. npm run test      — full vitest suite.
+           Expected: exits 0; no errors mentioning vite.config.ts or dist/webview.
+        3. npm run typecheck — TypeScript compilation check.
+           Expected: exits 0.
+      If any command fails, inspect stderr for references to the removed files/scripts and report
+      the exact error for triage.
+    wave: 4
+    agent: gem-devops
+    priority: high
+    status: pending
+    dependencies:
+      - T5
+    context_files: {}
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: Post-cleanup build, test, and typecheck validation
+    environment: development
+    requires_approval: false
+    security_sensitive: false
+    verification:
+      - npm run build exits 0
+      - npm run test exits 0
+      - npm run typecheck exits 0
+      - No reference to dist/webview/ in build output or error messages
+    acceptance_criteria:
+      - All three commands succeed without modification to any remaining file
+      - dist/webview/ is NOT produced (confirms the legacy build path is gone)
+      - dist/standalone-webview/ IS produced (confirms the active build path is intact)
+    failure_modes:
+      - scenario: npm run build fails because some esbuild step has a residual reference to vite.config.ts
+        likelihood: low
+        impact: medium
+        mitigation: Inspect stderr; grep package.json for any remaining `vite build` without --config.
+      - scenario: vitest fails with "cannot find config" or module resolution error after vite.config.ts deletion
+        likelihood: low
+        impact: medium
+        mitigation: Confirm vitest.config.ts still present and unchanged; it is self-contained.
+      - scenario: npm run typecheck fails due to tsconfig.json referencing a now-deleted file
+        likelihood: low
+        impact: low
+        mitigation: Check tsconfig.json include/exclude patterns; neither main.tsx nor index.html should be explicitly listed.

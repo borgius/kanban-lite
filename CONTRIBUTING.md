@@ -50,7 +50,7 @@ src/
 ```
 
 - **Extension** is bundled with esbuild (`npm run build:extension`)
-- **Webview** is bundled with Vite (`npm run build:webview`)
+- **Webview** is bundled with Vite (`npm run build:standalone-webview`)
 
 ## Development
 

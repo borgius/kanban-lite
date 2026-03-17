@@ -35,20 +35,28 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     if (!selectedCardId) return
     const container = scrollContainerRef.current
     if (!container) return
-    // Wait a frame so the panel layout transition has started and the board has shrunk
-    requestAnimationFrame(() => {
+
+    const doScroll = () => {
       const cardEl = container.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`)
       if (!cardEl) return
       const containerRect = container.getBoundingClientRect()
       const cardRect = cardEl.getBoundingClientRect()
-      // Check if the card is fully visible horizontally inside the scroll container
-      const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= containerRect.right
+      // In drawer mode the panel overlaps the right half of the viewport.
+      // Compute the unobscured right boundary so the card scrolls into the visible area.
+      const panelMode = useStore.getState().cardSettings.panelMode ?? 'drawer'
+      const drawerWidth = (panelMode === 'drawer') ? window.innerWidth * 0.5 : 0
+      const visibleRight = containerRect.right - drawerWidth
+      const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= visibleRight
       if (!isFullyVisible) {
-        // Scroll so the card's right edge is visible with 10px breathing room
-        const overflow = cardRect.right - containerRect.right
+        const overflow = cardRect.right - visibleRight
         container.scrollBy({ left: overflow + 10, behavior: 'smooth' })
       }
-    })
+    }
+
+    // Use a short timeout so the drawer has had time to mount and React has
+    // finished its render cycle before we measure positions.
+    const id = setTimeout(doScroll, 50)
+    return () => clearTimeout(id)
   }, [selectedCardId])
 
   const columns = useStore((s) => s.columns)
@@ -211,9 +219,14 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   }, [])
 
   const isVertical = layout === 'vertical'
+  const isDrawerOpen = !isVertical && !!selectedCardId && (cardSettings.panelMode ?? 'drawer') === 'drawer'
 
   return (
-    <div ref={scrollContainerRef} className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}>
+    <div
+      ref={scrollContainerRef}
+      className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}
+      style={isDrawerOpen ? { paddingRight: 'calc(50vw + 1rem)' } : undefined}
+    >
       <div className={isVertical ? "flex flex-col gap-4" : "flex gap-4 h-full min-w-max"}>
         {columns.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 py-20 text-zinc-400 dark:text-zinc-500">

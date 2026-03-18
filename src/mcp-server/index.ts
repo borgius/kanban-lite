@@ -206,6 +206,23 @@ async function main(): Promise<void> {
   )
 
   server.tool(
+    'get_active_card',
+    'Get the card currently marked as active/open in the workspace. Returns null when no card is active.',
+    {
+      boardId: z.string().optional().describe('Board ID (returns the active card only if it belongs to this board)'),
+    },
+    async ({ boardId }) => {
+      const card = await sdk.getActiveCard(boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(card, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
     'create_card',
     'Create a new kanban card. Returns the created card.',
     {

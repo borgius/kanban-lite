@@ -45,9 +45,12 @@ kl add --title "My first task" --priority high
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
+- **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
+- **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
 - **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
 - **Smooth scroll to selection**: Board automatically scrolls to the selected card
+- **URL-synced standalone navigation**: In standalone mode, the active board, card, tab, filters, search query, and fuzzy mode persist in browser history and deep links
 - **Keyboard shortcuts**:
   - `N` - Create new card
   - `Esc` - Close dialogs
@@ -119,6 +122,9 @@ kl add --title "Deploy service" --actions "retry,rollback,notify"
 # Show card details
 kl show implement-search
 
+# Show the currently active/open card
+kl active
+
 # Move to a different column
 kl move implement-search in-progress
 
@@ -159,6 +165,12 @@ kl board-log add --text "Deployment complete"            # Add a board log entry
 kl board-log add --text "Pipeline passed" \
   --source ci --object '{"build":"42"}'                    # With source and data
 kl board-log clear                                       # Clear all board logs
+
+# Board Actions
+kl board-actions list --board default                    # List board-level actions
+kl board-actions add --board default \
+  --key deploy --title "Deploy to Production"            # Add/update a board action
+kl board-actions fire --board default deploy             # Trigger a board action
 
 # Boards
 kl boards                                               # List boards
@@ -255,11 +267,22 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `PUT` | `/api/boards/:boardId` | Update board configuration |
 | `DELETE` | `/api/boards/:boardId` | Delete an empty board |
 
+#### Board Actions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/boards/:boardId/actions` | List named board actions |
+| `POST` | `/api/boards/:boardId/actions` | Replace the board action map |
+| `PUT` | `/api/boards/:boardId/actions/:key` | Add or update a single board action title |
+| `DELETE` | `/api/boards/:boardId/actions/:key` | Remove a named board action |
+| `POST` | `/api/boards/:boardId/actions/:key/trigger` | Trigger a board action webhook event |
+
 #### Tasks
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/tasks` | List all tasks (query: `?q=&fuzzy=&meta.<field>=&status=&priority=&assignee=&label=`) |
+| `GET` | `/api/tasks/active` | Get the currently active/open task |
 | `GET` | `/api/tasks/:id` | Get a single task |
 | `POST` | `/api/tasks` | Create a task |
 | `PUT` | `/api/tasks/:id` | Update task properties |
@@ -384,6 +407,7 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 | `board.created` | A new board is created |
 | `board.updated` | Board configuration is changed |
 | `board.deleted` | A board is deleted |
+| `board.action` | A board-level action is triggered from the toolbar, CLI, REST API, or MCP |
 
 ### Payload
 
@@ -507,6 +531,53 @@ curl -X POST http://localhost:3000/api/tasks \
 - Actions are **fire-and-forget** — no retry logic or delivery guarantees are built in. Implement idempotency and retries in your own webhook handler if needed.
 - Action strings have no special meaning to Kanban Lite; you define the vocabulary.
 
+## Board Actions
+
+Board actions are the board-level sibling to card actions. Define them once per board, and they appear in the toolbar **Actions** dropdown for that board.
+
+### How it works
+
+1. **Define actions on the board** in `.kanban.json`:
+
+```json
+{
+  "boards": {
+    "default": {
+      "name": "Default Board",
+      "actions": {
+        "deploy": "Deploy to Production",
+        "announce": "Post release update"
+      }
+    }
+  }
+}
+```
+
+2. **Trigger them from any interface**:
+
+- **UI**: Use the toolbar **Actions** dropdown on a board that defines actions.
+- **CLI**: `kl board-actions fire --board <boardId> <key>`
+- **REST API**: `POST /api/boards/:boardId/actions/:key/trigger`
+- **MCP**: `trigger_board_action`
+
+3. **Receive a webhook event**: triggering a board action emits a `board.action` event containing the board ID, action key, and display title.
+
+### Managing board actions
+
+```bash
+# List existing actions
+kl board-actions list --board default
+
+# Add or update a named action
+kl board-actions add --board default --key deploy --title "Deploy to Production"
+
+# Remove an action
+kl board-actions remove --board default deploy
+
+# Trigger an action
+kl board-actions fire --board default deploy
+```
+
 ## MCP Server
 
 Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -546,9 +617,14 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `create_board` | Create a new board with optional custom columns |
 | `get_board` | Get board configuration and details |
 | `delete_board` | Delete an empty board |
+| `list_board_actions` | List all named actions defined on a board |
+| `add_board_action` | Add or update a named board action |
+| `remove_board_action` | Remove a named board action |
+| `trigger_board_action` | Trigger a board action webhook event |
 | `transfer_card` | Move a card from one board to another |
 | `list_cards` | List/filter cards by status, priority, assignee, label, `searchQuery`, `fuzzy`, and `metaFilter` |
 | `get_card` | Get full details of a card (supports partial ID matching) |
+| `get_active_card` | Get the currently active/open card, or `null` if none is active |
 | `create_card` | Create a new card with title, body, status, priority, etc. |
 | `update_card` | Update fields of an existing card |
 | `move_card` | Move a card to a different status column |
@@ -603,6 +679,7 @@ await sdk.deleteBoard('bugs')
 
 // Cards (all accept optional boardId as last argument)
 const cards = await sdk.listCards()
+const activeCard = await sdk.getActiveCard()
 const card = await sdk.createCard({ content: '# My Task', status: 'todo', priority: 'high' })
 await sdk.moveCard(card.id, 'in-progress')
 await sdk.updateCard(card.id, { assignee: 'alice' })
@@ -761,6 +838,10 @@ Board configuration is stored in `.kanban.json` at your project root. It support
         { "id": "review", "name": "Review", "color": "#8b5cf6" },
         { "id": "done", "name": "Done", "color": "#22c55e" }
       ],
+      "actions": {
+        "deploy": "Deploy to Production",
+        "announce": "Post release update"
+      },
       "nextCardId": 1,
       "defaultStatus": "backlog",
       "defaultPriority": "medium"
@@ -773,6 +854,8 @@ Board configuration is stored in `.kanban.json` at your project root. It support
   "compactMode": false,
   "boardZoom": 100,
   "cardZoom": 100,
+  "panelMode": "drawer",
+  "drawerWidth": 50,
   "actionWebhookUrl": "https://example.com/kanban-actions"
 }
 ```
@@ -780,6 +863,8 @@ Board configuration is stored in `.kanban.json` at your project root. It support
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 
 `boardZoom` and `cardZoom` set the default zoom percentage (75–150) for the board view and card detail panel respectively. They can also be adjusted live in the Settings panel or with `Ctrl/Cmd + =` / `Ctrl/Cmd + -` keyboard shortcuts.
+
+`panelMode` controls whether card flows open as a centered popup or a right-side drawer. When using drawer mode, `drawerWidth` sets the default width percentage (20–80) for card creation and detail panels.
 
 ## AI Agent Integration
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes

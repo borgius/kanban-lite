@@ -9,7 +9,7 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: true,
+  compactMode: false,
   markdownEditorMode: false,
   showDeletedColumn: false,
   defaultPriority: 'medium',

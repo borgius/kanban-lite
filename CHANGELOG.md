@@ -8,8 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Active card lookup**: Added `getActiveCard(boardId?)` to the SDK plus matching REST API, CLI, and MCP support for retrieving the currently active/open card tracked by the UI.
+- **Configurable card panel layout**: Added the `panelMode` setting to switch card creation and detail flows between a right-side drawer and a centered popup.
+- **Adjustable drawer width**: Added the `drawerWidth` setting (20–80%) so drawer mode can be tuned per workspace; board layout and card visibility calculations now respect the configured width.
 - **Clickable label filters**: Clicking a label on a board card or in the card detail panel now applies that label as the active board filter.
 - **Metadata-aware fuzzy search parity**: Added the web UI `Fuzzy` toggle, metadata filter buttons in rendered metadata fields, CLI `kl list --search ... --fuzzy`, REST `q` / `fuzzy` task-list parameters, and MCP `list_cards` `searchQuery` / `fuzzy` inputs with shared metadata-aware semantics.
+
+### Changed
+- **Standalone URL sync**: Browser history and deep links now persist the fuzzy-search state alongside the existing board, card, tab, filter, and search query routing state.
 
 ### Fixed
 - **Toolbar search chips**: Mixed search queries in the web UI now render separate removable chips for plain-text terms and each `meta.*` token, so individual constraints can be cleared without wiping the entire query.

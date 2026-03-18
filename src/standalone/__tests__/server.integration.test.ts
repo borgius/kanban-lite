@@ -775,6 +775,28 @@ describe('Standalone Server Integration', () => {
       expect(frontmatter.assignee).toBe('bob')
       expect(frontmatter.labels).toEqual(['backend', 'api'])
     })
+
+    it('should expose the opened card via the active-card REST endpoint', async () => {
+      writeCardFile(tempDir, 'active-api.md', makeCardContent({
+        id: 'active-api',
+        status: 'todo',
+        title: 'Active API Card'
+      }), 'todo')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      await sendAndReceive(ws, { type: 'openCard', cardId: 'active-api' }, 'cardContent')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks/active`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.id).toBe('active-api')
+      expect(json.data.filePath).toBeUndefined()
+    })
   })
 
   // ── Save Card Content ──
@@ -889,6 +911,29 @@ describe('Standalone Server Integration', () => {
       await sleep(100)
 
       expect(ws.readyState).toBe(WebSocket.OPEN)
+    })
+
+    it('should clear the active-card REST endpoint when the card is closed', async () => {
+      writeCardFile(tempDir, 'close-active.md', makeCardContent({
+        id: 'close-active',
+        title: 'Close Active Card'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      await sendAndReceive(ws, { type: 'openCard', cardId: 'close-active' }, 'cardContent')
+
+      ws.send(JSON.stringify({ type: 'closeCard' }))
+      await sleep(100)
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks/active`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data).toBeNull()
     })
   })
 

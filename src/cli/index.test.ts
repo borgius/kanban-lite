@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
-import { cmdList, parseArgs, showHelp } from './index'
+import { cmdActive, cmdList, parseArgs, showHelp } from './index'
 
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -85,5 +85,34 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--search <text>')
     expect(helpText).toContain('--fuzzy')
     expect(helpText).toContain('--meta key=value')
+  })
+})
+
+describe('CLI active command', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('prints the active card as JSON when requested', async () => {
+    const sdk = {
+      getActiveCard: vi.fn().mockResolvedValue(makeCard({ id: 'active-1' })),
+    } as unknown as Pick<KanbanSDK, 'getActiveCard'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdActive(sdk as KanbanSDK, { json: true })
+
+    expect(sdk.getActiveCard).toHaveBeenCalledWith(undefined)
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(makeCard({ id: 'active-1' }))
+  })
+
+  it('prints a friendly message when no active card exists', async () => {
+    const sdk = {
+      getActiveCard: vi.fn().mockResolvedValue(null),
+    } as unknown as Pick<KanbanSDK, 'getActiveCard'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdActive(sdk as KanbanSDK, {})
+
+    expect(logSpy.mock.calls[0][0]).toContain('No active card')
   })
 })

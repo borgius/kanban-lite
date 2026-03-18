@@ -165,6 +165,10 @@ export class KanbanPanel {
             break
           case 'closeCard':
             this._currentEditingCardId = null
+            {
+              const sdk = this._getSDK()
+              if (sdk) void sdk.clearActiveCard(this._currentBoardId).catch(() => {})
+            }
             this._cleanupTempFile()
             break
           case 'openFile': {
@@ -781,6 +785,11 @@ export class KanbanPanel {
 
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(card.filePath))
     await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
+    this._currentEditingCardId = cardId
+    {
+      const sdk = this._getSDK()
+      if (sdk) void sdk.setActiveCard(cardId, this._currentBoardId).catch(() => {})
+    }
   }
 
   private async _sendCardContent(cardId: string): Promise<void> {
@@ -788,6 +797,10 @@ export class KanbanPanel {
     if (!card) return
 
     this._currentEditingCardId = cardId
+    {
+      const sdk = this._getSDK()
+      if (sdk) void sdk.setActiveCard(cardId, this._currentBoardId).catch(() => {})
+    }
 
     const frontmatter: CardFrontmatter = {
       version: CARD_FORMAT_VERSION,

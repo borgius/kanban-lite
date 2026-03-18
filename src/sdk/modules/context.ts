@@ -35,6 +35,9 @@ export interface SDKContext {
     fuzzy?: boolean
   ): Promise<Card[]>
   getCard(cardId: string, boardId?: string): Promise<Card | null>
+  getActiveCard(boardId?: string): Promise<Card | null>
+  setActiveCard(cardId: string, boardId?: string): Promise<Card>
+  clearActiveCard(boardId?: string): Promise<void>
   updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card>
   addLog(
     cardId: string,

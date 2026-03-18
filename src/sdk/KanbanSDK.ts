@@ -585,6 +585,39 @@ export class KanbanSDK {
   }
 
   /**
+   * Retrieves the card currently marked as active/open in this workspace.
+   *
+   * Active-card state is persisted in the workspace so other interfaces
+   * (standalone server, CLI, MCP, and VS Code) can query the same card.
+   * Returns `null` when no card is currently active.
+   *
+   * @param boardId - Optional board ID. When provided, returns the active card
+   *   only if it belongs to that board.
+   * @returns A promise resolving to the active {@link Card}, or `null`.
+   *
+   * @example
+   * ```ts
+   * const active = await sdk.getActiveCard()
+   * if (active) {
+   *   console.log(active.id)
+   * }
+   * ```
+   */
+  async getActiveCard(boardId?: string): Promise<Card | null> {
+    return Cards.getActiveCard(this, boardId)
+  }
+
+  /** @internal */
+  async setActiveCard(cardId: string, boardId?: string): Promise<Card> {
+    return Cards.setActiveCard(this, cardId, boardId)
+  }
+
+  /** @internal */
+  async clearActiveCard(boardId?: string): Promise<void> {
+    return Cards.clearActiveCard(this, boardId)
+  }
+
+  /**
    * Creates a new card on a board.
    *
    * The card is assigned an auto-incrementing numeric ID, placed at the end

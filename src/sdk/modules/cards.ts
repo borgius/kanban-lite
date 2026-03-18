@@ -1,3 +1,4 @@
+import * as fs from 'fs/promises'
 import * as path from 'path'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Card, CardSortOption } from '../../shared/types'
@@ -8,6 +9,36 @@ import { matchesCardSearch } from '../metaUtils'
 import { sanitizeCard } from '../types'
 import type { CreateCardInput } from '../types'
 import type { SDKContext } from './context'
+
+interface ActiveCardState {
+  cardId: string
+  boardId: string
+  updatedAt: string
+}
+
+function getActiveCardStateFilePath(ctx: SDKContext): string {
+  return path.join(ctx.kanbanDir, '.active-card.json')
+}
+
+async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardState | null> {
+  try {
+    const raw = await fs.readFile(getActiveCardStateFilePath(ctx), 'utf-8')
+    const parsed = JSON.parse(raw) as Partial<ActiveCardState>
+    if (typeof parsed.cardId !== 'string' || typeof parsed.boardId !== 'string') return null
+    return {
+      cardId: parsed.cardId,
+      boardId: parsed.boardId,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+async function writeActiveCardState(ctx: SDKContext, state: ActiveCardState): Promise<void> {
+  await fs.mkdir(ctx.kanbanDir, { recursive: true })
+  await fs.writeFile(getActiveCardStateFilePath(ctx), JSON.stringify(state, null, 2), 'utf-8')
+}
 
 // --- Card CRUD ---
 
@@ -84,6 +115,60 @@ export async function getCard(ctx: SDKContext, cardId: string, boardId?: string)
 }
 
 /**
+ * Retrieves the card currently marked as active/open in this workspace.
+ */
+export async function getActiveCard(ctx: SDKContext, boardId?: string): Promise<Card | null> {
+  const state = await readActiveCardState(ctx)
+  if (!state) return null
+
+  if (boardId && state.boardId !== ctx._resolveBoardId(boardId)) {
+    return null
+  }
+
+  const card = await getCard(ctx, state.cardId, state.boardId)
+  if (!card) {
+    await clearActiveCard(ctx, state.boardId)
+    return null
+  }
+
+  return card
+}
+
+/**
+ * Marks a card as the active/open card for this workspace.
+ */
+export async function setActiveCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<Card> {
+  const card = await getCard(ctx, cardId, boardId)
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  await writeActiveCardState(ctx, {
+    cardId: card.id,
+    boardId: card.boardId || ctx._resolveBoardId(boardId),
+    updatedAt: new Date().toISOString(),
+  })
+
+  return card
+}
+
+/**
+ * Clears the tracked active/open card for this workspace.
+ */
+export async function clearActiveCard(ctx: SDKContext, boardId?: string): Promise<void> {
+  const state = await readActiveCardState(ctx)
+  if (!state) return
+
+  if (boardId && state.boardId !== ctx._resolveBoardId(boardId)) {
+    return
+  }
+
+  try {
+    await fs.unlink(getActiveCardStateFilePath(ctx))
+  } catch {
+    // ignore missing files
+  }
+}
+
+/**
  * Creates a new card on a board.
  */
 export async function createCard(ctx: SDKContext, data: CreateCardInput): Promise<Card> {
@@ -156,7 +241,10 @@ export async function updateCard(
   const oldStatus = card.status
   const oldTitle = getTitleFromContent(card.content)
 
-  const { filePath: _fp, id: _id, boardId: _bid, ...safeUpdates } = updates
+  const safeUpdates = { ...updates }
+  delete safeUpdates.filePath
+  delete safeUpdates.id
+  delete safeUpdates.boardId
   Object.assign(card, safeUpdates)
   card.modified = new Date().toISOString()
 

@@ -551,6 +551,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         }
 
         currentEditingCardId = cardId
+        await sdk.setActiveCard(cardId, currentBoardId)
         const frontmatter: CardFrontmatter = {
           version: card.version ?? 0,
           id: card.id, status: card.status, priority: card.priority,
@@ -584,6 +585,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
       case 'closeCard':
         currentEditingCardId = null
+        await sdk.clearActiveCard(currentBoardId)
         cleanupTempFile()
         break
 
@@ -1059,6 +1061,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
     }
 
+    params = route('GET', '/api/boards/:boardId/tasks/active')
+    if (params) {
+      try {
+        const card = await sdk.getActiveCard(params.boardId)
+        return jsonOk(res, card ? sanitizeCard(card) : null)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
+    }
+
     params = route('POST', '/api/boards/:boardId/tasks')
     if (params) {
       try {
@@ -1199,6 +1211,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
       }
       return jsonOk(res, result)
+    }
+
+    params = route('GET', '/api/tasks/active')
+    if (params) {
+      try {
+        const card = await sdk.getActiveCard()
+        return jsonOk(res, card ? sanitizeCard(card) : null)
+      } catch (err) {
+        return jsonError(res, 400, String(err))
+      }
     }
 
     params = route('POST', '/api/tasks')

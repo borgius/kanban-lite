@@ -199,6 +199,29 @@ Supports partial ID matching.
 
 ---
 
+### Get Active Task
+
+```
+GET /api/tasks/active
+```
+
+Returns the currently active/open task, or `null` when no task is active.
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "42",
+    "status": "in-progress",
+    "priority": "high"
+  }
+}
+```
+
+---
+
 ### Create Task
 
 ```
@@ -299,6 +322,7 @@ All task endpoints are also available scoped to a specific board. These behave i
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/boards/:boardId/tasks` | List tasks (supports the same `q`, `fuzzy`, `meta.*`, and standard filters) |
+| `GET` | `/api/boards/:boardId/tasks/active` | Get the currently active/open task for the board |
 | `POST` | `/api/boards/:boardId/tasks` | Create a task in the board |
 | `GET` | `/api/boards/:boardId/tasks/:id` | Get a task |
 | `PUT` | `/api/boards/:boardId/tasks/:id` | Update a task |

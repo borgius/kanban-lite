@@ -92,6 +92,9 @@ HTTP server are all built on top of.
     * [.triggerBoardAction(boardId, actionKey)](#KanbanSDK+triggerBoardAction)
     * [.transferCard(cardId, fromBoardId, toBoardId, targetStatus)](#KanbanSDK+transferCard) ⇒
     * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
+    * [.getActiveCard(boardId)](#KanbanSDK+getActiveCard) ⇒
+    * [.setActiveCard()](#KanbanSDK+setActiveCard)
+    * [.clearActiveCard()](#KanbanSDK+clearActiveCard)
     * [.createCard(data)](#KanbanSDK+createCard) ⇒
     * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
     * [.triggerAction(cardId, action, boardId)](#KanbanSDK+triggerAction) ⇒
@@ -538,6 +541,48 @@ if (card) {
   console.log(card.content)
 }
 ```
+
+* * *
+
+<a name="KanbanSDK+getActiveCard"></a>
+
+#### kanbanSDK.getActiveCard(boardId) ⇒
+Retrieves the card currently marked as active/open in this workspace.
+
+Active-card state is persisted in the workspace so other interfaces
+(standalone server, CLI, MCP, and VS Code) can query the same card.
+Returns `null` when no card is currently active.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the active [Card](Card), or `null`.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Optional board ID. When provided, returns the active card   only if it belongs to that board. |
+
+**Example**  
+```ts
+const active = await sdk.getActiveCard()
+if (active) {
+  console.log(active.id)
+}
+```
+
+* * *
+
+<a name="KanbanSDK+setActiveCard"></a>
+
+#### kanbanSDK.setActiveCard()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+clearActiveCard"></a>
+
+#### kanbanSDK.clearActiveCard()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
 
 * * *
 

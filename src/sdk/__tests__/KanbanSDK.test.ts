@@ -172,6 +172,33 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('getActiveCard', () => {
+    it('should return the currently active card after it is marked active', async () => {
+      writeCardFile(tempDir, 'active-card.md', makeCardContent({ id: 'active-card', priority: 'high' }), 'backlog')
+
+      await sdk.setActiveCard('active-card')
+
+      const card = await sdk.getActiveCard()
+      expect(card?.id).toBe('active-card')
+      expect(card?.priority).toBe('high')
+    })
+
+    it('should return null when no active card is set', async () => {
+      const card = await sdk.getActiveCard()
+      expect(card).toBeNull()
+    })
+
+    it('should clear and return null when the tracked active card no longer exists', async () => {
+      writeCardFile(tempDir, 'stale-active.md', makeCardContent({ id: 'stale-active' }), 'backlog')
+
+      await sdk.setActiveCard('stale-active')
+      await sdk.permanentlyDeleteCard('stale-active')
+
+      await expect(sdk.getActiveCard()).resolves.toBeNull()
+      await expect(sdk.getActiveCard()).resolves.toBeNull()
+    })
+  })
+
   describe('createCard', () => {
     it('should create a card file on disk', async () => {
       const card = await sdk.createCard({

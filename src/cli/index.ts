@@ -238,6 +238,23 @@ export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   console.log(dim(`\n  ${cards.length} card(s)`))
 }
 
+export async function cmdActive(sdk: KanbanSDK, flags: Flags): Promise<void> {
+  const boardId = getBoardId(flags)
+  const card = await sdk.getActiveCard(boardId)
+
+  if (flags.json) {
+    console.log(JSON.stringify(card, null, 2))
+    return
+  }
+
+  if (!card) {
+    console.log(dim('  No active card.'))
+    return
+  }
+
+  console.log(formatCardDetail(card))
+}
+
 async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
@@ -1435,6 +1452,7 @@ ${bold('Usage:')}
 
 ${bold('Card Commands:')}
   list                        List cards
+  active                      Show the currently active/open card
   show <id>                   Show card details
   add --title "..."           Create a new card
   move <id> <status>          Move card to a new status (--position <n>)
@@ -1641,6 +1659,9 @@ async function main(): Promise<void> {
     case 'list':
     case 'ls':
       await cmdList(sdk, flags)
+      break
+    case 'active':
+      await cmdActive(sdk, flags)
       break
     case 'show':
     case 'view':

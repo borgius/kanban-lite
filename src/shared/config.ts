@@ -184,7 +184,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: true,
+  compactMode: false,
   markdownEditorMode: false,
   showDeletedColumn: false,
   boardZoom: 100,

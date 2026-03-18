@@ -172,7 +172,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    compactMode: true,
+    compactMode: false,
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium',

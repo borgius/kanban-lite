@@ -161,6 +161,21 @@ const ROUTES: Route[] = [
   },
   {
     section: 'Tasks (Default Board)',
+    subsection: 'Get Active Task',
+    method: 'GET',
+    path: '/api/tasks/active',
+    description: 'Returns the currently active/open task, or `null` when no task is active.',
+    response: `{
+  "ok": true,
+  "data": {
+    "id": "42",
+    "status": "in-progress",
+    "priority": "high"
+  }
+}`,
+  },
+  {
+    section: 'Tasks (Default Board)',
     subsection: 'Create Task',
     method: 'POST',
     path: '/api/tasks',
@@ -231,6 +246,7 @@ const ROUTES: Route[] = [
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | \`GET\` | \`/api/boards/:boardId/tasks\` | List tasks (supports the same \`q\`, \`fuzzy\`, \`meta.*\`, and standard filters) |
+| \`GET\` | \`/api/boards/:boardId/tasks/active\` | Get the currently active/open task for the board |
 | \`POST\` | \`/api/boards/:boardId/tasks\` | Create a task in the board |
 | \`GET\` | \`/api/boards/:boardId/tasks/:id\` | Get a task |
 | \`PUT\` | \`/api/boards/:boardId/tasks/:id\` | Update a task |

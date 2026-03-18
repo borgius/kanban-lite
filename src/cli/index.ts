@@ -12,7 +12,7 @@ type Flags = Record<string, string | true | string[]>
 
 // --- Arg parsing ---
 
-function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Flags } {
+export function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Flags } {
   const args = argv.slice(2)
   const command = args[0] || 'help'
   const positional: string[] = []
@@ -163,8 +163,10 @@ function formatCardDetail(c: Card): string {
 
 // --- Card Commands ---
 
-async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
+export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
+  const searchQuery = typeof flags.search === 'string' ? flags.search : undefined
+  const fuzzy = flags.fuzzy === true
 
   const metaFilter: Record<string, string> | undefined = Array.isArray(flags.meta) ? (() => {
     const mf: Record<string, string> = {}
@@ -190,7 +192,12 @@ async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
     sortOpt = sort
   }
 
-  let cards = await sdk.listCards(undefined, boardId, metaFilter, sortOpt)
+  let cards = await sdk.listCards(undefined, boardId, {
+    metaFilter,
+    sort: sortOpt,
+    searchQuery,
+    fuzzy,
+  })
 
   if (!flags['include-deleted']) {
     cards = cards.filter(c => c.status !== 'deleted')
@@ -1418,7 +1425,7 @@ async function showDocHelp(topic: string): Promise<void> {
   }
 }
 
-function showHelp(): void {
+export function showHelp(): void {
   console.log(`
 ${bold('kanban-lite')} (${bold('kl')}) - Manage your kanban board from the command line
 
@@ -1499,6 +1506,8 @@ ${bold('Global Options:')}
   --json                      Output as JSON
 
 ${bold('List Filters:')}
+  --search <text>            Search card content and inline metadata tokens
+  --fuzzy                    Enable fuzzy search for --search and metadata token matching
   --status <status>           Filter by status
   --priority <priority>       Filter by priority (critical, high, medium, low)
   --assignee <name>           Filter by assignee
@@ -1723,7 +1732,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(err => {
-  console.error(red(`Error: ${err.message}`))
-  process.exit(1)
-})
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
+  main().catch(err => {
+    console.error(red(`Error: ${err.message}`))
+    process.exit(1)
+  })
+}

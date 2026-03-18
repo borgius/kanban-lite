@@ -10,7 +10,6 @@ import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, writeConfig } from '../shared/config'
 import { sanitizeCard } from '../sdk/types'
 import { fireWebhooks } from './webhooks'
-import { matchesMetaFilter } from '../sdk/metaUtils'
 
 interface CreateCardData {
   status: string
@@ -89,16 +88,27 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   // --- Helpers ---
 
-  const VALID_SORTS: CardSortOption[] = ['created:asc', 'created:desc', 'modified:asc', 'modified:desc']
+  function getListCardsOptions(searchParams: URLSearchParams): {
+    metaFilter?: Record<string, string>
+    sort?: CardSortOption
+    searchQuery?: string
+    fuzzy?: boolean
+  } {
+    const metaFilter: Record<string, string> = {}
+    for (const [param, value] of searchParams.entries()) {
+      if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
+    }
 
-  function applySortParam<T extends { created: string; modified: string }>(result: T[], sortParam: string | null): T[] {
-    if (!sortParam || !VALID_SORTS.includes(sortParam as CardSortOption)) return result
-    const [field, dir] = sortParam.split(':')
-    return [...result].sort((a, b) => {
-      const aVal = field === 'created' ? a.created : a.modified
-      const bVal = field === 'created' ? b.created : b.modified
-      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-    })
+    const sort = searchParams.get('sort') as CardSortOption | null
+    const searchQuery = searchParams.get('q')?.trim() || undefined
+    const fuzzyParam = searchParams.get('fuzzy')
+
+    return {
+      metaFilter: Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
+      sort: sort || undefined,
+      searchQuery,
+      fuzzy: fuzzyParam?.toLowerCase() === 'true' ? true : undefined,
+    }
   }
 
   function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -1021,15 +1031,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       try {
         const { boardId } = params
         const boardColumns = sdk.listColumns(boardId)
-        const metaFilter: Record<string, string> = {}
-        for (const [param, value] of url.searchParams.entries()) {
-          if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value
-        }
-        const sortParam = url.searchParams.get('sort') as CardSortOption | null
+        const listCardsOptions = getListCardsOptions(url.searchParams)
         const boardTasks = await sdk.listCards(
           boardColumns.map(c => c.id), boardId,
-          Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
-          sortParam || undefined
+          listCardsOptions
         )
         let result = boardTasks.map(sanitizeCard)
         if (url.searchParams.get('includeDeleted') !== 'true') {
@@ -1174,13 +1179,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('GET', '/api/tasks')
     if (params) {
-      const metaFilter2: Record<string, string> = {}
-      for (const [param, value] of url.searchParams.entries()) {
-        if (param.startsWith('meta.')) metaFilter2[param.slice(5)] = value
-      }
-      const sortParam2 = url.searchParams.get('sort') as CardSortOption | null
-      await loadCards()
-      let result = cards.map(sanitizeCard)
+      const listCardsOptions = getListCardsOptions(url.searchParams)
+      const taskCards = await sdk.listCards(undefined, undefined, listCardsOptions)
+      let result = taskCards.map(sanitizeCard)
       if (url.searchParams.get('includeDeleted') !== 'true') {
         result = result.filter(f => f.status !== 'deleted')
       }
@@ -1197,9 +1198,6 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const groupLabels = sdk.getLabelsInGroup(labelGroup)
         result = result.filter(f => f.labels.some(l => groupLabels.includes(l)))
       }
-      if (Object.keys(metaFilter2).length > 0)
-        result = result.filter(f => matchesMetaFilter(f.metadata, metaFilter2))
-      result = applySortParam(result, sortParam2)
       return jsonOk(res, result)
     }
 

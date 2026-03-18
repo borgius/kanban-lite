@@ -1,0 +1,558 @@
+plan_id: 20260318-metadata-fuzzy-search
+objective: >-
+  Identify all files, symbols, state stores, and tests relevant to showing metadata
+  fields in cards and adding a filter icon/action for each displayed metadata
+  field (highlighted or regular). Also identify where top toolbar search UI lives,
+  how search currently works, and which files would likely need changes for
+  adding a Fuzzy checkbox next to search.
+focus_area: webview-card-metadata-and-search
+created_at: 2026-03-18
+created_by: GitHub Copilot (GPT-5.4)
+status: completed
+
+tldr: |
+  - `src/webview/components/Toolbar.tsx` owns the top toolbar search input; search state lives in the Zustand store at `src/webview/store/index.ts` and is mirrored into standalone URLs by `src/webview/router.tsx`.
+  - Card metadata is currently only surfaced on cards as a count badge in `src/webview/components/CardItem.tsx`; board-pinned metadata keys already exist and are rendered in the card detail panel by `src/webview/components/CardEditor.tsx` from `BoardInfo.metadata` / `BoardConfig.metadata`.
+  - Existing metadata filtering already exists in two places: UI-only parsing/filtering in `src/webview/store/index.ts` (`parseMetaTokens`, `getFilteredCardsByStatus`) and SDK-level substring matching in `src/sdk/metaUtils.ts` + `src/sdk/modules/cards.ts`.
+  - If “Fuzzy” is only a toolbar/UI concern, the minimal scope is webview store + toolbar + router/saved-view persistence; if fuzzy matching must affect API/CLI/MCP parity, the SDK/filter helpers and interface layers become in-scope per `AGENTS.md`.
+  - Test coverage exists for SDK metadata filtering (`src/sdk/__tests__/metadata.test.ts`, `src/sdk/__tests__/metaUtils.test.ts`), but no direct webview tests were found for toolbar search or card metadata rendering.
+
+research_metadata:
+  methodology: >-
+    Hybrid retrieval using semantic_search for conceptual discovery, grep_search for
+    exact symbol/pattern lookup, and targeted read_file passes for the minimum
+    relevant sections. Relationships traced from UI components -> Zustand store ->
+    router URL sync -> shared config/types -> SDK metadata filtering.
+  scope: >-
+    Focused only on card metadata display, toolbar search/filter state, board metadata
+    definitions, and existing metadata filter logic/tests. No full-repo scan.
+  confidence: high
+  coverage: 86
+
+files_analyzed:
+  - file: CardItem.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/CardItem.tsx
+    purpose: Renders each board card in the kanban UI.
+    key_elements:
+      - element: CardItem
+        type: function
+        location: src/webview/components/CardItem.tsx:37
+        description: Uses `cardSettings` and currently renders metadata only as a `{N}` count badge in the card footer.
+    language: tsx
+    lines: 220
+
+  - file: Toolbar.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/Toolbar.tsx
+    purpose: Renders the top toolbar including board switcher, search, filters, views, and actions.
+    key_elements:
+      - element: Toolbar
+        type: function
+        location: src/webview/components/Toolbar.tsx:43
+        description: Owns the search input UI and binds it directly to `searchQuery` in the store.
+      - element: applyView
+        type: function
+        location: src/webview/components/Toolbar.tsx:210
+        description: Restores persisted filter state from `SavedView`, currently including `searchQuery` but no fuzzy flag.
+    language: tsx
+    lines: 470
+
+  - file: store/index.ts
+    path: /Users/admin/dev/kanban-light/src/webview/store/index.ts
+    purpose: Zustand UI state store and in-memory filtering logic for visible cards.
+    key_elements:
+      - element: SavedView
+        type: interface
+        location: src/webview/store/index.ts:9
+        description: Persists current toolbar filter state; currently stores `searchQuery` but no fuzzy toggle.
+      - element: KanbanState.searchQuery
+        type: variable
+        location: src/webview/store/index.ts:25
+        description: Global search string used by toolbar and filtered card queries.
+      - element: parseMetaTokens
+        type: function
+        location: src/webview/store/index.ts:138
+        description: Parses `meta.path: value` tokens from the search box.
+      - element: setSearchQuery
+        type: function
+        location: src/webview/store/index.ts:222
+        description: Mutates toolbar search state.
+      - element: getFilteredCardsByStatus
+        type: function
+        location: src/webview/store/index.ts:250
+        description: Applies UI-side search, metadata token filtering, and plain-text contains matching.
+    language: ts
+    lines: 420
+
+  - file: router.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/router.tsx
+    purpose: Syncs standalone URL search params with the Zustand store.
+    key_elements:
+      - element: URLSync
+        type: function
+        location: src/webview/router.tsx:69
+        description: Restores `q` into `searchQuery` and writes store state back into the URL.
+      - element: RouteSearch.q
+        type: interface
+        location: src/webview/router.tsx:42
+        description: URL parameter that currently carries only raw search text.
+    language: tsx
+    lines: 240
+
+  - file: App.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/App.tsx
+    purpose: Main webview application shell that mounts toolbar, board, editor, and listens for extension init messages.
+    key_elements:
+      - element: handleMessage(init)
+        type: function
+        location: src/webview/App.tsx:261
+        description: Loads `boards`, `settings`, and other state into the store on init.
+      - element: Toolbar mount
+        type: pattern
+        location: src/webview/App.tsx:702
+        description: Single mount point for top toolbar UI.
+    language: tsx
+    lines: 251
+
+  - file: CardEditor.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/CardEditor.tsx
+    purpose: Card detail/editor UI including pinned metadata display and advanced metadata tree.
+    key_elements:
+      - element: pinnedMetadataKeys
+        type: variable
+        location: src/webview/components/CardEditor.tsx:725
+        description: Reads `boards.find(b => b.id === currentBoard)?.metadata ?? []` to decide which metadata keys are elevated in the detail panel.
+      - element: MetadataSection
+        type: function
+        location: src/webview/components/CardEditor.tsx:533
+        description: Reference for metadata summary/expand UI.
+      - element: pinned metadata PropertyRow loop
+        type: pattern
+        location: src/webview/components/CardEditor.tsx:1018
+        description: Existing pattern for rendering per-key metadata rows from board-configured keys.
+    language: tsx
+    lines: 1095
+
+  - file: SettingsPanel.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/SettingsPanel.tsx
+    purpose: Settings UI for card display preferences.
+    key_elements:
+      - element: SettingsSection(title="Card Display")
+        type: pattern
+        location: src/webview/components/SettingsPanel.tsx:642
+        description: Existing home for persisted display toggles such as assignee, due date, labels, and filename.
+    language: tsx
+    lines: 700
+
+  - file: LogsSection.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/LogsSection.tsx
+    purpose: Log viewer UI with reusable small checkbox rows.
+    key_elements:
+      - element: CheckboxItem
+        type: function
+        location: src/webview/components/LogsSection.tsx:166
+        description: Reference pattern for a compact inline checkbox UI matching current webview styling.
+    language: tsx
+    lines: 220
+
+  - file: shared/types.ts
+    path: /Users/admin/dev/kanban-light/src/shared/types.ts
+    purpose: Shared UI/domain types used by webview and extension layers.
+    key_elements:
+      - element: BoardInfo.metadata
+        type: interface
+        location: src/shared/types.ts:121
+        description: Declares per-board pinned metadata keys already used by the editor.
+      - element: CardDisplaySettings
+        type: interface
+        location: src/shared/types.ts:252
+        description: Persisted card display preferences; would need extension if fuzzy is a saved setting.
+    language: ts
+    lines: 360
+
+  - file: shared/config.ts
+    path: /Users/admin/dev/kanban-light/src/shared/config.ts
+    purpose: Workspace config schema persisted to `.kanban.json`.
+    key_elements:
+      - element: BoardConfig.metadata
+        type: interface
+        location: src/shared/config.ts:51
+        description: Persistent board-level metadata key list feeding `BoardInfo.metadata`.
+    language: ts
+    lines: 120
+
+  - file: sdk/metaUtils.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/metaUtils.ts
+    purpose: Shared SDK helpers for metadata lookup and matching.
+    key_elements:
+      - element: getNestedValue
+        type: function
+        location: src/sdk/metaUtils.ts:13
+        description: Resolves dot-notation paths into metadata values.
+      - element: matchesMetaFilter
+        type: function
+        location: src/sdk/metaUtils.ts:41
+        description: Case-insensitive substring matcher for metadata filters.
+    language: ts
+    lines: 140
+
+  - file: sdk/modules/cards.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+    purpose: SDK card listing and filtering logic.
+    key_elements:
+      - element: listCards
+        type: function
+        location: src/sdk/modules/cards.ts:17
+        description: Applies `metaFilter` via `matchesMetaFilter` before sorting.
+    language: ts
+    lines: 120
+
+  - file: sdk/KanbanSDK.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+    purpose: Public SDK surface.
+    key_elements:
+      - element: listCards
+        type: function
+        location: src/sdk/KanbanSDK.ts:431
+        description: Public API contract exposing metadata filter behavior.
+    language: ts
+    lines: 440
+
+  - file: sdk/modules/boards.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/modules/boards.ts
+    purpose: Board config read/update operations.
+    key_elements:
+      - element: updateBoard
+        type: function
+        location: src/sdk/modules/boards.ts:113
+        description: Persists board-level `metadata` arrays in config.
+    language: ts
+    lines: 160
+
+  - file: standalone/server.ts
+    path: /Users/admin/dev/kanban-light/src/standalone/server.ts
+    purpose: REST API layer over SDK.
+    key_elements:
+      - element: GET /api/boards/:boardId/tasks
+        type: pattern
+        location: src/standalone/server.ts:1018
+        description: Parses `meta.*` query params into `metaFilter` and passes them to `sdk.listCards`.
+    language: ts
+    lines: 1055
+
+  - file: cli/index.ts
+    path: /Users/admin/dev/kanban-light/src/cli/index.ts
+    purpose: CLI list command and flag handling.
+    key_elements:
+      - element: cmdList
+        type: function
+        location: src/cli/index.ts:167
+        description: Parses `--meta key=value` flags and forwards them to `sdk.listCards`.
+    language: ts
+    lines: 210
+
+patterns_found:
+  - category: structure
+    pattern: Toolbar search is store-driven, not locally owned
+    description: Search input writes directly into a shared Zustand field, and all visible card filtering derives from store selectors.
+    examples:
+      - file: src/webview/components/Toolbar.tsx
+        location: "44-45, 320-323"
+        snippet: "const searchQuery = useStore(s => s.searchQuery); const setSearchQuery = useStore(s => s.setSearchQuery); <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />"
+      - file: src/webview/store/index.ts
+        location: "222, 250-347"
+        snippet: "setSearchQuery: (query) => set({ searchQuery: query }); getFilteredCardsByStatus(...)"
+    prevalence: common
+
+  - category: architecture
+    pattern: Metadata search is duplicated in UI and SDK layers
+    description: The webview store parses `meta.*` tokens itself, while SDK filtering uses `matchesMetaFilter`; semantics are currently similar substring matching but implemented separately.
+    examples:
+      - file: src/webview/store/index.ts
+        location: "138-144, 315-333"
+        snippet: "parseMetaTokens(...); Object.entries(metaFilter).every(([path, needle]) => ... String(val).toLowerCase().includes(...) )"
+      - file: src/sdk/metaUtils.ts
+        location: "41-52"
+        snippet: "matchesMetaFilter(metadata, filter)"
+    prevalence: occasional
+
+  - category: structure
+    pattern: Board metadata keys already drive focused metadata rendering
+    description: Board-configured metadata keys are already surfaced in the card editor before the advanced section.
+    examples:
+      - file: src/shared/types.ts
+        location: "121-122"
+        snippet: "metadata?: string[]"
+      - file: src/webview/components/CardEditor.tsx
+        location: "725, 1018-1035"
+        snippet: "const pinnedMetadataKeys = boards.find(b => b.id === currentBoard)?.metadata ?? []; pinnedMetadataKeys.map(key => ...)"
+    prevalence: occasional
+
+  - category: naming
+    pattern: Persisted UI filter state is grouped into SavedView and URL query params
+    description: Filter-related state is saved/restored together, so a new fuzzy flag likely belongs wherever searchQuery persistence currently lives.
+    examples:
+      - file: src/webview/store/index.ts
+        location: "9-16, 193-204"
+        snippet: "interface SavedView { ... searchQuery: string ... }"
+      - file: src/webview/router.tsx
+        location: "42-58, 114-139, 160-201"
+        snippet: "RouteSearch.q; setSearchQuery(decodeURIComponent(search.q)); if (searchQuery) searchObj.q = searchQuery"
+    prevalence: common
+
+  - category: structure
+    pattern: Compact checkbox/toggle UI is implemented as a button row
+    description: Existing checkbox pattern in LogsSection can be reused for a small 'Fuzzy' control beside search.
+    examples:
+      - file: src/webview/components/LogsSection.tsx
+        location: "166-192"
+        snippet: "function CheckboxItem({ label, checked, onChange }) { ... }"
+    prevalence: rare
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: Toolbar
+      responsibility: Top-level search/filter controls
+      location: src/webview/components/Toolbar.tsx
+      relationship_to_domain: domain owns search UI and likely fuzzy checkbox placement
+    - component: Zustand store
+      responsibility: Shared UI filter state and filtered-card selectors
+      location: src/webview/store/index.ts
+      relationship_to_domain: domain depends on this for search semantics and visible-card filtering
+    - component: URLSync/router
+      responsibility: Standalone URL <-> store synchronization
+      location: src/webview/router.tsx
+      relationship_to_domain: this uses domain outputs
+    - component: CardItem
+      responsibility: Card tile rendering in board columns
+      location: src/webview/components/CardItem.tsx
+      relationship_to_domain: domain depends on this to show metadata fields on cards
+    - component: CardEditor
+      responsibility: Existing pinned metadata rendering reference
+      location: src/webview/components/CardEditor.tsx
+      relationship_to_domain: domain depends on this for current board-metadata display behavior
+    - component: SDK card filter path
+      responsibility: Cross-interface metadata filtering behavior
+      location: src/sdk/metaUtils.ts and src/sdk/modules/cards.ts
+      relationship_to_domain: optional extension if fuzzy semantics must affect non-webview interfaces
+  interfaces_used_by_domain:
+    - interface: CardDisplaySettings
+      location: src/shared/types.ts:252
+      usage_pattern: Controls persisted card/UI display toggles used by webview components and settings panel.
+    - interface: BoardInfo.metadata
+      location: src/shared/types.ts:121
+      usage_pattern: Carries board-pinned metadata keys from config into webview state.
+    - interface: BoardConfig.metadata
+      location: src/shared/config.ts:51
+      usage_pattern: Persists board-level metadata key arrays in `.kanban.json`.
+    - interface: SavedView
+      location: src/webview/store/index.ts:9
+      usage_pattern: Captures current search/filter UI state for reapplication.
+  data_flow_involving_domain: >-
+    Extension/server sends `boards`, `settings`, and cards into `App.tsx`, which loads
+    them into the Zustand store. `Toolbar.tsx` updates `searchQuery`, which is consumed
+    by `getFilteredCardsByStatus` in the store to filter visible cards. In standalone mode,
+    `router.tsx` mirrors `searchQuery` into the `q` URL param. Board metadata keys originate
+    in config (`BoardConfig.metadata`), flow through `BoardInfo.metadata`, and are consumed by
+    `CardEditor.tsx`; `CardItem.tsx` does not yet consume them.
+  key_relationships_to_domain:
+    - from: src/webview/components/Toolbar.tsx
+      to: src/webview/store/index.ts
+      relationship: calls
+    - from: src/webview/router.tsx
+      to: src/webview/store/index.ts
+      relationship: calls
+    - from: src/webview/App.tsx
+      to: src/webview/components/Toolbar.tsx
+      relationship: composes
+    - from: src/webview/App.tsx
+      to: src/webview/store/index.ts
+      relationship: calls
+    - from: src/webview/components/CardEditor.tsx
+      to: src/shared/types.ts
+      relationship: uses
+    - from: src/sdk/modules/cards.ts
+      to: src/sdk/metaUtils.ts
+      relationship: calls
+    - from: src/standalone/server.ts
+      to: src/sdk/KanbanSDK.ts
+      relationship: calls
+    - from: src/cli/index.ts
+      to: src/sdk/KanbanSDK.ts
+      relationship: calls
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - TSX
+  frameworks_used_in_domain:
+    - name: React
+      usage_in_domain: Webview components such as Toolbar, CardItem, CardEditor, and SettingsPanel.
+    - name: Zustand
+      usage_in_domain: Shared client-side state store for toolbar filters and card visibility.
+    - name: TanStack Router
+      usage_in_domain: Standalone URL synchronization for search/filter state.
+    - name: Vitest
+      usage_in_domain: SDK metadata filter tests.
+  libraries_used_in_domain:
+    - name: lucide-react
+      purpose_in_domain: Toolbar/card/editor icons and likely source for a metadata filter icon.
+    - name: marked
+      purpose_in_domain: Markdown rendering inside CardItem descriptions.
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: >-
+    UI state uses `searchQuery`, `setSearchQuery`, `*Filter`, `set*Filter`, and `SavedView`.
+    Metadata path filters use the `meta.<path>: value` token format in the toolbar/store and
+    `meta.*` query parameters in the standalone API.
+  structure_of_domain: >-
+    Toolbar and card rendering remain in `src/webview/components`; shared filter logic is kept
+    in the Zustand store rather than colocated in components. Persistent cross-layer config types
+    live under `src/shared/`, and SDK filtering logic lives under `src/sdk/`.
+  error_handling_in_domain: >-
+    UI filtering is fail-closed for metadata lookups (`!f.metadata => false`). SDK/server layers
+    similarly omit cards when metadata paths do not resolve.
+  testing_in_domain: >-
+    Automated coverage exists for SDK metadata filter helpers and `sdk.listCards` metadata filtering.
+    No direct webview tests were found for toolbar search or card metadata rendering.
+  documentation_in_domain: >-
+    Public SDK documentation for metadata filtering is driven by JSDoc on `KanbanSDK.listCards`.
+    Board metadata persistence is documented in shared config/types comments.
+
+related_dependencies:
+  internal:
+    - component: src/webview/store/index.ts
+      relationship_to_domain: Shared search/filter state and selector logic
+      direction: bidirectional
+    - component: src/webview/router.tsx
+      relationship_to_domain: Persists/restores search state in standalone URLs
+      direction: outbound
+    - component: src/webview/components/CardEditor.tsx
+      relationship_to_domain: Existing board metadata display pattern
+      direction: outbound
+    - component: src/shared/types.ts
+      relationship_to_domain: Defines board metadata and persisted UI settings contracts
+      direction: outbound
+    - component: src/shared/config.ts
+      relationship_to_domain: Persists board metadata arrays in workspace config
+      direction: outbound
+    - component: src/sdk/metaUtils.ts
+      relationship_to_domain: Canonical SDK metadata matching helper
+      direction: outbound
+    - component: src/sdk/modules/cards.ts
+      relationship_to_domain: Applies metadata filter in public SDK list path
+      direction: outbound
+    - component: src/standalone/server.ts
+      relationship_to_domain: REST surface for metadata filters if parity is required
+      direction: outbound
+    - component: src/cli/index.ts
+      relationship_to_domain: CLI surface for metadata filters if parity is required
+      direction: outbound
+  external:
+    - name: zustand
+      purpose_for_domain: Client-side state management
+    - name: @tanstack/react-router
+      purpose_for_domain: URL state sync in standalone mode
+    - name: lucide-react
+      purpose_for_domain: Toolbar and metadata action icons
+    - name: vitest
+      purpose_for_domain: Unit testing metadata filter behavior
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: Metadata rendering in card UI
+      location: src/webview/components/CardItem.tsx and src/webview/components/CardEditor.tsx
+      concern: Metadata may contain file paths or URLs; existing editor code already treats these specially.
+  authentication_patterns_in_domain: Not applicable in the researched domain.
+  authorization_patterns_in_domain: Not applicable in the researched domain.
+  data_validation_in_domain: >-
+    Metadata path lookup is permissive and stringifies values for matching. No schema validation for
+    metadata values was observed in the researched UI/search path.
+
+testing_patterns:
+  framework: Vitest
+  coverage_areas:
+    - SDK helper behavior for nested metadata lookup and case-insensitive substring matching
+    - SDK `listCards` behavior for flat and nested metadata filters and AND semantics
+  test_organization: >-
+    Metadata helper tests live in `src/sdk/__tests__/metaUtils.test.ts`; end-to-end SDK metadata
+    filter behavior lives in `src/sdk/__tests__/metadata.test.ts`.
+  mock_patterns:
+    - Temporary workspace directories created with `fs.mkdtempSync(...)`
+    - Real `KanbanSDK` instances initialized against temp `.kanban.json` configs
+
+open_questions:
+  - question: Should metadata fields shown on card tiles be driven by existing board-level `metadata` keys, or by a new card-display setting?
+    context: The editor already consumes `BoardInfo.metadata`, but `CardItem` does not; the desired source of truth for on-card metadata display was not specified in code.
+  - question: Should the proposed `Fuzzy` checkbox change only webview search semantics, or must it also affect SDK/REST/CLI/MCP metadata filtering for parity?
+    context: `AGENTS.md` requires SDK-first changes when business logic changes, but current fuzzy behavior does not exist anywhere.
+  - question: Should the fuzzy toggle persist across refresh/navigation/saved views/settings?
+    context: Search state currently spans store, URL sync, and saved views; scope changes materially depending on whether the flag is ephemeral or persisted.
+  - question: How should “highlighted or regular” metadata fields be distinguished on cards?
+    context: No existing card-tile implementation differentiates metadata display states; only the editor has pinned-vs-advanced metadata.
+
+gaps:
+  - area: Webview test coverage
+    description: No dedicated webview tests were found for `Toolbar` search behavior, `CardItem` metadata rendering, or a checkbox control near search.
+    impact: UI changes will likely require adding new tests from scratch or relying on manual verification.
+  - area: Server/API test coverage for metadata query params
+    description: No standalone integration tests were found covering `meta.*` query param handling for `/api/boards/:boardId/tasks`.
+    impact: If fuzzy matching/parity expands beyond the webview, server regression coverage appears thin.
+  - area: Board metadata editing flow
+    description: This pass confirmed board metadata persistence and consumption, but did not locate a dedicated existing UI for editing board metadata arrays.
+    impact: If showing metadata on cards also requires changing how board metadata keys are configured, additional discovery will be needed.
+
+context_map_markdown: |
+  ## Context Map
+
+  ### Files to Modify
+  | File | Purpose | Likely Change |
+  |---|---|---|
+  | `src/webview/components/CardItem.tsx` | Card tile renderer | Show selected metadata fields on cards; add per-field filter icon/action; handle highlighted vs regular presentation |
+  | `src/webview/components/Toolbar.tsx` | Top toolbar/search UI | Add `Fuzzy` checkbox beside search; possibly reflect fuzzy state in chips/views |
+  | `src/webview/store/index.ts` | Search/filter state + filtered selector | Add fuzzy state, extend search/filter semantics, possibly centralize metadata field click-to-filter behavior |
+  | `src/webview/router.tsx` | Standalone URL sync | Needed if fuzzy must persist in standalone URL/history |
+  | `src/webview/App.tsx` | Toolbar mount + init wiring | Only needed if fuzzy or metadata-card config arrives via init/settings messages |
+  | `src/shared/types.ts` | Shared state/config contracts | Needed if fuzzy becomes persisted setting or if card display settings gain metadata-card options |
+  | `src/webview/components/SettingsPanel.tsx` | Persisted display toggles UI | Only needed if fuzzy or metadata-on-card display becomes a saved setting |
+  | `src/webview/components/CardEditor.tsx` | Existing pinned metadata pattern | Reference/possible shared extraction if card tiles reuse board metadata keys |
+  | `src/shared/config.ts` | Persisted board config schema | Needed only if board metadata config model changes |
+  | `src/sdk/metaUtils.ts` | Canonical metadata matcher | Needed if fuzzy becomes SDK/business logic rather than webview-only |
+  | `src/sdk/modules/cards.ts` | SDK list/filter path | Needed if fuzzy changes must affect SDK outputs |
+  | `src/sdk/KanbanSDK.ts` | Public SDK contract/JSDoc | Needed if SDK filter behavior changes |
+  | `src/standalone/server.ts` | REST metadata filter entrypoint | Needed if fuzzy/parity extends to API |
+  | `src/cli/index.ts` | CLI metadata filter entrypoint | Needed if fuzzy/parity extends to CLI |
+
+  ### Dependencies
+  | File | Relationship |
+  |---|---|
+  | `src/webview/store/index.ts` | `Toolbar` reads/writes `searchQuery`; `CardItem` indirectly depends on filtered store output |
+  | `src/webview/router.tsx` | Mirrors `searchQuery` into `q` and restores it in standalone mode |
+  | `src/shared/types.ts` | Defines `BoardInfo.metadata` and `CardDisplaySettings` used by webview |
+  | `src/shared/config.ts` | Defines persisted `BoardConfig.metadata` source-of-truth for pinned metadata keys |
+  | `src/webview/components/CardEditor.tsx` | Existing implementation of board-pinned metadata rendering |
+  | `src/sdk/metaUtils.ts` | Shared SDK metadata path resolution and matching helper |
+  | `src/sdk/modules/cards.ts` | Applies SDK metadata filter via `matchesMetaFilter` |
+  | `src/webview/App.tsx` | Loads `boards`/`settings` into store and mounts `Toolbar` |
+
+  ### Test Files
+  | Test | Coverage |
+  |---|---|
+  | `src/sdk/__tests__/metadata.test.ts` | `sdk.listCards(..., metaFilter)` behavior for flat/nested keys, AND logic, empty/non-empty cases |
+  | `src/sdk/__tests__/metaUtils.test.ts` | `getNestedValue` and `matchesMetaFilter` helper behavior |
+  | `src/standalone/__tests__/server.integration.test.ts` | No direct metadata-query coverage found in this pass; likely file to extend if API parity changes |
+
+  ### Reference Patterns
+  | File | Pattern |
+  |---|---|
+  | `src/webview/components/CardEditor.tsx` | `pinnedMetadataKeys.map(...)` renders per-key metadata rows from board config |
+  | `src/webview/components/Toolbar.tsx` | Existing search/filter control layout and saved-view restore flow |
+  | `src/webview/components/LogsSection.tsx` | Compact checkbox row pattern (`CheckboxItem`) usable for a `Fuzzy` toggle |
+  | `src/webview/store/index.ts` | `parseMetaTokens` + `getFilteredCardsByStatus` search semantics |
+  | `src/sdk/metaUtils.ts` | Canonical nested metadata lookup + case-insensitive substring matching |
+
+  ### Risks
+  - If fuzzy is treated as business logic rather than UI sugar, `AGENTS.md` pushes the change into SDK -> API -> CLI -> MCP order, expanding scope.
+  - Search state already fans out into store, saved views, and standalone URL sync; a new fuzzy flag can become inconsistent if only one of those layers changes.
+  - Metadata matching logic currently exists in both the webview store and SDK helper paths; changing only one may create UI/API behavior drift.
+  - `CardItem` currently has no per-metadata rendering abstraction, so adding per-field actions may grow local complexity unless it reuses an existing metadata display helper.

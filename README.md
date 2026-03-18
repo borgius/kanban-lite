@@ -71,7 +71,11 @@ kl add --title "My first task" --priority high
 - **Timestamps**: Created and modified dates tracked automatically
 
 ### Filtering & Search
-- **Full-text search**: Search across content, IDs, assignees, and labels
+- **Toolbar search with optional fuzzy mode**: Exact search is the default; enable the `Fuzzy` toggle in the web UI to match near-misses across card text and metadata values
+- **Metadata token search**: Use `meta.field: value` tokens for field-scoped searches that behave consistently across the web UI, CLI, REST API, and MCP
+- **Removable search chips**: Mixed searches are split into separate toolbar chips for plain text and each `meta.*` token, so you can remove one constraint without clearing the whole query
+- **Metadata filter buttons**: Click the filter icon next to rendered metadata values in the card detail panel to inject the correct `meta.field: value` token into the shared search box
+- **Clickable label filters**: Click a label on a board card or in the card detail panel to immediately filter the board to that label
 - **Priority filter**: Show only critical, high, medium, or low items
 - **Assignee filter**: Filter by team member or show unassigned items
 - **Label filter**: Filter by specific labels
@@ -98,6 +102,13 @@ kl list
 
 # List with filters
 kl list --status todo --priority high
+
+# Exact and fuzzy search
+kl list --search "release meta.team: backend"
+kl list --search "meta.team: backnd api plumbng" --fuzzy
+
+# Combine fuzzy search with structured metadata filters
+kl list --search "release" --fuzzy --meta sprint=Q1 --meta links.jira=PROJ-123
 
 # Create a card
 kl add --title "Implement search" --priority high --label "frontend,search"
@@ -248,7 +259,7 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/tasks` | List all tasks (query: `?status=&priority=&assignee=&label=`) |
+| `GET` | `/api/tasks` | List all tasks (query: `?q=&fuzzy=&meta.<field>=&status=&priority=&assignee=&label=`) |
 | `GET` | `/api/tasks/:id` | Get a single task |
 | `POST` | `/api/tasks` | Create a task |
 | `PUT` | `/api/tasks/:id` | Update task properties |
@@ -256,6 +267,8 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `DELETE` | `/api/tasks/:id` | Delete a task |
 
 Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
+
+`q` is the free-text search input, `fuzzy=true` enables typo-tolerant matching, and `meta.<field>=value` keeps metadata filtering field-scoped. The same search semantics are shared with `kl list --search ... --fuzzy` and the MCP `list_cards` tool.
 
 #### Transfer
 
@@ -336,6 +349,13 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 curl -X POST http://localhost:3000/api/tasks \
   -H "Content-Type: application/json" \
   -d '{"content": "# My Task\n\nDescription here", "status": "todo", "priority": "high"}'
+```
+
+### Example: Search tasks via API
+
+```bash
+curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"
+curl "http://localhost:3000/api/boards/bugs/tasks?q=meta.team%3A%20backnd&fuzzy=true&meta.region=us-east"
 ```
 
 ## Webhooks
@@ -527,7 +547,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `get_board` | Get board configuration and details |
 | `delete_board` | Delete an empty board |
 | `transfer_card` | Move a card from one board to another |
-| `list_cards` | List/filter cards by status, priority, assignee, or label |
+| `list_cards` | List/filter cards by status, priority, assignee, label, `searchQuery`, `fuzzy`, and `metaFilter` |
 | `get_card` | Get full details of a card (supports partial ID matching) |
 | `create_card` | Create a new card with title, body, status, priority, etc. |
 | `update_card` | Update fields of an existing card |
@@ -558,6 +578,8 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
 | `get_workspace_info` | Get workspace root path, storage engine, and features directory |
+
+For agent-driven search, pass `searchQuery` for free text (including inline tokens like `meta.team: backend`), set `fuzzy: true` to widen matching across text and metadata values, or use `metaFilter` when you want structured dot-notation field filters.
 | `get_storage_status` | Get current storage engine type and configuration |
 | `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
 | `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |

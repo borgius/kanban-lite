@@ -43,6 +43,7 @@ function renderDescriptionHtml(text: string): string {
 export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
   const cardSettings = useStore(s => s.cardSettings)
   const labelDefs = useStore(s => s.labelDefs)
+  const applyLabelFilter = useStore(s => s.applyLabelFilter)
   const title = getTitleFromContent(card.content)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
@@ -141,13 +142,21 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
             {(cardSettings.compactMode ? card.labels.slice(0, 2) : card.labels).map((label) => {
               const def = labelDefs[label]
               return (
-                <span
+                <button
+                  type="button"
                   key={label}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    applyLabelFilter(label)
+                  }}
                   className={`text-xs px-1.5 py-0.5 rounded ${!def ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' : ''}`}
                   style={def ? { backgroundColor: `${def.color}20`, color: def.color } : undefined}
+                  title={`Filter cards by label ${label}`}
+                  aria-label={`Filter cards by label ${label}`}
                 >
                   {label}
-                </span>
+                </button>
               )
             })}
             {cardSettings.compactMode && card.labels.length > 2 && (

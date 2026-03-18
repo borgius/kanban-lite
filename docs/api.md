@@ -167,10 +167,15 @@ These endpoints operate on the default board. For board-scoped operations, see [
 GET /api/tasks
 ```
 
+Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.
+
 **Query parameters:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `q` | `string` | Free-text search query. May also include inline `meta.field: value` tokens. |
+| `fuzzy` | `boolean` | Enable fuzzy matching for free-text search and metadata tokens. |
+| `meta.<field>` | `string` | Field-scoped metadata filter. Repeat for multiple metadata fields. |
 | `status` | `string` | Filter by status (e.g., `todo`, `in-progress`) |
 | `priority` | `string` | Filter by priority (`critical`, `high`, `medium`, `low`) |
 | `assignee` | `string` | Filter by assignee name |
@@ -179,7 +184,7 @@ GET /api/tasks
 **Example:**
 
 ```bash
-curl "http://localhost:3000/api/tasks?status=todo&priority=high"
+curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"
 ```
 
 ---
@@ -289,23 +294,21 @@ curl -X DELETE http://localhost:3000/api/tasks/42
 
 ## Board-Scoped Tasks
 
-All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board.
+All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. The board-scoped list endpoint supports the same query params as `/api/tasks`, including `q`, `fuzzy`, and `meta.*` filters.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/boards/:boardId/tasks` | List tasks (supports same query filters) |
+| `GET` | `/api/boards/:boardId/tasks` | List tasks (supports the same `q`, `fuzzy`, `meta.*`, and standard filters) |
 | `POST` | `/api/boards/:boardId/tasks` | Create a task in the board |
 | `GET` | `/api/boards/:boardId/tasks/:id` | Get a task |
 | `PUT` | `/api/boards/:boardId/tasks/:id` | Update a task |
 | `PATCH` | `/api/boards/:boardId/tasks/:id/move` | Move a task |
 | `DELETE` | `/api/boards/:boardId/tasks/:id` | Delete a task |
 
-**Example — create a task in the "bugs" board:**
+**Example — search tasks in the "bugs" board with fuzzy metadata matching:**
 
 ```bash
-curl -X POST http://localhost:3000/api/boards/bugs/tasks \
-  -H "Content-Type: application/json" \
-  -d '{ "content": "# Login error", "status": "new", "priority": "critical" }'
+curl "http://localhost:3000/api/boards/bugs/tasks?q=meta.team%3A%20backnd&fuzzy=true&meta.region=us-east"
 ```
 
 ---

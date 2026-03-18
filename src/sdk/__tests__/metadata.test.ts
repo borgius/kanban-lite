@@ -4,9 +4,14 @@ import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parseCardFile, serializeCard } from '../parser'
 import { KanbanSDK } from '../KanbanSDK'
+import * as Cards from '../modules/cards'
 import { DEFAULT_COLUMNS } from '../../shared/types'
 import type { Card } from '../../shared/types'
 import type { KanbanConfig } from '../../shared/config'
+
+function asCardsContext(sdk: KanbanSDK): Parameters<typeof Cards.listCards>[0] {
+  return sdk as unknown as Parameters<typeof Cards.listCards>[0]
+}
 
 function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
   return {
@@ -388,5 +393,167 @@ describe('SDK listCards - metaFilter', () => {
     await sdk.createCard({ content: '# K', metadata: { team: 'Backend' } })
     const result = await sdk.listCards(undefined, undefined, { team: 'backend' })
     expect(result).toHaveLength(1)
+  })
+
+  it('keeps exact text search opt-in off by default for metadata values', async () => {
+    await sdk.createCard({ content: '# L\n\nImplements API plumbing.', metadata: { team: 'backend' } })
+
+    const result = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backend')
+
+    expect(result).toHaveLength(0)
+  })
+
+  it('applies fuzzy text search to metadata values while keeping field scope for metadata tokens', async () => {
+    await sdk.createCard({ content: '# M\n\nImplements API plumbing.', metadata: { team: 'backend', region: 'us-east' } })
+    await sdk.createCard({ content: '# N\n\nHandles docs.', metadata: { owner: 'backend', region: 'us-east' } })
+
+    const fuzzyTextResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+    const fuzzyMetaTokenResult = await Cards.listCards(
+      asCardsContext(sdk),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'meta.team: backnd meta.region: useast',
+      true
+    )
+
+    expect(fuzzyTextResult.map(card => card.content)).toEqual(expect.arrayContaining(['# M\n\nImplements API plumbing.']))
+    expect(fuzzyMetaTokenResult).toHaveLength(1)
+    expect(fuzzyMetaTokenResult[0].content).toContain('# M')
+  })
+
+  it('pairs exact and fuzzy search for the same metadata-backed free-text fixture', async () => {
+    await sdk.createCard({ content: '# M2\n\nImplements API plumbing.', metadata: { team: 'backend' } })
+
+    const exactResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd')
+    const fuzzyResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+
+    expect(exactResult).toHaveLength(0)
+    expect(fuzzyResult).toHaveLength(1)
+    expect(fuzzyResult[0].content).toContain('# M2')
+  })
+
+  it('pairs exact and fuzzy metadata token queries for the same fixture', async () => {
+    await sdk.createCard({ content: '# M3\n\nInvestigate release readiness.', metadata: { team: 'backend', region: 'us-east' } })
+
+    const exactResult = await sdk.listCards(undefined, undefined, { searchQuery: 'meta.team: backnd meta.region: useast' })
+    const fuzzyResult = await sdk.listCards(undefined, undefined, {
+      searchQuery: 'meta.team: backnd meta.region: useast',
+      fuzzy: true,
+    })
+
+    expect(exactResult).toHaveLength(0)
+    expect(fuzzyResult).toHaveLength(1)
+    expect(fuzzyResult[0].content).toContain('# M3')
+  })
+
+  it('pairs exact and fuzzy behavior for mixed metadata plus free-text queries', async () => {
+    await sdk.createCard({
+      content: '# M4\n\nImplements API plumbing for the release train.',
+      metadata: { team: 'backend' },
+    })
+    await sdk.createCard({
+      content: '# M5\n\nImplements API plumbing for the release train.',
+      metadata: { team: 'frontend' },
+    })
+
+    const exactResult = await sdk.listCards(undefined, undefined, { searchQuery: 'meta.team: backend plumbng' })
+    const fuzzyResult = await sdk.listCards(undefined, undefined, {
+      searchQuery: 'meta.team: backend plumbng',
+      fuzzy: true,
+    })
+
+    expect(exactResult).toHaveLength(0)
+    expect(fuzzyResult).toHaveLength(1)
+    expect(fuzzyResult[0].content).toContain('# M4')
+  })
+
+  it('supports the public options contract for exact and fuzzy search behavior', async () => {
+    await sdk.createCard({ content: '# P\n\nImplements API plumbing.', metadata: { team: 'backend', region: 'us-east' } })
+    await sdk.createCard({ content: '# Q\n\nHandles docs.', metadata: { owner: 'backend', region: 'us-east' } })
+
+    const exactResult = await sdk.listCards(undefined, undefined, { searchQuery: 'backend' })
+    const fuzzyResult = await sdk.listCards(undefined, undefined, {
+      searchQuery: 'meta.team: backnd meta.region: useast',
+      fuzzy: true,
+    })
+
+    expect(exactResult).toHaveLength(0)
+    expect(fuzzyResult).toHaveLength(1)
+    expect(fuzzyResult[0].content).toContain('# P')
+  })
+
+  it('supports the object overload when only sort is provided', async () => {
+    await sdk.createCard({ content: '# Older\n\nCreated first.' })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await sdk.createCard({ content: '# Newer\n\nCreated second.' })
+
+    const result = await sdk.listCards(undefined, undefined, { sort: 'created:desc' })
+
+    expect(result).toHaveLength(2)
+    expect(result[0].content).toContain('# Newer')
+    expect(result[1].content).toContain('# Older')
+  })
+
+  it('keeps the legacy positional listCards signature source-compatible', async () => {
+    await sdk.createCard({ content: '# R\n\nImplements API plumbing.', metadata: { team: 'backend' } })
+
+    const result = await sdk.listCards(undefined, undefined, undefined, undefined, 'backnd', true)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toContain('# R')
+  })
+})
+
+describe('SDK listCards - fuzzy search with SQLite storage', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let dbPath: string
+  let sdk: KanbanSDK
+
+  beforeEach(async () => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-fuzzy-sqlite-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    dbPath = path.join(kanbanDir, 'kanban.db')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    const config = createV2Config({ storageEngine: 'sqlite', sqlitePath: path.relative(workspaceDir, dbPath) })
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config, null, 2))
+    sdk = new KanbanSDK(kanbanDir, {
+      storageEngine: 'sqlite',
+      sqlitePath: path.relative(workspaceDir, dbPath)
+    })
+    await sdk.init()
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('uses the same fuzzy metadata search path for SQLite-backed cards', async () => {
+    await sdk.createCard({ content: '# O\n\nImplements API plumbing.', metadata: { team: 'backend' } })
+
+    const result = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toContain('# O')
+  })
+
+  it('keeps exact mixed metadata plus text queries strict in SQLite mode while fuzzy mode matches', async () => {
+    await sdk.createCard({
+      content: '# O2\n\nImplements API plumbing for the release train.',
+      metadata: { team: 'backend' },
+    })
+
+    const exactResult = await sdk.listCards(undefined, undefined, { searchQuery: 'meta.team: backend plumbng' })
+    const fuzzyResult = await sdk.listCards(undefined, undefined, {
+      searchQuery: 'meta.team: backend plumbng',
+      fuzzy: true,
+    })
+
+    expect(exactResult).toHaveLength(0)
+    expect(fuzzyResult).toHaveLength(1)
+    expect(fuzzyResult[0].content).toContain('# O2')
   })
 })

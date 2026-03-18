@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
@@ -296,6 +296,32 @@ function PropertyRow({ label, icon, children }: { label: string; icon: React.Rea
   )
 }
 
+function normalizeMetadataFilterValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(item => String(item)).join(',')
+  return String(value)
+}
+
+function MetadataFilterButton({ path, value }: { path: string; value: string }) {
+  const applyMetadataFilterToken = useStore(s => s.applyMetadataFilterToken)
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        applyMetadataFilterToken(path, value)
+      }}
+      className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      style={{ color: 'var(--vscode-descriptionForeground)' }}
+      title={`Filter cards by ${path}`}
+      aria-label={`Filter cards by metadata ${path} = ${value}`}
+    >
+      <Filter size={11} />
+    </button>
+  )
+}
+
 interface AIDropdownProps {
   onSelect: (agent: AIAgent, permissionMode: PermissionMode) => void
 }
@@ -569,20 +595,25 @@ function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<s
   )
 }
 
-function MetadataTree({ data, depth, onOpenMetadataFile }: { data: Record<string, any>; depth: number; onOpenMetadataFile?: (path: string) => void }) {
+function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { data: Record<string, any>; depth: number; pathPrefix?: string; onOpenMetadataFile?: (path: string) => void }) {
   return (
     <div style={{ paddingLeft: depth > 0 ? 12 : 0 }}>
-      {Object.entries(data).map(([key, value]) => (
+      {Object.entries(data).map(([key, value]) => {
+        const path = pathPrefix ? `${pathPrefix}.${key}` : key
+        const normalizedValue = normalizeMetadataFilterValue(value)
+
+        return (
         <div key={key} className="py-0.5">
           {value && typeof value === 'object' && !Array.isArray(value) ? (
             <>
               <span className="text-zinc-500 dark:text-zinc-400">{key}:</span>
-              <MetadataTree data={value} depth={depth + 1} onOpenMetadataFile={onOpenMetadataFile} />
+              <MetadataTree data={value} depth={depth + 1} pathPrefix={path} onOpenMetadataFile={onOpenMetadataFile} />
             </>
           ) : Array.isArray(value) ? (
             <div className="flex items-baseline gap-1">
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
               <CopyableValue value={`[${value.join(', ')}]`} />
+              <MetadataFilterButton path={path} value={normalizedValue} />
             </div>
           ) : (
             <div className="flex items-baseline gap-1 flex-wrap">
@@ -594,10 +625,12 @@ function MetadataTree({ data, depth, onOpenMetadataFile }: { data: Record<string
               ) : (
                 <CopyableValue value={String(value)} />
               )}
+              <MetadataFilterButton path={path} value={normalizedValue} />
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -608,6 +641,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   const inputRef = useRef<HTMLInputElement>(null)
   const allCards = useStore(s => s.cards)
   const labelDefs = useStore(s => s.labelDefs)
+  const applyLabelFilter = useStore(s => s.applyLabelFilter)
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
@@ -648,11 +682,23 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
               color: 'var(--vscode-badge-foreground)',
             }}
           >
-            {label}
             <button
               type="button"
-              onClick={() => removeLabel(label)}
+              onClick={() => applyLabelFilter(label)}
+              className="hover:underline"
+              title={`Filter cards by label ${label}`}
+              aria-label={`Filter cards by label ${label}`}
+            >
+              {label}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeLabel(label)
+              }}
               className="hover:text-red-500 transition-colors"
+              aria-label={`Remove label ${label}`}
             >
               <X size={9} />
             </button>
@@ -1019,21 +1065,25 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           const rawVal = currentFrontmatter.metadata?.[key]
           if (rawVal === undefined || rawVal === null) return null
           const strVal = String(rawVal)
+          const filterValue = normalizeMetadataFilterValue(rawVal)
           return (
             <PropertyRow key={key} label={key} icon={<ExternalLink size={13} />}>
-              {isUrl(strVal) ? (
-                <a
-                  href={strVal}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs hover:underline truncate"
-                  style={{ color: 'var(--vscode-textLink-foreground)' }}
-                >
-                  {strVal}
-                </a>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
-              )}
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isUrl(strVal) ? (
+                  <a
+                    href={strVal}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs hover:underline truncate"
+                    style={{ color: 'var(--vscode-textLink-foreground)' }}
+                  >
+                    {strVal}
+                  </a>
+                ) : (
+                  <span className="text-xs break-all" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
+                )}
+                <MetadataFilterButton path={key} value={filterValue} />
+              </div>
             </PropertyRow>
           )
         })}

@@ -140,14 +140,17 @@ const ROUTES: Route[] = [
     subsection: 'List Tasks',
     method: 'GET',
     path: '/api/tasks',
-    description: '',
+    description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.',
     queryParams: [
+      { name: 'q', type: 'string', required: false, description: 'Free-text search query. May also include inline `meta.field: value` tokens.' },
+      { name: 'fuzzy', type: 'boolean', required: false, default: 'false', description: 'Enable fuzzy matching for free-text search and metadata tokens.' },
+      { name: 'meta.<field>', type: 'string', required: false, description: 'Field-scoped metadata filter. Repeat for multiple metadata fields.' },
       { name: 'status', type: 'string', required: false, description: 'Filter by status (e.g., `todo`, `in-progress`)' },
       { name: 'priority', type: 'string', required: false, description: 'Filter by priority (`critical`, `high`, `medium`, `low`)' },
       { name: 'assignee', type: 'string', required: false, description: 'Filter by assignee name' },
       { name: 'label', type: 'string', required: false, description: 'Filter by label' },
     ],
-    example: 'curl "http://localhost:3000/api/tasks?status=todo&priority=high"',
+    example: 'curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"',
   },
   {
     section: 'Tasks (Default Board)',
@@ -223,20 +226,18 @@ const ROUTES: Route[] = [
     subsection: '',
     method: '',
     path: '',
-    description: `All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board.
+    description: `All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. The board-scoped list endpoint supports the same query params as \`/api/tasks\`, including \`q\`, \`fuzzy\`, and \`meta.*\` filters.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| \`GET\` | \`/api/boards/:boardId/tasks\` | List tasks (supports same query filters) |
+| \`GET\` | \`/api/boards/:boardId/tasks\` | List tasks (supports the same \`q\`, \`fuzzy\`, \`meta.*\`, and standard filters) |
 | \`POST\` | \`/api/boards/:boardId/tasks\` | Create a task in the board |
 | \`GET\` | \`/api/boards/:boardId/tasks/:id\` | Get a task |
 | \`PUT\` | \`/api/boards/:boardId/tasks/:id\` | Update a task |
 | \`PATCH\` | \`/api/boards/:boardId/tasks/:id/move\` | Move a task |
 | \`DELETE\` | \`/api/boards/:boardId/tasks/:id\` | Delete a task |`,
-    example: `curl -X POST http://localhost:3000/api/boards/bugs/tasks \\
-  -H "Content-Type: application/json" \\
-  -d '{ "content": "# Login error", "status": "new", "priority": "critical" }'`,
-    exampleLabel: '**Example — create a task in the "bugs" board:**',
+    example: 'curl "http://localhost:3000/api/boards/bugs/tasks?q=meta.team%3A%20backnd&fuzzy=true&meta.region=us-east"',
+    exampleLabel: '**Example — search tasks in the "bugs" board with fuzzy metadata matching:**',
   },
 
   // ===================== Transfer Task =====================

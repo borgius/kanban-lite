@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Clickable label filters**: Clicking a label on a board card or in the card detail panel now applies that label as the active board filter.
+- **Metadata-aware fuzzy search parity**: Added the web UI `Fuzzy` toggle, metadata filter buttons in rendered metadata fields, CLI `kl list --search ... --fuzzy`, REST `q` / `fuzzy` task-list parameters, and MCP `list_cards` `searchQuery` / `fuzzy` inputs with shared metadata-aware semantics.
+
+### Fixed
+- **Toolbar search chips**: Mixed search queries in the web UI now render separate removable chips for plain-text terms and each `meta.*` token, so individual constraints can be cleared without wiping the entire query.
+
 ### Removed
 - **Legacy webview build path**: Deleted `src/webview/main.tsx`, `src/webview/index.html`, and `vite.config.ts` — these produced `dist/webview/` which was unused since the dual-runtime `standalone-shim.ts` design was introduced. The active build path (`vite.standalone.config.ts` → `dist/standalone-webview/`) is unchanged.
 - **npm scripts**: Removed `build:webview` and `watch:webview`; the `watch` aggregate script now uses `watch:standalone-webview`.

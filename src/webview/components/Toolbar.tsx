@@ -4,6 +4,7 @@ import { useStore, type DueDateFilter, type SavedView } from '../store'
 import { LabelPicker } from './LabelPicker'
 import { BoardSwitcher } from './BoardSwitcher'
 import type { Priority } from '../../shared/types'
+import { parseSearchQuery } from '../../sdk/metaUtils'
 
 const priorities: { value: Priority | 'all'; label: string }[] = [
   { value: 'all', label: 'All Priorities' },
@@ -43,6 +44,10 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction, onOpenShortcutHelp }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void; onOpenShortcutHelp?: () => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
+  const fuzzySearch = useStore(s => s.fuzzySearch)
+  const setFuzzySearch = useStore(s => s.setFuzzySearch)
+  const clearPlainTextSearch = useStore(s => s.clearPlainTextSearch)
+  const removeMetadataFilterToken = useStore(s => s.removeMetadataFilterToken)
   const priorityFilter = useStore(s => s.priorityFilter)
   const setPriorityFilter = useStore(s => s.setPriorityFilter)
   const assigneeFilter = useStore(s => s.assigneeFilter)
@@ -78,17 +83,21 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     return Array.from(s).sort()
   }, [cards])
 
+  const parsedSearch = useMemo(() => parseSearchQuery(searchQuery), [searchQuery])
+  const metadataSearchTokens = useMemo(() => Object.entries(parsedSearch.metaFilter), [parsedSearch])
+
   const filtersActive = useMemo(() => {
     const columnSorts = useStore.getState().columnSorts
     return (
       searchQuery !== '' ||
+      fuzzySearch ||
       priorityFilter !== 'all' ||
       assigneeFilter !== 'all' ||
       labelFilter.length > 0 ||
       dueDateFilter !== 'all' ||
       Object.values(columnSorts).some(s => s !== 'order')
     )
-  }, [searchQuery, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
+  }, [searchQuery, fuzzySearch, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
 
   const [boardSwitcherOpen, setBoardSwitcherOpen] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
@@ -210,6 +219,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const applyView = useCallback((view: SavedView) => {
     const store = useStore.getState()
     store.setSearchQuery(view.searchQuery)
+    store.setFuzzySearch(view.fuzzySearch)
     store.setPriorityFilter(view.priorityFilter)
     store.setAssigneeFilter(view.assigneeFilter)
     store.setLabelFilter(view.labelFilter)
@@ -310,19 +320,30 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
       </div>
 
       {/* Search */}
-      <div className="relative flex-1 min-w-[180px] max-w-xs">
-        <Search
-          size={14}
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
-        />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search cards, people, labels..."
-          title="Search cards by text. Advanced metadata search also works with meta.field: value"
-          className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
-        />
+      <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-md">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search
+            size={14}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search cards, people, labels..."
+            title="Search cards by text. Advanced metadata search also works with meta.field: value"
+            className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+          />
+        </div>
+        <label className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md select-none whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={fuzzySearch}
+            onChange={(e) => setFuzzySearch(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span>Fuzzy</span>
+        </label>
       </div>
 
       {/* Primary action */}
@@ -642,8 +663,18 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     </div>
     {filtersActive && (
       <div className="flex flex-wrap gap-1.5 px-4 pb-2">
-        {searchQuery && (
-          <FilterChip label={`Search: "${searchQuery}"`} onRemove={() => setSearchQuery('')} />
+        {parsedSearch.plainText && (
+          <FilterChip label={`Search: "${parsedSearch.plainText}"`} onRemove={clearPlainTextSearch} />
+        )}
+        {metadataSearchTokens.map(([path, value]) => (
+          <FilterChip
+            key={path}
+            label={`meta.${path}: ${value}`}
+            onRemove={() => removeMetadataFilterToken(path)}
+          />
+        ))}
+        {fuzzySearch && (
+          <FilterChip label="Fuzzy" onRemove={() => setFuzzySearch(false)} />
         )}
         {priorityFilter !== 'all' && (
           <FilterChip label={`Priority: ${priorities.find(p => p.value === priorityFilter)?.label ?? priorityFilter}`} onRemove={() => setPriorityFilter('all')} />

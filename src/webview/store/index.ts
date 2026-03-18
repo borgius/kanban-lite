@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -10,6 +11,7 @@ export interface SavedView {
   id: string
   name: string
   searchQuery: string
+  fuzzySearch: boolean
   priorityFilter: Priority | 'all'
   assigneeFilter: string | 'all'
   labelFilter: string[]
@@ -23,6 +25,7 @@ interface KanbanState {
   currentBoard: string
   isDarkMode: boolean
   searchQuery: string
+  fuzzySearch: boolean
   priorityFilter: Priority | 'all'
   assigneeFilter: string | 'all'
   labelFilter: string[]
@@ -65,6 +68,11 @@ interface KanbanState {
   setCardSettings: (settings: CardDisplaySettings) => void
   setSettingsOpen: (open: boolean) => void
   setSearchQuery: (query: string) => void
+  setFuzzySearch: (enabled: boolean) => void
+  clearPlainTextSearch: () => void
+  applyMetadataFilterToken: (path: string, value: string) => void
+  removeMetadataFilterToken: (path: string) => void
+  applyLabelFilter: (label: string) => void
   setPriorityFilter: (priority: Priority | 'all') => void
   setAssigneeFilter: (assignee: string | 'all') => void
   setLabelFilter: (labels: string[]) => void
@@ -127,21 +135,19 @@ const isOverdue = (date: Date): boolean => {
   return date < today
 }
 
-/**
- * Parses `meta.path: value` tokens from the search query string.
- * Returns the extracted meta filters and the remaining plain-text query.
- *
- * @example
- * parseMetaTokens('meta.sprint: Q1 bug fix')
- * // => { metaFilter: { sprint: 'Q1' }, plainText: 'bug fix' }
- */
-function parseMetaTokens(query: string): { metaFilter: Record<string, string>; plainText: string } {
-  const metaFilter: Record<string, string> = {}
-  const plainText = query.replace(/meta\.([a-zA-Z0-9_.]+):\s*(\S+)/g, (_full, key, value) => {
-    metaFilter[key] = value
-    return ''
-  }).trim()
-  return { metaFilter, plainText }
+function formatMetadataTokenValue(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (!normalized) return ''
+  return /\s/.test(normalized) ? JSON.stringify(normalized) : normalized
+}
+
+function buildSearchQuery(plainText: string, metaFilter: Record<string, string>): string {
+  const metaTokens = Object.entries(metaFilter)
+    .map(([path, value]) => [path.trim(), value.trim()] as const)
+    .filter(([path, value]) => path.length > 0 && value.length > 0)
+    .map(([path, value]) => `meta.${path}: ${formatMetadataTokenValue(value)}`)
+
+  return [plainText.trim(), ...metaTokens].filter(Boolean).join(' ').trim()
 }
 
 export const useStore = create<KanbanState>((set, get) => ({
@@ -151,6 +157,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   currentBoard: 'default',
   isDarkMode: getInitialDarkMode(),
   searchQuery: '',
+  fuzzySearch: false,
   priorityFilter: 'all',
   assigneeFilter: 'all',
   labelFilter: [],
@@ -196,6 +203,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       id,
       name,
       searchQuery: state.searchQuery,
+      fuzzySearch: state.fuzzySearch,
       priorityFilter: state.priorityFilter,
       assigneeFilter: state.assigneeFilter,
       labelFilter: [...state.labelFilter],
@@ -220,6 +228,46 @@ export const useStore = create<KanbanState>((set, get) => ({
   setCardSettings: (settings) => set((state) => ({ cardSettings: { ...settings, boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom, cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom, panelMode: settings.panelMode ?? state.cardSettings.panelMode, drawerWidth: settings.drawerWidth ?? state.cardSettings.drawerWidth } })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setFuzzySearch: (enabled) => set({ fuzzySearch: enabled }),
+  clearPlainTextSearch: () => set((state) => {
+    const { metaFilter } = parseSearchQuery(state.searchQuery)
+    return {
+      searchQuery: buildSearchQuery('', metaFilter),
+    }
+  }),
+  applyMetadataFilterToken: (path, value) => set((state) => {
+    const normalizedPath = path.trim()
+    const normalizedValue = value.trim().replace(/\s+/g, ' ')
+    if (!normalizedPath || !normalizedValue) return {}
+
+    const { metaFilter, plainText } = parseSearchQuery(state.searchQuery)
+    metaFilter[normalizedPath] = normalizedValue
+
+    return {
+      searchQuery: buildSearchQuery(plainText, metaFilter),
+    }
+  }),
+  removeMetadataFilterToken: (path) => set((state) => {
+    const normalizedPath = path.trim()
+    if (!normalizedPath) return {}
+
+    const { metaFilter, plainText } = parseSearchQuery(state.searchQuery)
+    if (!(normalizedPath in metaFilter)) return {}
+
+    delete metaFilter[normalizedPath]
+
+    return {
+      searchQuery: buildSearchQuery(plainText, metaFilter),
+    }
+  }),
+  applyLabelFilter: (label) => set(() => {
+    const normalizedLabel = label.trim()
+    if (!normalizedLabel) return {}
+
+    return {
+      labelFilter: [normalizedLabel],
+    }
+  }),
   setPriorityFilter: (priority) => set({ priorityFilter: priority }),
   setAssigneeFilter: (assignee) => set({ assigneeFilter: assignee }),
   setLabelFilter: (labels) => set({ labelFilter: labels }),
@@ -235,6 +283,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   clearAllFilters: () =>
     set({
       searchQuery: '',
+      fuzzySearch: false,
       priorityFilter: 'all',
       assigneeFilter: 'all',
       labelFilter: [],
@@ -268,6 +317,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     const {
       cards,
       searchQuery,
+      fuzzySearch,
       priorityFilter,
       assigneeFilter,
       labelFilter,
@@ -311,30 +361,8 @@ export const useStore = create<KanbanState>((set, get) => ({
           }
         }
 
-        // Search query - supports meta.field: value tokens and plain text
-        if (searchQuery) {
-          const { metaFilter, plainText } = parseMetaTokens(searchQuery)
-
-          if (Object.keys(metaFilter).length > 0) {
-            const passes = Object.entries(metaFilter).every(([path, needle]) => {
-              if (!f.metadata) return false
-              const val = path.split('.').reduce((curr: unknown, k) =>
-                curr != null && typeof curr === 'object' ? (curr as Record<string, unknown>)[k] : undefined, f.metadata)
-              return val != null && String(val).toLowerCase().includes(needle.toLowerCase())
-            })
-            if (!passes) return false
-          }
-
-          if (plainText) {
-            const q = plainText.toLowerCase()
-            const textMatch = (
-              f.content.toLowerCase().includes(q) ||
-              f.id.toLowerCase().includes(q) ||
-              f.assignee?.toLowerCase().includes(q) ||
-              f.labels.some((l) => l.toLowerCase().includes(q))
-            )
-            if (!textMatch) return false
-          }
+        if (searchQuery && !matchesCardSearch(f, searchQuery, {}, fuzzySearch)) {
+          return false
         }
 
         return true
@@ -369,6 +397,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   hasActiveFilters: () => {
     const {
       searchQuery,
+      fuzzySearch,
       priorityFilter,
       assigneeFilter,
       labelFilter,
@@ -377,6 +406,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     } = get()
     return (
       searchQuery !== '' ||
+      fuzzySearch ||
       priorityFilter !== 'all' ||
       assigneeFilter !== 'all' ||
       labelFilter.length > 0 ||

@@ -31,6 +31,8 @@ function makeCardContent(opts: {
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
+  body?: string
+  metadataBlock?: string
 }): string {
   const {
     id,
@@ -40,7 +42,9 @@ function makeCardContent(opts: {
     order = 'a0',
     assignee = null,
     dueDate = null,
-    labels = []
+    labels = [],
+    body = 'Description here.',
+    metadataBlock
   } = opts
   return `---
 id: "${id}"
@@ -53,10 +57,10 @@ modified: "2024-01-01T00:00:00.000Z"
 completedAt: null
 labels: [${labels.map(l => `"${l}"`).join(', ')}]
 order: "${order}"
----
+${metadataBlock ? `metadata:\n${metadataBlock.split('\n').map(line => `  ${line}`).join('\n')}\n` : ''}---
 # ${title}
 
-Description here.`
+${body}`
 }
 
 // Helper: connect WebSocket and wait for open
@@ -1490,6 +1494,205 @@ describe('Standalone Server Integration', () => {
       expect(json.ok).toBe(true)
       expect(json.data.length).toBe(1)
       expect(json.data[0].id).toBe('label-fe')
+    })
+
+    it('GET /api/tasks should combine exact q search with meta.* filters', async () => {
+      writeCardFile(tempDir, 'release-backend.md', makeCardContent({
+        id: 'release-backend',
+        title: 'Release Backend API',
+        body: 'Coordinate the backend release.',
+        metadataBlock: 'team: backend'
+      }), 'backlog')
+      writeCardFile(tempDir, 'release-frontend.md', makeCardContent({
+        id: 'release-frontend',
+        title: 'Release Frontend UI',
+        body: 'Coordinate the frontend release.',
+        metadataBlock: 'team: frontend'
+      }), 'backlog')
+      writeCardFile(tempDir, 'metadata-only.md', makeCardContent({
+        id: 'metadata-only',
+        title: 'Roadmap review',
+        body: 'Roadmap planning only.',
+        metadataBlock: 'team: backend'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const query = new URLSearchParams({
+        q: 'release',
+        'meta.team': 'backend'
+      }).toString()
+      const res = await httpGet(`http://localhost:${port}/api/tasks?${query}`)
+      const json = JSON.parse(res.body)
+
+      expect(json.ok).toBe(true)
+      expect(json.data.map((card: Record<string, unknown>) => card.id)).toEqual(['release-backend'])
+    })
+
+    it('GET /api/tasks should support fuzzy q search', async () => {
+      writeCardFile(tempDir, 'api-plumbing.md', makeCardContent({
+        id: 'api-plumbing',
+        title: 'API Plumbing',
+        body: 'Implements API plumbing.'
+      }), 'backlog')
+      writeCardFile(tempDir, 'roadmap.md', makeCardContent({
+        id: 'roadmap',
+        title: 'Roadmap',
+        body: 'Plans next quarter work.'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const query = new URLSearchParams({
+        q: 'plumbng',
+        fuzzy: 'true'
+      }).toString()
+      const res = await httpGet(`http://localhost:${port}/api/tasks?${query}`)
+      const json = JSON.parse(res.body)
+
+      expect(json.ok).toBe(true)
+      expect(json.data.map((card: Record<string, unknown>) => card.id)).toEqual(['api-plumbing'])
+    })
+
+    it('GET /api/tasks should keep exact q search strict for the same typo fixture', async () => {
+      writeCardFile(tempDir, 'api-plumbing-exact.md', makeCardContent({
+        id: 'api-plumbing-exact',
+        title: 'API Plumbing',
+        body: 'Implements API plumbing.'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const query = new URLSearchParams({
+        q: 'plumbng'
+      }).toString()
+      const res = await httpGet(`http://localhost:${port}/api/tasks?${query}`)
+      const json = JSON.parse(res.body)
+
+      expect(json.ok).toBe(true)
+      expect(json.data).toHaveLength(0)
+    })
+
+    it('GET /api/boards/:boardId/tasks should support fuzzy metadata q search', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const createBoardRes = await httpRequest('POST', `http://localhost:${port}/api/boards`, {
+        id: 'bugs',
+        name: 'Bug Tracker'
+      })
+      expect(createBoardRes.status).toBe(201)
+
+      await httpRequest('POST', `http://localhost:${port}/api/boards/bugs/tasks`, {
+        content: '# Backend incident\n\nTrace the production API failure.',
+        status: 'backlog',
+        priority: 'high',
+        metadata: {
+          team: 'backend',
+          region: 'us-east'
+        }
+      })
+      await httpRequest('POST', `http://localhost:${port}/api/boards/bugs/tasks`, {
+        content: '# Frontend incident\n\nTrace the UI error.',
+        status: 'backlog',
+        priority: 'high',
+        metadata: {
+          team: 'frontend',
+          region: 'us-west'
+        }
+      })
+
+      const query = new URLSearchParams({
+        q: 'meta.team: backnd meta.region: useast',
+        fuzzy: 'true'
+      }).toString()
+      const res = await httpGet(`http://localhost:${port}/api/boards/bugs/tasks?${query}`)
+      const json = JSON.parse(res.body)
+
+      expect(json.ok).toBe(true)
+      expect(json.data).toHaveLength(1)
+      expect(json.data[0].metadata).toEqual({ team: 'backend', region: 'us-east' })
+    })
+
+    it('GET /api/boards/:boardId/tasks should keep metadata q search exact unless fuzzy=true', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const createBoardRes = await httpRequest('POST', `http://localhost:${port}/api/boards`, {
+        id: 'bugs-exact',
+        name: 'Bug Tracker Exact'
+      })
+      expect(createBoardRes.status).toBe(201)
+
+      await httpRequest('POST', `http://localhost:${port}/api/boards/bugs-exact/tasks`, {
+        content: '# Backend incident\n\nTrace the production API failure.',
+        status: 'backlog',
+        priority: 'high',
+        metadata: {
+          team: 'backend',
+          region: 'us-east'
+        }
+      })
+
+      const query = new URLSearchParams({
+        q: 'meta.team: backnd meta.region: useast'
+      }).toString()
+      const res = await httpGet(`http://localhost:${port}/api/boards/bugs-exact/tasks?${query}`)
+      const json = JSON.parse(res.body)
+
+      expect(json.ok).toBe(true)
+      expect(json.data).toHaveLength(0)
+    })
+
+    it('GET /api/tasks should pair exact and fuzzy behavior for mixed metadata plus text queries', async () => {
+      writeCardFile(tempDir, 'mixed-backend.md', makeCardContent({
+        id: 'mixed-backend',
+        title: 'Backend release plumbing',
+        body: 'Coordinate API plumbing for the backend release.',
+        metadataBlock: 'team: backend'
+      }), 'backlog')
+      writeCardFile(tempDir, 'mixed-frontend.md', makeCardContent({
+        id: 'mixed-frontend',
+        title: 'Frontend release plumbing',
+        body: 'Coordinate API plumbing for the frontend release.',
+        metadataBlock: 'team: frontend'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const exactQuery = new URLSearchParams({
+        q: 'meta.team: backend plumbng'
+      }).toString()
+      const exactRes = await httpGet(`http://localhost:${port}/api/tasks?${exactQuery}`)
+      const exactJson = JSON.parse(exactRes.body)
+
+      const fuzzyQuery = new URLSearchParams({
+        q: 'meta.team: backend plumbng',
+        fuzzy: 'true'
+      }).toString()
+      const fuzzyRes = await httpGet(`http://localhost:${port}/api/tasks?${fuzzyQuery}`)
+      const fuzzyJson = JSON.parse(fuzzyRes.body)
+
+      expect(exactJson.ok).toBe(true)
+      expect(exactJson.data).toHaveLength(0)
+      expect(fuzzyJson.ok).toBe(true)
+      expect(fuzzyJson.data.map((card: Record<string, unknown>) => card.id)).toEqual(['mixed-backend'])
     })
 
     it('GET /api/tasks/:id should return a single task', async () => {

@@ -118,7 +118,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'list_cards',
-    'List all kanban cards. Optionally filter by status, priority, assignee, label, or metadata fields.',
+    'List all kanban cards. Optionally filter by status, priority, assignee, label, searchQuery, or metadata fields. Fuzzy search also applies to metadata values, while metaFilter remains available for structured field-specific searches.',
     {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       status: z.string().optional().describe('Filter by status'),
@@ -127,15 +127,18 @@ async function main(): Promise<void> {
       label: z.string().optional().describe('Filter by label'),
       labelGroup: z.string().optional().describe('Filter by label group name'),
       includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted cards in results'),
-      metaFilter: z.record(z.string(), z.string()).optional().describe('Filter by metadata fields using dot-notation keys (e.g. { "links.jira": "PROJ-123" }). Substring match, case-insensitive.'),
+      searchQuery: z.string().optional().describe('Free-text search query. Supports inline metadata tokens like "meta.team: backend".'),
+      fuzzy: z.boolean().optional().describe('Enable fuzzy matching across free text and metadata values. metaFilter remains available for structured field-specific searches.'),
+      metaFilter: z.record(z.string(), z.string()).optional().describe('Structured metadata filter using dot-notation keys (e.g. { "links.jira": "PROJ-123" }). Case-insensitive substring match. Remains available alongside searchQuery/fuzzy for field-specific searches.'),
       sort: z.enum(['created:asc', 'created:desc', 'modified:asc', 'modified:desc']).optional().describe('Sort order: created:asc, created:desc, modified:asc, or modified:desc. Defaults to board order.'),
     },
-    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, metaFilter, sort }) => {
-      let cards = await sdk.listCards(
-        undefined, boardId,
-        metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
-        sort || undefined
-      )
+    async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, searchQuery, fuzzy, metaFilter, sort }) => {
+      let cards = await sdk.listCards(undefined, boardId, {
+        metaFilter: metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
+        sort: sort || undefined,
+        searchQuery: searchQuery?.trim() ? searchQuery : undefined,
+        fuzzy,
+      })
       if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
       if (status) cards = cards.filter(c => c.status === status)
       if (priority) cards = cards.filter(c => c.priority === priority)

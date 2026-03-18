@@ -4,7 +4,7 @@ import type { Card, CardSortOption } from '../../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/config'
 import { getCardFilePath } from '../fileUtils'
-import { matchesMetaFilter } from '../metaUtils'
+import { matchesCardSearch } from '../metaUtils'
 import { sanitizeCard } from '../types'
 import type { CreateCardInput } from '../types'
 import type { SDKContext } from './context'
@@ -12,14 +12,17 @@ import type { SDKContext } from './context'
 // --- Card CRUD ---
 
 /**
- * Lists all cards on a board, optionally filtered by column/status.
+ * Lists all cards on a board, optionally filtered by column/status, metadata,
+ * and an internal exact/fuzzy search query.
  */
 export async function listCards(
   ctx: SDKContext,
   columns?: string[],
   boardId?: string,
   metaFilter?: Record<string, string>,
-  sort?: CardSortOption
+  sort?: CardSortOption,
+  searchQuery?: string,
+  fuzzy?: boolean
 ): Promise<Card[]> {
   await ctx._ensureMigrated()
   const boardDir = ctx._boardDir(boardId)
@@ -56,8 +59,10 @@ export async function listCards(
     syncCardIdCounter(ctx.workspaceRoot, resolvedBoardId, numericIds)
   }
 
-  const filtered = metaFilter && Object.keys(metaFilter).length > 0
-    ? cards.filter(c => matchesMetaFilter(c.metadata, metaFilter))
+  const hasSearch = Boolean(searchQuery && searchQuery.trim().length > 0)
+  const hasMetaFilter = Boolean(metaFilter && Object.keys(metaFilter).length > 0)
+  const filtered = hasMetaFilter || hasSearch
+    ? cards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
     : cards
   if (sort) {
     const [field, dir] = sort.split(':')

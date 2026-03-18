@@ -20,6 +20,84 @@ import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
 
 /**
+ * Optional search and sort inputs for {@link KanbanSDK.listCards}.
+ *
+ * The object form is the recommended public contract for new callers because it
+ * keeps structured metadata filters, free-text search, fuzzy search, and sort
+ * options in one explicit shape.
+ */
+export interface ListCardsOptions {
+  /**
+   * Optional map of dot-notation metadata paths to required values.
+   * Each entry is AND-based and field-scoped.
+   */
+  metaFilter?: Record<string, string>
+  /**
+   * Optional sort order. Defaults to fractional board order.
+   */
+  sort?: CardSortOption
+  /**
+   * Optional free-text query. The query may also include inline
+   * `meta.field: value` tokens, which are merged with `metaFilter`.
+   */
+  searchQuery?: string
+  /**
+   * Enables fuzzy matching when `true`. Exact substring matching remains the default.
+   */
+  fuzzy?: boolean
+}
+
+const LIST_CARD_SORT_OPTIONS: ReadonlySet<CardSortOption> = new Set([
+  'created:asc',
+  'created:desc',
+  'modified:asc',
+  'modified:desc',
+])
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return Boolean(value)
+    && !Array.isArray(value)
+    && typeof value === 'object'
+    && Object.values(value as Record<string, unknown>).every(entry => typeof entry === 'string')
+}
+
+function isCardSortOption(value: unknown): value is CardSortOption {
+  return typeof value === 'string' && LIST_CARD_SORT_OPTIONS.has(value as CardSortOption)
+}
+
+function isListCardsOptions(value: unknown): value is ListCardsOptions {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return false
+  const candidate = value as Partial<ListCardsOptions> & Record<string, unknown>
+  if ('metaFilter' in candidate && candidate.metaFilter !== undefined && !isStringRecord(candidate.metaFilter)) return false
+  if ('sort' in candidate && candidate.sort !== undefined && !isCardSortOption(candidate.sort)) return false
+  if ('searchQuery' in candidate && candidate.searchQuery !== undefined && typeof candidate.searchQuery !== 'string') return false
+  if ('fuzzy' in candidate && candidate.fuzzy !== undefined && typeof candidate.fuzzy !== 'boolean') return false
+  return 'metaFilter' in candidate || 'sort' in candidate || 'searchQuery' in candidate || 'fuzzy' in candidate
+}
+
+function normalizeListCardsOptions(
+  optionsOrMetaFilter?: ListCardsOptions | Record<string, string>,
+  sort?: CardSortOption,
+  searchQuery?: string,
+  fuzzy?: boolean
+): ListCardsOptions {
+  if (sort !== undefined || searchQuery !== undefined || fuzzy !== undefined) {
+    return {
+      metaFilter: optionsOrMetaFilter as Record<string, string> | undefined,
+      sort,
+      searchQuery,
+      fuzzy,
+    }
+  }
+
+  if (!optionsOrMetaFilter) return {}
+
+  return isListCardsOptions(optionsOrMetaFilter)
+    ? optionsOrMetaFilter
+    : { metaFilter: optionsOrMetaFilter }
+}
+
+/**
  * Core SDK for managing kanban boards stored as markdown files.
  *
  * Provides full CRUD operations for boards, cards, columns, comments,
@@ -389,7 +467,7 @@ export class KanbanSDK {
   // --- Card CRUD ---
 
   /**
-   * Lists all cards on a board, optionally filtered by column/status.
+   * Lists all cards on a board, optionally filtered by column/status and search criteria.
    *
    * **Note:** This includes soft-deleted cards (status `'deleted'`).
    * Filter them out if you need only active cards.
@@ -400,17 +478,29 @@ export class KanbanSDK {
    * - Migrates legacy integer ordering to fractional indexing
    * - Syncs the card ID counter with existing cards
    *
-   * By default cards are returned sorted by their fractional order key (board order).
-   * Pass a {@link CardSortOption} to sort by creation or modification date instead.
+  * By default cards are returned sorted by their fractional order key (board order).
+  * Pass a {@link CardSortOption} to sort by creation or modification date instead.
+  *
+  * Search behavior is storage-agnostic and is the same for markdown and SQLite workspaces:
+  * - Exact mode is the default.
+  * - Exact free-text search checks the legacy text fields: `content`, `id`, `assignee`, and `labels`.
+  * - Inline `meta.field: value` tokens and `metaFilter` entries are always field-scoped and AND-based.
+  * - In exact mode, metadata matching uses case-insensitive substring matching.
+  * - In fuzzy mode, free-text search also considers metadata values, and field-scoped metadata checks gain fuzzy fallback matching.
+  *
+  * New code should prefer the object overload so search and sort options stay explicit.
+  * The legacy positional parameters remain supported for backward compatibility.
    *
    * @param columns - Optional array of status/column IDs to filter by.
    *   When provided, ensures those subdirectories exist on disk.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @param metaFilter - Optional map of dot-notation metadata paths to required substrings.
-   *   Only cards whose metadata contains all specified values (case-insensitive substring match)
-   *   are returned.
-   * @param sort - Optional sort order. One of `'created:asc'`, `'created:desc'`,
-   *   `'modified:asc'`, `'modified:desc'`. Defaults to fractional board order.
+  * @param optionsOrMetaFilter - Either the recommended {@link ListCardsOptions} object,
+  *   or the legacy positional `metaFilter` map for backward compatibility.
+  * @param sort - Legacy positional sort order. One of `'created:asc'`, `'created:desc'`,
+  *   `'modified:asc'`, `'modified:desc'`. Defaults to fractional board order.
+  * @param searchQuery - Legacy positional free-text query, which may include
+  *   `meta.field: value` tokens.
+  * @param fuzzy - Legacy positional fuzzy-search toggle. Defaults to `false`.
    * @returns A promise resolving to an array of {@link Card} card objects.
    *
    * @example
@@ -421,15 +511,55 @@ export class KanbanSDK {
    * // List only cards in 'todo' and 'in-progress' columns on the 'bugs' board
    * const filtered = await sdk.listCards(['todo', 'in-progress'], 'bugs')
    *
-   * // List cards where metadata.sprint contains 'Q1' and metadata.links.jira contains 'PROJ'
-   * const q1Jira = await sdk.listCards(undefined, undefined, { 'sprint': 'Q1', 'links.jira': 'PROJ' })
+   * // Preferred object form: exact metadata-aware search using inline meta tokens
+   * const releaseCards = await sdk.listCards(undefined, undefined, {
+   *   searchQuery: 'release meta.team: backend'
+   * })
    *
-   * // List all cards sorted by creation date, newest first
-   * const newest = await sdk.listCards(undefined, undefined, undefined, 'created:desc')
+   * // Preferred object form: fuzzy search across free text and metadata values
+   * const fuzzyMatches = await sdk.listCards(undefined, undefined, {
+   *   searchQuery: 'meta.team: backnd api plumbng',
+   *   fuzzy: true
+   * })
+   *
+   * // Structured metadata filters remain supported and are merged with inline meta tokens
+   * const q1Jira = await sdk.listCards(undefined, undefined, {
+   *   metaFilter: { sprint: 'Q1', 'links.jira': 'PROJ' },
+   *   sort: 'created:desc'
+   * })
+   *
+   * // Legacy positional form still works for existing callers
+   * const newest = await sdk.listCards(undefined, undefined, undefined, 'created:desc', 'meta.team: backend', true)
    * ```
    */
-  async listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Card[]> {
-    return Cards.listCards(this, columns, boardId, metaFilter, sort)
+  async listCards(columns?: string[], boardId?: string, options?: ListCardsOptions): Promise<Card[]>
+  async listCards(
+    columns?: string[],
+    boardId?: string,
+    metaFilter?: Record<string, string>,
+    sort?: CardSortOption,
+    searchQuery?: string,
+    fuzzy?: boolean
+  ): Promise<Card[]>
+  async listCards(
+    columns?: string[],
+    boardId?: string,
+    optionsOrMetaFilter?: ListCardsOptions | Record<string, string>,
+    sort?: CardSortOption,
+    searchQuery?: string,
+    fuzzy?: boolean
+  ): Promise<Card[]> {
+    const options = normalizeListCardsOptions(optionsOrMetaFilter, sort, searchQuery, fuzzy)
+
+    return Cards.listCards(
+      this,
+      columns,
+      boardId,
+      options.metaFilter,
+      options.sort,
+      options.searchQuery,
+      options.fuzzy
+    )
   }
 
   /**

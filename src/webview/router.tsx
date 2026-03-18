@@ -28,6 +28,8 @@ import {
 import App from './App'
 import { useStore, type CardTab, type DueDateFilter } from './store'
 import type { Priority } from '../shared/types'
+import { shouldUseMemoryHistory } from './routerHistory'
+import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
 
 // ---------------------------------------------------------------------------
 // vscode API (singleton so acquireVsCodeApi is called exactly once per page)
@@ -42,34 +44,6 @@ type TabId = CardTab
 const VALID_TABS: TabId[] = ['write', 'preview', 'comments', 'logs']
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 const VALID_DUE_DATES: DueDateFilter[] = ['overdue', 'today', 'this-week', 'no-date']
-
-interface RouteSearch {
-  priority?: string
-  labels?: string
-  assignee?: string
-  dueDate?: string
-  q?: string
-}
-
-function validateSearch(search: Record<string, unknown>): RouteSearch {
-  return {
-    priority: typeof search.priority === 'string' ? search.priority : undefined,
-    labels: typeof search.labels === 'string' ? search.labels : undefined,
-    assignee: typeof search.assignee === 'string' ? search.assignee : undefined,
-    dueDate: typeof search.dueDate === 'string' ? search.dueDate : undefined,
-    q: typeof search.q === 'string' ? search.q : undefined,
-  }
-}
-
-function buildSearchStr(s: RouteSearch): string {
-  return JSON.stringify({
-    ...(s.priority && { priority: s.priority }),
-    ...(s.labels && { labels: s.labels }),
-    ...(s.assignee && { assignee: s.assignee }),
-    ...(s.dueDate && { dueDate: s.dueDate }),
-    ...(s.q && { q: s.q }),
-  })
-}
 
 // ---------------------------------------------------------------------------
 // URLSync component — renders null, only has side-effects
@@ -90,6 +64,7 @@ function URLSync() {
     setLabelFilter,
     setDueDateFilter,
     setSearchQuery,
+    setFuzzySearch,
     setActiveCardTab,
   } = useStore.getState()
 
@@ -102,6 +77,7 @@ function URLSync() {
   const labelFilter = useStore(s => s.labelFilter)
   const dueDateFilter = useStore(s => s.dueDateFilter)
   const searchQuery = useStore(s => s.searchQuery)
+  const fuzzySearch = useStore(s => s.fuzzySearch)
 
   // Initialise prevStateRef from current URL (not store defaults) to prevent
   // spurious navigation on the first Store→URL effect run.
@@ -136,6 +112,10 @@ function URLSync() {
     }
     if (search.q) {
       setSearchQuery(decodeURIComponent(search.q))
+    }
+    const fuzzyFromUrl = parseRouteBoolean(search.fuzzy)
+    if (fuzzyFromUrl !== undefined) {
+      setFuzzySearch(fuzzyFromUrl)
     }
 
     // Restore active tab
@@ -174,6 +154,7 @@ function URLSync() {
     if (assigneeFilter !== 'all') searchObj.assignee = assigneeFilter
     if (dueDateFilter !== 'all') searchObj.dueDate = dueDateFilter
     if (searchQuery) searchObj.q = searchQuery
+    if (fuzzySearch) searchObj.fuzzy = 'true'
 
     const searchStr = buildSearchStr(searchObj)
     const prev = prevStateRef.current
@@ -212,7 +193,7 @@ function URLSync() {
         replace,
       })
     }
-  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, navigate])
+  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, navigate])
 
   return null
 }
@@ -281,7 +262,7 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
-  history: 'acquireVsCodeApi' in window ? createMemoryHistory({ initialEntries: ['/'] }) : undefined,
+  history: shouldUseMemoryHistory(window.location.protocol) ? createMemoryHistory({ initialEntries: ['/'] }) : undefined,
   defaultPreload: 'intent',
 })
 

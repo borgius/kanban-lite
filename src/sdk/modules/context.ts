@@ -26,7 +26,14 @@ export interface SDKContext {
   emitEvent(event: SDKEventType, data: unknown): void
 
   // Cross-module card operations (routed through KanbanSDK instance)
-  listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption): Promise<Card[]>
+  listCards(
+    columns?: string[],
+    boardId?: string,
+    metaFilter?: Record<string, string>,
+    sort?: CardSortOption,
+    searchQuery?: string,
+    fuzzy?: boolean
+  ): Promise<Card[]>
   getCard(cardId: string, boardId?: string): Promise<Card | null>
   updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card>
   addLog(

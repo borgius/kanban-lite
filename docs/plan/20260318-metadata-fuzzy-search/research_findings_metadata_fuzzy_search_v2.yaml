@@ -1,0 +1,568 @@
+plan_id: 20260318-metadata-fuzzy-search
+objective: inspect current search implementation across webview/store/sdk/server/cli/mcp and determine how metadata fields are searched today, whether search is client-side or SDK-backed, and what config/settings mechanisms already exist that could hold a fuzzy-search toggle or parameters
+focus_area: metadata_fuzzy_search
+created_at: 2026-03-18T00:00:00Z
+created_by: GitHub Copilot (GPT-5.4)
+status: completed
+
+tldr: |
+  - Webview card search is client-side after initial hydration: `Toolbar` updates `searchQuery`, `router` syncs it into `?q=`, and `useStore.getFilteredCardsByStatus()` applies both plain-text and `meta.field: value` filtering locally.
+  - SDK/API/CLI/MCP metadata search is exact in shape but substring-based in matching: `sdk.listCards(..., metaFilter)` delegates to `matchesMetaFilter()`, which performs case-insensitive `String(value).includes(needle)` checks with dot-notation traversal and AND semantics.
+  - No fuzzy-search implementation or search-specific config object exists today; the only existing persisted global settings path is `CardDisplaySettings` ↔ `KanbanConfig` via `configToSettings()` / `settingsToConfig()` and `/api/settings` / `saveSettings`.
+  - `BoardConfig.metadata` / `BoardInfo.metadata` already provide a board-scoped metadata-related config slot, but they are currently used for metadata field display ordering/visibility in card detail, not search behavior.
+  - Strong SDK-level tests exist for metadata filtering (`src/sdk/__tests__/metadata.test.ts`, `src/sdk/__tests__/metaUtils.test.ts`); no dedicated webview search tests were found in the inspected scope.
+
+research_metadata:
+  methodology: hybrid retrieval using semantic_search, grep_search, targeted read_file passes, and sandboxed line-count collection; relationship tracing followed search state from webview UI to Zustand store, SDK filter helpers, server routes, CLI commands, MCP tools, and settings serialization
+  scope: focused on `src/webview`, `src/sdk`, `src/standalone`, `src/cli`, `src/mcp-server`, and shared config/types relevant to search and settings persistence
+  confidence: high
+  coverage: 92
+
+files_analyzed:
+  - file: index.ts
+    path: /Users/admin/dev/kanban-light/src/webview/store/index.ts
+    purpose: Zustand state for cards, filters, saved views, and client-side filtering logic
+    key_elements:
+      - element: parseMetaTokens
+        type: function
+        location: src/webview/store/index.ts:138
+        description: Parses `meta.path: value` tokens out of the free-text query and returns `{ metaFilter, plainText }`.
+      - element: getFilteredCardsByStatus
+        type: function
+        location: src/webview/store/index.ts:267
+        description: Applies all UI filters client-side, including metadata substring matching and plain-text search over `content`, `id`, `assignee`, and `labels`.
+      - element: searchQuery
+        type: variable
+        location: src/webview/store/index.ts:153
+        description: In-memory query string that drives webview filtering; not persisted to workspace config.
+      - element: saveCurrentView
+        type: function
+        location: src/webview/store/index.ts:193
+        description: Saves the current `searchQuery` and other filters into a UI-only saved view object.
+      - element: setCardSettings
+        type: function
+        location: src/webview/store/index.ts:220
+        description: Receives persisted settings from the app shell and updates local card settings state.
+    language: TypeScript
+    lines: 431
+
+  - file: Toolbar.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/components/Toolbar.tsx
+    purpose: Search input and filter controls for the webview
+    key_elements:
+      - element: Toolbar
+        type: function
+        location: src/webview/components/Toolbar.tsx:43
+        description: Reads and writes `searchQuery` from the store; no network request is triggered on query change.
+      - element: search input
+        type: pattern
+        location: src/webview/components/Toolbar.tsx:320
+        description: Free-text input whose tooltip explicitly documents `meta.field: value` syntax.
+      - element: applyView
+        type: function
+        location: src/webview/components/Toolbar.tsx:210
+        description: Restores saved-view filters, including `searchQuery`, back into the store.
+    language: TypeScript
+    lines: 664
+
+  - file: router.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/router.tsx
+    purpose: URL ↔ store synchronization for standalone web mode
+    key_elements:
+      - element: RouteSearch
+        type: interface
+        location: src/webview/router.tsx:41
+        description: Search params include `q`, `priority`, `labels`, `assignee`, and `dueDate`; there is no metadata-specific structured URL field.
+      - element: URLSync
+        type: function
+        location: src/webview/router.tsx:69
+        description: Restores `q` into `setSearchQuery()` on load and mirrors store changes back into the URL.
+      - element: validateSearch
+        type: function
+        location: src/webview/router.tsx:49
+        description: Restricts query-string parsing to the existing flat search/filter keys.
+    language: TypeScript
+    lines: 293
+
+  - file: App.tsx
+    path: /Users/admin/dev/kanban-light/src/webview/App.tsx
+    purpose: Webview shell that hydrates cards/settings from messages and sends settings updates back out
+    key_elements:
+      - element: handleMessage case 'init'
+        type: pattern
+        location: src/webview/App.tsx:267
+        description: Hydrates `cards`, `columns`, `settings`, `boards`, and labels from a single init payload; subsequent search is performed locally in the store.
+      - element: handleSaveSettings
+        type: function
+        location: src/webview/App.tsx:492
+        description: Sends `saveSettings` messages with the full `CardDisplaySettings` payload.
+      - element: logsFilter save path
+        type: pattern
+        location: src/webview/App.tsx:816
+        description: Demonstrates an existing pattern for adding a nested settings field and persisting it immediately via `saveSettings`.
+    language: TypeScript
+    lines: 882
+
+  - file: metaUtils.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/metaUtils.ts
+    purpose: Shared metadata path traversal and matching helpers
+    key_elements:
+      - element: getNestedValue
+        type: function
+        location: src/sdk/metaUtils.ts:13
+        description: Resolves dot-notation metadata paths like `links.jira`.
+      - element: matchesMetaFilter
+        type: function
+        location: src/sdk/metaUtils.ts:41
+        description: Performs case-insensitive substring matching over stringified metadata values with AND semantics across filter entries.
+    language: TypeScript
+    lines: 52
+
+  - file: cards.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+    purpose: SDK card listing and card CRUD implementation
+    key_elements:
+      - element: listCards
+        type: function
+        location: src/sdk/modules/cards.ts:17
+        description: Reads all board cards, optionally filters them with `matchesMetaFilter()`, and optionally sorts them before returning.
+      - element: metaFilter application
+        type: pattern
+        location: src/sdk/modules/cards.ts:59
+        description: Applies metadata filtering before sort and before interface-layer filtering like status/assignee/labels.
+    language: TypeScript
+    lines: 323
+
+  - file: KanbanSDK.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+    purpose: Public SDK surface used by server, CLI, and MCP layers
+    key_elements:
+      - element: listCards
+        type: function
+        location: src/sdk/KanbanSDK.ts:431
+        description: Public API exposing `metaFilter?: Record<string, string>` and `sort?: CardSortOption` to all interface layers.
+    language: TypeScript
+    lines: 1436
+
+  - file: settings.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/modules/settings.ts
+    purpose: SDK wrapper around workspace settings persistence
+    key_elements:
+      - element: getSettings
+        type: function
+        location: src/sdk/modules/settings.ts:10
+        description: Reads persisted workspace settings by converting `.kanban.json` into `CardDisplaySettings`.
+      - element: updateSettings
+        type: function
+        location: src/sdk/modules/settings.ts:17
+        description: Persists `CardDisplaySettings` back into `.kanban.json` and emits `settings.updated`.
+    language: TypeScript
+    lines: 31
+
+  - file: types.ts
+    path: /Users/admin/dev/kanban-light/src/shared/types.ts
+    purpose: Shared type definitions for boards, settings, and extension/webview messages
+    key_elements:
+      - element: BoardInfo.metadata
+        type: variable
+        location: src/shared/types.ts:122
+        description: Board-scoped metadata-related field used to list metadata keys that should always be shown in the card detail panel.
+      - element: CardDisplaySettings
+        type: interface
+        location: src/shared/types.ts:251
+        description: Existing persisted global settings object; currently holds UI display/layout/defaults plus `logsFilter`, but nothing search-specific.
+      - element: saveSettings message
+        type: pattern
+        location: src/shared/types.ts:386
+        description: Webview→host message channel for persisting `CardDisplaySettings`.
+    language: TypeScript
+    lines: 410
+
+  - file: config.ts
+    path: /Users/admin/dev/kanban-light/src/shared/config.ts
+    purpose: `.kanban.json` schema plus conversion between config and runtime settings
+    key_elements:
+      - element: BoardConfig.metadata
+        type: variable
+        location: src/shared/config.ts:52
+        description: Board-level metadata config slot; currently described for always-visible metadata keys, not search behavior.
+      - element: KanbanConfig
+        type: interface
+        location: src/shared/config.ts:58
+        description: Root persisted workspace config containing global display settings fields.
+      - element: configToSettings
+        type: function
+        location: src/shared/config.ts:426
+        description: Maps persisted config fields into `CardDisplaySettings`.
+      - element: settingsToConfig
+        type: function
+        location: src/shared/config.ts:460
+        description: Maps `CardDisplaySettings` back into `.kanban.json`; fields not listed here do not persist.
+    language: TypeScript
+    lines: 478
+
+  - file: server.ts
+    path: /Users/admin/dev/kanban-light/src/standalone/server.ts
+    purpose: Standalone HTTP/WebSocket server and REST API
+    key_elements:
+      - element: buildInitMessage
+        type: function
+        location: src/standalone/server.ts:181
+        description: Sends preloaded `cards` and `settings` to the webview; this is the handoff that makes standalone search local after hydration.
+      - element: handleMessage case 'ready'
+        type: pattern
+        location: src/standalone/server.ts:488
+        description: Loads cards once and sends the init payload over WebSocket.
+      - element: GET /api/boards/:boardId/tasks
+        type: pattern
+        location: src/standalone/server.ts:1021
+        description: Parses `meta.*` query params, forwards them into `sdk.listCards()`, then applies status/priority/assignee/label filters in-memory.
+      - element: GET /api/tasks
+        type: pattern
+        location: src/standalone/server.ts:1175
+        description: Applies `matchesMetaFilter()` directly to already loaded cards for the global tasks endpoint.
+      - element: GET /api/settings and PUT /api/settings
+        type: pattern
+        location: src/standalone/server.ts:1619
+        description: Existing REST persistence path for `CardDisplaySettings`.
+    language: TypeScript
+    lines: 1954
+
+  - file: index.ts
+    path: /Users/admin/dev/kanban-light/src/cli/index.ts
+    purpose: CLI commands for listing cards and reading/updating workspace settings
+    key_elements:
+      - element: cmdList
+        type: function
+        location: src/cli/index.ts:166
+        description: Parses repeatable `--meta key=value` flags, passes them to `sdk.listCards()`, then applies additional non-metadata filters client-side in the CLI layer.
+      - element: SETTINGS_KEYS
+        type: variable
+        location: src/cli/index.ts:1261
+        description: Allowlist of settings the CLI can show/update; currently excludes any search-related field.
+      - element: cmdSettings
+        type: function
+        location: src/cli/index.ts:1266
+        description: Reads and updates `CardDisplaySettings` using the allowlisted keys only.
+      - element: CLI help for --meta
+        type: pattern
+        location: src/cli/index.ts:1507
+        description: Documents metadata filtering as `--meta key=value` with dot-notation support.
+    language: TypeScript
+    lines: 1729
+
+  - file: index.ts
+    path: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+    purpose: MCP tool definitions layered over the SDK
+    key_elements:
+      - element: list_cards
+        type: function
+        location: src/mcp-server/index.ts:120
+        description: Exposes `metaFilter: z.record(z.string(), z.string())` and forwards it into `sdk.listCards()`.
+      - element: metaFilter schema
+        type: pattern
+        location: src/mcp-server/index.ts:130
+        description: Documents substring, case-insensitive metadata filtering for MCP clients.
+    language: TypeScript
+    lines: 1380
+
+  - file: metadata.test.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/__tests__/metadata.test.ts
+    purpose: SDK integration coverage for metadata parsing and metadata filtering
+    key_elements:
+      - element: SDK listCards - metaFilter
+        type: pattern
+        location: src/sdk/__tests__/metadata.test.ts:326
+        description: Covers flat keys, nested dot-notation, AND logic, empty filters, and case-insensitive matching.
+    language: TypeScript
+    lines: 390
+
+  - file: metaUtils.test.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/__tests__/metaUtils.test.ts
+    purpose: Unit tests for metadata path traversal and matcher behavior
+    key_elements:
+      - element: describe('matchesMetaFilter')
+        type: pattern
+        location: src/sdk/__tests__/metaUtils.test.ts:42
+        description: Verifies undefined metadata behavior, substring matching, nested keys, AND logic, and numeric-to-string coercion.
+    language: TypeScript
+    lines: 90
+
+patterns_found:
+  - category: architecture
+    pattern: Webview search is store-driven and local after initial hydration
+    description: Search input updates only Zustand state and URL params; the actual card filtering happens in `getFilteredCardsByStatus()` against already-hydrated cards.
+    examples:
+      - file: /Users/admin/dev/kanban-light/src/webview/components/Toolbar.tsx
+        location: src/webview/components/Toolbar.tsx:320
+        snippet: "<input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} ... />"
+      - file: /Users/admin/dev/kanban-light/src/webview/router.tsx
+        location: src/webview/router.tsx:138
+        snippet: "if (search.q) { setSearchQuery(decodeURIComponent(search.q)) }"
+      - file: /Users/admin/dev/kanban-light/src/webview/store/index.ts
+        location: src/webview/store/index.ts:315
+        snippet: "const { metaFilter, plainText } = parseMetaTokens(searchQuery)"
+      - file: /Users/admin/dev/kanban-light/src/standalone/server.ts
+        location: src/standalone/server.ts:187
+        snippet: "return { type: 'init', cards, columns: sdk.listColumns(currentBoardId), settings, ... }"
+    prevalence: common
+
+  - category: search_behavior
+    pattern: Metadata search uses case-insensitive substring matching with dot-notation paths and AND semantics
+    description: Both the SDK helper and the webview store treat metadata filters as substring checks on stringified values; multiple fields must all match.
+    examples:
+      - file: /Users/admin/dev/kanban-light/src/sdk/metaUtils.ts
+        location: src/sdk/metaUtils.ts:41
+        snippet: "if (!String(value).toLowerCase().includes(needle.toLowerCase())) return false"
+      - file: /Users/admin/dev/kanban-light/src/webview/store/index.ts
+        location: src/webview/store/index.ts:319
+        snippet: "Object.entries(metaFilter).every(([path, needle]) => { ... String(val).toLowerCase().includes(needle.toLowerCase()) })"
+      - file: /Users/admin/dev/kanban-light/src/sdk/__tests__/metadata.test.ts
+        location: src/sdk/__tests__/metadata.test.ts:361
+        snippet: "const result = await sdk.listCards(undefined, undefined, { sprint: 'Q1', team: 'backend' })"
+    prevalence: common
+
+  - category: structure
+    pattern: Interface layers reuse SDK metadata filtering but keep non-metadata filtering in the interface layer
+    description: Server, CLI, and MCP pass `metaFilter` into `sdk.listCards()` first, then apply status/priority/assignee/label filters outside the SDK.
+    examples:
+      - file: /Users/admin/dev/kanban-light/src/standalone/server.ts
+        location: src/standalone/server.ts:1029
+        snippet: "const boardTasks = await sdk.listCards(..., Object.keys(metaFilter).length > 0 ? metaFilter : undefined, sortParam || undefined)"
+      - file: /Users/admin/dev/kanban-light/src/cli/index.ts
+        location: src/cli/index.ts:193
+        snippet: "let cards = await sdk.listCards(undefined, boardId, metaFilter, sortOpt)"
+      - file: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+        location: src/mcp-server/index.ts:134
+        snippet: "let cards = await sdk.listCards(undefined, boardId, metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined, sort || undefined)"
+    prevalence: common
+
+  - category: settings_persistence
+    pattern: Global UI settings persist through CardDisplaySettings mapped into .kanban.json
+    description: Existing persisted settings are centralized in `CardDisplaySettings` and serialized explicitly via shared config conversion helpers, then exposed through webview messages, REST settings endpoints, and CLI settings commands.
+    examples:
+      - file: /Users/admin/dev/kanban-light/src/shared/types.ts
+        location: src/shared/types.ts:251
+        snippet: "export interface CardDisplaySettings { ... logsFilter?: { ... } }"
+      - file: /Users/admin/dev/kanban-light/src/shared/config.ts
+        location: src/shared/config.ts:426
+        snippet: "export function configToSettings(config: KanbanConfig): CardDisplaySettings { ... }"
+      - file: /Users/admin/dev/kanban-light/src/shared/config.ts
+        location: src/shared/config.ts:460
+        snippet: "export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySettings): KanbanConfig { ... }"
+      - file: /Users/admin/dev/kanban-light/src/webview/App.tsx
+        location: src/webview/App.tsx:816
+        snippet: "const next = { ...cardSettings, logsFilter: filter }; vscode.postMessage({ type: 'saveSettings', settings: next })"
+    prevalence: common
+
+  - category: naming
+    pattern: Metadata query naming differs by interface
+    description: Webview uses inline `meta.field: value` syntax embedded in `searchQuery`, while CLI/MCP/REST expose structured `metaFilter`/`meta.*` inputs.
+    examples:
+      - file: /Users/admin/dev/kanban-light/src/webview/components/Toolbar.tsx
+        location: src/webview/components/Toolbar.tsx:323
+        snippet: "title=\"Search cards by text. Advanced metadata search also works with meta.field: value\""
+      - file: /Users/admin/dev/kanban-light/src/cli/index.ts
+        location: src/cli/index.ts:1507
+        snippet: "--meta key=value"
+      - file: /Users/admin/dev/kanban-light/src/standalone/server.ts
+        location: src/standalone/server.ts:1026
+        snippet: "if (param.startsWith('meta.')) metaFilter[param.slice(5)] = value"
+      - file: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+        location: src/mcp-server/index.ts:130
+        snippet: "metaFilter: z.record(z.string(), z.string()).optional()"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: webview toolbar and router
+      responsibility: Collect and synchronize the free-text search query
+      location: src/webview/components/Toolbar.tsx and src/webview/router.tsx
+      relationship_to_domain: domain entry point for standalone/webview search
+    - component: Zustand store filtering
+      responsibility: Filter already-loaded cards by metadata and plain text
+      location: src/webview/store/index.ts
+      relationship_to_domain: executes client-side search logic
+    - component: SDK metadata matcher
+      responsibility: Apply structured metadata filters to cards using dot-notation traversal
+      location: src/sdk/metaUtils.ts and src/sdk/modules/cards.ts
+      relationship_to_domain: shared metadata filter engine for SDK-backed interfaces
+    - component: standalone server REST layer
+      responsibility: Parse HTTP query params and/or preload cards/settings into the webview
+      location: src/standalone/server.ts
+      relationship_to_domain: bridges SDK-backed search and standalone webview hydration
+    - component: CLI list/settings commands
+      responsibility: Parse metadata filter flags and expose a subset of persisted settings
+      location: src/cli/index.ts
+      relationship_to_domain: non-HTTP interface for metadata filtering and settings control
+    - component: MCP tool layer
+      responsibility: Expose metadata filtering to MCP clients via structured tool input
+      location: src/mcp-server/index.ts
+      relationship_to_domain: AI-facing interface over SDK search
+    - component: shared config/settings schema
+      responsibility: Persist global workspace settings and board configuration in `.kanban.json`
+      location: src/shared/types.ts and src/shared/config.ts
+      relationship_to_domain: current persistence mechanism that could host future search-related settings
+  interfaces_used_by_domain:
+    - interface: CardDisplaySettings
+      location: src/shared/types.ts:251
+      usage_pattern: Global persisted workspace settings exchanged between webview, server, CLI, and shared config serialization.
+    - interface: KanbanConfig
+      location: src/shared/config.ts:58
+      usage_pattern: Root `.kanban.json` schema storing display/layout/default settings and board records.
+    - interface: BoardConfig / BoardInfo
+      location: src/shared/config.ts:27 and src/shared/types.ts:113
+      usage_pattern: Board-scoped metadata-related config exists today only for metadata key visibility in the card detail panel.
+  data_flow_involving_domain: Standalone webview receives `cards` and `settings` once through `buildInitMessage()` / `ready` WebSocket messages, writes the search term into Zustand and URL state, then filters cards locally. In contrast, CLI, REST, and MCP accept structured metadata filters (`--meta`, `meta.*`, `metaFilter`) and pass them into `sdk.listCards()`, which delegates to `matchesMetaFilter()` before returning results to the interface layer.
+  key_relationships_to_domain:
+    - from: src/webview/components/Toolbar.tsx
+      to: src/webview/store/index.ts
+      relationship: writes searchQuery into store
+    - from: src/webview/router.tsx
+      to: src/webview/store/index.ts
+      relationship: restores and mirrors searchQuery via URL q parameter
+    - from: src/webview/App.tsx
+      to: src/standalone/server.ts
+      relationship: consumes init/showSettings messages built by server
+    - from: src/sdk/KanbanSDK.ts
+      to: src/sdk/modules/cards.ts
+      relationship: delegates listCards implementation
+    - from: src/sdk/modules/cards.ts
+      to: src/sdk/metaUtils.ts
+      relationship: calls matchesMetaFilter for metadata search
+    - from: src/standalone/server.ts
+      to: src/sdk/KanbanSDK.ts
+      relationship: calls listCards/getSettings/updateSettings
+    - from: src/cli/index.ts
+      to: src/sdk/KanbanSDK.ts
+      relationship: calls listCards/getSettings/updateSettings
+    - from: src/mcp-server/index.ts
+      to: src/sdk/KanbanSDK.ts
+      relationship: calls listCards
+    - from: src/sdk/modules/settings.ts
+      to: src/shared/config.ts
+      relationship: serializes CardDisplaySettings to and from .kanban.json
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+  frameworks_used_in_domain:
+    - name: React
+      usage_in_domain: Webview UI components and search/settings interaction surface
+    - name: Zustand
+      usage_in_domain: In-memory client-side card/filter/settings state
+    - name: TanStack Router
+      usage_in_domain: URL synchronization for standalone web search state
+    - name: Zod
+      usage_in_domain: MCP tool input schema for metadata filters
+  libraries_used_in_domain:
+    - name: ws / WebSocket layer in standalone server
+      purpose_in_domain: Sends init/settings updates to the standalone webview
+    - name: Vitest
+      purpose_in_domain: SDK metadata filter and helper tests
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: Webview uses `searchQuery`/`q` for the free-text search string, SDK-backed interfaces use `metaFilter` or `meta.*`, and settings persistence flows through `CardDisplaySettings`/`saveSettings` naming.
+  structure_of_domain: Search behavior is split by interface: webview/store owns local free-text filtering, while SDK helper modules own structured metadata filtering used by REST/CLI/MCP.
+  error_handling_in_domain: CLI validates malformed `--meta` values and exits; server wraps route handlers in `try/catch` and returns HTTP 400/404 JSON errors; MCP returns `{ isError: true }` responses for failures.
+  testing_in_domain: Tests are concentrated in SDK unit/integration suites for metadata filter semantics; no dedicated webview search tests were identified in the inspected scope.
+  documentation_in_domain: CLI help text documents `--meta`; MCP schema descriptions document metadata substring behavior; webview search tooltip documents `meta.field: value` syntax inline.
+
+related_dependencies:
+  internal:
+    - component: src/sdk/metaUtils.ts
+      relationship_to_domain: shared matcher used by SDK listCards and direct server global-task filtering
+      direction: outbound
+    - component: src/shared/config.ts
+      relationship_to_domain: persists global settings fields used by webview/server/CLI
+      direction: bidirectional
+    - component: src/webview/store/index.ts
+      relationship_to_domain: executes standalone search locally over hydrated cards
+      direction: inbound
+  external:
+    - name: zustand
+      purpose_for_domain: client-side search/filter state container
+    - name: @tanstack/react-router
+      purpose_for_domain: URL persistence of search state in standalone mode
+    - name: zod
+      purpose_for_domain: schema validation for MCP search/filter inputs
+    - name: vitest
+      purpose_for_domain: automated verification of metadata matching behavior
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: free-form metadata and query parameters are stringified and compared without schema validation
+      location: src/sdk/metaUtils.ts:41 and src/webview/store/index.ts:319
+      concern: matching is permissive by design (string coercion + substring search), which affects semantics but not obviously auth-sensitive behavior
+  authentication_patterns_in_domain: none observed in this scope
+  authorization_patterns_in_domain: none observed in this scope
+  data_validation_in_domain: CLI validates `--meta key=value`; MCP validates structured input with Zod; REST settings and task-filter routes largely trust parsed request bodies/query params after lightweight parsing
+
+testing_patterns:
+  framework: Vitest
+  coverage_areas:
+    - metadata dot-notation traversal in `getNestedValue`
+    - metadata substring matching, case-insensitivity, AND semantics, and numeric coercion in `matchesMetaFilter`
+    - `sdk.listCards(..., metaFilter)` integration behavior for flat and nested metadata filters
+  test_organization: SDK unit tests live under `src/sdk/__tests__/`; metadata-specific coverage is split between `metaUtils.test.ts` and `metadata.test.ts`
+  mock_patterns:
+    - temporary workspace directories created with `fs.mkdtempSync(...)`
+    - real `KanbanSDK` instances backed by temporary `.kanban.json` configs
+
+insertion_points_observed:
+  - insertion_point: src/webview/store/index.ts:138 and src/webview/store/index.ts:267
+    symbols:
+      - parseMetaTokens
+      - getFilteredCardsByStatus
+    factual_role: Current local-only hook for standalone/webview query parsing and matching; any fuzzy behavior limited to the webview would need to enter here because search updates do not call the REST API.
+  - insertion_point: src/sdk/metaUtils.ts:41 and src/sdk/modules/cards.ts:17
+    symbols:
+      - matchesMetaFilter
+      - listCards
+    factual_role: Current shared SDK-backed metadata matcher used by server/CLI/MCP; changing matching semantics here would affect all structured metadata-filter interfaces.
+  - insertion_point: src/shared/types.ts:251, src/shared/config.ts:426, src/shared/config.ts:460, src/sdk/modules/settings.ts:10
+    symbols:
+      - CardDisplaySettings
+      - configToSettings
+      - settingsToConfig
+      - getSettings
+      - updateSettings
+    factual_role: Existing global persisted-settings pipeline for workspace config; new search settings would only persist if added to both the settings type and config serialization helpers.
+  - insertion_point: src/webview/components/SettingsPanel.tsx:551 and src/webview/App.tsx:492
+    symbols:
+      - SettingsPanelContent
+      - handleSaveSettings
+    factual_role: Existing webview UI and message bridge for editing persisted settings.
+  - insertion_point: src/cli/index.ts:1261 and src/standalone/server.ts:1619
+    symbols:
+      - SETTINGS_KEYS
+      - cmdSettings
+      - GET /api/settings
+      - PUT /api/settings
+    factual_role: Existing CLI and REST exposure points for persisted workspace settings.
+  - insertion_point: src/shared/config.ts:52 and src/shared/types.ts:122
+    symbols:
+      - BoardConfig.metadata
+      - BoardInfo.metadata
+    factual_role: Existing board-scoped metadata-related schema slots; today they represent metadata-key display preferences, not search configuration.
+  - insertion_point: src/mcp-server/index.ts:120
+    symbols:
+      - list_cards
+    factual_role: Existing request-time MCP surface if fuzzy behavior were exposed as per-call tool parameters instead of persisted settings.
+
+open_questions:
+  - question: Should future fuzzy behavior apply only to the standalone/webview free-text query, or also to SDK-backed `metaFilter` consumers (REST/CLI/MCP)?
+    context: The current architecture intentionally splits local free-text search from structured SDK metadata filtering, so there is no single existing hook that spans both behaviors.
+  - question: Should a future search setting be global workspace state or board-scoped state?
+    context: Both a global settings pipeline (`CardDisplaySettings`/`KanbanConfig`) and a board-scoped metadata-related schema (`BoardConfig.metadata`) exist, but they serve different purposes today.
+  - question: Should metadata fuzzy behavior affect only metadata matching, or also the plain-text fields searched in the webview (`content`, `id`, `assignee`, `labels`)?
+    context: `getFilteredCardsByStatus()` currently mixes metadata token handling and plain-text matching in one function, while SDK-backed interfaces only understand metadata filters.
+
+gaps:
+  - area: webview automated coverage
+    description: No dedicated tests for `parseMetaTokens()` / `getFilteredCardsByStatus()` were identified in the inspected scope.
+    impact: Client-side search behavior changes in the standalone/webview path would have less direct regression protection than SDK metadata matching changes.
+  - area: extension-host parity outside inspected scope
+    description: The extension host message handling was not traced in detail because the objective focused on webview/store/sdk/server/cli/mcp.
+    impact: Low for the stated objective; the shared `saveSettings` / `showSettings` message shapes indicate the same settings contract is reused.

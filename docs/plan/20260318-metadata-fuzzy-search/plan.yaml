@@ -1,0 +1,642 @@
+plan_id: 20260318-metadata-fuzzy-search
+objective: |
+  Add metadata-driven filtering affordances to the card UI and introduce an optional fuzzy-search mode
+  that works across normal text search and metadata fields. Implement the search semantics for parity
+  across SDK, REST API, CLI, MCP, and the webview, while keeping the solution storage-agnostic for
+  both markdown and SQLite workspaces.
+created_at: "2026-03-18"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  This plan explicitly chooses parity over a webview-only shortcut: fuzzy search will be implemented
+  in shared SDK business logic first, then exposed through REST API, CLI, and MCP before the webview
+  toggle and metadata filter icons are wired up. The recommended implementation is a single small
+  cross-storage JavaScript fuzzy-search dependency (`fuse.js`), not SQLite FTS5 and not semantic/vector
+  search; SQLite FTS5 can be a later accelerator, but it cannot be the primary solution because markdown
+  mode must behave the same way. The fuzzy toggle will be treated as transient filter state (saved views
+  + standalone URL sync), not as a persisted workspace setting in `.kanban.json`, while README,
+  CHANGELOG, and generated SDK/API docs are updated as part of the rollout. No `docs/prd.yaml` exists
+  today, so there is no PRD conflict to resolve before planning.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: Webview search semantics diverge from SDK/API/CLI/MCP semantics, causing exact and fuzzy modes to return different cards for the same query.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Centralize token parsing and search matching in SDK-owned pure helpers and have the webview consume
+        the same helper instead of maintaining a second implementation in the Zustand store.
+    - scenario: Fuzzy matching becomes too permissive for metadata tokens (for example `meta.team: be` matching unrelated values), making the filter icon feel unreliable.
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Keep field-scoped metadata queries as field-constrained matches even in fuzzy mode, document the
+        behavior clearly, and add regression tests for exact mode, fuzzy mode, and mixed text + metadata queries.
+    - scenario: Adding a new dependency increases bundle or build complexity without enough user value.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Limit the change to one dependency (`fuse.js`), use it only in pure search helpers, and avoid any
+        storage/index migration. If the dependency proves problematic during implementation, fall back before
+        touching interface layers.
+    - scenario: Filter state persistence leaks into workspace config and creates noisy `.kanban.json` churn for a purely UI-level toggle.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Keep the fuzzy flag in webview filter state, saved views, and standalone URL params only; do not add
+        it to `CardDisplaySettings` or `.kanban.json` unless a later requirement explicitly demands persistence.
+  assumptions:
+    - `src/webview/store/index.ts` is currently the only place implementing toolbar search semantics in the UI, so replacing its local matcher is sufficient for webview parity.
+    - `src/sdk/metaUtils.ts` and `src/sdk/modules/cards.ts` are the correct SDK-first home for metadata-aware matching logic.
+    - The existing `list_cards` MCP tool and `kl list` CLI command are the right parity surfaces for new search parameters; no separate search-only endpoint/tool is needed.
+    - README and CHANGELOG must be updated for this user-facing feature, and generated docs will be refreshed via `npm run docs` rather than hand-editing `docs/api.md` or `docs/sdk.md`.
+    - There is no `docs/prd.yaml` in the repo at planning time.
+
+implementation_specification:
+  code_structure: |
+    Keep the rollout surgical and ordered by AGENTS.md: introduce the fuzzy-search dependency and SDK-owned
+    search helpers first, then expose the same behavior through REST API, CLI, and MCP, and only then replace
+    the webview's local search logic and add the metadata filter affordances in the UI. Reuse the existing
+    `searchQuery` / `meta.field: value` model instead of inventing a second filter system, and prefer adding
+    a small shared helper path over scattering duplicate fuzzy logic across layers.
+  affected_areas:
+    - package.json and pnpm-lock.yaml (single dependency addition if approved)
+    - src/sdk/metaUtils.ts
+    - src/sdk/modules/cards.ts
+    - src/sdk/modules/context.ts
+    - src/sdk/KanbanSDK.ts
+    - src/standalone/server.ts
+    - src/standalone/__tests__/server.integration.test.ts
+    - scripts/generate-api-docs.ts
+    - src/cli/index.ts
+    - src/mcp-server/index.ts
+    - src/webview/store/index.ts
+    - src/webview/router.tsx
+    - src/webview/components/Toolbar.tsx
+    - src/webview/components/CardItem.tsx
+    - src/webview/components/CardEditor.tsx
+    - src/sdk/__tests__/metaUtils.test.ts
+    - src/sdk/__tests__/metadata.test.ts
+    - README.md
+    - CHANGELOG.md
+  component_details:
+    - component: SDK fuzzy-search core
+      responsibility: Own exact/fuzzy token parsing and matching for plain text and metadata in a storage-agnostic way.
+      interfaces:
+        - "Shared pure helper(s) for: free-text query parsing, metadata token extraction, exact matching, fuzzy matching, and searchable-card text assembly"
+        - "listCards(..., options?) or equivalent SDK contract extended to accept search query + fuzzy flag without breaking existing callers"
+    - component: REST list endpoints
+      responsibility: Accept query/fuzzy parameters and pass them into SDK search without changing endpoint shape.
+      interfaces:
+        - "GET /api/tasks?q=<text>&fuzzy=true&meta.field=value"
+        - "GET /api/boards/:boardId/tasks?q=<text>&fuzzy=true&meta.field=value"
+    - component: CLI list command
+      responsibility: Expose exact/fuzzy search on the same list surface that already supports metadata filters.
+      interfaces:
+        - "kl list --search <text> [--fuzzy] [--meta key=value ...]"
+    - component: MCP list_cards tool
+      responsibility: Add fuzzy-search inputs to the existing card-listing tool for agent parity.
+      interfaces:
+        - "list_cards({ searchQuery?: string, fuzzy?: boolean, metaFilter?: Record<string, string>, ... })"
+    - component: Webview filter state
+      responsibility: Hold the fuzzy toggle alongside searchQuery, saved views, and standalone URL params without persisting to workspace settings.
+      interfaces:
+        - "searchQuery: string"
+        - "fuzzySearch: boolean"
+        - "setFuzzySearch(enabled: boolean)"
+        - "applyMetadataFilterToken(path: string, value: string): void"
+    - component: Card metadata filter affordance
+      responsibility: Add a filter icon to rendered metadata fields so users can inject the correct `meta.field: value` token without manual typing.
+      interfaces:
+        - "Per-field icon/button on displayed metadata rows or chips"
+        - "Click action appends or replaces the appropriate metadata token in the shared search state"
+  dependencies:
+    - component: SDK fuzzy-search core
+      relationship: Blocks every interface layer because parity is an explicit requirement and AGENTS.md requires SDK-first business logic.
+    - component: REST API / CLI / MCP parity layers
+      relationship: Depend on the finalized SDK search contract and descriptions before their public flags/schemas can be updated.
+    - component: Webview search state
+      relationship: Depends on the SDK helper contract to avoid keeping a second matcher implementation in the store.
+    - component: Metadata filter icon UI
+      relationship: Depends on webview search state exposing a reliable helper for token insertion/toggle behavior.
+    - component: Docs and tests
+      relationship: Depend on all public contracts being stable so examples, help text, and regression cases describe the final UX.
+  integration_points:
+    - `src/sdk/modules/cards.ts` remains the storage-agnostic search execution point for both markdown and SQLite cards.
+    - `src/standalone/server.ts` continues to parse `meta.*` query params, now also forwarding `q` and `fuzzy`.
+    - `src/cli/index.ts` continues to use `sdk.listCards(...)` as the source of truth rather than re-implementing fuzzy matching locally.
+    - `src/mcp-server/index.ts` extends the existing `list_cards` schema instead of creating a second search tool.
+    - `src/webview/store/index.ts` stops owning bespoke search semantics and delegates matching to the SDK-owned helper.
+    - Generated docs continue to be produced by `npm run docs` from JSDoc and `scripts/generate-api-docs.ts` metadata.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "Approved dependency choice: add `fuse.js` as the only new runtime dependency for cross-storage fuzzy matching"
+    format: package.json dependency entry plus updated lockfile
+  - from_task: T2
+    to_task: T3
+    interface: "SDKContext/listCards contract extended to accept exact/fuzzy text search alongside existing metaFilter and sort"
+    format: TypeScript method signature in `src/sdk/modules/context.ts` and `src/sdk/modules/cards.ts`
+  - from_task: T3
+    to_task: T4
+    interface: "Public SDK JSDoc and method signature documenting `q`/`fuzzy` semantics, including metadata-field matching"
+    format: `KanbanSDK.listCards` signature + JSDoc in `src/sdk/KanbanSDK.ts`
+  - from_task: T3
+    to_task: T5
+    interface: "Stable SDK surface for CLI list command to pass searchQuery/fuzzy without extra local matching"
+    format: TypeScript call signature in `src/sdk/KanbanSDK.ts`
+  - from_task: T3
+    to_task: T6
+    interface: "Stable SDK surface for MCP `list_cards` schema to forward searchQuery/fuzzy"
+    format: TypeScript call signature in `src/sdk/KanbanSDK.ts`
+  - from_task: T3
+    to_task: T7
+    interface: "Pure SDK-owned matcher available for the webview store to consume for exact/fuzzy filtering"
+    format: helper import path and helper function signature in `src/sdk/metaUtils.ts`
+  - from_task: T7
+    to_task: T8
+    interface: "Webview store exposes `fuzzySearch` state and a metadata-token insertion helper"
+    format: Zustand state fields + action signatures in `src/webview/store/index.ts`
+  - from_task: T4
+    to_task: T10
+    interface: "REST query params and examples are finalized for README/API docs"
+    format: endpoint parameter list (`q`, `fuzzy`, `meta.*`) and example request shape
+  - from_task: T5
+    to_task: T10
+    interface: "CLI flags and help text are finalized for README examples"
+    format: `kl list --search <text> [--fuzzy] [--meta ...]`
+  - from_task: T6
+    to_task: T10
+    interface: "MCP tool schema text is finalized for README/MCP docs references"
+    format: `list_cards` input schema description
+
+tasks:
+  - id: T1
+    title: Add the single approved fuzzy-search dependency
+    description: |
+      Update `package.json` and `pnpm-lock.yaml` to add `fuse.js` as the only new dependency for this feature.
+      This task is intentionally isolated so the dependency decision is explicit and reviewable. The plan does
+      not choose MiniSearch, SQLite FTS5, or semantic/vector search for the initial rollout because the feature
+      must work identically in markdown and SQLite storage modes and inside the webview's already-hydrated card set.
+    wave: 1
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies: []
+    context_files:
+      package.json: "Dependencies list; no fuzzy-search library is currently installed."
+      pnpm-lock.yaml: "Lockfile must be updated atomically with package.json."
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 6
+    focus_area: Runtime dependency selection
+    verification:
+      - Dependency list contains exactly one new fuzzy-search library entry (`fuse.js`) and no unrelated package churn.
+      - Build tooling still resolves after install/lockfile refresh.
+    acceptance_criteria:
+      - `fuse.js` is added and locked.
+      - No other dependency or script changes are introduced in this step.
+    failure_modes:
+      - scenario: The added dependency causes bundling or typing issues in either Node or Vite builds.
+        likelihood: low
+        impact: medium
+        mitigation: Keep the addition isolated so it can be reverted cleanly before any interface-layer work begins.
+    tech_stack:
+      - TypeScript
+      - Fuse.js
+    test_coverage: null
+
+  - id: T2
+    title: Implement SDK-owned exact and fuzzy search helpers
+    description: |
+      Extend the SDK internals so search semantics live in one place. In `src/sdk/metaUtils.ts`, add pure helpers for:
+      tokenizing `meta.field: value` fragments from a search string, extracting searchable card text (including metadata
+      values), exact substring matching, and Fuse-powered fuzzy matching that still respects field-scoped metadata tokens.
+      In `src/sdk/modules/cards.ts`, wire those helpers into the card listing path so the search remains storage-agnostic.
+      In `src/sdk/modules/context.ts`, update the SDKContext signature as needed so downstream module callers share the same contract.
+      Exact mode must preserve current behavior by default; fuzzy mode is opt-in and must include metadata values.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      src/sdk/metaUtils.ts: "Current metadata-only helpers (`getNestedValue`, `matchesMetaFilter`) and the best home for shared search primitives."
+      src/sdk/modules/cards.ts: "Current listCards implementation that applies metadata filtering before sort."
+      src/sdk/modules/context.ts: "SDKContext interface currently mirrors the old listCards signature."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 160
+    focus_area: Shared search semantics
+    verification:
+      - Exact mode still matches current substring behavior for existing metadata filters.
+      - Fuzzy mode can match text and metadata without requiring storage-engine-specific code paths.
+      - `src/sdk/modules/context.ts` and `src/sdk/modules/cards.ts` compile against the same method signature.
+    acceptance_criteria:
+      - Search parsing/matching exists as reusable pure helpers owned by the SDK layer.
+      - Metadata tokens remain AND-based and field-scoped.
+      - Fuzzy mode applies to metadata values as well as free text.
+      - Markdown and SQLite paths continue to use the same code path.
+    failure_modes:
+      - scenario: Helper logic duplicates or conflicts with the existing webview token parser, leaving two sources of truth.
+        likelihood: medium
+        impact: high
+        mitigation: Replace the webview's local matcher in a later task rather than preserving both implementations.
+      - scenario: Fuzzy search changes default exact matching behavior for existing callers.
+        likelihood: low
+        impact: high
+        mitigation: Keep fuzzy matching behind an explicit boolean flag and add regression coverage for the default path.
+    tech_stack:
+      - TypeScript
+      - Fuse.js
+    test_coverage: "Add/extend unit and integration coverage in T9 before final validation."
+
+  - id: T3
+    title: Publish the SDK search contract and JSDoc
+    description: |
+      Update `src/sdk/KanbanSDK.ts` so the public SDK surface documents and exposes the new search capability.
+      The public contract should describe how exact search, fuzzy search, and `meta.field: value` tokens interact,
+      while staying backward-compatible for existing callers. This task is also where the generated SDK docs source
+      is updated, since `docs/sdk.md` is produced from JSDoc and must not be edited directly.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T2
+    context_files:
+      src/sdk/KanbanSDK.ts: "Public listCards JSDoc and signature currently document metadata substring filtering only."
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 45
+    focus_area: Public SDK API
+    verification:
+      - `KanbanSDK.listCards` (or the chosen public search surface) has one stable documented contract for query + fuzzy behavior.
+      - JSDoc examples mention metadata-field fuzzy search and cross-storage support.
+    acceptance_criteria:
+      - Public SDK docs describe the new search inputs and default exact behavior.
+      - Existing callers remain source-compatible unless the implementation task explicitly updates them in later waves.
+    failure_modes:
+      - scenario: The public signature becomes ambiguous or overly broad, making interface-layer call sites inconsistent.
+        likelihood: medium
+        impact: medium
+        mitigation: Prefer one explicit options shape and describe it with concrete JSDoc examples before updating callers.
+    tech_stack:
+      - TypeScript
+    test_coverage: null
+
+  - id: T4
+    title: Expose exact and fuzzy search through the REST API
+    description: |
+      Update `src/standalone/server.ts` so both card-list endpoints accept a plain-text query and a fuzzy toggle
+      while preserving existing `meta.*` query param behavior. The recommended surface is `q=<text>` and `fuzzy=true`
+      for both `GET /api/tasks` and `GET /api/boards/:boardId/tasks`, forwarding everything into the SDK contract from T3.
+      Extend `src/standalone/__tests__/server.integration.test.ts` to cover exact search, fuzzy search, and fuzzy metadata matching.
+      Update `scripts/generate-api-docs.ts` so generated API documentation includes the new query params and examples.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      src/standalone/server.ts: "List endpoints already parse `meta.*` query params and call `sdk.listCards(...)`."
+      src/standalone/__tests__/server.integration.test.ts: "Existing integration coverage for settings and REST endpoints; extend with search-specific cases."
+      scripts/generate-api-docs.ts: "Single source of truth for docs/api.md route/query parameter documentation."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 130
+    focus_area: REST parity
+    verification:
+      - `GET /api/tasks` and `GET /api/boards/:boardId/tasks` both support `q` and `fuzzy`.
+      - Exact mode and fuzzy mode behave consistently with the SDK helper tests.
+      - API docs generation metadata reflects the new query params.
+    acceptance_criteria:
+      - REST callers can request exact search, fuzzy search, metadata filters, or combinations of them.
+      - Existing `meta.*` query parameters keep working.
+      - Integration tests cover at least one metadata fuzzy case.
+    failure_modes:
+      - scenario: Server applies fuzzy matching in one endpoint but not the other, breaking default-board vs board-scoped parity.
+        likelihood: medium
+        impact: high
+        mitigation: Update both routes in one task and cover both shapes in integration tests.
+      - scenario: Generated API docs lag behind the runtime behavior.
+        likelihood: medium
+        impact: medium
+        mitigation: Treat `scripts/generate-api-docs.ts` as part of the same change, not a follow-up cleanup.
+    tech_stack:
+      - TypeScript
+      - Node.js HTTP server
+    test_coverage: "Extend server.integration.test.ts with exact/fuzzy/metadata search cases."
+
+  - id: T5
+    title: Add search and fuzzy flags to the CLI list command
+    description: |
+      Update `src/cli/index.ts` so `kl list` can forward both a free-text query and a fuzzy toggle to the SDK,
+      while continuing to support repeatable `--meta key=value` filters. The recommended public shape is
+      `kl list --search <text> [--fuzzy] [--meta key=value ...]`. Help text and JSON output behavior should
+      stay consistent with the current command.
+    wave: 5
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      src/cli/index.ts: "`cmdList` already parses `--meta`, sorting, and other filters before calling `sdk.listCards(...)`."
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 50
+    focus_area: CLI parity
+    verification:
+      - `kl list --search foo` returns the same exact-mode results as the SDK/API.
+      - `kl list --search foo --fuzzy --meta sprint=Q1` forwards both search dimensions together.
+      - CLI help text documents the new flags.
+    acceptance_criteria:
+      - CLI adds no new command surface; it extends `kl list` only.
+      - Existing filters and JSON output remain unchanged apart from the new search behavior.
+    failure_modes:
+      - scenario: CLI accidentally re-implements fuzzy logic instead of delegating to the SDK.
+        likelihood: low
+        impact: medium
+        mitigation: Keep CLI as a thin parser/forwarder and let the SDK remain the only matcher.
+    tech_stack:
+      - TypeScript
+    test_coverage: null
+
+  - id: T6
+    title: Extend the MCP list_cards tool for fuzzy-search parity
+    description: |
+      Update `src/mcp-server/index.ts` so the existing `list_cards` tool accepts a free-text query and a fuzzy boolean,
+      then forwards both into the SDK search contract. Tool descriptions should explicitly state that fuzzy mode also applies
+      to metadata values and that `metaFilter` remains available for structured field-specific searches.
+    wave: 6
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      src/mcp-server/index.ts: "`list_cards` currently exposes `metaFilter` and forwards to `sdk.listCards(...)`."
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 35
+    focus_area: MCP parity
+    verification:
+      - MCP schema for `list_cards` includes `searchQuery` and `fuzzy` with clear descriptions.
+      - Tool implementation remains a thin pass-through to the SDK.
+    acceptance_criteria:
+      - MCP clients can trigger exact/fuzzy search without using a separate tool.
+      - `metaFilter` behavior remains documented and supported.
+    failure_modes:
+      - scenario: Tool descriptions imply fuzzy search works differently from REST/CLI.
+        likelihood: medium
+        impact: medium
+        mitigation: Reuse the same wording as the SDK/API docs and avoid interface-specific semantics.
+    tech_stack:
+      - TypeScript
+      - Zod
+    test_coverage: null
+
+  - id: T7
+    title: Replace webview-local search semantics with shared exact/fuzzy state
+    description: |
+      Update `src/webview/store/index.ts`, `src/webview/router.tsx`, and `src/webview/components/Toolbar.tsx`
+      so the webview uses the SDK-owned matcher helpers instead of its current bespoke token parser. Add a
+      `fuzzySearch` boolean to the Zustand state and `SavedView`, wire a compact `[x] Fuzzy` checkbox next to
+      the top-toolbar search input, and synchronize the flag through standalone routing (for example `?q=...&fuzzy=true`).
+      Keep this as filter/session state only; do not add it to `CardDisplaySettings` or `.kanban.json`.
+    wave: 7
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+      - T4
+      - T5
+      - T6
+    context_files:
+      src/webview/store/index.ts: "Current `searchQuery`, `SavedView`, `parseMetaTokens`, and in-memory card filtering implementation."
+      src/webview/router.tsx: "Current standalone URL sync for `q` and other filters."
+      src/webview/components/Toolbar.tsx: "Top toolbar search input, saved-view reapply path, and filter chip display."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 140
+    focus_area: Webview search state and UX
+    verification:
+      - Toggling fuzzy mode changes only search semantics, not unrelated filters.
+      - Saved views round-trip both `searchQuery` and `fuzzySearch`.
+      - Standalone URL restore rehydrates the fuzzy flag correctly.
+    acceptance_criteria:
+      - Toolbar shows a compact fuzzy checkbox adjacent to the search field.
+      - Webview exact/fuzzy results match the SDK/API/CLI/MCP behavior for the same card set.
+      - No `.kanban.json` settings schema changes are introduced for the fuzzy toggle.
+    failure_modes:
+      - scenario: The new checkbox is added visually but not included in saved views or standalone URL sync.
+        likelihood: medium
+        impact: medium
+        mitigation: Treat `SavedView` and router updates as part of the same task, not optional polish.
+      - scenario: The webview keeps the old `parseMetaTokens` code path alive, causing hidden divergence.
+        likelihood: medium
+        impact: high
+        mitigation: Replace or delegate the existing parser instead of layering fuzzy behavior on top of it.
+    tech_stack:
+      - TypeScript
+      - React
+      - Zustand
+      - TanStack Router
+    test_coverage: "Manual validation plus helper-driven automated coverage from T9."
+
+  - id: T8
+    title: Add metadata filter icons where metadata fields are actually rendered
+    description: |
+      Update the card-facing metadata renderers so every displayed metadata field (highlighted or regular) gets a small,
+      accessible filter affordance that inserts the correct `meta.field: value` token into the shared search state.
+      Use `src/webview/components/CardItem.tsx` for card-tile metadata rendering, and update `src/webview/components/CardEditor.tsx`
+      only if it shares or remains the active field-row renderer for the same user-facing metadata display. Do not invent a second
+      metadata display system just to host the icon; keep the change attached to the render path that already exists.
+    wave: 8
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T7
+    context_files:
+      src/webview/components/CardItem.tsx: "Card-tile rendering path; currently only shows a metadata count badge and may need the new affordance where fields are shown."
+      src/webview/components/CardEditor.tsx: "Existing metadata-row rendering reference for pinned board metadata fields."
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: Metadata field filter affordance
+    verification:
+      - Clicking the filter icon injects or updates the correct metadata token in the toolbar search.
+      - The icon is keyboard-accessible and does not interfere with opening/selecting the card.
+      - Hidden metadata fields do not get stray filter buttons.
+    acceptance_criteria:
+      - Every rendered metadata field in the applicable card UI has a filter affordance.
+      - The inserted token works in both exact and fuzzy modes.
+      - The icon styling matches existing lightweight action buttons/icons.
+    failure_modes:
+      - scenario: Icon click handlers interfere with card click/drag behavior or open the wrong card.
+        likelihood: medium
+        impact: medium
+        mitigation: Stop propagation only for the icon action and regression-check normal card interaction in browser validation.
+      - scenario: The implementation adds icons to metadata count badges or hidden values with no field/value context.
+        likelihood: low
+        impact: medium
+        mitigation: Only render the affordance where a concrete metadata key/value pair is already available.
+    tech_stack:
+      - TypeScript
+      - React
+      - lucide-react
+    test_coverage: null
+
+  - id: T9
+    title: Add regression coverage for exact and fuzzy search behavior
+    description: |
+      Extend the existing SDK and server tests so the feature is protected at the business-logic and interface levels.
+      Update `src/sdk/__tests__/metaUtils.test.ts` for helper-level matching rules, `src/sdk/__tests__/metadata.test.ts`
+      for SDK integration coverage, and `src/standalone/__tests__/server.integration.test.ts` for REST parity. Cover exact
+      mode regressions, fuzzy free-text matches, fuzzy metadata matches, and mixed metadata + text queries.
+    wave: 9
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T8
+      - T4
+    context_files:
+      src/sdk/__tests__/metaUtils.test.ts: "Current unit coverage for `matchesMetaFilter` and `getNestedValue`."
+      src/sdk/__tests__/metadata.test.ts: "Current SDK integration coverage for metadata filtering."
+      src/standalone/__tests__/server.integration.test.ts: "Current REST integration test suite."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 150
+    focus_area: Automated regression safety net
+    verification:
+      - Tests fail before the feature work and pass after it.
+      - At least one fuzzy metadata case is asserted at both helper and API levels.
+      - Exact-mode legacy behavior remains covered explicitly.
+    acceptance_criteria:
+      - SDK helper tests cover exact vs fuzzy matching differences.
+      - SDK integration tests cover metadata fuzzy behavior on real cards.
+      - REST integration tests cover `q` + `fuzzy` request handling.
+    failure_modes:
+      - scenario: Coverage only tests happy-path fuzzy search and misses exact-mode regressions.
+        likelihood: medium
+        impact: high
+        mitigation: Add paired exact/fuzzy assertions for the same fixtures, not fuzzy-only tests.
+    tech_stack:
+      - Vitest
+      - TypeScript
+    test_coverage: "Expanded across helper, SDK integration, and REST integration layers."
+
+  - id: T10
+    title: Update README, CHANGELOG, and generated docs sources
+    description: |
+      Update `README.md` and `CHANGELOG.md` to describe the new fuzzy search toggle, metadata filter icon UX,
+      and parity across CLI/API/MCP. Mention the new REST query params and CLI flags in the relevant usage sections.
+      Do not hand-edit generated docs; instead rely on the JSDoc/API metadata updates from earlier tasks and run `npm run docs`
+      so `docs/sdk.md` and `docs/api.md` are regenerated from source.
+    wave: 9
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - T4
+      - T5
+      - T6
+      - T8
+    context_files:
+      README.md: "Features, filtering/search, CLI usage, and REST API overview sections."
+      CHANGELOG.md: "`## [Unreleased]` section with `### Added` / `### Changed` / `### Fixed` subsections."
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 40
+    focus_area: User-facing documentation
+    verification:
+      - README examples mention fuzzy search in the web UI and CLI/API surfaces.
+      - CHANGELOG records the feature under `## [Unreleased]`.
+      - `npm run docs` regenerates `docs/api.md` and `docs/sdk.md` without manual edits.
+    acceptance_criteria:
+      - User-facing docs explain what the fuzzy toggle does and that metadata fields are searchable.
+      - The changelog entry is concise and follows existing format.
+    failure_modes:
+      - scenario: README documents a flag or query param name that differs from the implemented surface.
+        likelihood: medium
+        impact: medium
+        mitigation: Make documentation depend on finalized interface tasks and reuse the exact parameter names from those tasks.
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - Web UI fuzzy toggle and metadata filter icon
+      - CLI `kl list --search ... --fuzzy`
+      - REST `q` / `fuzzy` query params
+      - MCP `list_cards` search inputs
+
+  - id: T11
+    title: Run end-to-end validation across build, tests, docs, and browser flows
+    description: |
+      Validate the completed implementation with a combined automated and manual matrix. Automated checks should run
+      `npm run build`, `npm run test`, and `npm run docs`. Browser validation should confirm exact search, fuzzy search,
+      fuzzy metadata search, filter-icon token insertion, saved-view round-tripping, and standalone URL restoration.
+      This is the final gate before approval/merge.
+    wave: 10
+    agent: gem-browser-tester
+    priority: medium
+    status: pending
+    dependencies:
+      - T9
+      - T10
+    context_files:
+      src/webview/components/Toolbar.tsx: "Validate checkbox placement and behavior."
+      src/webview/components/CardItem.tsx: "Validate metadata filter affordance interaction on cards."
+      src/webview/router.tsx: "Validate standalone URL sync for the fuzzy flag."
+    estimated_effort: medium
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: Final verification
+    verification:
+      - `npm run build` succeeds.
+      - `npm run test` succeeds.
+      - `npm run docs` succeeds and produces updated generated docs.
+      - Manual browser checks confirm exact/fuzzy/metadata search behavior and state persistence.
+    acceptance_criteria:
+      - No parity gaps remain between webview, SDK, API, CLI, and MCP for the shipped search behavior.
+      - Search UX remains stable under both exact and fuzzy modes.
+    failure_modes:
+      - scenario: Automated tests pass but the browser workflow exposes UI-state bugs around token insertion or URL restore.
+        likelihood: medium
+        impact: medium
+        mitigation: Treat browser validation as mandatory, not optional, and block completion until the manual matrix passes.
+    validation_matrix:
+      - scenario: Exact search regression
+        steps:
+          - Open the board with cards whose titles/content differ by small substrings.
+          - Search with fuzzy disabled.
+          - Confirm only exact substring matches remain visible.
+        expected_result: Exact mode matches legacy behavior.
+      - scenario: Fuzzy free-text search
+        steps:
+          - Enable the Fuzzy checkbox.
+          - Search with a typo or partial term that would not match via plain substring.
+          - Compare results with SDK/API output for the same query.
+        expected_result: Relevant cards are returned consistently across surfaces.
+      - scenario: Metadata filter icon + fuzzy metadata search
+        steps:
+          - Click the filter icon beside a rendered metadata field.
+          - Confirm the toolbar search receives the correct `meta.field: value` token.
+          - Enable fuzzy mode and slightly alter the value.
+        expected_result: The token is inserted correctly and fuzzy mode still finds the intended card(s).
+      - scenario: Saved view and standalone URL persistence
+        steps:
+          - Save a view with both search text and fuzzy enabled.
+          - Reload the standalone page or reopen the saved view.
+        expected_result: Both `searchQuery` and the fuzzy toggle restore correctly.

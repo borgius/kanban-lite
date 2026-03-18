@@ -584,10 +584,10 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
       {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={onClose} />}
       <div
         className={isDrawer
-          ? 'relative h-full w-1/2 max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
+          ? 'relative h-full max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={isDrawer
-          ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+          ? { width: `${local.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
           : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
         {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
       >
@@ -696,6 +696,17 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                   ]}
                   onChange={v => update({ panelMode: v as 'popup' | 'drawer' })}
                 />
+                {(local.panelMode ?? 'drawer') === 'drawer' && (
+                  <SettingsSlider
+                    label="Drawer Width"
+                    description="Width of the right-side drawer as a percentage of the viewport"
+                    value={local.drawerWidth ?? 50}
+                    min={20}
+                    max={80}
+                    step={5}
+                    onChange={v => update({ drawerWidth: v })}
+                  />
+                )}
               </SettingsSection>
               <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
               <SettingsSection title="Zoom">

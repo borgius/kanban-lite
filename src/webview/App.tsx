@@ -740,10 +740,10 @@ function App(): React.JSX.Element {
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full w-1/2 max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
+                  ? 'relative h-full max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
                 style={isDrawer
-                  ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                  ? { width: `${cardSettings.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                   : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
@@ -777,12 +777,12 @@ function App(): React.JSX.Element {
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full w-1/2 flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto'
+                  ? 'relative h-full flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200'}
                 style={{
                   fontSize: `calc(1em * var(--card-zoom, 1))`,
                   ...(isDrawer
-                    ? { background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                    ? { width: `${cardSettings.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                     : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' })
                 }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}

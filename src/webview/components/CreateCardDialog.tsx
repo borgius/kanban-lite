@@ -438,12 +438,12 @@ function CreateCardDialogContent({
       {(cardSettings.panelMode ?? 'drawer') !== 'drawer' && <div className="absolute inset-0 bg-black/50" onClick={handleCancel} />}
       <div
         className={(cardSettings.panelMode ?? 'drawer') === 'drawer'
-          ? 'relative h-full w-1/2 shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
+          ? 'relative h-full shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={{
           background: 'var(--vscode-editor-background)',
           ...((cardSettings.panelMode ?? 'drawer') === 'drawer'
-            ? { borderLeft: '1px solid var(--vscode-panel-border)' }
+            ? { width: `${cardSettings.drawerWidth ?? 50}%`, borderLeft: '1px solid var(--vscode-panel-border)' }
             : { border: '1px solid var(--vscode-panel-border)' }),
         }}
         {...((cardSettings.panelMode ?? 'drawer') === 'drawer' ? { 'data-panel-drawer': '' } : {})}

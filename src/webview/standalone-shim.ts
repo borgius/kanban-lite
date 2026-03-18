@@ -133,7 +133,9 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
     if (msg.type === 'toggleTheme') {
       const isDark = document.body.classList.contains('vscode-dark')
-      applyTheme(!isDark)
+      const newDark = !isDark
+      localStorage.setItem('kanban-standalone-theme', newDark ? 'dark' : 'light')
+      applyTheme(newDark)
       return
     }
 
@@ -157,18 +159,27 @@ function handleOpenAttachment(cardId: string, attachment: string) {
   }
 })
 
-// Set dark mode class based on system preference (replaces VSCode's vscode-dark class)
+// Set dark mode class — persists user override in localStorage, falls back to system preference
 const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 function applyTheme(dark: boolean) {
   document.body.classList.toggle('vscode-dark', dark)
   document.body.classList.toggle('vscode-light', !dark)
 }
-darkMq.addEventListener('change', (e) => applyTheme(e.matches))
+darkMq.addEventListener('change', (e) => {
+  // Only follow system preference when user hasn't set an explicit override
+  if (localStorage.getItem('kanban-standalone-theme') === null) {
+    applyTheme(e.matches)
+  }
+})
+function applyInitialTheme() {
+  const saved = localStorage.getItem('kanban-standalone-theme')
+  applyTheme(saved !== null ? saved === 'dark' : darkMq.matches)
+}
 // Apply immediately (body may not exist yet, so also apply on DOMContentLoaded)
 if (document.body) {
-  applyTheme(darkMq.matches)
+  applyInitialTheme()
 } else {
-  document.addEventListener('DOMContentLoaded', () => applyTheme(darkMq.matches))
+  document.addEventListener('DOMContentLoaded', applyInitialTheme)
 }
 
 } // end: !acquireVsCodeApi guard

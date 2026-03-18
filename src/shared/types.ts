@@ -277,6 +277,8 @@ export interface CardDisplaySettings {
   cardZoom: number
   /** Whether panels open as a centered popup or a right-side drawer. Default 'drawer'. */
   panelMode?: 'popup' | 'drawer'
+  /** Width of the right-side drawer as a percentage of the viewport (20–80). Default 50. */
+  drawerWidth?: number
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'

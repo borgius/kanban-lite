@@ -44,7 +44,8 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
       // In drawer mode the panel overlaps the right half of the viewport.
       // Compute the unobscured right boundary so the card scrolls into the visible area.
       const panelMode = useStore.getState().cardSettings.panelMode ?? 'drawer'
-      const drawerWidth = (panelMode === 'drawer') ? window.innerWidth * 0.5 : 0
+      const drawerWidthPct = (useStore.getState().cardSettings.drawerWidth ?? 50) / 100
+      const drawerWidth = (panelMode === 'drawer') ? window.innerWidth * drawerWidthPct : 0
       const visibleRight = containerRect.right - drawerWidth
       const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= visibleRight
       if (!isFullyVisible) {

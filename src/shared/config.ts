@@ -112,6 +112,8 @@ export interface KanbanConfig {
   nextCardId: number
   /** Whether panels open as a centered popup or a right-side drawer. */
   panelMode?: 'popup' | 'drawer'
+  /** Width of the right-side drawer as a percentage of the viewport (20–80). Default 50. */
+  drawerWidth?: number
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'
@@ -182,7 +184,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: false,
+  compactMode: true,
   markdownEditorMode: false,
   showDeletedColumn: false,
   boardZoom: 100,
@@ -419,7 +421,7 @@ export function syncCardIdCounter(workspaceRoot: string, boardId: string, existi
  * @example
  * const config = readConfig('/home/user/my-project')
  * const settings = configToSettings(config)
- * console.log(settings.compactMode) // => false
+ * console.log(settings.compactMode) // => true
  */
 export function configToSettings(config: KanbanConfig): CardDisplaySettings {
   return {
@@ -437,6 +439,7 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     boardZoom: config.boardZoom ?? 100,
     cardZoom: config.cardZoom ?? 100,
     panelMode: config.panelMode,
+    drawerWidth: config.drawerWidth,
     logsFilter: config.logsFilter
   }
 }
@@ -469,6 +472,7 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     boardZoom: settings.boardZoom,
     cardZoom: settings.cardZoom,
     panelMode: settings.panelMode,
+    drawerWidth: settings.drawerWidth,
     logsFilter: settings.logsFilter
   }
 }

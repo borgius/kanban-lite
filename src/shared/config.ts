@@ -110,6 +110,8 @@ export interface KanbanConfig {
    * it is created on.
    */
   nextCardId: number
+  /** Whether panels open as a centered popup or a right-side drawer. */
+  panelMode?: 'popup' | 'drawer'
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'
@@ -434,6 +436,7 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     defaultStatus: config.defaultStatus,
     boardZoom: config.boardZoom ?? 100,
     cardZoom: config.cardZoom ?? 100,
+    panelMode: config.panelMode,
     logsFilter: config.logsFilter
   }
 }
@@ -465,6 +468,7 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     defaultStatus: settings.defaultStatus,
     boardZoom: settings.boardZoom,
     cardZoom: settings.cardZoom,
+    panelMode: settings.panelMode,
     logsFilter: settings.logsFilter
   }
 }

@@ -216,7 +216,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   setBoards: (boards) => set({ boards }),
   setCurrentBoard: (boardId) => set({ currentBoard: boardId }),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
-  setCardSettings: (settings) => set((state) => ({ cardSettings: { ...settings, boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom, cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom } })),
+  setCardSettings: (settings) => set((state) => ({ cardSettings: { ...settings, boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom, cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom, panelMode: settings.panelMode ?? state.cardSettings.panelMode } })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setPriorityFilter: (priority) => set({ priorityFilter: priority }),

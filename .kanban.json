@@ -18,9 +18,9 @@
           "color": "#3b82f6"
         },
         {
-          "id": "in-progress",
-          "name": "In Progress",
-          "color": "#f59e0b"
+          "id": "review",
+          "name": "Review",
+          "color": "#8b5cf6"
         },
         {
           "id": "done",
@@ -28,9 +28,9 @@
           "color": "#22c55e"
         },
         {
-          "id": "review",
-          "name": "Review",
-          "color": "#8b5cf6"
+          "id": "in-progress",
+          "name": "In Progress",
+          "color": "#f59e0b"
         }
       ],
       "nextCardId": 229,

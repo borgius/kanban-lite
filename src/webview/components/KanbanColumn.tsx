@@ -149,8 +149,12 @@ export function KanbanColumn({
             isDropTarget && draggedCard ? 'ring-2 ring-blue-400 dark:ring-blue-500' : '',
           ].filter(Boolean).join(' ')
         }
-        onDragOver={(e) => onDragOver(e, column.id)}
-        onDrop={(e) => onDrop(e, column.id)}
+        onDragOver={(e) => {
+          if (isColumnDragEvent(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
+        }}
+        onDrop={(e) => {
+          if (isColumnDragEvent(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
+        }}
       >
         <div
           className={
@@ -229,8 +233,12 @@ export function KanbanColumn({
           isDropTarget && draggedCard ? "ring-2 ring-blue-400 dark:ring-blue-500" : "",
         ].filter(Boolean).join(' ')
       }
-      onDragOver={(e) => onDragOver(e, column.id)}
-      onDrop={(e) => onDrop(e, column.id)}
+      onDragOver={(e) => {
+        if (isColumnDragEvent(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
+      }}
+      onDrop={(e) => {
+        if (isColumnDragEvent(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
+      }}
     >
       {/* Column Header */}
       <div

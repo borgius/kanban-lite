@@ -100,5 +100,7 @@
       "source": true,
       "objects": false
     }
-  }
+  },
+  "panelMode": "drawer",
+  "drawerWidth": 42.03878012048193
 }

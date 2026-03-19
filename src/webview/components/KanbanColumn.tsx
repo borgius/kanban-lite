@@ -30,7 +30,7 @@ interface KanbanColumnProps {
   onRemoveColumn: (columnId: string) => void
   onCleanupColumn: (columnId: string) => void
   onDragStart: (e: React.DragEvent, card: Card) => void
-  onDragOver: (e: React.DragEvent) => void
+  onDragOver: (e: React.DragEvent, columnId: string) => void
   onDragOverCard: (e: React.DragEvent, columnId: string, cardIndex: number) => void
   onDrop: (e: React.DragEvent, status: string) => void
   onDragEnd: () => void
@@ -146,9 +146,10 @@ export function KanbanColumn({
             isBeingDragged ? 'opacity-40' : '',
             isColumnDropBefore ? 'border-l-2 border-blue-500' : '',
             isColumnDropAfter ? 'border-r-2 border-blue-500' : '',
+            isDropTarget && draggedCard ? 'ring-2 ring-blue-400 dark:ring-blue-500' : '',
           ].filter(Boolean).join(' ')
         }
-        onDragOver={onDragOver}
+        onDragOver={(e) => onDragOver(e, column.id)}
         onDrop={(e) => onDrop(e, column.id)}
       >
         <div
@@ -225,9 +226,10 @@ export function KanbanColumn({
           isBeingDragged ? "opacity-40" : "",
           isColumnDropBefore ? "border-l-2 border-blue-500" : "",
           isColumnDropAfter ? "border-r-2 border-blue-500" : "",
+          isDropTarget && draggedCard ? "ring-2 ring-blue-400 dark:ring-blue-500" : "",
         ].filter(Boolean).join(' ')
       }
-      onDragOver={onDragOver}
+      onDragOver={(e) => onDragOver(e, column.id)}
       onDrop={(e) => onDrop(e, column.id)}
     >
       {/* Column Header */}

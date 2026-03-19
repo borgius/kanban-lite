@@ -100,10 +100,11 @@ const storeState = {
   boards: [] as unknown[],
 }
 
-const { postMessageSpy, getStateSpy, setStateSpy } = vi.hoisted(() => ({
+const { postMessageSpy, getStateSpy, setStateSpy, resizePropsRef } = vi.hoisted(() => ({
   postMessageSpy: vi.fn(),
   getStateSpy: vi.fn<() => unknown>(() => null),
   setStateSpy: vi.fn<(state: unknown) => void>(),
+  resizePropsRef: { current: null as null | { panelMode: string; onPreview: (width: number) => void; onCommit: (width: number) => void; onCancel: () => void } },
 }))
 let messageHandler: ((event: MessageEvent<ExtensionMessage>) => void) | null = null
 
@@ -196,6 +197,15 @@ vi.mock('./components/ColumnDialog', () => ({ ColumnDialog: () => null }))
 vi.mock('./components/BulkActionsBar', () => ({ BulkActionsBar: () => null }))
 vi.mock('./components/ShortcutHelp', () => ({ ShortcutHelp: () => null }))
 vi.mock('./components/LogsSection', () => ({ LogsSection: () => null }))
+vi.mock('./components/DrawerResizeHandle', async () => {
+  const { createElement } = await import('react')
+  return {
+    DrawerResizeHandle: (props: { panelMode: string; onPreview: (width: number) => void; onCommit: (width: number) => void; onCancel: () => void }) => {
+      resizePropsRef.current = props
+      return props.panelMode === 'drawer' ? createElement('button', { 'data-panel-resize-handle': '' }) : null
+    },
+  }
+})
 
 import App from './App'
 
@@ -217,6 +227,7 @@ function dispatchMessage(message: ExtensionMessage) {
 beforeEach(() => {
   postMessageSpy.mockClear()
   messageHandler = null
+  resizePropsRef.current = null
 
   Object.assign(storeState, {
     cards: [],
@@ -457,5 +468,44 @@ describe('App connection notices', () => {
 
     expect(markup).not.toContain('data-panel-drawer')
     expect(markup).not.toContain('data-panel-resize-handle')
+  })
+})
+
+describe('App resize preview and commit timing', () => {
+  it('preview updates the in-memory drawer width without posting saveSettings', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    hookRuntime.values[6] = true // editingCard truthy → drawer panel renders
+
+    renderApp()
+
+    expect(resizePropsRef.current).not.toBeNull()
+    postMessageSpy.mockClear()
+
+    resizePropsRef.current!.onPreview(65)
+
+    expect(storeState.setDrawerWidthPreview).toHaveBeenCalledWith(65)
+    expect(postMessageSpy).not.toHaveBeenCalled()
+  })
+
+  it('commit saves settings exactly once and clears the in-memory preview', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    hookRuntime.values[6] = true // editingCard truthy → drawer panel renders
+
+    renderApp()
+
+    expect(resizePropsRef.current).not.toBeNull()
+    postMessageSpy.mockClear()
+
+    resizePropsRef.current!.onCommit(65)
+
+    expect(storeState.clearDrawerWidthPreview).toHaveBeenCalledTimes(1)
+    expect(storeState.setCardSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ drawerWidth: 65 }),
+    )
+    expect(postMessageSpy).toHaveBeenCalledTimes(1)
+    expect(postMessageSpy).toHaveBeenCalledWith({
+      type: 'saveSettings',
+      settings: expect.objectContaining({ drawerWidth: 65 }),
+    })
   })
 })

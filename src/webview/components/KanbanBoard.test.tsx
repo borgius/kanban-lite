@@ -192,26 +192,21 @@ describe('KanbanBoard hidden column reorder behavior', () => {
     expect(onReorderColumnsSpy).toHaveBeenCalledWith(['done', 'hidden', 'todo'])
   })
 
-  it('uses the effective drawer width for board padding while a drawer is open', () => {
+  it('does not apply inline padding-right to the board scroll container (width is now constrained by App.tsx)', () => {
     storeState.cardSettings.drawerWidth = 50
     storeState.effectiveDrawerWidth = 72
 
     const { markup } = renderBoard({ selectedCardId: 'card-1' })
 
-    expect(markup).toContain('padding-right:calc(72vw + 1rem)')
-    expect(markup).not.toContain('50vw')
+    expect(markup).not.toContain('padding-right')
   })
 
   it('uses the effective drawer width when scrolling a selected card into view', () => {
     storeState.cardSettings.drawerWidth = 50
     storeState.effectiveDrawerWidth = 70
-    const originalWindow = globalThis.window
-    Object.defineProperty(globalThis, 'window', {
-      value: { innerWidth: 1000 },
-      configurable: true,
-      writable: true,
-    })
 
+    // Simulate a pre-narrowed board container: App.tsx sets the container to
+    // (100 - 70)% = 30% of a 1000px viewport, so containerRect.right = 300.
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: TimerHandler) => {
       if (typeof callback === 'function') {
         callback()
@@ -224,7 +219,7 @@ describe('KanbanBoard hidden column reorder behavior', () => {
     const { effects, refs } = renderBoard({ selectedCardId: 'card-1' })
 
     refs[0].current = {
-      getBoundingClientRect: () => ({ left: 0, right: 1000 }),
+      getBoundingClientRect: () => ({ left: 0, right: 300 }),
       querySelector: () => ({
         getBoundingClientRect: () => ({ left: 600, right: 750 }),
       }),
@@ -240,10 +235,5 @@ describe('KanbanBoard hidden column reorder behavior', () => {
 
     setTimeoutSpy.mockRestore()
     clearTimeoutSpy.mockRestore()
-    Object.defineProperty(globalThis, 'window', {
-      value: originalWindow,
-      configurable: true,
-      writable: true,
-    })
   })
 })

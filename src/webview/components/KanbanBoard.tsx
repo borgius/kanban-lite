@@ -53,15 +53,11 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
       if (!cardEl) return
       const containerRect = container.getBoundingClientRect()
       const cardRect = cardEl.getBoundingClientRect()
-      // In drawer mode the panel overlaps the right half of the viewport.
-      // Compute the unobscured right boundary so the card scrolls into the visible area.
-      const panelMode = cardSettings.panelMode ?? 'drawer'
-      const drawerWidthPct = effectiveDrawerWidth / 100
-      const drawerWidth = (panelMode === 'drawer') ? window.innerWidth * drawerWidthPct : 0
-      const visibleRight = containerRect.right - drawerWidth
-      const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= visibleRight
+      // The board container is pre-narrowed by App.tsx to exclude the active
+      // drawer width, so containerRect.right is already the unobscured boundary.
+      const isFullyVisible = cardRect.left >= containerRect.left && cardRect.right <= containerRect.right
       if (!isFullyVisible) {
-        const overflow = cardRect.right - visibleRight
+        const overflow = cardRect.right - containerRect.right
         container.scrollBy({ left: overflow + 10, behavior: 'smooth' })
       }
     }
@@ -88,9 +84,15 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     }
   }, [selectedCardIds])
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent, columnId?: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
+    if (columnId) {
+      setDropTarget((prev) => {
+        if (prev?.columnId === columnId) return prev
+        return { columnId, index: 0 }
+      })
+    }
   }, [])
 
   const handleDragOverCard = useCallback(
@@ -231,7 +233,6 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   }, [])
 
   const isVertical = layout === 'vertical'
-  const isDrawerOpen = !isVertical && !!selectedCardId && (cardSettings.panelMode ?? 'drawer') === 'drawer'
   const hiddenColumnIdSet = new Set(hiddenColumnIds)
   const minimizedColumnIdSet = new Set(minimizedColumnIds)
   const visibleColumns = columns.filter((column) => !hiddenColumnIdSet.has(column.id))
@@ -240,7 +241,6 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     <div
       ref={scrollContainerRef}
       className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}
-      style={isDrawerOpen ? { paddingRight: `calc(${effectiveDrawerWidth}vw + 1rem)` } : undefined}
     >
       <div className={isVertical ? "flex flex-col gap-4" : "flex gap-4 h-full min-w-max"}>
         {columns.length === 0 && (

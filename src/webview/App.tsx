@@ -811,7 +811,12 @@ function App(): React.JSX.Element {
         onOpenShortcutHelp={() => setShortcutHelpOpen(open => !open)}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className="board-zoom-scope w-full">
+        <div
+          className="board-zoom-scope w-full"
+          style={(cardSettings.panelMode ?? 'drawer') === 'drawer' && selectedCardIds.length === 0 && (editingCard !== null || boardLogsOpen)
+            ? { width: `${100 - effectiveDrawerWidth}%` }
+            : undefined}
+        >
           <KanbanBoard
             onCardClick={handleCardClick}
             onAddCard={handleAddCardInColumn}

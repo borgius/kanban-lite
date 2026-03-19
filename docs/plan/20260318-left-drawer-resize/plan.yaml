@@ -5,7 +5,7 @@ objective: |
 	respect the configured drawer width instead of a hardcoded 50vw path.
 created_at: "2026-03-18"
 created_by: gem-planner
-status: pending_approval
+status: completed
 research_confidence: high
 
 tldr: |
@@ -232,7 +232,7 @@ tasks:
 		wave: 3
 		agent: gem-implementer
 		priority: medium
-		status: pending
+		status: completed
 		dependencies:
 			- T2
 			- T3

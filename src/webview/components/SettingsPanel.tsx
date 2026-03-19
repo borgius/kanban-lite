@@ -4,6 +4,7 @@ import type { CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDef
 import { LABEL_PRESET_COLORS, DELETED_STATUS_ID } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
+import { DrawerResizeHandle } from './DrawerResizeHandle'
 
 const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'critical', label: 'Critical', dot: 'bg-red-500' },
@@ -553,6 +554,9 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
   const [activeTab, setActiveTab] = useState<'general' | 'defaults' | 'labels'>('general')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const columns = useStore(s => s.columns)
+  const effectiveDrawerWidth = useStore(s => s.effectiveDrawerWidth)
+  const setDrawerWidthPreview = useStore(s => s.setDrawerWidthPreview)
+  const clearDrawerWidthPreview = useStore(s => s.clearDrawerWidthPreview)
   const statusOptions = useMemo(
     () => columns.filter(c => c.id !== DELETED_STATUS_ID).map(c => ({ value: c.id, label: c.name, dotColor: c.color })),
     [columns]
@@ -587,10 +591,21 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
           ? 'relative h-full max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={isDrawer
-          ? { width: `${local.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+          ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
           : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
         {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
       >
+        <DrawerResizeHandle
+          panelMode={isDrawer ? 'drawer' : 'popup'}
+          onPreview={setDrawerWidthPreview}
+          onCommit={(width) => {
+            clearDrawerWidthPreview()
+            const next = { ...local, drawerWidth: width }
+            setLocal(next)
+            onSave(next)
+          }}
+          onCancel={clearDrawerWidthPreview}
+        />
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3"

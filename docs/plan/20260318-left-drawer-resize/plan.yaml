@@ -1,0 +1,262 @@
+plan_id: 20260318-left-drawer-resize
+objective: |
+	Add draggable left-edge resizing for every drawer-mode panel rendered in the shared webview UI,
+	while keeping scope limited to the existing right-side drawer experience and making board spacing
+	respect the configured drawer width instead of a hardcoded 50vw path.
+created_at: "2026-03-18"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+	Implement a small shared drawer-resize interaction for the webview drawer shells, reuse the
+	existing `cardSettings.drawerWidth` percentage model (20-80), update drawer-mode panels to show
+	a draggable left-edge handle, and make KanbanBoard consume the active width so board content is
+	never hidden behind a resized drawer. Keep persistence minimal by previewing width locally or in
+	optimistic UI state during drag and committing `saveSettings` only once on pointer release.
+
+open_questions: []
+
+pre_mortem:
+	overall_risk_level: medium
+	critical_failure_modes:
+		- scenario: Persisting `saveSettings` on every pointer move floods the extension/standalone message channel and causes noisy state churn.
+			likelihood: high
+			impact: high
+			mitigation: |
+				Use optimistic in-memory width updates for live dragging and defer the persisted `saveSettings`
+				call until pointer release/cancel, with one final clamped width commit.
+		- scenario: The resize handle steals pointer events from drawer content or makes popup-mode panels behave like drawers.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Render a dedicated narrow left-edge handle only when `panelMode === 'drawer'`, keep it outside
+				the content flow, and leave centered popup markup and behavior unchanged.
+		- scenario: Kanban board padding/scroll math continues to assume `50vw`, leaving selected cards partially obscured after a resize.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Route board overlap calculations through the same effective drawer width source used by the
+				resize interaction and add focused regression coverage for non-default widths.
+	assumptions:
+		- Scope is limited to shared webview drawer-mode panels, not VS Code native sidebars or dropdown menus.
+		- The existing `drawerWidth` percentage setting and its 20-80 clamp remain the canonical width model.
+		- No SDK, API, CLI, MCP, or storage-schema changes are required for this UI-only enhancement.
+		- Minimal edits are preferred over broader component refactors unless a tiny shared helper clearly reduces duplication.
+
+implementation_specification:
+	code_structure: |
+		Keep the change inside `src/webview/` and reuse the current drawer shell markup wherever possible.
+		Introduce at most a tiny shared resize helper/hook for pointer math and commit semantics; otherwise
+		make surgical edits in the existing drawer render sites. Persist final width through the existing
+		settings save path, not a new message type.
+	affected_areas:
+		- src/webview/App.tsx
+		- src/webview/components/SettingsPanel.tsx
+		- src/webview/components/CreateCardDialog.tsx
+		- src/webview/components/KanbanBoard.tsx
+		- src/webview/store/index.ts
+		- src/webview/App.test.tsx
+		- src/webview/components/KanbanBoard.test.tsx
+	component_details:
+		- component: shared drawer resize interaction
+			responsibility: Convert left-edge pointer drag into a clamped drawer width percentage and separate live preview updates from persisted saves.
+			interfaces:
+				- "start resize from the left edge of a drawer shell"
+				- "preview width updates constrained to 20-80 percent"
+				- "commit final width once on pointer release/cancel"
+		- component: drawer shell integrations
+			responsibility: Apply the resize affordance to board logs, card editor, settings, and create-card drawers without changing popup-mode behavior.
+			interfaces:
+				- "drawer-mode panels render a left-edge resize handle"
+				- "final width writes continue through existing `onSave`/`saveSettings` flows"
+		- component: board layout width awareness
+			responsibility: Replace hardcoded drawer overlap assumptions with calculations based on the active drawer width so selected cards and board padding remain visible.
+			interfaces:
+				- "KanbanBoard reads the effective drawer width for scroll-into-view logic"
+				- "KanbanBoard computes drawer-mode padding from configured width instead of `50vw`"
+		- component: focused regression coverage
+			responsibility: Prove resize clamping, deferred persistence, and width-aware board layout behavior with targeted tests.
+			interfaces:
+				- "App-level tests for preview vs commit timing"
+				- "KanbanBoard tests for non-default drawer overlap calculations"
+	dependencies:
+		- component: drawer shell integrations
+			relationship: Depend on the shared resize interaction contract to avoid duplicating pointer math and commit behavior.
+		- component: board layout width awareness
+			relationship: Depends on the same effective width source used by drawer resizing.
+		- component: regression coverage
+			relationship: Depends on finalized resize handle behavior and width-aware layout calculations.
+	integration_points:
+		- Existing `cardSettings.drawerWidth` state and `setCardSettings` optimistic update path
+		- Existing `saveSettings` message in `App.tsx`
+		- Existing drawer-mode shell markup identified by `data-panel-drawer`
+		- Existing `KanbanBoard` drawer overlap and selected-card scroll logic
+
+contracts:
+	- from_task: T1
+		to_task: T2
+		interface: Shared preview/commit resize contract with clamped width percentage output.
+		format: "TypeScript helper or local utility API returning preview width updates and a release commit callback"
+	- from_task: T1
+		to_task: T3
+		interface: Effective drawer width source used during an active drag and after commit.
+		format: "number percentage in the existing 20-80 width range"
+	- from_task: T2
+		to_task: T4
+		interface: Drawer shells expose a handle only in drawer mode and persist the final width once per resize interaction.
+		format: "React UI behavior verified through focused tests"
+	- from_task: T3
+		to_task: T4
+		interface: Board padding and selected-card visibility calculations honor the active drawer width.
+		format: "React layout behavior verified through focused tests"
+
+tasks:
+	- id: T1
+		title: Define a minimal shared drawer resize interaction for the webview
+		description: |
+			Add a small webview-local resize contract that turns left-edge drag gestures into clamped
+			width percentages using the existing `drawerWidth` model. The interaction must support live
+			preview updates without persisting on every pointer move, clean up listeners reliably, and
+			remain scoped to drawer-mode panels only.
+		wave: 1
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies: []
+		context_files:
+			src/webview/App.tsx: Existing optimistic settings updates and `saveSettings` message flow.
+			src/webview/store/index.ts: Existing `cardSettings.drawerWidth` state and setters.
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 120
+		focus_area: Shared pointer math and persistence boundaries
+		verification:
+			- Drag calculations clamp widths to the existing 20-80 percent range.
+			- Pointer listeners or capture are cleaned up on release and unmount.
+			- No persistence message is required during pointermove.
+		acceptance_criteria:
+			- A single shared interaction contract exists for drawer resizing.
+			- Live resize preview can update UI immediately without changing persisted settings on every move.
+			- Popup-mode panels are not affected by the new interaction.
+		failure_modes:
+			- scenario: Window-level listeners remain attached after a cancelled drag and keep mutating width.
+				likelihood: medium
+				impact: high
+				mitigation: Centralize registration/cleanup in one helper path and cover cancel/release behavior in tests.
+		tech_stack:
+			- TypeScript
+			- React
+		test_coverage: App.test.tsx and/or a small helper-focused test
+
+	- id: T2
+		title: Add left-edge resize handles to all shared webview drawer panels
+		description: |
+			Apply the shared resize behavior to every drawer-mode shell rendered in the shared webview UI:
+			the card editor drawer, board logs drawer, settings drawer, and create-card drawer. Preserve
+			the existing popup path and keep visual styling consistent with the current right-side drawer
+			presentation.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			src/webview/App.tsx: Hosts the board logs and card editor drawer shells.
+			src/webview/components/SettingsPanel.tsx: Renders the settings drawer shell.
+			src/webview/components/CreateCardDialog.tsx: Renders the create-card drawer shell.
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 180
+		focus_area: Drawer-shell UI integration
+		verification:
+			- Each drawer-mode panel shows a draggable left-edge handle.
+			- Resizing updates the open drawer width live.
+			- Popup-mode settings and create-card dialogs remain centered and non-resizable.
+		acceptance_criteria:
+			- All shared webview drawers support drag resize from their left edge.
+			- Existing close buttons, overlays, and content scrolling continue to work.
+			- Final width commits reuse the existing settings-save path instead of adding a new API.
+		failure_modes:
+			- scenario: Handle placement blocks clicks or text selection near the drawer edge.
+				likelihood: medium
+				impact: medium
+				mitigation: Keep the handle narrow, positioned at the shell edge, and visually separate from content controls.
+		tech_stack:
+			- TypeScript
+			- React
+		test_coverage: App.test.tsx plus targeted component coverage if needed
+
+	- id: T3
+		title: Make board overlap and auto-scroll calculations respect the active drawer width
+		description: |
+			Replace the board's hardcoded drawer overlap assumptions with calculations based on the active
+			drawer width so resizing a drawer immediately updates visible board space. This includes both
+			the selected-card scroll-into-view path and the layout padding applied when drawer mode is open.
+		wave: 2
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			src/webview/components/KanbanBoard.tsx: Contains the current selected-card scroll logic and `50vw` padding path.
+			src/webview/App.tsx: Supplies the drawer-open state consumed by board layout.
+		estimated_effort: small
+		estimated_files: 2
+		estimated_lines: 70
+		focus_area: Width-aware board visibility
+		verification:
+			- Board padding changes when drawer width differs from 50 percent.
+			- Selected-card scrolling keeps the card inside the unobscured board area.
+		acceptance_criteria:
+			- No board layout path still assumes `50vw` for drawer overlap.
+			- Drawer resizing and persisted non-default widths produce the same board visibility behavior.
+		failure_modes:
+			- scenario: Board padding updates only after persistence, so live dragging still obscures cards.
+				likelihood: medium
+				impact: medium
+				mitigation: Use the same effective preview width source for live layout calculations during drag.
+		tech_stack:
+			- TypeScript
+			- React
+		test_coverage: src/webview/components/KanbanBoard.test.tsx
+
+	- id: T4
+		title: Add focused regression coverage for resize behavior and persistence timing
+		description: |
+			Extend the existing webview tests with targeted assertions for drawer resizing. Cover width
+			clamping, one-save-on-release persistence behavior, drawer-only handle rendering, and the
+			board layout changes needed for non-default widths.
+		wave: 3
+		agent: gem-implementer
+		priority: medium
+		status: pending
+		dependencies:
+			- T2
+			- T3
+		context_files:
+			src/webview/App.test.tsx: Existing app-shell and settings persistence test harness.
+			src/webview/components/KanbanBoard.test.tsx: Existing focused board-layout regression tests.
+		estimated_effort: small
+		estimated_files: 2
+		estimated_lines: 120
+		focus_area: Regression protection
+		verification:
+			- Tests fail without the resize implementation and pass once behavior is wired correctly.
+			- No new backend, SDK, or extension-host message tests are needed.
+		acceptance_criteria:
+			- Test coverage proves resize updates are clamped and persisted once per drag.
+			- Test coverage proves board layout honors non-default drawer widths.
+			- Test coverage proves popup-mode panels do not expose the resize affordance.
+		failure_modes:
+			- scenario: Tests only validate final persisted width and miss live preview regressions.
+				likelihood: medium
+				impact: medium
+				mitigation: Assert both interim preview state changes and final commit behavior in the app-shell test harness.
+		tech_stack:
+			- TypeScript
+			- React
+			- Vitest
+		test_coverage: src/webview/App.test.tsx and src/webview/components/KanbanBoard.test.tsx

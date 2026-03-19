@@ -10,6 +10,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
 import { ShortcutHelp } from './components/ShortcutHelp'
+import { DrawerResizeHandle } from './components/DrawerResizeHandle'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
@@ -56,6 +57,7 @@ function App(): React.JSX.Element {
     columnVisibilityByBoard,
     workspace,
     cardSettings,
+    effectiveDrawerWidth,
     settingsOpen,
     selectedCardIds,
     setCards,
@@ -64,6 +66,8 @@ function App(): React.JSX.Element {
     setIsDarkMode,
     setWorkspace,
     setCardSettings,
+    setDrawerWidthPreview,
+    clearDrawerWidthPreview,
     setSettingsOpen,
     setLabelDefs,
     toggleSelectCard,
@@ -570,6 +574,21 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'saveSettings', settings })
   }
 
+  const handlePreviewDrawerWidth = useCallback((width: number): void => {
+    setDrawerWidthPreview(width)
+  }, [setDrawerWidthPreview])
+
+  const handleCommitDrawerWidth = useCallback((width: number): void => {
+    clearDrawerWidthPreview()
+    const next = { ...useStore.getState().cardSettings, drawerWidth: width }
+    setCardSettings(next)
+    handleSaveSettings(next)
+  }, [clearDrawerWidthPreview, setCardSettings])
+
+  const handleCancelDrawerResize = useCallback((): void => {
+    clearDrawerWidthPreview()
+  }, [clearDrawerWidthPreview])
+
   const handleAddColumn = (): void => {
     setEditingColumn(null)
     setColumnDialogOpen(true)
@@ -820,10 +839,16 @@ function App(): React.JSX.Element {
                   ? 'relative h-full max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
                 style={isDrawer
-                  ? { width: `${cardSettings.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                  ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                   : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
+                <DrawerResizeHandle
+                  panelMode={isDrawer ? 'drawer' : 'popup'}
+                  onPreview={handlePreviewDrawerWidth}
+                  onCommit={handleCommitDrawerWidth}
+                  onCancel={handleCancelDrawerResize}
+                />
                 <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
                   <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board Logs</span>
                   <button
@@ -859,11 +884,17 @@ function App(): React.JSX.Element {
                 style={{
                   fontSize: `calc(1em * var(--card-zoom, 1))`,
                   ...(isDrawer
-                    ? { width: `${cardSettings.drawerWidth ?? 50}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                    ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
                     : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' })
                 }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
+                <DrawerResizeHandle
+                  panelMode={isDrawer ? 'drawer' : 'popup'}
+                  onPreview={handlePreviewDrawerWidth}
+                  onCommit={handleCommitDrawerWidth}
+                  onCancel={handleCancelDrawerResize}
+                />
                 <CardEditor
               cardId={editingCard.id}
               content={editingCard.content}
@@ -919,6 +950,7 @@ function App(): React.JSX.Element {
         onClose={() => setCreateCardOpen(false)}
         onCreate={handleCreateCard}
         initialStatus={createCardStatus}
+        onSaveSettings={handleSaveSettings}
       />
 
       <SettingsPanel

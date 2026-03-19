@@ -76,6 +76,8 @@ function resetStore() {
     layout: 'horizontal',
     workspace: null,
     cardSettings: DEFAULT_CARD_SETTINGS,
+    drawerWidthPreview: null,
+    effectiveDrawerWidth: 50,
     settingsOpen: false,
     labelDefs: {},
     activeCardId: null,
@@ -321,5 +323,33 @@ describe('webview store column visibility state', () => {
 
     expect(useStore.getState().getHiddenColumnIds()).toEqual([])
     expect(useStore.getState().getMinimizedColumnIds()).toEqual(['todo'])
+  })
+})
+
+describe('webview store drawer resize state', () => {
+  it('tracks preview width separately from persisted card settings', () => {
+    const store = useStore.getState()
+
+    store.setDrawerWidthPreview(68)
+
+    expect(useStore.getState().drawerWidthPreview).toBe(68)
+    expect(useStore.getState().effectiveDrawerWidth).toBe(68)
+    expect(useStore.getState().cardSettings.drawerWidth).toBe(50)
+  })
+
+  it('clamps preview and committed drawer widths and falls back after clearing preview', () => {
+    const store = useStore.getState()
+
+    store.setDrawerWidthPreview(10)
+    expect(useStore.getState().effectiveDrawerWidth).toBe(20)
+
+    store.setCardSettings({ ...DEFAULT_CARD_SETTINGS, drawerWidth: 90 })
+    expect(useStore.getState().drawerWidthPreview).toBe(20)
+    expect(useStore.getState().cardSettings.drawerWidth).toBe(80)
+    expect(useStore.getState().effectiveDrawerWidth).toBe(20)
+
+    store.clearDrawerWidthPreview()
+    expect(useStore.getState().drawerWidthPreview).toBeNull()
+    expect(useStore.getState().effectiveDrawerWidth).toBe(80)
   })
 })

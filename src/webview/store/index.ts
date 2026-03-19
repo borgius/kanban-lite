@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
+import { clampDrawerWidthPercent } from '../drawerResize'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
@@ -119,6 +120,8 @@ interface KanbanState {
   layout: LayoutMode
   workspace: WorkspaceInfo | null
   cardSettings: CardDisplaySettings
+  drawerWidthPreview: number | null
+  effectiveDrawerWidth: number
   settingsOpen: boolean
   labelDefs: Record<string, LabelDefinition>
 
@@ -160,6 +163,8 @@ interface KanbanState {
   sanitizeColumnVisibility: (boardId: string, validColumnIds: string[]) => void
   setIsDarkMode: (dark: boolean) => void
   setCardSettings: (settings: CardDisplaySettings) => void
+  setDrawerWidthPreview: (width: number) => void
+  clearDrawerWidthPreview: () => void
   setSettingsOpen: (open: boolean) => void
   setSearchQuery: (query: string) => void
   setFuzzySearch: (enabled: boolean) => void
@@ -277,6 +282,8 @@ export const useStore = create<KanbanState>((set, get) => ({
     panelMode: 'drawer' as const,
     drawerWidth: 50
   },
+  drawerWidthPreview: null,
+  effectiveDrawerWidth: 50,
   settingsOpen: false,
   labelDefs: {},
   activeCardId: null,
@@ -380,7 +387,30 @@ export const useStore = create<KanbanState>((set, get) => ({
     ),
   })),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
-  setCardSettings: (settings) => set((state) => ({ cardSettings: { ...settings, boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom, cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom, panelMode: settings.panelMode ?? state.cardSettings.panelMode, drawerWidth: settings.drawerWidth ?? state.cardSettings.drawerWidth } })),
+  setCardSettings: (settings) => set((state) => {
+    const nextDrawerWidth = clampDrawerWidthPercent(settings.drawerWidth ?? state.cardSettings.drawerWidth ?? 50)
+    return {
+      cardSettings: {
+        ...settings,
+        boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom,
+        cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom,
+        panelMode: settings.panelMode ?? state.cardSettings.panelMode,
+        drawerWidth: nextDrawerWidth,
+      },
+      effectiveDrawerWidth: state.drawerWidthPreview ?? nextDrawerWidth,
+    }
+  }),
+  setDrawerWidthPreview: (width) => set((state) => {
+    const nextPreview = clampDrawerWidthPercent(width)
+    return {
+      drawerWidthPreview: nextPreview,
+      effectiveDrawerWidth: nextPreview,
+    }
+  }),
+  clearDrawerWidthPreview: () => set((state) => ({
+    drawerWidthPreview: null,
+    effectiveDrawerWidth: clampDrawerWidthPercent(state.cardSettings.drawerWidth ?? 50),
+  })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFuzzySearch: (enabled) => set({ fuzzySearch: enabled }),

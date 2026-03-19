@@ -6,11 +6,14 @@ import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DatePicker } from './DatePicker'
 import { MarkdownEditor } from './MarkdownEditor'
+import { DrawerResizeHandle } from './DrawerResizeHandle'
+import type { CardDisplaySettings } from '../../shared/types'
 
 interface CreateCardDialogProps {
   isOpen: boolean
   onClose: () => void
   onCreate: (data: { status: CardStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[] }) => void
+  onSaveSettings: (settings: CardDisplaySettings) => void
   initialStatus?: CardStatus
 }
 
@@ -371,9 +374,14 @@ function CreateCardDialogContent({
   isOpen,
   onClose,
   onCreate,
+  onSaveSettings,
   initialStatus
 }: CreateCardDialogProps) {
   const cardSettings = useStore(s => s.cardSettings)
+  const effectiveDrawerWidth = useStore(s => s.effectiveDrawerWidth)
+  const setDrawerWidthPreview = useStore(s => s.setDrawerWidthPreview)
+  const clearDrawerWidthPreview = useStore(s => s.clearDrawerWidthPreview)
+  const setCardSettings = useStore(s => s.setCardSettings)
   const columns = useStore(s => s.columns)
   const statusOptions = useMemo(
     () => columns.filter(c => c.id !== DELETED_STATUS_ID).map(c => ({ value: c.id, label: c.name, dotColor: c.color })),
@@ -443,11 +451,22 @@ function CreateCardDialogContent({
         style={{
           background: 'var(--vscode-editor-background)',
           ...((cardSettings.panelMode ?? 'drawer') === 'drawer'
-            ? { width: `${cardSettings.drawerWidth ?? 50}%`, borderLeft: '1px solid var(--vscode-panel-border)' }
+            ? { width: `${effectiveDrawerWidth}%`, borderLeft: '1px solid var(--vscode-panel-border)' }
             : { border: '1px solid var(--vscode-panel-border)' }),
         }}
         {...((cardSettings.panelMode ?? 'drawer') === 'drawer' ? { 'data-panel-drawer': '' } : {})}
       >
+        <DrawerResizeHandle
+          panelMode={(cardSettings.panelMode ?? 'drawer') === 'drawer' ? 'drawer' : 'popup'}
+          onPreview={setDrawerWidthPreview}
+          onCommit={(width) => {
+            clearDrawerWidthPreview()
+            const next = { ...useStore.getState().cardSettings, drawerWidth: width }
+            setCardSettings(next)
+            onSaveSettings(next)
+          }}
+          onCancel={clearDrawerWidthPreview}
+        />
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3"

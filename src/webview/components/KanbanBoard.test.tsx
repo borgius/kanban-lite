@@ -1,15 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hookRuntime = {
   values: [] as unknown[],
   cursor: 0,
+  effects: [] as Array<() => void | (() => void)>,
+  refs: [] as Array<{ current: unknown }>,
   beginRender() {
     this.cursor = 0
+    this.effects = []
+    this.refs = []
   },
   reset() {
     this.values = []
     this.cursor = 0
+    this.effects = []
+    this.refs = []
   },
 }
 
@@ -27,6 +34,7 @@ const storeState = {
     panelMode: 'drawer' as const,
     drawerWidth: 50,
   },
+  effectiveDrawerWidth: 50,
   getFilteredCardsByStatus: vi.fn(() => []),
   getCardsByStatus: vi.fn(() => []),
   getHiddenColumnIds: vi.fn(() => ['hidden']),
@@ -59,13 +67,18 @@ vi.mock('react', async (importOriginal) => {
 
       return [hookRuntime.values[index] as T, setState] as const
     },
-    useEffect() {},
+    useEffect(effect: () => void | (() => void)) {
+      hookRuntime.cursor++
+      hookRuntime.effects.push(effect)
+    },
     useRef<T>(initialValue: T) {
       const index = hookRuntime.cursor++
       if (!(index in hookRuntime.values)) {
         hookRuntime.values[index] = { current: initialValue }
       }
-      return hookRuntime.values[index] as { current: T }
+      const ref = hookRuntime.values[index] as { current: T }
+      hookRuntime.refs.push(ref as { current: unknown })
+      return ref
     },
     useCallback<T extends (...args: never[]) => unknown>(callback: T) {
       hookRuntime.cursor++
@@ -97,10 +110,12 @@ vi.mock('../store', async (importOriginal) => {
 
 import { KanbanBoard } from './KanbanBoard'
 
-function renderBoard() {
+type KanbanBoardProps = React.ComponentProps<typeof KanbanBoard>
+
+function renderBoard(propOverrides: Partial<KanbanBoardProps> = {}) {
   renderedColumnProps.length = 0
   hookRuntime.beginRender()
-  renderToStaticMarkup(
+  const markup = renderToStaticMarkup(
     <KanbanBoard
       onCardClick={() => {}}
       onAddCard={() => {}}
@@ -113,10 +128,16 @@ function renderBoard() {
       onReorderColumns={onReorderColumnsSpy}
       selectedCardIds={[]}
       onSelectAll={() => {}}
+      {...propOverrides}
     />
   )
 
-  return [...renderedColumnProps]
+  return {
+    columns: [...renderedColumnProps],
+    effects: [...hookRuntime.effects],
+    refs: [...hookRuntime.refs],
+    markup,
+  }
 }
 
 const onReorderColumnsSpy = vi.fn<(columnIds: string[]) => void>()
@@ -125,6 +146,10 @@ beforeEach(() => {
   hookRuntime.reset()
   renderedColumnProps.length = 0
   onReorderColumnsSpy.mockReset()
+  storeState.cardSettings.panelMode = 'drawer'
+  storeState.cardSettings.drawerWidth = 50
+  storeState.effectiveDrawerWidth = 50
+  storeState.layout = 'horizontal'
   storeState.getFilteredCardsByStatus.mockClear()
   storeState.getCardsByStatus.mockClear()
   storeState.getHiddenColumnIds.mockClear()
@@ -135,7 +160,7 @@ beforeEach(() => {
 
 describe('KanbanBoard hidden column reorder behavior', () => {
   it('keeps hidden columns out of the rendered board while preserving them in reorder callbacks', () => {
-    const initialColumns = renderBoard()
+    const { columns: initialColumns } = renderBoard()
 
     expect(initialColumns.map((props) => props.column && (props.column as { id: string }).id)).toEqual(['todo', 'done'])
 
@@ -147,7 +172,7 @@ describe('KanbanBoard hidden column reorder behavior', () => {
       },
     }, 'done')
 
-    const draggedColumns = renderBoard()
+    const { columns: draggedColumns } = renderBoard()
     draggedColumns[0].onColumnDragOver?.({
       preventDefault: vi.fn(),
       clientX: 0,
@@ -159,11 +184,66 @@ describe('KanbanBoard hidden column reorder behavior', () => {
       },
     }, 0)
 
-    const dropReadyColumns = renderBoard()
+    const { columns: dropReadyColumns } = renderBoard()
     dropReadyColumns[0].onColumnDrop?.({
       preventDefault: vi.fn(),
     })
 
     expect(onReorderColumnsSpy).toHaveBeenCalledWith(['done', 'hidden', 'todo'])
+  })
+
+  it('uses the effective drawer width for board padding while a drawer is open', () => {
+    storeState.cardSettings.drawerWidth = 50
+    storeState.effectiveDrawerWidth = 72
+
+    const { markup } = renderBoard({ selectedCardId: 'card-1' })
+
+    expect(markup).toContain('padding-right:calc(72vw + 1rem)')
+    expect(markup).not.toContain('50vw')
+  })
+
+  it('uses the effective drawer width when scrolling a selected card into view', () => {
+    storeState.cardSettings.drawerWidth = 50
+    storeState.effectiveDrawerWidth = 70
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      value: { innerWidth: 1000 },
+      configurable: true,
+      writable: true,
+    })
+
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: TimerHandler) => {
+      if (typeof callback === 'function') {
+        callback()
+      }
+      return 1 as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout)
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => {})
+    const scrollBy = vi.fn()
+
+    const { effects, refs } = renderBoard({ selectedCardId: 'card-1' })
+
+    refs[0].current = {
+      getBoundingClientRect: () => ({ left: 0, right: 1000 }),
+      querySelector: () => ({
+        getBoundingClientRect: () => ({ left: 600, right: 750 }),
+      }),
+      scrollBy,
+    }
+
+    const cleanup = effects[0]?.()
+
+    expect(scrollBy).toHaveBeenCalledWith({ left: 460, behavior: 'smooth' })
+
+    cleanup?.()
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(1)
+
+    setTimeoutSpy.mockRestore()
+    clearTimeoutSpy.mockRestore()
+    Object.defineProperty(globalThis, 'window', {
+      value: originalWindow,
+      configurable: true,
+      writable: true,
+    })
   })
 })

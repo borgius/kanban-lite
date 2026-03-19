@@ -54,6 +54,8 @@ const storeState = {
   columnVisibilityByBoard: {} as Record<string, { hiddenColumnIds: string[]; minimizedColumnIds: string[] }>,
   workspace: null,
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
+  drawerWidthPreview: null as number | null,
+  effectiveDrawerWidth: 50,
   settingsOpen: false,
   selectedCardIds: [] as string[],
   setCards: vi.fn((cards) => {
@@ -74,6 +76,15 @@ const storeState = {
   }),
   setCardSettings: vi.fn((cardSettings) => {
     storeState.cardSettings = cardSettings
+    storeState.effectiveDrawerWidth = storeState.drawerWidthPreview ?? cardSettings.drawerWidth ?? 50
+  }),
+  setDrawerWidthPreview: vi.fn((width) => {
+    storeState.drawerWidthPreview = width
+    storeState.effectiveDrawerWidth = width
+  }),
+  clearDrawerWidthPreview: vi.fn(() => {
+    storeState.drawerWidthPreview = null
+    storeState.effectiveDrawerWidth = storeState.cardSettings.drawerWidth ?? 50
   }),
   setSettingsOpen: vi.fn((settingsOpen) => {
     storeState.settingsOpen = settingsOpen
@@ -215,6 +226,8 @@ beforeEach(() => {
     columnVisibilityByBoard: {},
     workspace: null,
     cardSettings: { ...DEFAULT_CARD_SETTINGS },
+    drawerWidthPreview: null,
+    effectiveDrawerWidth: 50,
     settingsOpen: false,
     selectedCardIds: [],
   })
@@ -413,5 +426,36 @@ describe('App connection notices', () => {
         minimizedColumnIds: [],
       },
     })
+  })
+
+  it('renders a resize handle for the board logs drawer in drawer mode', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    hookRuntime.values[6] = true
+
+    const markup = renderApp()
+
+    expect(markup).toContain('data-panel-drawer')
+    expect(markup).toContain('data-panel-resize-handle')
+  })
+
+  it('does not render a resize handle for the card editor in popup mode', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.cardSettings = {
+      ...DEFAULT_CARD_SETTINGS,
+      panelMode: 'popup',
+    }
+    hookRuntime.values[5] = {
+      id: 'card-1',
+      content: '# Card',
+      frontmatter: { status: 'backlog' },
+      comments: [],
+      logs: [],
+      contentVersion: 1,
+    }
+
+    const markup = renderApp()
+
+    expect(markup).not.toContain('data-panel-drawer')
+    expect(markup).not.toContain('data-panel-resize-handle')
   })
 })

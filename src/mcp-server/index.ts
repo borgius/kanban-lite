@@ -1105,6 +1105,24 @@ async function main(): Promise<void> {
   )
 
   server.tool(
+    'set_minimized_columns',
+    'Persist the minimized column IDs for a board to the config file. Pass an empty array to clear all minimized columns.',
+    {
+      columnIds: z.array(z.string()).describe('Column IDs to mark as minimized. Pass [] to clear.'),
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ columnIds, boardId }) => {
+      const minimized = sdk.setMinimizedColumns(columnIds, boardId)
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ minimizedColumnIds: minimized }, null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
     'cleanup_column',
     'Move all cards in a column to the deleted (soft-delete) column. The column itself is kept.',
     {

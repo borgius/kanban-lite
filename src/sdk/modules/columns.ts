@@ -133,3 +133,30 @@ export function reorderColumns(ctx: SDKContext, columnIds: string[], boardId?: s
   writeConfig(ctx.workspaceRoot, config)
   return board.columns
 }
+
+/**
+ * Returns the minimized column IDs for a board.
+ */
+export function getMinimizedColumns(ctx: SDKContext, boardId?: string): string[] {
+  const config = readConfig(ctx.workspaceRoot)
+  const resolvedId = boardId || config.defaultBoard
+  const board = config.boards[resolvedId]
+  if (!board) throw new Error(`Board not found: ${resolvedId}`)
+  return board.minimizedColumnIds ?? []
+}
+
+/**
+ * Sets the minimized column IDs for a board, persisting the state to config.
+ * Only IDs that correspond to existing columns are retained.
+ */
+export function setMinimizedColumns(ctx: SDKContext, columnIds: string[], boardId?: string): string[] {
+  const config = readConfig(ctx.workspaceRoot)
+  const resolvedId = boardId || config.defaultBoard
+  const board = config.boards[resolvedId]
+  if (!board) throw new Error(`Board not found: ${resolvedId}`)
+  const validIds = new Set(board.columns.map(c => c.id))
+  const sanitized = [...new Set(columnIds.filter(id => validIds.has(id)))]
+  board.minimizedColumnIds = sanitized.length > 0 ? sanitized : undefined
+  writeConfig(ctx.workspaceRoot, config)
+  return sanitized
+}

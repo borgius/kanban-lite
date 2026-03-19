@@ -1445,6 +1445,28 @@ export class KanbanSDK {
     return Columns.reorderColumns(this, columnIds, boardId)
   }
 
+  /**
+   * Returns the minimized column IDs for a board.
+   *
+   * @param boardId - Board to query (uses default board if omitted).
+   * @returns Array of column IDs currently marked as minimized.
+   */
+  getMinimizedColumns(boardId?: string): string[] {
+    return Columns.getMinimizedColumns(this, boardId)
+  }
+
+  /**
+   * Sets the minimized column IDs for a board, persisting the state to the
+   * workspace config file. Stale or invalid IDs are silently dropped.
+   *
+   * @param columnIds - Column IDs to mark as minimized.
+   * @param boardId - Board to update (uses default board if omitted).
+   * @returns The sanitized list of minimized column IDs that was saved.
+   */
+  setMinimizedColumns(columnIds: string[], boardId?: string): string[] {
+    return Columns.setMinimizedColumns(this, columnIds, boardId)
+  }
+
   // --- Settings management (global) ---
 
   /**

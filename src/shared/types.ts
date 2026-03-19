@@ -375,7 +375,7 @@ export interface ConnectionStatusMessage {
 
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
+  | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition>; minimizedColumnIds?: string[] }
   | ConnectionStatusMessage
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
@@ -406,6 +406,7 @@ export type WebviewMessage =
   | { type: 'editColumn'; columnId: string; updates: { name: string; color: string } }
   | { type: 'removeColumn'; columnId: string }
   | { type: 'reorderColumns'; columnIds: string[]; boardId?: string }
+  | { type: 'setMinimizedColumns'; columnIds: string[]; boardId?: string }
   | { type: 'addComment'; cardId: string; author: string; content: string }
   | { type: 'updateComment'; cardId: string; commentId: string; content: string }
   | { type: 'deleteComment'; cardId: string; commentId: string }

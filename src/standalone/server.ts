@@ -206,7 +206,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         port: config.port,
         configVersion: config.version
       },
-      labels: sdk.getLabels()
+      labels: sdk.getLabels(),
+      minimizedColumnIds: sdk.getMinimizedColumns(currentBoardId)
     }
   }
 
@@ -619,6 +620,22 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         await doCleanupColumn(msg.columnId as string)
         break
 
+      case 'reorderColumns': {
+        const columnIds = msg.columnIds as string[]
+        const boardId = msg.boardId as string | undefined
+        if (Array.isArray(columnIds)) {
+          sdk.reorderColumns(columnIds, boardId)
+          broadcast(buildInitMessage())
+        }
+        break
+      }
+
+      case 'setMinimizedColumns': {
+        const columnIds = msg.columnIds as string[]
+        const boardId = msg.boardId as string | undefined
+        sdk.setMinimizedColumns(Array.isArray(columnIds) ? columnIds : [], boardId)
+        break
+      }
       case 'removeAttachment': {
         const cardId = msg.cardId as string
         const card = await doRemoveAttachment(cardId, msg.attachment as string)
@@ -1608,6 +1625,20 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const columns = sdk.reorderColumns(columnIds, boardId)
         broadcast(buildInitMessage())
         return jsonOk(res, columns)
+      } catch (err) {
+        return jsonError(res, 500, String(err))
+      }
+    }
+
+    params = route('PUT', '/api/columns/minimized')
+    if (params) {
+      try {
+        const boardId = url.searchParams.get('boardId') ?? undefined
+        const body = await readBody(req)
+        const { columnIds } = body as { columnIds: string[] }
+        if (!Array.isArray(columnIds)) return jsonError(res, 400, 'columnIds must be an array')
+        const minimized = sdk.setMinimizedColumns(columnIds, boardId)
+        return jsonOk(res, { minimizedColumnIds: minimized })
       } catch (err) {
         return jsonError(res, 500, String(err))
       }

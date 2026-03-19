@@ -49,6 +49,10 @@ function hasBoardVisibilityState(columnVisibilityByBoard: ColumnVisibilityByBoar
   return Object.prototype.hasOwnProperty.call(columnVisibilityByBoard, boardId)
 }
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
 function App(): React.JSX.Element {
 
   const {
@@ -102,6 +106,7 @@ function App(): React.JSX.Element {
   const [boardLogs, setBoardLogs] = useState<LogEntry[]>([])
   const [isColumnVisibilityPersistenceReady, setIsColumnVisibilityPersistenceReady] = useState(false)
   const persistedColumnVisibilityRef = useRef<ColumnVisibilityByBoard>(readPersistedColumnVisibilityByBoard(vscode.getState()))
+  const lastPostedMinimizedRef = useRef<{ boardId: string; columnIds: string[] } | null>(null)
 
   // Keep store in sync so URLSync (router) can read/update the active card
   useEffect(() => {
@@ -308,11 +313,19 @@ function App(): React.JSX.Element {
             const nextBoardId = message.currentBoard ?? useStore.getState().currentBoard
             const nextColumnIds = nextColumns.map((column) => column.id)
             const currentColumnVisibilityByBoard = useStore.getState().columnVisibilityByBoard
+            const mergeBase: ColumnVisibilityByBoard = {
+              ...persistedColumnVisibilityRef.current,
+              ...currentColumnVisibilityByBoard,
+            }
+            // Apply config-backed minimized state for the incoming board, overriding panel state
+            if (message.minimizedColumnIds !== undefined) {
+              const existing = mergeBase[nextBoardId] ?? { hiddenColumnIds: [], minimizedColumnIds: [] }
+              mergeBase[nextBoardId] = { ...existing, minimizedColumnIds: message.minimizedColumnIds }
+              // Seed ref so the persistence effect doesn't immediately re-post these same values
+              lastPostedMinimizedRef.current = { boardId: nextBoardId, columnIds: message.minimizedColumnIds }
+            }
             const hydratedColumnVisibilityByBoard = sanitizeColumnVisibilityByBoard(
-              {
-                ...persistedColumnVisibilityRef.current,
-                ...currentColumnVisibilityByBoard,
-              },
+              mergeBase,
               nextBoardId,
               nextColumnIds
             )
@@ -413,6 +426,14 @@ function App(): React.JSX.Element {
 
     persistedColumnVisibilityRef.current = sanitizedColumnVisibilityByBoard
     vscode.setState(sanitizedColumnVisibilityByBoard)
+
+    // Also persist minimized state to config file
+    const currentMinimized = sanitizedColumnVisibilityByBoard[currentBoard]?.minimizedColumnIds ?? []
+    const lastPosted = lastPostedMinimizedRef.current
+    if (!lastPosted || lastPosted.boardId !== currentBoard || !arraysEqual(lastPosted.columnIds, currentMinimized)) {
+      vscode.postMessage({ type: 'setMinimizedColumns', boardId: currentBoard, columnIds: currentMinimized })
+      lastPostedMinimizedRef.current = { boardId: currentBoard, columnIds: currentMinimized }
+    }
   }, [columnVisibilityByBoard, columns, currentBoard, isColumnVisibilityPersistenceReady])
 
   const handleCardClick = (card: Card, e: React.MouseEvent): void => {

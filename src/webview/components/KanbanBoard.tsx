@@ -71,6 +71,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   const [draggedCard, setDraggedCard] = useState<Card | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null)
+  const draggedColumnIdRef = useRef<string | null>(null)
   const [dropColumnIndex, setDropColumnIndex] = useState<number | null>(null)
 
   const handleDragStart = useCallback((e: React.DragEvent, card: Card) => {
@@ -87,6 +88,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   const handleDragOver = useCallback((e: React.DragEvent, columnId?: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
+    if (draggedColumnIdRef.current) return
     if (columnId) {
       setDropTarget((prev) => {
         if (prev?.columnId === columnId) return prev
@@ -99,6 +101,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     (e: React.DragEvent, columnId: string, cardIndex: number) => {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
+      if (draggedColumnIdRef.current) return
 
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
       const midY = rect.top + rect.height / 2
@@ -183,7 +186,9 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   }, [])
 
   const handleColumnDragStart = useCallback((e: React.DragEvent, columnId: string) => {
+    draggedColumnIdRef.current = columnId
     setDraggedColumnId(columnId)
+    setDropTarget(null)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('application/x-column-id', columnId)
   }, [])
@@ -223,11 +228,13 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
       ))
       onReorderColumns(nextColumnIds)
     }
+    draggedColumnIdRef.current = null
     setDraggedColumnId(null)
     setDropColumnIndex(null)
   }, [columns, draggedColumnId, dropColumnIndex, hiddenColumnIds, onReorderColumns])
 
   const handleColumnDragEnd = useCallback(() => {
+    draggedColumnIdRef.current = null
     setDraggedColumnId(null)
     setDropColumnIndex(null)
   }, [])

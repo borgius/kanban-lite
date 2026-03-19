@@ -289,6 +289,11 @@ export class KanbanPanel {
             this._sendCardsToWebview()
             break
           }
+          case 'setMinimizedColumns': {
+            if (!this._sdk) break
+            this._sdk.setMinimizedColumns(message.columnIds, message.boardId)
+            break
+          }
           case 'cleanupColumn':
             await this._cleanupColumn(message.columnId)
             break
@@ -1171,7 +1176,8 @@ export class KanbanPanel {
       settings,
       boards,
       currentBoard,
-      labels: sdk ? sdk.getLabels() : {}
+      labels: sdk ? sdk.getLabels() : {},
+      minimizedColumnIds: sdk ? sdk.getMinimizedColumns(this._currentBoardId) : []
     })
   }
 

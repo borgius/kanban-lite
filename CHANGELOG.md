@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Active card lookup**: Added `getActiveCard(boardId?)` to the SDK plus matching REST API, CLI, and MCP support for retrieving the currently active/open card tracked by the UI.
+- **Persisted minimized columns**: Minimized column state is now saved to `.kanban.json` per board (`minimizedColumnIds`), surviving extension reloads and panel restores. SDK exposes `getMinimizedColumns(boardId?)` and `setMinimizedColumns(columnIds, boardId?)`; REST `PUT /api/columns/minimized`; CLI `kl columns set-minimized <id...>`; MCP `set_minimized_columns` tool.
 - **Configurable card panel layout**: Added the `panelMode` setting to switch card creation and detail flows between a right-side drawer and a centered popup.
 - **Adjustable drawer width**: Added the `drawerWidth` setting (20–80%) so drawer mode can be tuned per workspace; board layout and card visibility calculations now respect the configured width.
 - **Clickable label filters**: Clicking a label on a board card or in the card detail panel now applies that label as the active board filter.

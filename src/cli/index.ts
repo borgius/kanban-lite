@@ -1068,9 +1068,19 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
       console.log(green('Columns reordered.'))
       break
     }
+    case 'set-minimized': {
+      const columnIds = positional.slice(1)
+      sdk.setMinimizedColumns(columnIds, boardId)
+      if (columnIds.length === 0) {
+        console.log(green('Cleared all minimized columns.'))
+      } else {
+        console.log(green(`Minimized columns set: ${columnIds.join(', ')}`))
+      }
+      break
+    }
     default:
       console.error(red(`Unknown columns subcommand: ${subcommand}`))
-      console.error('Available: list, add, update, remove, cleanup, reorder')
+      console.error('Available: list, add, update, remove, cleanup, reorder, set-minimized')
       process.exit(1)
   }
 }

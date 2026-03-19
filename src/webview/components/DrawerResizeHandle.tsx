@@ -10,6 +10,14 @@ interface DrawerResizeHandleProps {
 
 export function DrawerResizeHandle({ panelMode, onPreview, onCommit, onCancel }: DrawerResizeHandleProps) {
   const controllerRef = useRef<DrawerResizeController | null>(null)
+  const onPreviewRef = useRef(onPreview)
+  const onCommitRef = useRef(onCommit)
+  const onCancelRef = useRef(onCancel)
+
+  // Keep refs current without recreating the controller on every render
+  onPreviewRef.current = onPreview
+  onCommitRef.current = onCommit
+  onCancelRef.current = onCancel
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -20,9 +28,9 @@ export function DrawerResizeHandle({ panelMode, onPreview, onCommit, onCancel }:
       eventTarget: window,
       getPanelMode: () => panelMode,
       getViewportWidth: () => window.innerWidth,
-      onPreview,
-      onCommit,
-      onCancel,
+      onPreview: (w) => onPreviewRef.current(w),
+      onCommit: (w) => onCommitRef.current(w),
+      onCancel: () => onCancelRef.current(),
     })
 
     controllerRef.current = controller
@@ -31,7 +39,7 @@ export function DrawerResizeHandle({ panelMode, onPreview, onCommit, onCancel }:
       controller.dispose()
       controllerRef.current = null
     }
-  }, [onCancel, onCommit, onPreview, panelMode])
+  }, [panelMode])
 
   if (panelMode !== 'drawer') {
     return null

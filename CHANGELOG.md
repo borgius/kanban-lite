@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standalone URL sync**: Browser history and deep links now persist the fuzzy-search state alongside the existing board, card, tab, filter, and search query routing state.
 
 ### Fixed
+- **Standalone reconnect recovery**: In standalone/browser mode, the app now automatically retries same-page backend reconnects when possible and shows an in-app connection-lost error with refresh/reopen guidance if recovery cannot be restored.
 - **Toolbar search chips**: Mixed search queries in the web UI now render separate removable chips for plain-text terms and each `meta.*` token, so individual constraints can be cleared without wiping the entire query.
 
 ### Removed

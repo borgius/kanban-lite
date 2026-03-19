@@ -356,9 +356,27 @@ export interface WorkspaceInfo {
   configVersion: number
 }
 
+/**
+ * Standalone transport lifecycle status emitted to the frontend.
+ *
+ * This is produced by the standalone shim only; the native VS Code webview
+ * path does not emit these messages.
+ */
+export interface ConnectionStatusMessage {
+  type: 'connectionStatus'
+  connected: boolean
+  reconnecting: boolean
+  fatal: boolean
+  retryCount?: number
+  maxRetries?: number
+  retryDelayMs?: number
+  reason?: string
+}
+
 // Messages between extension and webview
 export type ExtensionMessage =
   | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition> }
+  | ConnectionStatusMessage
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[]; logs?: LogEntry[] }

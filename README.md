@@ -251,6 +251,8 @@ The server provides:
 - **REST API** at `http://localhost:3000/api` — full programmatic access
 - **WebSocket** — real-time updates for connected clients
 
+> In standalone/browser mode, the app automatically retries same-page backend reconnects when possible after the connection drops. If reconnect cannot be restored, the UI shows an in-app connection-lost error with guidance to refresh or reopen the standalone page.
+
 ### REST API
 
 All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "message" }`. CORS is enabled for all origins.

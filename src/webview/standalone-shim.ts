@@ -2,32 +2,160 @@
 // Must be imported BEFORE App.tsx so the global is available at module load time.
 // When loaded inside VS Code the native acquireVsCodeApi is already injected —
 // skip this entire shim so we never overwrite the real API.
+import type { ConnectionStatusMessage, ExtensionMessage, WebviewMessage } from '../shared/types'
+
 if (!('acquireVsCodeApi' in window)) {
 
-const ws = new WebSocket(`ws://${window.location.host}/ws`)
+const WS_URL = `ws://${window.location.host}/ws`
+const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 4000] as const
+const MAX_RETRIES = RECONNECT_DELAYS_MS.length
+
+let ws: WebSocket | null = null
 const pendingMessages: string[] = []
 let connected = false
+let hasConnectedOnce = false
+let readyRequested = false
+let reconnectAttemptCount = 0
+let reconnectTimer: number | null = null
+let allowReconnect = true
 
-ws.addEventListener('open', () => {
-  connected = true
+function emitConnectionStatus(status: Omit<ConnectionStatusMessage, 'type'>) {
+  const message: ExtensionMessage = { type: 'connectionStatus', ...status }
+  window.postMessage(message, '*')
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer !== null) {
+    window.clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
+function sendPendingBootstrapState(socket: WebSocket) {
+  if (readyRequested) {
+    socket.send(JSON.stringify({ type: 'ready' } satisfies Extract<WebviewMessage, { type: 'ready' }>))
+  }
+}
+
+function flushInitialPendingMessages(socket: WebSocket) {
   for (const msg of pendingMessages) {
-    ws.send(msg)
+    socket.send(msg)
   }
   pendingMessages.length = 0
-})
+}
 
-ws.addEventListener('message', (event) => {
-  try {
-    const data = JSON.parse(event.data)
-    window.postMessage(data, '*')
-  } catch {
-    // ignore malformed messages
+function scheduleReconnect(reason: string) {
+  connected = false
+
+  if (!allowReconnect) {
+    return
+  }
+
+  if (reconnectTimer !== null) {
+    return
+  }
+
+  if (reconnectAttemptCount >= MAX_RETRIES) {
+    emitConnectionStatus({
+      connected: false,
+      reconnecting: false,
+      fatal: true,
+      retryCount: reconnectAttemptCount,
+      maxRetries: MAX_RETRIES,
+      reason
+    })
+    return
+  }
+
+  const retryDelayMs = RECONNECT_DELAYS_MS[reconnectAttemptCount]
+  reconnectAttemptCount += 1
+  emitConnectionStatus({
+    connected: false,
+    reconnecting: true,
+    fatal: false,
+    retryCount: reconnectAttemptCount,
+    maxRetries: MAX_RETRIES,
+    retryDelayMs,
+    reason
+  })
+
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    connect()
+  }, retryDelayMs)
+}
+
+function connect() {
+  const socket = new WebSocket(WS_URL)
+  ws = socket
+
+  socket.addEventListener('open', () => {
+    if (ws !== socket) {
+      return
+    }
+
+    connected = true
+    const shouldFlushInitialQueue = !hasConnectedOnce
+    hasConnectedOnce = true
+    clearReconnectTimer()
+    reconnectAttemptCount = 0
+
+    sendPendingBootstrapState(socket)
+    if (shouldFlushInitialQueue) {
+      flushInitialPendingMessages(socket)
+    }
+
+    emitConnectionStatus({
+      connected: true,
+      reconnecting: false,
+      fatal: false,
+      retryCount: 0,
+      maxRetries: MAX_RETRIES
+    })
+  })
+
+  socket.addEventListener('message', (event) => {
+    if (ws !== socket) {
+      return
+    }
+
+    try {
+      const data = JSON.parse(event.data) as ExtensionMessage
+      window.postMessage(data, '*')
+    } catch {
+      // ignore malformed messages
+    }
+  })
+
+  socket.addEventListener('error', () => {
+    if (ws !== socket) {
+      return
+    }
+
+    if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+      socket.close()
+    }
+  })
+
+  socket.addEventListener('close', () => {
+    if (ws !== socket) {
+      return
+    }
+
+    ws = null
+    scheduleReconnect('socket-closed')
+  })
+}
+
+window.addEventListener('beforeunload', () => {
+  allowReconnect = false
+  clearReconnectTimer()
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+    ws.close()
   }
 })
 
-ws.addEventListener('close', () => {
-  connected = false
-})
+connect()
 
 // State persistence via sessionStorage
 let savedState: unknown = null
@@ -89,7 +217,7 @@ function handleOpenAttachment(cardId: string, attachment: string) {
 // Provide the same API shape as acquireVsCodeApi()
 ;(window as unknown as Record<string, unknown>).acquireVsCodeApi = () => ({
   postMessage(message: unknown) {
-    const msg = message as Record<string, unknown>
+    const msg = message as WebviewMessage & Record<string, unknown>
     // Intercept attachment messages — handle browser-side in standalone
     if (msg.type === 'openFile') {
       const cardId = msg.cardId as string
@@ -140,10 +268,20 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
 
     const json = JSON.stringify(message)
-    if (connected) {
+    if (msg.type === 'ready') {
+      readyRequested = true
+      if (connected && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(json)
+      }
+      return
+    }
+
+    if (connected && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(json)
-    } else {
+    } else if (!hasConnectedOnce) {
       pendingMessages.push(json)
+    } else {
+      console.warn('Dropping standalone message while disconnected', msg.type)
     }
   },
   getState() {

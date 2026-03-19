@@ -1,0 +1,293 @@
+plan_id: 20260318-backend-reconnect
+objective: |
+	When the standalone backend restarts or its exposed init/version state changes, the frontend should
+	automatically attempt to reconnect, re-run the existing `ready -> init` handshake, and surface a
+	clear in-app error notification if reconnection cannot be recovered.
+created_at: "2026-03-18"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+	This is a frontend transport/UI change, not an SDK/business-logic change: the standalone backend
+	already supports a fresh socket connection and `ready -> init` rehydration on every connection, so
+	the surgical path is to add reconnect logic in `src/webview/standalone-shim.ts`, extend the shared
+	message contract in `src/shared/types.ts`, and render reconnecting/fatal connection notifications in
+	`src/webview/App.tsx` using the existing toast styling pattern. No SDK-first work is needed unless
+	product scope expands from reconnect behavior into a new backend build-version contract.
+
+open_questions:
+	- "Assumption for this plan: 'version changes' means the frontend should accept a fresh `init` payload after reconnect and compare existing workspace/init metadata, not introduce a new backend package-version API. If product wants explicit build-version detection, that should be a small follow-up backend task."
+
+pre_mortem:
+	overall_risk_level: medium
+	critical_failure_modes:
+		- scenario: Queued outbound messages are blindly replayed after reconnect and repeat a non-idempotent action that may already have reached the backend before the disconnect.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Restrict automatic replay to connection bootstrap/system messages, or mark the queue so only
+				messages that were never sent are replayed. Do not duplicate create/move/delete side effects
+				without an explicit delivery guarantee.
+		- scenario: The backend comes back on a different port, so the browser page cannot rediscover the new server from the old origin and reconnect loops forever.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Treat same-origin reconnect as the supported recovery path for this change. After bounded retry
+				exhaustion, emit a fatal connection notification instructing the user to refresh or reopen the
+				standalone page instead of retrying indefinitely.
+		- scenario: Reconnect state leaks into VS Code-hosted webview behavior and regresses the native `acquireVsCodeApi()` path.
+			likelihood: low
+			impact: medium
+			mitigation: |
+				Keep all reconnect logic inside the standalone-only shim guard and verify the native webview path
+				remains untouched.
+	assumptions:
+		- The current standalone server behavior (`ready -> init` on every WebSocket connection) is sufficient for client-side reconnect and rehydration.
+		- This objective does not require SDK, REST, CLI, or MCP surface changes because it is transport/UI behavior in standalone browser mode.
+		- A bounded reconnect loop plus a user-visible fatal notification satisfies the requested error handling when recovery is not possible.
+		- README and CHANGELOG should be updated because the standalone browser UX changes in a user-visible way.
+		- There is no `docs/prd.yaml` in the repository at planning time, so there is no PRD conflict to resolve.
+
+implementation_specification:
+	code_structure: |
+		Keep the change surgical and frontend-only. Replace the one-shot module-level WebSocket in
+		`src/webview/standalone-shim.ts` with a small reconnecting transport wrapper that owns socket
+		lifecycle, bounded retry/backoff, connection-status event emission, and handshake replay. Extend the
+		shared message union in `src/shared/types.ts` with a narrow connection-status message, then consume
+		that message in `src/webview/App.tsx` to show reconnecting and fatal-loss notifications using the
+		existing toast styling pattern from `src/webview/components/UndoToast.tsx`. Do not touch SDK layers
+		because no board/card business logic is changing.
+	affected_areas:
+		- src/webview/standalone-shim.ts
+		- src/shared/types.ts
+		- src/webview/App.tsx
+		- src/webview/components/UndoToast.tsx
+		- src/webview/standalone-shim.test.ts
+		- src/webview/App.test.tsx
+		- src/standalone/__tests__/server.integration.test.ts
+		- README.md
+		- CHANGELOG.md
+	component_details:
+		- component: Standalone reconnect transport
+			responsibility: Own WebSocket creation, close/error handling, retry scheduling, handshake replay, and frontend-visible connection status events for standalone mode only.
+			interfaces:
+				- "Internal reconnect wrapper around `/ws` in `src/webview/standalone-shim.ts`"
+				- "Posts window messages such as `{ type: 'connectionStatus', connected, reconnecting, fatal, retryCount, reason? }`"
+		- component: Shared transport message contract
+			responsibility: Keep the connection-status payload type-safe between shim and app.
+			interfaces:
+				- "`ExtensionMessage` union entry for connection lifecycle updates"
+		- component: App-level connection notification state
+			responsibility: Track reconnecting vs unrecoverable loss and render the correct in-app notification while leaving normal board behavior untouched.
+			interfaces:
+				- "`App.tsx` message handler branch for `connectionStatus`"
+				- "Toast/banner props for reconnecting and fatal-loss states"
+		- component: Regression test coverage
+			responsibility: Lock the reconnect contract at transport, UI, and backend-handshake seams.
+			interfaces:
+				- "Vitest shim test for retry/replay behavior"
+				- "Vitest App test for reconnect/fatal notification rendering"
+				- "Integration test confirming a newly connected socket still receives `init` after `ready`"
+	dependencies:
+		- component: Shared transport message contract
+			relationship: Must land before `App.tsx` can consume connection-status events safely.
+		- component: Standalone reconnect transport
+			relationship: Produces the connection-status events and restored handshake behavior that the app UI depends on.
+		- component: App-level connection notification state
+			relationship: Depends on the finalized connection-status payload shape and any toast reuse/generalization.
+		- component: Regression tests
+			relationship: Depend on the reconnect contract and UI copy being stable enough to assert precisely.
+		- component: Docs/changelog updates
+			relationship: Depend on the final reconnect behavior and user-facing fallback wording.
+	integration_points:
+		- `src/webview/standalone-main.tsx` already imports the shim before React, so reconnect behavior belongs in the shim rather than router/bootstrap code.
+		- `src/standalone/server.ts` already replies to `{ type: 'ready' }` with `init`, so reconnect should reuse that existing handshake rather than inventing a new backend protocol.
+		- `src/webview/vsCodeApi.ts` remains the app-facing transport seam; native VS Code webview behavior stays unchanged.
+		- `src/webview/components/UndoToast.tsx` provides the existing notification styling pattern to reuse rather than introducing a second visual system.
+
+contracts:
+	- from_task: T1
+		to_task: T2
+		interface: "Connection lifecycle event payload sent from the standalone shim to the React app"
+		format: "`ExtensionMessage` union member with `type: 'connectionStatus'`, booleans for `connected`/`reconnecting`/`fatal`, and optional retry metadata"
+	- from_task: T2
+		to_task: T3
+		interface: "Stable reconnect UX contract: when to show transient reconnecting vs fatal-loss notification, and what text/action state each one exposes"
+		format: "React state shape in `App.tsx` plus any supporting toast props"
+	- from_task: T1
+		to_task: T3
+		interface: "Reconnect wrapper behavior for retry/backoff and `ready` replay after a new socket opens"
+		format: "Standalone shim behavior and message emission semantics"
+	- from_task: T3
+		to_task: T4
+		interface: "Final user-visible reconnect behavior and failure guidance"
+		format: "README note and CHANGELOG bullet text"
+
+tasks:
+	- id: T1
+		title: Add standalone reconnect transport and shared connection-status typing
+		description: |
+			Replace the current one-shot WebSocket in `src/webview/standalone-shim.ts` with a bounded reconnect
+			wrapper that recreates the socket on close/error, tracks retry count/backoff, replays the bootstrap
+			handshake after reconnect, and emits a typed frontend-visible connection-status message. Extend
+			`src/shared/types.ts` so the app can consume those messages without unsafe casts. This is frontend
+			transport work only; no SDK-first step is required.
+		wave: 1
+		agent: gem-implementer
+		priority: high
+		status: pending
+		dependencies: []
+		context_files:
+			src/webview/standalone-shim.ts: "Standalone browser transport; currently one-shot socket with a pre-open queue and no reconnect/status signaling."
+			src/shared/types.ts: "Shared message union; must gain a narrow connection-status message for typed app handling."
+		estimated_effort: medium
+		estimated_files: 2
+		estimated_lines: 140
+		focus_area: frontend transport resilience
+		verification:
+			- "A reconnect-capable shim can recreate the socket, bound retries, and re-send the bootstrap handshake without affecting the native VS Code webview path."
+			- "TypeScript accepts the new connection-status message in the shared message union."
+		acceptance_criteria:
+			- "When the standalone socket closes unexpectedly, the shim starts reconnect attempts automatically."
+			- "After a successful reconnect, the frontend triggers the existing `ready -> init` rehydration flow again."
+			- "If retries are exhausted, the shim emits a terminal connection status that the app can surface to the user."
+		failure_modes:
+			- scenario: Reconnect logic accidentally replays stale mutation messages.
+				likelihood: medium
+				impact: high
+				mitigation: "Only replay unsent/bootstrap-safe messages, and keep mutation replay conservative."
+			- scenario: Standalone-only code leaks into VS Code-hosted mode.
+				likelihood: low
+				impact: medium
+				mitigation: "Keep all changes inside the existing `!('acquireVsCodeApi' in window)` guard and verify native mode is unchanged."
+		tech_stack:
+			- TypeScript
+			- WebSocket browser API
+		test_coverage: "Add/adjust targeted transport tests in T3."
+
+	- id: T2
+		title: Surface reconnecting and unrecoverable-loss notifications in the app shell
+		description: |
+			Teach `src/webview/App.tsx` to consume the new connection-status message and show a transient
+			reconnecting notice while retries are active, then a persistent fatal-loss error notification when
+			reconnect is no longer possible. Reuse the existing toast visual language from
+			`src/webview/components/UndoToast.tsx`; if the smallest path is to generalize that component for a
+			non-undo/non-timed variant, do that surgically rather than introducing a brand-new notification system.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: pending
+		dependencies:
+			- T1
+		context_files:
+			src/webview/App.tsx: "Main message consumer and the place where `ready` is posted today; must gain connection-status state and rendering."
+			src/webview/components/UndoToast.tsx: "Existing toast styling/pattern to reuse or minimally generalize for reconnect notifications."
+		estimated_effort: medium
+		estimated_files: 2
+		estimated_lines: 120
+		focus_area: user-visible error handling
+		verification:
+			- "Reconnecting state appears while retries are active and clears itself once fresh `init` arrives."
+			- "Fatal loss state remains visible with user guidance after retry exhaustion."
+		acceptance_criteria:
+			- "Users see an in-app reconnecting notification instead of silent dead transport while recovery is underway."
+			- "Users see an explicit error notification when connection loss is unrecoverable."
+			- "Existing undo-delete toast behavior remains intact."
+		failure_modes:
+			- scenario: Notification state never clears after a successful reconnect.
+				likelihood: medium
+				impact: medium
+				mitigation: "Reset UI state on successful `init` and/or explicit connected status event."
+			- scenario: Reusing `UndoToast` regresses current delete-undo timing or layout.
+				likelihood: low
+				impact: medium
+				mitigation: "Keep the generalization additive and verify existing undo toast behavior in the app."
+		tech_stack:
+			- React
+			- TSX
+			- Tailwind/CSS utility classes already used in webview components
+		test_coverage: "Add focused App/UI assertions in T3."
+
+	- id: T3
+		title: Add focused reconnect regression coverage and run targeted validation
+		description: |
+			Add narrow tests that cover the reconnect contract at three seams: a shim-level unit test for retry
+			and handshake replay, an app-level UI test for reconnecting/fatal notifications, and a backend
+			integration assertion that a newly connected socket still receives `init` after `ready`. Then run the
+			targeted Vitest files plus a build to catch typing or bundling regressions.
+		wave: 3
+		agent: gem-implementer
+		priority: high
+		status: pending
+		dependencies:
+			- T1
+			- T2
+		context_files:
+			src/webview/standalone-shim.test.ts: "New test file covering reconnect retry/backoff and handshake replay semantics."
+			src/webview/App.test.tsx: "New jsdom test file covering reconnecting/fatal notification rendering and clearing behavior."
+			src/standalone/__tests__/server.integration.test.ts: "Existing integration suite to lock the backend handshake assumption that reconnect relies on."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: regression safety
+		verification:
+			- "Run Vitest for `src/webview/standalone-shim.test.ts`, `src/webview/App.test.tsx`, and `src/standalone/__tests__/server.integration.test.ts`."
+			- "Run the workspace build task to ensure TypeScript and bundle output remain healthy."
+		acceptance_criteria:
+			- "Transport tests prove reconnect attempts occur and the handshake is replayed after socket recovery."
+			- "UI tests prove reconnecting and fatal-loss notifications render and clear at the correct times."
+			- "Integration tests continue to prove the backend supports a fresh `ready -> init` cycle on a new socket."
+		failure_modes:
+			- scenario: UI tests become flaky because timers/backoff are not controlled deterministically.
+				likelihood: medium
+				impact: medium
+				mitigation: "Use fake timers/mocked WebSocket timing in frontend tests so reconnect states are deterministic."
+			- scenario: The backend integration test tries to simulate full auto-reconnect and becomes brittle.
+				likelihood: low
+				impact: medium
+				mitigation: "Keep the integration test scoped to the server-side handshake contract; validate auto-reconnect in frontend unit tests."
+		tech_stack:
+			- Vitest
+			- jsdom per-file test environment for TSX UI coverage
+			- ws test client for backend integration assertions
+		test_coverage: "Targeted regression coverage for reconnect transport, reconnect UI, and backend handshake assumptions."
+
+	- id: T4
+		title: Document the standalone reconnect behavior and record the fix
+		description: |
+			Update the user-facing docs and changelog with the minimal text needed to explain the new standalone
+			reconnect behavior and what users should expect when recovery fails. Because no SDK/API/CLI/MCP public
+			contract is changing, this should stay limited to `README.md` and `CHANGELOG.md`; autogenerated docs
+			are not in scope.
+		wave: 4
+		agent: gem-documentation-writer
+		priority: medium
+		status: pending
+		dependencies:
+			- T3
+		context_files:
+			README.md: "Add a small standalone/browser-mode note describing automatic reconnect and the fatal-loss notification fallback."
+			CHANGELOG.md: "Add an `Unreleased` fix entry for standalone reconnect/error-notification behavior."
+		estimated_effort: small
+		estimated_files: 2
+		estimated_lines: 18
+		focus_area: release notes
+		verification:
+			- "README wording matches the implemented standalone behavior and does not claim new backend APIs or SDK changes."
+			- "CHANGELOG contains an `Unreleased` fix entry summarizing the reconnect and lost-connection notification behavior."
+		acceptance_criteria:
+			- "Docs clearly state that standalone mode retries backend reconnect automatically."
+			- "Docs clearly state that users receive an error notification if reconnect cannot be restored."
+			- "No autogenerated docs are edited because no SDK/API contract changed."
+		failure_modes:
+			- scenario: Docs overstate support for backend restarts that change the port or require a browser refresh.
+				likelihood: medium
+				impact: medium
+				mitigation: "Keep wording precise: same-page reconnect is automatic when possible; otherwise the app shows a loss-of-connection error and recovery guidance."
+		task_type: update
+		audience: end-users
+		coverage_matrix:
+			- "Standalone/browser mode reconnect behavior"
+			- "Unrecoverable connection loss user guidance"
+			- "CHANGELOG release note entry"

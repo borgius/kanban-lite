@@ -338,6 +338,34 @@ describe('Standalone Server Integration', () => {
       expect(cards[0].id).toBe('card-a')
       expect(cards[1].id).toBe('card-b')
     })
+
+    it('should return init after ready on a newly connected socket', async () => {
+      writeCardFile(tempDir, 'test-card.md', makeCardContent({
+        id: 'test-card',
+        status: 'backlog',
+        priority: 'high',
+        title: 'Test Card'
+      }), 'backlog')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const firstSocket = await connectWs(port)
+      const firstResponse = await sendAndReceive(firstSocket, { type: 'ready' }, 'init')
+      expect(firstResponse.type).toBe('init')
+
+      firstSocket.close()
+      await sleep(50)
+
+      const secondSocket = await connectWs(port)
+      ws = secondSocket
+      const secondResponse = await sendAndReceive(secondSocket, { type: 'ready' }, 'init')
+
+      expect(secondResponse.type).toBe('init')
+      const cards = secondResponse.cards as Array<Record<string, unknown>>
+      expect(cards).toHaveLength(1)
+      expect(cards[0].id).toBe('test-card')
+    })
   })
 
   // ── Create Card ──

@@ -13,6 +13,7 @@ import { ShortcutHelp } from './components/ShortcutHelp'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
 import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
+import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
 import { getVsCodeApi } from './vsCodeApi'
 
@@ -73,6 +74,7 @@ function App(): React.JSX.Element {
 
   // Undo delete stack
   const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
+  const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null)
   const pendingDeletesRef = useRef(pendingDeletes)
   useEffect(() => {
     pendingDeletesRef.current = pendingDeletes
@@ -265,6 +267,7 @@ function App(): React.JSX.Element {
 
       switch (message.type) {
         case 'init':
+          setConnectionNotice(null)
           setCards(message.cards)
           setColumns(message.columns)
           if (message.boards) setBoards(message.boards)
@@ -277,6 +280,9 @@ function App(): React.JSX.Element {
             setCardSettings(message.settings)
           }
           if (message.labels) setLabelDefs(message.labels)
+          break
+        case 'connectionStatus':
+          setConnectionNotice(buildConnectionNotice(message))
           break
         case 'cardsUpdated':
           setCards(message.cards)
@@ -863,6 +869,16 @@ function App(): React.JSX.Element {
         title={editingColumn ? 'Edit List' : 'Add List'}
       />
 
+      {connectionNotice && (
+        <UndoToast
+          title={connectionNotice.title}
+          message={connectionNotice.message}
+          persistent
+          tone={connectionNotice.tone}
+          index={0}
+        />
+      )}
+
       {pendingDeletes.map((entry, i) => (
         <UndoToast
           key={entry.id}
@@ -870,7 +886,7 @@ function App(): React.JSX.Element {
           onUndo={() => handleUndoDelete(entry.id)}
           onExpire={() => commitDelete(entry.id)}
           duration={5000}
-          index={i}
+          index={connectionNotice ? i + 1 : i}
         />
       ))}
 

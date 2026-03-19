@@ -1,17 +1,42 @@
 import { useEffect, useState } from 'react'
 
 interface UndoToastProps {
+  title?: string
   message: string
-  onUndo: () => void
-  onExpire: () => void
-  duration: number
+  onUndo?: () => void
+  onExpire?: () => void
+  duration?: number
   index: number
+  actionLabel?: string
+  persistent?: boolean
+  tone?: 'default' | 'info' | 'error'
 }
 
-export function UndoToast({ message, onUndo, onExpire, duration, index }: UndoToastProps) {
+export function UndoToast({
+  title,
+  message,
+  onUndo,
+  onExpire,
+  duration,
+  index,
+  actionLabel = 'Undo',
+  persistent = false,
+  tone = 'default',
+}: UndoToastProps) {
   const [progress, setProgress] = useState(100)
+  const showProgress = !persistent && typeof duration === 'number' && typeof onExpire === 'function'
+  const accentColor = tone === 'error'
+    ? 'var(--vscode-errorForeground, #f14c4c)'
+    : tone === 'info'
+      ? 'var(--vscode-progressBar-background)'
+      : undefined
 
   useEffect(() => {
+    if (!showProgress || !duration) {
+      setProgress(100)
+      return
+    }
+
     const interval = 50
     const step = (interval / duration) * 100
     const timer = setInterval(() => {
@@ -26,13 +51,13 @@ export function UndoToast({ message, onUndo, onExpire, duration, index }: UndoTo
     }, interval)
 
     return () => clearInterval(timer)
-  }, [duration])
+  }, [duration, showProgress])
 
   useEffect(() => {
-    if (progress <= 0) {
+    if (showProgress && progress <= 0 && onExpire) {
       onExpire()
     }
-  }, [progress, onExpire])
+  }, [progress, onExpire, showProgress])
 
   return (
     <div
@@ -42,29 +67,37 @@ export function UndoToast({ message, onUndo, onExpire, duration, index }: UndoTo
         background: 'var(--vscode-notifications-background)',
         color: 'var(--vscode-notifications-foreground)',
         border: '1px solid var(--vscode-notifications-border, var(--vscode-widget-border))',
+        borderLeft: accentColor ? `3px solid ${accentColor}` : undefined,
       }}
     >
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <span className="text-[13px] leading-snug flex-1 truncate">{message}</span>
-        <button
-          onClick={onUndo}
-          className="text-[13px] px-2 py-0.5 shrink-0"
-          style={{
-            background: 'var(--vscode-button-background)',
-            color: 'var(--vscode-button-foreground)',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'var(--vscode-button-background)'}
-        >
-          Undo
-        </button>
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          {title && <div className="mb-0.5 text-[12px] font-semibold">{title}</div>}
+          <span className={`text-[13px] leading-snug ${title ? 'block' : 'truncate'}`}>{message}</span>
+        </div>
+        {onUndo && (
+          <button
+            onClick={onUndo}
+            className="text-[13px] px-2 py-0.5 shrink-0"
+            style={{
+              background: 'var(--vscode-button-background)',
+              color: 'var(--vscode-button-foreground)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--vscode-button-background)'}
+          >
+            {actionLabel}
+          </button>
+        )}
       </div>
-      <div className="h-[2px] w-full" style={{ background: 'var(--vscode-widget-border)' }}>
-        <div
-          className="h-full transition-none"
-          style={{ width: `${progress}%`, background: 'var(--vscode-progressBar-background)' }}
-        />
-      </div>
+      {showProgress && (
+        <div className="h-[2px] w-full" style={{ background: 'var(--vscode-widget-border)' }}>
+          <div
+            className="h-full transition-none"
+            style={{ width: `${progress}%`, background: 'var(--vscode-progressBar-background)' }}
+          />
+        </div>
+      )}
     </div>
   )
 }

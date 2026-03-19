@@ -1,0 +1,411 @@
+plan_id: "20260318-backend-reconnect"
+objective: "Research frontend/backend reconnect behavior when the standalone backend restarts or config/version changes."
+focus_area: "connectivity_reconnect"
+created_at: "2026-03-18"
+created_by: "GitHub Copilot (GPT-5.4)"
+status: "completed"
+
+tldr: |
+	- Standalone browser mode depends on a single WebSocket created in `src/webview/standalone-shim.ts`; it queues outbound messages before the first open, but has no reconnect, retry, or lost-connection UI.
+	- The app shell in `src/webview/App.tsx` assumes an eventual `init` message after posting `{ type: 'ready' }`; if the socket dies later, UI state remains mounted but no longer receives backend updates.
+	- The backend exposes `/ws`, `GET /api/workspace`, and `GET /api/storage`; there is no dedicated health/version endpoint, heartbeat, or server-issued disconnect reason.
+	- Reusable UI patterns already exist for inline/browser-side notifications (`UndoToast`, notification CSS tokens) and for extension-hosted errors (`vscode.window.showErrorMessage`).
+	- Test coverage is strong for initial WS init/broadcast behavior, but missing for socket close/reconnect, backend restart, version mismatch detection, and lost-connection notification rendering.
+
+research_metadata:
+	methodology: "Hybrid repository research using semantic search, exact grep, and targeted file reads of frontend bridge, app shell, extension host, server routes, and tests."
+	scope: "Standalone browser connectivity path, extension/webview bootstrap comparison, server websocket/API entry points, notification primitives, and related tests."
+	confidence: "high"
+	coverage: 88
+
+files_analyzed:
+	- file: "src/webview/standalone-shim.ts"
+		path: "/Users/admin/dev/kanban-light/src/webview/standalone-shim.ts"
+		purpose: "Standalone-mode transport bridge that emulates `acquireVsCodeApi()` over WebSocket and direct fetch calls."
+		key_elements:
+			- element: "const ws = new WebSocket(`ws://${window.location.host}/ws`)"
+				type: "pattern"
+				location: "src/webview/standalone-shim.ts:7"
+				description: "Single socket created eagerly on module load; no reconnect wrapper or socket recreation."
+			- element: "pendingMessages"
+				type: "variable"
+				location: "src/webview/standalone-shim.ts:8"
+				description: "Outbound queue reused only until first successful open; could support reconnect replay."
+			- element: "ws.addEventListener('close', ...)"
+				type: "pattern"
+				location: "src/webview/standalone-shim.ts:28"
+				description: "Only flips `connected = false`; does not notify UI or retry."
+			- element: "acquireVsCodeApi().postMessage"
+				type: "function"
+				location: "src/webview/standalone-shim.ts:82"
+				description: "Queues or sends messages to the socket; browser-specific commands use `fetch` for attachments/path resolution."
+		language: "TypeScript"
+		lines: 172
+
+	- file: "src/webview/App.tsx"
+		path: "/Users/admin/dev/kanban-light/src/webview/App.tsx"
+		purpose: "Main frontend app shell handling init data, editor state, and the only existing browser-side toast pattern."
+		key_elements:
+			- element: "handleMessage"
+				type: "function"
+				location: "src/webview/App.tsx:267"
+				description: "Consumes extension/server messages (`init`, `cardContent`, `logsUpdated`, etc.) but has no connection status branch."
+			- element: "vscode.postMessage({ type: 'ready' })"
+				type: "pattern"
+				location: "src/webview/App.tsx:332"
+				description: "One-shot readiness handshake sent on mount; no re-send trigger after transport loss."
+			- element: "pendingDeletes / UndoToast"
+				type: "pattern"
+				location: "src/webview/App.tsx:69-108,867-874"
+				description: "Existing in-app transient notification stack suitable as a styling/placement reference."
+		language: "TypeScript React"
+		lines: 879
+
+	- file: "src/webview/components/UndoToast.tsx"
+		path: "/Users/admin/dev/kanban-light/src/webview/components/UndoToast.tsx"
+		purpose: "Current standalone/webview toast component with timer and notification theming."
+		key_elements:
+			- element: "UndoToast"
+				type: "function"
+				location: "src/webview/components/UndoToast.tsx:11"
+				description: "Toast UI with progress timer, fixed stacking, and VS Code notification CSS variables."
+		language: "TypeScript React"
+		lines: 61
+
+	- file: "src/webview/router.tsx"
+		path: "/Users/admin/dev/kanban-light/src/webview/router.tsx"
+		purpose: "App shell routing/bootstrap logic for both standalone and webview modes."
+		key_elements:
+			- element: "URLSync"
+				type: "function"
+				location: "src/webview/router.tsx:45"
+				description: "Waits for `columns.length > 0` before store→URL sync, effectively treating `init` as readiness."
+			- element: "vscode.postMessage({ type: 'switchBoard' ... })"
+				type: "pattern"
+				location: "src/webview/router.tsx:128"
+				description: "Relies on shim queueing during early boot; same pattern can be reused after reconnect."
+		language: "TypeScript React"
+		lines: 200
+
+	- file: "src/webview/vsCodeApi.ts"
+		path: "/Users/admin/dev/kanban-light/src/webview/vsCodeApi.ts"
+		purpose: "Singleton accessor for native VS Code API or the standalone shim."
+		key_elements:
+			- element: "getVsCodeApi"
+				type: "function"
+				location: "src/webview/vsCodeApi.ts:12"
+				description: "Central seam for any future transport-status abstraction."
+		language: "TypeScript"
+		lines: 15
+
+	- file: "src/webview/standalone-main.tsx"
+		path: "/Users/admin/dev/kanban-light/src/webview/standalone-main.tsx"
+		purpose: "Standalone entrypoint that guarantees the shim loads before React."
+		key_elements:
+			- element: "import './standalone-shim'"
+				type: "pattern"
+				location: "src/webview/standalone-main.tsx:1"
+				description: "Confirms reconnect behavior belongs in the shim, not in Vite or router bootstrap."
+		language: "TypeScript React"
+		lines: 13
+
+	- file: "src/standalone/server.ts"
+		path: "/Users/admin/dev/kanban-light/src/standalone/server.ts"
+		purpose: "Standalone HTTP/WebSocket backend that serves init payloads and API routes."
+		key_elements:
+			- element: "buildInitMessage"
+				type: "function"
+				location: "src/standalone/server.ts:191"
+				description: "Returns `init` payload including `workspace.port` and `workspace.configVersion`; useful for post-reconnect resync/version comparison."
+			- element: "GET /api/workspace"
+				type: "route"
+				location: "src/standalone/server.ts:1756"
+				description: "Only existing lightweight endpoint exposing workspace path, port, storage engine, and config-derived port/sqlite data."
+			- element: "GET /api/storage"
+				type: "route"
+				location: "src/standalone/server.ts:1768"
+				description: "Returns current storage engine details; not a health endpoint."
+			- element: "const wss = new WebSocketServer({ server, path: '/ws' })"
+				type: "pattern"
+				location: "src/standalone/server.ts:1889"
+				description: "Socket server exposes no reconnect/session-resume contract beyond clients sending `{ type: 'ready' }` again."
+			- element: "wss.on('connection', ...)"
+				type: "pattern"
+				location: "src/standalone/server.ts:1891"
+				description: "Registers message handler only; no ping/pong, close reason, or server availability signal."
+		language: "TypeScript"
+		lines: 1965
+
+	- file: "src/extension/index.ts"
+		path: "/Users/admin/dev/kanban-light/src/extension/index.ts"
+		purpose: "VS Code activation/bootstrap that starts the standalone server for browser access."
+		key_elements:
+			- element: "activate"
+				type: "function"
+				location: "src/extension/index.ts:111"
+				description: "Starts standalone server, updates `KanbanPanel.serverPort`, and refreshes panel if the port changes at startup."
+			- element: "standaloneServer.on('error', ...)"
+				type: "pattern"
+				location: "src/extension/index.ts:129"
+				description: "Only clears the server reference; no browser reconnect or UI notification path."
+		language: "TypeScript"
+		lines: 180
+
+	- file: "src/extension/KanbanPanel.ts"
+		path: "/Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts"
+		purpose: "VS Code-hosted panel transport host; relevant mainly as a contrast to standalone mode."
+		key_elements:
+			- element: "_panel.webview.onDidReceiveMessage"
+				type: "pattern"
+				location: "src/extension/KanbanPanel.ts:96"
+				description: "Uses VS Code webview messaging, not the standalone WebSocket."
+			- element: "_sendCardContent"
+				type: "function"
+				location: "src/extension/KanbanPanel.ts:793"
+				description: "Pushes data directly into the panel via `webview.postMessage`, bypassing standalone server connectivity issues."
+			- element: "vscode.window.showErrorMessage(...)"
+				type: "pattern"
+				location: "src/extension/KanbanPanel.ts:312,331,643,..."
+				description: "Existing host-side error notification pattern for extension mode."
+		language: "TypeScript"
+		lines: 1215
+
+	- file: "src/shared/types.ts"
+		path: "/Users/admin/dev/kanban-light/src/shared/types.ts"
+		purpose: "Shared message/workspace types used by server and frontend."
+		key_elements:
+			- element: "WorkspaceInfo"
+				type: "interface"
+				location: "src/shared/types.ts:352"
+				description: "Currently contains `projectPath`, `kanbanDirectory`, `port`, `configVersion`; no connection status or backend version field."
+			- element: "ExtensionMessage"
+				type: "type"
+				location: "src/shared/types.ts:360"
+				description: "Current inbound message union lacks reconnect/disconnected/error notification messages."
+		language: "TypeScript"
+		lines: 381
+
+	- file: "src/standalone/__tests__/server.integration.test.ts"
+		path: "/Users/admin/dev/kanban-light/src/standalone/__tests__/server.integration.test.ts"
+		purpose: "Primary backend/socket behavior coverage."
+		key_elements:
+			- element: "connectWs / sendAndReceive / waitForMessage"
+				type: "functions"
+				location: "src/standalone/__tests__/server.integration.test.ts:64-109"
+				description: "Reusable test helpers for websocket lifecycle and init/broadcast assertions."
+			- element: "ready message and init response"
+				type: "test group"
+				location: "src/standalone/__tests__/server.integration.test.ts:260"
+				description: "Verifies initial `ready` → `init` handshake."
+			- element: "Connection should still be open"
+				type: "test pattern"
+				location: "src/standalone/__tests__/server.integration.test.ts:677"
+				description: "Existing socket robustness assertions focus on invalid operations, not backend restarts."
+		language: "TypeScript"
+		lines: 2174
+
+patterns_found:
+	- category: "connectivity"
+		pattern: "One-shot standalone WebSocket bootstrap"
+		description: "Standalone mode creates a socket once at module load and sends `{ type: 'ready' }` from the app on mount."
+		examples:
+			- file: "src/webview/standalone-shim.ts"
+				location: "7-30"
+				snippet: "const ws = new WebSocket(`ws://${window.location.host}/ws`); ... ws.addEventListener('close', () => { connected = false })"
+			- file: "src/webview/App.tsx"
+				location: "329-333"
+				snippet: "window.addEventListener('message', handleMessage); vscode.postMessage({ type: 'ready' })"
+		prevalence: "common"
+
+	- category: "retry"
+		pattern: "Queue-before-open, but no queue-after-disconnect"
+		description: "The shim already buffers outbound messages while disconnected, but only because the initial socket has not opened yet."
+		examples:
+			- file: "src/webview/standalone-shim.ts"
+				location: "8-17,137-141"
+				snippet: "const pendingMessages: string[] = []; if (connected) ws.send(json) else pendingMessages.push(json)"
+		prevalence: "occasional"
+
+	- category: "notifications"
+		pattern: "In-app React toast + host-side VS Code error messages"
+		description: "Browser UI already has a toast primitive; extension host already uses native VS Code error notifications."
+		examples:
+			- file: "src/webview/components/UndoToast.tsx"
+				location: "11-59"
+				snippet: "export function UndoToast(...) { ... }"
+			- file: "src/extension/KanbanPanel.ts"
+				location: "312,331,643"
+				snippet: "vscode.window.showErrorMessage(`Failed to ...: ${err}`)"
+		prevalence: "common"
+
+	- category: "availability_check"
+		pattern: "Frontend readiness inferred from `init`, not explicit health state"
+		description: "The app/router wait for data-bearing init state rather than a dedicated connection status signal."
+		examples:
+			- file: "src/webview/router.tsx"
+				location: "135-146"
+				snippet: "if (columns.length === 0) return // wait for server init"
+			- file: "src/standalone/server.ts"
+				location: "191-208"
+				snippet: "buildInitMessage() returns type: 'init' with workspace/configVersion"
+		prevalence: "common"
+
+related_architecture:
+	components_relevant_to_domain:
+		- component: "Standalone shim"
+			responsibility: "Transport bridge between browser UI and standalone backend"
+			location: "src/webview/standalone-shim.ts"
+			relationship_to_domain: "primary client-side connectivity implementation"
+		- component: "React app shell"
+			responsibility: "Consumes backend messages and renders board state"
+			location: "src/webview/App.tsx"
+			relationship_to_domain: "depends on shim/server for state hydration and updates"
+		- component: "Standalone server"
+			responsibility: "Serves static UI, REST API, and WebSocket message stream"
+			location: "src/standalone/server.ts"
+			relationship_to_domain: "primary backend endpoint for browser mode"
+		- component: "VS Code webview host"
+			responsibility: "Hosts the extension panel using direct `webview.postMessage`"
+			location: "src/extension/KanbanPanel.ts"
+			relationship_to_domain: "related bootstrap path but not the failing standalone transport"
+	interfaces_used_by_domain:
+		- interface: "WorkspaceInfo"
+			location: "src/shared/types.ts:352"
+			usage_pattern: "Sent in `init` for settings/about display; viable place to compare config/version after reconnect."
+		- interface: "ExtensionMessage"
+			location: "src/shared/types.ts:360"
+			usage_pattern: "Message contract between server/extension and React app."
+	data_flow_involving_domain: "In standalone mode, `standalone-main.tsx` imports the shim, the shim opens `/ws`, `App.tsx` sends `{ type: 'ready' }`, `server.ts` responds with `init`, and later server broadcasts refresh state over the same socket. REST fetches are only used for selected browser-only commands, not primary state sync."
+	key_relationships_to_domain:
+		- from: "src/webview/standalone-main.tsx"
+			to: "src/webview/standalone-shim.ts"
+			relationship: "imports"
+		- from: "src/webview/App.tsx"
+			to: "src/webview/vsCodeApi.ts"
+			relationship: "imports"
+		- from: "src/webview/vsCodeApi.ts"
+			to: "src/webview/standalone-shim.ts"
+			relationship: "uses runtime-injected API"
+		- from: "src/webview/App.tsx"
+			to: "src/standalone/server.ts"
+			relationship: "communicates via WebSocket message contract"
+		- from: "src/extension/index.ts"
+			to: "src/standalone/server.ts"
+			relationship: "starts server for browser mode"
+
+related_technology_stack:
+	languages_used_in_domain:
+		- "TypeScript"
+		- "TSX"
+	frameworks_used_in_domain:
+		- name: "React"
+			usage_in_domain: "App shell, router host, and notification UI."
+		- name: "TanStack Router"
+			usage_in_domain: "Bootstraps board/card route state after backend init."
+		- name: "Zustand"
+			usage_in_domain: "Stores hydrated card/board/workspace state."
+	libraries_used_in_domain:
+		- name: "ws"
+			purpose_for_domain: "Standalone WebSocket server and integration-test client."
+		- name: "chokidar"
+			purpose_for_domain: "Backend filesystem watch → websocket broadcast updates."
+		- name: "vite"
+			purpose_for_domain: "Standalone dev proxy for `/ws` and `/api`."
+	external_apis_used_in_domain: []
+
+related_conventions:
+	naming_patterns_in_domain: "Transport messages use discriminated `type` strings such as `init`, `ready`, `cardContent`, `logsUpdated`, `boardLogsUpdated`."
+	structure_of_domain: "Standalone-specific transport lives in `src/webview/standalone-shim.ts`; shared UI lives in `src/webview`; server transport lives in `src/standalone/server.ts`; VS Code-hosted transport lives under `src/extension`."
+	error_handling_in_domain: "Standalone browser mode mostly logs to `console.error`; extension mode uses `vscode.window.showErrorMessage`; app shell currently does not surface transport failures to users."
+	testing_in_domain: "Backend socket behavior is integration-tested in `src/standalone/__tests__/server.integration.test.ts`; frontend store/router tests cover URL/search state, not connectivity."
+	documentation_in_domain: "No dedicated reconnect/health documentation found in the files examined."
+
+related_dependencies:
+	internal:
+		- component: "src/shared/types.ts"
+			relationship_to_domain: "defines message/workspace contracts"
+			direction: "bidirectional"
+		- component: "src/webview/store/index.ts"
+			relationship_to_domain: "holds hydrated board state after connection success"
+			direction: "outbound"
+		- component: "src/extension/index.ts"
+			relationship_to_domain: "starts the standalone backend used by browser mode"
+			direction: "inbound"
+	external:
+		- name: "ws"
+			purpose_for_domain: "WebSocket transport"
+		- name: "@tanstack/react-router"
+			purpose_for_domain: "route sync after init"
+		- name: "zustand"
+			purpose_for_domain: "frontend state store"
+
+domain_security_considerations:
+	sensitive_areas:
+		- area: "Browser-side `openFile` / `openMetadataFile` helpers"
+			location: "src/webview/standalone-shim.ts:90-123"
+			concern: "Reconnect changes should avoid retrying browser-only side effects blindly."
+	authentication_patterns_in_domain: "None observed; standalone API/ws are local unauthenticated endpoints."
+	authorization_patterns_in_domain: "None observed."
+	data_validation_in_domain: "Server validates REST payloads per route, but socket message handling is lightweight and optimistic."
+
+testing_patterns:
+	framework: "Vitest"
+	coverage_areas:
+		- "WebSocket ready/init handshake"
+		- "Socket remains open after non-fatal invalid operations"
+		- "Broadcast of file and REST-driven updates"
+		- "Workspace/storage REST routes"
+	test_organization: "Large backend integration suite in `src/standalone/__tests__/server.integration.test.ts`; lightweight frontend unit tests for router/store helpers."
+	mock_patterns:
+		- "Real temporary HTTP server + real `ws` client"
+		- "Temp directories for cards/static assets"
+
+related_tests_and_missing_coverage:
+	existing:
+		- file: "src/standalone/__tests__/server.integration.test.ts"
+			coverage: "`ready` → `init`, multi-client broadcast, REST-to-WS broadcast, and several assertions that bad operations do not close the socket."
+		- file: "src/webview/store/index.test.ts"
+			coverage: "Store behavior only; no transport/connectivity state."
+		- file: "src/webview/routerHistory.test.ts"
+			coverage: "Standalone vs VS Code history mode selection."
+	missing:
+		- "No test where the WebSocket closes and the standalone client reconnects automatically."
+		- "No test where `App.tsx` re-sends `{ type: 'ready' }` after reconnect and rehydrates state."
+		- "No frontend test for a lost-connection toast/banner/error state."
+		- "No backend test for a lightweight health/version probe endpoint because none exists today."
+		- "No test covering backend restart with same port vs changed port."
+		- "No contract test comparing pre/post reconnect `workspace.configVersion` or any backend version field."
+
+recommended_minimal_implementation_approach:
+	approach: |
+		1. Keep the change centered in `src/webview/standalone-shim.ts` plus a very small message/UI addition in `src/shared/types.ts` and `src/webview/App.tsx`.
+		2. Replace the module-level one-shot socket with a small reconnecting wrapper that:
+			 - recreates the `WebSocket` on `close`/`error`,
+			 - replays `pendingMessages`,
+			 - re-sends `{ type: 'ready' }` after reconnect, and
+			 - emits a frontend-visible message such as `{ type: 'connectionStatus', connected, reconnecting, fatal, reason? }`.
+		3. In `App.tsx`, reuse the existing toast/banner styling conventions (`UndoToast` + notification tokens) to show:
+			 - transient reconnecting state while retrying,
+			 - terminal error notification when retries are exhausted or a health probe confirms backend loss.
+		4. If a version-aware failure mode must be detected, the smallest backend addition is a lightweight endpoint or init field exposing backend/app version; `workspace.configVersion` already exists but reflects config schema, not server build version.
+	risks:
+		- "If reconnect retries are added only in the shim, VS Code-hosted panel behavior must remain untouched because it uses the native webview API, not `/ws`."
+		- "Blindly replaying all queued messages after reconnect could repeat non-idempotent actions (for example create/move/delete) if those messages were already accepted before disconnect."
+		- "Using only `workspace.configVersion` to detect restart/version change is insufficient for binary/app version changes; it tracks config schema."
+		- "Port changes after backend restart are only detectable in browser mode if the page can discover the new port; current standalone browser URL and Vite proxy assume a stable host/port."
+
+open_questions:
+	- question: "Does the bug target only browser standalone mode, or should the extension-hosted panel also surface backend loss from the auxiliary standalone server?"
+		context: "The panel does not depend on `/ws`, but the browser-opened board does. Scope affects whether extension-side notifications matter."
+	- question: "Is 'version changes' referring to config schema (`workspace.configVersion`), package/app version, or server port reassignment during extension reload?"
+		context: "The repository currently exposes only config version, not application build version."
+	- question: "Should reconnect replay only the `ready` handshake, or also preserve queued user mutations issued while disconnected?"
+		context: "Current queueing is simple and could duplicate side effects if reused without filtering."
+
+gaps:
+	- area: "Backend version visibility"
+		description: "No explicit REST or WS contract for server/app version or liveness beyond successful socket open and `init`."
+		impact: "Limits precise detection of version-change scenarios requested by the bug report."
+	- area: "Transport state in shared message types"
+		description: "No existing `ExtensionMessage` variant communicates disconnected/reconnecting/fatal states to the React app."
+		impact: "Frontend currently has no first-class place to render connection-loss UI."

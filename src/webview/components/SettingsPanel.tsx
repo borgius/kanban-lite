@@ -588,7 +588,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
       {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={onClose} />}
       <div
         className={isDrawer
-          ? 'relative h-full max-w-lg shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
+          ? 'relative h-full shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={isDrawer
           ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }

@@ -841,7 +841,7 @@ function App(): React.JSX.Element {
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full max-w-lg flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
+                  ? 'relative h-full flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
                   : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
                 style={isDrawer
                   ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }

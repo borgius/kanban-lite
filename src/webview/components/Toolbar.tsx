@@ -3,7 +3,7 @@ import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check
 import { useStore, type DueDateFilter, type SavedView } from '../store'
 import { LabelPicker } from './LabelPicker'
 import { BoardSwitcher } from './BoardSwitcher'
-import type { Priority } from '../../shared/types'
+import { DELETED_STATUS_ID, type Priority } from '../../shared/types'
 import { parseSearchQuery } from '../../sdk/metaUtils'
 
 const priorities: { value: Priority | 'all'; label: string }[] = [
@@ -41,6 +41,40 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   )
 }
 
+function CheckboxMenuItem({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (nextChecked: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      onClick={(e) => {
+        e.stopPropagation()
+        onChange(!checked)
+      }}
+      className="w-full text-left px-3 py-2 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 flex items-center gap-2"
+    >
+      <span
+        className="w-4 h-4 rounded-sm border flex items-center justify-center shrink-0"
+        style={{
+          borderColor: checked ? 'var(--vscode-focusBorder)' : 'var(--vscode-checkbox-border, var(--vscode-panel-border))',
+          background: checked ? 'var(--vscode-focusBorder)' : 'transparent',
+        }}
+      >
+        {checked && <Check size={10} style={{ color: 'var(--vscode-checkbox-foreground, white)' }} />}
+      </span>
+      <span className="truncate">{label}</span>
+    </button>
+  )
+}
+
 export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction, onOpenShortcutHelp }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void; onOpenShortcutHelp?: () => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
@@ -63,6 +97,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const cardSettings = useStore(s => s.cardSettings)
   const boards = useStore(s => s.boards)
   const currentBoard = useStore(s => s.currentBoard)
+  const columns = useStore(s => s.columns)
   const labelDefs = useStore(s => s.labelDefs)
   const cards = useStore(s => s.cards)
   const starredBoards = useStore(s => s.starredBoards)
@@ -70,6 +105,8 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const savedViews = useStore(s => s.savedViews)
   const saveCurrentView = useStore(s => s.saveCurrentView)
   const removeView = useStore(s => s.removeView)
+  const hiddenColumnIds = useStore(s => s.getHiddenColumnIds())
+  const setColumnHidden = useStore(s => s.setColumnHidden)
 
   const assignees = useMemo(() => {
     const s = new Set<string>()
@@ -109,6 +146,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const labelDropdownRef = useRef<HTMLDivElement>(null)
 
   const [boardMenuOpen, setBoardMenuOpen] = useState(false)
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false)
   const boardMenuRef = useRef<HTMLDivElement>(null)
   const [actionsDropdownOpen, setActionsDropdownOpen] = useState(false)
   const actionsDropdownRef = useRef<HTMLDivElement>(null)
@@ -121,6 +159,11 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
 
   const currentBoardActions = useMemo(() => boards.find(b => b.id === currentBoard)?.actions ?? {}, [boards, currentBoard])
   const boardActionEntries = useMemo(() => Object.entries(currentBoardActions), [currentBoardActions])
+  const boardColumns = useMemo(
+    () => columns.filter((column) => column.id !== DELETED_STATUS_ID),
+    [columns]
+  )
+  const hiddenColumnIdSet = useMemo(() => new Set(hiddenColumnIds), [hiddenColumnIds])
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (priorityFilter !== 'all') count += 1
@@ -160,12 +203,19 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
     const handleClickOutside = (e: MouseEvent) => {
       if (boardMenuRef.current && !boardMenuRef.current.contains(e.target as Node)) {
         setBoardMenuOpen(false)
+        setColumnsMenuOpen(false)
       }
     }
     if (boardMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside)
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [boardMenuOpen])
+
+  useEffect(() => {
+    if (!boardMenuOpen) {
+      setColumnsMenuOpen(false)
+    }
   }, [boardMenuOpen])
 
   useEffect(() => {
@@ -593,6 +643,41 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         </button>
         {boardMenuOpen && (
           <div className="absolute top-full right-0 mt-1 min-w-[200px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md shadow-lg z-50 py-1">
+            {boardColumns.length > 0 && (
+              <>
+                <div className="px-1" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setColumnsMenuOpen(open => !open)
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors rounded-sm"
+                    aria-expanded={columnsMenuOpen}
+                  >
+                    <Columns size={14} className="shrink-0 text-zinc-400" />
+                    <span className="flex-1">Columns</span>
+                    <ChevronDown size={14} className={`shrink-0 text-zinc-400 transition-transform ${columnsMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {columnsMenuOpen && (
+                    <div className="mt-1 mb-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/50 py-1" onClick={(e) => e.stopPropagation()}>
+                      {boardColumns.map((column) => {
+                        const checked = !hiddenColumnIdSet.has(column.id)
+                        return (
+                          <CheckboxMenuItem
+                            key={column.id}
+                            label={column.name}
+                            checked={checked}
+                            onChange={(nextChecked) => setColumnHidden(currentBoard, column.id, !nextChecked)}
+                          />
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-zinc-100 dark:border-zinc-700 my-1" />
+              </>
+            )}
             <button
               type="button"
               onClick={() => { onToggleTheme(); setBoardMenuOpen(false) }}

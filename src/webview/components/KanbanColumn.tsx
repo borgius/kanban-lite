@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare, LayoutList, Zap } from 'lucide-react'
+import { Plus, MoreVertical, Pencil, Trash2, Check, CheckSquare, LayoutList, Maximize2, Minimize2, Zap } from 'lucide-react'
 import { CardItem } from './CardItem'
 import { QuickAddInput } from './QuickAddInput'
 import type { Card, KanbanColumn as KanbanColumnType, CardStatus, Priority } from '../../shared/types'
@@ -13,6 +13,12 @@ const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
   { value: 'modified:asc', label: 'Modified (oldest)' },
   { value: 'modified:desc', label: 'Modified (newest)' },
 ]
+
+const COLUMN_DRAG_MIME_TYPE = 'application/x-column-id'
+
+function isColumnDragEvent(event: Pick<React.DragEvent, 'dataTransfer'>): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes(COLUMN_DRAG_MIME_TYPE)
+}
 
 interface KanbanColumnProps {
   column: KanbanColumnType
@@ -36,6 +42,8 @@ interface KanbanColumnProps {
   onColumnDragOver: (e: React.DragEvent, colIdx: number) => void
   onColumnDrop: (e: React.DragEvent) => void
   onColumnDragEnd: () => void
+  isMinimized?: boolean
+  onToggleMinimized: () => void
   layout: LayoutMode
   isDeletedColumn?: boolean
   onPurgeColumn?: () => void
@@ -70,6 +78,8 @@ export function KanbanColumn({
   onColumnDragOver,
   onColumnDrop,
   onColumnDragEnd,
+  isMinimized = false,
+  onToggleMinimized,
   layout,
   isDeletedColumn,
   onPurgeColumn,
@@ -125,6 +135,86 @@ export function KanbanColumn({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [menuOpen])
 
+  if (isMinimized && !isDeletedColumn) {
+    return (
+      <div
+        className={
+          [
+            isVertical
+              ? 'flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-2 py-1.5'
+              : 'flex-shrink-0 w-10 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg',
+            isBeingDragged ? 'opacity-40' : '',
+            isColumnDropBefore ? 'border-l-2 border-blue-500' : '',
+            isColumnDropAfter ? 'border-r-2 border-blue-500' : '',
+          ].filter(Boolean).join(' ')
+        }
+        onDragOver={onDragOver}
+        onDrop={(e) => onDrop(e, column.id)}
+      >
+        <div
+          className={
+            isVertical
+              ? 'flex items-center gap-2 w-full cursor-grab active:cursor-grabbing'
+              : 'flex flex-col items-center gap-1.5 px-1.5 py-1.5 cursor-grab active:cursor-grabbing h-full'
+          }
+          draggable
+          onDragStart={(e) => onColumnDragStart(e, column.id)}
+          onDragOver={(e) => {
+            if (!isColumnDragEvent(e)) return
+            e.stopPropagation()
+            onColumnDragOver(e, columnIndex)
+          }}
+          onDrop={(e) => {
+            if (!isColumnDragEvent(e)) return
+            e.stopPropagation()
+            onColumnDrop(e)
+          }}
+          onDragEnd={onColumnDragEnd}
+        >
+          {/* Expand button at the top */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleMinimized() }}
+            className="p-0.5 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60 transition-colors flex-shrink-0"
+            title={`Expand ${column.name}`}
+          >
+            <Maximize2 size={12} className="text-zinc-500" />
+          </button>
+          {isVertical ? (
+            /* Horizontal chip layout (vertical board mode): dot → title → count left-to-right */
+            <>
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: column.color }} />
+              <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100 truncate" title={column.name}>
+                {column.name}
+              </span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium tabular-nums">
+                {cards.length}
+              </span>
+            </>
+          ) : (
+            /* Vertical rail layout: DOM order count→title→dot so reading bottom-to-top gives dot→title→count */
+            <div className="flex flex-col items-center gap-1.5 flex-1 justify-start min-h-0 overflow-hidden">
+              <span
+                className="text-xs text-zinc-500 dark:text-zinc-400 font-medium tabular-nums"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >
+                {cards.length}
+              </span>
+              <span
+                className="text-xs font-medium text-zinc-900 dark:text-zinc-100 tracking-wide"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                title={column.name}
+              >
+                {column.name}
+              </span>
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: column.color }} />
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={
@@ -145,8 +235,16 @@ export function KanbanColumn({
         className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing"
         draggable={!isDeletedColumn}
         onDragStart={(e) => { if (!isDeletedColumn) onColumnDragStart(e, column.id) }}
-        onDragOver={(e) => { e.stopPropagation(); if (!isDeletedColumn) onColumnDragOver(e, columnIndex) }}
-        onDrop={(e) => { e.stopPropagation(); onColumnDrop(e) }}
+        onDragOver={(e) => {
+          if (isDeletedColumn || !isColumnDragEvent(e)) return
+          e.stopPropagation()
+          onColumnDragOver(e, columnIndex)
+        }}
+        onDrop={(e) => {
+          if (!isColumnDragEvent(e)) return
+          e.stopPropagation()
+          onColumnDrop(e)
+        }}
         onDragEnd={onColumnDragEnd}
       >
         <div className="flex items-center gap-2">
@@ -230,6 +328,14 @@ export function KanbanColumn({
                       Cleanup List
                     </button>
                     <div className="border-t border-zinc-200 dark:border-zinc-600 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => { setMenuOpen(false); onToggleMinimized() }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      <Minimize2 size={14} />
+                      Minimize List
+                    </button>
                     <button
                       type="button"
                       onClick={() => { setMenuOpen(false); onSelectAll(column.id) }}

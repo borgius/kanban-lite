@@ -18,10 +18,95 @@ export interface SavedView {
   dueDateFilter: DueDateFilter
 }
 
+export interface ColumnVisibilityState {
+  hiddenColumnIds: string[]
+  minimizedColumnIds: string[]
+}
+
+export type ColumnVisibilityByBoard = Record<string, ColumnVisibilityState>
+
+const EMPTY_COLUMN_VISIBILITY: ColumnVisibilityState = {
+  hiddenColumnIds: [],
+  minimizedColumnIds: [],
+}
+
+function normalizeColumnVisibilityState(visibility?: Partial<ColumnVisibilityState>): ColumnVisibilityState {
+  const hiddenColumnIds = Array.from(new Set(visibility?.hiddenColumnIds ?? []))
+  const hiddenSet = new Set(hiddenColumnIds)
+
+  return {
+    hiddenColumnIds,
+    minimizedColumnIds: Array.from(new Set(visibility?.minimizedColumnIds ?? [])).filter((columnId) => !hiddenSet.has(columnId)),
+  }
+}
+
+function sanitizeColumnVisibilityState(
+  visibility: ColumnVisibilityState,
+  validColumnIds: readonly string[]
+): ColumnVisibilityState {
+  const validIds = new Set(validColumnIds)
+
+  return normalizeColumnVisibilityState({
+    hiddenColumnIds: visibility.hiddenColumnIds.filter((columnId) => validIds.has(columnId)),
+    minimizedColumnIds: visibility.minimizedColumnIds.filter((columnId) => validIds.has(columnId)),
+  })
+}
+
+function hasColumnVisibilityState(visibility: ColumnVisibilityState): boolean {
+  return visibility.hiddenColumnIds.length > 0 || visibility.minimizedColumnIds.length > 0
+}
+
+function getColumnVisibilityState(
+  columnVisibilityByBoard: ColumnVisibilityByBoard,
+  boardId: string
+): ColumnVisibilityState {
+  return columnVisibilityByBoard[boardId] ?? EMPTY_COLUMN_VISIBILITY
+}
+
+function setBoardColumnVisibility(
+  columnVisibilityByBoard: ColumnVisibilityByBoard,
+  boardId: string,
+  visibility: ColumnVisibilityState
+): ColumnVisibilityByBoard {
+  if (!hasColumnVisibilityState(visibility)) {
+    if (!(boardId in columnVisibilityByBoard)) {
+      return columnVisibilityByBoard
+    }
+
+    return Object.fromEntries(Object.entries(columnVisibilityByBoard).filter(([id]) => id !== boardId))
+  }
+
+  return {
+    ...columnVisibilityByBoard,
+    [boardId]: visibility,
+  }
+}
+
+function columnVisibilityStateEquals(a: ColumnVisibilityState, b: ColumnVisibilityState): boolean {
+  return a.hiddenColumnIds.length === b.hiddenColumnIds.length
+    && a.minimizedColumnIds.length === b.minimizedColumnIds.length
+    && a.hiddenColumnIds.every((columnId, index) => columnId === b.hiddenColumnIds[index])
+    && a.minimizedColumnIds.every((columnId, index) => columnId === b.minimizedColumnIds[index])
+}
+
+export function sanitizeColumnVisibilityByBoard(
+  columnVisibilityByBoard: ColumnVisibilityByBoard,
+  boardId: string,
+  validColumnIds: readonly string[]
+): ColumnVisibilityByBoard {
+  const currentVisibility = getColumnVisibilityState(columnVisibilityByBoard, boardId)
+  const sanitizedVisibility = sanitizeColumnVisibilityState(currentVisibility, validColumnIds)
+
+  return columnVisibilityStateEquals(currentVisibility, sanitizedVisibility)
+    ? columnVisibilityByBoard
+    : setBoardColumnVisibility(columnVisibilityByBoard, boardId, sanitizedVisibility)
+}
+
 interface KanbanState {
   cards: Card[]
   columns: KanbanColumn[]
   boards: BoardInfo[]
+  columnVisibilityByBoard: Record<string, ColumnVisibilityState>
   currentBoard: string
   isDarkMode: boolean
   searchQuery: string
@@ -64,6 +149,15 @@ interface KanbanState {
   setColumns: (columns: KanbanColumn[]) => void
   setBoards: (boards: BoardInfo[]) => void
   setCurrentBoard: (boardId: string) => void
+  getColumnVisibility: (boardId?: string) => ColumnVisibilityState
+  getHiddenColumnIds: (boardId?: string) => string[]
+  getMinimizedColumnIds: (boardId?: string) => string[]
+  isColumnHidden: (columnId: string, boardId?: string) => boolean
+  isColumnMinimized: (columnId: string, boardId?: string) => boolean
+  setColumnHidden: (boardId: string, columnId: string, hidden: boolean) => void
+  setColumnMinimized: (boardId: string, columnId: string, minimized: boolean) => void
+  toggleColumnMinimized: (boardId: string, columnId: string) => void
+  sanitizeColumnVisibility: (boardId: string, validColumnIds: string[]) => void
   setIsDarkMode: (dark: boolean) => void
   setCardSettings: (settings: CardDisplaySettings) => void
   setSettingsOpen: (open: boolean) => void
@@ -154,6 +248,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   cards: [],
   columns: [],
   boards: [],
+  columnVisibilityByBoard: {},
   currentBoard: 'default',
   isDarkMode: getInitialDarkMode(),
   searchQuery: '',
@@ -221,9 +316,69 @@ export const useStore = create<KanbanState>((set, get) => ({
   setWorkspace: (workspace) => set({ workspace }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
   setCards: (cards) => set({ cards }),
-  setColumns: (columns) => set({ columns }),
-  setBoards: (boards) => set({ boards }),
+  setColumns: (columns) => set((state) => ({
+    columns,
+    columnVisibilityByBoard: setBoardColumnVisibility(
+      state.columnVisibilityByBoard,
+      state.currentBoard,
+      sanitizeColumnVisibilityState(getColumnVisibilityState(state.columnVisibilityByBoard, state.currentBoard), columns.map((column) => column.id))
+    ),
+  })),
+  setBoards: (boards) => set((state) => {
+    const validBoardIds = new Set(boards.map((board) => board.id))
+    return {
+      boards,
+      columnVisibilityByBoard: Object.fromEntries(
+        Object.entries(state.columnVisibilityByBoard).filter(([boardId]) => validBoardIds.has(boardId))
+      ),
+    }
+  }),
   setCurrentBoard: (boardId) => set({ currentBoard: boardId }),
+  getColumnVisibility: (boardId) => {
+    const resolvedBoardId = boardId ?? get().currentBoard
+    return getColumnVisibilityState(get().columnVisibilityByBoard, resolvedBoardId)
+  },
+  getHiddenColumnIds: (boardId) => get().getColumnVisibility(boardId).hiddenColumnIds,
+  getMinimizedColumnIds: (boardId) => get().getColumnVisibility(boardId).minimizedColumnIds,
+  isColumnHidden: (columnId, boardId) => get().getHiddenColumnIds(boardId).includes(columnId),
+  isColumnMinimized: (columnId, boardId) => get().getMinimizedColumnIds(boardId).includes(columnId),
+  setColumnHidden: (boardId, columnId, hidden) => set((state) => {
+    const visibility = getColumnVisibilityState(state.columnVisibilityByBoard, boardId)
+    const hiddenColumnIds = hidden
+      ? [...visibility.hiddenColumnIds, columnId]
+      : visibility.hiddenColumnIds.filter((id) => id !== columnId)
+
+    return {
+      columnVisibilityByBoard: setBoardColumnVisibility(state.columnVisibilityByBoard, boardId, normalizeColumnVisibilityState({
+        hiddenColumnIds,
+        minimizedColumnIds: visibility.minimizedColumnIds.filter((id) => id !== columnId),
+      })),
+    }
+  }),
+  setColumnMinimized: (boardId, columnId, minimized) => set((state) => {
+    const visibility = getColumnVisibilityState(state.columnVisibilityByBoard, boardId)
+    const minimizedColumnIds = minimized
+      ? [...visibility.minimizedColumnIds, columnId]
+      : visibility.minimizedColumnIds.filter((id) => id !== columnId)
+
+    return {
+      columnVisibilityByBoard: setBoardColumnVisibility(state.columnVisibilityByBoard, boardId, normalizeColumnVisibilityState({
+        hiddenColumnIds: visibility.hiddenColumnIds,
+        minimizedColumnIds,
+      })),
+    }
+  }),
+  toggleColumnMinimized: (boardId, columnId) => {
+    const state = get()
+    state.setColumnMinimized(boardId, columnId, !state.isColumnMinimized(columnId, boardId))
+  },
+  sanitizeColumnVisibility: (boardId, validColumnIds) => set((state) => ({
+    columnVisibilityByBoard: setBoardColumnVisibility(
+      state.columnVisibilityByBoard,
+      boardId,
+      sanitizeColumnVisibilityState(getColumnVisibilityState(state.columnVisibilityByBoard, boardId), validColumnIds)
+    ),
+  })),
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
   setCardSettings: (settings) => set((state) => ({ cardSettings: { ...settings, boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom, cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom, panelMode: settings.panelMode ?? state.cardSettings.panelMode, drawerWidth: settings.drawerWidth ?? state.cardSettings.drawerWidth } })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),

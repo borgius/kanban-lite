@@ -16,13 +16,44 @@ import { LogsSection } from './components/LogsSection'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
 import { getVsCodeApi } from './vsCodeApi'
+import type { ColumnVisibilityByBoard } from './store'
+import { sanitizeColumnVisibilityByBoard } from './store'
 
 const vscode = getVsCodeApi()
+
+function readPersistedColumnVisibilityByBoard(state: unknown): ColumnVisibilityByBoard {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(state).flatMap(([boardId, visibility]) => {
+      if (!visibility || typeof visibility !== 'object' || Array.isArray(visibility)) {
+        return []
+      }
+
+      const hiddenColumnIds = Array.isArray((visibility as { hiddenColumnIds?: unknown }).hiddenColumnIds)
+        ? (visibility as { hiddenColumnIds: unknown[] }).hiddenColumnIds.filter((columnId): columnId is string => typeof columnId === 'string')
+        : []
+      const minimizedColumnIds = Array.isArray((visibility as { minimizedColumnIds?: unknown }).minimizedColumnIds)
+        ? (visibility as { minimizedColumnIds: unknown[] }).minimizedColumnIds.filter((columnId): columnId is string => typeof columnId === 'string')
+        : []
+
+      return [[boardId, { hiddenColumnIds, minimizedColumnIds }] as const]
+    })
+  )
+}
+
+function hasBoardVisibilityState(columnVisibilityByBoard: ColumnVisibilityByBoard, boardId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(columnVisibilityByBoard, boardId)
+}
 
 function App(): React.JSX.Element {
 
   const {
     columns,
+    currentBoard,
+    columnVisibilityByBoard,
     workspace,
     cardSettings,
     settingsOpen,
@@ -30,7 +61,6 @@ function App(): React.JSX.Element {
     setCards,
     setColumns,
     setBoards,
-    setCurrentBoard,
     setIsDarkMode,
     setWorkspace,
     setCardSettings,
@@ -66,6 +96,8 @@ function App(): React.JSX.Element {
   // Board logs panel state
   const [boardLogsOpen, setBoardLogsOpen] = useState(false)
   const [boardLogs, setBoardLogs] = useState<LogEntry[]>([])
+  const [isColumnVisibilityPersistenceReady, setIsColumnVisibilityPersistenceReady] = useState(false)
+  const persistedColumnVisibilityRef = useRef<ColumnVisibilityByBoard>(readPersistedColumnVisibilityByBoard(vscode.getState()))
 
   // Keep store in sync so URLSync (router) can read/update the active card
   useEffect(() => {
@@ -267,11 +299,29 @@ function App(): React.JSX.Element {
 
       switch (message.type) {
         case 'init':
+          {
+            const nextColumns = message.columns ?? []
+            const nextBoardId = message.currentBoard ?? useStore.getState().currentBoard
+            const nextColumnIds = nextColumns.map((column) => column.id)
+            const currentColumnVisibilityByBoard = useStore.getState().columnVisibilityByBoard
+            const hydratedColumnVisibilityByBoard = sanitizeColumnVisibilityByBoard(
+              {
+                ...persistedColumnVisibilityRef.current,
+                ...currentColumnVisibilityByBoard,
+              },
+              nextBoardId,
+              nextColumnIds
+            )
+
+            useStore.setState({
+              currentBoard: nextBoardId,
+              columnVisibilityByBoard: hydratedColumnVisibilityByBoard,
+            })
+          }
           setConnectionNotice(null)
-          setCards(message.cards)
-          setColumns(message.columns)
+          setCards(message.cards ?? [])
+          setColumns(message.columns ?? [])
           if (message.boards) setBoards(message.boards)
-          if (message.currentBoard) setCurrentBoard(message.currentBoard)
           if (message.workspace) setWorkspace(message.workspace)
           if (message.settings) {
             if (message.settings.markdownEditorMode && editingCard) {
@@ -280,6 +330,7 @@ function App(): React.JSX.Element {
             setCardSettings(message.settings)
           }
           if (message.labels) setLabelDefs(message.labels)
+          setIsColumnVisibilityPersistenceReady(true)
           break
         case 'connectionStatus':
           setConnectionNotice(buildConnectionNotice(message))
@@ -338,7 +389,27 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [setCards, setColumns, setBoards, setCurrentBoard, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
+  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
+
+  useEffect(() => {
+    if (!isColumnVisibilityPersistenceReady) {
+      return
+    }
+
+    const sanitizedColumnVisibilityByBoard = sanitizeColumnVisibilityByBoard(
+      columnVisibilityByBoard,
+      currentBoard,
+      columns.map((column) => column.id)
+    )
+
+    if (sanitizedColumnVisibilityByBoard !== columnVisibilityByBoard) {
+      useStore.setState({ columnVisibilityByBoard: sanitizedColumnVisibilityByBoard })
+      return
+    }
+
+    persistedColumnVisibilityRef.current = sanitizedColumnVisibilityByBoard
+    vscode.setState(sanitizedColumnVisibilityByBoard)
+  }, [columnVisibilityByBoard, columns, currentBoard, isColumnVisibilityPersistenceReady])
 
   const handleCardClick = (card: Card, e: React.MouseEvent): void => {
     // Cmd/Ctrl+click → toggle this card in multi-selection

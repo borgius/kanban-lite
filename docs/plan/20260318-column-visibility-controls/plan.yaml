@@ -1,0 +1,372 @@
+plan_id: 20260318-column-visibility-controls
+objective: |
+  Implement two client-side column visibility controls in the webview/standalone UI:
+  (1) minimize a column into a narrow vertical rail that stays rendered, droppable, and reorderable;
+  (2) add a toolbar columns submenu with checkbox hide/show controls. Keep scope UI-only unless a
+  stronger reason emerges.
+created_at: "2026-03-18"
+created_by: gem-planner
+status: completed
+research_confidence: high
+
+tldr: |
+  Completed as a client-side webview/standalone UI change: Zustand now stores board-scoped hidden/minimized
+  column IDs, App hydrates/persists that UI state, KanbanBoard/KanbanColumn preserve minimized columns in
+  render order for DnD, and Toolbar exposes checkbox hide/show controls. Targeted validation completed on
+  the standalone app, including the minimized-drop follow-up fix, and README.md plus CHANGELOG.md were updated.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: Hidden-column filtering causes the existing reorder callback to send only visible IDs, which would drop hidden columns from optimistic state and persisted order.
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Keep the canonical column array untouched in store and have KanbanBoard translate visible drag positions
+        back into a full ordered column ID list before calling the existing onReorderColumns handler. Add a focused
+        test covering reorder with at least one hidden column.
+    - scenario: Minimizing a column removes or bypasses the live drop zone, so cards can no longer be dropped into the minimized column.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Keep minimized columns mounted in the board loop, preserve the outer drop handlers on the rail container,
+        and limit minimization to the inner content/body rendering only.
+    - scenario: Persisted hidden/minimized IDs become stale after switching boards, deleting columns, or receiving fresh init payloads.
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Sanitize board-scoped visibility state against the current board's column IDs whenever init/currentBoard/columns
+        change, and persist only the sanitized payload through getState/setState.
+  assumptions:
+    - Existing column reorder support in App.tsx and the extension path remains the canonical persisted order flow.
+    - Hidden columns do not need server persistence and can safely live in board-scoped webview state.
+    - Deleted-column visibility remains controlled by existing card settings and is out of scope for the new toolbar submenu.
+    - No new npm dependencies are permitted.
+
+implementation_specification:
+  code_structure: |
+    Restrict changes to webview client files only. Store owns board-scoped visibility state and actions;
+    App owns optional hydrate/persist glue through acquireVsCodeApi(); KanbanBoard/KanbanColumn implement
+    minimized rendering and hidden-safe DnD/reorder translation; Toolbar exposes the recovery controls.
+  affected_areas:
+    - src/webview/store/index.ts
+    - src/webview/App.tsx
+    - src/webview/components/KanbanBoard.tsx
+    - src/webview/components/KanbanColumn.tsx
+    - src/webview/components/Toolbar.tsx
+    - src/webview/store/index.test.ts
+    - src/webview/App.test.tsx
+  component_details:
+    - component: webview store visibility state
+      responsibility: Track board-scoped hidden/minimized column IDs and expose actions/selectors that keep state canonical and sanitizable.
+      interfaces:
+        - "columnVisibilityByBoard[currentBoard] -> { hiddenColumnIds: string[]; minimizedColumnIds: string[] }"
+        - "setColumnHidden(boardId, columnId, hidden)"
+        - "toggleColumnMinimized(boardId, columnId)"
+        - "sanitizeColumnVisibility(boardId, validColumnIds)"
+    - component: App.tsx visibility persistence glue
+      responsibility: Hydrate optional board-scoped UI state from acquireVsCodeApi().getState() and persist sanitized updates with setState().
+      interfaces:
+        - "vscode.getState()/setState() payload containing only board-scoped column visibility UI state"
+    - component: KanbanBoard minimized/hidden render pipeline
+      responsibility: Render visible columns only, keep minimized columns mounted as rails, and translate visible-column reorders into full ordered ID arrays.
+      interfaces:
+        - "visibleColumns = columns filtered by hiddenColumnIds"
+        - "onReorderColumns(fullOrderedColumnIds: string[])"
+    - component: KanbanColumn minimized rail UI
+      responsibility: Add Minimize/Expand affordance and render a narrow vertical rail showing column name and card count while preserving drag/drop hooks.
+      interfaces:
+        - "isMinimized prop"
+        - "onToggleMinimized(columnId)"
+    - component: Toolbar columns submenu
+      responsibility: Provide hide/show checkbox controls for non-deleted columns using the existing dropdown checkbox interaction pattern.
+      interfaces:
+        - "Columns submenu listing board columns with checked = visible"
+  dependencies:
+    - component: App.tsx persistence
+      relationship: Depends on store visibility schema and sanitization helpers.
+    - component: KanbanBoard/KanbanColumn
+      relationship: Depends on store visibility selectors/actions to decide hidden vs minimized rendering.
+    - component: Toolbar submenu
+      relationship: Depends on store visibility selectors/actions and existing board menu dropdown state.
+    - component: Focused tests
+      relationship: Depend on finalized store schema and App/UI wiring contracts.
+  integration_points:
+    - App.tsx existing init/currentBoard message flow
+    - App.tsx existing onReorderColumns optimistic update path
+    - Toolbar board `...` menu and dropdown interaction pattern
+    - KanbanBoard existing HTML5 card + column drag-and-drop handlers
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: Board-scoped visibility state shape plus sanitize helper used for hydrate/persist.
+    format: "TypeScript Zustand state/actions in src/webview/store/index.ts"
+  - from_task: T1
+    to_task: T3
+    interface: Hidden/minimized selectors and mutation actions for currentBoard.
+    format: "TypeScript Zustand selectors/actions in src/webview/store/index.ts"
+  - from_task: T1
+    to_task: T4
+    interface: Visible/hidden checkbox state per column and hide/show action.
+    format: "TypeScript Zustand selectors/actions in src/webview/store/index.ts"
+  - from_task: T3
+    to_task: T5
+    interface: Reorder callback continues to emit a full ordered column ID array even when some columns are hidden.
+    format: "React prop contract: onReorderColumns(columnIds: string[])"
+  - from_task: T2
+    to_task: T5
+    interface: Persisted UI payload contains only board-scoped visibility state and round-trips through getState/setState.
+    format: "Serialized webview state object in App.tsx"
+
+tasks:
+  - id: T1
+    title: Add board-scoped column visibility state to the webview store
+    description: |
+      Extend src/webview/store/index.ts with a client-only visibility model keyed by board ID.
+      The store should distinguish hidden columns from minimized columns, expose small mutation
+      helpers, and provide a sanitization path so stale IDs are removed when boards or columns change.
+      Keep this entirely in the webview store; do not touch shared types, SDK, API, CLI, or MCP.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      src/webview/store/index.ts: Existing Zustand state, currentBoard, and columns setters.
+      src/webview/store/index.test.ts: Existing focused store-unit pattern.
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: Board-scoped UI state only
+    verification:
+      - Store tests cover hide/show, minimize/expand, and sanitization behavior.
+      - No shared or backend files are changed.
+    acceptance_criteria:
+      - Hidden and minimized column IDs are stored separately per board.
+      - Store exposes enough selectors/actions for Toolbar and KanbanBoard to read/update visibility without local duplicate state.
+      - Sanitization removes IDs for columns that no longer exist on the active board.
+    failure_modes:
+      - scenario: Hidden and minimized sets drift or overlap in invalid ways.
+        likelihood: medium
+        impact: medium
+        mitigation: Enforce deterministic action rules (e.g. hiding a column also clears its minimized flag).
+    tech_stack:
+      - TypeScript
+      - React
+      - Zustand
+    test_coverage: src/webview/store/index.test.ts
+
+  - id: T2
+    title: Hydrate and persist board-scoped column visibility through webview state
+    description: |
+      Wire App.tsx to read optional persisted visibility state from acquireVsCodeApi().getState(),
+      apply it through the store after init/currentBoard data becomes available, sanitize it against
+      live columns, and write it back with setState() when relevant visibility state changes.
+      Keep the payload limited to board-scoped UI state only.
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      src/webview/App.tsx: Existing init message handling and acquireVsCodeApi singleton usage.
+      src/webview/vsCodeApi.ts: API shape includes getState/setState.
+      src/webview/standalone-shim.ts: Standalone sessionStorage-backed getState/setState implementation.
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 60
+    focus_area: Optional board-scoped persistence
+    verification:
+      - App test proves persisted visibility is hydrated and persisted using mocked VS Code API methods.
+      - State remains board-scoped when switching currentBoard.
+    acceptance_criteria:
+      - No new extension/server/shared message types are introduced.
+      - Persisted payload is sanitized before being written.
+      - Fresh init payloads do not clobber unrelated board UI visibility state.
+    failure_modes:
+      - scenario: Persist happens before init and writes an empty payload over valid saved state.
+        likelihood: medium
+        impact: medium
+        mitigation: Gate first write behind successful hydration/init or compare against sanitized current state before writing.
+    tech_stack:
+      - TypeScript
+      - React
+    test_coverage: src/webview/App.test.tsx
+
+  - id: T3
+    title: Keep minimized columns rendered and hidden columns reorder-safe in the board UI
+    description: |
+      Update KanbanBoard.tsx and KanbanColumn.tsx so hidden columns are filtered out of the visible
+      board loop, minimized columns remain in that loop as narrow rails, and minimized rails keep the
+      existing outer card drop handlers plus column drag handles. Add a Minimize action in the column
+      menu and an Expand affordance on the minimized rail. Preserve existing reorder behavior by translating
+      visible-column drag results back into a full ordered ID list before calling App's existing reorder callback.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      src/webview/components/KanbanBoard.tsx: Existing visible column map and column/card DnD handlers.
+      src/webview/components/KanbanColumn.tsx: Existing column menu and draggable header.
+      src/webview/App.tsx: Existing optimistic handleReorderColumns expects full ordered IDs.
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: Render-order preservation and DnD safety
+    verification:
+      - Minimized columns still accept card drops.
+      - Reordering visible columns with hidden columns present still sends a full ordered ID list.
+      - Deleted column behavior remains unchanged.
+    acceptance_criteria:
+      - Minimized columns stay rendered in board order as narrow rails showing only column name and card count.
+      - Minimized rails remain valid card drop targets and column drag sources/targets.
+      - Hidden columns are absent from the board surface but reappear at their canonical position when shown again.
+      - Minimized columns can be restored without using the toolbar hide/show menu.
+    failure_modes:
+      - scenario: Minimized header/rail loses access to column actions, trapping the column in minimized state.
+        likelihood: medium
+        impact: high
+        mitigation: Keep an explicit Expand affordance or a compact options control on the rail.
+      - scenario: Visible-index drag math ignores hidden columns and produces partial reorder arrays.
+        likelihood: high
+        impact: critical
+        mitigation: Translate visible order back into the full columns array before invoking the existing callback.
+    tech_stack:
+      - TypeScript
+      - React
+      - HTML5 Drag and Drop
+    test_coverage: Manual plus focused regression assertions where practical
+
+  - id: T4
+    title: Add a toolbar Columns submenu with checkbox hide/show controls
+    description: |
+      Extend the board `...` menu in Toolbar.tsx with a Columns submenu that lists non-deleted columns
+      and uses checkbox items to hide/show each one. Reuse the existing dropdown checkbox interaction
+      pattern from LogsSection so multiple toggles can be made without the menu fighting the user.
+      Showing a column restores it to the board using the canonical columns array order.
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      src/webview/components/Toolbar.tsx: Existing board menu and dropdown state.
+      src/webview/components/LogsSection.tsx: Existing checkbox dropdown interaction pattern.
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 70
+    focus_area: Recovery path for hidden columns
+    verification:
+      - Toolbar menu can hide and re-show any non-deleted column.
+      - Checkbox interactions do not close the parent menu on every click.
+    acceptance_criteria:
+      - Board `...` menu exposes a Columns submenu with checkbox items.
+      - Hidden columns are recoverable entirely from the toolbar.
+      - Deleted pseudo-column is not mixed into the hide/show list unless intentionally required by existing settings.
+    failure_modes:
+      - scenario: Nested dropdown state collides with the existing board menu close-on-outside-click behavior.
+        likelihood: medium
+        impact: medium
+        mitigation: Reuse the stopPropagation pattern from LogsSection and keep submenu state local to Toolbar.
+    tech_stack:
+      - TypeScript
+      - React
+    test_coverage: Manual validation
+
+  - id: T5
+    title: Add focused regression coverage for store and App visibility state behavior
+    description: |
+      Extend store/index.test.ts and App.test.tsx with focused tests for board-scoped visibility state,
+      sanitization, and acquireVsCodeApi() getState/setState round-tripping. Prefer store/App tests over
+      broad component rewrites to keep the scope surgical.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+      - T2
+      - T3
+      - T4
+    context_files:
+      src/webview/store/index.test.ts: Existing state-oriented test style.
+      src/webview/App.test.tsx: Existing mocked VS Code API and hook runtime.
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: Regression safety for UI-only state
+    verification:
+      - Focused tests fail without the new behavior and pass with it.
+      - Build/test run covers touched files without introducing new test scaffolding elsewhere.
+    acceptance_criteria:
+      - Tests cover board-scoped hide/show and minimize/expand semantics.
+      - Tests cover stale-ID sanitization.
+      - Tests cover getState hydration and setState persistence.
+    failure_modes:
+      - scenario: Component behavior is hard to assert directly with current mocks, leading to brittle test rewrites.
+        likelihood: medium
+        impact: low
+        mitigation: Keep most assertions at the store/App wiring layer and leave complex drag/drop interaction to manual validation.
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: src/webview/store/index.test.ts and src/webview/App.test.tsx
+
+  - id: T6
+    title: Run targeted UI regression validation for minimize, hide/show, and drag/drop flows
+    description: |
+      Validate the implemented behavior in both extension-style webview and standalone rendering paths.
+      Focus on the user-visible scenarios that are hardest to prove with unit tests: minimized rails stay droppable,
+      column reorder still behaves correctly with hidden columns present, and hidden columns remain recoverable.
+    wave: 4
+    agent: gem-browser-tester
+    priority: medium
+    status: completed
+    dependencies:
+      - T5
+    context_files:
+      src/webview/App.tsx: Final UI composition entry point.
+      src/webview/components/KanbanBoard.tsx: DnD and visible-column render logic.
+      src/webview/components/Toolbar.tsx: Columns submenu entry point.
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: Behavioral regression validation
+    verification:
+      - Build succeeds.
+      - Validation matrix scenarios pass in the rendered UI.
+    acceptance_criteria:
+      - Minimized columns remain droppable and reorderable.
+      - Hidden columns can always be restored from the toolbar Columns submenu.
+      - Visible-column reorder remains stable when hidden columns exist.
+    failure_modes:
+      - scenario: Standalone and VS Code webview differ in persisted visibility state behavior.
+        likelihood: low
+        impact: medium
+        mitigation: Explicitly validate both runtimes because standalone uses the shim-backed state implementation.
+    validation_matrix:
+      - scenario: Minimize an in-use column and drop a card onto its rail
+        steps:
+          - Open a board with at least two populated columns.
+          - Use the column menu to minimize one visible column.
+          - Drag a card from another column onto the minimized rail.
+        expected_result: The card moves into the minimized column and the rail remains in board order.
+      - scenario: Hide a column and restore it from the toolbar
+        steps:
+          - Open the board `...` menu and uncheck a column in Columns.
+          - Confirm the column disappears from the board.
+          - Re-open Columns and re-check that column.
+        expected_result: The column returns at its canonical board position with its cards intact.
+      - scenario: Reorder visible columns while another column is hidden
+        steps:
+          - Hide one middle column from the toolbar.
+          - Drag one visible column before another visible column.
+          - Re-show the hidden column.
+        expected_result: Visible reorder persists and the restored hidden column appears in the correct relative position.

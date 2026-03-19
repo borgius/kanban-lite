@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Card, CardDisplaySettings } from '../../shared/types'
+import type { BoardInfo, Card, CardDisplaySettings, KanbanColumn } from '../../shared/types'
 import { useStore } from './index'
 
 const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
@@ -41,11 +41,29 @@ function makeCard(overrides: Partial<Card>): Card {
   }
 }
 
+function makeColumn(overrides: Partial<KanbanColumn> = {}): KanbanColumn {
+  return {
+    id: 'todo',
+    name: 'To Do',
+    color: '#3b82f6',
+    ...overrides,
+  }
+}
+
+function makeBoard(overrides: Partial<BoardInfo> = {}): BoardInfo {
+  return {
+    id: 'default',
+    name: 'Default',
+    ...overrides,
+  }
+}
+
 function resetStore() {
   useStore.setState({
     cards: [],
     columns: [],
     boards: [],
+    columnVisibilityByBoard: {},
     currentBoard: 'default',
     isDarkMode: false,
     searchQuery: '',
@@ -205,5 +223,103 @@ describe('webview store fuzzy search state', () => {
     expect(useStore.getState().labelFilter).toEqual(['backend'])
     expect(useStore.getState().searchQuery).toBe('meta.team: platform')
     expect(store.getFilteredCardsByStatus('todo').map(card => card.id)).toEqual(['card-backend'])
+  })
+})
+
+describe('webview store column visibility state', () => {
+  it('stores hidden and minimized column ids separately per board', () => {
+    const store = useStore.getState()
+
+    store.setColumnHidden('board-a', 'todo', true)
+    store.setColumnMinimized('board-a', 'in-progress', true)
+    store.setColumnHidden('board-b', 'done', true)
+
+    expect(useStore.getState().getHiddenColumnIds('board-a')).toEqual(['todo'])
+    expect(useStore.getState().getMinimizedColumnIds('board-a')).toEqual(['in-progress'])
+    expect(useStore.getState().getHiddenColumnIds('board-b')).toEqual(['done'])
+    expect(useStore.getState().getMinimizedColumnIds('board-b')).toEqual([])
+    expect(useStore.getState().isColumnHidden('todo', 'board-a')).toBe(true)
+    expect(useStore.getState().isColumnMinimized('in-progress', 'board-a')).toBe(true)
+  })
+
+  it('supports board-scoped show/hide and minimize/expand round-trips', () => {
+    const store = useStore.getState()
+
+    store.setColumnHidden('board-a', 'todo', true)
+    store.setColumnMinimized('board-a', 'doing', true)
+    store.setColumnHidden('board-b', 'done', true)
+
+    store.setColumnHidden('board-a', 'todo', false)
+    store.setColumnMinimized('board-a', 'doing', false)
+
+    expect(useStore.getState().getColumnVisibility('board-a')).toEqual({
+      hiddenColumnIds: [],
+      minimizedColumnIds: [],
+    })
+    expect(useStore.getState().getColumnVisibility('board-b')).toEqual({
+      hiddenColumnIds: ['done'],
+      minimizedColumnIds: [],
+    })
+  })
+
+  it('clears a minimized flag when a column is hidden', () => {
+    const store = useStore.getState()
+
+    store.setColumnMinimized('board-a', 'todo', true)
+    store.setColumnHidden('board-a', 'todo', true)
+
+    expect(useStore.getState().getColumnVisibility('board-a')).toEqual({
+      hiddenColumnIds: ['todo'],
+      minimizedColumnIds: [],
+    })
+    expect(useStore.getState().isColumnMinimized('todo', 'board-a')).toBe(false)
+  })
+
+  it('sanitizes stale visibility ids when active board columns change', () => {
+    const store = useStore.getState()
+
+    store.setCurrentBoard('board-a')
+    store.setColumnHidden('board-a', 'todo', true)
+    store.setColumnHidden('board-a', 'ghost', true)
+    store.setColumnMinimized('board-a', 'review', true)
+    store.setColumnMinimized('board-a', 'phantom', true)
+    store.setColumns([
+      makeColumn({ id: 'todo' }),
+      makeColumn({ id: 'done', name: 'Done', color: '#22c55e' }),
+    ])
+
+    expect(useStore.getState().getColumnVisibility('board-a')).toEqual({
+      hiddenColumnIds: ['todo'],
+      minimizedColumnIds: [],
+    })
+  })
+
+  it('removes visibility state for boards that no longer exist', () => {
+    const store = useStore.getState()
+
+    store.setColumnHidden('board-a', 'todo', true)
+    store.setColumnMinimized('board-b', 'done', true)
+    store.setBoards([
+      makeBoard({ id: 'board-a', name: 'Board A' }),
+    ])
+
+    expect(useStore.getState().columnVisibilityByBoard).toEqual({
+      'board-a': {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: [],
+      },
+    })
+  })
+
+  it('uses explicit sanitization helpers for the active board selectors', () => {
+    const store = useStore.getState()
+
+    store.setCurrentBoard('board-a')
+    store.setColumnMinimized('board-a', 'todo', true)
+    store.setColumnHidden('board-a', 'ghost', true)
+    store.sanitizeColumnVisibility('board-a', ['todo'])
+
+    expect(useStore.getState().getHiddenColumnIds()).toEqual([])
+    expect(useStore.getState().getMinimizedColumnIds()).toEqual(['todo'])
   })
 })

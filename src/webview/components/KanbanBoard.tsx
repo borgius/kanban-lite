@@ -61,9 +61,13 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   }, [selectedCardId])
 
   const columns = useStore((s) => s.columns)
+  const currentBoard = useStore((s) => s.currentBoard)
   const cardSettings = useStore((s) => s.cardSettings)
   const getFilteredCardsByStatus = useStore((s) => s.getFilteredCardsByStatus)
   const getCardsByStatus = useStore((s) => s.getCardsByStatus)
+  const hiddenColumnIds = useStore((s) => s.getHiddenColumnIds(currentBoard))
+  const minimizedColumnIds = useStore((s) => s.getMinimizedColumnIds(currentBoard))
+  const toggleColumnMinimized = useStore((s) => s.toggleColumnMinimized)
   const layout = useStore((s) => s.layout)
   const columnSorts = useStore((s) => s.columnSorts)
   const setColumnSort = useStore((s) => s.setColumnSort)
@@ -196,23 +200,29 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
       setDropColumnIndex(null)
       return
     }
+    const hiddenColumnIdSet = new Set(hiddenColumnIds)
     const colIds = columns.map(c => c.id)
-    const fromIdx = colIds.indexOf(draggedColumnId)
+    const visibleColIds = colIds.filter((columnId) => !hiddenColumnIdSet.has(columnId))
+    const fromIdx = visibleColIds.indexOf(draggedColumnId)
     if (fromIdx === -1) {
       setDraggedColumnId(null)
       setDropColumnIndex(null)
       return
     }
-    const newIds = [...colIds]
-    newIds.splice(fromIdx, 1)
+    const newVisibleIds = [...visibleColIds]
+    newVisibleIds.splice(fromIdx, 1)
     const adjustedIdx = dropColumnIndex > fromIdx ? dropColumnIndex - 1 : dropColumnIndex
-    newIds.splice(adjustedIdx, 0, draggedColumnId)
-    if (newIds.join() !== colIds.join()) {
-      onReorderColumns(newIds)
+    newVisibleIds.splice(adjustedIdx, 0, draggedColumnId)
+    if (newVisibleIds.join() !== visibleColIds.join()) {
+      let visibleIndex = 0
+      const nextColumnIds = colIds.map((columnId) => (
+        hiddenColumnIdSet.has(columnId) ? columnId : newVisibleIds[visibleIndex++]
+      ))
+      onReorderColumns(nextColumnIds)
     }
     setDraggedColumnId(null)
     setDropColumnIndex(null)
-  }, [columns, draggedColumnId, dropColumnIndex, onReorderColumns])
+  }, [columns, draggedColumnId, dropColumnIndex, hiddenColumnIds, onReorderColumns])
 
   const handleColumnDragEnd = useCallback(() => {
     setDraggedColumnId(null)
@@ -221,6 +231,9 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
 
   const isVertical = layout === 'vertical'
   const isDrawerOpen = !isVertical && !!selectedCardId && (cardSettings.panelMode ?? 'drawer') === 'drawer'
+  const hiddenColumnIdSet = new Set(hiddenColumnIds)
+  const minimizedColumnIdSet = new Set(minimizedColumnIds)
+  const visibleColumns = columns.filter((column) => !hiddenColumnIdSet.has(column.id))
 
   return (
     <div
@@ -238,7 +251,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             </div>
           </div>
         )}
-        {columns.map((column, colIdx) => (
+        {visibleColumns.map((column, colIdx) => (
           <KanbanColumn
             key={column.id}
             column={column}
@@ -262,6 +275,8 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             onColumnDragOver={handleColumnDragOver}
             onColumnDrop={handleColumnDrop}
             onColumnDragEnd={handleColumnDragEnd}
+            isMinimized={minimizedColumnIdSet.has(column.id)}
+            onToggleMinimized={() => toggleColumnMinimized(currentBoard, column.id)}
             layout={layout}
             selectedCardId={selectedCardId}
             selectedCardIds={selectedCardIds}

@@ -49,6 +49,7 @@ kl add --title "My first task" --priority high
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
 - **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
+- **Column visibility controls**: Minimize a column into a narrow rail with its name and card count from the column menu, or hide/show columns from **Board options → Columns**
 - **Smooth scroll to selection**: Board automatically scrolls to the selected card
 - **URL-synced standalone navigation**: In standalone mode, the active board, card, tab, filters, search query, and fuzzy mode persist in browser history and deep links
 - **Keyboard shortcuts**:

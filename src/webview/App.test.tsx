@@ -50,18 +50,34 @@ const hookRuntime = {
 
 const storeState = {
   columns: [],
+  currentBoard: 'default',
+  columnVisibilityByBoard: {} as Record<string, { hiddenColumnIds: string[]; minimizedColumnIds: string[] }>,
   workspace: null,
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
   settingsOpen: false,
   selectedCardIds: [] as string[],
-  setCards: vi.fn(),
-  setColumns: vi.fn(),
-  setBoards: vi.fn(),
-  setCurrentBoard: vi.fn(),
+  setCards: vi.fn((cards) => {
+    storeState.cards = cards
+  }),
+  setColumns: vi.fn((columns) => {
+    storeState.columns = columns
+  }),
+  setBoards: vi.fn((boards) => {
+    storeState.boards = boards
+  }),
+  setCurrentBoard: vi.fn((boardId) => {
+    storeState.currentBoard = boardId
+  }),
   setIsDarkMode: vi.fn(),
-  setWorkspace: vi.fn(),
-  setCardSettings: vi.fn(),
-  setSettingsOpen: vi.fn(),
+  setWorkspace: vi.fn((workspace) => {
+    storeState.workspace = workspace
+  }),
+  setCardSettings: vi.fn((cardSettings) => {
+    storeState.cardSettings = cardSettings
+  }),
+  setSettingsOpen: vi.fn((settingsOpen) => {
+    storeState.settingsOpen = settingsOpen
+  }),
   setLabelDefs: vi.fn(),
   toggleSelectCard: vi.fn(),
   selectCardRange: vi.fn(),
@@ -69,9 +85,15 @@ const storeState = {
   clearSelection: vi.fn(),
   setActiveCardId: vi.fn(),
   setActiveCardTab: vi.fn(),
+  cards: [] as unknown[],
+  boards: [] as unknown[],
 }
 
-const postMessageSpy = vi.fn()
+const { postMessageSpy, getStateSpy, setStateSpy } = vi.hoisted(() => ({
+  postMessageSpy: vi.fn(),
+  getStateSpy: vi.fn<() => unknown>(() => null),
+  setStateSpy: vi.fn<(state: unknown) => void>(),
+}))
 let messageHandler: ((event: MessageEvent<ExtensionMessage>) => void) | null = null
 
 vi.mock('react', async (importOriginal) => {
@@ -130,24 +152,27 @@ vi.mock('react', async (importOriginal) => {
   }
 })
 
-vi.mock('./store', () => {
-  const useStore = Object.assign(() => storeState, {
-    getState: () => ({
-      cards: [],
-      cardSettings: storeState.cardSettings,
-      selectedCardIds: [],
-    }),
-    setState: vi.fn(),
+vi.mock('./store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store')>()
+
+  const storeSetStateSpy = vi.fn((nextState: Partial<typeof storeState> | ((previous: typeof storeState) => Partial<typeof storeState>)) => {
+    const resolvedState = typeof nextState === 'function' ? nextState(storeState) : nextState
+    Object.assign(storeState, resolvedState)
   })
 
-  return { useStore }
+  const useStore = Object.assign(() => storeState, {
+    getState: () => storeState,
+    setState: storeSetStateSpy,
+  })
+
+  return { ...actual, useStore }
 })
 
 vi.mock('./vsCodeApi', () => ({
   getVsCodeApi: () => ({
     postMessage: postMessageSpy,
-    getState: () => null,
-    setState: vi.fn(),
+    getState: getStateSpy,
+    setState: setStateSpy,
   }),
 }))
 
@@ -183,12 +208,20 @@ beforeEach(() => {
   messageHandler = null
 
   Object.assign(storeState, {
+    cards: [],
     columns: [],
+    boards: [],
+    currentBoard: 'default',
+    columnVisibilityByBoard: {},
     workspace: null,
     cardSettings: { ...DEFAULT_CARD_SETTINGS },
     settingsOpen: false,
     selectedCardIds: [],
   })
+
+  getStateSpy.mockReset()
+  getStateSpy.mockReturnValue(null)
+  setStateSpy.mockReset()
 
   for (const key of Object.keys(storeState) as Array<keyof typeof storeState>) {
     const value = storeState[key]
@@ -240,6 +273,8 @@ afterEach(() => {
 
 describe('App connection notices', () => {
   it('renders a reconnecting notice and clears it after init arrives', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
     expect(renderApp()).not.toContain('Reconnecting…')
     expect(postMessageSpy).toHaveBeenCalledWith({ type: 'ready' })
 
@@ -265,6 +300,8 @@ describe('App connection notices', () => {
   })
 
   it('renders a fatal notice and clears it once connectivity is restored', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
     renderApp()
 
     dispatchMessage({
@@ -291,5 +328,90 @@ describe('App connection notices', () => {
     })
 
     expect(renderApp()).not.toContain('Connection lost')
+  })
+
+  it('hydrates persisted column visibility for the current board and persists a sanitized payload', () => {
+    getStateSpy.mockReturnValue({
+      boardA: {
+        hiddenColumnIds: ['todo', 'ghost'],
+        minimizedColumnIds: ['doing', 'ghost', 'todo'],
+      },
+      boardB: {
+        hiddenColumnIds: ['archive'],
+        minimizedColumnIds: [],
+      },
+    })
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'init',
+      cards: [],
+      columns: [
+        { id: 'todo', name: 'Todo', color: '#000000' },
+        { id: 'doing', name: 'Doing', color: '#111111' },
+      ],
+      currentBoard: 'boardA',
+    } as ExtensionMessage)
+
+    renderApp()
+
+    expect(storeState.columnVisibilityByBoard).toEqual({
+      boardA: {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: ['doing'],
+      },
+      boardB: {
+        hiddenColumnIds: ['archive'],
+        minimizedColumnIds: [],
+      },
+    })
+
+    expect(setStateSpy).toHaveBeenLastCalledWith({
+      boardA: {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: ['doing'],
+      },
+      boardB: {
+        hiddenColumnIds: ['archive'],
+        minimizedColumnIds: [],
+      },
+    })
+  })
+
+  it('preserves unrelated board visibility state when init updates the current board', () => {
+    storeState.columnVisibilityByBoard = {
+      boardA: {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: [],
+      },
+    }
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'init',
+      cards: [],
+      columns: [
+        { id: 'doing', name: 'Doing', color: '#111111' },
+      ],
+      currentBoard: 'boardB',
+    } as ExtensionMessage)
+
+    renderApp()
+
+    expect(storeState.columnVisibilityByBoard).toEqual({
+      boardA: {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: [],
+      },
+    })
+
+    expect(setStateSpy).toHaveBeenLastCalledWith({
+      boardA: {
+        hiddenColumnIds: ['todo'],
+        minimizedColumnIds: [],
+      },
+    })
   })
 })

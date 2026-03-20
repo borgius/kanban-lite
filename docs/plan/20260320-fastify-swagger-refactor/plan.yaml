@@ -1,0 +1,199 @@
+plan_id: 20260320-fastify-swagger-refactor
+objective: >-
+  Refactor the standalone server to Fastify, split src/standalone/server.ts into modules,
+  add @fastify/swagger with OpenAPI v3 and @fastify/swagger-ui, and deprecate
+  scripts/generate-api-docs.ts in favor of Swagger-generated documentation while preserving
+  standalone behavior.
+status: approved
+summary: >-
+  DAG plan for incrementally extracting src/standalone/server.ts, swapping the HTTP layer
+  to Fastify behind a compatibility-preserving startServer adapter, then replacing
+  handwritten API docs with Swagger-backed documentation while keeping behavior and tests
+  stable.
+tasks:
+  - id: T1
+    title: Lock the standalone compatibility contract and target module map
+    wave: 1
+    status: pending
+    dependencies: []
+    owner: gem-researcher
+    definition: >-
+      Capture the externally observable contract that must survive the refactor before code
+      moves begin: startServer(kanbanDir, port, webviewDir?) call shape and return semantics
+      used by src/standalone/index.ts, src/cli/index.ts, and src/extension/index.ts; /ws
+      path and raw websocket expectations from the standalone shim; SPA/static fallback
+      behavior; watcher/bootstrap/close lifecycle; and REST surface verified by
+      src/standalone/__tests__/server.integration.test.ts and
+      src/standalone/__tests__/webhooks.test.ts. Define the target module layout so the
+      refactor has clear seams: runtime context/store, HTTP/auth/utils, mutation services,
+      route modules by domain, websocket bridge, static asset handler, editor bridge, and
+      filesystem watch lifecycle.
+    acceptance_criteria:
+      - A written compatibility matrix exists for the startServer API, websocket path/behavior, SPA fallback, teardown lifecycle, and critical REST routes.
+      - A concrete module map exists for the Fastify migration, including ownership boundaries for runtime state, routes, websocket handling, assets, and watchers.
+      - Any unavoidable compatibility gaps are identified up front with a localized mitigation plan for the affected call sites only.
+  - id: T2
+    title: Extract monolithic server internals into standalone runtime and domain modules
+    wave: 2
+    status: pending
+    dependencies:
+      - T1
+    owner: gem-implementer
+    definition: >-
+      Refactor src/standalone/server.ts into smaller internal modules without changing
+      transport behavior yet. Move runtime state and helper utilities into a shared
+      standalone context/store; extract auth/header/body/response helpers; pull
+      card/board/settings/mutation operations into reusable services; isolate websocket
+      message handlers and broadcast helpers; isolate file watching and temp-editor
+      lifecycle; and split route intent by domain so the eventual Fastify registration
+      step can reuse them instead of re-implementing logic. Keep server.ts as a thin
+      composition entry point during this phase.
+    acceptance_criteria:
+      - src/standalone/server.ts becomes an orchestration layer rather than the sole owner of runtime state, mutations, routes, websocket handling, and file watching.
+      - Extracted modules expose clear internal interfaces that can be reused by both route registration and websocket/message flows.
+      - Existing standalone behavior remains unchanged during this extraction phase, with targeted standalone integration and webhook tests still green.
+  - id: T3
+    title: Introduce Fastify bootstrap with a compatibility-preserving startServer adapter
+    wave: 3
+    status: pending
+    dependencies:
+      - T2
+    owner: gem-implementer
+    definition: >-
+      Add fastify, @fastify/swagger, and @fastify/swagger-ui, then replace the manual
+      http.createServer request router with a Fastify application that registers extracted
+      route modules by domain. Preserve the public startServer entry point when possible
+      by returning the underlying raw Node server and keeping the current call signature
+      stable; if total http.Server parity is not possible, confine compatibility shims or
+      minimal updates to the known callers in src/standalone/index.ts, src/cli/index.ts,
+      and src/extension/index.ts.
+    acceptance_criteria:
+      - Fastify owns HTTP routing and request/response handling for the standalone server.
+      - The exported startServer API remains source-compatible for current callers, or any unavoidable caller changes are minimal, localized, and documented.
+      - Named REST endpoints continue to satisfy existing request/response contracts verified by the standalone integration suite.
+  - id: T4
+    title: Reconnect stateful subsystems on top of the Fastify runtime
+    wave: 4
+    status: pending
+    dependencies:
+      - T3
+    owner: gem-implementer
+    definition: >-
+      Reattach the non-REST parts that are easy to break in a transport swap: raw
+      websocket upgrade handling on /ws, broadcast and auth context propagation,
+      standalone editor bridge endpoints used by the webview shim, static asset serving,
+      SPA HTML fallback for non-asset paths, and chokidar watcher lifecycle/cleanup on
+      server shutdown. Preserve the current raw ws behavior rather than silently changing
+      protocols or paths.
+    acceptance_criteria:
+      - The standalone webview shim continues to connect to ws://${window.location.host}/ws without client-side contract changes.
+      - Static asset requests, deep-link SPA fallback, attachment and editor bridge endpoints, and watcher-triggered refresh flows behave the same as before.
+      - Server close/teardown still shuts down websocket and watcher resources cleanly, avoiding leaked handles in tests.
+  - id: T5
+    title: Add OpenAPI schemas and replace handwritten API docs generation with Swagger-backed output
+    wave: 4
+    status: pending
+    dependencies:
+      - T3
+    owner: gem-implementer
+    definition: >-
+      Attach OpenAPI v3 schemas to the Fastify route modules, register @fastify/swagger
+      and @fastify/swagger-ui, and make the runtime serve interactive API docs. Replace
+      the current handwritten scripts/generate-api-docs.ts flow with documentation
+      generated from the Swagger/OpenAPI source of truth, while keeping docs/api.md
+      available if needed for repo conventions, README links, and CLI help. Use this
+      migration to eliminate current contract drift and fill in undocumented endpoints,
+      especially around attachment upload/materialization behavior.
+    acceptance_criteria:
+      - Swagger/OpenAPI is generated directly from the Fastify route registration layer and available through the standalone server.
+      - scripts/generate-api-docs.ts is deprecated or removed from the docs pipeline, and npm run docs uses the Swagger/OpenAPI source of truth for API documentation.
+      - Previously missing or drifted API docs are reconciled with implementation, including attachment-related endpoints and any undocumented routes.
+  - id: T6
+    title: Update repo-facing documentation and help text to reflect the new API documentation source
+    wave: 5
+    status: pending
+    dependencies:
+      - T4
+      - T5
+    owner: gem-documentation-writer
+    definition: >-
+      Update user-facing and repo-mandated docs after the technical migration is stable:
+      README.md, CHANGELOG.md, and any CLI help or doc-link mappings that currently point
+      to handwritten API docs. Preserve the existing documentation entry points where
+      practical (docs/api.md, README links, CLI help api mapping), but make it clear that
+      the authoritative source is now Swagger/OpenAPI and that interactive docs are
+      available from the standalone server.
+    acceptance_criteria:
+      - README guidance for the standalone server and REST API reflects the Fastify/Swagger architecture and correct docs locations.
+      - CHANGELOG includes a concise unreleased entry for the server modularization and Swagger-backed documentation change.
+      - CLI help/docs mapping continues to resolve to valid API documentation without stale references to the old generator.
+  - id: T7
+    title: Run focused regression verification and close out compatibility gaps
+    wave: 6
+    status: pending
+    dependencies:
+      - T4
+      - T5
+    owner: gem-reviewer
+    definition: >-
+      Execute the agreed verification matrix against the migrated server and docs pipeline,
+      then resolve any regressions that are truly caused by the refactor. The minimum gate
+      is the named high-risk suites and commands from the objective:
+      src/standalone/__tests__/server.integration.test.ts,
+      src/standalone/__tests__/webhooks.test.ts,
+      src/webview/standalone-shim.test.ts, src/webview/App.test.tsx,
+      src/webview/connectionNotice.test.ts, src/webview/routerHistory.test.ts,
+      npm run build, and npm run docs.
+    acceptance_criteria:
+      - All named verification targets from the objective pass on the refactored Fastify server.
+      - No stale references remain to the deprecated API-doc generation flow in code, scripts, or docs.
+      - Any residual incompatibilities are either fixed before merge or explicitly documented as intentional, localized exceptions.
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: Standalone compatibility matrix and target module decomposition
+    format: Preserved external contracts list plus internal module ownership map
+  - from_task: T2
+    to_task: T3
+    interface: Extracted runtime/services/routes interfaces reusable by Fastify registration
+    format: Internal TypeScript modules for runtime context, services, route handlers, and lifecycle hooks
+  - from_task: T3
+    to_task: T4
+    interface: Fastify app bootstrap plus raw Node server access for websocket upgrades and shutdown hooks
+    format: Fastify instance, underlying Node server, and lifecycle registration points
+  - from_task: T3
+    to_task: T5
+    interface: Route modules with stable endpoint definitions ready for OpenAPI schema attachment
+    format: Domain-based Fastify route registrations with schema metadata hooks
+  - from_task: T4
+    to_task: T6
+    interface: Verified runtime endpoints, websocket path, static asset behavior, and docs URL locations
+    format: Behavioral parity checklist and final served API/docs paths
+  - from_task: T5
+    to_task: T6
+    interface: Swagger/OpenAPI-backed docs pipeline replacing handwritten API doc generation
+    format: Updated docs commands, generated docs/api.md strategy, and interactive Swagger UI entry point
+  - from_task: T4
+    to_task: T7
+    interface: Fastify runtime with migrated websockets, static assets, editor bridge, and watcher lifecycle
+    format: Refactored standalone server ready for regression verification
+  - from_task: T5
+    to_task: T7
+    interface: Final OpenAPI/Swagger documentation outputs and script wiring
+    format: Docs pipeline outputs plus updated package script expectations
+risks:
+  - scenario: Fastify bootstrap introduces async lifecycle differences that break the current synchronous startServer usage pattern.
+    impact: High
+    mitigation: Keep startServer as the public entry point, return the underlying raw server where possible, and explicitly verify the listening, error, close, and shutdown behaviors relied on by the CLI, standalone entry, and extension.
+  - scenario: Raw websocket behavior on /ws changes during the transport refactor and silently breaks the standalone shim reconnect flow.
+    impact: Critical
+    mitigation: Preserve the /ws path and raw ws semantics, treat websocket migration as a separate task after Fastify routing is stable, and gate completion on the standalone shim and connection-notice tests.
+  - scenario: Static asset serving or SPA fallback semantics regress, causing deep links or browser refreshes to return the wrong content.
+    impact: High
+    mitigation: Isolate asset serving and fallback logic into a dedicated module, preserve current non-extension-path fallback behavior, and verify browser-facing tests plus manual deep-link scenarios before merge.
+  - scenario: Swagger migration reproduces existing contract drift because schemas are added selectively or generated from incomplete route metadata.
+    impact: High
+    mitigation: Attach schemas at the same layer where routes are registered, require undocumented endpoints to be added before the old generator is retired, and explicitly reconcile known attachment-upload drift during the migration.
+  - scenario: Watcher, temp-file editor bridge, or websocket resources are not cleaned up correctly after the refactor, leading to hanging tests and flaky shutdown behavior.
+    impact: Medium
+    mitigation: Centralize teardown in the new runtime lifecycle module and require regression runs against the integration and webview suites plus build/docs commands before closeout.

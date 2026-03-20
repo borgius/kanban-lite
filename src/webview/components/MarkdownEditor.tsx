@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { marked } from 'marked'
 import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
-import type { Comment, LogEntry } from '../../shared/types'
+import type { Comment, LogEntry, CardFrontmatter, SubmitFormTransportResult } from '../../shared/types'
 import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
 import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
-import { useStore, type CardTab } from '../store'
+import { useStore, type CardTab, isFormCardTab, createFormCardTabId } from '../store'
+import { CardFormTab, resolveCardFormDescriptors } from './CardFormTab'
 
 interface MarkdownEditorProps {
   value: string
@@ -23,10 +24,13 @@ interface MarkdownEditorProps {
   onClearLogs?: () => void
   logsFilter?: import('../../shared/types').CardDisplaySettings['logsFilter']
   onLogsFilterChange?: (filter: NonNullable<import('../../shared/types').CardDisplaySettings['logsFilter']>) => void
+  cardId?: string
+  frontmatter?: CardFrontmatter
+  onFormSubmitSuccess?: (result: SubmitFormTransportResult) => void
 }
 
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange, cardId, frontmatter, onFormSubmitSuccess }: MarkdownEditorProps) {
   const isEditMode = mode === 'edit'
   const writeLabel = isEditMode ? 'Edit' : 'Write'
 
@@ -34,6 +38,8 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
   // In create mode, use local state.
   const storeActiveCardTab = useStore(s => s.activeCardTab)
   const setStoreActiveCardTab = useStore(s => s.setActiveCardTab)
+  const boards = useStore(s => s.boards)
+  const currentBoard = useStore(s => s.currentBoard)
   const [localTab, setLocalTab] = useState<CardTab>('write')
   const activeTab: CardTab = isEditMode ? storeActiveCardTab : localTab
   const setActiveTab = (tab: CardTab) => {
@@ -41,6 +47,14 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
     else setLocalTab(tab)
   }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const activeBoard = useMemo(
+    () => boards.find((board) => board.id === currentBoard),
+    [boards, currentBoard],
+  )
+  const resolvedForms = useMemo(
+    () => (isEditMode && frontmatter ? resolveCardFormDescriptors(frontmatter, activeBoard) : []),
+    [activeBoard, frontmatter, isEditMode],
+  )
 
   const previewHtml = useMemo(() => {
     if (!value.trim()) return ''
@@ -125,6 +139,28 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             )}
           </button>
         ))}
+        {resolvedForms.map((form) => {
+          const tabId = createFormCardTabId(form.id)
+          return (
+            <button
+              key={tabId}
+              type="button"
+              onClick={() => setActiveTab(tabId)}
+              className="px-3 py-2 text-xs font-medium transition-colors relative"
+              style={{
+                color: activeTab === tabId ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
+              }}
+            >
+              {form.label}
+              {activeTab === tabId && (
+                <span
+                  className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
+                  style={{ background: 'var(--vscode-focusBorder)' }}
+                />
+              )}
+            </button>
+          )
+        })}
         {comments && (
           <button
             type="button"
@@ -232,6 +268,21 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             )}
           </div>
         )}
+        {resolvedForms.map((form) => {
+          const tabId = createFormCardTabId(form.id)
+          if (!cardId) return null
+
+          return (
+            <div key={tabId} className={cn('h-full', activeTab === tabId ? 'block' : 'hidden')}>
+              <CardFormTab
+                cardId={cardId}
+                boardId={activeBoard?.id}
+                form={form}
+                onSubmitted={onFormSubmitSuccess}
+              />
+            </div>
+          )
+        })}
         {activeTab === 'comments' && comments && onAddComment && onUpdateComment && onDeleteComment && (
           <CommentsSection
             comments={comments}

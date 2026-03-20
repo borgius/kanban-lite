@@ -53,6 +53,41 @@ const EVENTS: EventMeta[] = [
 }`,
   },
   {
+    event: 'form.submit',
+    category: 'Task',
+    description: 'A card form payload was validated, persisted, and submitted.',
+    trigger: 'Submitting an attached card form via the SDK, REST API, CLI, MCP, or the webview form tab.',
+    payload: `{
+  "event": "form.submit",
+  "timestamp": "2026-03-19T12:10:00.000Z",
+  "data": {
+    "boardId": "default",
+    "card": {
+      "id": "investigate-outage-2026-03-19",
+      "status": "todo",
+      "priority": "high",
+      "formData": {
+        "incident-report": {
+          "severity": "critical",
+          "owner": "alice",
+          "service": "billing"
+        }
+      }
+    },
+    "form": {
+      "id": "incident-report",
+      "label": "incident-report",
+      "fromConfig": true
+    },
+    "data": {
+      "severity": "critical",
+      "owner": "alice",
+      "service": "billing"
+    }
+  }
+}`,
+  },
+  {
     event: 'task.updated',
     category: 'Task',
     description: 'A task was updated (fields changed, not moved).',

@@ -117,6 +117,7 @@ function verifySignature(payload, signature, secret) {
 | Event | Category | Description |
 |-------|----------|-------------|
 | `task.created` | Task | A new task was created. |
+| `form.submit` | Task | A card form payload was validated, persisted, and submitted. |
 | `task.updated` | Task | A task was updated (fields changed, not moved). |
 | `task.moved` | Task | A task was moved to a different column or transferred between boards. |
 | `task.deleted` | Task | A task was permanently deleted. |
@@ -158,6 +159,46 @@ A new task was created.
     "attachments": [],
     "created": "2026-02-24T12:00:00.000Z",
     "modified": "2026-02-24T12:00:00.000Z"
+  }
+}
+```
+
+#### `form.submit`
+
+A card form payload was validated, persisted, and submitted.
+
+**Trigger:** Submitting an attached card form via the SDK, REST API, CLI, MCP, or the webview form tab.
+
+**Example payload:**
+
+```json
+{
+  "event": "form.submit",
+  "timestamp": "2026-03-19T12:10:00.000Z",
+  "data": {
+    "boardId": "default",
+    "card": {
+      "id": "investigate-outage-2026-03-19",
+      "status": "todo",
+      "priority": "high",
+      "formData": {
+        "incident-report": {
+          "severity": "critical",
+          "owner": "alice",
+          "service": "billing"
+        }
+      }
+    },
+    "form": {
+      "id": "incident-report",
+      "label": "incident-report",
+      "fromConfig": true
+    },
+    "data": {
+      "severity": "critical",
+      "owner": "alice",
+      "service": "billing"
+    }
   }
 }
 ```

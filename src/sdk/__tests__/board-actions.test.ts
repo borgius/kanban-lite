@@ -184,5 +184,40 @@ describe('Board Actions', () => {
       const boards = await sdk.listBoards()
       expect(boards[0].actions).toBeUndefined()
     })
+
+    it('includes workspace forms in BoardInfo', async () => {
+      writeKanbanJson(workspaceDir, {
+        ...BASE_CONFIG,
+        forms: {
+          'bug-report': {
+            schema: {
+              type: 'object',
+              properties: {
+                title: { type: 'string' }
+              }
+            },
+            data: {
+              title: 'Default title'
+            }
+          }
+        }
+      })
+      sdk = new KanbanSDK(kanbanDir)
+
+      const boards = await sdk.listBoards()
+      expect(boards[0].forms).toEqual({
+        'bug-report': {
+          schema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' }
+            }
+          },
+          data: {
+            title: 'Default title'
+          }
+        }
+      })
+    })
   })
 })

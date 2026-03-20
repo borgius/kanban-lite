@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { SqliteStorageEngine } from '../storage/sqlite'
+import { SqliteStorageEngine } from '../plugins/sqlite'
 import type { Card } from '../../shared/types'
 
 function createTempDir(): string {
@@ -108,6 +108,91 @@ describe('SqliteStorageEngine', () => {
 
       const cards = await engine.scanCards(boardDir, 'default')
       expect(cards[0].metadata).toEqual({ sprint: '2026-Q1', estimate: 5 })
+    })
+
+    it('round-trips forms and formData', async () => {
+      const boardDir = path.join(kanbanDir, 'boards', 'default')
+      const card = makeCard({
+        forms: [
+          { name: 'bug-report' },
+          {
+            schema: {
+              type: 'object',
+              title: 'Inline Form',
+              properties: {
+                severity: { type: 'string' }
+              }
+            },
+            ui: { type: 'VerticalLayout' },
+            data: { severity: 'medium' }
+          }
+        ],
+        formData: {
+          'bug-report': { severity: 'high' },
+          'inline-form': { severity: 'medium' }
+        }
+      })
+      await engine.writeCard(card)
+
+      const cards = await engine.scanCards(boardDir, 'default')
+      expect(cards[0].forms).toEqual(card.forms)
+      expect(cards[0].formData).toEqual(card.formData)
+    })
+
+    it('upserts nested form-aware fields without losing updated structure', async () => {
+      const boardDir = path.join(kanbanDir, 'boards', 'default')
+      const original = makeCard({
+        id: 'form-upsert',
+        forms: [{
+          name: 'triage',
+          schema: {
+            type: 'object',
+            properties: {
+              owner: { type: 'string' }
+            }
+          }
+        }],
+        formData: {
+          triage: {
+            owner: 'alice',
+            checklist: ['repro'],
+            details: { severity: 'medium' }
+          }
+        }
+      })
+      await engine.writeCard(original)
+
+      const updated = {
+        ...original,
+        forms: [
+          ...original.forms!,
+          {
+            schema: {
+              type: 'object',
+              title: 'Resolution',
+              properties: {
+                summary: { type: 'string' }
+              }
+            }
+          }
+        ],
+        formData: {
+          triage: {
+            owner: 'bob',
+            checklist: ['repro', 'fix-verified'],
+            details: { severity: 'high', escalated: true }
+          },
+          resolution: {
+            summary: 'Patched'
+          }
+        }
+      }
+      await engine.writeCard(updated)
+
+      const cards = await engine.scanCards(boardDir, 'default')
+      expect(cards).toHaveLength(1)
+      expect(cards[0].forms).toEqual(updated.forms)
+      expect(cards[0].formData).toEqual(updated.formData)
     })
 
     it('round-trips comments', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter } from 'lucide-react'
-import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry } from '../../shared/types'
+import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
 import { DELETED_STATUS_ID } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
@@ -822,6 +822,14 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
     })
   }, [onSave])
 
+  const handleFormSubmitSuccess = useCallback((result: SubmitFormTransportResult) => {
+    setCurrentFrontmatter(prev => ({
+      ...prev,
+      formData: result.card.formData,
+      modified: result.card.modified,
+    }))
+  }, [])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1148,6 +1156,9 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         onClearLogs={onClearLogs}
         logsFilter={logsFilter}
         onLogsFilterChange={onLogsFilterChange}
+        cardId={cardId}
+        frontmatter={currentFrontmatter}
+        onFormSubmitSuccess={handleFormSubmitSuccess}
       />
     </div>
   )

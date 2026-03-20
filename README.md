@@ -17,6 +17,14 @@ npx skills add https://github.com/borgius/kanban-lite
 
 See [SKILL.md](SKILL.md) for the full skill reference covering MCP tools, CLI, and REST API.
 
+This repo also ships a dedicated `kanban-storage-plugin-author` skill for generating third-party `card.storage` / `attachment.storage` npm packages that can be selected from `.kanban.json`:
+
+```bash
+npx skills add https://github.com/borgius/kanban-lite --skill kanban-storage-plugin-author
+```
+
+See [`.agents/skills/kanban-storage-plugin-author/SKILL.md`](.agents/skills/kanban-storage-plugin-author/SKILL.md) for the workflow, bundled references, and package templates.
+
 ## Quick Start
 
 ```bash
@@ -41,6 +49,7 @@ kl add --title "My first task" --priority high
 - **5-column workflow**: Backlog, To Do, In Progress, Review, Done (fully customizable per board)
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
+- **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
@@ -71,6 +80,8 @@ kl add --title "My first task" --priority high
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
 - **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
+- **Reusable and inline forms**: Attach named workspace forms from `.kanban.json` or define card-local inline forms directly on the card
+- **Per-form saved data**: Each attached form persists its submitted payload separately under `formData[formId]`, so multiple forms on one card do not collide
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
 
@@ -120,6 +131,12 @@ kl add --title "Implement search" --priority high --label "frontend,search"
 # Create a card with actions
 kl add --title "Deploy service" --actions "retry,rollback,notify"
 
+# Create a card with attached forms
+kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
+
+# Update form attachments or persisted per-form data
+kl edit investigate-outage --forms @forms.json --form-data @form-data.json
+
 # Show card details
 kl show implement-search
 
@@ -137,6 +154,9 @@ kl edit deploy-service --actions "retry,rollback,notify"
 
 # Trigger an action
 kl action trigger deploy-service retry
+
+# Submit a card form payload
+kl form submit investigate-outage incident-report --data '{"severity":"high","owner":"alice"}'
 
 # Delete a card
 kl delete implement-search
@@ -207,8 +227,8 @@ kl settings update --compactMode true                   # Update a setting
 # Workspace
 kl pwd                                                  # Print workspace root path
 
-# Storage engine
-kl storage status                                       # Show current engine
+# Storage providers
+kl storage status                                       # Show current provider + capability status
 kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db  # Migrate to SQLite
 kl storage migrate-to-markdown                          # Migrate back to markdown
 
@@ -231,6 +251,8 @@ kl help api                                             # Show REST API document
 ```
 
 Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
+
+`--forms` accepts a JSON array of attached form descriptors, and `--form-data` accepts a JSON object keyed by resolved form id. Both flags also support `@path/to/file.json`.
 
 ## Standalone Server
 
@@ -287,12 +309,13 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `GET` | `/api/tasks` | List all tasks (query: `?q=&fuzzy=&meta.<field>=&status=&priority=&assignee=&label=`) |
 | `GET` | `/api/tasks/active` | Get the currently active/open task |
 | `GET` | `/api/tasks/:id` | Get a single task |
-| `POST` | `/api/tasks` | Create a task |
-| `PUT` | `/api/tasks/:id` | Update task properties |
+| `POST` | `/api/tasks` | Create a task, including optional `forms` and `formData` |
+| `PUT` | `/api/tasks/:id` | Update task properties, including `forms` and `formData` |
+| `POST` | `/api/tasks/:id/forms/:formId/submit` | Validate and submit a card form payload |
 | `PATCH` | `/api/tasks/:id/move` | Move task to column/position |
 | `DELETE` | `/api/tasks/:id` | Delete a task |
 
-Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
+Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, including `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`.
 
 `q` is the free-text search input, `fuzzy=true` enables typo-tolerant matching, and `meta.<field>=value` keeps metadata filtering field-scoped. The same search semantics are shared with `kl list --search ... --fuzzy` and the MCP `list_cards` tool.
 
@@ -331,8 +354,8 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/workspace` | Get workspace root path and storage engine |
-| `GET` | `/api/storage` | Get current storage engine type and config |
+| `GET` | `/api/workspace` | Get workspace root path plus active storage provider metadata |
+| `GET` | `/api/storage` | Get current card/attachment storage provider status |
 | `POST` | `/api/storage/migrate-to-sqlite` | Migrate cards to SQLite (`{ sqlitePath? }`) |
 | `POST` | `/api/storage/migrate-to-markdown` | Migrate cards back to markdown files |
 
@@ -374,7 +397,48 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`.
 ```bash
 curl -X POST http://localhost:3000/api/tasks \
   -H "Content-Type: application/json" \
-  -d '{"content": "# My Task\n\nDescription here", "status": "todo", "priority": "high"}'
+  -d '{
+    "content": "# Investigate outage\n\nCollect incident details.",
+    "status": "todo",
+    "priority": "high",
+    "forms": [{"name": "incident-report"}],
+    "formData": {"incident-report": {"service": "billing"}}
+  }'
+```
+
+### Example: Update a task's attached forms via API
+
+```bash
+curl -X PUT http://localhost:3000/api/tasks/investigate-outage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "forms": [
+      {"name": "incident-report"},
+      {
+        "schema": {
+          "type": "object",
+          "title": "Postmortem",
+          "properties": {
+            "summary": {"type": "string"}
+          }
+        },
+        "data": {"summary": "Initial draft"}
+      }
+    ]
+  }'
+```
+
+### Example: Submit a task form via API
+
+```bash
+curl -X POST http://localhost:3000/api/tasks/investigate-outage/forms/incident-report/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "severity": "critical",
+      "owner": "alice"
+    }
+  }'
 ```
 
 ### Example: Search tasks via API
@@ -395,6 +459,7 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 | Event | Trigger |
 |-------|---------|
 | `task.created` | A new task is created |
+| `form.submit` | A card form payload is validated, persisted, and submitted |
 | `task.updated` | Task properties are changed |
 | `task.moved` | Task is moved to a different column or transferred between boards |
 | `task.deleted` | A task is deleted |
@@ -445,6 +510,90 @@ curl -X POST http://localhost:3000/api/webhooks \
 ```
 
 Webhook registrations are stored in `.kanban.json` at the workspace root and persist across server restarts.
+
+## Card Forms
+
+Forms let you attach structured JSON Schema-driven workflows directly to cards. Each attachment becomes its own tab in the webview card editor, is validated with the SDK-owned rules, and can be submitted from the UI, CLI, REST API, SDK, or MCP.
+
+### Define reusable workspace forms
+
+Declare named reusable forms in `.kanban.json` under the top-level `forms` map:
+
+```json
+{
+  "forms": {
+    "incident-report": {
+      "schema": {
+        "type": "object",
+        "title": "Incident Report",
+        "properties": {
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "owner": { "type": "string" },
+          "service": { "type": "string" }
+        },
+        "required": ["severity", "owner"]
+      },
+      "ui": {
+        "type": "VerticalLayout",
+        "elements": [
+          { "type": "Control", "scope": "#/properties/severity" },
+          { "type": "Control", "scope": "#/properties/owner" },
+          { "type": "Control", "scope": "#/properties/service" }
+        ]
+      },
+      "data": {
+        "severity": "medium"
+      }
+    }
+  }
+}
+```
+
+### Attach forms to cards
+
+Cards can attach reusable named forms or inline card-local definitions in frontmatter:
+
+```yaml
+forms:
+  - name: incident-report
+  - schema:
+      type: object
+      title: Postmortem
+      properties:
+        summary:
+          type: string
+    data:
+      summary: Initial draft
+formData:
+  incident-report:
+    service: billing
+```
+
+### Merge order and submit behavior
+
+For every attached form, the resolved payload is built in this order, from lowest to highest priority:
+
+1. Workspace form defaults from `.kanban.json` (`forms.<name>.data`)
+2. Card-scoped attachment defaults, then previously persisted `formData[formId]`
+3. Card metadata fields whose keys exist in the form schema
+4. The submitted payload
+
+The SDK validates that final payload before persistence and before any `form.submit` webhook fires.
+
+### Webview behavior
+
+- Every attached form renders as an extra tab in the card editor.
+- Tabs are stable and deep-linkable in standalone mode using `form:<resolved-id>` tab ids.
+- Shared config forms show a **Shared** badge in the tab content.
+- Submit stays disabled until validation passes, and successful submissions update the card's saved `formData`.
+
+### Programmatic submission surfaces
+
+- **SDK**: `await sdk.submitForm({ cardId, formId, data, boardId? })`
+- **CLI**: `kl form submit <cardId> <formId> --data '<json|@file>'`
+- **REST API**: `POST /api/tasks/:id/forms/:formId/submit`
+- **Board-scoped REST API**: `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`
+- **MCP**: `submit_card_form`
 
 ## Card Actions
 
@@ -628,8 +777,9 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `list_cards` | List/filter cards by status, priority, assignee, label, `searchQuery`, `fuzzy`, and `metaFilter` |
 | `get_card` | Get full details of a card (supports partial ID matching) |
 | `get_active_card` | Get the currently active/open card, or `null` if none is active |
-| `create_card` | Create a new card with title, body, status, priority, etc. |
-| `update_card` | Update fields of an existing card |
+| `create_card` | Create a new card with title, body, status, priority, metadata, forms, and formData |
+| `update_card` | Update fields of an existing card, including forms and formData |
+| `submit_card_form` | Validate and submit a card form payload through the shared SDK workflow |
 | `move_card` | Move a card to a different status column |
 | `delete_card` | Permanently delete a card |
 | `trigger_action` | Trigger a named action on a card, calling the configured action webhook |
@@ -656,10 +806,10 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_webhook` | Register a new webhook |
 | `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
-| `get_workspace_info` | Get workspace root path, storage engine, and features directory |
+| `get_workspace_info` | Get workspace root path, kanban directory, and active storage provider metadata |
 
 For agent-driven search, pass `searchQuery` for free text (including inline tokens like `meta.team: backend`), set `fuzzy: true` to widen matching across text and metadata values, or use `metaFilter` when you want structured dot-notation field filters.
-| `get_storage_status` | Get current storage engine type and configuration |
+| `get_storage_status` | Get current card/attachment storage provider status |
 | `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
 | `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |
 
@@ -696,6 +846,20 @@ const deployCard = await sdk.createCard({
   actions: ['retry', 'rollback', 'notify-slack']
 })
 
+// Cards with attached forms
+const incidentCard = await sdk.createCard({
+  content: '# Investigate outage',
+  forms: [{ name: 'incident-report' }],
+  formData: { 'incident-report': { service: 'billing' } },
+})
+
+// Submit a form payload with SDK-owned validation + persistence
+await sdk.submitForm({
+  cardId: incidentCard.id,
+  formId: 'incident-report',
+  data: { severity: 'critical', owner: 'alice' },
+})
+
 // Trigger an action (POSTs to the actionWebhookUrl in .kanban.json)
 await sdk.triggerAction(deployCard.id, 'notify-slack')
 
@@ -726,7 +890,7 @@ See the [full SDK documentation](docs/sdk.md) for detailed API reference, types,
 
 ## Data Storage
 
-Cards are stored as markdown files with YAML frontmatter in `.kanban/boards/<boardId>/` within your project:
+By default, cards are stored as markdown files with YAML frontmatter in `.kanban/boards/<boardId>/` within your project:
 
 ```markdown
 ---
@@ -765,11 +929,18 @@ Yes, good idea. I'll add that as a follow-up.
 
 Comments are stored as additional YAML documents in the same file, keeping everything in one place and version-controllable.
 
-## Storage Engines
+When you switch the `card.storage` provider to `sqlite` or `mysql`, card/comment persistence moves behind that provider while `.kanban.json` remains the source of truth for board config, columns, labels, settings, forms, and webhooks.
 
-By default cards are stored as markdown files. You can optionally switch to a **SQLite** backend to keep all card data in a single database file — useful for programmatic access or performance at scale.
+Attachments keep their legacy default unless you opt in explicitly: omitted `attachment.storage` still resolves to `localfs`, even when `card.storage` is `sqlite` or `mysql`.
 
-The active engine is configured in `.kanban.json`:
+## Storage Providers
+
+Kanban Lite resolves storage by capability namespace. When no explicit config is present, it defaults to:
+
+- `card.storage` → `markdown`
+- `attachment.storage` → `localfs`
+
+Legacy `.kanban.json` fields still work and are normalized into the same runtime capability map:
 
 ```json
 {
@@ -778,14 +949,120 @@ The active engine is configured in `.kanban.json`:
 }
 ```
 
-| Engine | Default | Card storage | Config storage |
-|--------|---------|--------------|----------------|
-| `markdown` | ✓ | `.kanban/boards/<board>/<status>/*.md` | `.kanban.json` |
-| `sqlite` | | `.kanban/kanban.db` (configurable) | `.kanban.json` |
+The equivalent capability-based config is:
 
-In both cases `.kanban.json` remains the source of truth for board config, columns, labels, settings, and webhooks.
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "sqlite",
+      "options": {
+        "sqlitePath": ".kanban/kanban.db"
+      }
+    },
+    "attachment.storage": {
+      "provider": "localfs"
+    }
+  }
+}
+```
 
-### Migrating between engines
+If both forms are present, `plugins[namespace]` wins for that namespace and legacy fields remain as compatibility aliases.
+
+| Capability | Default | Built-in providers | Notes |
+|-----------|---------|--------------------|-------|
+| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Controls card/comment persistence. |
+| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql` | `sqlite` and `mysql` are explicit opt-ins and require the matching `card.storage` provider. Omitting this namespace still falls back to `localfs`, including with `sqlite` and `mysql`. |
+
+If you want attachments to route through the built-in SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "sqlite",
+      "options": {
+        "sqlitePath": ".kanban/kanban.db"
+      }
+    },
+    "attachment.storage": {
+      "provider": "sqlite"
+    }
+  }
+}
+```
+
+The same pattern applies to MySQL:
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "mysql",
+      "options": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "kanban",
+        "password": "secret",
+        "database": "kanban_db"
+      }
+    },
+    "attachment.storage": {
+      "provider": "mysql"
+    }
+  }
+}
+```
+
+### Installing and selecting providers
+
+- Built-in providers (`markdown`, `sqlite`, `mysql`, `localfs`) do not require a separate kanban plugin package.
+- External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
+- Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
+
+### MySQL setup and runtime expectations
+
+Use the built-in MySQL card provider by selecting `provider: "mysql"` under `plugins["card.storage"]`:
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "mysql",
+      "options": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "kanban",
+        "password": "secret",
+        "database": "kanban_db"
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- `database` is required.
+- The `mysql2` driver is an optional runtime dependency and is loaded lazily. Install it only in environments that actually use the MySQL provider.
+- `mysql` stores cards/comments in MySQL, while attachments still default to the built-in `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mysql"`.
+
+```bash
+npm install mysql2
+```
+
+### Provider status surfaces
+
+These commands/endpoints/tools expose the active card provider id, attachment provider id, whether cards are file-backed, and the filesystem watch glob when one exists:
+
+- `kl storage status`
+- `GET /api/storage`
+- `GET /api/workspace`
+- MCP: `get_storage_status`, `get_workspace_info`
+
+Built-in `markdown` reports `watchGlob: "boards/**/*.md"`. Built-in `sqlite` and `mysql` report `isFileBacked: false` and `watchGlob: null`. External providers declare the same file/watch hints through their plugin metadata, so host layers do not have to infer them from the storage engine name.
+
+### Migrating between built-in providers
 
 **CLI:**
 ```bash
@@ -819,7 +1096,9 @@ console.log(`Migrated ${count} cards to SQLite`)
 await sdk.migrateToMarkdown()
 ```
 
-Existing files / the database are **not deleted** during migration — they serve as a manual backup until you remove them.
+These migration helpers are compatibility aliases for the built-in markdown ↔ sqlite flow. Existing files / the database are **not deleted** during migration — they serve as a manual backup until you remove them.
+
+If a workspace was explicitly using the built-in `sqlite` attachment provider, migrating back to markdown automatically drops that incompatible built-in attachment override so the legacy `localfs` default continues to work without manual config cleanup.
 
 **MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
 
@@ -859,6 +1138,21 @@ Board configuration is stored in `.kanban.json` at your project root. It support
   "cardZoom": 100,
   "panelMode": "drawer",
   "drawerWidth": 50,
+  "forms": {
+    "incident-report": {
+      "schema": {
+        "type": "object",
+        "title": "Incident Report",
+        "properties": {
+          "severity": { "type": "string" },
+          "owner": { "type": "string" }
+        }
+      },
+      "data": {
+        "severity": "medium"
+      }
+    }
+  },
   "actionWebhookUrl": "https://example.com/kanban-actions"
 }
 ```
@@ -868,6 +1162,8 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 `boardZoom` and `cardZoom` set the default zoom percentage (75–150) for the board view and card detail panel respectively. They can also be adjusted live in the Settings panel or with `Ctrl/Cmd + =` / `Ctrl/Cmd + -` keyboard shortcuts.
 
 `panelMode` controls whether card flows open as a centered popup or a right-side drawer. When using drawer mode, `drawerWidth` sets the default width percentage (20–80) for card creation and detail panels.
+
+`forms` defines reusable JSON Schema/JSON Forms descriptors that any card can attach by name. Card-local inline forms still live on the card frontmatter under `forms`, while submitted values persist per card under `formData`.
 
 ## AI Agent Integration
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes

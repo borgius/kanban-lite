@@ -89,6 +89,45 @@ async function resolveKanbanDir(flags: Flags): Promise<string> {
   return path.join(root, '.kanban')
 }
 
+async function parseJsonFlagValue(value: string, flagName: string): Promise<unknown> {
+  let jsonText = value
+
+  if (value.startsWith('@')) {
+    const jsonPath = path.resolve(value.slice(1))
+    try {
+      jsonText = await fs.readFile(jsonPath, 'utf-8')
+    } catch {
+      console.error(red(`Error: --${flagName} could not read JSON file: ${jsonPath}`))
+      process.exit(1)
+    }
+  }
+
+  try {
+    return JSON.parse(jsonText)
+  } catch {
+    console.error(red(`Error: --${flagName} must be valid JSON or @path to a JSON file`))
+    process.exit(1)
+  }
+}
+
+async function parseJsonObjectFlag(value: string, flagName: string): Promise<Record<string, unknown>> {
+  const parsed = await parseJsonFlagValue(value, flagName)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    console.error(red(`Error: --${flagName} must be a JSON object`))
+    process.exit(1)
+  }
+  return parsed as Record<string, unknown>
+}
+
+async function parseJsonArrayFlag<T>(value: string, flagName: string): Promise<T[]> {
+  const parsed = await parseJsonFlagValue(value, flagName)
+  if (!Array.isArray(parsed)) {
+    console.error(red(`Error: --${flagName} must be a JSON array`))
+    process.exit(1)
+  }
+  return parsed as T[]
+}
+
 // --- Colors ---
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -291,7 +330,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   }
 }
 
-async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
+export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const title = typeof flags.title === 'string' ? flags.title : ''
   if (!title) {
     console.error(red('Error: --title is required. Usage: kl add --title "My card"'))
@@ -333,9 +372,18 @@ async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
     ? flags.actions.split(',').map((s: string) => s.trim()).filter(Boolean)
     : undefined
 
+  const hasFormsFlag = typeof flags.forms === 'string'
+  const hasFormDataFlag = typeof flags['form-data'] === 'string'
+  const forms = hasFormsFlag
+    ? await parseJsonArrayFlag<Card['forms'] extends Array<infer T> ? T : never>(flags.forms as string, 'forms')
+    : undefined
+  const formData = hasFormDataFlag
+    ? await parseJsonObjectFlag(flags['form-data'] as string, 'form-data') as Card['formData']
+    : undefined
+
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId })
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData })
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -370,7 +418,7 @@ async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
-async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+export async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
     console.error(red('Usage: kl edit <id> [--status ...] [--priority ...] [--assignee ...] [--due ...] [--label ...] [--metadata ...]'))
@@ -412,14 +460,61 @@ async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   if (typeof flags.actions === 'string') {
     updates.actions = flags.actions.split(',').map((s: string) => s.trim()).filter(Boolean)
   }
+  if (typeof flags.forms === 'string') {
+    updates.forms = await parseJsonArrayFlag<Card['forms'] extends Array<infer T> ? T : never>(flags.forms, 'forms')
+  }
+  if (typeof flags['form-data'] === 'string') {
+    updates.formData = await parseJsonObjectFlag(flags['form-data'], 'form-data') as Card['formData']
+  }
 
   if (Object.keys(updates).length === 0) {
-    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, --label, --metadata, or --actions'))
+    console.error(red('No updates specified. Use --status, --priority, --assignee, --due, --label, --metadata, --actions, --forms, or --form-data'))
     process.exit(1)
   }
 
   const updated = await sdk.updateCard(resolvedId, updates, boardId)
   console.log(green(`Updated: ${updated.id}`))
+}
+
+export async function cmdForm(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'submit'
+
+  switch (subcommand) {
+    case 'submit': {
+      const cardId = positional[1]
+      const formId = positional[2]
+      if (!cardId || !formId) {
+        console.error(red('Usage: kl form submit <card-id> <form-id> --data <json|@file>'))
+        process.exit(1)
+      }
+
+      if (typeof flags.data !== 'string') {
+        console.error(red('Error: --data is required and must be a JSON object'))
+        process.exit(1)
+      }
+
+      const boardId = getBoardId(flags)
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      const data = await parseJsonObjectFlag(flags.data, 'data')
+      const result = await sdk.submitForm({
+        cardId: resolvedId,
+        formId,
+        data,
+        boardId,
+      })
+
+      if (flags.json) {
+        console.log(JSON.stringify(result, null, 2))
+      } else {
+        console.log(green(`Submitted form "${result.form.id}" for card ${resolvedId}`))
+      }
+      break
+    }
+    default:
+      console.error(red(`Unknown form subcommand: ${subcommand}`))
+      console.error('Available: submit')
+      process.exit(1)
+  }
 }
 
 async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
@@ -1510,6 +1605,9 @@ ${bold('Label Commands:')}
   labels rename <old> <new>   Rename a label (cascades to cards)
   labels delete <name>        Remove a label definition
 
+${bold('Form Commands:')}
+  form submit <id> <form>     Submit a card form (--data <json|@file>)
+
 ${bold('Webhook Commands:')}
   webhooks                    List registered webhooks
   webhooks add                Register a webhook (--url, --events, --secret)
@@ -1553,6 +1651,11 @@ ${bold('Add/Edit Options:')}
   --due <date>                Due date
   --label <l1,l2>             Labels (comma-separated)
   --metadata '<json>'         Metadata as JSON string
+  --forms '<json|@file>'      Form attachments as a JSON array
+  --form-data '<json|@file>'  Per-form data map as a JSON object
+
+${bold('Form Options:')}
+  --data '<json|@file>'       Form submission payload as a JSON object
 
 ${bold('Transfer Options:')}
   --from <board>              Source board (required)
@@ -1584,15 +1687,33 @@ ${bold('Storage Commands:')}
 
 async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, workspaceRoot: string): Promise<void> {
   const sub = positional[0] || 'status'
+  const storageStatus = sdk.getStorageStatus()
+  const providers = storageStatus.providers
+    ? {
+        'card.storage': storageStatus.providers['card.storage'].provider,
+        'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+      }
+    : null
 
   if (sub === 'status') {
-    const type = sdk.storageEngine.type
     const cfg = readConfig(workspaceRoot)
     if (flags.json) {
-      console.log(JSON.stringify({ storageEngine: type, sqlitePath: cfg.sqlitePath ?? null }))
+      console.log(JSON.stringify({
+        storageEngine: storageStatus.storageEngine,
+        sqlitePath: cfg.sqlitePath ?? null,
+        providers,
+        isFileBacked: storageStatus.isFileBacked,
+        watchGlob: storageStatus.watchGlob,
+      }))
     } else {
-      console.log(`Storage engine: ${bold(type)}`)
+      console.log(`Storage engine: ${bold(storageStatus.storageEngine)}`)
       if (cfg.sqlitePath) console.log(`SQLite path:    ${cfg.sqlitePath}`)
+      if (providers) {
+        console.log(`Card provider:  ${providers['card.storage']}`)
+        console.log(`Attach provider:${providers['attachment.storage']}`)
+      }
+      console.log(`File-backed:    ${storageStatus.isFileBacked ? 'yes' : 'no'}`)
+      if (storageStatus.watchGlob) console.log(`Watch glob:     ${storageStatus.watchGlob}`)
     }
     return
   }
@@ -1734,6 +1855,10 @@ async function main(): Promise<void> {
       break
     case 'action':
       await cmdAction(sdk, positional, flags)
+      break
+    case 'form':
+    case 'forms':
+      await cmdForm(sdk, positional, flags)
       break
     case 'webhooks':
     case 'webhook':

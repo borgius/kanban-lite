@@ -10,6 +10,7 @@ import {
 import { parseCardFile, serializeCard } from '../parser'
 import { migrateFileSystemToMultiBoard } from '../migration'
 import type { StorageEngine, StorageEngineType } from './types'
+import type { AttachmentStoragePlugin } from './index'
 
 /**
  * Default (markdown-based) storage engine.
@@ -17,11 +18,6 @@ import type { StorageEngine, StorageEngineType } from './types'
  * Cards are persisted as individual `.md` files with YAML frontmatter under
  * `.kanban/boards/{boardId}/{status}/{id}-{slug}.md`. Workspace configuration
  * is stored in `.kanban.json` at the workspace root.
- *
- * This engine is backward-compatible with all existing kanban-markdown workspaces.
- *
- * Workspace configuration (boards, columns, labels, settings, webhooks) is stored
- * in `.kanban.json` — the same as it always has been.
  *
  * @example
  * ```ts
@@ -32,9 +28,7 @@ import type { StorageEngine, StorageEngineType } from './types'
 export class MarkdownStorageEngine implements StorageEngine {
   readonly type: StorageEngineType = 'markdown'
 
-  /**
-   * Absolute path to the `.kanban` directory.
-   */
+  /** Absolute path to the `.kanban` directory. */
   readonly kanbanDir: string
 
   constructor(kanbanDir: string) {
@@ -188,4 +182,48 @@ export class MarkdownStorageEngine implements StorageEngine {
     const content = await fs.readFile(filePath, 'utf-8')
     return parseCardFile(content, filePath)
   }
+}
+
+/**
+ * Built-in attachment-storage plugin for the markdown provider.
+ *
+ * Delegates attachment directory resolution and file copying to the markdown
+ * card-storage engine.
+ *
+ * @internal
+ */
+export function createMarkdownAttachmentPlugin(engine: MarkdownStorageEngine): AttachmentStoragePlugin {
+  return {
+    manifest: { id: 'localfs', provides: ['attachment.storage'] },
+    getCardDir(card: Card): string | null {
+      return engine.getCardDir(card)
+    },
+    async copyAttachment(sourcePath: string, card: Card): Promise<void> {
+      await engine.copyAttachment(sourcePath, card)
+    },
+  }
+}
+
+/**
+ * Built-in card-storage plugin for the default markdown (file-backed) provider.
+ *
+ * Cards are persisted as individual `.md` files under `.kanban/boards/`.
+ * This is the default provider when no `plugins['card.storage']` override is set.
+ *
+ * @internal
+ */
+export const MARKDOWN_PLUGIN = {
+  manifest: { id: 'markdown', provides: ['card.storage'] as const },
+  createEngine(kanbanDir: string): StorageEngine {
+    return new MarkdownStorageEngine(kanbanDir)
+  },
+  nodeCapabilities: {
+    isFileBacked: true,
+    getLocalCardPath(card: Card): string | null {
+      return card.filePath || null
+    },
+    getWatchGlob(): string | null {
+      return 'boards/**/*.md'
+    },
+  },
 }

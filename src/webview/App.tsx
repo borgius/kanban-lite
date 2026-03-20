@@ -78,8 +78,7 @@ function App(): React.JSX.Element {
     selectCardRange,
     selectAllInColumn,
     clearSelection,
-    setActiveCardId,
-    setActiveCardTab
+    setActiveCardId
   } = useStore()
 
   const [createCardOpen, setCreateCardOpen] = useState(false)
@@ -135,6 +134,7 @@ function App(): React.JSX.Element {
     // Close editor if this card is open
     if (editingCard?.id === cardId) {
       setEditingCard(null)
+      setActiveCardId(null)
     }
 
     // Push onto the undo stack
@@ -369,6 +369,7 @@ function App(): React.JSX.Element {
         case 'cardContent': {
           const { cardSettings } = useStore.getState()
           if (cardSettings.markdownEditorMode) break
+          setActiveCardId(message.cardId)
           contentVersionRef.current += 1
           setEditingCard(prev => ({
             id: message.cardId,
@@ -496,11 +497,12 @@ function App(): React.JSX.Element {
       targetStatus
     })
     setEditingCard(null)
+    setActiveCardId(null)
   }
 
   const handleCloseEditor = (): void => {
     setEditingCard(null)
-    setActiveCardTab('preview') // reset so next card opens on preview tab
+    setActiveCardId(null)
     vscode.postMessage({ type: 'closeCard' })
   }
 
@@ -513,12 +515,14 @@ function App(): React.JSX.Element {
     if (!editingCard) return
     vscode.postMessage({ type: 'permanentDeleteCard', cardId: editingCard.id })
     setEditingCard(null)
+    setActiveCardId(null)
   }
 
   const handleRestoreCard = (): void => {
     if (!editingCard) return
     vscode.postMessage({ type: 'restoreCard', cardId: editingCard.id })
     setEditingCard(null)
+    setActiveCardId(null)
   }
 
   const handlePurgeDeletedCards = (): void => {

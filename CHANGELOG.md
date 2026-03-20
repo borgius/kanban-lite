@@ -8,17 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Installable storage-plugin authoring skill**: Added the `kanban-storage-plugin-author` skills.sh-compatible skill for generating third-party kanban-lite storage plugin npm packages, including bundled contract references and starter templates.
+- **Card forms across all surfaces**: Cards can now attach reusable workspace forms from `.kanban.json` or inline card-local forms, render them as dedicated webview tabs, and submit validated payloads via the SDK, REST API, CLI, and MCP.
+- **`form.submit` webhook event**: Successful form submissions now emit a first-class `form.submit` event with board, card, resolved form descriptor, and persisted payload context.
+- **Capability-based storage config**: `.kanban.json` now supports `plugins["card.storage"]` and `plugins["attachment.storage"]` provider selections alongside the legacy storage fields.
+- **Built-in MySQL card provider**: Added the built-in `mysql` `card.storage` provider with lazy optional `mysql2` runtime loading and clear install guidance when the driver is missing.
+- **Provider metadata surfaces**: Storage status in the SDK, REST API, CLI, and MCP now reports resolved card/attachment provider ids plus `isFileBacked` and `watchGlob` support metadata.
 - **Active card lookup**: Added `getActiveCard(boardId?)` to the SDK plus matching REST API, CLI, and MCP support for retrieving the currently active/open card tracked by the UI.
 - **Persisted minimized columns**: Minimized column state is now saved to `.kanban.json` per board (`minimizedColumnIds`), surviving extension reloads and panel restores. SDK exposes `getMinimizedColumns(boardId?)` and `setMinimizedColumns(columnIds, boardId?)`; REST `PUT /api/columns/minimized`; CLI `kl columns set-minimized <id...>`; MCP `set_minimized_columns` tool.
 - **Configurable card panel layout**: Added the `panelMode` setting to switch card creation and detail flows between a right-side drawer and a centered popup.
 - **Adjustable drawer width**: Added the `drawerWidth` setting (20–80%) so drawer mode can be tuned per workspace; board layout and card visibility calculations now respect the configured width.
 - **Clickable label filters**: Clicking a label on a board card or in the card detail panel now applies that label as the active board filter.
 - **Metadata-aware fuzzy search parity**: Added the web UI `Fuzzy` toggle, metadata filter buttons in rendered metadata fields, CLI `kl list --search ... --fuzzy`, REST `q` / `fuzzy` task-list parameters, and MCP `list_cards` `searchQuery` / `fuzzy` inputs with shared metadata-aware semantics.
+- **Explicit built-in sqlite/mysql attachment providers**: `attachment.storage` now supports first-class built-in `sqlite` and `mysql` providers when explicitly selected, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Generated SDK and REST docs**: Expanded the source JSDoc and API route metadata with clearer behavior notes, richer examples, attachment/upload guidance, and storage/form semantics so regenerated `docs/sdk.md` and `docs/api.md` are more useful for integrators.
+- **Polished card form UI**: The card form tab now renders with consistent spacing, theme-aware input and label styles, and clear validation-state indicators in both standalone and VS Code webview runtimes.
+- **Legacy storage compatibility**: `storageEngine` / `sqlitePath` continue to work as compatibility aliases, but per-namespace `plugins[...]` entries now take precedence and `attachment.storage` falls back to `localfs` when omitted.
+- **Plugin-owned built-in engines**: Markdown and SQLite built-ins now live exclusively under `src/sdk/plugins/*`, and the legacy `src/sdk/storage/*` layer no longer owns engine classes or a parallel factory path.
+- **Plugin-only storage internals**: The obsolete `src/sdk/storage` directory has been removed, and the shared engine contract now lives under `src/sdk/plugins/types.ts` alongside the plugin-owned engine implementations.
 - **Standalone URL sync**: Browser history and deep links now persist the fuzzy-search state alongside the existing board, card, tab, filter, and search query routing state.
 
 ### Fixed
+- **Migration config cleanup for built-in attachment providers**: Migrating from SQLite back to markdown now removes incompatible built-in `attachment.storage: sqlite/mysql` overrides so reopened workspaces fall back cleanly to the legacy `localfs` attachment default.
+
+- **Standalone watcher refreshes**: The standalone server now honors capability-provided watch globs without filtering refresh events to `.md` files only, so file-backed storage plugins can trigger board refreshes correctly.
+- **ESM SDK plugin loading**: The published ESM SDK build now resolves lazy MySQL driver loads and external storage plugins through an ESM-safe runtime loader, preserving actionable install/validation errors instead of crashing with `Dynamic require` failures.
+- **Attachment provider serving**: The standalone server now asks the active attachment capability to safely resolve or materialize files instead of assuming every served attachment must live under `.kanban`.
 - **Minimized column drops**: Card drags now reach minimized-column rails correctly instead of being swallowed by the rail's column-reorder wrapper.
 - **Standalone reconnect recovery**: In standalone/browser mode, the app now automatically retries same-page backend reconnects when possible and shows an in-app connection-lost error with refresh/reopen guidance if recovery cannot be restored.
 - **Toolbar search chips**: Mixed search queries in the web UI now render separate removable chips for plain-text terms and each `meta.*` token, so individual constraints can be cleared without wiping the entire query.

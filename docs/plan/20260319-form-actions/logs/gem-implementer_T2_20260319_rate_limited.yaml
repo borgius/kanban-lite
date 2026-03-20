@@ -1,0 +1,17 @@
+timestamp: "2026-03-19"
+plan_id: 20260319-form-actions
+task_id: T2
+agent: gem-implementer
+status: failed
+failure_type: transient
+retries_attempted: 3
+error_code: rate_limited
+summary: >-
+  Task T2 could not be executed because the implementation subagent hit an upstream
+  Copilot rate limit/service disruption on all three attempts.
+impact: >-
+  Shared form contracts are blocked, which in turn blocks all downstream persistence,
+  SDK submit, parity, and UI tasks.
+recommended_next_step: >-
+  Retry T2 once the upstream Copilot service disruption clears, then resume the plan
+  from wave 1 with T2 followed by T3.

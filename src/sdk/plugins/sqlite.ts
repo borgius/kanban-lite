@@ -7,9 +7,10 @@ import { DEFAULT_COLUMNS, CARD_FORMAT_VERSION } from '../../shared/types'
 import type { KanbanConfig, BoardConfig, Webhook } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 import type { StorageEngine, StorageEngineType } from './types'
+import type { AttachmentStoragePlugin } from './index'
 
 /** Current SQLite schema version. Increment when the schema changes. */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 // ---------------------------------------------------------------------------
 // SQL schema
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS cards (
   content      TEXT    NOT NULL DEFAULT '',
   metadata     TEXT,
   actions      TEXT,
+  forms        TEXT,
+  form_data    TEXT,
   PRIMARY KEY (id, board_id)
 );
 
@@ -157,8 +160,22 @@ export class SqliteStorageEngine implements StorageEngine {
       this.db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
       // Seed defaults if empty
       this._seedDefaultsIfEmpty()
+      return
     }
-    // Future schema upgrades: if (versionRow.version < N) { ... upgrade ... }
+
+    if (versionRow.version < 2) {
+      const cardColumns = this.db.prepare('PRAGMA table_info(cards)').all() as Array<{ name: string }>
+      const hasForms = cardColumns.some((column) => column.name === 'forms')
+      const hasFormData = cardColumns.some((column) => column.name === 'form_data')
+
+      const upgrade = this.db.transaction(() => {
+        if (!hasForms) this.db.exec('ALTER TABLE cards ADD COLUMN forms TEXT')
+        if (!hasFormData) this.db.exec('ALTER TABLE cards ADD COLUMN form_data TEXT')
+        this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
+      })
+
+      upgrade()
+    }
   }
 
   /**
@@ -422,8 +439,8 @@ export class SqliteStorageEngine implements StorageEngine {
       INSERT INTO cards (
         id, board_id, version, status, priority, assignee, due_date,
         created, modified, completed_at, labels, attachments, order_key,
-        content, metadata, actions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        content, metadata, actions, forms, form_data
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id, board_id) DO UPDATE SET
         version      = excluded.version,
         status       = excluded.status,
@@ -437,7 +454,9 @@ export class SqliteStorageEngine implements StorageEngine {
         order_key    = excluded.order_key,
         content      = excluded.content,
         metadata     = excluded.metadata,
-        actions      = excluded.actions
+        actions      = excluded.actions,
+        forms        = excluded.forms,
+        form_data    = excluded.form_data
     `)
 
     const deleteComments = this.db.prepare('DELETE FROM comments WHERE card_id = ? AND board_id = ?')
@@ -464,6 +483,8 @@ export class SqliteStorageEngine implements StorageEngine {
         card.content || '',
         card.metadata && Object.keys(card.metadata).length > 0 ? JSON.stringify(card.metadata) : null,
         card.actions && (Array.isArray(card.actions) ? card.actions.length > 0 : Object.keys(card.actions).length > 0) ? JSON.stringify(card.actions) : null,
+        card.forms && card.forms.length > 0 ? JSON.stringify(card.forms) : null,
+        card.formData && Object.keys(card.formData).length > 0 ? JSON.stringify(card.formData) : null,
       )
       deleteComments.run(card.id, boardId)
       for (const comment of card.comments || []) {
@@ -531,6 +552,8 @@ export class SqliteStorageEngine implements StorageEngine {
       comments,
       ...(row.metadata ? { metadata: JSON.parse(row.metadata) as Record<string, unknown> } : {}),
       ...(row.actions ? { actions: JSON.parse(row.actions) as string[] | Record<string, string> } : {}),
+      ...(row.forms ? { forms: JSON.parse(row.forms) as Card['forms'] } : {}),
+      ...(row.form_data ? { formData: JSON.parse(row.form_data) as Card['formData'] } : {}),
       filePath: '',
     }
   }
@@ -585,6 +608,8 @@ interface CardRow {
   content: string
   metadata: string | null
   actions: string | null
+  forms: string | null
+  form_data: string | null
 }
 
 interface CommentRow {
@@ -608,4 +633,68 @@ interface WebhookRow {
   events: string
   secret: string | null
   active: number
+}
+
+// ---------------------------------------------------------------------------
+// Attachment plugin
+// ---------------------------------------------------------------------------
+
+const SQLITE_ATTACHMENT_MANIFEST = { id: 'sqlite', provides: ['attachment.storage'] as const }
+
+function assertSqliteAttachmentEngine(engine: StorageEngine): asserts engine is SqliteStorageEngine {
+  if (engine.type !== 'sqlite') {
+    throw new Error('Built-in attachment storage provider "sqlite" requires card.storage provider "sqlite".')
+  }
+}
+
+/**
+ * Built-in attachment-storage plugin for the SQLite provider.
+ *
+ * Delegates attachment directory resolution and file copying to the active
+ * SQLite card-storage engine.
+ *
+ * @internal
+ */
+export function createSqliteAttachmentPlugin(engine: StorageEngine): AttachmentStoragePlugin {
+  assertSqliteAttachmentEngine(engine)
+
+  return {
+    manifest: SQLITE_ATTACHMENT_MANIFEST,
+    getCardDir(card: Card): string | null {
+      return engine.getCardDir(card)
+    },
+    async copyAttachment(sourcePath: string, card: Card): Promise<void> {
+      await engine.copyAttachment(sourcePath, card)
+    },
+  }
+}
+
+/**
+ * Built-in card-storage plugin for the SQLite provider.
+ *
+ * Card metadata is stored in a SQLite database at `.kanban/kanban.db` by
+ * default.  The database path can be overridden via the `sqlitePath` option
+ * in `.kanban.json`.
+ *
+ * @internal
+ */
+export const SQLITE_PLUGIN = {
+  manifest: { id: 'sqlite', provides: ['card.storage'] as const },
+  createEngine(kanbanDir: string, options?: Record<string, unknown>): StorageEngine {
+    const rawPath = (options?.sqlitePath as string | undefined) ?? '.kanban/kanban.db'
+    const workspaceRoot = path.dirname(kanbanDir)
+    const absoluteDbPath = path.isAbsolute(rawPath)
+      ? rawPath
+      : path.join(workspaceRoot, rawPath)
+    return new SqliteStorageEngine(kanbanDir, absoluteDbPath)
+  },
+  nodeCapabilities: {
+    isFileBacked: false,
+    getLocalCardPath(): string | null {
+      return null
+    },
+    getWatchGlob(): string | null {
+      return null
+    },
+  },
 }

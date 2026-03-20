@@ -75,9 +75,11 @@ async function createCardFromPrompts(): Promise<void> {
   const content = `# ${title}${description ? '\n\n' + description : ''}`
   const card = await sdk.createCard({ content, status, priority })
 
-  // Open the created file
-  const document = await vscode.workspace.openTextDocument(card.filePath)
-  await vscode.window.showTextDocument(document)
+  const localCardPath = sdk.getLocalCardPath(card)
+  if (localCardPath) {
+    const document = await vscode.workspace.openTextDocument(localCardPath)
+    await vscode.window.showTextDocument(document)
+  }
 
   vscode.window.showInformationMessage(`Created card: ${title}`)
 }

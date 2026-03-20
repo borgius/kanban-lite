@@ -22,7 +22,8 @@ export function listBoards(ctx: SDKContext): BoardInfo[] {
     description: board.description,
     columns: board.columns,
     actions: board.actions,
-    metadata: board.metadata
+    metadata: board.metadata,
+    forms: config.forms
   }))
 }
 
@@ -216,7 +217,7 @@ export async function transferCard(
 
   await ctx._storage.ensureBoardDirs(toBoardDir, [newStatus])
 
-  const srcAttachDir = ctx._storage.getCardDir(card)
+  const srcAttachDir = ctx.getAttachmentStoragePath(card)
 
   await ctx._storage.deleteCard(card)
 
@@ -241,8 +242,8 @@ export async function transferCard(
   await ctx._storage.writeCard(card)
 
   if (card.attachments.length > 0) {
-    const dstAttachDir = ctx._storage.getCardDir(card)
-    if (srcAttachDir !== dstAttachDir) {
+    const dstAttachDir = ctx.getAttachmentStoragePath(card)
+    if (srcAttachDir && dstAttachDir && srcAttachDir !== dstAttachDir) {
       await fs.mkdir(dstAttachDir, { recursive: true })
       await Promise.all(
         card.attachments.map(async (filename) => {

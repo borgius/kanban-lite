@@ -13,7 +13,7 @@ export async function addAttachment(ctx: SDKContext, cardId: string, sourcePath:
 
   const fileName = path.basename(sourcePath)
 
-  await ctx._storage.copyAttachment(sourcePath, card)
+  await ctx.copyAttachment(sourcePath, card)
 
   if (!card.attachments.includes(fileName)) {
     card.attachments.push(fileName)
@@ -56,5 +56,5 @@ export async function listAttachments(ctx: SDKContext, cardId: string, boardId?:
 export async function getAttachmentDir(ctx: SDKContext, cardId: string, boardId?: string): Promise<string | null> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) return null
-  return ctx._storage.getCardDir(card)
+  return ctx.getAttachmentStoragePath(card)
 }

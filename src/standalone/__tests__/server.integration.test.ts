@@ -4,7 +4,9 @@ import * as path from 'path'
 import * as os from 'os'
 import * as http from 'http'
 import { WebSocket } from 'ws'
+import { vi } from 'vitest'
 import { startServer } from '../server'
+import { KanbanSDK } from '../../sdk/KanbanSDK'
 
 // Helper: create a temp directory for cards
 function createTempDir(): string {
@@ -31,6 +33,7 @@ function makeCardContent(opts: {
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
+  attachments?: string[]
   body?: string
   metadataBlock?: string
 }): string {
@@ -43,6 +46,7 @@ function makeCardContent(opts: {
     assignee = null,
     dueDate = null,
     labels = [],
+    attachments = [],
     body = 'Description here.',
     metadataBlock
   } = opts
@@ -56,6 +60,7 @@ created: "2024-01-01T00:00:00.000Z"
 modified: "2024-01-01T00:00:00.000Z"
 completedAt: null
 labels: [${labels.map(l => `"${l}"`).join(', ')}]
+attachments: [${attachments.map(a => `"${a}"`).join(', ')}]
 order: "${order}"
 ${metadataBlock ? `metadata:\n${metadataBlock.split('\n').map(line => `  ${line}`).join('\n')}\n` : ''}---
 # ${title}
@@ -196,6 +201,7 @@ describe('Standalone Server Integration', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.close()
       await sleep(50)
@@ -965,6 +971,38 @@ describe('Standalone Server Integration', () => {
     })
   })
 
+  describe('attachment materialization', () => {
+    it('serves provider-materialized attachments even when the file is outside .kanban', async () => {
+      const attachmentName = 'external-proof.txt'
+      const externalAttachmentPath = path.join(path.dirname(tempDir), `served-${Date.now()}-${attachmentName}`)
+
+      writeCardFile(tempDir, 'attachment-host.md', makeCardContent({
+        id: 'attachment-host',
+        title: 'Attachment Host',
+        attachments: [attachmentName]
+      }), 'backlog')
+      fs.writeFileSync(externalAttachmentPath, 'served from provider-owned path', 'utf-8')
+
+      vi.spyOn(KanbanSDK.prototype, 'materializeAttachment').mockImplementation(async (card, attachment) => {
+        if (card.id === 'attachment-host' && attachment === attachmentName) {
+          return externalAttachmentPath
+        }
+        return null
+      })
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/tasks/attachment-host/attachments/${attachmentName}`)
+      expect(res.status).toBe(200)
+      expect(res.body).toBe('served from provider-owned path')
+
+      fs.rmSync(externalAttachmentPath, { force: true })
+    })
+  })
+
   // ── No-op VSCode messages ──
 
   describe('VSCode-specific no-op messages', () => {
@@ -1024,10 +1062,10 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       // Let chokidar fully initialize before making external changes
-      await sleep(1000)
+      await sleep(2000)
 
       // Listen for the next init broadcast
-      const updatePromise = waitForMessage(ws, 'init', 10000)
+      const updatePromise = waitForMessage(ws, 'init', 15000)
 
       writeCardFile(tempDir, 'external-card.md', makeCardContent({
         id: 'external-card',
@@ -1057,9 +1095,9 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       // Let chokidar fully initialize
-      await sleep(1000)
+      await sleep(2000)
 
-      const updatePromise = waitForMessage(ws, 'init', 10000)
+      const updatePromise = waitForMessage(ws, 'init', 15000)
 
       fs.writeFileSync(filePath, makeCardContent({
         id: 'modify-me',
@@ -1089,15 +1127,46 @@ describe('Standalone Server Integration', () => {
       expect((initResponse.cards as Array<unknown>).length).toBe(1)
 
       // Let chokidar fully initialize
-      await sleep(1000)
+      await sleep(2000)
 
-      const updatePromise = waitForMessage(ws, 'init', 10000)
+      const updatePromise = waitForMessage(ws, 'init', 15000)
 
       fs.unlinkSync(filePath)
 
       const response = await updatePromise
       const cards = response.cards as Array<unknown>
       expect(cards.length).toBe(0)
+    })
+
+    it('should honor provider-defined watch globs for non-markdown files', async () => {
+      const originalGetStorageStatus = KanbanSDK.prototype.getStorageStatus
+      const statusSpy = vi.spyOn(KanbanSDK.prototype, 'getStorageStatus')
+      statusSpy.mockImplementation(function (this: KanbanSDK) {
+        return {
+          ...originalGetStorageStatus.call(this),
+          isFileBacked: true,
+          watchGlob: 'boards/**/*.json',
+        }
+      })
+
+      const providerStatePath = path.join(tempDir, 'boards', 'default', 'backlog', 'provider-state.json')
+      fs.mkdirSync(path.dirname(providerStatePath), { recursive: true })
+      fs.writeFileSync(providerStatePath, JSON.stringify({ version: 1 }), 'utf-8')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      await sleep(2000)
+
+      const updatePromise = waitForMessage(ws, 'init', 15000)
+
+      fs.writeFileSync(providerStatePath, JSON.stringify({ version: 2 }), 'utf-8')
+
+      const response = await updatePromise
+      expect(response.type).toBe('init')
     })
   })
 
@@ -1850,6 +1919,322 @@ describe('Standalone Server Integration', () => {
       expect(json.ok).toBe(true)
       expect(json.data.priority).toBe('critical')
       expect(json.data.assignee).toBe('bob')
+    })
+
+    it('POST /api/tasks should create a form-aware task', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# API Form Task\n\nHas a form.',
+        status: 'todo',
+        priority: 'high',
+        forms: [{
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }],
+        formData: {
+          'bug-report': {
+            severity: 'medium'
+          }
+        }
+      })
+
+      expect(res.status).toBe(201)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.forms).toEqual([
+        {
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }
+      ])
+      expect(json.data.formData).toEqual({ 'bug-report': { severity: 'medium' } })
+
+      const todoDir = path.join(tempDir, 'boards', 'default', 'todo')
+      const files = fs.readdirSync(todoDir).filter(f => f.endsWith('.md'))
+      expect(files).toHaveLength(1)
+      const fileContent = fs.readFileSync(path.join(todoDir, files[0]), 'utf-8')
+      expect(fileContent).toContain('forms:')
+      expect(fileContent).toContain('formData:')
+      expect(fileContent).toContain('bug-report:')
+    })
+
+    it('PUT /api/tasks/:id should update form-aware fields', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Update Form Task',
+        status: 'backlog',
+        priority: 'medium'
+      })
+      const created = JSON.parse(createRes.body)
+
+      const updateRes = await httpRequest('PUT', `http://localhost:${port}/api/tasks/${created.data.id}`, {
+        forms: [{
+          name: 'triage',
+          schema: {
+            title: 'Triage',
+            type: 'object',
+            properties: {
+              owner: { type: 'string' }
+            }
+          }
+        }],
+        formData: {
+          triage: { owner: 'alice' }
+        }
+      })
+
+      expect(updateRes.status).toBe(200)
+      const updated = JSON.parse(updateRes.body)
+      expect(updated.ok).toBe(true)
+      expect(updated.data.forms).toEqual([
+        {
+          name: 'triage',
+          schema: {
+            title: 'Triage',
+            type: 'object',
+            properties: {
+              owner: { type: 'string' }
+            }
+          }
+        }
+      ])
+      expect(updated.data.formData).toEqual({ triage: { owner: 'alice' } })
+    })
+
+    it('POST /api/tasks/:id/forms/:formId/submit should submit via the SDK and persist form data', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Submit Form Task',
+        status: 'backlog',
+        priority: 'medium',
+        forms: [{
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }]
+      })
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id
+
+      const submitRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/forms/bug-report/submit`, {
+        data: {
+          severity: 'critical'
+        }
+      })
+
+      expect(submitRes.status).toBe(200)
+      const submitted = JSON.parse(submitRes.body)
+      expect(submitted.ok).toBe(true)
+      expect(submitted.data.boardId).toBe('default')
+      expect(submitted.data.form.id).toBe('bug-report')
+      expect(submitted.data.data).toEqual({ severity: 'critical' })
+      expect(submitted.data.card.formData).toEqual({ 'bug-report': { severity: 'critical' } })
+
+      const getRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      const fetched = JSON.parse(getRes.body)
+      expect(fetched.data.formData).toEqual({ 'bug-report': { severity: 'critical' } })
+    })
+
+    it('POST /api/tasks/:id/forms/:formId/submit should reject invalid submissions without overwriting persisted data', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Invalid Submit Task',
+        status: 'backlog',
+        priority: 'medium',
+        forms: [{
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }],
+        formData: {
+          'bug-report': {
+            severity: 'medium'
+          }
+        }
+      })
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id
+
+      const submitRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/forms/bug-report/submit`, {
+        data: {
+          severity: 123
+        }
+      })
+
+      expect(submitRes.status).toBe(400)
+      const submitted = JSON.parse(submitRes.body)
+      expect(submitted.ok).toBe(false)
+      expect(String(submitted.error)).toContain('Invalid form submission')
+
+      const getRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      const fetched = JSON.parse(getRes.body)
+      expect(fetched.data.formData).toEqual({ 'bug-report': { severity: 'medium' } })
+    })
+
+    it('board-scoped REST routes keep form-aware create, update, and submit behavior in parity', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const boardRes = await httpRequest('POST', `http://localhost:${port}/api/boards`, {
+        id: 'qa',
+        name: 'QA Board'
+      })
+      expect(boardRes.status).toBe(201)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa/tasks`, {
+        content: '# QA Form Task',
+        status: 'todo',
+        priority: 'high',
+        forms: [{
+          name: 'qa-check',
+          schema: {
+            title: 'QA Check',
+            type: 'object',
+            properties: {
+              status: { type: 'string' }
+            },
+            required: ['status']
+          }
+        }],
+        formData: {
+          'qa-check': {
+            status: 'draft'
+          }
+        }
+      })
+
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      expect(created.data.boardId).toBe('qa')
+      expect(created.data.formData).toEqual({ 'qa-check': { status: 'draft' } })
+
+      const updateRes = await httpRequest('PUT', `http://localhost:${port}/api/boards/qa/tasks/${created.data.id}`, {
+        formData: {
+          'qa-check': {
+            status: 'ready'
+          }
+        }
+      })
+
+      expect(updateRes.status).toBe(200)
+      const updated = JSON.parse(updateRes.body)
+      expect(updated.data.formData).toEqual({ 'qa-check': { status: 'ready' } })
+
+      const submitRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa/tasks/${created.data.id}/forms/qa-check/submit`, {
+        data: {}
+      })
+
+      expect(submitRes.status).toBe(200)
+      const submitted = JSON.parse(submitRes.body)
+      expect(submitted.ok).toBe(true)
+      expect(submitted.data.boardId).toBe('qa')
+      expect(submitted.data.form.id).toBe('qa-check')
+      expect(submitted.data.data).toEqual({ status: 'ready' })
+      expect(submitted.data.card.formData).toEqual({ 'qa-check': { status: 'ready' } })
+    })
+
+    it('websocket submitForm should return matching success and error callbacks', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init', 10000)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Socket Form Task',
+        status: 'backlog',
+        priority: 'medium',
+        forms: [{
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }]
+      })
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id
+
+      const okResponse = await sendAndReceive(ws, {
+        type: 'submitForm',
+        cardId,
+        formId: 'bug-report',
+        data: { severity: 'high' },
+        callbackKey: 'submit-ok'
+      }, 'submitFormResult')
+
+      expect(okResponse.callbackKey).toBe('submit-ok')
+      expect((okResponse.result as Record<string, unknown>).data).toEqual({ severity: 'high' })
+      expect(okResponse.error).toBeUndefined()
+
+      const invalidCreateRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Socket Invalid Form Task',
+        status: 'backlog',
+        priority: 'medium',
+        forms: [{
+          name: 'bug-report',
+          schema: {
+            title: 'Bug Report',
+            type: 'object',
+            properties: {
+              severity: { type: 'string' }
+            },
+            required: ['severity']
+          }
+        }]
+      })
+      const invalidCreated = JSON.parse(invalidCreateRes.body)
+
+      const errorResponse = await sendAndReceive(ws, {
+        type: 'submitForm',
+        cardId: invalidCreated.data.id,
+        formId: 'bug-report',
+        data: {},
+        callbackKey: 'submit-error'
+      }, 'submitFormResult')
+
+      expect(errorResponse.callbackKey).toBe('submit-error')
+      expect(errorResponse.result).toBeUndefined()
+      expect(String(errorResponse.error)).toContain('Invalid form submission')
     })
 
     it('PUT /api/tasks/:id should return 404 for non-existent task', async () => {

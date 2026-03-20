@@ -1,13 +1,14 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Card, CardSortOption } from '../../shared/types'
-import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION } from '../../shared/types'
+import type { Card, CardFormAttachment, CardSortOption, ResolvedFormDescriptor } from '../../shared/types'
+import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug } from '../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/config'
 import { getCardFilePath } from '../fileUtils'
 import { matchesCardSearch } from '../metaUtils'
 import { sanitizeCard } from '../types'
-import type { CreateCardInput } from '../types'
+import type { CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
 import type { SDKContext } from './context'
 
 interface ActiveCardState {
@@ -18,6 +19,124 @@ interface ActiveCardState {
 
 function getActiveCardStateFilePath(ctx: SDKContext): string {
   return path.join(ctx.kanbanDir, '.active-card.json')
+}
+
+const formAjv = createAjv({ allErrors: true, strict: false })
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function cloneRecord(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  return value ? { ...value } : {}
+}
+
+function getSchemaProperties(schema: Record<string, unknown>): Set<string> {
+  return isRecord(schema.properties)
+    ? new Set(Object.keys(schema.properties))
+    : new Set<string>()
+}
+
+function getMetadataOverlay(card: Card, schema: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(card.metadata)) return {}
+
+  const properties = getSchemaProperties(schema)
+  if (properties.size === 0) return {}
+
+  return Object.fromEntries(
+    Object.entries(card.metadata).filter(([key]) => properties.has(key))
+  )
+}
+
+function getInlineFormLabel(schema: Record<string, unknown>, fallbackId: string): string {
+  return typeof schema.title === 'string' && schema.title.trim().length > 0
+    ? schema.title.trim()
+    : fallbackId
+}
+
+function createInlineFormIdResolver(): (attachment: CardFormAttachment, index: number) => string {
+  const usedIds = new Set<string>()
+
+  return (attachment: CardFormAttachment, index: number): string => {
+    const schema = isRecord(attachment.schema) ? attachment.schema : undefined
+    const baseId = attachment.name
+      ?? (schema && typeof schema.title === 'string' && schema.title.trim().length > 0
+        ? generateSlug(schema.title)
+        : `form-${index}`)
+
+    let candidate = baseId || `form-${index}`
+    let suffix = 2
+    while (usedIds.has(candidate)) {
+      candidate = `${baseId}-${suffix++}`
+    }
+    usedIds.add(candidate)
+    return candidate
+  }
+}
+
+function resolveCardForms(ctx: SDKContext, card: Card): ResolvedFormDescriptor[] {
+  const config = readConfig(ctx.workspaceRoot)
+  const workspaceForms = config.forms ?? {}
+  const attachments = card.forms ?? []
+  const resolveInlineId = createInlineFormIdResolver()
+
+  return attachments.flatMap((attachment, index) => {
+    const configForm = attachment.name ? workspaceForms[attachment.name] : undefined
+    const schema = isRecord(attachment.schema)
+      ? attachment.schema
+      : isRecord(configForm?.schema)
+        ? configForm.schema
+        : undefined
+
+    if (!schema) return []
+
+    const formId = resolveInlineId(attachment, index)
+    const label = attachment.name
+      ?? (typeof configForm?.schema?.title === 'string' && configForm.schema.title.trim().length > 0
+        ? configForm.schema.title.trim()
+        : getInlineFormLabel(schema, formId))
+
+    const initialData = {
+      ...cloneRecord(configForm?.data),
+      ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined),
+      ...cloneRecord(card.formData?.[formId]),
+      ...getMetadataOverlay(card, schema),
+    }
+
+    const descriptor: ResolvedFormDescriptor = {
+      id: formId,
+      label,
+      schema,
+      ...(isRecord(attachment.ui)
+        ? { ui: attachment.ui }
+        : isRecord(configForm?.ui)
+          ? { ui: configForm.ui }
+          : {}),
+      initialData,
+      fromConfig: Boolean(attachment.name && configForm),
+    }
+
+    return [descriptor]
+  })
+}
+
+function formatValidationErrors(errors: unknown): string {
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return 'Invalid form submission'
+  }
+
+  return errors
+    .map((error) => {
+      if (!isRecord(error)) return 'validation error'
+      const instancePath = typeof error.instancePath === 'string' ? error.instancePath : ''
+      const missingProperty = isRecord(error.params) && typeof error.params.missingProperty === 'string'
+        ? error.params.missingProperty
+        : ''
+      const target = missingProperty || instancePath || '/'
+      const message = typeof error.message === 'string' ? error.message : 'is invalid'
+      return `${target} ${message}`.trim()
+    })
+    .join('; ')
 }
 
 async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardState | null> {
@@ -213,6 +332,8 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
     content: data.content,
     ...(data.metadata && Object.keys(data.metadata).length > 0 ? { metadata: data.metadata } : {}),
     ...(data.actions && (Array.isArray(data.actions) ? data.actions.length > 0 : Object.keys(data.actions).length > 0) ? { actions: data.actions } : {}),
+    ...(data.forms && data.forms.length > 0 ? { forms: data.forms } : {}),
+    ...(data.formData && Object.keys(data.formData).length > 0 ? { formData: data.formData } : {}),
     filePath: ctx._storage.type === 'markdown'
       ? getCardFilePath(boardDir, status, filename)
       : ''
@@ -311,6 +432,48 @@ export async function triggerAction(
     throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
   }
   await ctx.addLog(cardId, `Action triggered: \`${action}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+}
+
+/**
+ * Validates and persists a card form submission, then emits `form.submit`.
+ */
+export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promise<SubmitFormResult> {
+  const card = await getCard(ctx, input.cardId, input.boardId)
+  if (!card) throw new Error(`Card not found: ${input.cardId}`)
+
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId(input.boardId)
+  const form = resolveCardForms(ctx, card).find(candidate => candidate.id === input.formId)
+  if (!form) {
+    throw new Error(`Form not found on card ${card.id}: ${input.formId}`)
+  }
+
+  const submittedData = {
+    ...cloneRecord(form.initialData),
+    ...cloneRecord(input.data),
+  }
+
+  const validate = formAjv.compile(form.schema)
+  const valid = validate(submittedData)
+  if (!valid) {
+    throw new Error(`Invalid form submission for ${form.id}: ${formatValidationErrors(validate.errors)}`)
+  }
+
+  card.formData = {
+    ...(card.formData ?? {}),
+    [form.id]: submittedData,
+  }
+  card.modified = new Date().toISOString()
+  await ctx._storage.writeCard(card)
+
+  const event: FormSubmitEvent = {
+    boardId: resolvedBoardId,
+    card: sanitizeCard(card),
+    form,
+    data: submittedData,
+  }
+  ctx.emitEvent('form.submit', event)
+
+  return event
 }
 
 /**

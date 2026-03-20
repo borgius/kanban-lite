@@ -1,5 +1,6 @@
 import type { Card, CardSortOption, LogEntry } from '../../shared/types'
-import type { StorageEngine } from '../storage/types'
+import type { ResolvedCapabilities } from '../../shared/config'
+import type { StorageEngine } from '../plugins/types'
 import type { SDKEventType } from '../types'
 
 /**
@@ -13,6 +14,7 @@ export interface SDKContext {
   readonly workspaceRoot: string
   readonly kanbanDir: string
   _storage: StorageEngine
+  readonly capabilities: { providers: ResolvedCapabilities } | null
 
   /** @internal */
   _resolveBoardId(boardId?: string): string
@@ -24,6 +26,9 @@ export interface SDKContext {
   _ensureMigrated(): Promise<void>
   /** @internal */
   emitEvent(event: SDKEventType, data: unknown): void
+  getLocalCardPath(card: Card): string | null
+  getAttachmentStoragePath(card: Card): string | null
+  copyAttachment(sourcePath: string, card: Card): Promise<void>
 
   // Cross-module card operations (routed through KanbanSDK instance)
   listCards(

@@ -1,0 +1,38 @@
+task_id: T11
+plan_id: 20260319-form-actions
+status: failed
+observed_at: 2026-03-19T22:00:00Z
+scenarios:
+  - name: config-defined form seeded data
+    result: passed
+    details:
+      severity: high
+      owner: metadata-owner
+      environment: production
+      notes: config defaults, persisted formData, and metadata overlay were visible in the standalone form tab.
+  - name: invalid submit blocked
+    result: passed
+    details:
+      submit_disabled: true
+      validation_copy:
+        - Fix 1 validation error before submitting.
+        - owner must have required property 'owner'
+      success_banner_present: false
+  - name: valid submit succeeds and updates state
+    result: failed
+    details:
+      persisted_formData:
+        severity: low
+        owner: qa-owner
+        environment: staging
+      ui_after_submit:
+        success_banner_present: false
+        status_copy: Ready to submit.
+      notes: persisted values survived reload, but explicit success feedback was not shown after submit.
+  - name: reconnect-sensitive submit handling
+    result: passed_with_note
+    details:
+      reconnect_banner: "Trying to reconnect to the standalone backend (attempt 1 of 5). Next retry in 250ms. The previous socket closed unexpectedly. Form submissions pause until the backend reconnects."
+      disconnected_submit_error: "Cannot submit while disconnected from the standalone backend. Wait for reconnection and try again."
+      false_success_present: false
+      note: reconnect path was validated by instrumenting and closing the page websocket in-browser to sustain the disconnect long enough to observe UI copy.

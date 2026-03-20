@@ -3,6 +3,23 @@ import * as path from 'path'
 import type { KanbanColumn, CardDisplaySettings, Priority, LabelDefinition } from './types'
 import { DEFAULT_COLUMNS } from './types'
 
+/** Capability namespaces supported by the storage plugin system. */
+export type CapabilityNamespace = 'card.storage' | 'attachment.storage'
+
+/** Provider selection for a capability namespace. */
+export interface ProviderRef {
+  /** Provider id (for built-ins this is e.g. `'markdown'`, `'sqlite'`, `'mysql'`, `'localfs'`). */
+  provider: string
+  /** Provider-specific configuration passed through to the plugin implementation. */
+  options?: Record<string, unknown>
+}
+
+/** Partial capability selections from config or constructor overrides. */
+export type CapabilitySelections = Partial<Record<CapabilityNamespace, ProviderRef>>
+
+/** Fully normalized capability selections used at runtime. */
+export type ResolvedCapabilities = Record<CapabilityNamespace, ProviderRef>
+
 /**
  * A registered webhook endpoint that receives event notifications.
  *
@@ -52,6 +69,30 @@ export interface BoardConfig {
   metadata?: string[]
   /** Column IDs currently minimized (shown as a narrow rail) on this board. */
   minimizedColumnIds?: string[]
+}
+
+/**
+ * A reusable named form definition stored in the workspace config.
+ *
+ * When declared under {@link KanbanConfig.forms}, a form is available for
+ * attachment to any card on any board in the workspace. Card-local
+ * attachments may override or extend these definitions per card.
+ *
+ * Merge order for initial data (lowest → highest priority):
+ * 1. `FormDefinition.data` — workspace-level defaults from this interface
+ * 2. `Card.formData[id]` — per-card persisted form data
+ * 3. `Card.metadata` — card metadata fields whose keys appear in the schema
+ */
+export interface FormDefinition {
+  /** JSON Schema object describing the data shape for AJV validation. */
+  schema: Record<string, unknown>
+  /** Optional JSON Forms UI schema for layout/rendering hints. */
+  ui?: Record<string, unknown>
+  /**
+   * Optional default field values applied as the base layer when computing
+   * initial form state before card-level data and metadata are merged in.
+   */
+  data?: Record<string, unknown>
 }
 
 /**
@@ -124,17 +165,44 @@ export interface KanbanConfig {
     show: { timestamp: boolean; source: boolean; objects: boolean }
   }
   /**
-   * Storage engine to use for this workspace.
-   * - `'markdown'` (default) — cards stored as individual `.md` files
-   * - `'sqlite'` — all data stored in a single SQLite database file
+    * Legacy card-storage selector kept for backward compatibility.
+    * - `'markdown'` (default) — cards stored as individual `.md` files
+    * - `'sqlite'` — cards/comments stored in a SQLite database file
+    *
+    * Prefer {@link plugins} for new configuration. When both forms are present,
+    * `plugins['card.storage']` takes precedence at runtime.
    */
   storageEngine?: 'markdown' | 'sqlite'
   /**
-   * Path to the SQLite database file when `storageEngine` is `'sqlite'`.
+    * Path to the SQLite database file when `storageEngine` is `'sqlite'`.
    * Relative paths are resolved from the workspace root.
    * @default '.kanban/kanban.db'
+    *
+    * This field is also kept for backward compatibility. Prefer
+    * `plugins['card.storage'].options.sqlitePath` in new configs.
    */
   sqlitePath?: string
+  /**
+   * Optional capability-based storage provider selections.
+   * When present, these override legacy `storageEngine` / `sqlitePath` for the
+    * matching namespaces while preserving backward-compatible defaults for any
+    * omitted namespaces (`markdown` for `card.storage`, `localfs` for
+    * `attachment.storage`).
+     *
+     * Built-in attachment providers `sqlite` and `mysql` are additive opt-ins.
+     * They require the matching `card.storage` provider and do not change the
+     * legacy omitted-default behavior, which remains `attachment.storage: localfs`.
+   */
+  plugins?: CapabilitySelections
+  /**
+   * Named reusable form definitions available on all boards in the workspace.
+   * Cards attach forms by name via {@link Card.forms} and store their own
+   * submitted data under {@link Card.formData}.
+   *
+   * @example
+   * { "bug-report": { schema: { type: "object", properties: { title: { type: "string" } } } } }
+   */
+  forms?: Record<string, import('./config').FormDefinition>
 }
 
 // Legacy v1 config (for migration)
@@ -476,5 +544,46 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     panelMode: settings.panelMode,
     drawerWidth: settings.drawerWidth,
     logsFilter: settings.logsFilter
+  }
+}
+
+function cloneProviderRef(ref: ProviderRef): ProviderRef {
+  return ref.options !== undefined
+    ? { provider: ref.provider, options: { ...ref.options } }
+    : { provider: ref.provider }
+}
+
+/**
+ * Normalizes legacy storage settings plus capability-based plugin selections
+ * into a complete runtime capability map.
+ *
+ * Precedence:
+ * 1. Explicit `plugins[namespace]`
+ * 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
+ * 3. Backward-compatible defaults (`markdown` + `localfs`)
+ *
+ * Explicit built-in `attachment.storage` providers such as `sqlite` and
+ * `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
+ * it away from the legacy `localfs` default.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeStorageCapabilities(
+  config: Pick<KanbanConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
+): ResolvedCapabilities {
+  const legacyCardProvider: ProviderRef = config.storageEngine === 'sqlite'
+    ? {
+        provider: 'sqlite',
+        options: { sqlitePath: config.sqlitePath ?? '.kanban/kanban.db' },
+      }
+    : { provider: 'markdown' }
+
+  return {
+    'card.storage': config.plugins?.['card.storage']
+      ? cloneProviderRef(config.plugins['card.storage'])
+      : legacyCardProvider,
+    'attachment.storage': config.plugins?.['attachment.storage']
+      ? cloneProviderRef(config.plugins['attachment.storage'])
+      : { provider: 'localfs' },
   }
 }

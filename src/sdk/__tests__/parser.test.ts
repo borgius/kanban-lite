@@ -107,6 +107,84 @@ order: "a0"
     expect(card?.status).toBe('backlog')
     expect(card?.priority).toBe('medium')
   })
+
+  it('should parse forms and formData from frontmatter', () => {
+    const content = `---
+id: "form-card"
+status: "todo"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: []
+attachments: []
+order: "a0"
+forms:
+  - name: "bug-report"
+  - schema:
+      type: "object"
+      title: "Inline Form"
+      properties:
+        severity:
+          type: "string"
+    ui:
+      type: "VerticalLayout"
+formData:
+  bug-report:
+    severity: "high"
+---
+# Form Card`
+
+    const card = parseCardFile(content, '/tmp/form-card.md')
+
+    expect(card?.forms).toEqual([
+      { name: 'bug-report' },
+      {
+        schema: {
+          type: 'object',
+          title: 'Inline Form',
+          properties: {
+            severity: { type: 'string' }
+          }
+        },
+        ui: {
+          type: 'VerticalLayout'
+        }
+      }
+    ])
+    expect(card?.formData).toEqual({
+      'bug-report': { severity: 'high' }
+    })
+  })
+
+  it('should parse string shorthand form references from frontmatter', () => {
+    const content = `---
+id: "form-shortcut-card"
+status: "todo"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: []
+attachments: []
+order: "a0"
+forms:
+  - test
+  - "incident-report"
+---
+# Form Shortcut Card`
+
+    const card = parseCardFile(content, '/tmp/form-shortcut-card.md')
+
+    expect(card?.forms).toEqual([
+      { name: 'test' },
+      { name: 'incident-report' },
+    ])
+  })
 })
 
 describe('serializeCard', () => {
@@ -170,6 +248,51 @@ describe('serializeCard', () => {
     expect(serialized).toContain('completedAt: null')
     expect(serialized).toContain('labels: []')
     expect(serialized).toContain('attachments: []')
+  })
+
+  it('should round-trip forms and formData', () => {
+    const original: Card = {
+      version: 1,
+      id: 'forms-round-trip',
+      status: 'backlog',
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      created: '2025-01-01T00:00:00.000Z',
+      modified: '2025-01-01T00:00:00.000Z',
+      completedAt: null,
+      labels: [],
+      attachments: [],
+      comments: [],
+      order: 'a0',
+      content: '# Form Round Trip',
+      forms: [
+        { name: 'bug-report' },
+        {
+          schema: {
+            type: 'object',
+            title: 'Inline Form',
+            properties: {
+              severity: { type: 'string' }
+            }
+          },
+          data: {
+            severity: 'medium'
+          }
+        }
+      ],
+      formData: {
+        'bug-report': { severity: 'high' },
+        'inline-form': { severity: 'medium' }
+      },
+      filePath: '/tmp/forms-round-trip.md'
+    }
+
+    const serialized = serializeCard(original)
+    const parsed = parseCardFile(serialized, original.filePath)
+
+    expect(parsed?.forms).toEqual(original.forms)
+    expect(parsed?.formData).toEqual(original.formData)
   })
 })
 

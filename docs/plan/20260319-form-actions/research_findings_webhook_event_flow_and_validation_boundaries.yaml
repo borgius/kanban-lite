@@ -1,0 +1,191 @@
+plan_id: 20260319-form-actions
+objective: on valid form submit, send webhook event form.submit with merged initial data from config, card data, and metadata
+focus_area: webhook/event flow and validation boundaries
+created_at: 2026-03-19T00:00:00Z
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - Existing mutation webhooks are SDK-owned: modules emit typed `SDKEventType` events, then `KanbanSDK.emitEvent()` forwards them either to a registered handler or directly to `fireWebhooks()`.
+  - Card action submission is currently a separate path from normal webhooks: `triggerAction()` POSTs directly to `actionWebhookUrl` and does not emit an SDK event.
+  - Standalone and VS Code webview transports are kept in lockstep through shared `WebviewMessage`/`ExtensionMessage` unions and mirrored switch handlers.
+  - Validation is boundary-local and lightweight: UI components trim/disable for obvious empty input, REST endpoints do imperative required-field checks, but WebSocket/webview message handlers largely trust payload shape.
+  - No existing `form.submit` event, generic form schema, or merge utility for config + card + metadata was found in the examined surface.
+
+research_metadata:
+  methodology: hybrid retrieval using semantic_search, targeted grep_search, and focused read_file passes over SDK event definitions, webhook delivery, transport message unions, backend handlers, UI submit components, and existing tests
+  scope: minimum relevant files for webhook event flow, standalone/webview communication, and validation boundaries
+  confidence: high
+  coverage: 88
+
+relevant_files:
+  - file: src/sdk/types.ts
+    location: src/sdk/types.ts:8-74
+    purpose: defines `CreateCardInput`, the canonical `SDKEventType` union, and webhook-safe `sanitizeCard`
+    why_relevant: `form.submit` would need to exist here if it participates in normal webhook registration/filtering
+  - file: src/sdk/KanbanSDK.ts
+    location: src/sdk/KanbanSDK.ts:185-197
+    purpose: central event dispatch fan-out
+    why_relevant: all SDK mutation events pass through `emitEvent()` before webhooks are delivered
+  - file: src/sdk/webhooks.ts
+    location: src/sdk/webhooks.ts:23-93
+    purpose: filters configured webhooks, wraps payload as `{ event, timestamp, data }`, and delivers async HTTP POSTs
+    why_relevant: current canonical webhook envelope and delivery semantics
+  - file: src/sdk/modules/cards.ts
+    location: src/sdk/modules/cards.ts:214-223, 270-322
+    purpose: emits `task.created`/`task.updated`; contains `triggerAction()` direct webhook POST path
+    why_relevant: closest existing precedent for “submit something related to a card and send external request”
+  - file: src/shared/types.ts
+    location: src/shared/types.ts:372-422
+    purpose: shared frontend/backend message unions for extension and standalone transports
+    why_relevant: any new submit message must be added here to keep both runtimes aligned
+  - file: src/standalone/server.ts
+    location: src/standalone/server.ts:71-84, 509-536, 846-862, 1143-1165, 1290-1313
+    purpose: standalone websocket + REST handlers; SDK wired with `onEvent`; imperative HTTP validation/error mapping
+    why_relevant: standalone is the main client/server bridge and exposes current validation boundaries
+  - file: src/extension/KanbanPanel.ts
+    location: src/extension/KanbanPanel.ts:108-160, 367-387
+    purpose: VS Code webview message handling mirroring standalone behavior
+    why_relevant: extension path must mirror any new webview submit flow
+  - file: src/webview/App.tsx
+    location: src/webview/App.tsx:741-765
+    purpose: frontend emits typed action/board-action messages with callback keys
+    why_relevant: current UI pattern for async command submission and completion/error round-tripping
+  - file: src/webview/standalone-shim.ts
+    location: src/webview/standalone-shim.ts:219-279
+    purpose: browser shim that forwards webview messages over WebSocket and manages offline queue/drop behavior
+    why_relevant: standalone submit requests can be queued pre-connect but dropped after a disconnect
+  - file: src/shared/config.ts
+    location: src/shared/config.ts:95-129
+    purpose: workspace config shape, including `webhooks` and `actionWebhookUrl`
+    why_relevant: no existing form-specific config or initial-data config was found here
+  - file: src/webview/components/CreateCardDialog.tsx
+    location: src/webview/components/CreateCardDialog.tsx:406-412
+    purpose: example of lightweight client-side submit normalization
+    why_relevant: demonstrates current UI definition of “valid enough to submit” for creation flows
+  - file: src/webview/components/CommentEditor.tsx
+    location: src/webview/components/CommentEditor.tsx:47-79
+    purpose: example of stronger client-side trim/required-field validation with submit gating
+    why_relevant: closest reusable validation boundary pattern in the UI layer
+  - file: src/sdk/__tests__/KanbanSDK.test.ts
+    location: src/sdk/__tests__/KanbanSDK.test.ts:754-808
+    purpose: tests for direct action webhook behavior
+    why_relevant: shows expected payload assertions and non-2xx error handling pattern
+  - file: src/standalone/__tests__/webhooks.test.ts
+    location: src/standalone/__tests__/webhooks.test.ts:186-354
+    purpose: verifies webhook filtering, wildcard delivery, HMAC signing, inactivity, and failure tolerance
+    why_relevant: defines current webhook contract expectations
+  - file: src/webview/standalone-shim.test.ts
+    location: src/webview/standalone-shim.test.ts:116-156
+    purpose: verifies reconnect + ready replay behavior
+    why_relevant: relevant to submit reliability in standalone mode
+
+existing_patterns:
+  - name: sdk_event_first_webhooks
+    description: Domain mutations emit a typed SDK event from module code; webhook delivery is downstream of the SDK, not implemented in UI/API layers.
+    evidence:
+      - src/sdk/modules/cards.ts:223 `ctx.emitEvent('task.created', sanitizeCard(card))`
+      - src/sdk/modules/cards.ts:270 `ctx.emitEvent('task.updated', sanitizeCard(card))`
+      - src/sdk/KanbanSDK.ts:189-197 `emitEvent()` calls registered `onEvent` or falls back to `fireWebhooks()`
+  - name: canonical_webhook_envelope
+    description: Registered webhooks receive JSON shaped as `{ event, timestamp, data }`; event matching is exact or wildcard via config-stored registrations.
+    evidence:
+      - src/sdk/webhooks.ts:23-37
+      - src/standalone/__tests__/webhooks.test.ts:191-206
+  - name: direct_action_webhook_is_separate
+    description: Card actions bypass `SDKEventType` and send a direct POST to `actionWebhookUrl` with payload `{ action, board, list, card }`.
+    evidence:
+      - src/sdk/modules/cards.ts:280-322
+      - src/sdk/__tests__/KanbanSDK.test.ts:768-799
+  - name: mirrored_transport_contracts
+    description: Frontend sends discriminated `WebviewMessage` objects; standalone WebSocket server and VS Code extension each implement matching `switch` cases and completion callbacks.
+    evidence:
+      - src/shared/types.ts:381-422
+      - src/standalone/server.ts:846-862
+      - src/extension/KanbanPanel.ts:367-387
+      - src/webview/App.tsx:747-765
+  - name: boundary_local_validation
+    description: Validation is not centralized. UI components trim and sometimes disable submit buttons; REST routes perform explicit required-field checks; message-based handlers do little/no structural validation beyond TypeScript casts.
+    evidence:
+      - src/webview/components/CommentEditor.tsx:49-79
+      - src/webview/components/CreateCardDialog.tsx:406-412
+      - src/standalone/server.ts:114-126
+      - src/standalone/server.ts:1257, 1486-1502, 1703-1705
+  - name: standalone_message_reliability_is_stateful
+    description: Before first connection, standalone queues outgoing messages; after at least one connection, messages are dropped while disconnected.
+    evidence:
+      - src/webview/standalone-shim.ts:260-279
+      - src/webview/standalone-shim.test.ts:116-156
+
+risks:
+  - risk: event_namespace_gap
+    details: `SDKEventType` does not include `form.submit`; if omitted from the union and downstream docs/tests, registered webhook filtering cannot treat it as a first-class event.
+    impact: medium
+  - risk: split_delivery_path
+    details: existing external callback precedent (`triggerAction`) is not part of SDK event emission, so a new submit feature could accidentally create a second ad-hoc webhook path instead of using the normal webhook pipeline.
+    impact: high
+  - risk: ambiguous_merge_precedence
+    details: no helper or convention was found for merging config-derived initial data with card fields and metadata; precedence/order is currently undefined in the examined code.
+    impact: high
+  - risk: validation_inconsistency
+    details: UI, WebSocket, and REST paths enforce validity differently; a “valid form submit” rule implemented in only one boundary would behave differently across standalone vs extension or REST-triggered paths.
+    impact: high
+  - risk: standalone_disconnect_loss
+    details: standalone shim drops non-ready messages after the first successful connection if the socket is down.
+    impact: medium
+  - risk: parity_surface
+    details: AGENTS guidance in this repo establishes SDK-first behavior and parity across API/CLI/MCP; a submit feature added only to the webview path would diverge from existing architecture.
+    impact: medium
+
+recommended_task_slices:
+  - slice: event_contract
+    scope: define whether `form.submit` is a normal SDK event or a separate direct webhook path; if normal, specify payload envelope inside SDK event flow
+    touched_surfaces:
+      - src/sdk/types.ts
+      - src/sdk/KanbanSDK.ts
+      - src/sdk/webhooks.ts
+  - slice: payload_composition
+    scope: define the exact merge inputs and precedence for config initial data, sanitized card data, and metadata; identify whether payload lives under `data` only or nested fields
+    touched_surfaces:
+      - src/shared/config.ts
+      - src/sdk/modules/cards.ts
+      - any new SDK helper adjacent to submit logic
+  - slice: client_transport
+    scope: add a shared webview message and result callback pattern for submit requests so extension and standalone remain symmetrical
+    touched_surfaces:
+      - src/shared/types.ts
+      - src/webview/App.tsx
+      - src/extension/KanbanPanel.ts
+      - src/standalone/server.ts
+      - src/webview/standalone-shim.ts
+  - slice: validation_boundary
+    scope: define what “valid form submit” means at UI level vs backend enforcement level, and ensure both websocket and REST-equivalent paths reject invalid payloads consistently
+    touched_surfaces:
+      - src/webview/components/*submit-related*
+      - src/standalone/server.ts
+      - any SDK submit entrypoint
+  - slice: verification
+    scope: extend tests for event delivery, callback/error handling, merge semantics, and standalone reconnect-sensitive submission behavior
+    touched_surfaces:
+      - src/sdk/__tests__/KanbanSDK.test.ts
+      - src/standalone/__tests__/webhooks.test.ts
+      - src/webview/standalone-shim.test.ts
+      - transport-specific integration tests if a REST endpoint is added
+
+open_questions:
+  - question: where is form schema/config expected to live?
+    context: only `webhooks` and `actionWebhookUrl` exist in examined config; no form-specific config or initial data block was found
+  - question: what should win on key collisions between config initial data, card fields, and metadata?
+    context: no merge helper or documented precedence was found
+  - question: should `form.submit` be delivered through registered webhooks (`config.webhooks`) or through a dedicated endpoint like `actionWebhookUrl`?
+    context: the repository currently supports both models, depending on feature
+  - question: is form submission intended to be available outside the webview path?
+    context: repo conventions indicate feature parity across SDK/API/CLI/MCP, but no existing form surface was found
+
+gaps:
+  - area: plan scaffolding
+    description: `docs/plan/20260319-form-actions/plan.yaml` did not exist at research time
+    impact: reduces certainty about intended UX, payload shape, and acceptance criteria
+  - area: form_ui_surface
+    description: no concrete form component or form configuration model was found in the examined focus area
+    impact: the precise submit entrypoint and validation UX remain unspecified

@@ -44,7 +44,7 @@ export function buildConnectionNotice(message: ConnectionStatusMessage | { type:
   if (message.fatal) {
     return {
       title: 'Connection lost',
-      message: `The standalone backend is unavailable and automatic reconnect has stopped.${formatReason(message.reason)} Refresh or reopen this page after the backend is available again.`,
+      message: `The standalone backend is unavailable and automatic reconnect has stopped.${formatReason(message.reason)} Form submissions are unavailable until the backend is reachable again. Refresh or reopen this page after the backend is available again.`,
       tone: 'error',
     }
   }
@@ -54,7 +54,7 @@ export function buildConnectionNotice(message: ConnectionStatusMessage | { type:
 
   return {
     title: 'Reconnecting…',
-    message: `Trying to reconnect to the standalone backend (attempt ${attempt} of ${maxRetries}).${formatRetryDelay(message.retryDelayMs)}${formatReason(message.reason)}`,
+    message: `Trying to reconnect to the standalone backend (attempt ${attempt} of ${maxRetries}).${formatRetryDelay(message.retryDelayMs)}${formatReason(message.reason)} Form submissions pause until the backend reconnects.`,
     tone: 'info',
   }
 }

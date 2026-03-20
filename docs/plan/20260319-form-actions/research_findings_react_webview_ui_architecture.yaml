@@ -1,0 +1,380 @@
+plan_id: 20260319-form-actions
+objective: render additional card tabs for forms using https://jsonforms.io/
+focus_area: react_webview_ui_architecture
+created_at: 2026-03-19T00:00:00Z
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - Card detail UI is centered on `src/webview/components/CardEditor.tsx`, which delegates tab rendering/content switching to `src/webview/components/MarkdownEditor.tsx`.
+  - Card tab state is global and URL-addressable today via `CardTab` in Zustand plus TanStack Router; current allowed tabs are only `write | preview | comments | logs`.
+  - Config already supports board-scoped `metadata` and `actions`, but no form schema, UI schema, or JSON Forms dependency exists in the repository today.
+  - Existing drawer/popup dialog shells in `CreateCardDialog` and `SettingsPanel` are strong reference patterns for any form-hosting panel or configuration UI.
+  - Main open boundary is where form definitions should live: board config, card metadata, or both.
+
+research_metadata:
+  methodology: hybrid retrieval using semantic_search, grep_search, targeted read_file, and call-site discovery
+  scope: minimal React/webview architecture needed for card detail tabs, config-driven UI, and existing dialog/form-like patterns
+  confidence: high
+  coverage: 88
+
+files_analyzed:
+  - file: CardEditor.tsx
+    path: src/webview/components/CardEditor.tsx
+    purpose: card detail shell; renders properties/header and mounts markdown/tabbed editor
+    key_elements:
+      - element: CardEditor
+        type: function
+        location: src/webview/components/CardEditor.tsx:769
+        description: main card detail panel; reads board metadata keys, renders property rows, and passes comments/logs into MarkdownEditor
+      - element: pinnedMetadataKeys
+        type: variable
+        location: src/webview/components/CardEditor.tsx:771
+        description: board-scoped config-driven metadata surfaced before the Advanced section
+      - element: RunActionsDropdown
+        type: function
+        location: src/webview/components/CardEditor.tsx:41-57, 331-380
+        description: precedent for config-driven secondary actions in card header
+    language: tsx
+    lines: 1160
+  - file: MarkdownEditor.tsx
+    path: src/webview/components/MarkdownEditor.tsx
+    purpose: current tab bar implementation and content switcher for card editing
+    key_elements:
+      - element: MarkdownEditor
+        type: function
+        location: src/webview/components/MarkdownEditor.tsx:29
+        description: owns write/preview/comments/logs tab UI and conditionally syncs tab state with store in edit mode
+      - element: activeTab
+        type: pattern
+        location: src/webview/components/MarkdownEditor.tsx:35-40
+        description: store-backed in edit mode, local in create mode
+    language: tsx
+    lines: 247
+  - file: index.ts
+    path: src/webview/store/index.ts
+    purpose: Zustand UI state for active card and active tab
+    key_elements:
+      - element: CardTab
+        type: type
+        location: src/webview/store/index.ts:9
+        description: union type for legal card tabs; currently write/preview/comments/logs only
+      - element: activeCardTab
+        type: variable
+        location: src/webview/store/index.ts:131,290
+        description: global active card tab persisted in UI state with default preview
+      - element: setActiveCardTab
+        type: function
+        location: src/webview/store/index.ts:148,322
+        description: setter used by router and MarkdownEditor
+    language: ts
+    lines: 380
+  - file: router.tsx
+    path: src/webview/router.tsx
+    purpose: standalone URL contract for card tabs and filters
+    key_elements:
+      - element: VALID_TABS
+        type: variable
+        location: src/webview/router.tsx:44
+        description: whitelist for route-driven tab restoration
+      - element: URLSync
+        type: function
+        location: src/webview/router.tsx:49-196
+        description: syncs URL params to Zustand and store state back to URL
+      - element: tabRoute
+        type: route
+        location: src/webview/router.tsx:245-251
+        description: `/$boardId/$cardId/$tabId` route segment for active tab
+    language: tsx
+    lines: 280
+  - file: App.tsx
+    path: src/webview/App.tsx
+    purpose: mounts CardEditor inside drawer/popup shell and resets tab on close
+    key_elements:
+      - element: CardEditor mount
+        type: pattern
+        location: src/webview/App.tsx:924
+        description: sole CardEditor call site, receives editingCard payload and callbacks
+      - element: setActiveCardTab('preview')
+        type: pattern
+        location: src/webview/App.tsx:503
+        description: resets default tab when editor closes so next card opens on preview
+    language: tsx
+    lines: 980
+  - file: config.ts
+    path: src/shared/config.ts
+    purpose: persisted workspace/board config types
+    key_elements:
+      - element: BoardConfig.actions
+        type: field
+        location: src/shared/config.ts:50
+        description: board-level action map already exists
+      - element: BoardConfig.metadata
+        type: field
+        location: src/shared/config.ts:52
+        description: board-level list of metadata keys pinned into card details
+      - element: KanbanConfig.panelMode/drawerWidth
+        type: field
+        location: src/shared/config.ts:116-118
+        description: persisted panel presentation settings reused by detail dialogs
+    language: ts
+    lines: 220
+  - file: types.ts
+    path: src/shared/types.ts
+    purpose: shared UI/data contracts used by webview
+    key_elements:
+      - element: BoardInfo.actions
+        type: field
+        location: src/shared/types.ts:120
+        description: board action info projected to the webview
+      - element: BoardInfo.metadata
+        type: field
+        location: src/shared/types.ts:122
+        description: board metadata keys projected to the webview
+      - element: CardDisplaySettings
+        type: interface
+        location: src/shared/types.ts:249-285
+        description: current persisted UI settings; no form-tab-related fields yet
+    language: ts
+    lines: 320
+  - file: CreateCardDialog.tsx
+    path: src/webview/components/CreateCardDialog.tsx
+    purpose: reusable drawer/popup dialog pattern and create-mode MarkdownEditor usage
+    key_elements:
+      - element: CreateCardDialog
+        type: function
+        location: src/webview/components/CreateCardDialog.tsx:368
+        description: unmount/remount wrapper for state reset on open
+      - element: MarkdownEditor mount
+        type: pattern
+        location: src/webview/components/CreateCardDialog.tsx:557
+        description: create mode uses local editor tabs, showing split between local vs global tab behavior
+    language: tsx
+    lines: 700
+  - file: SettingsPanel.tsx
+    path: src/webview/components/SettingsPanel.tsx
+    purpose: reference implementation for tabbed settings UI in drawer/popup shell
+    key_elements:
+      - element: SettingsPanelContent
+        type: function
+        location: src/webview/components/SettingsPanel.tsx:552
+        description: tabbed settings panel with auto-save and drawer resize integration
+      - element: activeTab
+        type: pattern
+        location: src/webview/components/SettingsPanel.tsx:554,635-645
+        description: simple local tab bar with indicator styling reusable for new config surfaces
+    language: tsx
+    lines: 860
+  - file: package.json
+    path: package.json
+    purpose: dependency inventory for webview/runtime feasibility
+    key_elements:
+      - element: dependencies
+        type: pattern
+        location: package.json:1-220
+        description: React, Zustand, TanStack Router, Tiptap, and Marked are present; no `@jsonforms/*` packages are installed
+    language: json
+    lines: 220
+
+patterns_found:
+  - category: architecture
+    pattern: Card detail panel composes fixed property rows above a single tabbed content region
+    description: CardEditor owns header/details and delegates all lower-panel tab behavior to MarkdownEditor.
+    examples:
+      - file: src/webview/components/CardEditor.tsx
+        location: src/webview/components/CardEditor.tsx:805-1137
+        snippet: "Property rows render first, then `<MarkdownEditor ... mode=\"edit\" />` fills the remaining panel."
+    prevalence: common
+  - category: architecture
+    pattern: Card tab state is centralized in Zustand and mirrored into route state
+    description: New card tabs must be added consistently in the store union, router whitelist, and UI tab renderer.
+    examples:
+      - file: src/webview/store/index.ts
+        location: src/webview/store/index.ts:9
+        snippet: "export type CardTab = 'write' | 'preview' | 'comments' | 'logs'"
+      - file: src/webview/router.tsx
+        location: src/webview/router.tsx:44
+        snippet: "const VALID_TABS: TabId[] = ['write', 'preview', 'comments', 'logs']"
+      - file: src/webview/components/MarkdownEditor.tsx
+        location: src/webview/components/MarkdownEditor.tsx:108-243
+        snippet: "tab buttons and conditional rendering are hard-coded per tab"
+    prevalence: common
+  - category: structure
+    pattern: Config-driven UI currently means board metadata pinning and action maps, not schema-rendered forms
+    description: Existing config influences which metadata keys/actions are shown, but not full component generation.
+    examples:
+      - file: src/shared/config.ts
+        location: src/shared/config.ts:50-52
+        snippet: "actions?: Record<string, string>; metadata?: string[]"
+      - file: src/webview/components/CardEditor.tsx
+        location: src/webview/components/CardEditor.tsx:771,1069-1098
+        snippet: "board metadata keys are mapped into property rows"
+    prevalence: occasional
+  - category: structure
+    pattern: Dialogs use shared drawer/popup shell conventions with auto-save and keyboard escape handling
+    description: CreateCardDialog and SettingsPanel provide reference shells for any new form-management or configuration UI.
+    examples:
+      - file: src/webview/components/CreateCardDialog.tsx
+        location: src/webview/components/CreateCardDialog.tsx:368-700
+        snippet: "conditional drawer/popup container plus DrawerResizeHandle"
+      - file: src/webview/components/SettingsPanel.tsx
+        location: src/webview/components/SettingsPanel.tsx:552-860
+        snippet: "tabbed drawer/popup settings panel with local activeTab"
+    prevalence: common
+  - category: testing
+    pattern: Most higher-level webview tests mock heavyweight child components
+    description: App and dialog tests validate integration boundaries lightly; there is no dedicated CardEditor test file.
+    examples:
+      - file: src/webview/App.test.tsx
+        location: src/webview/App.test.tsx:192-195
+        snippet: "CreateCardDialog/CardEditor/SettingsPanel are mocked"
+      - file: src/webview/components/CreateCardDialog.test.tsx
+        location: src/webview/components/CreateCardDialog.test.tsx:41
+        snippet: "MarkdownEditor is mocked"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: CardEditor
+      responsibility: card detail panel composition and editable metadata surface
+      location: src/webview/components/CardEditor.tsx
+      relationship_to_domain: domain anchor for any extra card tabs
+    - component: MarkdownEditor
+      responsibility: current tab strip and body region for edit/preview/comments/logs
+      location: src/webview/components/MarkdownEditor.tsx
+      relationship_to_domain: current tab implementation to extend or refactor
+    - component: Zustand store
+      responsibility: active card/tab state and UI preferences
+      location: src/webview/store/index.ts
+      relationship_to_domain: domain depends on this for tab state
+    - component: TanStack Router URLSync
+      responsibility: route <-> store synchronization for active tab and filters
+      location: src/webview/router.tsx
+      relationship_to_domain: standalone mode depends on this for deep-linkable tabs
+    - component: CreateCardDialog / SettingsPanel
+      responsibility: reusable drawer/popup shells and tabbed settings UX
+      location: src/webview/components
+      relationship_to_domain: reference patterns for config or form setup surfaces
+  interfaces_used_by_domain:
+    - interface: CardDisplaySettings
+      location: src/shared/types.ts
+      usage_pattern: persisted UI preferences for detail panel behavior
+    - interface: BoardConfig / BoardInfo
+      location: src/shared/config.ts and src/shared/types.ts
+      usage_pattern: board-scoped config projected into webview as metadata/actions
+  data_flow_involving_domain: Board/workspace config is read server-side into shared types, projected into webview store/props, then CardEditor renders board-pinned metadata while MarkdownEditor renders global active tab content; standalone routing mirrors the active tab into the URL.
+  key_relationships_to_domain:
+    - from: src/webview/App.tsx
+      to: src/webview/components/CardEditor.tsx
+      relationship: imports
+    - from: src/webview/components/CardEditor.tsx
+      to: src/webview/components/MarkdownEditor.tsx
+      relationship: imports
+    - from: src/webview/components/MarkdownEditor.tsx
+      to: src/webview/store/index.ts
+      relationship: imports
+    - from: src/webview/router.tsx
+      to: src/webview/store/index.ts
+      relationship: imports
+    - from: src/webview/components/CardEditor.tsx
+      to: src/shared/types.ts
+      relationship: imports
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - TSX
+  frameworks_used_in_domain:
+    - name: React
+      usage_in_domain: function components, hooks, conditional rendering for panels and tabs
+    - name: TanStack Router
+      usage_in_domain: standalone deep-linking for board/card/tab state
+    - name: Zustand
+      usage_in_domain: shared client state for active card tab and settings
+  libraries_used_in_domain:
+    - name: lucide-react
+      purpose_in_domain: iconography for tabs, properties, and actions
+    - name: marked
+      purpose_in_domain: markdown preview rendering in MarkdownEditor
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: UI components are PascalCase, store state uses explicit `active*`/`set*` pairs, and route constants use ALL_CAPS whitelists like `VALID_TABS`.
+  structure_of_domain: App owns overlay shells, CardEditor owns card details, MarkdownEditor owns inner tabbed body, and shared types/config define persisted contracts.
+  error_handling_in_domain: Minimal runtime guards; invalid tabs are blocked by `VALID_TABS`/route validation rather than error boundaries.
+  testing_in_domain: Vitest component tests focus on shallow integration and store behavior, with many child-component mocks.
+  documentation_in_domain: Inline comments in router/store explain source-of-truth and synchronization behavior.
+
+related_dependencies:
+  internal:
+    - component: src/webview/App.tsx
+      relationship_to_domain: mounts and closes the editor surface
+      direction: inbound
+    - component: src/shared/config.ts
+      relationship_to_domain: supplies persisted board/workspace config shape
+      direction: outbound
+    - component: src/shared/types.ts
+      relationship_to_domain: supplies shared UI/data contracts
+      direction: outbound
+  external:
+    - name: react
+      purpose_for_domain: component rendering
+    - name: zustand
+      purpose_for_domain: UI state
+    - name: @tanstack/react-router
+      purpose_for_domain: standalone tab routing
+    - name: marked
+      purpose_for_domain: markdown preview
+
+open_questions:
+  - question: Where should form definitions live: board config, card frontmatter metadata, or a separate workspace-level registry?
+    context: Existing config supports pinned metadata keys and action maps, but no analogous schema container exists.
+  - question: Should additional form tabs be deep-linkable in standalone mode?
+    context: Current router hard-whitelists tabs, so every new tab changes URL/state compatibility.
+  - question: Should forms edit `frontmatter.metadata`, top-level frontmatter fields, or detached data blobs?
+    context: CardEditor today only exposes primitive top-level fields plus read-only pinned metadata previews.
+
+gaps:
+  - area: schema-driven form infrastructure
+    description: No JSON Forms dependency, JSON Schema types, UI schema conventions, or renderer registry were found.
+    impact: Introducing jsonforms is net-new architecture, not a small extension of existing form code.
+  - area: direct CardEditor test coverage
+    description: No dedicated `CardEditor` test file was found.
+    impact: Tab-expansion work will likely rely on adding new tests rather than extending an existing focused suite.
+
+status_summary:
+  status: completed
+  relevant_files:
+    - src/webview/components/CardEditor.tsx
+    - src/webview/components/MarkdownEditor.tsx
+    - src/webview/store/index.ts
+    - src/webview/router.tsx
+    - src/webview/App.tsx
+    - src/shared/config.ts
+    - src/shared/types.ts
+    - src/webview/components/CreateCardDialog.tsx
+    - src/webview/components/SettingsPanel.tsx
+    - package.json
+  existing_patterns:
+    - Global card tabs are hard-coded across store, router, and MarkdownEditor.
+    - Card detail properties are config-influenced via board `metadata` and `actions`.
+    - Drawer/popup shells and tab bars already exist as reusable UI patterns.
+    - Create mode uses local tabs; edit mode uses store-backed tabs.
+    - Tests currently mock many heavy child components.
+  risks:
+    - Extending tabs requires synchronized changes in type unions, router validation, and rendering logic.
+    - Adding jsonforms introduces new runtime/dependency surface absent from current bundle.
+    - Form persistence target is unresolved and may force shared type/config changes.
+    - Standalone URL compatibility may be affected if new tabs become routable.
+    - Limited focused tests around CardEditor increase regression risk in the detail panel.
+  recommended_task_slices:
+    - slice: card-tab contract expansion
+      scope: store CardTab union, router VALID_TABS, default-tab/reset behavior, standalone deep-link semantics
+    - slice: form-definition contract
+      scope: shared config/types for board or workspace form declarations and how they map to card data
+    - slice: form-tab host UI
+      scope: CardEditor/MarkdownEditor composition for rendering additional non-markdown tabs
+    - slice: jsonforms integration layer
+      scope: dependency addition, renderer setup, schema/uiSchema mapping, and metadata/frontmatter binding
+    - slice: test coverage
+      scope: focused tests for tab rendering, route sync, and form-host behavior

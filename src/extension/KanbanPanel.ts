@@ -3,22 +3,13 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
 import { getTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
-import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings } from '../shared/types'
+import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings, CreateCardPayload, SubmitFormMessage } from '../shared/types'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 
 
-interface CreateCardData {
-  status: string
-  priority: Priority
-  content: string
-  assignee: string | null
-  dueDate: string | null
-  labels: string[]
-  metadata?: Record<string, any>
-  actions?: string[]
-}
+type CreateCardData = CreateCardPayload
 
 export class KanbanPanel {
   public static readonly viewType = 'kanban-lite.panel'
@@ -174,8 +165,10 @@ export class KanbanPanel {
           case 'openFile': {
             const feat = this._cards.find(f => f.id === message.cardId)
             if (feat) {
-              if (feat.filePath) {
-                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(feat.filePath))
+              const sdk = this._getSDK()
+              const localCardPath = sdk ? sdk.getLocalCardPath(feat) : feat.filePath
+              if (localCardPath) {
+                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(localCardPath))
                 await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside })
               } else {
                 await this._openCardInTempFile(feat)
@@ -224,7 +217,9 @@ export class KanbanPanel {
           case 'downloadCard': {
             const dlCard = this._cards.find(f => f.id === message.cardId)
             if (!dlCard) break
-            const defaultName = path.basename(dlCard.filePath)
+            const downloadSdk = this._getSDK()
+            const localCardPath = downloadSdk ? downloadSdk.getLocalCardPath(dlCard) : dlCard.filePath
+            const defaultName = localCardPath ? path.basename(localCardPath) : `${dlCard.id}.md`
             const workspaceRoot = this._getWorkspaceRoot()
             const saveUri = await vscode.window.showSaveDialog({
               defaultUri: vscode.Uri.file(path.join(workspaceRoot ?? '', defaultName)),
@@ -232,7 +227,9 @@ export class KanbanPanel {
               title: 'Download card as Markdown'
             })
             if (saveUri) {
-              const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(dlCard.filePath))
+              const fileContent = localCardPath
+                ? await vscode.workspace.fs.readFile(vscode.Uri.file(localCardPath))
+                : Buffer.from(serializeCard(dlCard), 'utf-8')
               await vscode.workspace.fs.writeFile(saveUri, fileContent)
               vscode.window.showInformationMessage(`Card saved to ${saveUri.fsPath}`)
             }
@@ -388,6 +385,28 @@ export class KanbanPanel {
             }
             break
           }
+          case 'submitForm': {
+            const { cardId, formId, callbackKey, boardId } = message as SubmitFormMessage
+            const submitSdk = this._getSDK()
+            if (!submitSdk) break
+            try {
+              const result = await submitSdk.submitForm({
+                cardId,
+                formId,
+                data: (message as SubmitFormMessage).data,
+                boardId: boardId ?? this._currentBoardId,
+              })
+              await this._loadCards()
+              this._sendCardsToWebview()
+              if (this._currentEditingCardId === cardId) {
+                await this._sendCardContent(cardId)
+              }
+              this._panel.webview.postMessage({ type: 'submitFormResult', callbackKey, result })
+            } catch (err) {
+              this._panel.webview.postMessage({ type: 'submitFormResult', callbackKey, error: String(err) })
+            }
+            break
+          }
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break
@@ -413,8 +432,12 @@ export class KanbanPanel {
     const kanbanDir = this._getWorkspaceKanbanDir()
     if (!kanbanDir) return
 
+    const sdk = this._getSDK()
+    const watchGlob = sdk?.getStorageStatus().watchGlob
+    if (!watchGlob) return
+
     // Watch for changes in the kanban directory (recursive for board/status subfolders)
-    const pattern = new vscode.RelativePattern(kanbanDir, 'boards/**/*.md')
+    const pattern = new vscode.RelativePattern(kanbanDir, watchGlob)
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     // Debounce to avoid multiple rapid updates
@@ -430,7 +453,7 @@ export class KanbanPanel {
         // If the changed file is the currently-edited card, check for external changes
         if (this._currentEditingCardId && uri) {
           const editingCard = this._cards.find(f => f.id === this._currentEditingCardId)
-          if (editingCard && editingCard.filePath === uri.fsPath) {
+          if (editingCard && sdk?.getLocalCardPath(editingCard) === uri.fsPath) {
             const currentContent = serializeCard(editingCard)
             if (currentContent !== this._lastWrittenContent) {
               // External change detected — refresh the editor
@@ -612,6 +635,8 @@ export class KanbanPanel {
         labels: data.labels,
         metadata: data.metadata,
         actions: data.actions,
+        forms: data.forms,
+        formData: data.formData,
         boardId: this._currentBoardId
       })
       this._cards.push(card)
@@ -784,11 +809,18 @@ export class KanbanPanel {
     const card = this._cards.find(f => f.id === cardId)
     if (!card) return
 
+    const sdk = this._getSDK()
+    const localCardPath = sdk?.getLocalCardPath(card)
+    if (!localCardPath) {
+      await this._openCardInTempFile(card)
+      return
+    }
+
     // Use a fixed column beside the panel so repeated clicks reuse the same split
     const panelColumn = this._panel.viewColumn ?? vscode.ViewColumn.One
     const targetColumn = panelColumn === vscode.ViewColumn.One ? vscode.ViewColumn.Two : vscode.ViewColumn.Beside
 
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(card.filePath))
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(localCardPath))
     await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
     this._currentEditingCardId = cardId
     {
@@ -807,28 +839,11 @@ export class KanbanPanel {
       if (sdk) void sdk.setActiveCard(cardId, this._currentBoardId).catch(() => {})
     }
 
-    const frontmatter: CardFrontmatter = {
-      version: CARD_FORMAT_VERSION,
-      id: card.id,
-      status: card.status,
-      priority: card.priority,
-      assignee: card.assignee,
-      dueDate: card.dueDate,
-      created: card.created,
-      modified: card.modified,
-      completedAt: card.completedAt,
-      labels: card.labels,
-      attachments: card.attachments,
-      order: card.order,
-      metadata: card.metadata,
-      actions: card.actions
-    }
-
     this._panel.webview.postMessage({
       type: 'cardContent',
       cardId: card.id,
       content: card.content,
-      frontmatter,
+      frontmatter: this._buildCardFrontmatter(card),
       comments: card.comments || [],
       logs: await this._getLogsForCard(card.id)
     })
@@ -851,7 +866,11 @@ export class KanbanPanel {
         assignee: frontmatter.assignee,
         dueDate: frontmatter.dueDate,
         labels: frontmatter.labels,
-        attachments: frontmatter.attachments
+        attachments: frontmatter.attachments,
+        metadata: frontmatter.metadata,
+        actions: frontmatter.actions,
+        forms: frontmatter.forms,
+        formData: frontmatter.formData,
       }, this._currentBoardId)
       this._lastWrittenContent = serializeCard(updated)
       const idx = this._cards.findIndex(f => f.id === cardId)
@@ -898,9 +917,11 @@ export class KanbanPanel {
     if (!card) return
 
     // Resolve attachment directory via SDK (handles both markdown and SQLite paths)
-    const attachmentDir = sdk
-      ? (await sdk.getAttachmentDir(cardId, this._currentBoardId) ?? path.join(path.dirname(card.filePath), 'attachments'))
-      : path.join(path.dirname(card.filePath), 'attachments')
+    const attachmentDir = sdk ? await sdk.getAttachmentDir(cardId, this._currentBoardId) : null
+    if (!attachmentDir) {
+      vscode.window.showWarningMessage('The active attachment provider does not expose a local file path to open.')
+      return
+    }
 
     const attachmentPath = path.resolve(attachmentDir, attachment)
 
@@ -1092,7 +1113,8 @@ export class KanbanPanel {
     const description = card.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
     const shortDesc = description.length > 200 ? description.substring(0, 200) + '...' : description
 
-    const prompt = `Implement this card: "${title}" (${card.priority} priority)${labels}. ${shortDesc} See full details in: ${card.filePath}`
+    const promptTarget = this._sdk?.getLocalCardPath(card) ?? `card ${card.id}`
+    const prompt = `Implement this card: "${title}" (${card.priority} priority)${labels}. ${shortDesc} See full details in: ${promptTarget}`
 
     // Use provided agent or fall back to config
     const aiRoot = this._getWorkspaceRoot()
@@ -1221,6 +1243,27 @@ export class KanbanPanel {
       vscode.window.showErrorMessage(`Failed to cleanup list: ${err}`)
     } finally {
       this._migrating = false
+    }
+  }
+
+  private _buildCardFrontmatter(card: Card): CardFrontmatter {
+    return {
+      version: card.version ?? CARD_FORMAT_VERSION,
+      id: card.id,
+      status: card.status,
+      priority: card.priority,
+      assignee: card.assignee,
+      dueDate: card.dueDate,
+      created: card.created,
+      modified: card.modified,
+      completedAt: card.completedAt,
+      labels: card.labels,
+      attachments: card.attachments,
+      order: card.order,
+      metadata: card.metadata,
+      actions: card.actions,
+      forms: card.forms,
+      formData: card.formData,
     }
   }
 }

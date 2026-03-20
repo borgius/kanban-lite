@@ -101,6 +101,10 @@ export interface Card {
   metadata?: Record<string, any>
   /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
   actions?: string[] | Record<string, string>
+  /** Forms attached to this card (named config-form references or inline definitions). */
+  forms?: CardFormAttachment[]
+  /** Per-form persisted data keyed by the resolved form `id`. */
+  formData?: CardFormDataMap
   /** Absolute path to the card's markdown file on disk. */
   filePath: string
 }
@@ -120,6 +124,8 @@ export interface BoardInfo {
   actions?: Record<string, string>
   /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
   metadata?: string[]
+  /** Reusable named workspace forms available for attachment/resolution on this board. */
+  forms?: Record<string, import('./config').FormDefinition>
 }
 
 /**
@@ -310,6 +316,76 @@ export const LABEL_PRESET_COLORS: { name: string; hex: string }[] = [
 ]
 
 /**
+ * A form attached to a card, referencing a named workspace-config form
+ * and/or declaring an inline card-local form definition.
+ *
+ * Either `name` (to reference a config-level form) or `schema` (for an inline
+ * definition) must be present. When both are given, the inline `schema` takes
+ * precedence over the config-level schema, but other config fields (e.g.
+ * `data`) still act as the base layer for the merge order.
+ */
+export interface CardFormAttachment {
+  /**
+   * Name of a reusable form declared in `KanbanConfig.forms`.
+   * When present, the resolved descriptor sources schema/ui/data from config
+   * unless overridden by inline fields on this attachment.
+   */
+  name?: string
+  /**
+   * Inline JSON Schema for a card-local form.
+   * Required when no `name` is provided.
+   */
+  schema?: Record<string, unknown>
+  /** Optional JSON Forms UI schema for layout/rendering hints. */
+  ui?: Record<string, unknown>
+  /**
+   * Optional attachment-level default data merged after the config-level
+   * `FormDefinition.data` and before persisted `Card.formData` values.
+   */
+  data?: Record<string, unknown>
+}
+
+export type CardFormDataMap = Record<string, Record<string, unknown>>
+
+/**
+ * Normalized runtime descriptor for a form attached to a card.
+ *
+ * Produced by SDK resolution from a {@link CardFormAttachment} combined with
+ * the backing config {@link FormDefinition} (if any). All downstream layers
+ * — REST API, CLI, MCP, and the webview — work with this shape rather than
+ * the raw attachment or config definition directly.
+ */
+export interface ResolvedFormDescriptor {
+  /**
+   * Stable identifier for this form on the card.
+   * - For named config forms: equals the config form name.
+   * - For inline forms: a deterministic slug derived from the schema `title`
+   *   property, falling back to a positional index (e.g. `'form-0'`).
+   */
+  id: string
+  /**
+   * Human-readable label used for tab headings and display.
+   * Falls back to `id` when no explicit title is available.
+   */
+  label: string
+  /** Resolved JSON Schema for AJV validation and JSON Forms rendering. */
+  schema: Record<string, unknown>
+  /** Resolved JSON Forms UI schema, if any. */
+  ui?: Record<string, unknown>
+  /**
+   * Resolved initial data for the form.
+   *
+   * Merge order (lowest → highest priority):
+   * 1. Config-level `FormDefinition.data` (workspace defaults)
+   * 2. `Card.formData[id]` (persisted per-card form data)
+   * 3. `Card.metadata` fields whose keys appear in the schema properties
+   */
+  initialData: Record<string, unknown>
+  /** `true` when this descriptor was sourced from a named config form. */
+  fromConfig: boolean
+}
+
+/**
  * YAML frontmatter fields stored at the top of each card's markdown file.
  *
  * These fields are parsed from and serialized back to the frontmatter block
@@ -344,6 +420,14 @@ export interface CardFrontmatter {
   metadata?: Record<string, any>
   /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
   actions?: string[] | Record<string, string>
+  /** Forms attached to this card (named config-form references or inline definitions). */
+  forms?: CardFormAttachment[]
+  /**
+   * Per-form persisted data keyed by the resolved form `id`.
+   * Using a form-keyed map prevents field collisions when multiple forms
+   * share property names across different tabs.
+   */
+  formData?: CardFormDataMap
 }
 
 /**
@@ -354,6 +438,50 @@ export interface WorkspaceInfo {
   kanbanDirectory: string
   port: number
   configVersion: number
+}
+
+/**
+ * Shared create-card payload used by REST and webview transport surfaces.
+ *
+ * This remains backward compatible with existing card creation flows while
+ * allowing form-aware cards to be created without a second ad-hoc payload
+ * shape.
+ */
+export interface CreateCardPayload {
+  status: string
+  priority: Priority
+  content: string
+  assignee: string | null
+  dueDate: string | null
+  labels: string[]
+  metadata?: Record<string, any>
+  actions?: string[] | Record<string, string>
+  forms?: CardFormAttachment[]
+  formData?: CardFormDataMap
+}
+
+/**
+ * Webview transport request for submitting a form attached to a card.
+ */
+export interface SubmitFormMessage {
+  type: 'submitForm'
+  cardId: string
+  formId: string
+  data: Record<string, unknown>
+  callbackKey: string
+  boardId?: string
+}
+
+/**
+ * Transport-safe result for a successful form submission.
+ * Mirrors the SDK `submitForm` contract while keeping shared types decoupled
+ * from the SDK module graph.
+ */
+export interface SubmitFormTransportResult {
+  boardId: string
+  card: Omit<Card, 'filePath'>
+  form: ResolvedFormDescriptor
+  data: Record<string, unknown>
 }
 
 /**
@@ -384,12 +512,13 @@ export type ExtensionMessage =
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
   | { type: 'actionResult'; callbackKey: string; error?: string }
   | { type: 'boardActionResult'; callbackKey: string; error?: string }
+  | { type: 'submitFormResult'; callbackKey: string; result?: SubmitFormTransportResult; error?: string }
   | { type: 'logsUpdated'; cardId: string; logs: import('./types').LogEntry[] }
   | { type: 'boardLogsUpdated'; boardId: string; logs: import('./types').LogEntry[] }
 
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'createCard'; data: { status: string; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; metadata?: Record<string, any>; actions?: string[] | Record<string, string> } }
+  | { type: 'createCard'; data: CreateCardPayload }
   | { type: 'moveCard'; cardId: string; newStatus: string; newOrder: number }
   | { type: 'deleteCard'; cardId: string }
   | { type: 'updateCard'; cardId: string; updates: Partial<Card> }
@@ -421,6 +550,7 @@ export type WebviewMessage =
   | { type: 'deleteLabel'; name: string }
   | { type: 'triggerAction'; cardId: string; action: string; callbackKey: string }
   | { type: 'triggerBoardAction'; boardId: string; actionKey: string; callbackKey: string }
+  | SubmitFormMessage
   | { type: 'addLog'; cardId: string; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
   | { type: 'clearLogs'; cardId: string }
   | { type: 'getLogs'; cardId: string }

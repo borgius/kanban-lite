@@ -1,0 +1,105 @@
+import { describe, expect, it } from 'vitest'
+import { normalizeStorageCapabilities } from '../../shared/config'
+import type { KanbanConfig } from '../../shared/config'
+import { DEFAULT_CONFIG } from '../../shared/config'
+
+/** Minimal valid config scaffold for tests. */
+function makeConfig(overrides: Partial<KanbanConfig> = {}): KanbanConfig {
+  return { ...DEFAULT_CONFIG, ...overrides }
+}
+
+describe('normalizeStorageCapabilities', () => {
+  describe('card.storage', () => {
+    it('defaults to markdown when no storage fields are set', () => {
+      const result = normalizeStorageCapabilities(makeConfig())
+      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+    })
+
+    it('maps storageEngine="markdown" to markdown provider', () => {
+      const result = normalizeStorageCapabilities(makeConfig({ storageEngine: 'markdown' }))
+      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+    })
+
+    it('maps storageEngine="sqlite" to sqlite provider with default sqlitePath', () => {
+      const result = normalizeStorageCapabilities(makeConfig({ storageEngine: 'sqlite' }))
+      expect(result['card.storage']).toEqual({
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/kanban.db' },
+      })
+    })
+
+    it('maps storageEngine="sqlite" with explicit sqlitePath', () => {
+      const result = normalizeStorageCapabilities(
+        makeConfig({ storageEngine: 'sqlite', sqlitePath: 'data/custom.db' })
+      )
+      expect(result['card.storage']).toEqual({
+        provider: 'sqlite',
+        options: { sqlitePath: 'data/custom.db' },
+      })
+    })
+
+    it('plugins["card.storage"] overrides legacy storageEngine', () => {
+      const result = normalizeStorageCapabilities(
+        makeConfig({
+          storageEngine: 'sqlite',
+          sqlitePath: '.kanban/kanban.db',
+          plugins: { 'card.storage': { provider: 'markdown' } },
+        })
+      )
+      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+    })
+
+    it('plugins["card.storage"] with custom options is passed through', () => {
+      const result = normalizeStorageCapabilities(
+        makeConfig({
+          plugins: {
+            'card.storage': { provider: 'kanban-mysql-plugin', options: { host: 'localhost' } },
+          },
+        })
+      )
+      expect(result['card.storage']).toEqual({
+        provider: 'kanban-mysql-plugin',
+        options: { host: 'localhost' },
+      })
+    })
+  })
+
+  describe('attachment.storage', () => {
+    it('defaults to localfs', () => {
+      const result = normalizeStorageCapabilities(makeConfig())
+      expect(result['attachment.storage']).toEqual({ provider: 'localfs' })
+    })
+
+    it('localfs default is independent of storageEngine value', () => {
+      const result = normalizeStorageCapabilities(makeConfig({ storageEngine: 'sqlite' }))
+      expect(result['attachment.storage']).toEqual({ provider: 'localfs' })
+    })
+
+    it('plugins["attachment.storage"] overrides localfs default', () => {
+      const result = normalizeStorageCapabilities(
+        makeConfig({
+          plugins: { 'attachment.storage': { provider: 's3', options: { bucket: 'my-bucket' } } },
+        })
+      )
+      expect(result['attachment.storage']).toEqual({
+        provider: 's3',
+        options: { bucket: 'my-bucket' },
+      })
+    })
+  })
+
+  describe('backward compatibility', () => {
+    it('both core namespaces are always present in the output', () => {
+      const result = normalizeStorageCapabilities(makeConfig())
+      expect(result).toHaveProperty('card.storage')
+      expect(result).toHaveProperty('attachment.storage')
+    })
+
+    it('config without storage keys round-trips without mutation', () => {
+      const config = makeConfig()
+      const before = JSON.stringify(config)
+      normalizeStorageCapabilities(config)
+      expect(JSON.stringify(config)).toBe(before)
+    })
+  })
+})

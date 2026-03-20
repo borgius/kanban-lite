@@ -439,6 +439,266 @@ input:focus-visible {
   font-size: calc(1em * var(--board-zoom, 1));
 }
 
+/* ─────────────────────────────────────────────────
+   JSON Forms vanilla renderer — scoped to .card-jsonforms
+   Covers: layout, labels, inputs, selects, textareas,
+   checkboxes, help text, groups/fieldsets, validation,
+   and focus/hover/disabled states.
+   ───────────────────────────────────────────────── */
+
+/* ── Layout containers ── */
+.card-jsonforms .vertical-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.card-jsonforms .vertical-layout-item {
+  flex: 1;
+}
+
+.card-jsonforms .horizontal-layout {
+  display: flex;
+  flex-direction: row;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.card-jsonforms .horizontal-layout-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Group / fieldset ── */
+.card-jsonforms fieldset {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 0.25rem;
+  padding: 0.75rem 1rem;
+  margin: 0;
+}
+
+.card-jsonforms fieldset legend,
+.card-jsonforms .group-layout-label {
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.card-jsonforms .group-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Control wrapper ── */
+.card-jsonforms .control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* ── Labels ── */
+.card-jsonforms .control > label,
+.card-jsonforms label.control-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  cursor: default;
+  user-select: none;
+}
+
+/* ── Text / number / email / url inputs ── */
+.card-jsonforms input.input,
+.card-jsonforms input[type="text"],
+.card-jsonforms input[type="number"],
+.card-jsonforms input[type="email"],
+.card-jsonforms input[type="url"],
+.card-jsonforms input[type="password"],
+.card-jsonforms input[type="date"],
+.card-jsonforms input[type="time"],
+.card-jsonforms input[type="datetime-local"] {
+  width: 100%;
+  padding: 0.3125rem 0.5rem;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 0.1875rem;
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.card-jsonforms input.input::placeholder,
+.card-jsonforms input[type="text"]::placeholder,
+.card-jsonforms input[type="number"]::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+/* ── Textarea ── */
+.card-jsonforms textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.3125rem 0.5rem;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 0.1875rem;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.1s;
+}
+
+.card-jsonforms textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+/* ── Select ── */
+.card-jsonforms select {
+  width: 100%;
+  padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 0.1875rem;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  cursor: pointer;
+}
+
+/* ── Checkbox / radio-ish ── */
+.card-jsonforms input[type="checkbox"] {
+  width: 0.875rem;
+  height: 0.875rem;
+  accent-color: var(--vscode-focusBorder);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 0 0.375rem 0 0;
+}
+
+.card-jsonforms .control label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 400;
+  cursor: pointer;
+  gap: 0.25rem;
+}
+
+/* ── Help / description text ── */
+.card-jsonforms .description,
+.card-jsonforms p.description {
+  font-size: 0.6875rem;
+  color: var(--vscode-descriptionForeground);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ── Validation messages ── */
+.card-jsonforms .validation_error,
+.card-jsonforms p.validation_error {
+  font-size: 0.6875rem;
+  color: var(--vscode-errorForeground);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.card-jsonforms .validation {
+  font-size: 0.6875rem;
+  color: var(--vscode-errorForeground);
+  margin: 0;
+}
+
+/* ── Invalid state border ── */
+.card-jsonforms .control:has(.validation_error:not(:empty)) input,
+.card-jsonforms .control:has(.validation_error:not(:empty)) select,
+.card-jsonforms .control:has(.validation_error:not(:empty)) textarea {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+/* ── Focus states ── */
+.card-jsonforms input:focus,
+.card-jsonforms textarea:focus,
+.card-jsonforms select:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* ── Hover states ── */
+.card-jsonforms input:hover:not(:focus):not(:disabled),
+.card-jsonforms textarea:hover:not(:focus):not(:disabled),
+.card-jsonforms select:hover:not(:focus):not(:disabled) {
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+}
+
+/* ── Disabled states ── */
+.card-jsonforms input:disabled,
+.card-jsonforms textarea:disabled,
+.card-jsonforms select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Array layout ── */
+.card-jsonforms .array-layout-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.card-jsonforms .array-list-item {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.card-jsonforms .array-list-item-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-bottom: 0.375rem;
+}
+
+/* ── Categorization tabs ── */
+.card-jsonforms .categorization-master {
+  display: flex;
+  flex-direction: row;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 0.75rem;
+}
+
+.card-jsonforms .categorization-master button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  opacity: 0.65;
+}
+
+.card-jsonforms .categorization-master button.selected,
+.card-jsonforms .categorization-master button[aria-selected="true"] {
+  opacity: 1;
+  border-bottom-color: var(--vscode-focusBorder);
+}
+
 /* Settings slider */
 .settings-slider {
   -webkit-appearance: none;

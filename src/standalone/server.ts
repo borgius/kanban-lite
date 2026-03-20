@@ -4,23 +4,14 @@ import * as os from 'os'
 import * as path from 'path'
 import { WebSocketServer, WebSocket } from 'ws'
 import chokidar from 'chokidar'
-import { type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption } from '../shared/types'
+import { type Comment, type Card, type Priority, type KanbanColumn, type CardFrontmatter, type CardDisplaySettings, type CardSortOption, type CreateCardPayload, type SubmitFormMessage } from '../shared/types'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, writeConfig } from '../shared/config'
-import { sanitizeCard } from '../sdk/types'
+import { sanitizeCard, type SubmitFormInput, type SubmitFormResult } from '../sdk/types'
 import { fireWebhooks } from './webhooks'
 
-interface CreateCardData {
-  status: string
-  priority: Priority
-  content: string
-  assignee: string | null
-  dueDate: string | null
-  labels: string[]
-  metadata?: Record<string, any>
-  actions?: string[]
-}
+type CreateCardData = CreateCardPayload
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -46,6 +37,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   const absoluteKanbanDir = path.resolve(kanbanDir)
   let cards: Card[] = []
   let migrating = false
+  let suppressWatcherEventsUntil = 0
   let currentEditingCardId: string | null = null
   let lastWrittenContent = ''
   let currentBoardId: string | undefined
@@ -87,6 +79,60 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   })
 
   // --- Helpers ---
+
+  function suppressWatcherEvents(durationMs = 500): void {
+    suppressWatcherEventsUntil = Math.max(suppressWatcherEventsUntil, Date.now() + durationMs)
+  }
+
+  function escapeRegex(value: string): string {
+    return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')
+  }
+
+  function globToRegExp(glob: string): RegExp {
+    const normalized = glob.replace(/\\/g, '/')
+    let pattern = '^'
+
+    for (let index = 0; index < normalized.length; index++) {
+      const char = normalized[index]
+
+      if (char === '*') {
+        const next = normalized[index + 1]
+        const afterNext = normalized[index + 2]
+        if (next === '*') {
+          pattern += afterNext === '/' ? '(?:.*/)?' : '.*'
+          index += afterNext === '/' ? 2 : 1
+        } else {
+          pattern += '[^/]*'
+        }
+        continue
+      }
+
+      if (char === '?') {
+        pattern += '[^/]'
+        continue
+      }
+
+      pattern += escapeRegex(char)
+    }
+
+    return new RegExp(`${pattern}$`)
+  }
+
+  function getStorageStatus() {
+    return sdk.getStorageStatus()
+  }
+
+  function getLocalCardPath(card: Card): string | null {
+    return sdk.getLocalCardPath(card)
+  }
+
+  function getAttachmentDir(card: Card): string | null {
+    return sdk.getAttachmentStoragePath(card)
+  }
+
+  async function materializeAttachment(card: Card, attachment: string): Promise<string | null> {
+    return sdk.materializeAttachment(card, attachment)
+  }
 
   function getListCardsOptions(searchParams: URLSearchParams): {
     metaFilter?: Record<string, string>
@@ -164,6 +210,53 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     res.end(JSON.stringify({ ok: false, error }))
   }
 
+  function buildCardFrontmatter(card: Card): CardFrontmatter {
+    return {
+      version: card.version ?? 0,
+      id: card.id,
+      status: card.status,
+      priority: card.priority,
+      assignee: card.assignee,
+      dueDate: card.dueDate,
+      created: card.created,
+      modified: card.modified,
+      completedAt: card.completedAt,
+      labels: card.labels,
+      attachments: card.attachments,
+      order: card.order,
+      metadata: card.metadata,
+      actions: card.actions,
+      forms: card.forms,
+      formData: card.formData,
+    }
+  }
+
+  function parseSubmitData(value: unknown): Record<string, unknown> {
+    if (value === undefined) return {}
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>
+    }
+    throw new Error('data must be an object')
+  }
+
+  function getSubmitErrorStatus(err: unknown): number {
+    const message = String(err)
+    return message.includes('Card not found') || message.includes('Form not found') ? 404 : 400
+  }
+
+  async function sendCardContent(ws: WebSocket, card: Card): Promise<void> {
+    let logs: import('../shared/types').LogEntry[] = []
+    try { logs = await sdk.listLogs(card.id, currentBoardId) } catch {}
+    ws.send(JSON.stringify({
+      type: 'cardContent',
+      cardId: card.id,
+      content: card.content,
+      frontmatter: buildCardFrontmatter(card),
+      comments: card.comments || [],
+      logs,
+    }))
+  }
+
   // --- HTML template ---
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -235,8 +328,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         labels: data.labels,
         metadata: data.metadata,
         actions: data.actions,
+        forms: data.forms,
+        formData: data.formData,
         boardId: currentBoardId,
       })
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return card
@@ -252,6 +348,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     migrating = true
     try {
       const updated = await sdk.moveCard(cardId, newStatus, newOrder, currentBoardId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return updated
@@ -268,9 +365,25 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     try {
       const updated = await sdk.updateCard(cardId, updates, currentBoardId)
       lastWrittenContent = serializeCard(updated)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return updated
+    } finally {
+      migrating = false
+    }
+  }
+
+  async function doSubmitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
+    migrating = true
+    try {
+      const result = await sdk.submitForm({
+        ...input,
+        boardId: input.boardId ?? currentBoardId,
+      })
+      await loadCards()
+      broadcast(buildInitMessage())
+      return result
     } finally {
       migrating = false
     }
@@ -282,6 +395,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     try {
       await sdk.deleteCard(cardId, currentBoardId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -297,6 +411,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     try {
       await sdk.permanentlyDeleteCard(cardId, currentBoardId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -309,6 +424,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   async function doPurgeDeletedCards(): Promise<boolean> {
     try {
       await sdk.purgeDeletedCards(currentBoardId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -354,6 +470,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     try {
       migrating = true
       await sdk.cleanupColumn(columnId, currentBoardId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -374,21 +491,19 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
 
-    // Write file data to the card's attachment directory
-    const cardDir = sdk.storageEngine.getCardDir(card)
-    fs.mkdirSync(cardDir, { recursive: true })
-    fs.writeFileSync(path.join(cardDir, filename), fileData)
-
-    // Register attachment via SDK (skips copy since file is already in place)
+    const tempUploadPath = path.join(os.tmpdir(), `kanban-upload-${card.id}-${Date.now()}-${filename}`)
     migrating = true
     try {
-      const updated = await sdk.addAttachment(cardId, path.join(cardDir, filename), currentBoardId)
+      fs.writeFileSync(tempUploadPath, fileData)
+      const updated = await sdk.addAttachment(cardId, tempUploadPath, currentBoardId)
       lastWrittenContent = serializeCard(updated)
+      suppressWatcherEvents()
       await loadCards()
+      return true
     } finally {
+      try { fs.unlinkSync(tempUploadPath) } catch { /* ignore */ }
       migrating = false
     }
-    return true
   }
 
   async function doRemoveAttachment(cardId: string, attachment: string): Promise<Card | null> {
@@ -399,6 +514,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     try {
       const updated = await sdk.removeAttachment(cardId, attachment, currentBoardId)
       lastWrittenContent = serializeCard(updated)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return updated
@@ -415,6 +531,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const updated = await sdk.addComment(cardId, author, content, currentBoardId)
       lastWrittenContent = serializeCard(updated)
       const comment = updated.comments[updated.comments.length - 1]
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return comment
@@ -431,6 +548,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const updated = await sdk.updateComment(cardId, commentId, content, currentBoardId)
       lastWrittenContent = serializeCard(updated)
       const comment = (updated.comments || []).find(c => c.id === commentId)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return comment ?? null
@@ -451,6 +569,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     try {
       const updated = await sdk.deleteComment(cardId, commentId, currentBoardId)
       lastWrittenContent = serializeCard(updated)
+      suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -553,17 +672,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
         currentEditingCardId = cardId
         await sdk.setActiveCard(cardId, currentBoardId)
-        const frontmatter: CardFrontmatter = {
-          version: card.version ?? 0,
-          id: card.id, status: card.status, priority: card.priority,
-          assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-          modified: card.modified, completedAt: card.completedAt,
-          labels: card.labels, attachments: card.attachments, order: card.order,
-          metadata: card.metadata, actions: card.actions
-        }
-        let logs: import('../shared/types').LogEntry[] = []
-        try { logs = await sdk.listLogs(cardId, currentBoardId) } catch {}
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [], logs }))
+        await sendCardContent(ws, card)
         break
       }
 
@@ -579,8 +688,31 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           dueDate: fm.dueDate,
           labels: fm.labels,
           attachments: fm.attachments,
+          metadata: fm.metadata,
           actions: fm.actions,
+          forms: fm.forms,
+          formData: fm.formData,
         })
+        break
+      }
+
+      case 'submitForm': {
+        const { cardId, formId, callbackKey, boardId } = msg as SubmitFormMessage
+        try {
+          const result = await doSubmitForm({
+            cardId,
+            formId,
+            data: parseSubmitData((msg as SubmitFormMessage).data),
+            boardId,
+          })
+          const updatedCard = cards.find(candidate => candidate.id === cardId)
+          if (updatedCard && currentEditingCardId === cardId) {
+            await sendCardContent(ws, updatedCard)
+          }
+          ws.send(JSON.stringify({ type: 'submitFormResult', callbackKey, result }))
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'submitFormResult', callbackKey, error: String(err) }))
+        }
         break
       }
 
@@ -640,15 +772,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const cardId = msg.cardId as string
         const card = await doRemoveAttachment(cardId, msg.attachment as string)
         if (card && currentEditingCardId === cardId) {
-          const frontmatter: CardFrontmatter = {
-            version: card.version ?? 0,
-            id: card.id, status: card.status, priority: card.priority,
-            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-            modified: card.modified, completedAt: card.completedAt,
-            labels: card.labels, attachments: card.attachments, order: card.order,
-            actions: card.actions
-          }
-          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
         }
         break
       }
@@ -658,15 +782,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         if (!comment) break
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
-          const frontmatter: CardFrontmatter = {
-            version: card.version ?? 0,
-            id: card.id, status: card.status, priority: card.priority,
-            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-            modified: card.modified, completedAt: card.completedAt,
-            labels: card.labels, attachments: card.attachments, order: card.order,
-            actions: card.actions
-          }
-          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
         }
         break
       }
@@ -676,15 +792,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         if (!comment) break
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
-          const frontmatter: CardFrontmatter = {
-            version: card.version ?? 0,
-            id: card.id, status: card.status, priority: card.priority,
-            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-            modified: card.modified, completedAt: card.completedAt,
-            labels: card.labels, attachments: card.attachments, order: card.order,
-            actions: card.actions
-          }
-          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
         }
         break
       }
@@ -693,15 +801,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         await doDeleteComment(msg.cardId as string, msg.commentId as string)
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
-          const frontmatter: CardFrontmatter = {
-            version: card.version ?? 0,
-            id: card.id, status: card.status, priority: card.priority,
-            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-            modified: card.modified, completedAt: card.completedAt,
-            labels: card.labels, attachments: card.attachments, order: card.order,
-            actions: card.actions
-          }
-          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] }))
+          ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
         }
         break
       }
@@ -1103,7 +1203,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           dueDate: (body.dueDate as string) || null,
           labels: (body.labels as string[]) || [],
           metadata: body.metadata as Record<string, any> | undefined,
-          actions: body.actions as string[] | undefined,
+          actions: body.actions as string[] | Record<string, string> | undefined,
+          forms: body.forms as CreateCardPayload['forms'],
+          formData: body.formData as CreateCardPayload['formData'],
           boardId,
         })
         return jsonOk(res, sanitizeCard(card), 201)
@@ -1133,6 +1235,23 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/boards/:boardId/tasks/:id/forms/:formId/submit')
+    if (params) {
+      try {
+        const { boardId, id, formId } = params
+        const body = await readBody(req)
+        const result = await doSubmitForm({
+          cardId: id,
+          formId,
+          data: parseSubmitData(body.data),
+          boardId,
+        })
+        return jsonOk(res, result)
+      } catch (err) {
+        return jsonError(res, getSubmitErrorStatus(err), String(err))
       }
     }
 
@@ -1252,7 +1371,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           dueDate: (body.dueDate as string) || null,
           labels: (body.labels as string[]) || [],
           metadata: body.metadata as Record<string, any> | undefined,
-          actions: body.actions as string[] | undefined,
+          actions: body.actions as string[] | Record<string, string> | undefined,
+          forms: body.forms as CreateCardPayload['forms'],
+          formData: body.formData as CreateCardPayload['formData'],
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
         const card = await doCreateCard(data)
@@ -1280,6 +1401,22 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
+      }
+    }
+
+    params = route('POST', '/api/tasks/:id/forms/:formId/submit')
+    if (params) {
+      try {
+        const { id, formId } = params
+        const body = await readBody(req)
+        const result = await doSubmitForm({
+          cardId: id,
+          formId,
+          data: parseSubmitData(body.data),
+        })
+        return jsonOk(res, result)
+      } catch (err) {
+        return jsonError(res, getSubmitErrorStatus(err), String(err))
       }
     }
 
@@ -1374,9 +1511,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       // Clean up any previous temp file for a different card
       if (tempFileCardId && tempFileCardId !== cardId) cleanupTempFile()
 
-      if (openCard.filePath) {
+      const localCardPath = getLocalCardPath(openCard)
+      if (localCardPath) {
         // Markdown engine — return the real file path
-        return jsonOk(res, { path: openCard.filePath })
+        return jsonOk(res, { path: localCardPath })
       } else {
         // SQLite engine — write a temp file and watch for changes to sync back
         if (tempFileCardId === cardId && tempFilePath) {
@@ -1436,13 +1574,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       const { id, filename: attachName } = params
       const card = cards.find(f => f.id === id)
       if (!card) return jsonError(res, 404, 'Task not found')
-      const cardDir = sdk.storageEngine.getCardDir(card)
-      const attachmentPath = path.resolve(cardDir, attachName)
-      if (!attachmentPath.startsWith(absoluteKanbanDir)) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' })
-        res.end('Forbidden')
-        return
-      }
+      const attachmentPath = await materializeAttachment(card, attachName)
+      if (!attachmentPath) return jsonError(res, 501, 'Attachment provider does not expose a local file path')
       const ext = path.extname(attachName)
       const contentType = MIME_TYPES[ext] || 'application/octet-stream'
       const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
@@ -1787,20 +1920,40 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     params = route('GET', '/api/workspace')
     if (params) {
       const wsConfig = readConfig(workspaceRoot)
+      const storageStatus = getStorageStatus()
+      const providers = storageStatus.providers
+        ? {
+            'card.storage': storageStatus.providers['card.storage'].provider,
+            'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+          }
+        : null
       return jsonOk(res, {
         path: workspaceRoot,
         port: wsConfig.port,
-        storageEngine: sdk.storageEngine.type,
-        sqlitePath: wsConfig.sqlitePath
+        storageEngine: storageStatus.storageEngine,
+        sqlitePath: wsConfig.sqlitePath,
+        providers,
+        isFileBacked: storageStatus.isFileBacked,
+        watchGlob: storageStatus.watchGlob,
       })
     }
 
     params = route('GET', '/api/storage')
     if (params) {
       const wsConfig = readConfig(workspaceRoot)
+      const storageStatus = getStorageStatus()
+      const providers = storageStatus.providers
+        ? {
+            'card.storage': storageStatus.providers['card.storage'].provider,
+            'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+          }
+        : null
       return jsonOk(res, {
-        type: sdk.storageEngine.type,
-        sqlitePath: wsConfig.sqlitePath
+        type: storageStatus.storageEngine,
+        sqlitePath: wsConfig.sqlitePath,
+        providers,
+        isFileBacked: storageStatus.isFileBacked,
+        watchGlob: storageStatus.watchGlob,
       })
     }
 
@@ -1843,15 +1996,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         broadcast(buildInitMessage())
         const card = cards.find(f => f.id === cardId)
         if (card && currentEditingCardId === cardId) {
-          const frontmatter: CardFrontmatter = {
-            version: card.version ?? 0,
-            id: card.id, status: card.status, priority: card.priority,
-            assignee: card.assignee, dueDate: card.dueDate, created: card.created,
-            modified: card.modified, completedAt: card.completedAt,
-            labels: card.labels, attachments: card.attachments, order: card.order,
-            metadata: card.metadata, actions: card.actions,
-          }
-          broadcast({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter, comments: card.comments || [] })
+          broadcast({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] })
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true }))
@@ -1870,10 +2015,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
       const card = cards.find(f => f.id === cardId)
       if (!card) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Card not found'); return }
-      const cardDir = sdk.storageEngine.getCardDir(card)
-      const attachmentPath = path.resolve(cardDir, filename)
-      if (!attachmentPath.startsWith(absoluteKanbanDir)) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end('Forbidden'); return
+      const attachmentPath = await materializeAttachment(card, filename)
+      if (!attachmentPath) {
+        res.writeHead(501, { 'Content-Type': 'text/plain' })
+        res.end('Attachment provider does not expose a local file path')
+        return
       }
       const ext = path.extname(filename)
       const contentType = MIME_TYPES[ext] || 'application/octet-stream'
@@ -1931,19 +2077,19 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   })
 
   // --- File watcher ---
-  // Only watch for markdown file changes when using the markdown storage engine.
-  // SQLite-backed boards are updated in-process and need no filesystem watching.
+  // Only watch when the active card-storage provider exposes local files.
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
   fs.mkdirSync(absoluteKanbanDir, { recursive: true })
 
   const handleFileChange = (changedPath?: string) => {
-    if (changedPath && !changedPath.endsWith('.md')) return
     if (migrating) return
+    if (Date.now() < suppressWatcherEventsUntil) return
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(async () => {
       if (migrating) return
+      if (Date.now() < suppressWatcherEventsUntil) return
       migrating = true
       try {
         await loadCards()
@@ -1954,35 +2100,33 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
       if (currentEditingCardId && changedPath) {
         const editingCard = cards.find(f => f.id === currentEditingCardId)
-        if (editingCard && editingCard.filePath === changedPath) {
+        if (editingCard && getLocalCardPath(editingCard) === changedPath) {
           const currentContent = serializeCard(editingCard)
           if (currentContent !== lastWrittenContent) {
-            const frontmatter: CardFrontmatter = {
-              version: editingCard.version ?? 0,
-              id: editingCard.id, status: editingCard.status, priority: editingCard.priority,
-              assignee: editingCard.assignee, dueDate: editingCard.dueDate, created: editingCard.created,
-              modified: editingCard.modified, completedAt: editingCard.completedAt,
-              labels: editingCard.labels, attachments: editingCard.attachments, order: editingCard.order,
-              metadata: editingCard.metadata, actions: editingCard.actions,
-            }
-            broadcast({ type: 'cardContent', cardId: editingCard.id, content: editingCard.content, frontmatter, comments: editingCard.comments || [] })
+            broadcast({ type: 'cardContent', cardId: editingCard.id, content: editingCard.content, frontmatter: buildCardFrontmatter(editingCard), comments: editingCard.comments || [] })
           }
         }
       }
     }, 100)
   }
 
-  if (sdk.storageEngine.type === 'markdown') {
+  const watchGlob = getStorageStatus().watchGlob
+  if (watchGlob) {
     let watcherReady = false
+    const watchPattern = globToRegExp(watchGlob)
+    const shouldHandleWatchPath = (watchedPath: string): boolean => {
+      const relativePath = path.relative(absoluteKanbanDir, watchedPath).replace(/\\/g, '/')
+      return !relativePath.startsWith('../') && watchPattern.test(relativePath)
+    }
     const watcher = chokidar.watch(absoluteKanbanDir, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 100 }
     })
 
     watcher.on('ready', () => { watcherReady = true })
-    watcher.on('change', (p) => watcherReady && handleFileChange(p))
-    watcher.on('add', (p) => watcherReady && handleFileChange(p))
-    watcher.on('unlink', (p) => watcherReady && handleFileChange(p))
+    watcher.on('change', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(p))
+    watcher.on('add', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(p))
+    watcher.on('unlink', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(p))
 
     server.on('close', () => {
       watcher.close()

@@ -1,12 +1,103 @@
 import { create } from 'zustand'
-import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
+import { generateSlug } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
-export type CardTab = 'write' | 'preview' | 'comments' | 'logs'
+export const FIXED_CARD_TABS = ['write', 'preview', 'comments', 'logs'] as const
+export const DEFAULT_CARD_TAB = 'preview'
+
+export type FixedCardTab = (typeof FIXED_CARD_TABS)[number]
+export type FormCardTab = `form:${string}`
+export type CardTab = FixedCardTab | FormCardTab
+
+const FORM_CARD_TAB_PREFIX = 'form:'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function isFixedCardTab(tab: string): tab is FixedCardTab {
+  return (FIXED_CARD_TABS as readonly string[]).includes(tab)
+}
+
+export function isFormCardTab(tab: string): tab is FormCardTab {
+  return tab.startsWith(FORM_CARD_TAB_PREFIX) && tab.length > FORM_CARD_TAB_PREFIX.length
+}
+
+export function isCardTabRouteCandidate(tab: string): tab is CardTab {
+  return isFixedCardTab(tab) || isFormCardTab(tab)
+}
+
+export function createFormCardTabId(formId: string): FormCardTab {
+  return `${FORM_CARD_TAB_PREFIX}${formId}` as FormCardTab
+}
+
+function sanitizeCardTab(tab: string): CardTab {
+  return isCardTabRouteCandidate(tab) ? tab : DEFAULT_CARD_TAB
+}
+
+function hasResolvedAttachmentSchema(attachment: CardFormAttachment, board?: BoardInfo): boolean {
+  if (isRecord(attachment.schema)) {
+    return true
+  }
+
+  return Boolean(
+    attachment.name
+    && board?.forms
+    && isRecord(board.forms[attachment.name]?.schema)
+  )
+}
+
+export function getCardFormTabIds(card?: Pick<Card, 'forms'> | null, board?: BoardInfo): FormCardTab[] {
+  const attachments = card?.forms ?? []
+  if (attachments.length === 0) {
+    return []
+  }
+
+  const usedIds = new Set<string>()
+
+  return attachments.flatMap((attachment, index) => {
+    if (!hasResolvedAttachmentSchema(attachment, board)) {
+      return []
+    }
+
+    const schema = isRecord(attachment.schema) ? attachment.schema : undefined
+    const baseId = attachment.name
+      ?? (schema && typeof schema.title === 'string' && schema.title.trim().length > 0
+        ? generateSlug(schema.title)
+        : `form-${index}`)
+
+    let candidate = baseId || `form-${index}`
+    let suffix = 2
+
+    while (usedIds.has(candidate)) {
+      candidate = `${baseId}-${suffix++}`
+    }
+
+    usedIds.add(candidate)
+    return [createFormCardTabId(candidate)]
+  })
+}
+
+export function normalizeCardTab(tab: string, card?: Pick<Card, 'forms'> | null, board?: BoardInfo): CardTab {
+  const candidate = sanitizeCardTab(tab)
+
+  if (!card || isFixedCardTab(candidate)) {
+    return candidate
+  }
+
+  return isFormCardTab(candidate) && getCardFormTabIds(card, board).includes(candidate)
+    ? candidate
+    : DEFAULT_CARD_TAB
+}
+
+function getBoardInfo(boards: BoardInfo[], boardId: string): BoardInfo | undefined {
+  return boards.find((board) => board.id === boardId)
+}
 
 export interface SavedView {
   id: string
@@ -287,7 +378,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   settingsOpen: false,
   labelDefs: {},
   activeCardId: null,
-  activeCardTab: 'preview' as CardTab,
+  activeCardTab: DEFAULT_CARD_TAB,
   selectedCardIds: [] as string[],
   lastClickedCardId: null,
   starredBoards: [] as string[],
@@ -318,11 +409,41 @@ export const useStore = create<KanbanState>((set, get) => ({
     savedViews: state.savedViews.filter(v => v.id !== id)
   })),
 
-  setActiveCardId: (id) => set({ activeCardId: id }),
-  setActiveCardTab: (tab) => set({ activeCardTab: tab }),
+  setActiveCardId: (id) => set((state) => {
+    if (!id) {
+      return {
+        activeCardId: null,
+        activeCardTab: DEFAULT_CARD_TAB,
+      }
+    }
+
+    const board = getBoardInfo(state.boards, state.currentBoard)
+    const card = state.cards.find((candidate) => candidate.id === id)
+
+    return {
+      activeCardId: id,
+      activeCardTab: normalizeCardTab(state.activeCardTab, card, board),
+    }
+  }),
+  setActiveCardTab: (tab) => set((state) => ({
+    activeCardTab: normalizeCardTab(
+      tab,
+      state.activeCardId ? state.cards.find((candidate) => candidate.id === state.activeCardId) : undefined,
+      getBoardInfo(state.boards, state.currentBoard)
+    ),
+  })),
   setWorkspace: (workspace) => set({ workspace }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
-  setCards: (cards) => set({ cards }),
+  setCards: (cards) => set((state) => ({
+    cards,
+    activeCardTab: state.activeCardId
+      ? normalizeCardTab(
+        state.activeCardTab,
+        cards.find((candidate) => candidate.id === state.activeCardId),
+        getBoardInfo(state.boards, state.currentBoard)
+      )
+      : state.activeCardTab,
+  })),
   setColumns: (columns) => set((state) => ({
     columns,
     columnVisibilityByBoard: setBoardColumnVisibility(
@@ -333,14 +454,31 @@ export const useStore = create<KanbanState>((set, get) => ({
   })),
   setBoards: (boards) => set((state) => {
     const validBoardIds = new Set(boards.map((board) => board.id))
+    const board = getBoardInfo(boards, state.currentBoard)
     return {
       boards,
       columnVisibilityByBoard: Object.fromEntries(
         Object.entries(state.columnVisibilityByBoard).filter(([boardId]) => validBoardIds.has(boardId))
       ),
+      activeCardTab: state.activeCardId
+        ? normalizeCardTab(
+          state.activeCardTab,
+          state.cards.find((candidate) => candidate.id === state.activeCardId),
+          board
+        )
+        : state.activeCardTab,
     }
   }),
-  setCurrentBoard: (boardId) => set({ currentBoard: boardId }),
+  setCurrentBoard: (boardId) => set((state) => ({
+    currentBoard: boardId,
+    activeCardTab: state.activeCardId
+      ? normalizeCardTab(
+        state.activeCardTab,
+        state.cards.find((candidate) => candidate.id === state.activeCardId),
+        getBoardInfo(state.boards, boardId)
+      )
+      : state.activeCardTab,
+  })),
   getColumnVisibility: (boardId) => {
     const resolvedBoardId = boardId ?? get().currentBoard
     return getColumnVisibilityState(get().columnVisibilityByBoard, resolvedBoardId)

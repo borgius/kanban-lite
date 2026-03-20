@@ -22,6 +22,7 @@ describe('buildConnectionNotice', () => {
     expect(notice?.tone).toBe('info')
     expect(notice?.message).toContain('attempt 2 of 5')
     expect(notice?.message).toContain('1s')
+    expect(notice?.message).toContain('Form submissions pause until the backend reconnects')
   })
 
   it('returns a persistent fatal notice when reconnect recovery is exhausted', () => {
@@ -40,6 +41,7 @@ describe('buildConnectionNotice', () => {
     expect(notice).not.toBeNull()
     expect(notice?.title).toBe('Connection lost')
     expect(notice?.tone).toBe('error')
+    expect(notice?.message).toContain('Form submissions are unavailable until the backend is reachable again')
     expect(notice?.message).toContain('Refresh or reopen this page')
   })
 

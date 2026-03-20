@@ -1,0 +1,329 @@
+plan_id: 20260319-form-actions
+objective: >-
+  Support form actions attached to kanban cards and config-defined forms, focusing
+  on SDK/data model/configuration. Determine where board config is defined, how
+  card fields are modeled and persisted, how metadata/config are merged, and what
+  changes are likely needed for `config.forms.<name> = { schema, ui, data }` and
+  `card.forms[]`.
+focus_area: sdk-data-model-configuration
+created_at: 2026-03-19
+created_by: GitHub Copilot (GPT-5.4)
+status: completed
+
+tldr: |
+  - Workspace/board configuration is defined in `src/shared/config.ts`; board-scoped fields already include `actions` and `metadata`, while workspace config is persisted in `.kanban.json` and shallow-merged with defaults.
+  - Card shape is defined in `src/shared/types.ts`; current extensible card fields are `metadata` and `actions`, with markdown persistence handled by `src/sdk/parser.ts` and SQLite persistence handled independently in `src/sdk/storage/sqlite.ts`.
+  - The closest existing pattern to config-defined forms is board actions: `BoardConfig.actions`, `BoardInfo.actions`, SDK wrappers in `KanbanSDK`, mutations in `src/sdk/modules/boards.ts`, and dedicated tests in `src/sdk/__tests__/board-actions.test.ts`.
+  - Card creation/update flows assemble a `Card` in `src/sdk/modules/cards.ts` and persist via the storage engine interface, so `card.forms[]` would need coordinated type + parser + markdown + SQLite changes.
+  - `AGENTS.md` constraints are aligned with the current architecture: SDK/domain changes first, then API/CLI/MCP and other interface layers.
+
+research_metadata:
+  methodology: >-
+    Hybrid retrieval using semantic_search for initial discovery, grep_search for
+    exact symbol/pattern lookup, and targeted read_file passes over only the
+    minimum relevant SDK/config/storage/test files. Relationships traced from
+    config/types -> parser/storage -> SDK modules -> tests.
+  scope: >-
+    Limited to SDK/data model/configuration concerns: shared config/types,
+    card persistence, board action/config patterns, and representative SDK/storage
+    tests. No interface-layer deep dive.
+  confidence: high
+  coverage: 91
+
+relevant_files:
+  - path: /Users/admin/dev/kanban-light/src/shared/config.ts
+    purpose: Defines `BoardConfig`, `KanbanConfig`, defaults, migration, config read/write, and config merge behavior.
+    key_points:
+      - "`BoardConfig` currently includes `actions?: Record<string, string>` and `metadata?: string[]`."
+      - "`KanbanConfig` is the root `.kanban.json` schema and is the natural home for a new root-level `forms` map."
+      - "`readConfig()` does a shallow `{ ...defaults, ...raw }` merge, then validates/repairs `boards` and `nextCardId`."
+      - "`settingsToConfig()` only merges display settings fields; it is not a generic deep config merger."
+    locations:
+      - "BoardConfig: src/shared/config.ts:31"
+      - "KanbanConfig: src/shared/config.ts:64"
+      - "DEFAULT_CONFIG: src/shared/config.ts:172"
+      - "readConfig: src/shared/config.ts:279"
+      - "settingsToConfig: src/shared/config.ts:462"
+    lines: 480
+
+  - path: /Users/admin/dev/kanban-light/src/shared/types.ts
+    purpose: Defines shared `Card`, `BoardInfo`, and `CardFrontmatter` domain shapes used across SDK/UI/interfaces.
+    key_points:
+      - "`Card` currently carries extensible optional fields `metadata` and `actions`."
+      - "`BoardInfo` mirrors board config fields exposed outward, currently including `actions` and `metadata`."
+      - "`CardFrontmatter` controls what can round-trip through markdown frontmatter."
+    locations:
+      - "Card: src/shared/types.ts:69"
+      - "BoardInfo: src/shared/types.ts:107"
+      - "CardFrontmatter: src/shared/types.ts:318"
+    lines: 429
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/types.ts
+    purpose: Defines SDK input types and event types.
+    key_points:
+      - "`CreateCardInput` currently supports `metadata?: Record<string, any>` and `actions?: string[]`."
+      - "Input typing is narrower than `Card.actions`, which already allows `string[] | Record<string, string>`."
+    locations:
+      - "CreateCardInput: src/sdk/types.ts:12"
+    lines: 127
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/parser.ts
+    purpose: Markdown/YAML card round-trip layer.
+    key_points:
+      - "`parseCardFile()` explicitly parses `actions` and `metadata` from YAML frontmatter."
+      - "`serializeCard()` conditionally emits `actions` and `metadata` only when non-empty."
+      - "Any new persisted card field such as `forms` needs explicit parse + serialize support here for markdown storage."
+    locations:
+      - "parseCardFile: src/sdk/parser.ts:45"
+      - "actions parse block: src/sdk/parser.ts:94"
+      - "metadata parse block: src/sdk/parser.ts:104"
+      - "serializeCard: src/sdk/parser.ts:140"
+    lines: 172
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+    purpose: SDK card lifecycle logic.
+    key_points:
+      - "`createCard()` derives defaults from board config/global config, assembles the in-memory `Card`, and delegates persistence to `_storage.writeCard()`."
+      - "`updateCard()` applies partial card updates directly onto the loaded `Card` object and then persists it."
+      - "`triggerAction()` uses global `actionWebhookUrl` from root config and sends sanitized card payloads."
+    locations:
+      - "createCard: src/sdk/modules/cards.ts:174"
+      - "updateCard: src/sdk/modules/cards.ts:230"
+      - "triggerAction: src/sdk/modules/cards.ts:286"
+    lines: 416
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/modules/boards.ts
+    purpose: Board-level config access/mutation patterns.
+    key_points:
+      - "`listBoards()` exposes `actions` and `metadata` via `BoardInfo`."
+      - "`updateBoard()` only whitelists specific mutable `BoardConfig` fields and currently includes `metadata` but not any future form field."
+      - "Board actions are stored in config and mutated via small focused helpers (`getBoardActions`, `addBoardAction`, `removeBoardAction`)."
+    locations:
+      - "listBoards: src/sdk/modules/boards.ts:15"
+      - "updateBoard: src/sdk/modules/boards.ts:113"
+      - "getBoardActions: src/sdk/modules/boards.ts:139"
+      - "addBoardAction: src/sdk/modules/boards.ts:150"
+      - "removeBoardAction: src/sdk/modules/boards.ts:164"
+    lines: 260
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/storage/types.ts
+    purpose: Defines the storage abstraction used by the SDK.
+    key_points:
+      - "Config stays in `.kanban.json` regardless of storage engine; storage engines only own card/comment/attachment persistence."
+      - "Any new persisted card field must round-trip through `writeCard()` and `scanCards()` for every engine."
+    locations:
+      - "StorageEngine: src/sdk/storage/types.ts:54"
+      - "writeCard contract: src/sdk/storage/types.ts:143"
+    lines: 206
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/storage/markdown.ts
+    purpose: Markdown storage implementation.
+    key_points:
+      - "Markdown engine persists card data by `serializeCard(card)` and reloads by `parseCardFile(content, filePath)`."
+      - "This engine will inherit new card fields automatically only if parser/types are updated."
+    locations:
+      - "writeCard: src/sdk/storage/markdown.ts:144"
+      - "_loadCard: src/sdk/storage/markdown.ts:187"
+    lines: 191
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/storage/sqlite.ts
+    purpose: SQLite card persistence implementation.
+    key_points:
+      - "SQLite `cards` table currently has dedicated `metadata TEXT` and `actions TEXT` columns."
+      - "`writeCard()` JSON-serializes those fields; `_rowToCard()` parses them back into the card object."
+      - "Config is not stored here; root config additions such as `config.forms` remain a `.kanban.json` concern."
+    locations:
+      - "cards table schema: src/sdk/storage/sqlite.ts:41"
+      - "metadata/actions columns: src/sdk/storage/sqlite.ts:56-57"
+      - "writeCard: src/sdk/storage/sqlite.ts:420"
+      - "_rowToCard: src/sdk/storage/sqlite.ts:523"
+    lines: 611
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/__tests__/board-actions.test.ts
+    purpose: Regression coverage for config-backed board action behavior.
+    key_points:
+      - "Demonstrates the existing pattern for config-defined named objects on boards plus SDK helper methods and persistence assertions."
+    locations:
+      - "getBoardActions/addBoardAction/removeBoardAction tests: src/sdk/__tests__/board-actions.test.ts:54"
+    lines: 188
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/__tests__/KanbanSDK.test.ts
+    purpose: End-to-end SDK card behavior tests.
+    key_points:
+      - "Existing action tests already verify parser round-trip and webhook payload behavior for card-level actions."
+    locations:
+      - "actions describe block: src/sdk/__tests__/KanbanSDK.test.ts:733"
+    lines: 1020
+
+  - path: /Users/admin/dev/kanban-light/src/sdk/__tests__/storage-sqlite.test.ts
+    purpose: Storage-engine specific round-trip tests.
+    key_points:
+      - "Confirms SQLite round-trips metadata today; forms would need matching storage tests if stored separately from metadata."
+    locations:
+      - "round-trips metadata: src/sdk/__tests__/storage-sqlite.test.ts:104"
+    lines: 214
+
+existing_patterns:
+  - pattern: Root workspace config with board sub-records
+    evidence:
+      - "`KanbanConfig.boards: Record<string, BoardConfig>` in `src/shared/config.ts`."
+      - "Board-specific optional features (`actions`, `metadata`, `minimizedColumnIds`) live on `BoardConfig`, while global features (`labels`, `webhooks`, `actionWebhookUrl`) live on `KanbanConfig`."
+    implication_for_forms: >-
+      A root `config.forms` map fits the existing workspace-level configuration pattern;
+      board-scoped forms would instead parallel `BoardConfig.actions`.
+
+  - pattern: Optional card fields are explicitly modeled in three places
+    evidence:
+      - "Domain type in `src/shared/types.ts` (`Card`, `CardFrontmatter`)"
+      - "SDK input type in `src/sdk/types.ts` (`CreateCardInput`)"
+      - "Persistence adapters in `src/sdk/parser.ts` and `src/sdk/storage/sqlite.ts`"
+    implication_for_forms: >-
+      `card.forms[]` would require coordinated updates across all of those layers;
+      changing only `Card` would not persist anything.
+
+  - pattern: Markdown persistence is schema-by-code, not generic passthrough
+    evidence:
+      - "`parseCardFile()` manually extracts `actions` and `metadata`."
+      - "`serializeCard()` manually emits `actions` and `metadata`."
+    implication_for_forms: >-
+      A new `forms` field will be ignored in markdown mode until parser logic is
+      explicitly extended.
+
+  - pattern: SQLite persistence uses explicit columns for optional card features
+    evidence:
+      - "`cards` table has `metadata TEXT` and `actions TEXT` columns, not a generic JSON blob for the whole card."
+      - "`writeCard()`/`_rowToCard()` serialize/parse those columns individually."
+    implication_for_forms: >-
+      Supporting `card.forms[]` as first-class data likely requires a schema migration
+      and explicit column handling, unless the feature is intentionally embedded into
+      existing `metadata` instead of modeled separately.
+
+  - pattern: Config-backed named object helpers for boards
+    evidence:
+      - "Board actions use dedicated helpers in `src/sdk/modules/boards.ts` plus tests in `src/sdk/__tests__/board-actions.test.ts`."
+      - "`listBoards()` mirrors selected board config into outward-facing `BoardInfo`."
+    implication_for_forms: >-
+      If forms need SDK helpers beyond raw `getBoard()`/`updateBoard()`, board-actions
+      is the closest implementation pattern already present.
+
+  - pattern: Config merging is shallow and selective
+    evidence:
+      - "`readConfig()` does `{ ...defaults, ...raw }` rather than a deep merge."
+      - "`updateBoard()` only copies a fixed whitelist of board fields."
+      - "`settingsToConfig()` only merges display settings fields."
+    implication_for_forms: >-
+      New nested config such as `config.forms.<name>.ui` or board-level form settings
+      will need explicit defaulting/mutation handling; there is no generic nested merge.
+
+risks:
+  - risk: Type drift between shared card model and SDK input model
+    detail: >-
+      `Card.actions` already supports `string[] | Record<string, string>`, while
+      `CreateCardInput.actions` is only `string[]`. A new forms feature could repeat
+      or worsen this mismatch unless all public types are aligned deliberately.
+
+  - risk: Partial config/default handling for nested form definitions
+    detail: >-
+      Because config merging is shallow, adding `config.forms` without explicit
+      defaulting/migration can produce inconsistent shapes across older workspaces
+      and partially defined form objects.
+
+  - risk: Dual persistence paths
+    detail: >-
+      Markdown and SQLite persist optional card fields differently. A feature that
+      lands in parser/frontmatter only will fail in SQLite mode, and vice versa.
+
+  - risk: Schema migration cost in SQLite
+    detail: >-
+      If `card.forms[]` is stored as a first-class field rather than under existing
+      `metadata`, SQLite needs a schema version bump plus migration logic.
+
+  - risk: External payload shape changes
+    detail: >-
+      `triggerAction()` posts sanitized card payloads. Adding `card.forms` changes
+      the webhook payload shape seen by downstream integrations.
+
+  - risk: Interface parity/documentation debt
+    detail: >-
+      `AGENTS.md` requires SDK first and then interface layers; user-facing features
+      also require README and CHANGELOG updates, and generated docs are sourced from
+      code/JSDoc rather than edited directly.
+
+recommended_task_slices:
+  - slice: SDK schema and config modeling
+    likely_files:
+      - /Users/admin/dev/kanban-light/src/shared/config.ts
+      - /Users/admin/dev/kanban-light/src/shared/types.ts
+      - /Users/admin/dev/kanban-light/src/sdk/types.ts
+    scope: >-
+      Add root config typing/defaults/migration for `config.forms` and shared card/
+      frontmatter/input typing for `card.forms[]`.
+    sequencing_note: SDK/domain layer first per `AGENTS.md`.
+
+  - slice: Persistence round-trip for card forms
+    likely_files:
+      - /Users/admin/dev/kanban-light/src/sdk/parser.ts
+      - /Users/admin/dev/kanban-light/src/sdk/storage/markdown.ts
+      - /Users/admin/dev/kanban-light/src/sdk/storage/sqlite.ts
+    scope: >-
+      Ensure markdown frontmatter and SQLite both round-trip the new card field,
+      including any required SQLite schema migration.
+    sequencing_note: Must be completed before interface-layer create/update flows are trustworthy.
+
+  - slice: SDK mutation/read APIs
+    likely_files:
+      - /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+      - /Users/admin/dev/kanban-light/src/sdk/modules/boards.ts
+      - /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+    scope: >-
+      Thread new config/card form fields through create/update/list/get flows and,
+      if needed, add focused SDK helpers following the board-actions pattern.
+    sequencing_note: Keep mutations explicit; current board/card update helpers are whitelist-based.
+
+  - slice: SDK regression coverage
+    likely_files:
+      - /Users/admin/dev/kanban-light/src/sdk/__tests__/KanbanSDK.test.ts
+      - /Users/admin/dev/kanban-light/src/sdk/__tests__/board-actions.test.ts
+      - /Users/admin/dev/kanban-light/src/sdk/__tests__/storage-sqlite.test.ts
+      - /Users/admin/dev/kanban-light/src/sdk/__tests__/metadata.test.ts
+    scope: >-
+      Add tests for config defaults/migration, parser round-trip, markdown and SQLite
+      persistence, and any new form/action interactions.
+    sequencing_note: Existing metadata/action tests provide the nearest coverage templates.
+
+  - slice: Interface parity and docs after SDK lands
+    likely_files:
+      - /Users/admin/dev/kanban-light/src/standalone/server.ts
+      - /Users/admin/dev/kanban-light/src/cli/index.ts
+      - /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+      - /Users/admin/dev/kanban-light/README.md
+      - /Users/admin/dev/kanban-light/CHANGELOG.md
+    scope: >-
+      Propagate the finalized SDK feature into API/CLI/MCP and update user-facing docs.
+    sequencing_note: This slice is explicitly downstream of SDK changes per `AGENTS.md`.
+
+open_questions:
+  - question: Should `card.forms[]` store only form identifiers, or per-card submitted form state/results as well?
+    context: >-
+      Current evidence only establishes how optional fields are persisted; storage shape
+      and migration cost depend heavily on whether `card.forms[]` is identifiers-only or
+      contains richer objects.
+
+  - question: Is `config.forms.<name>.data` intended as immutable form definition defaults or mutable workspace state?
+    context: >-
+      Root config currently stores durable workspace configuration, not per-card runtime
+      state. This affects whether `.kanban.json` is the right persistence target.
+
+  - question: Do forms need outward-facing board/list payload exposure similar to `BoardInfo.actions`?
+    context: >-
+      Existing board config fields exposed to UI/interfaces are selectively mirrored;
+      there is no generic auto-exposure mechanism.
+
+gaps:
+  - area: Runtime consumers outside SDK/config domain
+    description: >-
+      This research intentionally did not trace extension/webview/server consumers of any
+      future forms fields.
+    impact: >-
+      The saved findings identify the SDK-first work and parity obligations, but not the
+      eventual UI/API payload changes.

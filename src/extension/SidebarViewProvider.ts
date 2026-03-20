@@ -121,7 +121,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     const kanbanDir = this._getKanbanDir()
     if (!kanbanDir) return
 
-    const pattern = new vscode.RelativePattern(kanbanDir, '**/*.md')
+    const sdk = new KanbanSDK(kanbanDir)
+    const watchGlob = sdk.getStorageStatus().watchGlob
+    if (!watchGlob) return
+
+    const pattern = new vscode.RelativePattern(kanbanDir, watchGlob)
     this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
 
     const handleChange = () => {

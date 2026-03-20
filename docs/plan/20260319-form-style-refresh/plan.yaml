@@ -1,0 +1,291 @@
+plan_id: 20260319-form-style-refresh
+objective: |
+  Refresh the attached card form UI so it looks polished while continuing to use the
+  current React + JSON Forms vanilla renderer path shared by standalone and VS Code webview.
+created_at: "2026-03-19"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  The likely defect is not renderer logic but missing theme-aware CSS for JSON Forms vanilla
+  class names in `src/webview/assets/main.css`, which is already loaded by the shared webview
+  entrypoint. The plan keeps the fix surgical: add scoped styling hooks around `CardFormTab`,
+  add focused test coverage that no longer hides renderer markup behind a full mock, then update
+  the user-facing docs/changelog and validate the shared stylesheet behavior in both runtimes.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: Global JSON Forms CSS leaks into unrelated controls and regresses existing editor layouts.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Scope all new selectors under a dedicated `CardFormTab` wrapper class and avoid broad element-only rules.
+    - scenario: Tests still mock `JsonForms`, so the styling regression can reappear without detection.
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Replace or supplement the current mock with one focused test that renders real vanilla markup and asserts the style hook path.
+    - scenario: Standalone looks correct but VS Code webview does not, despite sharing the same bundle.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Validate both entry paths explicitly and use only theme variables already supported in the shared stylesheet.
+  assumptions:
+    - `src/webview/components/CardFormTab.tsx` remains the only component that needs a styling hook for the JSON Forms renderer surface.
+    - `src/webview/assets/main.css` is the correct shared stylesheet for both standalone and VS Code webview runtimes.
+    - No renderer swap, dependency addition, or architectural change is required; this is a presentation-layer refresh only.
+    - A short README and CHANGELOG update is required because the fix changes visible product behavior.
+
+implementation_specification:
+  code_structure: |
+    Keep the renderer stack intact and constrain the change to the webview presentation layer.
+    Introduce a narrowly scoped wrapper or hook class in `CardFormTab.tsx` only if needed to target
+    JSON Forms vanilla renderer markup safely, then define theme-aware rules in `main.css`. Follow
+    with a focused test update and minimal documentation/changelog edits.
+  affected_areas:
+    - src/webview/components/CardFormTab.tsx
+    - src/webview/assets/main.css
+    - src/webview/components/CardFormTab.test.tsx
+    - README.md
+    - CHANGELOG.md
+  component_details:
+    - component: Card form renderer shell
+      responsibility: Expose a stable, narrowly scoped container around the JSON Forms output without changing submit or validation behavior.
+      interfaces:
+        - "`CardFormTab` wrapper class or data attribute for scoped styling"
+    - component: Shared form stylesheet
+      responsibility: Provide theme-aware spacing, borders, typography, inputs, labels, arrays, and validation-state styles for JSON Forms vanilla renderer markup.
+      interfaces:
+        - "Scoped CSS selectors in `src/webview/assets/main.css` using existing VS Code theme variables"
+    - component: Form renderer regression coverage
+      responsibility: Assert the real renderer path is exercised enough to catch missing-style-hook regressions.
+      interfaces:
+        - "Focused test coverage in `CardFormTab.test.tsx` that does not fully mock away `JsonForms`"
+    - component: User-facing release notes
+      responsibility: Document the refreshed form presentation in the README and Unreleased changelog.
+      interfaces:
+        - "README feature note"
+        - "CHANGELOG Unreleased entry"
+  dependencies:
+    - component: Card form renderer shell
+      relationship: Must land before CSS and tests can target a stable, scoped selector surface.
+    - component: Shared form stylesheet
+      relationship: Depends on the chosen wrapper/scope and blocks visual validation.
+    - component: Form renderer regression coverage
+      relationship: Depends on the final styling hook and renderer surface chosen in implementation.
+    - component: User-facing release notes
+      relationship: Depends on the shipped behavior and wording being finalized.
+  integration_points:
+    - src/webview/standalone-main.tsx imports `src/webview/assets/main.css` for the standalone path.
+    - The VS Code webview consumes the same built stylesheet bundle, so CSS changes propagate cross-surface.
+    - `CardFormTab.tsx` remains the only JSON Forms vanilla renderer host in the card editor flow.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: Stable scoped selector/hook for styling the JSON Forms renderer output.
+    format: TypeScript markup contract in `CardFormTab.tsx` plus the corresponding CSS selector namespace.
+  - from_task: T1
+    to_task: T4
+    interface: Final expected visual states for labels, inputs, sections, and validation messages.
+    format: Shared CSS rules in `src/webview/assets/main.css` rendered through the existing standalone and webview bundles.
+  - from_task: T2
+    to_task: T5
+    interface: Proof that the real renderer path is covered well enough to catch future missing-style regressions.
+    format: Passing targeted test(s) for `CardFormTab.test.tsx`.
+  - from_task: T3
+    to_task: T5
+    interface: Final user-facing wording for the polish change.
+    format: README + CHANGELOG diff.
+
+tasks:
+  - id: T1
+    title: Add scoped JSON Forms vanilla styling hooks and shared theme CSS
+    description: |
+      Make the smallest presentation-layer change needed to polish the form UI while preserving
+      the current React + JSON Forms vanilla renderer approach. Add a dedicated wrapper class or
+      equivalent scope in `CardFormTab.tsx` only if the existing markup is insufficient, then add
+      theme-aware CSS for vanilla renderer class names in `src/webview/assets/main.css`.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - src/webview/components/CardFormTab.tsx: JSON Forms host component and safest place to add a scoped style hook.
+      - src/webview/assets/main.css: Shared stylesheet consumed by standalone and VS Code webview.
+      - src/webview/standalone-main.tsx: Confirms the shared stylesheet import path.
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 140
+    focus_area: form presentation
+    verification:
+      - Confirm new selectors are scoped to the card form surface and do not rely on new dependencies.
+      - Check for TypeScript/CSS errors after the edit.
+    acceptance_criteria:
+      - Attached forms visibly gain cohesive spacing, labels, inputs, grouping, and validation styling.
+      - Submit/validation behavior remains unchanged.
+      - Styles are sourced from the existing shared stylesheet path.
+    failure_modes:
+      - scenario: Styling depends on brittle unscoped selectors and bleeds into other editor controls.
+        likelihood: medium
+        impact: high
+        mitigation: Scope all selectors beneath a dedicated `CardFormTab` namespace.
+    tech_stack:
+      - React
+      - TypeScript
+      - JSON Forms vanilla renderers
+      - Shared CSS using VS Code theme variables
+    test_coverage: Existing component coverage plus targeted renderer regression coverage added in T2.
+
+  - id: T2
+    title: Add targeted renderer-path regression coverage for the style hook
+    description: |
+      Update `CardFormTab.test.tsx` so at least one focused test exercises the real JSON Forms vanilla
+      renderer path or an equivalent unmocked surface, ensuring future missing-style regressions are
+      detectable. Keep the test lightweight and limited to the form tab surface.
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      - src/webview/components/CardFormTab.test.tsx: Existing tests currently mock `JsonForms` too aggressively.
+      - src/webview/components/CardFormTab.tsx: Source of the scoped style hook and rendered output.
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: regression coverage
+    verification:
+      - Run the targeted `CardFormTab` test file.
+      - Ensure the updated test fails meaningfully if the scoped styling hook is removed.
+    acceptance_criteria:
+      - The test suite no longer depends exclusively on a mocked `JsonForms` surface for this component.
+      - A focused test guards the real renderer/styling path.
+    failure_modes:
+      - scenario: The test remains too synthetic to catch renderer markup regressions.
+        likelihood: medium
+        impact: medium
+        mitigation: Assert on the real container/markup path instead of only high-level text content.
+    tech_stack:
+      - Vitest
+      - React Testing Library / existing test utilities
+      - JSON Forms vanilla renderers
+    test_coverage: Focused component regression coverage for the form renderer surface.
+
+  - id: T3
+    title: Update user-facing release notes for the polished form UI
+    description: |
+      Record the visible form styling refresh in the Unreleased changelog and add a concise README note
+      where the dynamic form-tab experience is described. Keep wording factual and minimal.
+    wave: 2
+    agent: gem-documentation-writer
+    priority: low
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      - CHANGELOG.md: Must receive an Unreleased entry per repository rules.
+      - README.md: Must reflect user-visible behavior changes.
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 24
+    focus_area: user-facing docs
+    verification:
+      - Confirm the CHANGELOG entry is under `## [Unreleased]`.
+      - Confirm the README wording matches the shipped UI refresh without overpromising.
+    acceptance_criteria:
+      - CHANGELOG mentions the refreshed form styling.
+      - README reflects the improved dynamic form tab presentation.
+    failure_modes: []
+    task_type: update
+    audience: end-users
+    coverage_matrix:
+      - CHANGELOG release note
+      - README Web UI / Cards feature wording
+
+  - id: T4
+    title: Validate the refreshed form styling in standalone and VS Code webview flows
+    description: |
+      Run focused visual and behavioral checks against the shared form path to confirm the new CSS is
+      active in both runtimes and that submission/validation feedback remains legible.
+    wave: 3
+    agent: gem-browser-tester
+    priority: medium
+    status: pending
+    dependencies:
+      - T1
+      - T2
+    context_files:
+      - src/webview/standalone-main.tsx: Shared standalone entrypoint importing the stylesheet bundle.
+      - src/webview/components/CardFormTab.tsx: UI surface under validation.
+      - src/webview/assets/main.css: New style rules under test.
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: cross-surface validation
+    verification:
+      - Run targeted component tests and a build.
+      - Manually inspect at least one attached form in standalone and one in VS Code webview.
+    acceptance_criteria:
+      - Both runtimes render the same improved form presentation.
+      - Validation and submit feedback remain readable and accessible.
+      - No obvious style bleed appears elsewhere in the card editor.
+    failure_modes:
+      - scenario: One runtime loads stale or divergent CSS output.
+        likelihood: low
+        impact: medium
+        mitigation: Rebuild once, then validate the exact shared stylesheet path/bundle consumption.
+    validation_matrix:
+      - scenario: Standalone attached form renders with refreshed styling
+        steps:
+          - Open a card with an attached form in standalone mode.
+          - Inspect labels, inputs, group spacing, and validation feedback.
+        expected_result: The form looks polished and theme-consistent without broken layout.
+      - scenario: VS Code webview attached form matches standalone presentation
+        steps:
+          - Open the same or equivalent card in the VS Code webview.
+          - Compare the form layout and validation message styling.
+        expected_result: The form uses the same polished styling because both runtimes share the stylesheet bundle.
+
+  - id: T5
+    title: Review the change for minimal-scope compliance and regression risk
+    description: |
+      Review the final diff to ensure the implementation stayed surgical, preserved the renderer choice,
+      avoided new dependencies, and included the required user-facing documentation updates.
+    wave: 4
+    agent: gem-reviewer
+    priority: medium
+    status: pending
+    dependencies:
+      - T2
+      - T3
+      - T4
+    context_files:
+      - src/webview/components/CardFormTab.tsx: Scope and behavior review.
+      - src/webview/assets/main.css: Selector scoping and theme variable usage review.
+      - CHANGELOG.md: User-facing compliance review.
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: scope control
+    verification:
+      - Confirm no dependency or renderer changes were introduced.
+      - Confirm tests/build/manual checks are recorded.
+    acceptance_criteria:
+      - Diff is limited to the planned files and presentation/test/docs scope.
+      - No new dependency was added.
+      - Verification evidence exists for build/tests/manual cross-surface checks.
+    failure_modes:
+      - scenario: The fix drifts into renderer or architecture changes unrelated to the styling defect.
+        likelihood: low
+        impact: medium
+        mitigation: Reject or trim any changes outside CSS scope, targeted test coverage, and required docs.
+    requires_review: true
+    review_depth: standard
+    security_sensitive: false

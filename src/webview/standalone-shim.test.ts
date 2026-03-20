@@ -100,6 +100,7 @@ function installStandaloneGlobals(postMessageSpy: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('document', documentMock)
   vi.stubGlobal('sessionStorage', sessionStorageMock)
   vi.stubGlobal('localStorage', localStorageMock)
+  vi.stubGlobal('navigator', { onLine: true })
   vi.stubGlobal('fetch', vi.fn())
   vi.stubGlobal('btoa', (value: string) => Buffer.from(value, 'binary').toString('base64'))
   vi.stubGlobal('WebSocket', MockWebSocket)
@@ -165,5 +166,35 @@ describe('standalone shim reconnect behavior', () => {
       }),
       '*',
     )
+  })
+
+  it('fails form submits immediately while disconnected instead of leaving them in-flight', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('navigator', { onLine: false })
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({
+      type: 'submitForm',
+      cardId: '42',
+      formId: 'bug-report',
+      data: { severity: 'high' },
+      callbackKey: 'submit-1',
+    })
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'submitFormResult',
+        callbackKey: 'submit-1',
+        error: 'You are offline. Form submissions are unavailable until the standalone backend reconnects.',
+      }),
+      '*',
+    )
+    expect(MockWebSocket.instances[0]?.sent).toEqual([])
   })
 })

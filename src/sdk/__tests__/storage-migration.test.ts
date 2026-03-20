@@ -44,6 +44,7 @@ describe('Storage Engine Migration', () => {
       // Config should be updated
       const cfg = readConfig(workspaceDir)
       expect(cfg.storageEngine).toBe('sqlite')
+      expect(cfg.plugins?.['card.storage']).toBeUndefined()
 
       // New SDK instance should use SQLite and see the same cards
       const sqlSdk = new KanbanSDK(kanbanDir)
@@ -89,6 +90,7 @@ describe('Storage Engine Migration', () => {
       // Config should be updated (no storageEngine key or 'markdown')
       const cfg = readConfig(workspaceDir)
       expect(cfg.storageEngine).toBeUndefined()
+      expect(cfg.plugins?.['card.storage']).toBeUndefined()
 
       // New SDK instance should use markdown
       const mdSdk = new KanbanSDK(kanbanDir)
@@ -143,6 +145,98 @@ describe('Storage Engine Migration', () => {
       expect(afterMarkdown[0].priority).toBe('high')
       expect(afterMarkdown[0].assignee).toBe('alice')
       expect(afterMarkdown[0].labels).toEqual(['important'])
+    })
+  })
+
+  describe('plugin-aware config cleanup', () => {
+    it('clears card.storage plugin override when migrating to sqlite', async () => {
+      fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify({
+        version: 2,
+        boards: {
+          default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' }
+        },
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        aiAgent: 'claude',
+        defaultPriority: 'medium',
+        defaultStatus: 'backlog',
+        nextCardId: 1,
+        showPriorityBadges: true,
+        showAssignee: true,
+        showDueDate: true,
+        showLabels: true,
+        showBuildWithAI: true,
+        showFileName: false,
+        compactMode: false,
+        markdownEditorMode: false,
+        showDeletedColumn: false,
+        boardZoom: 100,
+        cardZoom: 100,
+        port: 2954,
+        plugins: {
+          'card.storage': { provider: 'markdown' },
+          'attachment.storage': { provider: 'localfs' }
+        }
+      }), 'utf-8')
+
+      const sdk = new KanbanSDK(kanbanDir)
+      await sdk.init()
+      await sdk.createCard({ content: '# Plugin config cleanup' })
+      await sdk.migrateToSqlite('.kanban/kanban.db')
+
+      const cfg = readConfig(workspaceDir)
+      expect(cfg.storageEngine).toBe('sqlite')
+      expect(cfg.plugins?.['card.storage']).toBeUndefined()
+      expect(cfg.plugins?.['attachment.storage']).toEqual({ provider: 'localfs' })
+      sdk.close()
+    })
+
+    it('clears incompatible built-in attachment provider when migrating back to markdown', async () => {
+      fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify({
+        version: 2,
+        boards: {
+          default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' }
+        },
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        aiAgent: 'claude',
+        defaultPriority: 'medium',
+        defaultStatus: 'backlog',
+        nextCardId: 1,
+        showPriorityBadges: true,
+        showAssignee: true,
+        showDueDate: true,
+        showLabels: true,
+        showBuildWithAI: true,
+        showFileName: false,
+        compactMode: false,
+        markdownEditorMode: false,
+        showDeletedColumn: false,
+        boardZoom: 100,
+        cardZoom: 100,
+        port: 2954,
+        storageEngine: 'sqlite',
+        sqlitePath: '.kanban/kanban.db',
+        plugins: {
+          'attachment.storage': { provider: 'sqlite' }
+        }
+      }), 'utf-8')
+
+      const sdk = new KanbanSDK(kanbanDir)
+      await sdk.init()
+      await sdk.createCard({ content: '# Markdown cleanup' })
+      await sdk.migrateToMarkdown()
+      sdk.close()
+
+      const cfg = readConfig(workspaceDir)
+      expect(cfg.storageEngine).toBeUndefined()
+      expect(cfg.sqlitePath).toBeUndefined()
+      expect(cfg.plugins?.['attachment.storage']).toBeUndefined()
+
+      const markdownSdk = new KanbanSDK(kanbanDir)
+      await markdownSdk.init()
+      expect(markdownSdk.getStorageStatus().providers?.['attachment.storage']).toEqual({ provider: 'localfs' })
+      markdownSdk.close()
     })
   })
 })

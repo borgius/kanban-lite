@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BoardInfo, Card, CardDisplaySettings, KanbanColumn } from '../../shared/types'
-import { useStore } from './index'
+import { createFormCardTabId, DEFAULT_CARD_TAB, getCardFormTabIds, isCardTabRouteCandidate, useStore } from './index'
 
 const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   showPriorityBadges: true,
@@ -323,6 +323,102 @@ describe('webview store column visibility state', () => {
 
     expect(useStore.getState().getHiddenColumnIds()).toEqual([])
     expect(useStore.getState().getMinimizedColumnIds()).toEqual(['todo'])
+  })
+})
+
+describe('webview store dynamic form tabs', () => {
+  it('keeps fixed tabs and derives stable dynamic form tab ids for attached forms', () => {
+    const board = makeBoard({
+      forms: {
+        'bug-report': {
+          schema: { type: 'object', title: 'Bug Report' },
+        },
+      },
+    })
+    const card = makeCard({
+      forms: [
+        { name: 'bug-report' },
+        { schema: { type: 'object', title: 'Release Checklist' } },
+        { schema: { type: 'object', title: 'Release Checklist' } },
+      ],
+    })
+
+    expect(isCardTabRouteCandidate('preview')).toBe(true)
+    expect(isCardTabRouteCandidate('comments')).toBe(true)
+    expect(isCardTabRouteCandidate('form:bug-report')).toBe(true)
+    expect(isCardTabRouteCandidate('mystery')).toBe(false)
+
+    expect(getCardFormTabIds(card, board)).toEqual([
+      createFormCardTabId('bug-report'),
+      createFormCardTabId('release-checklist'),
+      createFormCardTabId('release-checklist-2'),
+    ])
+  })
+
+  it('preserves pending form tabs for deep links until the matching card is opened', () => {
+    const store = useStore.getState()
+    const bugReportTab = createFormCardTabId('bug-report')
+
+    store.setBoards([
+      makeBoard({
+        forms: {
+          'bug-report': {
+            schema: { type: 'object', title: 'Bug Report' },
+          },
+        },
+      }),
+    ])
+    store.setCards([
+      makeCard({
+        id: 'card-with-form',
+        forms: [{ name: 'bug-report' }],
+      }),
+    ])
+
+    store.setActiveCardTab(bugReportTab)
+    expect(useStore.getState().activeCardTab).toBe(bugReportTab)
+
+    store.setActiveCardId('card-with-form')
+    expect(useStore.getState().activeCardTab).toBe(bugReportTab)
+  })
+
+  it('resets stale form tabs when switching cards or closing the editor', () => {
+    const store = useStore.getState()
+    const bugReportTab = createFormCardTabId('bug-report')
+
+    store.setBoards([
+      makeBoard({
+        forms: {
+          'bug-report': {
+            schema: { type: 'object', title: 'Bug Report' },
+          },
+        },
+      }),
+    ])
+    store.setCards([
+      makeCard({
+        id: 'card-with-form',
+        forms: [{ name: 'bug-report' }],
+      }),
+      makeCard({
+        id: 'card-without-form',
+      }),
+    ])
+
+    store.setActiveCardTab(bugReportTab)
+    store.setActiveCardId('card-with-form')
+    expect(useStore.getState().activeCardTab).toBe(bugReportTab)
+
+    store.setActiveCardId('card-without-form')
+    expect(useStore.getState().activeCardTab).toBe(DEFAULT_CARD_TAB)
+
+    store.setActiveCardId(null)
+    store.setActiveCardTab(bugReportTab)
+    store.setActiveCardId('card-with-form')
+    expect(useStore.getState().activeCardTab).toBe(bugReportTab)
+
+    store.setActiveCardId(null)
+    expect(useStore.getState().activeCardTab).toBe(DEFAULT_CARD_TAB)
   })
 })
 

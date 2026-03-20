@@ -2,13 +2,14 @@ import * as path from 'path'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig } from '../shared/config'
-import type { BoardConfig, Webhook } from '../shared/config'
-import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions } from './types'
-import type { StorageEngine } from './storage/types'
-import { createStorageEngine } from './storage'
+import { readConfig, normalizeStorageCapabilities } from '../shared/config'
+import type { BoardConfig, ProviderRef, ResolvedCapabilities, Webhook } from '../shared/config'
+import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult } from './types'
+import type { StorageEngine } from './plugins/types'
 import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
 import { resolveKanbanDir } from './fileUtils'
+import { resolveCapabilityBag } from './plugins'
+import type { ResolvedCapabilityBag } from './plugins'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
 import * as Labels from './modules/labels'
@@ -20,11 +21,39 @@ import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
 
 /**
+ * Resolved storage/provider metadata for diagnostics and host surfaces.
+ *
+ * This lightweight shape is designed for UI status banners, REST responses,
+ * CLI diagnostics, and integration checks that need to know which providers
+ * are active without reaching into the internal capability bag.
+ */
+export interface StorageStatus {
+  /** Active `card.storage` provider id (also mirrored as the legacy storage-engine label). */
+  storageEngine: string
+  /** Fully resolved provider selections, or `null` when a pre-built storage engine was injected. */
+  providers: ResolvedCapabilities | null
+  /** Whether the active card provider stores cards as local files. */
+  isFileBacked: boolean
+  /** File-watcher glob for local card files, or `null` for non-file-backed providers. */
+  watchGlob: string | null
+}
+
+/**
  * Optional search and sort inputs for {@link KanbanSDK.listCards}.
  *
  * The object form is the recommended public contract for new callers because it
  * keeps structured metadata filters, free-text search, fuzzy search, and sort
  * options in one explicit shape.
+ *
+ * @example
+ * ```ts
+ * const cards = await sdk.listCards(undefined, 'bugs', {
+ *   searchQuery: 'release meta.team: backend',
+ *   metaFilter: { 'links.jira': 'PROJ-' },
+ *   sort: 'modified:desc',
+ *   fuzzy: true,
+ * })
+ * ```
  */
 export interface ListCardsOptions {
   /**
@@ -97,13 +126,44 @@ function normalizeListCardsOptions(
     : { metaFilter: optionsOrMetaFilter }
 }
 
+function cloneProviderRef(ref: ProviderRef): ProviderRef {
+  return ref.options !== undefined
+    ? { provider: ref.provider, options: { ...ref.options } }
+    : { provider: ref.provider }
+}
+
+function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions): ResolvedCapabilities {
+  const config = readConfig(path.dirname(kanbanDir))
+  const capabilities = normalizeStorageCapabilities(config)
+
+  if (options?.storageEngine === 'sqlite') {
+    capabilities['card.storage'] = {
+      provider: 'sqlite',
+      options: { sqlitePath: options.sqlitePath ?? config.sqlitePath ?? '.kanban/kanban.db' },
+    }
+  } else if (options?.storageEngine === 'markdown') {
+    capabilities['card.storage'] = { provider: 'markdown' }
+  }
+
+  if (options?.capabilities?.['card.storage']) {
+    capabilities['card.storage'] = cloneProviderRef(options.capabilities['card.storage'])
+  }
+  if (options?.capabilities?.['attachment.storage']) {
+    capabilities['attachment.storage'] = cloneProviderRef(options.capabilities['attachment.storage'])
+  }
+
+  return capabilities
+}
+
 /**
- * Core SDK for managing kanban boards stored as markdown files.
+ * Core SDK for managing kanban boards with provider-backed card storage.
  *
  * Provides full CRUD operations for boards, cards, columns, comments,
- * attachments, and display settings. Cards are persisted as markdown files
- * with YAML frontmatter under the `.kanban/` directory, organized by board
- * and status column.
+ * attachments, and display settings. By default cards are persisted as
+ * markdown files with YAML frontmatter under the `.kanban/` directory,
+ * organized by board and status column, but the resolved `card.storage`
+ * provider may also route card/comment persistence to SQLite, MySQL, or an
+ * external plugin.
  *
  * This class is the foundation that the CLI, MCP server, and standalone
  * HTTP server are all built on top of.
@@ -119,6 +179,7 @@ export class KanbanSDK {
   private _migrated = false
   private _onEvent?: SDKEventHandler
   /** @internal */ _storage: StorageEngine
+  private _capabilities: ResolvedCapabilityBag | null = null
 
   /**
    * Absolute path to the `.kanban` kanban directory.
@@ -159,18 +220,158 @@ export class KanbanSDK {
   constructor(kanbanDir?: string, options?: SDKOptions) {
     this.kanbanDir = kanbanDir ?? resolveKanbanDir()
     this._onEvent = options?.onEvent
-    this._storage = options?.storage ?? createStorageEngine(this.kanbanDir, {
-      storageEngine: options?.storageEngine,
-      sqlitePath: options?.sqlitePath,
-    })
+    if (options?.storage) {
+      this._storage = options.storage
+      this._capabilities = null
+      return
+    }
+
+    this._capabilities = resolveCapabilityBag(
+      resolveConfiguredCapabilities(this.kanbanDir, options),
+      this.kanbanDir,
+    )
+    this._storage = this._capabilities.cardStorage
   }
 
   /**
    * The active storage engine powering this SDK instance.
-   * Returns `'markdown'` or `'sqlite'`.
+   * Returns the resolved `card.storage` provider implementation
+   * (for example `markdown`, `sqlite`, or `mysql`).
    */
   get storageEngine(): StorageEngine {
     return this._storage
+  }
+
+  /**
+   * The resolved storage/attachment capability bag for this SDK instance.
+   * Returns `null` when a pre-built storage engine was injected directly.
+   */
+  get capabilities(): ResolvedCapabilityBag | null {
+    return this._capabilities
+  }
+
+  /**
+   * Returns storage/provider metadata for host surfaces and diagnostics.
+   *
+   * Use this to inspect resolved provider ids, file-backed status, and
+   * watcher behavior without reaching into capability internals.
+   *
+   * @returns A {@link StorageStatus} snapshot containing the active provider id,
+   *   resolved provider selections (when available), whether cards are backed by
+   *   local files, and the watcher glob used by file-backed hosts.
+   *
+   * @example
+   * ```ts
+   * const status = sdk.getStorageStatus()
+   * console.log(status.storageEngine) // 'markdown' | 'sqlite' | 'mysql' | ...
+  * console.log(status.watchGlob) // e.g. markdown card glob for board/status directories
+   * ```
+   */
+  getStorageStatus(): StorageStatus {
+    return {
+      storageEngine: this._storage.type,
+      providers: this._capabilities?.providers ?? null,
+      isFileBacked: this._capabilities?.isFileBacked ?? this._storage.type === 'markdown',
+      watchGlob: this._capabilities?.getWatchGlob() ?? (this._storage.type === 'markdown' ? 'boards/**/*.md' : null),
+    }
+  }
+
+  /**
+   * Returns the local file path for a card when the active provider exposes one.
+   *
+   * This is most useful for editor integrations or diagnostics that need to open
+   * or reveal the underlying source file. Providers that do not expose stable
+   * local card files return `null`.
+   *
+   * @param card - The resolved card object.
+   * @returns The absolute on-disk card path, or `null` when the active provider
+   *   does not expose one.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.getCard('42')
+   * if (card) {
+   *   console.log(sdk.getLocalCardPath(card))
+   * }
+   * ```
+   */
+  getLocalCardPath(card: Card): string | null {
+    return this._capabilities?.getLocalCardPath(card) ?? (card.filePath || null)
+  }
+
+  /**
+   * Returns the local attachment directory for a card when the active
+   * attachment provider exposes one.
+   *
+   * File-backed providers typically return an absolute directory under the
+   * workspace, while database-backed or remote attachment providers may return
+   * `null` when attachments are not directly browseable on disk.
+   *
+   * @param card - The resolved card object.
+   * @returns The absolute attachment directory, or `null` when the active
+   *   attachment provider cannot expose one.
+   */
+  getAttachmentStoragePath(card: Card): string | null {
+    if (this._capabilities) {
+      return this._capabilities.getAttachmentDir(card)
+    }
+
+    try {
+      return this._storage.getCardDir(card)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Resolves or materializes a safe local file path for a named attachment.
+   *
+   * For simple file-backed providers this usually returns the existing file.
+   * Other providers may need to materialize a temporary local copy first.
+   * The method also guards against invalid attachment names and only resolves
+   * files already attached to the card.
+   *
+   * @param card - The resolved card object.
+   * @param attachment - Attachment filename exactly as stored on the card.
+   * @returns An absolute local path, or `null` when the attachment cannot be
+   *   safely exposed by the current provider.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.getCard('42')
+   * const pdfPath = card ? await sdk.materializeAttachment(card, 'report.pdf') : null
+   * ```
+   */
+  async materializeAttachment(card: Card, attachment: string): Promise<string | null> {
+    if (this._capabilities) {
+      return this._capabilities.materializeAttachment(card, attachment)
+    }
+
+    const normalized = attachment.replace(/\\/g, '/')
+    if (!normalized || normalized.includes('/')) return null
+    if (!Array.isArray(card.attachments) || !card.attachments.includes(normalized)) return null
+
+    const attachmentDir = this.getAttachmentStoragePath(card)
+    if (!attachmentDir) return null
+    return path.join(attachmentDir, normalized)
+  }
+
+  /**
+   * Copies an attachment through the resolved attachment-storage capability.
+   *
+   * This is a low-level helper used by higher-level attachment flows. It writes
+   * the supplied source file into the active attachment provider for the given
+   * card, whether that provider is local filesystem storage or a custom plugin.
+   *
+   * @param sourcePath - Absolute or relative path to the source file to copy.
+   * @param card - The target card that should own the copied attachment.
+   */
+  async copyAttachment(sourcePath: string, card: Card): Promise<void> {
+    if (this._capabilities) {
+      await this._capabilities.attachmentStorage.copyAttachment(sourcePath, card)
+      return
+    }
+    await this._storage.copyAttachment(sourcePath, card)
   }
 
   /**
@@ -392,6 +593,12 @@ export class KanbanSDK {
    * @param boardId - Board ID. Defaults to the active board when omitted.
    * @returns A map of action key to display title.
    * @throws {Error} If the board does not exist.
+    *
+    * @example
+    * ```ts
+    * const actions = sdk.getBoardActions('deployments')
+    * console.log(actions.deploy) // 'Deploy now'
+    * ```
    */
   getBoardActions(boardId?: string): Record<string, string> {
     return Boards.getBoardActions(this, boardId)
@@ -405,6 +612,11 @@ export class KanbanSDK {
    * @param title - Human-readable display title for the action.
    * @returns The updated actions map.
    * @throws {Error} If the board does not exist.
+    *
+    * @example
+    * ```ts
+    * sdk.addBoardAction('deployments', 'deploy', 'Deploy now')
+    * ```
    */
   addBoardAction(boardId: string, key: string, title: string): Record<string, string> {
     return Boards.addBoardAction(this, boardId, key, title)
@@ -418,6 +630,11 @@ export class KanbanSDK {
    * @returns The updated actions map.
    * @throws {Error} If the board does not exist.
    * @throws {Error} If the action key is not found on the board.
+    *
+    * @example
+    * ```ts
+    * sdk.removeBoardAction('deployments', 'deploy')
+    * ```
    */
   removeBoardAction(boardId: string, key: string): Record<string, string> {
     return Boards.removeBoardAction(this, boardId, key)
@@ -430,6 +647,11 @@ export class KanbanSDK {
    * @param actionKey - The key of the action to trigger.
    * @throws {Error} If the board does not exist.
    * @throws {Error} If the action key is not defined on the board.
+    *
+    * @example
+    * ```ts
+    * await sdk.triggerBoardAction('deployments', 'deploy')
+    * ```
    */
   async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
     return Boards.triggerBoardAction(this, boardId, actionKey)
@@ -634,6 +856,9 @@ export class KanbanSDK {
    * @param data.labels - Optional array of label strings.
    * @param data.attachments - Optional array of attachment filenames.
    * @param data.metadata - Optional arbitrary key-value metadata stored in the card's frontmatter.
+   * @param data.actions - Optional per-card actions as action keys or key-to-title map.
+   * @param data.forms - Optional attached forms, using workspace-form references or inline definitions.
+   * @param data.formData - Optional per-form persisted values keyed by resolved form ID.
    * @param data.boardId - Optional board ID. Defaults to the workspace's default board.
    * @returns A promise resolving to the newly created {@link Card} card.
    *
@@ -661,6 +886,9 @@ export class KanbanSDK {
    * overwritten. If the card's title changes, the underlying file is renamed.
    * If the status changes, the file is moved to the new status subdirectory
    * and `completedAt` is updated accordingly.
+  *
+  * Common update fields include `content`, `status`, `priority`, `assignee`,
+  * `dueDate`, `labels`, `metadata`, `actions`, `forms`, and `formData`.
    *
    * @param cardId - The ID of the card to update.
    * @param updates - A partial {@link Card} object with the fields to update.
@@ -679,6 +907,44 @@ export class KanbanSDK {
    */
   async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
     return Cards.updateCard(this, cardId, updates, boardId)
+  }
+
+  /**
+   * Validates and persists a form submission for a card, then emits `form.submit`
+   * through the normal SDK event/webhook pipeline.
+   *
+   * The target form must already be attached to the card, either as an inline
+   * card-local form or as a named reusable workspace form reference.
+   *
+   * Merge order for the resolved base payload (lowest → highest priority):
+   * 1. Workspace-config form defaults (`KanbanConfig.forms[formName].data`)
+   * 2. Card-scoped form defaults/persisted data (`attachment.data`, then `card.formData[formId]`)
+   * 3. Card metadata fields that are declared in the form schema
+   * 4. The submitted payload passed to this method
+   *
+   * Validation happens authoritatively in the SDK before persistence and before
+   * any event/webhook emission, so CLI/API/MCP/UI callers all share the same rules.
+   *
+   * @param input - The form submission input.
+   * @param input.cardId - ID of the card that owns the target form.
+   * @param input.formId - Resolved form ID/name to submit.
+   * @param input.data - Submitted field values to merge over the resolved base payload.
+   * @param input.boardId - Optional board ID. Defaults to the workspace default board.
+   * @returns The canonical persisted payload and event context.
+   * @throws {Error} If the card or form cannot be found, or if validation fails.
+   *
+   * @example
+   * ```ts
+   * const result = await sdk.submitForm({
+   *   cardId: '42',
+   *   formId: 'bug-report',
+   *   data: { severity: 'high', title: 'Crash on save' }
+   * })
+   * console.log(result.data.severity) // 'high'
+   * ```
+   */
+  async submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
+    return Cards.submitForm(this, input)
   }
 
   /**

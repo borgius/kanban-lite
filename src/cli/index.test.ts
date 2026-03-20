@@ -1,7 +1,10 @@
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
-import { cmdActive, cmdList, parseArgs, showHelp } from './index'
+import { cmdActive, cmdAdd, cmdEdit, cmdForm, cmdList, parseArgs, showHelp } from './index'
 
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -25,6 +28,12 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     version: 1,
     ...overrides,
   }
+}
+
+function mockProcessExit(): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    throw new Error(`process.exit:${code ?? 0}`)
+  }) as typeof process.exit)
 }
 
 describe('CLI list command', () => {
@@ -85,6 +94,10 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--search <text>')
     expect(helpText).toContain('--fuzzy')
     expect(helpText).toContain('--meta key=value')
+    expect(helpText).toContain('form submit <id> <form>')
+    expect(helpText).toContain("--forms '<json|@file>'")
+    expect(helpText).toContain("--form-data '<json|@file>'")
+    expect(helpText).toContain("--data '<json|@file>'")
   })
 })
 
@@ -114,5 +127,174 @@ describe('CLI active command', () => {
     await cmdActive(sdk as KanbanSDK, {})
 
     expect(logSpy.mock.calls[0][0]).toContain('No active card')
+  })
+})
+
+describe('CLI form-aware card commands', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('creates a card with forms and form data in a single createCard call', async () => {
+    const card = makeCard({
+      id: 'card-create',
+      forms: [{ name: 'bug-report' }],
+      formData: { 'bug-report': { severity: 'high' } },
+    })
+    const sdk = {
+      createCard: vi.fn().mockResolvedValue(card),
+    } as unknown as Pick<KanbanSDK, 'createCard'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdAdd(sdk as KanbanSDK, {
+      title: 'Bug card',
+      forms: JSON.stringify([{ name: 'bug-report' }]),
+      'form-data': JSON.stringify({ 'bug-report': { severity: 'high' } }),
+      json: true,
+    })
+
+    expect(sdk.createCard).toHaveBeenCalledWith({
+      content: '# Bug card',
+      status: undefined,
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      labels: [],
+      metadata: undefined,
+      actions: undefined,
+      boardId: undefined,
+      forms: [{ name: 'bug-report' }],
+      formData: { 'bug-report': { severity: 'high' } },
+    })
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(card)
+  })
+
+  it('updates forms and form data on an existing card', async () => {
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-edit' })),
+      updateCard: vi.fn().mockResolvedValue(makeCard({
+        id: 'card-edit',
+        forms: [{ schema: { type: 'object', title: 'Checklist' } }],
+        formData: { checklist: { approved: true } },
+      })),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'updateCard'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdEdit(sdk as KanbanSDK, ['card-edit'], {
+      forms: JSON.stringify([{ schema: { type: 'object', title: 'Checklist' } }]),
+      'form-data': JSON.stringify({ checklist: { approved: true } }),
+    })
+
+    expect(sdk.updateCard).toHaveBeenCalledWith('card-edit', {
+      forms: [{ schema: { type: 'object', title: 'Checklist' } }],
+      formData: { checklist: { approved: true } },
+    }, undefined)
+    expect(logSpy.mock.calls[0][0]).toContain('Updated: card-edit')
+  })
+
+  it('submits a named card form using a JSON payload', async () => {
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-submit' })),
+      submitForm: vi.fn().mockResolvedValue({
+        boardId: 'default',
+        card: { ...makeCard({ id: 'card-submit' }), filePath: undefined },
+        form: {
+          id: 'bug-report',
+          label: 'bug-report',
+          schema: { type: 'object' },
+          initialData: { severity: 'medium' },
+          fromConfig: true,
+        },
+        data: { severity: 'high' },
+      }),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
+      data: JSON.stringify({ severity: 'high' }),
+      json: true,
+    })
+
+    expect(sdk.submitForm).toHaveBeenCalledWith({
+      cardId: 'card-submit',
+      formId: 'bug-report',
+      data: { severity: 'high' },
+      boardId: undefined,
+    })
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
+      form: { id: 'bug-report' },
+      data: { severity: 'high' },
+    })
+  })
+
+  it('supports @file JSON payloads for form submission ergonomics', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-form-'))
+    const payloadPath = path.join(tempDir, 'payload.json')
+    fs.writeFileSync(payloadPath, JSON.stringify({ severity: 'critical' }), 'utf-8')
+
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-submit' })),
+      submitForm: vi.fn().mockResolvedValue({
+        boardId: 'default',
+        card: { ...makeCard({ id: 'card-submit' }), filePath: undefined },
+        form: {
+          id: 'bug-report',
+          label: 'bug-report',
+          schema: { type: 'object' },
+          initialData: { severity: 'medium' },
+          fromConfig: true,
+        },
+        data: { severity: 'critical' },
+      }),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    try {
+      await cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
+        data: `@${payloadPath}`,
+        json: true,
+      })
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+
+    expect(sdk.submitForm).toHaveBeenCalledWith({
+      cardId: 'card-submit',
+      formId: 'bug-report',
+      data: { severity: 'critical' },
+      boardId: undefined,
+    })
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
+      data: { severity: 'critical' },
+    })
+  })
+
+  it('fails fast when --forms is not valid JSON', async () => {
+    const sdk = {
+      createCard: vi.fn(),
+      updateCard: vi.fn(),
+    } as unknown as Pick<KanbanSDK, 'createCard' | 'updateCard'>
+    const exitSpy = mockProcessExit()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(cmdAdd(sdk as KanbanSDK, {
+      title: 'Bad card',
+      forms: '{not-json',
+    })).rejects.toThrow('process.exit:1')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--forms must be valid JSON'))
+    expect(sdk.createCard).not.toHaveBeenCalled()
+  })
+
+  it('propagates SDK form submission errors', async () => {
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-submit' })),
+      submitForm: vi.fn().mockRejectedValue(new Error('Invalid form submission for bug-report')),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+
+    await expect(cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
+      data: JSON.stringify({ severity: 'nope' }),
+    })).rejects.toThrow('Invalid form submission for bug-report')
   })
 })

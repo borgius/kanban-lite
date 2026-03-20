@@ -1,0 +1,461 @@
+plan_id: 20260319-storage-plugin-system
+objective: |
+	Implement a plugin system for storage engines so users can install an engine as an npm package
+	and select it in `.kanban.json`; move file/existence concerns behind capability abstractions;
+	add a built-in MySQL engine/plugin; and support attachment storage either from the same plugin
+	or from a separate plugin, while preserving backward compatibility and SDK/API/CLI/MCP parity.
+created_at: "2026-03-19"
+created_by: gem-planner
+status: completed
+research_confidence: high
+
+tldr: |
+	The lowest-risk path is to keep the current SDK as the single orchestrator, but replace the hard-coded
+	`StorageEngine` selection with a capability-based plugin registry that resolves `card.storage`,
+	`attachment.storage`, and optional node-only capabilities such as local file access and watch roots.
+	Legacy `storageEngine` / `sqlitePath` config must continue to work by normalizing into the new internal
+	capability map, while built-in markdown/sqlite implementations are wrapped as first-party plugins.
+	MySQL should ship as a built-in first-party plugin module with lazy optional driver loading, and all host
+	layers must consume capability metadata instead of assuming markdown files or local attachment paths.
+
+open_questions:
+	- "Should the built-in MySQL plugin bundle a driver dependency in the package, or treat `mysql2` as a soft runtime requirement loaded lazily with a clear install error?"
+	- "Should plugin package resolution search only the app package plus workspace `node_modules`, or also support absolute/local file references for development plugins?"
+	- "Do we want the first release to include a generic plugin-to-plugin migration command, or is fresh-config support plus retained sqlite/markdown migration aliases sufficient?"
+	- "For non-file-backed card storage, should the editing flow materialize temporary files only, or should a new host-side editor contract be introduced immediately for richer remote editing?"
+
+pre_mortem:
+	overall_risk_level: high
+	critical_failure_modes:
+		- scenario: Legacy workspaces silently switch behavior because new config parsing no longer treats missing storage settings as markdown defaults.
+			likelihood: medium
+			impact: critical
+			mitigation: |
+				Normalize legacy config first, keep markdown as the default when no capability is configured,
+				and add regression coverage proving old `.kanban.json` files still resolve to the same runtime
+				behavior as before.
+		- scenario: Node host layers continue to assume local markdown files and break when a plugin is remote-backed or does not expose direct filesystem paths.
+			likelihood: high
+			impact: high
+			mitigation: |
+				Introduce explicit node-only capabilities for file access/watch roots/materialized edit buffers,
+				migrate host code to those capabilities before enabling MySQL/non-file-backed plugins by default,
+				and preserve `card.filePath` only as a transitional compatibility field.
+		- scenario: External plugin loading expands the attack surface or destabilizes the extension/server via eager imports or version mismatches.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Restrict plugin loading to node-hosted layers, load lazily, validate manifest shape before use,
+				surface deterministic errors, and keep the built-in registry path independent from third-party
+				package resolution.
+		- scenario: MySQL support forces a hard dependency or bundling change that bloats existing installs or breaks current build scripts.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Keep the MySQL driver optional and lazily loaded, mark it external in node builds if needed,
+				and verify markdown/sqlite workflows still build and run without the MySQL driver installed.
+	assumptions:
+		- Existing markdown and sqlite implementations should remain the reference behavior and be adapted rather than rewritten.
+		- Webview code will not load plugins directly; all plugin resolution happens in node-hosted SDK consumers.
+		- Backward compatibility is a release requirement for `.kanban.json`, CLI commands, MCP tools, and server responses.
+		- Attachment metadata can remain filename-based initially, provided storage/path resolution moves behind capability contracts.
+		- There is no existing `docs/prd.yaml`, so this plan does not need to reconcile against a prior PRD.
+
+implementation_specification:
+	code_structure: |
+		Add a new SDK plugin layer under `src/sdk/plugins/` that owns plugin manifests, capability types,
+		built-in registrations, and node-only package loading. The SDK should resolve a typed capability bag
+		during construction or init, then delegate card storage, attachment storage, file access, and watch-root
+		discovery through those capabilities instead of directly branching on `'markdown' | 'sqlite'`. Keep
+		`src/shared/config.ts` as the single config normalization point: legacy fields are still read/written,
+		but the SDK consumes an internal normalized capability selection structure. Existing markdown/sqlite engine
+		code should be wrapped behind adapter plugins first; MySQL then plugs into the same contracts.
+	affected_areas:
+		- src/shared/config.ts
+		- src/sdk/types.ts
+		- src/sdk/KanbanSDK.ts
+		- src/sdk/storage/types.ts
+		- src/sdk/storage/index.ts
+		- src/sdk/modules/attachments.ts
+		- src/sdk/modules/cards.ts
+		- src/sdk/modules/migration.ts
+		- src/sdk/plugins/
+		- src/standalone/server.ts
+		- src/extension/KanbanPanel.ts
+		- src/extension/index.ts
+		- src/cli/index.ts
+		- src/mcp-server/index.ts
+		- src/sdk/__tests__/
+		- src/standalone/__tests__/server.integration.test.ts
+		- README.md
+		- CHANGELOG.md
+	component_details:
+		- component: Capability config normalization
+			responsibility: Translate legacy and new `.kanban.json` storage settings into a single normalized capability-selection model while preserving backward-compatible defaults and writes.
+			interfaces:
+				- "Normalized config reader/writer in `src/shared/config.ts`"
+				- "Internal capability selection shape for `card.storage`, `attachment.storage`, and future namespaces"
+		- component: SDK plugin registry and loader
+			responsibility: Resolve built-in and external plugin packages, validate plugin manifests, and expose a typed capability bag to the SDK without involving the webview.
+			interfaces:
+				- "Plugin manifest / capability interfaces in `src/sdk/plugins` and `src/sdk/storage/types.ts`"
+				- "Registry/loader entry point consumed by `KanbanSDK`"
+		- component: Built-in plugin adapters
+			responsibility: Adapt existing markdown/sqlite implementations plus local-filesystem attachment handling into first-party plugins that satisfy the new capability contracts.
+			interfaces:
+				- "Built-in markdown card storage plugin"
+				- "Built-in sqlite card storage plugin"
+				- "Built-in local-filesystem attachment storage plugin"
+		- component: MySQL plugin
+			responsibility: Provide first-party `card.storage` support for MySQL, optionally co-providing `attachment.storage` later but initially interoperating with the filesystem attachment plugin.
+			interfaces:
+				- "Built-in MySQL plugin manifest"
+				- "Lazy Node-only driver loading and connection configuration"
+		- component: Host capability consumers
+			responsibility: Replace direct file-path and watcher assumptions in extension/standalone/CLI/MCP layers with capability-aware flows and expose active plugin/capability info for supportability.
+			interfaces:
+				- "Host-side file access / temporary materialization helpers"
+				- "Workspace info/status responses that report active capability providers"
+	dependencies:
+		- component: Capability config normalization
+			relationship: Must land before loader and host changes so both legacy and new config shapes resolve consistently.
+		- component: SDK plugin registry and loader
+			relationship: Depends on normalized config and provides the capability bag consumed by adapters, MySQL, and host layers.
+		- component: Built-in plugin adapters
+			relationship: Depend on the registry/loader contracts and provide backward-compatible runtime behavior for existing workspaces.
+		- component: MySQL plugin
+			relationship: Depends on registry/loader contracts and on the migration/status surface exposed by the SDK.
+		- component: Host capability consumers
+			relationship: Depend on the resolved capability bag and optional file-access/watch capabilities to avoid raw storage branching.
+	integration_points:
+		- `src/shared/config.ts` is the only safe place to normalize legacy `storageEngine` / `sqlitePath` into capability selections.
+		- `KanbanSDK` constructor/init is the seam where plugins should be resolved and attached; interface layers should not duplicate resolution logic.
+		- `src/standalone/server.ts` and `src/extension/KanbanPanel.ts` currently branch on file-backed assumptions and must be migrated to capability-driven paths/watchers.
+		- `src/cli/index.ts` and `src/mcp-server/index.ts` already expose storage status/migration surfaces and must remain parity-aligned with the SDK changes.
+		- README, CHANGELOG, and autogenerated docs must reflect the final config shape and legacy compatibility story.
+
+contracts:
+	- from_task: T1
+		to_task: T2
+		interface: Normalized capability selection model and plugin manifest contracts
+		format: "Typed config output mapping capability keys (for example `card.storage`, `attachment.storage`) to provider references plus provider-specific options"
+	- from_task: T2
+		to_task: T3
+		interface: Resolved capability bag exposed by the SDK
+		format: "Runtime object containing card storage, attachment storage, and optional node-only file/watch capabilities plus provider metadata"
+	- from_task: T2
+		to_task: T4
+		interface: Built-in/external plugin registration and loading API
+		format: "Registry hooks and validation rules that let the MySQL plugin register `card.storage` without host-specific branching"
+	- from_task: T3
+		to_task: T5
+		interface: Host-facing SDK methods and capability metadata for file access and status reporting
+		format: "Stable SDK/response contract used by standalone, CLI, and MCP surfaces"
+	- from_task: T4
+		to_task: T5
+		interface: Generic migration/status behavior for built-in plugins including MySQL
+		format: "SDK migration/status APIs plus provider identifiers that host layers can expose"
+	- from_task: T5
+		to_task: T6
+		interface: Final public config and command/tool semantics
+		format: "README/CHANGELOG/doc updates describing config shape, plugin installation, migration, and compatibility"
+
+tasks:
+	- id: T1
+		title: Define capability-oriented plugin contracts and config normalization
+		description: |
+			Introduce the new internal capability model for plugin-driven storage, including provider references,
+			capability namespaces, and compatibility normalization from legacy `storageEngine` / `sqlitePath`
+			fields. This task should also define the minimum node-only abstractions needed to remove raw
+			file/existence assumptions from host layers later, while preserving default markdown behavior for
+			existing workspaces.
+		wave: 1
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies: []
+		context_files:
+			src/shared/config.ts: "Current permissive `.kanban.json` reader/writer and the safest place to normalize old and new config shapes."
+			src/sdk/storage/types.ts: "Current narrow storage abstraction that must evolve into capability-oriented contracts."
+			src/sdk/types.ts: "Public SDK options surface that currently exposes only storageEngine/sqlitePath overrides."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: plugin contracts and backward compatibility
+		verification:
+			- "Legacy configs with no storage keys still resolve to markdown via the normalized model."
+			- "Legacy sqlite configs normalize to a provider selection without changing runtime behavior."
+			- "TypeScript surfaces remain backward-compatible for existing SDK callers."
+		acceptance_criteria:
+			- "A normalized capability selection model exists for `card.storage`, `attachment.storage`, and future namespaces."
+			- "Legacy `storageEngine` / `sqlitePath` inputs map deterministically into the new model."
+			- "The config layer can still round-trip old workspaces without forcing immediate migration."
+		failure_modes:
+			- scenario: The normalized model is too storage-specific and blocks future capabilities.
+				likelihood: medium
+				impact: high
+				mitigation: "Keep provider selection generic and capability-keyed; avoid hard-coding engine-specific fields into the core schema."
+			- scenario: Config writes drop unknown fields from permissive user configs.
+				likelihood: medium
+				impact: high
+				mitigation: "Retain permissive merge behavior and add regression tests for unknown-field preservation where currently supported."
+		tech_stack:
+			- TypeScript
+			- Existing shared config utilities
+		test_coverage: "Add/extend config normalization and SDK option tests before loader work begins."
+
+	- id: T2
+		title: Build the SDK plugin registry, loader, and built-in markdown/sqlite/localfs adapters
+		description: |
+			Add a node-hosted plugin registry/loader that can resolve built-in providers first and lazily load
+			external npm packages when configured. Adapt the existing markdown and sqlite implementations into
+			first-party `card.storage` plugins, and split the local attachment behavior into a first-party
+			`attachment.storage` plugin that can either be selected explicitly or inherited from the card plugin
+			when the provider exposes both capabilities.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			src/sdk/storage/index.ts: "Current factory that hard-codes markdown/sqlite selection and bootstrap parsing."
+			src/sdk/KanbanSDK.ts: "Constructor/init path where capability resolution should become the single runtime entry point."
+			src/sdk/storage/markdown.ts: "Reference behavior to preserve via an adapter plugin rather than a rewrite."
+		estimated_effort: large
+		estimated_files: 3
+		estimated_lines: 380
+		focus_area: runtime plugin loading and built-in adaptation
+		verification:
+			- "SDK init resolves markdown/sqlite through the registry using both legacy and new config shapes."
+			- "External plugin loading fails with deterministic validation/install errors instead of crashes."
+			- "Attachment storage can come from the same provider or a separate provider without branching in callers."
+		acceptance_criteria:
+			- "Built-in markdown and sqlite behavior is available via the plugin registry."
+			- "A built-in local-filesystem attachment plugin exists and can be selected independently."
+			- "The SDK receives a resolved capability bag rather than branching directly on storage type."
+		failure_modes:
+			- scenario: Loader behavior differs between extension/server/CLI entry points.
+				likelihood: medium
+				impact: high
+				mitigation: "Keep plugin resolution inside shared SDK code and forbid host-specific resolution logic."
+			- scenario: Attachment provider fallback rules are ambiguous.
+				likelihood: medium
+				impact: medium
+				mitigation: "Define explicit precedence: configured attachment provider → same card plugin if it implements attachment.storage → built-in localfs provider."
+		tech_stack:
+			- TypeScript
+			- Node module resolution
+			- Existing markdown/sqlite storage implementations
+		test_coverage: "Add registry/loader tests plus adapter parity tests for built-in providers."
+
+	- id: T3
+		title: Migrate SDK host seams from raw file paths to capability-based file and watch abstractions
+		description: |
+			Remove direct file/existence assumptions from attachment handling, open-in-editor flows, and watcher
+			setup. Introduce optional node-only capabilities for resolving a local attachment path, materializing
+			an editable card buffer, and declaring watch roots or watchability. Update extension and standalone
+			server flows to consume those capabilities first, while keeping `card.filePath` and markdown/sqlite
+			behavior available as transitional fallbacks.
+		wave: 3
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T2
+		context_files:
+			src/sdk/modules/attachments.ts: "Current attachment logic assumes a copy-to-path flow and returns raw directories."
+			src/standalone/server.ts: "Current upload/edit/watcher paths branch directly on local filesystem behavior."
+			src/extension/KanbanPanel.ts: "Current open-attachment and watcher logic depends on local paths and markdown file watching."
+		estimated_effort: large
+		estimated_files: 3
+		estimated_lines: 420
+		focus_area: host compatibility for non-file-backed plugins
+		verification:
+			- "Markdown and sqlite still support edit/open/watch flows via the new capability layer."
+			- "A plugin without local card files can still expose attachments and editable card content through capability methods or temporary materialization."
+			- "Standalone and extension watchers no longer hard-code markdown-only path logic outside capability checks."
+		acceptance_criteria:
+			- "Host code paths use capability methods instead of calling `getCardDir()` / `filePath` directly whenever a plugin-backed alternative exists."
+			- "Non-file-backed providers can explicitly opt out of watch support without crashing host layers."
+			- "Transitional fallbacks preserve current UX for markdown/sqlite users."
+		failure_modes:
+			- scenario: Editing flows become temp-file-only and introduce sync races or stale overwrites.
+				likelihood: medium
+				impact: high
+				mitigation: "Keep explicit materialization/write-back contracts and verify external-change detection before enabling remote-backed providers broadly."
+			- scenario: Watchers stop refreshing markdown boards.
+				likelihood: medium
+				impact: medium
+				mitigation: "Retain file-backed watch roots for markdown/sqlite plugins and add watcher regression tests before removing old branching."
+		tech_stack:
+			- TypeScript
+			- VS Code file APIs
+			- chokidar / existing watcher patterns
+		test_coverage: "Add targeted extension/standalone and SDK integration tests for attachment and watch semantics."
+
+	- id: T4
+		title: Add the built-in MySQL card-storage plugin and generic migration/status support
+		description: |
+			Implement a first-party MySQL `card.storage` plugin using the same capability contracts as markdown
+			and sqlite. Keep driver loading lazy and optional, provide clear configuration and install failures,
+			and add the minimal generic migration/status plumbing needed so the SDK can report active providers
+			and migrate from built-in markdown/sqlite into another provider without duplicating engine-specific
+			orchestration logic.
+		wave: 3
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T2
+		context_files:
+			src/sdk/modules/migration.ts: "Current migration logic is hard-coded to markdown↔sqlite and should become plugin-aware without regressing aliases."
+			src/sdk/storage/sqlite.ts: "Reference relational storage behavior and schema patterns that inform MySQL plugin design."
+			package.json: "Build/dependency surface where optional MySQL driver strategy must remain low-risk."
+		estimated_effort: large
+		estimated_files: 3
+		estimated_lines: 460
+		focus_area: first-party externalized storage provider
+		verification:
+			- "MySQL provider resolves only when configured and reports a deterministic error when its driver/runtime requirements are missing."
+			- "SDK status APIs can identify the active card and attachment providers by provider id, not just `'markdown' | 'sqlite'`."
+			- "Legacy `migrateToSqlite` / `migrateToMarkdown` behavior still works via compatibility wrappers if generic migration lands."
+		acceptance_criteria:
+			- "A built-in MySQL plugin exists and satisfies the same card-storage contract as other providers."
+			- "MySQL can coexist with the built-in local attachment plugin when the provider does not own attachment storage."
+			- "Migration/status plumbing is generic enough to avoid reintroducing hard-coded engine branches."
+		failure_modes:
+			- scenario: The MySQL driver requirement forces a hard dependency for all users.
+				likelihood: medium
+				impact: high
+				mitigation: "Load the driver lazily and document/install-check it as an optional runtime requirement unless approval is given for a bundled dependency."
+			- scenario: MySQL plugin schema diverges from core card semantics.
+				likelihood: medium
+				impact: high
+				mitigation: "Reuse existing card/comment semantics and lock behavior with shared SDK integration tests across providers."
+		tech_stack:
+			- TypeScript
+			- MySQL driver loaded lazily in Node
+			- Existing relational storage patterns
+		test_coverage: "Add provider-specific integration tests plus migration/status regressions."
+
+	- id: T5
+		title: Preserve SDK/API/CLI/MCP parity and expose active plugin capability metadata
+		description: |
+			Update the public node-host surfaces so they all honor the new config and plugin system consistently.
+			This includes workspace info/status reporting, storage migration/status commands/tools, and any host-
+			visible errors for missing plugin packages or unsupported local file access. Legacy status/migration
+			commands should remain available, but their internals should route through the plugin-aware SDK.
+		wave: 4
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T3
+			- T4
+		context_files:
+			src/cli/index.ts: "Current storage status and migration commands expose only markdown/sqlite."
+			src/mcp-server/index.ts: "Current workspace info and storage tools must remain parity-aligned with the SDK."
+			src/standalone/server.ts: "Current REST responses expose storage engine status and attachment/file behaviors that need plugin-aware reporting."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 280
+		focus_area: parity and operability
+		verification:
+			- "CLI, MCP, and standalone workspace info all report provider/capability identities consistently."
+			- "Legacy storage commands still work for markdown/sqlite users."
+			- "Plugin load errors surface with actionable messages instead of generic stack traces."
+		acceptance_criteria:
+			- "All node-host interfaces consume the same SDK plugin-resolution path."
+			- "Workspace info/status surfaces expose enough metadata to debug active card/attachment providers."
+			- "Compatibility aliases preserve existing scripts and automation for markdown/sqlite migrations."
+		failure_modes:
+			- scenario: One interface layer lags behind and exposes stale storage semantics.
+				likelihood: medium
+				impact: medium
+				mitigation: "Treat parity as a dedicated task with shared verification against all three interfaces."
+		tech_stack:
+			- TypeScript
+			- Existing CLI/MCP/HTTP surfaces
+		test_coverage: "Add parity assertions across CLI/MCP/server tests where storage status and errors are exposed."
+
+	- id: T6
+		title: Update tests, docs, changelog, and generated references for the plugin model
+		description: |
+			Add the cross-provider regression suite, document the new `.kanban.json` capability configuration,
+			plugin installation flow, backward compatibility rules, and MySQL guidance, then regenerate SDK/API/
+			webhook docs as required by AGENTS.md. Include explicit notes for how attachment providers fall back,
+			and how legacy fields are interpreted in mixed-version workspaces.
+		wave: 5
+		agent: gem-documentation-writer
+		priority: medium
+		status: completed
+		dependencies:
+			- T5
+		context_files:
+			README.md: "Primary user-facing config and command reference that must explain plugin and compatibility behavior."
+			CHANGELOG.md: "Must capture the feature, compatibility guarantees, and any migration notes under Unreleased."
+			docs/sdk.md: "Generated SDK docs that must reflect any new public types/APIs after running the docs generator."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 260
+		focus_area: release safety and user guidance
+		verification:
+			- "README explains both the new capability config and the legacy compatibility path."
+			- "CHANGELOG includes concise Added/Changed/Fixed bullets for the plugin system release."
+			- "Generated docs match the updated JSDoc/source definitions after regeneration."
+		acceptance_criteria:
+			- "User-facing docs cover installing/selecting plugins, MySQL setup, and attachment provider fallback."
+			- "Developer docs cover capability interfaces and plugin authoring expectations."
+			- "Regression tests exist for legacy config, built-in providers, and plugin load failures."
+		failure_modes:
+			- scenario: Docs describe config shapes or commands that do not match the implementation.
+				likelihood: medium
+				impact: medium
+				mitigation: "Write docs only after parity/status outputs stabilize and regenerate derived docs from source comments."
+		task_type: update
+		audience: developers
+		coverage_matrix:
+			- "Legacy config compatibility"
+			- "Capability config format"
+			- "Plugin installation and resolution"
+			- "MySQL runtime requirements"
+			- "Attachment provider fallback"
+
+	- id: T7
+		title: Review plugin loading, compatibility, and host-surface regressions before merge
+		description: |
+			Perform a full review focused on plugin resolution safety, backward compatibility, host-surface parity,
+			and the risk of leaking file-path assumptions. Validate that the final implementation does not add
+			accidental dependencies, preserves markdown/sqlite defaults, and exposes clear operator-facing failure
+			messages for unsupported plugin/runtime combinations.
+		wave: 6
+		agent: gem-reviewer
+		priority: medium
+		status: completed
+		dependencies:
+			- T6
+		context_files:
+			src/sdk/KanbanSDK.ts: "Single orchestration point where plugin resolution and capability wiring converge."
+			src/standalone/server.ts: "Largest host surface with watcher, attachment, status, and API behaviors to validate."
+			README.md: "Source of truth for public behavior and compatibility claims that must match the implementation."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 180
+		focus_area: compatibility and safety review
+		verification:
+			- "Review confirms markdown/sqlite workspaces still behave the same without plugin config changes."
+			- "Review confirms plugin loading is node-only, lazy, and produces actionable errors."
+			- "Review confirms CLI/MCP/server surfaces expose the same provider metadata and migration semantics."
+		acceptance_criteria:
+			- "No unresolved high-severity compatibility or safety regressions remain."
+			- "Final implementation matches the documented config and migration story."
+			- "Any follow-up gaps are explicitly called out for a separate plan rather than merged implicitly."
+		failure_modes:
+			- scenario: Review happens too late to catch host/API mismatch cheaply.
+				likelihood: medium
+				impact: medium
+				mitigation: "Use wave-by-wave verification and parity checks before the final review pass."
+		requires_review: true
+		review_depth: full
+		security_sensitive: true

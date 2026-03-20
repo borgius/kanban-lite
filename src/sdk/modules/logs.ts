@@ -1,5 +1,6 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
+import type { Card } from '../../shared/types'
 import type { LogEntry } from '../../shared/types'
 import type { SDKContext } from './context'
 
@@ -31,6 +32,15 @@ function serializeLogEntry(entry: LogEntry): string {
   return line
 }
 
+function getLogDir(ctx: SDKContext, card: Card): string {
+  const dir = ctx.getAttachmentStoragePath(card)
+  if (!dir) {
+    const provider = ctx.capabilities?.providers['attachment.storage'].provider ?? 'unknown'
+    throw new Error(`Attachment storage provider "${provider}" does not expose a local directory for logs.`)
+  }
+  return dir
+}
+
 // --- Card-level log management ---
 
 /**
@@ -39,7 +49,7 @@ function serializeLogEntry(entry: LogEntry): string {
 export async function getLogFilePath(ctx: SDKContext, cardId: string, boardId?: string): Promise<string | null> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) return null
-  const dir = ctx._storage.getCardDir(card)
+  const dir = getLogDir(ctx, card)
   return path.join(dir, `${card.id}.log`)
 }
 
@@ -83,7 +93,7 @@ export async function addLog(
     ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
   }
 
-  const dir = ctx._storage.getCardDir(card)
+  const dir = getLogDir(ctx, card)
   const logFileName = `${card.id}.log`
   const logPath = path.join(dir, logFileName)
 
@@ -110,7 +120,7 @@ export async function clearLogs(ctx: SDKContext, cardId: string, boardId?: strin
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const logFileName = `${card.id}.log`
-  const dir = ctx._storage.getCardDir(card)
+  const dir = getLogDir(ctx, card)
   const logPath = path.join(dir, logFileName)
 
   try {

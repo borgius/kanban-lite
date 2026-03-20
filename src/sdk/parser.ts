@@ -1,7 +1,45 @@
 import * as path from 'path'
 import * as yaml from 'js-yaml'
-import type { Comment, Card, CardStatus, Priority } from '../shared/types'
+import type { Comment, Card, CardStatus, Priority, CardFormAttachment, CardFormDataMap } from '../shared/types'
 import { CARD_FORMAT_VERSION } from '../shared/types'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseForms(value: unknown): CardFormAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  const forms = value
+    .flatMap((entry) => {
+      if (typeof entry === 'string' && entry.trim().length > 0) {
+        return [{ name: entry.trim() } satisfies CardFormAttachment]
+      }
+
+      if (!isRecord(entry)) {
+        return []
+      }
+
+      const form: CardFormAttachment = {}
+      if (typeof entry.name === 'string' && entry.name.trim().length > 0) form.name = entry.name
+      if (isRecord(entry.schema)) form.schema = entry.schema
+      if (isRecord(entry.ui)) form.ui = entry.ui
+      if (isRecord(entry.data)) form.data = entry.data
+      return form.name !== undefined || form.schema !== undefined ? [form] : []
+    })
+
+  return forms.length > 0 ? forms : undefined
+}
+
+function parseFormData(value: unknown): CardFormDataMap | undefined {
+  if (!isRecord(value)) return undefined
+
+  const formData = Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => isRecord(entry))
+  ) as CardFormDataMap
+
+  return Object.keys(formData).length > 0 ? formData : undefined
+}
 
 function extractIdFromFilename(filePath: string): string {
   const basename = path.basename(filePath, '.md')
@@ -105,6 +143,8 @@ export function parseCardFile(content: string, filePath: string): Card | null {
   const meta = rawMeta != null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
     ? rawMeta as Record<string, unknown>
     : undefined
+  const forms = parseForms(parsed.forms)
+  const formData = parseFormData(parsed.formData)
 
   return {
     version: typeof parsed.version === 'number' ? parsed.version : parseInt(str('version'), 10) || 0,
@@ -123,6 +163,8 @@ export function parseCardFile(content: string, filePath: string): Card | null {
     content: body.trim(),
     ...(meta ? { metadata: meta } : {}),
     ...(actions && (Array.isArray(actions) ? actions.length > 0 : Object.keys(actions).length > 0) ? { actions } : {}),
+    ...(forms ? { forms } : {}),
+    ...(formData ? { formData } : {}),
     filePath
   }
 }
@@ -153,6 +195,8 @@ export function serializeCard(card: Card): string {
     order: card.order,
     ...(card.actions && (Array.isArray(card.actions) ? card.actions.length > 0 : Object.keys(card.actions).length > 0) ? { actions: card.actions } : {}),
     ...(card.metadata && Object.keys(card.metadata).length > 0 ? { metadata: card.metadata } : {}),
+    ...(card.forms && card.forms.length > 0 ? { forms: card.forms } : {}),
+    ...(card.formData && Object.keys(card.formData).length > 0 ? { formData: card.formData } : {}),
   }
 
   const yamlStr = yaml.dump(frontmatterObj, { lineWidth: -1, quotingType: '"', forceQuotes: true })

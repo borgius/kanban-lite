@@ -8,6 +8,17 @@ import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOpt
 import { readConfig } from '../shared/config'
 import { fireWebhooks } from '../sdk/webhooks'
 
+const cardFormAttachmentSchema = z.object({
+  name: z.string().optional().describe('Name of a reusable workspace-config form declared under forms.<name>.'),
+  schema: z.record(z.string(), z.unknown()).optional().describe('Inline JSON Schema for a card-local form. Required when name is omitted.'),
+  ui: z.record(z.string(), z.unknown()).optional().describe('Optional JSON Forms UI schema for layout/rendering hints.'),
+  data: z.record(z.string(), z.unknown()).optional().describe('Optional default data merged after config defaults and before persisted card form data.'),
+}).refine((value) => Boolean(value.name) || Boolean(value.schema), {
+  message: 'Each form attachment must include either name or schema.',
+})
+
+const cardFormDataMapSchema = z.record(z.string(), z.record(z.string(), z.unknown()))
+
 // --- Resolve cards directory ---
 
 async function findWorkspaceRoot(startDir: string): Promise<string> {
@@ -224,7 +235,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'create_card',
-    'Create a new kanban card. Returns the created card.',
+    'Create a new kanban card. Returns the created card. Supports form attachments and persisted per-form data for form-aware workflows.',
     {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       title: z.string().describe('Card title'),
@@ -236,8 +247,10 @@ async function main(): Promise<void> {
       labels: z.array(z.string()).optional().describe('Labels/tags'),
       metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (supports nested objects)'),
       actions: z.array(z.string()).optional().describe('Action names available on this card (e.g. ["retry", "sendEmail"])'),
+      forms: z.array(cardFormAttachmentSchema).optional().describe('Optional forms attached to this card. Each item may reference a named workspace form and/or provide an inline schema/ui/data override.'),
+      formData: cardFormDataMapSchema.optional().describe('Optional persisted per-form data keyed by resolved form id. Useful when seeding card-scoped form state at creation time.'),
     },
-    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata, actions }) => {
+    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata, actions, forms, formData }) => {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
       const card = await sdk.createCard({
@@ -250,6 +263,8 @@ async function main(): Promise<void> {
         metadata,
         actions,
         boardId,
+        forms,
+        formData,
       })
 
       return {
@@ -263,7 +278,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'update_card',
-    'Update fields of an existing kanban card. Only specified fields are changed.',
+    'Update fields of an existing kanban card. Only specified fields are changed. Supports replacing attached forms and persisted per-form data.',
     {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
@@ -275,8 +290,10 @@ async function main(): Promise<void> {
       content: z.string().optional().describe('New markdown content (replaces existing body)'),
       metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (replaces existing)'),
       actions: z.array(z.string()).optional().describe('Action names available on this card (replaces existing)'),
+      forms: z.array(cardFormAttachmentSchema).optional().describe('Forms attached to this card (replaces existing attachments when provided).'),
+      formData: cardFormDataMapSchema.optional().describe('Per-form persisted data keyed by resolved form id (replaces existing formData when provided).'),
     },
-    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata, actions }) => {
+    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata, actions, forms, formData }) => {
       // Resolve partial ID
       let resolvedId = cardId
       const card = await sdk.getCard(cardId, boardId)
@@ -307,6 +324,8 @@ async function main(): Promise<void> {
       if (content !== undefined) updates.content = content
       if (metadata !== undefined) updates.metadata = metadata
       if (actions !== undefined) updates.actions = actions
+      if (forms !== undefined) updates.forms = forms
+      if (formData !== undefined) updates.formData = formData
 
       const updated = await sdk.updateCard(resolvedId, updates, boardId)
 
@@ -315,6 +334,59 @@ async function main(): Promise<void> {
           type: 'text' as const,
           text: JSON.stringify(updated, null, 2),
         }],
+      }
+    }
+  )
+
+  server.tool(
+    'submit_card_form',
+    'Submit a named/resolved form for a card using the SDK-owned validation and persistence contract. Returns the canonical persisted payload and form/card context.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      formId: z.string().describe('Resolved form identifier to submit (for named workspace forms this is usually the form name).'),
+      data: z.record(z.string(), z.unknown()).describe('Submitted field values merged over the resolved form base payload before SDK validation.'),
+    },
+    async ({ boardId, cardId, formId, data }) => {
+      try {
+        let resolvedId = cardId
+        const card = await sdk.getCard(cardId, boardId)
+        if (!card) {
+          const all = await sdk.listCards(undefined, boardId)
+          const matches = all.filter(c => c.id.includes(cardId))
+          if (matches.length === 1) {
+            resolvedId = matches[0].id
+          } else if (matches.length > 1) {
+            return {
+              content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+              isError: true,
+            }
+          } else {
+            return {
+              content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+              isError: true,
+            }
+          }
+        }
+
+        const result = await sdk.submitForm({
+          boardId,
+          cardId: resolvedId,
+          formId,
+          data,
+        })
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(result, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
       }
     }
   )
@@ -1325,6 +1397,13 @@ async function main(): Promise<void> {
     {},
     async () => {
       const cfg = readConfig(workspaceRoot)
+      const storageStatus = sdk.getStorageStatus()
+      const providers = storageStatus.providers
+        ? {
+            'card.storage': storageStatus.providers['card.storage'].provider,
+            'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+          }
+        : null
       return {
         content: [{
           type: 'text' as const,
@@ -1332,8 +1411,11 @@ async function main(): Promise<void> {
             workspaceRoot,
             kanbanDir,
             port: cfg.port,
-            storageEngine: sdk.storageEngine.type,
-            sqlitePath: cfg.sqlitePath ?? null
+            storageEngine: storageStatus.storageEngine,
+            sqlitePath: cfg.sqlitePath ?? null,
+            providers,
+            isFileBacked: storageStatus.isFileBacked,
+            watchGlob: storageStatus.watchGlob,
           }, null, 2),
         }],
       }
@@ -1348,12 +1430,22 @@ async function main(): Promise<void> {
     {},
     async () => {
       const cfg = readConfig(workspaceRoot)
+      const storageStatus = sdk.getStorageStatus()
+      const providers = storageStatus.providers
+        ? {
+            'card.storage': storageStatus.providers['card.storage'].provider,
+            'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+          }
+        : null
       return {
         content: [{
           type: 'text' as const,
           text: JSON.stringify({
-            storageEngine: sdk.storageEngine.type,
+            storageEngine: storageStatus.storageEngine,
             sqlitePath: cfg.sqlitePath ?? null,
+            providers,
+            isFileBacked: storageStatus.isFileBacked,
+            watchGlob: storageStatus.watchGlob,
           }, null, 2),
         }],
       }

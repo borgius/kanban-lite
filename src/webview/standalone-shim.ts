@@ -19,6 +19,14 @@ let reconnectAttemptCount = 0
 let reconnectTimer: number | null = null
 let allowReconnect = true
 
+function getDisconnectedSubmitErrorMessage(): string {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'You are offline. Form submissions are unavailable until the standalone backend reconnects.'
+  }
+
+  return 'Cannot submit while disconnected from the standalone backend. Wait for reconnection and try again.'
+}
+
 function emitConnectionStatus(status: Omit<ConnectionStatusMessage, 'type'>) {
   const message: ExtensionMessage = { type: 'connectionStatus', ...status }
   window.postMessage(message, '*')
@@ -273,6 +281,15 @@ function handleOpenAttachment(cardId: string, attachment: string) {
       if (connected && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(json)
       }
+      return
+    }
+
+    if (msg.type === 'submitForm' && (!connected || !ws || ws.readyState !== WebSocket.OPEN)) {
+      window.postMessage({
+        type: 'submitFormResult',
+        callbackKey: msg.callbackKey,
+        error: getDisconnectedSubmitErrorMessage(),
+      } satisfies ExtensionMessage, '*')
       return
     }
 

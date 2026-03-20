@@ -58,12 +58,14 @@ await sdk.deleteCard(card.id)
 <a name="KanbanSDK"></a>
 
 ### KanbanSDK
-Core SDK for managing kanban boards stored as markdown files.
+Core SDK for managing kanban boards with provider-backed card storage.
 
 Provides full CRUD operations for boards, cards, columns, comments,
-attachments, and display settings. Cards are persisted as markdown files
-with YAML frontmatter under the `.kanban/` directory, organized by board
-and status column.
+attachments, and display settings. By default cards are persisted as
+markdown files with YAML frontmatter under the `.kanban/` directory,
+organized by board and status column, but the resolved `card.storage`
+provider may also route card/comment persistence to SQLite, MySQL, or an
+external plugin.
 
 This class is the foundation that the CLI, MCP server, and standalone
 HTTP server are all built on top of.
@@ -73,7 +75,13 @@ HTTP server are all built on top of.
 * [KanbanSDK](#KanbanSDK)
     * [new KanbanSDK(kanbanDir, options)](#new_KanbanSDK_new)
     * [.storageEngine](#KanbanSDK+storageEngine)
+    * [.capabilities](#KanbanSDK+capabilities)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
+    * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
+    * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
+    * [.getAttachmentStoragePath(card)](#KanbanSDK+getAttachmentStoragePath) ⇒
+    * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
+    * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
     * [.close()](#KanbanSDK+close)
     * [.emitEvent()](#KanbanSDK+emitEvent)
     * [._resolveBoardId()](#KanbanSDK+_resolveBoardId)
@@ -97,6 +105,7 @@ HTTP server are all built on top of.
     * [.clearActiveCard()](#KanbanSDK+clearActiveCard)
     * [.createCard(data)](#KanbanSDK+createCard) ⇒
     * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
+    * [.submitForm(input)](#KanbanSDK+submitForm) ⇒
     * [.triggerAction(cardId, action, boardId)](#KanbanSDK+triggerAction) ⇒
     * [.moveCard(cardId, newStatus, position, boardId)](#KanbanSDK+moveCard) ⇒
     * [.deleteCard(cardId, boardId)](#KanbanSDK+deleteCard) ⇒
@@ -133,6 +142,8 @@ HTTP server are all built on top of.
     * [.cleanupColumn(columnId, boardId)](#KanbanSDK+cleanupColumn) ⇒
     * [.purgeDeletedCards(boardId)](#KanbanSDK+purgeDeletedCards) ⇒
     * [.reorderColumns(columnIds, boardId)](#KanbanSDK+reorderColumns) ⇒
+    * [.getMinimizedColumns(boardId)](#KanbanSDK+getMinimizedColumns) ⇒
+    * [.setMinimizedColumns(columnIds, boardId)](#KanbanSDK+setMinimizedColumns) ⇒
     * [.getSettings()](#KanbanSDK+getSettings) ⇒
     * [.updateSettings(settings)](#KanbanSDK+updateSettings)
     * [.migrateToSqlite(dbPath)](#KanbanSDK+migrateToSqlite) ⇒
@@ -170,7 +181,18 @@ const cards = await sdk.listCards()
 
 #### kanbanSDK.storageEngine
 The active storage engine powering this SDK instance.
-Returns `'markdown'` or `'sqlite'`.
+Returns the resolved `card.storage` provider implementation
+(for example `markdown`, `sqlite`, or `mysql`).
+
+**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+capabilities"></a>
+
+#### kanbanSDK.capabilities
+The resolved storage/attachment capability bag for this SDK instance.
+Returns `null` when a pre-built storage engine was injected directly.
 
 **Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -190,6 +212,121 @@ This is the project root where `.kanban.json` configuration lives.
 const sdk = new KanbanSDK('/home/user/my-project/.kanban')
 console.log(sdk.workspaceRoot) // '/home/user/my-project'
 ```
+
+* * *
+
+<a name="KanbanSDK+getStorageStatus"></a>
+
+#### kanbanSDK.getStorageStatus() ⇒
+Returns storage/provider metadata for host surfaces and diagnostics.
+
+Use this to inspect resolved provider ids, file-backed status, and
+watcher behavior without reaching into capability internals.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A [StorageStatus](StorageStatus) snapshot containing the active provider id,
+  resolved provider selections (when available), whether cards are backed by
+  local files, and the watcher glob used by file-backed hosts.  
+**Example**  
+```ts
+const status = sdk.getStorageStatus()
+console.log(status.storageEngine) // 'markdown' | 'sqlite' | 'mysql' | ...
+console.log(status.watchGlob) // e.g. markdown card glob for board/status directories
+```
+
+* * *
+
+<a name="KanbanSDK+getLocalCardPath"></a>
+
+#### kanbanSDK.getLocalCardPath(card) ⇒
+Returns the local file path for a card when the active provider exposes one.
+
+This is most useful for editor integrations or diagnostics that need to open
+or reveal the underlying source file. Providers that do not expose stable
+local card files return `null`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The absolute on-disk card path, or `null` when the active provider
+  does not expose one.  
+
+| Param | Description |
+| --- | --- |
+| card | The resolved card object. |
+
+**Example**  
+```ts
+const card = await sdk.getCard('42')
+if (card) {
+  console.log(sdk.getLocalCardPath(card))
+}
+```
+
+* * *
+
+<a name="KanbanSDK+getAttachmentStoragePath"></a>
+
+#### kanbanSDK.getAttachmentStoragePath(card) ⇒
+Returns the local attachment directory for a card when the active
+attachment provider exposes one.
+
+File-backed providers typically return an absolute directory under the
+workspace, while database-backed or remote attachment providers may return
+`null` when attachments are not directly browseable on disk.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The absolute attachment directory, or `null` when the active
+  attachment provider cannot expose one.  
+
+| Param | Description |
+| --- | --- |
+| card | The resolved card object. |
+
+
+* * *
+
+<a name="KanbanSDK+materializeAttachment"></a>
+
+#### kanbanSDK.materializeAttachment(card, attachment) ⇒
+Resolves or materializes a safe local file path for a named attachment.
+
+For simple file-backed providers this usually returns the existing file.
+Other providers may need to materialize a temporary local copy first.
+The method also guards against invalid attachment names and only resolves
+files already attached to the card.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: An absolute local path, or `null` when the attachment cannot be
+  safely exposed by the current provider.  
+
+| Param | Description |
+| --- | --- |
+| card | The resolved card object. |
+| attachment | Attachment filename exactly as stored on the card. |
+
+**Example**  
+```ts
+const card = await sdk.getCard('42')
+const pdfPath = card ? await sdk.materializeAttachment(card, 'report.pdf') : null
+```
+
+* * *
+
+<a name="KanbanSDK+copyAttachment"></a>
+
+#### kanbanSDK.copyAttachment(sourcePath, card)
+Copies an attachment through the resolved attachment-storage capability.
+
+This is a low-level helper used by higher-level attachment flows. It writes
+the supplied source file into the active attachment provider for the given
+card, whether that provider is local filesystem storage or a custom plugin.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+| Param | Description |
+| --- | --- |
+| sourcePath | Absolute or relative path to the source file to copy. |
+| card | The target card that should own the copied attachment. |
+
 
 * * *
 
@@ -418,6 +555,11 @@ Returns the named actions defined on a board.
 | --- | --- |
 | boardId | Board ID. Defaults to the active board when omitted. |
 
+**Example**  
+```ts
+const actions = sdk.getBoardActions('deployments')
+console.log(actions.deploy) // 'Deploy now'
+```
 
 * * *
 
@@ -439,6 +581,10 @@ Adds or updates a named action on a board.
 | key | Unique action key (used as identifier). |
 | title | Human-readable display title for the action. |
 
+**Example**  
+```ts
+sdk.addBoardAction('deployments', 'deploy', 'Deploy now')
+```
 
 * * *
 
@@ -460,6 +606,10 @@ Removes a named action from a board.
 | boardId | Board ID. |
 | key | The action key to remove. |
 
+**Example**  
+```ts
+sdk.removeBoardAction('deployments', 'deploy')
+```
 
 * * *
 
@@ -480,6 +630,10 @@ Fires the `board.action` webhook event for a named board action.
 | boardId | The board that owns the action. |
 | actionKey | The key of the action to trigger. |
 
+**Example**  
+```ts
+await sdk.triggerBoardAction('deployments', 'deploy')
+```
 
 * * *
 
@@ -610,6 +764,9 @@ the board's defaults are used.
 | data.labels | Optional array of label strings. |
 | data.attachments | Optional array of attachment filenames. |
 | data.metadata | Optional arbitrary key-value metadata stored in the card's frontmatter. |
+| data.actions | Optional per-card actions as action keys or key-to-title map. |
+| data.forms | Optional attached forms, using workspace-form references or inline definitions. |
+| data.formData | Optional per-form persisted values keyed by resolved form ID. |
 | data.boardId | Optional board ID. Defaults to the workspace's default board. |
 
 **Example**  
@@ -637,6 +794,9 @@ overwritten. If the card's title changes, the underlying file is renamed.
 If the status changes, the file is moved to the new status subdirectory
 and `completedAt` is updated accordingly.
 
+Common update fields include `content`, `status`, `priority`, `assignee`,
+`dueDate`, `labels`, `metadata`, `actions`, `forms`, and `formData`.
+
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A promise resolving to the updated [Card](Card) card.  
 **Throws**:
@@ -657,6 +817,51 @@ const updated = await sdk.updateCard('42', {
   assignee: 'alice',
   labels: ['urgent', 'backend']
 })
+```
+
+* * *
+
+<a name="KanbanSDK+submitForm"></a>
+
+#### kanbanSDK.submitForm(input) ⇒
+Validates and persists a form submission for a card, then emits `form.submit`
+through the normal SDK event/webhook pipeline.
+
+The target form must already be attached to the card, either as an inline
+card-local form or as a named reusable workspace form reference.
+
+Merge order for the resolved base payload (lowest → highest priority):
+1. Workspace-config form defaults (`KanbanConfig.forms[formName].data`)
+2. Card-scoped form defaults/persisted data (`attachment.data`, then `card.formData[formId]`)
+3. Card metadata fields that are declared in the form schema
+4. The submitted payload passed to this method
+
+Validation happens authoritatively in the SDK before persistence and before
+any event/webhook emission, so CLI/API/MCP/UI callers all share the same rules.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The canonical persisted payload and event context.  
+**Throws**:
+
+- <code>Error</code> If the card or form cannot be found, or if validation fails.
+
+
+| Param | Description |
+| --- | --- |
+| input | The form submission input. |
+| input.cardId | ID of the card that owns the target form. |
+| input.formId | Resolved form ID/name to submit. |
+| input.data | Submitted field values to merge over the resolved base payload. |
+| input.boardId | Optional board ID. Defaults to the workspace default board. |
+
+**Example**  
+```ts
+const result = await sdk.submitForm({
+  cardId: '42',
+  formId: 'bug-report',
+  data: { severity: 'high', title: 'Crash on save' }
+})
+console.log(result.data.severity) // 'high'
 ```
 
 * * *
@@ -1601,6 +1806,38 @@ const columns = sdk.reorderColumns(
 
 * * *
 
+<a name="KanbanSDK+getMinimizedColumns"></a>
+
+#### kanbanSDK.getMinimizedColumns(boardId) ⇒
+Returns the minimized column IDs for a board.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: Array of column IDs currently marked as minimized.  
+
+| Param | Description |
+| --- | --- |
+| boardId | Board to query (uses default board if omitted). |
+
+
+* * *
+
+<a name="KanbanSDK+setMinimizedColumns"></a>
+
+#### kanbanSDK.setMinimizedColumns(columnIds, boardId) ⇒
+Sets the minimized column IDs for a board, persisting the state to the
+workspace config file. Stale or invalid IDs are silently dropped.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The sanitized list of minimized column IDs that was saved.  
+
+| Param | Description |
+| --- | --- |
+| columnIds | Column IDs to mark as minimized. |
+| boardId | Board to update (uses default board if omitted). |
+
+
+* * *
+
 <a name="KanbanSDK+getSettings"></a>
 
 #### kanbanSDK.getSettings() ⇒
@@ -2168,6 +2405,27 @@ const config = readConfig('/home/user/my-project')
 const updated = settingsToConfig(config, { ...configToSettings(config), compactMode: true })
 writeConfig('/home/user/my-project', updated)
 ```
+
+* * *
+
+<a name="normalizeStorageCapabilities"></a>
+
+### normalizeStorageCapabilities()
+Normalizes legacy storage settings plus capability-based plugin selections
+into a complete runtime capability map.
+
+Precedence:
+1. Explicit `plugins[namespace]`
+2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
+3. Backward-compatible defaults (`markdown` + `localfs`)
+
+Explicit built-in `attachment.storage` providers such as `sqlite` and
+`mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
+it away from the legacy `localfs` default.
+
+The input object is never mutated.
+
+**Kind**: global function  
 
 * * *
 

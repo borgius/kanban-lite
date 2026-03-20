@@ -1,0 +1,769 @@
+plan_id: 20260319-form-actions
+objective: |
+  Add support for forms attached directly to cards or declared in workspace config under
+  `forms.<name> = { schema, ui, data }`, render each attached form as an additional card tab,
+  seed initial form state from config defaults then card-scoped data then card metadata, validate
+  submissions with JSON Forms/AJV, and emit a `form.submit` webhook event through the existing
+  SDK-first parity surfaces (SDK, REST API, CLI, MCP, webview, README, CHANGELOG).
+created_at: "2026-03-19"
+created_by: gem-planner
+status: in_progress
+research_confidence: high
+
+tldr: |
+  This plan treats card forms as a first-class cross-surface feature, not a webview-only shortcut:
+  form definitions and card bindings are introduced in shared/SDK contracts first, persisted in both
+  markdown and SQLite storage, then exposed through REST API, CLI, and MCP before the webview renders
+  dynamic JSON Forms tabs. The plan normalizes both config-defined forms and card-local forms into a
+  single resolved form descriptor model, stores per-card submitted payloads in a dedicated form-keyed
+  map so multiple tabs do not collide, and routes `form.submit` through the normal SDK webhook event
+  pipeline instead of creating a second ad-hoc callback path. JSON Forms is the only justified new UI
+  dependency family for this feature, and README, CHANGELOG, and generated docs refresh remain mandatory
+  per `AGENTS.md`. No `docs/prd.yaml` exists today, so there is no PRD conflict to resolve before planning.
+
+open_questions: []
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: Markdown and SQLite store different card-form payloads or attachment metadata, causing tabs to appear or submit differently depending on storage mode.
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep the canonical form/card contracts in shared SDK types, implement persistence in both markdown
+        parser and SQLite adapter before any interface work, and add storage-specific regression coverage
+        before wiring the UI.
+    - scenario: The webview submits directly to a dedicated endpoint while SDK/REST/CLI/MCP use a different payload or validation path, breaking parity and webhook expectations.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Introduce a single SDK-owned submit-form entrypoint and payload composition helper, then have REST,
+        extension, CLI, and MCP delegate to that contract instead of duplicating validation or webhook logic.
+    - scenario: Form state merge precedence is implemented inconsistently, so config defaults, persisted card form data, and card metadata overwrite one another unpredictably.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Lock the merge order in shared/SDK contracts as `config default data -> card form data -> card metadata`,
+        document it in SDK JSDoc/README, and add targeted tests for collision cases before UI integration.
+    - scenario: Dynamic tabs are added only in the card editor component without updating global tab state and router handling, causing broken deep links or incorrect tab reset behavior.
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Extend the tab model, router whitelist, and close/reset behavior before rendering form content, and
+        keep dynamic tab IDs normalized so routing and standalone URLs remain stable.
+  assumptions:
+    - Root workspace config is the correct home for reusable named forms (`KanbanConfig.forms`), mirroring how other global features are declared today.
+    - Cards need both form attachments (`forms[]`) and a dedicated persisted form-data map keyed by resolved form id/name so multiple forms can coexist without field collisions.
+    - `form.submit` should be a first-class SDK event delivered through the existing webhook registration pipeline rather than the separate `actionWebhookUrl` shortcut.
+    - Non-UI parity means at minimum REST API, CLI, and MCP can create/update cards with forms, inspect resolved form state, and submit form payloads programmatically.
+    - Generated docs will be refreshed from JSDoc and route metadata via `npm run docs`; `docs/api.md`, `docs/sdk.md`, and `docs/webhooks.md` will not be edited by hand.
+
+implementation_specification:
+  code_structure: |
+    Keep the rollout surgical and ordered by `AGENTS.md`: first establish shared form definition, card binding,
+    and submit payload contracts in SDK-adjacent files; next persist those contracts in markdown and SQLite; then
+    expose the same behavior through REST API, CLI, and MCP; finally render dynamic JSON Forms tabs in the webview.
+    Normalize config-defined and card-local forms into one resolved descriptor model so the UI consumes a single
+    shape regardless of source. Validation and webhook delivery stay SDK-owned, while the webview is responsible
+    only for rendering, editing, and invoking the shared submit command.
+  affected_areas:
+    - package.json and pnpm-lock.yaml
+    - src/shared/config.ts
+    - src/shared/types.ts
+    - src/sdk/types.ts
+    - src/sdk/parser.ts
+    - src/sdk/storage/sqlite.ts
+    - src/sdk/modules/boards.ts
+    - src/sdk/modules/cards.ts
+    - src/sdk/KanbanSDK.ts
+    - src/standalone/server.ts
+    - src/extension/KanbanPanel.ts
+    - src/cli/index.ts
+    - src/mcp-server/index.ts
+    - src/webview/store/index.ts
+    - src/webview/router.tsx
+    - src/webview/App.tsx
+    - src/webview/components/CardEditor.tsx
+    - src/webview/components/MarkdownEditor.tsx
+    - src/webview/components/CardFormTab.tsx
+    - src/sdk/__tests__/KanbanSDK.test.ts
+    - src/sdk/__tests__/storage-sqlite.test.ts
+    - src/standalone/__tests__/server.integration.test.ts
+    - src/cli/index.test.ts
+    - README.md
+    - CHANGELOG.md
+  component_details:
+    - component: Shared form contracts
+      responsibility: Define reusable form definition, card attachment, resolved form descriptor, and form-data storage shapes shared across SDK and UI layers.
+      interfaces:
+        - "Workspace config form map: `forms.<name> = { schema, ui, data }`"
+        - "Card form attachments: named references and/or card-local inline form definitions"
+        - "Card-scoped form data map keyed by normalized form id/name"
+        - "Resolved submit payload contract including merged initial data and validation result surface"
+    - component: SDK persistence and resolution
+      responsibility: Persist card form bindings and form data in markdown and SQLite, expose named forms via board/card info, and resolve config + card-local definitions into a stable runtime descriptor list.
+      interfaces:
+        - "Parser + serializer support for form attachments and form data"
+        - "SQLite schema and row mapping for form attachments and form data"
+        - "SDK helpers to resolve attached forms for a given card/board"
+    - component: SDK submit workflow
+      responsibility: Validate submitted form data, merge defaults/card data/metadata in the documented order, persist the new form data, and emit `form.submit` through the webhook pipeline.
+      interfaces:
+        - "Public SDK method for submitting a card form"
+        - "`form.submit` added to SDK event contract"
+        - "Webhook payload containing board, card, form descriptor, submitted data, and validation context"
+    - component: Interface parity layer
+      responsibility: Mirror the SDK form contract and submit operation through REST API, CLI, MCP, and extension/standalone transport handlers without re-implementing business logic.
+      interfaces:
+        - "REST endpoints/request payloads for form-aware card create/update and form submit"
+        - "CLI flags/commands for attaching forms and submitting JSON payloads"
+        - "MCP schema/tool updates for forms and submit flow"
+        - "Shared webview message contracts for form submit callbacks"
+    - component: Webview JSON Forms renderer
+      responsibility: Add dynamic card tabs for attached forms, render them with JSON Forms renderers/cells, surface validation errors, and invoke the shared submit command.
+      interfaces:
+        - "Dynamic form tab ids derived from resolved form identifiers"
+        - "JSON Forms `onChange({ data, errors })` integration with local editor state"
+        - "Submit action gated by validation mode / AJV result"
+  dependencies:
+    - component: Shared form contracts
+      relationship: Blocks all persistence, interface, and UI work because every later layer needs a stable shape for forms, form data, and submit payloads.
+    - component: SDK persistence and resolution
+      relationship: Must land before submit flow and UI rendering so every surface reads the same normalized form descriptors in both storage modes.
+    - component: SDK submit workflow
+      relationship: Blocks REST, CLI, MCP, and webview submit actions because validation and webhook behavior must remain centralized.
+    - component: Interface parity layer
+      relationship: Depends on finalized SDK contracts and in turn blocks final README examples and cross-surface verification.
+    - component: Webview JSON Forms renderer
+      relationship: Depends on dependency installation, normalized form descriptors, dynamic tab plumbing, and shared submit transport.
+    - component: Docs and tests
+      relationship: Depend on the public contracts and UX labels being stable across SDK, API, CLI, MCP, and webview.
+  integration_points:
+    - `src/shared/config.ts` remains the source of truth for workspace-level reusable form declarations.
+    - `src/shared/types.ts` and `src/sdk/types.ts` remain the shared cross-layer contract for card fields, transport messages, and SDK events.
+    - `src/sdk/parser.ts` and `src/sdk/storage/sqlite.ts` remain the only persistence adapters for markdown and SQLite card state.
+    - `src/sdk/modules/cards.ts` remains the owner of card submit business logic and webhook emission.
+    - `src/standalone/server.ts`, `src/cli/index.ts`, and `src/mcp-server/index.ts` continue to delegate into SDK methods rather than implementing their own form logic.
+    - `src/webview/store/index.ts`, `src/webview/router.tsx`, and `src/webview/components/*` remain the card-editor state and rendering path for tabs.
+    - `README.md`, `CHANGELOG.md`, and generated docs remain mandatory completion surfaces for any user-visible feature rollout.
+
+contracts:
+  - from_task: T1
+    to_task: T8
+    interface: "Approved JSON Forms runtime package set is available to the webview build without adding unrelated dependencies"
+    format: "`package.json` dependency entries plus matching `pnpm-lock.yaml` updates"
+  - from_task: T2
+    to_task: T3
+    interface: "Stable shared types for reusable form definitions, card form attachments, and card form-data storage"
+    format: "TypeScript interfaces/types in `src/shared/config.ts`, `src/shared/types.ts`, and `src/sdk/types.ts`"
+  - from_task: T3
+    to_task: T4
+    interface: "Resolved form descriptor and persisted card form state can be read/written consistently in markdown and SQLite"
+    format: "SDK helper signatures plus persistence adapters that round-trip form attachments and form data"
+  - from_task: T4
+    to_task: T5
+    interface: "REST and extension transport handlers receive a single SDK submit-form method and canonical payload/error contract"
+    format: "Public SDK method signature + `form.submit` event payload schema"
+  - from_task: T4
+    to_task: T6
+    interface: "CLI can submit forms by passing card id, form id/name, and JSON payload into the stable SDK method"
+    format: "SDK method signature and expected JSON payload shape"
+  - from_task: T4
+    to_task: T7
+    interface: "MCP tool schemas can mirror the same form-aware create/update and submit contracts"
+    format: "SDK method signature and input/output field definitions"
+  - from_task: T5
+    to_task: T8
+    interface: "Webview transport message types and callback/result contract for form submission are finalized"
+    format: "Shared `WebviewMessage` / `ExtensionMessage` shapes and standalone/extension switch-case behavior"
+  - from_task: T8
+    to_task: T9
+    interface: "Dynamic tab ids and routing behavior for form tabs are stable"
+    format: "Store tab model, router whitelist/segment handling, and close/reset behavior"
+  - from_task: T4
+    to_task: T10
+    interface: "SDK merge order, validation rules, and webhook event semantics are finalized for regression coverage"
+    format: "Documented behavior in SDK method/JSDoc and submit helper tests"
+  - from_task: T5
+    to_task: T11
+    interface: "Standalone and extension transports expose a stable submit callback cycle for browser validation"
+    format: "Transport contract plus expected success/error states"
+  - from_task: T5
+    to_task: T12
+    interface: "Public API/transport behavior is stable enough to document"
+    format: "Endpoint shapes, examples, and submit semantics"
+  - from_task: T6
+    to_task: T12
+    interface: "CLI command/flag names and usage examples are stable enough to document"
+    format: "CLI syntax and sample payload invocation"
+  - from_task: T7
+    to_task: T12
+    interface: "MCP tool names and schema text are stable enough to document"
+    format: "Tool descriptions and argument schema"
+
+tasks:
+  - id: T1
+    title: Add the minimal JSON Forms dependency set for the webview
+    description: |
+      Add only the package set needed to render JSON Forms with React renderers/cells and AJV-backed
+      validation in the webview build. Keep this isolated so the dependency decision is explicit,
+      reviewable, and limited to the feature's stated requirement.
+    wave: 1
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies: []
+    context_files:
+      - package.json: "Current runtime dependency inventory; JSON Forms packages are not present."
+      - pnpm-lock.yaml: "Lockfile must be updated atomically with package.json."
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 12
+    focus_area: JSON Forms runtime enablement
+    verification:
+      - Webview build resolves JSON Forms imports without adding unrelated dependencies.
+      - Lockfile change is limited to the approved JSON Forms/AJV package family.
+    acceptance_criteria:
+      - `package.json` contains the minimal JSON Forms dependency set required by the chosen renderer approach.
+      - Dependency additions do not change non-form feature behavior or build scripts.
+    failure_modes:
+      - scenario: Too many renderer/helper packages are added, increasing bundle surface and review risk.
+        likelihood: medium
+        impact: medium
+        mitigation: Keep the addition limited to JSON Forms React + renderer/cell support and AJV only if required.
+    tech_stack:
+      - TypeScript
+      - React 18
+      - JSON Forms
+      - AJV
+    test_coverage: "Build-time verification via the existing webview bundle and follow-up UI integration tests."
+
+  - id: T2
+    title: Establish shared form definitions, card attachments, and form-data contracts
+    description: |
+      Define the canonical forms model in shared and SDK-adjacent types: reusable config forms,
+      card-local form attachments, normalized resolved form descriptors, a dedicated per-card form-data
+      map, and the `form.submit` event/input contract. This task also locks the documented merge order
+      for initial values as `config default data -> card form data -> card metadata`.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      - src/shared/config.ts: "Workspace config root where reusable named forms should live."
+      - src/shared/types.ts: "Card, board, frontmatter, and transport-facing shared types."
+      - src/sdk/types.ts: "SDK event and input contracts that must gain `form.submit`."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: SDK-first contract design
+    verification:
+      - Shared types compile without widening unrelated public APIs.
+      - Merge precedence and event contract are documented in code comments/JSDoc where applicable.
+    acceptance_criteria:
+      - Reusable forms can be declared in workspace config under a typed `forms` map.
+      - Cards have a typed way to reference inline and/or named forms plus persisted per-form data.
+      - `form.submit` exists as a first-class SDK event/input contract.
+    failure_modes:
+      - scenario: Card form data is modeled as a flat object, causing collisions when multiple forms share field names.
+        likelihood: medium
+        impact: high
+        mitigation: Use a form-keyed storage map in the contract so each tab has isolated persisted data.
+      - scenario: Shared types only model config-defined forms and forget card-local forms, making the feature half-implemented before persistence begins.
+        likelihood: medium
+        impact: high
+        mitigation: Define a single normalized descriptor that can represent both config-backed and inline card forms from the start.
+    tech_stack:
+      - TypeScript
+      - SDK shared contracts
+    test_coverage: "Compile-time coverage plus downstream SDK/storage tests for merge order and event typing."
+
+  - id: T3
+    title: Persist form attachments and per-card form data in markdown and SQLite
+    description: |
+      Extend the SDK persistence layer so card form attachments and per-card form data round-trip in both
+      markdown and SQLite storage modes. Expose reusable form declarations through existing board/card info
+      resolution paths so later interface layers read the same normalized state.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+    context_files:
+      - src/sdk/parser.ts: "Markdown frontmatter parse/serialize path for new card fields."
+      - src/sdk/storage/sqlite.ts: "SQLite schema, write path, and row-to-card mapping."
+      - src/sdk/modules/boards.ts: "Board info exposure path for config-backed forms."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: Cross-storage persistence parity
+    verification:
+      - Markdown cards round-trip attached forms and form data without losing existing metadata/actions fields.
+      - SQLite rows round-trip the same fields without schema drift at read/write time.
+      - Board/card listing surfaces can resolve available forms from config and card state.
+    acceptance_criteria:
+      - Attached forms and form data persist identically in markdown and SQLite modes.
+      - Existing cards without forms remain backward compatible.
+      - Resolved board/card info exposes enough data for later submit/UI steps.
+    failure_modes:
+      - scenario: SQLite migration adds fields but markdown serialization does not, causing storage-mode divergence.
+        likelihood: medium
+        impact: critical
+        mitigation: Implement and test both adapters in the same task before any higher-level integration.
+      - scenario: Board exposure paths surface raw config and raw card forms separately, forcing later layers to duplicate normalization logic.
+        likelihood: medium
+        impact: medium
+        mitigation: Normalize to a single runtime descriptor list in SDK-owned helpers before interface work starts.
+    tech_stack:
+      - TypeScript
+      - Markdown frontmatter parser
+      - better-sqlite3
+    test_coverage: "Regression tests in SDK/storage suites will cover round-trip parity and backward compatibility."
+
+  - id: T4
+    title: Implement the SDK submit-form workflow and webhook event emission
+    description: |
+      Add the SDK-owned submit-form entrypoint that resolves the target form, composes initial data using the
+      documented merge order, validates the submitted payload, persists the updated per-card form data, and
+      emits `form.submit` through the existing webhook pipeline. Keep this separate from `actionWebhookUrl`
+      so form submission remains a first-class event with normal webhook filtering and docs generation.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+      - T3
+    context_files:
+      - src/sdk/modules/cards.ts: "Current card business logic and action trigger precedent."
+      - src/sdk/KanbanSDK.ts: "Public SDK facade and JSDoc source for generated docs."
+      - src/sdk/types.ts: "Submit payload and event typing established in T2."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 220
+    focus_area: Validation and webhook boundaries
+    verification:
+      - Invalid form submissions are rejected before any webhook is emitted.
+      - Valid submissions persist updated form data and emit a `form.submit` event with the canonical payload.
+      - Public SDK docs/JSDoc reflect the final submit method and merge semantics.
+    acceptance_criteria:
+      - There is a single SDK method to submit a card form programmatically.
+      - `form.submit` uses the normal SDK webhook path and not a new ad-hoc HTTP shortcut.
+      - The submit payload includes board/card/form context and the validated data that was persisted.
+    failure_modes:
+      - scenario: Validation happens only in the UI, allowing invalid submissions through CLI/API/MCP.
+        likelihood: medium
+        impact: high
+        mitigation: Perform authoritative validation in the SDK submit method and let the UI use it as a convenience layer, not the source of truth.
+      - scenario: The form submit payload omits enough form metadata that downstream webhooks cannot identify which form was submitted.
+        likelihood: medium
+        impact: high
+        mitigation: Include a stable resolved form identifier and source metadata in the SDK event payload contract.
+    tech_stack:
+      - TypeScript
+      - SDK modules
+      - Webhook pipeline
+    test_coverage: "Unit/integration coverage for merge order, validation failure, persistence, and webhook emission."
+
+  - id: T5
+    title: Add REST and webview transport parity for form-aware cards and submit actions
+    description: |
+      Extend standalone REST handlers plus the standalone/extension webview transport bridge so form-aware
+      card payloads and form submission requests flow through the same SDK contract. This task covers shared
+      message handling, callback/error propagation, and any REST endpoint additions needed for parity.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+      - T4
+    context_files:
+      - src/standalone/server.ts: "REST API and standalone WebSocket handler surface."
+      - src/extension/KanbanPanel.ts: "VS Code webview message mirror for standalone behavior."
+      - src/shared/types.ts: "Shared transport message unions established in T2."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 260
+    focus_area: API and transport parity
+    verification:
+      - REST can create/update cards with forms and submit a form payload through the SDK.
+      - Standalone and VS Code transports return consistent success/error callbacks for submit.
+      - No business-rule duplication is introduced outside the SDK.
+    acceptance_criteria:
+      - Transport handlers mirror the same form submit operation and payload shape.
+      - API responses/errors are stable enough for README examples and test coverage.
+      - Extension and standalone paths stay in lockstep for message names and result handling.
+    failure_modes:
+      - scenario: Standalone REST and extension message paths diverge on error handling, producing different UI behavior for the same invalid form.
+        likelihood: medium
+        impact: high
+        mitigation: Reuse one shared transport message contract and map all errors from SDK exceptions/results rather than bespoke strings.
+      - scenario: REST endpoint design exposes a second submit payload shape separate from the webview message contract.
+        likelihood: medium
+        impact: medium
+        mitigation: Base both on the SDK submit method inputs and keep endpoint bodies thin adapters only.
+    tech_stack:
+      - TypeScript
+      - REST API
+      - VS Code webview bridge
+      - WebSocket transport
+    test_coverage: "Server integration tests plus browser-level transport validation."
+
+  - id: T6
+    title: Add CLI parity for form-aware card workflows and submission
+    description: |
+      Extend the CLI so users can create/update cards with form attachments and submit form payloads via the
+      same SDK submit method. Keep the surface minimal and scriptable, favoring JSON input over bespoke flag
+      sprawl while preserving existing card commands.
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T2
+      - T4
+    context_files:
+      - src/cli/index.ts: "Existing card create/edit/action commands and help text patterns."
+      - src/cli/index.test.ts: "CLI regression coverage for public command behavior."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: CLI parity
+    verification:
+      - CLI can attach forms during create/update flows without breaking existing options.
+      - CLI can submit form payload JSON and surfaces SDK validation errors clearly.
+    acceptance_criteria:
+      - Users can attach or update card forms from the CLI.
+      - Users can submit a named form for a card from the CLI using a JSON payload.
+      - CLI help/examples remain aligned with README documentation.
+    failure_modes:
+      - scenario: CLI syntax becomes overly complex and inconsistent with existing command patterns.
+        likelihood: medium
+        impact: medium
+        mitigation: Reuse existing card command structure and prefer a single JSON payload option for submit rather than many per-field flags.
+    tech_stack:
+      - TypeScript
+      - Node CLI
+    test_coverage: "CLI integration tests for create/update and submit happy/error paths."
+
+  - id: T7
+    title: Add MCP parity for form-aware card workflows and submission
+    description: |
+      Extend MCP schemas/tools so agents can create or update cards with forms and submit form payloads using
+      the same SDK-owned contract. Keep the change surgical by reusing existing card tool patterns where possible
+      and adding a dedicated submit operation only if the current tool set cannot express it clearly.
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T2
+      - T4
+    context_files:
+      - src/mcp-server/index.ts: "Existing create/update/trigger tool schemas and SDK delegation patterns."
+      - src/sdk/KanbanSDK.ts: "Public form-aware SDK methods exposed to MCP."
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 170
+    focus_area: MCP parity
+    verification:
+      - MCP schemas can express form attachments and a form submit call without ambiguity.
+      - MCP tool handlers delegate to the SDK submit method and return validation failures clearly.
+    acceptance_criteria:
+      - MCP card tools accept form-aware inputs.
+      - MCP offers a clear programmatic path to submit a named form for a card.
+      - Tool descriptions remain aligned with README/MCP docs tables.
+    failure_modes:
+      - scenario: MCP schema allows shapes that the SDK no longer accepts, causing runtime validation mismatches.
+        likelihood: medium
+        impact: medium
+        mitigation: Reuse shared SDK input types when defining schemas and cover the submit path during review/build verification.
+    tech_stack:
+      - TypeScript
+      - MCP server
+      - Zod
+    test_coverage: "Schema/build verification plus cross-surface review against SDK signatures."
+
+  - id: T8
+    title: Extend card tab state and routing for dynamic form tabs
+    description: |
+      Update the webview store, route handling, and card-editor lifecycle so form tabs can be added dynamically
+      per card while preserving existing preview/comments/logs behavior, URL restoration, and close/reset logic.
+      This task intentionally stops short of rendering JSON Forms; it only makes the tab model safe for dynamic tabs.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+      - T3
+      - T5
+    context_files:
+      - src/webview/store/index.ts: "Current global card tab union and active-tab state."
+      - src/webview/router.tsx: "Current valid-tab whitelist and URL sync logic."
+      - src/webview/App.tsx: "Card-editor open/close reset behavior."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: Dynamic tab plumbing
+    verification:
+      - Deep links to a form tab resolve to the correct card/tab when forms are attached.
+      - Closing a card resets to the expected default tab without leaving stale dynamic tab ids in state.
+      - Cards without forms continue to use the current fixed tab experience.
+    acceptance_criteria:
+      - Dynamic form tab ids are supported in store and router state.
+      - Existing fixed tabs remain available and unchanged for cards without forms.
+      - Tab reset and standalone URL sync continue to behave deterministically.
+    failure_modes:
+      - scenario: Router validation still whitelists only fixed tabs, making direct links to form tabs impossible.
+        likelihood: high
+        impact: medium
+        mitigation: Replace fixed-tab assumptions with normalized dynamic-tab resolution before adding UI rendering.
+      - scenario: Dynamic tabs leak between cards because active tab state is global and not normalized on card change.
+        likelihood: medium
+        impact: high
+        mitigation: Reset/validate active form-tab ids whenever the active card changes or closes.
+    tech_stack:
+      - React
+      - Zustand
+      - TanStack Router
+    test_coverage: "Webview/router tests plus browser validation for deep-link and reset behavior."
+
+  - id: T9
+    title: Render JSON Forms inside card tabs and wire submit UX
+    description: |
+      Add the dedicated form-tab UI that resolves attached forms for the active card, renders them with JSON Forms,
+      tracks `onChange({ data, errors })`, surfaces validation state, and submits through the shared transport contract.
+      Reuse the existing card editor shell rather than introducing a second editor surface.
+    wave: 6
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+      - T4
+      - T5
+      - T8
+    context_files:
+      - src/webview/components/CardEditor.tsx: "Card detail shell and current action/header placement."
+      - src/webview/components/MarkdownEditor.tsx: "Current tab renderer and content switcher."
+      - src/webview/components/CardFormTab.tsx: "New JSON Forms host component for per-card form tabs."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: Webview form rendering and submit UX
+    verification:
+      - Attached forms render as additional tabs with stable labels/ids.
+      - JSON Forms validation state gates submission and shows actionable errors.
+      - Successful submit updates the card form state without breaking markdown preview/comments/logs.
+    acceptance_criteria:
+      - Cards with `forms[]` show one extra tab per resolved form.
+      - Initial data respects the documented merge order before user edits begin.
+      - Submit triggers the shared transport callback and reflects success/error state in the UI.
+    failure_modes:
+      - scenario: JSON Forms state is recreated on every render, causing users to lose unsaved edits while switching tabs.
+        likelihood: medium
+        impact: high
+        mitigation: Keep per-tab local state stable and key components by normalized form id rather than transient array index.
+      - scenario: Form tabs render only config-defined forms and skip inline card-local forms.
+        likelihood: medium
+        impact: medium
+        mitigation: Consume the normalized resolved descriptor list from SDK-backed state instead of branching in the component tree.
+    tech_stack:
+      - React
+      - JSON Forms
+      - AJV
+      - TypeScript
+    test_coverage: "Component-level and browser-level coverage for render, validation, and submit flows."
+
+  - id: T10
+    title: Expand automated regression coverage for SDK, storage, CLI, and REST form flows
+    description: |
+      Add and update automated tests for the highest-risk behavior: merge precedence, markdown/SQLite persistence,
+      webhook emission, REST parity, and CLI submit ergonomics. Keep this task focused on regression coverage that
+      protects the SDK-first contract and the public command/API surfaces.
+    wave: 6
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T3
+      - T4
+      - T5
+      - T6
+    context_files:
+      - src/sdk/__tests__/KanbanSDK.test.ts: "SDK submit and webhook regression coverage."
+      - src/sdk/__tests__/storage-sqlite.test.ts: "SQLite round-trip parity coverage."
+      - src/standalone/__tests__/server.integration.test.ts: "REST/API integration coverage for form-aware payloads."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: Regression automation
+    verification:
+      - Automated tests cover valid submit, invalid submit, merge collisions, and storage round-trip cases.
+      - REST integration asserts that API submit behavior matches SDK behavior.
+      - Existing unrelated tests remain green.
+    acceptance_criteria:
+      - Hidden-risk areas (merge order, webhook emission, storage parity) have explicit regression tests.
+      - REST create/update/submit coverage exists for form-aware payloads.
+      - Test failures point to contract regressions rather than UI-only snapshots.
+    failure_modes:
+      - scenario: Tests focus only on happy paths and miss collision/invalid-payload cases that will fail hidden tests later.
+        likelihood: medium
+        impact: high
+        mitigation: Include explicit negative tests for AJV validation failures and data-merge precedence conflicts.
+      - scenario: CLI behavior changes without coverage because the task only updates SDK/REST tests.
+        likelihood: medium
+        impact: medium
+        mitigation: Add or extend CLI tests in the same execution wave even if they live in a neighboring file beyond the three-file core set.
+    tech_stack:
+      - Vitest
+      - SDK integration tests
+      - REST integration tests
+    test_coverage: "Focused regression coverage for SDK, storage, REST, and CLI form behaviors."
+
+  - id: T11
+    title: Validate interactive standalone and VS Code form-tab behavior end to end
+    description: |
+      Run end-to-end browser validation against the standalone webview and spot-check the VS Code webview bridge
+      to ensure dynamic tabs, JSON Forms validation, reconnect-sensitive submit behavior, and success/error UI
+      states behave as planned. This complements automated coverage with real interaction checks.
+    wave: 7
+    agent: gem-browser-tester
+    priority: medium
+    status: pending
+    dependencies:
+      - T5
+      - T8
+      - T9
+    context_files:
+      - src/webview/App.tsx: "Standalone card-editor shell and active card lifecycle."
+      - src/webview/components/CardEditor.tsx: "Rendered form tabs and submit UI."
+      - src/webview/standalone-shim.ts: "Reconnect-sensitive transport behavior."
+    estimated_effort: medium
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: Interactive validation
+    verification:
+      - Manual/browser checks confirm dynamic tabs, validation gating, and submit callbacks in standalone mode.
+      - VS Code bridge spot-check confirms the same success/error flow as standalone.
+    acceptance_criteria:
+      - Users can open a card, switch among multiple form tabs, submit valid data, and see expected feedback.
+      - Invalid submissions do not leave the UI in an ambiguous state.
+      - Disconnect/reconnect scenarios do not silently lose or double-submit form data.
+    failure_modes:
+      - scenario: The standalone shim drops a submit during reconnect and the UI appears successful anyway.
+        likelihood: medium
+        impact: high
+        mitigation: Validate explicit offline/disconnect scenarios and ensure the UI only reports success on confirmed callbacks.
+    validation_matrix:
+      - scenario: Config-defined form tab renders with seeded data
+        steps:
+          - Open a card that references a named config form.
+          - Navigate to the corresponding form tab.
+          - Confirm the rendered values reflect config defaults overlaid by persisted card form data and metadata.
+        expected_result: The form renders on the correct tab with the documented merge order visible in field values.
+      - scenario: Invalid form submit is blocked
+        steps:
+          - Edit required fields into an invalid state.
+          - Attempt to submit from the form tab.
+        expected_result: Submission is blocked, validation errors are visible, and no success callback is shown.
+      - scenario: Valid form submit succeeds and updates state
+        steps:
+          - Enter valid data on a form tab.
+          - Submit the form and wait for completion.
+          - Reopen the card or switch tabs away and back.
+        expected_result: The submit succeeds, state persists, and the edited values remain visible.
+      - scenario: Reconnect-sensitive submit handling
+        steps:
+          - Start a submit, interrupt connectivity in standalone mode, then restore connectivity.
+          - Observe UI state and server outcome.
+        expected_result: The UI does not report a false success, and the final state matches the confirmed server result.
+
+  - id: T12
+    title: Update README and CHANGELOG, then refresh generated docs from source metadata
+    description: |
+      Document the new forms model, merge order, submit event, and parity surfaces in the user-facing docs,
+      and add release notes under `Unreleased`. Generated docs must be refreshed from the SDK JSDoc and API/webhook
+      metadata touched in earlier tasks; generated outputs are never edited manually.
+    wave: 7
+    agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - T4
+      - T5
+      - T6
+      - T7
+      - T9
+    context_files:
+      - README.md: "Primary user-facing reference for SDK/API/CLI/MCP/webview features."
+      - CHANGELOG.md: "Required release-note surface under `Unreleased`."
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: User-facing documentation
+    verification:
+      - README examples match the final SDK/API/CLI/MCP/webview behavior.
+      - CHANGELOG records the feature under the correct unreleased headings.
+      - Generated docs are refreshed via `npm run docs` without manual edits to generated files.
+    acceptance_criteria:
+      - README explains config-defined forms, card-attached forms, submit behavior, and parity surfaces.
+      - CHANGELOG includes concise Added/Changed/Fixed notes as appropriate.
+      - Documentation explicitly notes `form.submit` and the data merge order.
+    failure_modes:
+      - scenario: README documents only the UI and omits CLI/MCP/API parity, leaving public interfaces underspecified.
+        likelihood: medium
+        impact: medium
+        mitigation: Update docs only after parity task outputs are stable, and include a short example for each public surface.
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - SDK submit method and merge semantics
+      - REST create/update/submit examples
+      - CLI form attachment and submit examples
+      - MCP tool/table updates
+      - Webview form-tab behavior
+      - CHANGELOG unreleased entry
+
+  - id: T13
+    title: Review cross-surface parity, docs obligations, and regression completeness
+    description: |
+      Perform a final review of the implementation against `AGENTS.md` and this plan: SDK-first ordering,
+      REST/CLI/MCP parity, storage parity, JSON Forms dependency discipline, and README/CHANGELOG/doc-refresh
+      obligations. This is the final gate before merge.
+    wave: 8
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - T10
+      - T11
+      - T12
+    context_files:
+      - AGENTS.md: "Repository parity, implementation-order, and documentation rules."
+      - README.md: "User-facing feature contract after doc updates."
+      - CHANGELOG.md: "Release-note completeness check."
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: Final parity and compliance review
+    verification:
+      - Review confirms SDK-first execution and no interface-only shortcuts.
+      - Review confirms parity coverage across API, CLI, MCP, and webview.
+      - Review confirms docs and generated-doc refresh obligations were not skipped.
+    acceptance_criteria:
+      - No required parity surface is missing for the delivered behavior.
+      - No storage-mode divergence or undocumented merge behavior remains.
+      - The change is ready for merge with explicit review sign-off.
+    failure_modes:
+      - scenario: A public surface (usually CLI or MCP) lags behind the webview implementation and would only be noticed after release.
+        likelihood: medium
+        impact: high
+        mitigation: Use this task as a hard release gate and compare completed work directly against the task graph and AGENTS checklist.
+    requires_review: true
+    review_depth: full
+    security_sensitive: false

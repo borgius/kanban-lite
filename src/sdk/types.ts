@@ -1,10 +1,10 @@
-import type { Card, Priority } from '../shared/types'
-import type { StorageEngine, StorageEngineType } from './storage/types'
+import type { Card, CardFormAttachment, CardFormDataMap, Priority, ResolvedFormDescriptor } from '../shared/types'
+import type { CapabilitySelections } from '../shared/config'
+import type { StorageEngine, StorageEngineType } from './plugins/types'
 
-export type { StorageEngine, StorageEngineType } from './storage/types'
-export { MarkdownStorageEngine } from './storage/markdown'
-export { SqliteStorageEngine } from './storage/sqlite'
-export { createStorageEngine, readBootstrapConfig } from './storage/index'
+export type { StorageEngine, StorageEngineType } from './plugins/types'
+export { MarkdownStorageEngine } from './plugins/markdown'
+export { SqliteStorageEngine } from './plugins/sqlite'
 
 /**
  * Input data for creating a new kanban card.
@@ -28,8 +28,12 @@ export interface CreateCardInput {
   boardId?: string
   /** Arbitrary user-defined metadata to store in the card's frontmatter. */
   metadata?: Record<string, any>
-  /** Named action strings that can be triggered via the action webhook. */
-  actions?: string[]
+  /** Named actions that can be triggered via the action webhook. */
+  actions?: string[] | Record<string, string>
+  /** Forms attached to this card (named config-form references or inline definitions). */
+  forms?: CardFormAttachment[]
+  /** Per-form persisted data keyed by resolved form ID. */
+  formData?: CardFormDataMap
 }
 
 /**
@@ -52,6 +56,7 @@ export interface CreateCardInput {
  */
 export type SDKEventType =
   | 'task.created'
+  | 'form.submit'
   | 'task.updated'
   | 'task.moved'
   | 'task.deleted'
@@ -107,7 +112,36 @@ export interface SDKOptions {
    * `.kanban/kanban.db`.
    */
   sqlitePath?: string
+  /**
+   * Optional capability-provider overrides.
+   * Any omitted namespace falls back to `.kanban.json` and legacy defaults.
+   */
+  capabilities?: CapabilitySelections
 }
+
+export interface SubmitFormInput {
+  /** Card ID that owns the target attached form. */
+  cardId: string
+  /** Resolved form identifier (named config form id or inline generated id). */
+  formId: string
+  /** Submitted field values merged over the resolved base payload before validation. */
+  data: Record<string, unknown>
+  /** Optional board ID. Defaults to the workspace default board. */
+  boardId?: string
+}
+
+export interface SubmitFormResult {
+  /** Board that owns the submitted card/form. */
+  boardId: string
+  /** Sanitized persisted card snapshot after the successful form update. */
+  card: Omit<Card, 'filePath'>
+  /** Resolved form descriptor used for validation and downstream context. */
+  form: ResolvedFormDescriptor
+  /** Final validated payload that was persisted to `card.formData[form.id]`. */
+  data: Record<string, unknown>
+}
+
+export type FormSubmitEvent = SubmitFormResult
 
 /**
  * Strips the `filePath` property from a card before exposing it

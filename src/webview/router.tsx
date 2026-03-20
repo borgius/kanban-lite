@@ -26,7 +26,7 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 import App from './App'
-import { useStore, type CardTab, type DueDateFilter } from './store'
+import { useStore, type CardTab, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
 import type { Priority } from '../shared/types'
 import { shouldUseMemoryHistory } from './routerHistory'
 import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
@@ -41,7 +41,6 @@ const vscode = getVsCodeApi()
 // Types
 // ---------------------------------------------------------------------------
 type TabId = CardTab
-const VALID_TABS: TabId[] = ['write', 'preview', 'comments', 'logs']
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 const VALID_DUE_DATES: DueDateFilter[] = ['overdue', 'today', 'this-week', 'no-date']
 
@@ -85,7 +84,7 @@ function URLSync() {
   const prevStateRef = useRef({
     board: params.boardId ?? initialStore.currentBoard,
     cardId: '', // card opens asynchronously, start empty
-    tab: (params.tabId as TabId | undefined) ?? initialStore.activeCardTab,
+    tab: normalizeCardTab(params.tabId ?? initialStore.activeCardTab),
     searchStr: buildSearchStr(search),
   })
 
@@ -119,8 +118,8 @@ function URLSync() {
     }
 
     // Restore active tab
-    if (params.tabId && VALID_TABS.includes(params.tabId as TabId)) {
-      setActiveCardTab(params.tabId as TabId)
+    if (params.tabId && isCardTabRouteCandidate(params.tabId)) {
+      setActiveCardTab(params.tabId)
     }
 
     // Switch to the board from the URL (shim queues the message if not yet connected)

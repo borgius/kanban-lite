@@ -1,0 +1,330 @@
+plan_id: 20260319-storage-plugin-followup
+objective: |
+  Rework the pending storage-plugin follow-up into a stricter refactor that removes engine
+  ownership from `src/sdk/storage/markdown.ts` and `src/sdk/storage/sqlite.ts`, moves the
+  built-in markdown/sqlite engines fully into plugin-owned modules under `src/sdk/plugins/`,
+  removes wrapper/shim compatibility where practical, and preserves working app behavior without
+  optimizing for backward-compatible import paths.
+created_at: "2026-03-19"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  Update the existing follow-up plan in place rather than creating a second successor plan.
+  The current code still treats `src/sdk/storage/*` as the real home of the markdown/sqlite
+  engines, while `src/sdk/plugins/*` mostly acts as a provider shell and `src/sdk/plugins/index.ts`
+  still synthesizes attachment behavior through `wrapEngineAsAttachment(...)`. The strict refactor
+  should invert that ownership: plugin modules become the only engine home, legacy storage wrappers
+  are deleted or reduced to non-owning surfaces, and resolver logic uses explicit plugin-owned
+  attachment providers instead of generic engine wrappers.
+
+open_questions: []
+
+current_state: |
+  - `src/sdk/plugins/markdown.ts` imports `MarkdownStorageEngine` from `src/sdk/storage/markdown.ts`.
+  - `src/sdk/plugins/sqlite.ts` imports `SqliteStorageEngine` from `src/sdk/storage/sqlite.ts`.
+  - `src/sdk/plugins/index.ts` still owns `wrapEngineAsAttachment(...)`, so built-in attachment
+    behavior is partly synthesized in the registry instead of living in plugin-owned modules.
+  - `src/sdk/storage/index.ts` still exposes `createStorageEngine(...)`, which preserves a parallel
+    engine-selection path outside the plugin registry.
+  - Tests and SDK exports still point at `src/sdk/storage/markdown.ts` and `src/sdk/storage/sqlite.ts`.
+
+target_state: |
+  - `src/sdk/plugins/markdown.ts` owns the markdown engine implementation and markdown card-storage plugin.
+  - `src/sdk/plugins/sqlite.ts` owns the sqlite engine implementation, sqlite card-storage plugin,
+    and sqlite attachment-provider logic.
+  - Built-in attachment behavior is represented by explicit plugin-owned providers; the registry no
+    longer fabricates built-in attachment support through `wrapEngineAsAttachment(...)`.
+  - `src/sdk/storage/markdown.ts` and `src/sdk/storage/sqlite.ts` no longer own engine classes.
+    Preferred end state is deletion, unless one of them must temporarily remain as a non-owning
+    surface during the same change set.
+  - Internal imports, tests, and SDK exports point at plugin-owned modules or shared interfaces,
+    not legacy engine files.
+
+affected_files:
+  - path: src/sdk/plugins/markdown.ts
+    change_type: modify
+    reason: Move markdown engine implementation into the plugin-owned module.
+  - path: src/sdk/plugins/sqlite.ts
+    change_type: modify
+    reason: Move sqlite engine implementation and sqlite attachment-provider logic into the plugin-owned module.
+  - path: src/sdk/plugins/index.ts
+    change_type: modify
+    reason: Remove built-in wrapper-based attachment synthesis and resolve explicit plugin-owned providers.
+  - path: src/sdk/plugins/localfs.ts
+    change_type: create
+    reason: Optional but likely minimal home for explicit built-in local filesystem attachment behavior if needed after removing registry wrappers.
+  - path: src/sdk/storage/markdown.ts
+    change_type: delete_or_reduce
+    reason: Remove markdown engine ownership from legacy storage path.
+  - path: src/sdk/storage/sqlite.ts
+    change_type: delete_or_reduce
+    reason: Remove sqlite engine ownership from legacy storage path.
+  - path: src/sdk/storage/index.ts
+    change_type: delete_or_reduce
+    reason: Remove or demote the parallel engine factory path that bypasses plugin ownership.
+  - path: src/sdk/types.ts
+    change_type: modify
+    reason: Stop exporting plugin-owned engines from legacy storage paths.
+  - path: src/sdk/__tests__/storage-markdown.test.ts
+    change_type: modify
+    reason: Repoint markdown engine tests to the plugin-owned module.
+  - path: src/sdk/__tests__/storage-sqlite.test.ts
+    change_type: modify
+    reason: Repoint sqlite engine tests to the plugin-owned module.
+  - path: src/sdk/__tests__/plugin-registry.test.ts
+    change_type: modify
+    reason: Update plugin-registry assertions/imports to the new plugin-owned engine surfaces.
+
+phased_execution_plan:
+  - phase: Phase 1
+    goal: Move markdown and sqlite engine ownership into `src/sdk/plugins/`.
+  - phase: Phase 2
+    goal: Replace registry wrappers with explicit plugin-owned attachment providers and remove the parallel storage factory path.
+  - phase: Phase 3
+    goal: Update imports/tests and delete or demote legacy storage-layer surfaces that no longer own engines.
+
+verification_steps:
+  - Confirm `src/sdk/plugins/markdown.ts` and `src/sdk/plugins/sqlite.ts` contain the actual engine classes after the refactor.
+  - Confirm `src/sdk/plugins/index.ts` no longer contains `wrapEngineAsAttachment(...)` or equivalent built-in wrapper fallback for markdown/sqlite.
+  - Confirm no production code imports `MarkdownStorageEngine` or `SqliteStorageEngine` from `src/sdk/storage/*`.
+  - Run targeted SDK tests covering markdown engine behavior, sqlite engine behavior, and plugin resolution.
+  - Run the build task to verify imports and public exports still compile.
+
+risks:
+  - risk: Deleting or shrinking `src/sdk/storage/*` may break residual imports or tests that still assume legacy paths.
+    mitigation: Update all in-repo imports in the same change set and treat broken legacy imports as intentional cleanup unless they block app behavior.
+  - risk: Moving large engine classes can accidentally change runtime behavior while preserving type compatibility.
+    mitigation: Keep the move surgical, preserve constructor/method signatures, and run existing markdown/sqlite regression tests immediately after each engine relocation.
+  - risk: Removing `wrapEngineAsAttachment(...)` could subtly change attachment resolution defaults.
+    mitigation: Replace it with explicit plugin-owned providers and verify both the default markdown path and explicit sqlite attachment path before cleanup is finalized.
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: Engine classes are moved into plugin files, but a hidden import path still instantiates a deleted legacy storage class.
+      likelihood: medium
+      impact: high
+      mitigation: Grep for all `storage/markdown`, `storage/sqlite`, `MarkdownStorageEngine`, and `SqliteStorageEngine` references before deleting legacy files.
+    - scenario: Resolver cleanup removes the wrapper path but leaves no explicit built-in provider for the default attachment flow.
+      likelihood: medium
+      impact: high
+      mitigation: Land the explicit localfs/sqlite attachment-provider path before deleting wrapper-based logic.
+  assumptions:
+    - The existing follow-up plan has not been implemented yet, so updating it in place is lower-noise than creating a new successor plan.
+    - Backward-compatible import paths are not a requirement for this pass.
+    - Preserving working app behavior means preserving runtime behavior for default markdown and configured sqlite flows inside this repository, not preserving every historical export path.
+
+implementation_specification:
+  code_structure: |
+    Treat `src/sdk/plugins/` as the sole ownership boundary for built-in engines and built-in
+    storage providers. Leave `src/sdk/storage/types.ts` as the shared interface home if useful,
+    but remove engine constructors/factories from `src/sdk/storage/*`. Keep the refactor surgical:
+    move existing class bodies rather than rewriting behavior, introduce only the minimal new
+    plugin file(s) needed to replace wrapper-based attachment resolution, and update the SDK export
+    surface only where required to stop pointing at legacy engine files.
+  affected_areas:
+    - src/sdk/plugins/
+    - src/sdk/storage/
+    - src/sdk/types.ts
+    - src/sdk/__tests__/
+  component_details:
+    - component: Markdown plugin-owned engine
+      responsibility: Own the markdown engine class and the built-in markdown card-storage plugin.
+      interfaces:
+        - "`MarkdownStorageEngine` exported from `src/sdk/plugins/markdown.ts`"
+        - "`MARKDOWN_PLUGIN` exported from `src/sdk/plugins/markdown.ts`"
+    - component: Sqlite plugin-owned engine
+      responsibility: Own the sqlite engine class, sqlite card-storage plugin, and sqlite attachment-provider logic.
+      interfaces:
+        - "`SqliteStorageEngine` exported from `src/sdk/plugins/sqlite.ts`"
+        - "`SQLITE_PLUGIN` exported from `src/sdk/plugins/sqlite.ts`"
+        - "Explicit sqlite attachment plugin/factory in `src/sdk/plugins/sqlite.ts`"
+    - component: Built-in attachment provider registry
+      responsibility: Resolve explicit built-in attachment providers without synthesizing them from generic engine wrappers.
+      interfaces:
+        - "Built-in attachment provider resolution in `src/sdk/plugins/index.ts`"
+        - "Optional `src/sdk/plugins/localfs.ts` module if localfs needs its own explicit provider"
+    - component: Legacy storage cleanup
+      responsibility: Remove or demote old storage-layer engine/factory files so they no longer own built-in engines.
+      interfaces:
+        - "Reduced or deleted `src/sdk/storage/markdown.ts`"
+        - "Reduced or deleted `src/sdk/storage/sqlite.ts`"
+        - "Reduced or deleted `src/sdk/storage/index.ts`"
+  dependencies:
+    - component: Markdown plugin-owned engine
+      relationship: Must land before markdown tests/imports can stop referencing `src/sdk/storage/markdown.ts`.
+    - component: Sqlite plugin-owned engine
+      relationship: Must land before registry cleanup can stop depending on legacy sqlite engine imports.
+    - component: Built-in attachment provider registry
+      relationship: Depends on the plugin-owned engines/providers so wrapper-based fallback can be removed safely.
+    - component: Legacy storage cleanup
+      relationship: Depends on relocated imports and updated tests so deleted/demoted files are no longer referenced.
+  integration_points:
+    - `src/sdk/plugins/index.ts` remains the single resolver entry point.
+    - `src/sdk/types.ts` is the main SDK public surface that must stop pointing at legacy engine files.
+    - `src/sdk/__tests__/plugin-registry.test.ts` is the best regression point for provider ownership and resolution behavior.
+
+contracts:
+  - from_task: T1
+    to_task: T3
+    interface: Markdown engine class and plugin-owned export surface
+    format: "`MarkdownStorageEngine` and `MARKDOWN_PLUGIN` exported from `src/sdk/plugins/markdown.ts`"
+  - from_task: T2
+    to_task: T3
+    interface: Sqlite engine class and explicit sqlite attachment-provider surface
+    format: "`SqliteStorageEngine`, `SQLITE_PLUGIN`, and sqlite attachment provider exported from `src/sdk/plugins/sqlite.ts`"
+  - from_task: T3
+    to_task: T4
+    interface: Final resolver and public import paths after wrapper removal
+    format: "Updated plugin registry plus cleaned SDK/test imports that no longer rely on `src/sdk/storage/*` engine ownership"
+
+tasks:
+  - id: T1
+    title: Re-home markdown engine ownership into the plugin layer
+    description: |
+      Move the full markdown engine class into `src/sdk/plugins/markdown.ts` so the plugin module owns
+      both the engine implementation and the built-in markdown provider. Update the markdown engine test
+      alongside the move. `src/sdk/storage/markdown.ts` should end this task as non-owning or removable.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      src/sdk/plugins/markdown.ts: "Current provider shell that should become the markdown engine home."
+      src/sdk/storage/markdown.ts: "Current markdown engine implementation to relocate."
+      src/sdk/__tests__/storage-markdown.test.ts: "Regression coverage for markdown engine behavior."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: markdown plugin ownership
+    verification:
+      - "Markdown engine tests import the plugin-owned engine class and still pass."
+      - "No markdown engine logic remains owned by `src/sdk/storage/markdown.ts`."
+    acceptance_criteria:
+      - "`MarkdownStorageEngine` lives in `src/sdk/plugins/markdown.ts`."
+      - "`MARKDOWN_PLUGIN` instantiates the plugin-owned engine directly."
+      - "Legacy markdown storage file is no longer the source of truth."
+    failure_modes:
+      - scenario: File-based scan/move/write behavior changes during the move.
+        likelihood: medium
+        impact: high
+        mitigation: "Move the class body with minimal edits and run markdown engine tests immediately."
+    tech_stack:
+      - TypeScript
+      - Existing markdown engine utilities in `src/sdk/fileUtils.ts`, `src/sdk/parser.ts`, and `src/sdk/migration.ts`
+    test_coverage: "Use `src/sdk/__tests__/storage-markdown.test.ts` as the primary regression guard."
+
+  - id: T2
+    title: Re-home sqlite engine ownership into the plugin layer
+    description: |
+      Move the full sqlite engine class into `src/sdk/plugins/sqlite.ts` and keep sqlite path resolution
+      plus sqlite attachment-provider behavior in that same plugin-owned module. Update the sqlite engine
+      test alongside the move. `src/sdk/storage/sqlite.ts` should end this task as non-owning or removable.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      src/sdk/plugins/sqlite.ts: "Current sqlite provider shell and attachment provider entry point."
+      src/sdk/storage/sqlite.ts: "Current sqlite engine implementation to relocate."
+      src/sdk/__tests__/storage-sqlite.test.ts: "Regression coverage for sqlite engine behavior."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: sqlite plugin ownership
+    verification:
+      - "Sqlite engine tests import the plugin-owned engine class and still pass."
+      - "No sqlite engine logic remains owned by `src/sdk/storage/sqlite.ts`."
+    acceptance_criteria:
+      - "`SqliteStorageEngine` lives in `src/sdk/plugins/sqlite.ts`."
+      - "`SQLITE_PLUGIN` instantiates the plugin-owned engine directly."
+      - "The sqlite attachment provider no longer depends on a legacy storage-module class import."
+    failure_modes:
+      - scenario: SQLite schema or initialization behavior changes while moving the class.
+        likelihood: medium
+        impact: high
+        mitigation: "Preserve constructor/init/migrate logic exactly and run sqlite tests immediately after relocation."
+    tech_stack:
+      - TypeScript
+      - better-sqlite3
+    test_coverage: "Use `src/sdk/__tests__/storage-sqlite.test.ts` as the primary regression guard."
+
+  - id: T3
+    title: Remove registry wrappers and make built-in attachment providers explicit
+    description: |
+      Refactor `src/sdk/plugins/index.ts` so built-in attachment behavior is resolved through explicit
+      plugin-owned providers instead of `wrapEngineAsAttachment(...)`. If the cleanest minimal solution is
+      a dedicated `src/sdk/plugins/localfs.ts`, add it; otherwise keep the explicit provider in the existing
+      plugin layer. This task should also update the plugin-registry test to validate the new ownership model.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+      - T2
+    context_files:
+      src/sdk/plugins/index.ts: "Current resolver that still wraps engines for built-in attachment behavior."
+      src/sdk/plugins/sqlite.ts: "Should expose explicit sqlite attachment behavior after relocation."
+      src/sdk/__tests__/plugin-registry.test.ts: "Regression coverage for provider resolution and ownership expectations."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: explicit attachment providers and resolver cleanup
+    verification:
+      - "`wrapEngineAsAttachment(...)` is removed from the registry."
+      - "Default markdown/localfs and explicit sqlite attachment flows still resolve correctly."
+    acceptance_criteria:
+      - "Built-in attachment providers are explicit plugin-owned surfaces."
+      - "The registry no longer fabricates markdown/sqlite attachment behavior through a generic engine wrapper."
+      - "Plugin-registry tests pass with imports/assertions updated to plugin-owned engines."
+    failure_modes:
+      - scenario: Default attachment behavior changes subtly when the generic wrapper is removed.
+        likelihood: medium
+        impact: high
+        mitigation: "Preserve manifest IDs and verify default markdown/localfs plus explicit sqlite attachment cases in tests."
+    tech_stack:
+      - TypeScript
+      - Existing plugin registry in `src/sdk/plugins/index.ts`
+    test_coverage: "Strengthen `src/sdk/__tests__/plugin-registry.test.ts` around default vs explicit attachment provider resolution."
+
+  - id: T4
+    title: Remove legacy storage ownership surfaces and finalize internal import cleanup
+    description: |
+      Delete or demote `src/sdk/storage/markdown.ts`, `src/sdk/storage/sqlite.ts`, and `src/sdk/storage/index.ts`
+      so they no longer own engines or act as the preferred engine factory path. Update `src/sdk/types.ts`
+      to stop exporting engines from legacy storage paths. Keep this cleanup limited to in-repo imports and
+      working behavior; backward-compatible public import paths are explicitly out of scope.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      src/sdk/storage/index.ts: "Legacy engine factory path that should no longer be the preferred source of engine creation."
+      src/sdk/types.ts: "SDK public surface currently exporting engines from legacy storage paths."
+      src/sdk/storage/markdown.ts: "Legacy markdown engine path to delete or reduce after migration."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: cleanup of non-owning legacy storage surfaces
+    verification:
+      - "No production imports of `storage/markdown` or `storage/sqlite` remain."
+      - "Build passes after removing or reducing legacy storage surfaces."
+    acceptance_criteria:
+      - "Legacy storage files do not own engine implementations."
+      - "SDK exports no longer point at legacy engine files by default."
+      - "The repository compiles and targeted tests still pass."
+    failure_modes:
+      - scenario: A final hidden import or export path breaks compilation after cleanup.
+        likelihood: medium
+        impact: medium
+        mitigation: "Use final grep/build verification and treat broken legacy imports as cleanup work within this same task."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Final pass should include targeted plugin/storage tests plus the build task."

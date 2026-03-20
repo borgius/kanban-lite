@@ -66,7 +66,7 @@ const ROUTES: Route[] = [
     subsection: 'Create Board',
     method: 'POST',
     path: '/api/boards',
-    description: '',
+    description: 'Creates a new board and persists it to `.kanban.json`. When `columns` is omitted, the board inherits the default board\'s columns (or the built-in standard columns when the default board has none).',
     bodyFields: [
       { name: 'id', type: 'string', required: true, description: 'Unique board identifier' },
       { name: 'name', type: 'string', required: true, description: 'Display name' },
@@ -118,7 +118,7 @@ const ROUTES: Route[] = [
     subsection: 'Update Board',
     method: 'PUT',
     path: '/api/boards/:boardId',
-    description: '',
+    description: 'Updates an existing board in place. Only provided fields are changed; omitted properties keep their current values.',
     bodyNote: 'Any subset of board config fields (`name`, `description`, `columns`, `defaultStatus`, `defaultPriority`).',
     example: `curl -X PUT http://localhost:3000/api/boards/bugs \\
   -H "Content-Type: application/json" \\
@@ -157,7 +157,7 @@ const ROUTES: Route[] = [
     subsection: 'Get Task',
     method: 'GET',
     path: '/api/tasks/:id',
-    description: 'Supports partial ID matching.',
+    description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching, which is convenient when card IDs are numeric and unique within the board.',
   },
   {
     section: 'Tasks (Default Board)',
@@ -179,7 +179,7 @@ const ROUTES: Route[] = [
     subsection: 'Create Task',
     method: 'POST',
     path: '/api/tasks',
-    description: '',
+    description: 'Creates a task on the default board. The title is derived from the first Markdown `# heading`, the card is appended to the target column using fractional ordering, and omitted `status` / `priority` values fall back to board defaults.',
     bodyFields: [
       { name: 'content', type: 'string', required: true, description: 'Markdown content (title from first `# heading`)' },
       { name: 'status', type: 'string', required: false, default: 'backlog', description: 'Initial status' },
@@ -188,16 +188,18 @@ const ROUTES: Route[] = [
       { name: 'dueDate', type: 'string', required: false, default: 'null', description: 'Due date (ISO 8601)' },
       { name: 'labels', type: 'string[]', required: false, default: '[]', description: 'Labels/tags' },
       { name: 'metadata', type: 'Record<string, any>', required: false, description: 'Arbitrary user-defined metadata' },
+      { name: 'forms', type: 'CardFormAttachment[]', required: false, description: 'Attached forms, either named workspace-form references or inline form definitions' },
+      { name: 'formData', type: 'Record<string, Record<string, unknown>>', required: false, description: 'Per-form saved data keyed by resolved form id' },
     ],
     example: `curl -X POST http://localhost:3000/api/tasks \\
   -H "Content-Type: application/json" \\
   -d '{
-    "content": "# Fix login bug\\n\\nUsers cannot log in with SSO.",
+    "content": "# Investigate outage\\n\\nCollect incident details.",
     "status": "todo",
-    "priority": "critical",
-    "assignee": "alice",
-    "labels": ["bug", "auth"],
-    "metadata": { "sprint": 5, "team": "backend" }
+    "priority": "high",
+    "forms": [{ "name": "incident-report" }],
+    "formData": { "incident-report": { "service": "billing" } },
+    "metadata": { "team": "backend" }
   }'`,
     responseStatus: '201 Created',
   },
@@ -206,11 +208,25 @@ const ROUTES: Route[] = [
     subsection: 'Update Task',
     method: 'PUT',
     path: '/api/tasks/:id',
-    description: '',
-    bodyNote: 'Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`).',
+    description: 'Updates an existing task on the default board. Only the supplied fields are modified; omitted fields remain unchanged.',
+    bodyNote: 'Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`).',
     example: `curl -X PUT http://localhost:3000/api/tasks/42 \\
   -H "Content-Type: application/json" \\
-  -d '{ "priority": "high", "assignee": "bob" }'`,
+  -d '{ "forms": [{ "name": "incident-report" }], "formData": { "incident-report": { "owner": "alice" } } }'`,
+  },
+  {
+    section: 'Tasks (Default Board)',
+    subsection: 'Submit Task Form',
+    method: 'POST',
+    path: '/api/tasks/:id/forms/:formId/submit',
+    description: 'Validates and persists a card form submission through the shared SDK workflow.',
+    bodyFields: [
+      { name: 'data', type: 'Record<string, unknown>', required: true, description: 'Submitted field values merged over config defaults, card form data, and matching metadata before validation' },
+    ],
+    notes: 'Merge order is `config form defaults -> card attachment defaults / existing formData -> matching card metadata -> submitted data`. Successful submissions emit the `form.submit` webhook event.',
+    example: `curl -X POST http://localhost:3000/api/tasks/42/forms/incident-report/submit \
+  -H "Content-Type: application/json" \
+  -d '{ "data": { "severity": "critical", "owner": "alice" } }'`,
   },
   {
     section: 'Tasks (Default Board)',
@@ -231,7 +247,7 @@ const ROUTES: Route[] = [
     subsection: 'Delete Task',
     method: 'DELETE',
     path: '/api/tasks/:id',
-    description: '',
+    description: 'Soft-deletes a task by moving it into the hidden `deleted` column. Use permanent-delete flows if you need irreversible removal.',
     example: 'curl -X DELETE http://localhost:3000/api/tasks/42',
   },
 
@@ -241,7 +257,7 @@ const ROUTES: Route[] = [
     subsection: '',
     method: '',
     path: '',
-    description: `All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. The board-scoped list endpoint supports the same query params as \`/api/tasks\`, including \`q\`, \`fuzzy\`, and \`meta.*\` filters.
+    description: `All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. Use these routes when your integration manages multiple boards explicitly instead of relying on the workspace default. The board-scoped list endpoint supports the same query params as \`/api/tasks\`, including \`q\`, \`fuzzy\`, and \`meta.*\` filters.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -250,10 +266,13 @@ const ROUTES: Route[] = [
 | \`POST\` | \`/api/boards/:boardId/tasks\` | Create a task in the board |
 | \`GET\` | \`/api/boards/:boardId/tasks/:id\` | Get a task |
 | \`PUT\` | \`/api/boards/:boardId/tasks/:id\` | Update a task |
+| \`POST\` | \`/api/boards/:boardId/tasks/:id/forms/:formId/submit\` | Submit a task form in the board |
 | \`PATCH\` | \`/api/boards/:boardId/tasks/:id/move\` | Move a task |
 | \`DELETE\` | \`/api/boards/:boardId/tasks/:id\` | Delete a task |`,
-    example: 'curl "http://localhost:3000/api/boards/bugs/tasks?q=meta.team%3A%20backnd&fuzzy=true&meta.region=us-east"',
-    exampleLabel: '**Example — search tasks in the "bugs" board with fuzzy metadata matching:**',
+    example: `curl -X POST http://localhost:3000/api/boards/bugs/tasks/42/forms/incident-report/submit \
+  -H "Content-Type: application/json" \
+  -d '{ "data": { "severity": "high", "owner": "alice" } }'`,
+    exampleLabel: '**Example — submit a task form in the "bugs" board:**',
   },
 
   // ===================== Transfer Task =====================
@@ -262,7 +281,7 @@ const ROUTES: Route[] = [
     subsection: '',
     method: 'POST',
     path: '/api/boards/:boardId/tasks/:id/transfer',
-    description: 'Move a task from the current board to another board.\n\nThe `:boardId` is the **destination** board. The task is moved from the currently active board.',
+    description: 'Moves a task from the current board into another board.\n\nThe `:boardId` path segment is the **destination** board. The source board is the server\'s currently active board context, so this endpoint is primarily intended for the live standalone UI and closely-coupled local integrations.',
     bodyFields: [
       { name: 'targetStatus', type: 'string', required: false, description: "Status in the destination board (defaults to the board's default status)" },
     ],
@@ -277,7 +296,7 @@ const ROUTES: Route[] = [
     subsection: '',
     method: 'GET',
     path: '/api/boards/:boardId/columns',
-    description: 'Returns columns for a specific board.',
+    description: 'Returns the ordered column definitions for a specific board, including each column\'s `id`, display `name`, and `color`.',
   },
 
   // ===================== Columns (Default Board) =====================
@@ -286,14 +305,14 @@ const ROUTES: Route[] = [
     subsection: 'List Columns',
     method: 'GET',
     path: '/api/columns',
-    description: '',
+    description: 'Returns the ordered column definitions for the default board.',
   },
   {
     section: 'Columns (Default Board)',
     subsection: 'Add Column',
     method: 'POST',
     path: '/api/columns',
-    description: '',
+    description: 'Creates a new column on the default board. New columns are appended to the end of the board\'s current column order.',
     bodyFields: [
       { name: 'id', type: 'string', required: true, description: 'Unique column identifier' },
       { name: 'name', type: 'string', required: true, description: 'Display name' },
@@ -308,7 +327,7 @@ const ROUTES: Route[] = [
     subsection: 'Update Column',
     method: 'PUT',
     path: '/api/columns/:id',
-    description: '',
+    description: 'Updates a column\'s display name and/or color on the default board.',
     bodyNote: '`name` and/or `color`.',
   },
   {
@@ -325,14 +344,14 @@ const ROUTES: Route[] = [
     subsection: 'List Comments',
     method: 'GET',
     path: '/api/tasks/:id/comments',
-    description: '',
+    description: 'Returns all comments currently attached to the task, in stored order.',
   },
   {
     section: 'Comments',
     subsection: 'Add Comment',
     method: 'POST',
     path: '/api/tasks/:id/comments',
-    description: '',
+    description: 'Adds a new comment to the task and emits the shared `comment.created` event/webhook pipeline.',
     bodyFields: [
       { name: 'author', type: 'string', required: true, description: 'Comment author' },
       { name: 'content', type: 'string', required: true, description: 'Comment body' },
@@ -346,7 +365,7 @@ const ROUTES: Route[] = [
     subsection: 'Update Comment',
     method: 'PUT',
     path: '/api/tasks/:id/comments/:commentId',
-    description: '',
+    description: 'Updates the Markdown content of an existing comment.',
     bodyNote: '`{ "content": "Updated comment" }`',
   },
   {
@@ -354,7 +373,7 @@ const ROUTES: Route[] = [
     subsection: 'Delete Comment',
     method: 'DELETE',
     path: '/api/tasks/:id/comments/:commentId',
-    description: '',
+    description: 'Deletes the specified comment from the task.',
   },
 
   // ===================== Attachments =====================
@@ -363,21 +382,24 @@ const ROUTES: Route[] = [
     subsection: 'Upload Attachment',
     method: 'POST',
     path: '/api/tasks/:id/attachments',
-    description: 'Send as `multipart/form-data` with file(s).',
+    description: 'Uploads one or more files as task attachments. Send the request as `multipart/form-data`; each uploaded file is copied through the active attachment-storage provider.',
+    example: `curl -X POST http://localhost:3000/api/tasks/42/attachments \\
+  -F 'files=@./screenshot.png' \\
+  -F 'files=@./report.pdf'`,
   },
   {
     section: 'Attachments',
     subsection: 'Download Attachment',
     method: 'GET',
     path: '/api/tasks/:id/attachments/:filename',
-    description: '',
+    description: 'Streams the named attachment back to the client. For file types the browser understands (for example PDFs or images), most browsers will render inline.',
   },
   {
     section: 'Attachments',
     subsection: 'Delete Attachment',
     method: 'DELETE',
     path: '/api/tasks/:id/attachments/:filename',
-    description: '',
+    description: 'Removes the named attachment from the task and deletes the provider-backed attachment payload when supported.',
   },
 
   // ===================== Logs =====================
@@ -450,7 +472,7 @@ const ROUTES: Route[] = [
     subsection: 'Get Settings',
     method: 'GET',
     path: '/api/settings',
-    description: '',
+    description: 'Returns the workspace\'s current display and behavior settings used by the UI surfaces.',
     response: `{
   "ok": true,
   "data": {
@@ -472,7 +494,7 @@ const ROUTES: Route[] = [
     subsection: 'Update Settings',
     method: 'PUT',
     path: '/api/settings',
-    description: '',
+    description: 'Updates workspace display settings and immediately broadcasts the change to connected realtime clients.',
     bodyNote: 'Full `CardDisplaySettings` object.',
     example: `curl -X PUT http://localhost:3000/api/settings \\
   -H "Content-Type: application/json" \\
@@ -485,20 +507,20 @@ const ROUTES: Route[] = [
     subsection: 'List Webhooks',
     method: 'GET',
     path: '/api/webhooks',
-    description: '',
+    description: 'Returns all registered webhook subscriptions from the workspace webhook registry.',
   },
   {
     section: 'Webhooks',
     subsection: 'Register Webhook',
     method: 'POST',
     path: '/api/webhooks',
-    description: '',
+    description: 'Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.',
     bodyFields: [
       { name: 'url', type: 'string', required: true, description: 'Target URL' },
       { name: 'events', type: 'string[]', required: false, default: '["*"]', description: 'Events to subscribe to' },
       { name: 'secret', type: 'string', required: false, description: 'HMAC-SHA256 signing secret' },
     ],
-    notes: '**Available events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`',
+    notes: '**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`, `board.action`, `board.log.added`, `board.log.cleared`',
     example: `curl -X POST http://localhost:3000/api/webhooks \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -512,7 +534,7 @@ const ROUTES: Route[] = [
     subsection: 'Update Webhook',
     method: 'PUT',
     path: '/api/webhooks/:id',
-    description: '',
+    description: 'Updates an existing webhook\'s URL, event subscriptions, signing secret, or active state.',
     bodyFields: [
       { name: 'url', type: 'string', required: false, description: 'New target URL' },
       { name: 'events', type: 'string[]', required: false, description: 'New event subscriptions' },
@@ -528,7 +550,7 @@ const ROUTES: Route[] = [
     subsection: 'Delete Webhook',
     method: 'DELETE',
     path: '/api/webhooks/:id',
-    description: '',
+    description: 'Deletes the webhook registration permanently.',
   },
 
   // ===================== Workspace =====================
@@ -537,11 +559,77 @@ const ROUTES: Route[] = [
     subsection: 'Get Workspace Info',
     method: 'GET',
     path: '/api/workspace',
-    description: '',
+    description: 'Returns workspace-level connection and storage metadata, including resolved provider ids and filesystem watcher support.',
     response: `{
   "ok": true,
-  "data": { "path": "/Users/admin/dev/my-project" }
+  "data": {
+    "path": "/Users/admin/dev/my-project",
+    "port": 3000,
+    "storageEngine": "markdown",
+    "sqlitePath": null,
+    "providers": {
+      "card.storage": "markdown",
+      "attachment.storage": "localfs"
+    },
+    "isFileBacked": true,
+    "watchGlob": "boards/**/*.md"
+  }
 }`,
+  },
+  {
+    section: 'Workspace',
+    subsection: 'Get Storage Status',
+    method: 'GET',
+    path: '/api/storage',
+    description: 'Returns the active card provider id, attachment provider id, and host-facing file/watch metadata.',
+    response: `{
+  "ok": true,
+  "data": {
+    "type": "markdown",
+    "sqlitePath": null,
+    "providers": {
+      "card.storage": "markdown",
+      "attachment.storage": "localfs"
+    },
+    "isFileBacked": true,
+    "watchGlob": "boards/**/*.md"
+  }
+}`,
+  },
+  {
+    section: 'Workspace',
+    subsection: 'Migrate to SQLite',
+    method: 'POST',
+    path: '/api/storage/migrate-to-sqlite',
+    description: 'Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`.',
+    bodyFields: [
+      { name: 'sqlitePath', type: 'string', required: false, description: 'Optional database path relative to the workspace root.' },
+    ],
+    response: `{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "count": 12,
+    "storageEngine": "sqlite"
+  }
+}`,
+    notes: 'This endpoint is a compatibility helper for the built-in markdown ↔ sqlite migration path. It does not migrate into arbitrary external providers.',
+  },
+  {
+    section: 'Workspace',
+    subsection: 'Migrate to Markdown',
+    method: 'POST',
+    path: '/api/storage/migrate-to-markdown',
+    description: 'Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields in `.kanban.json`.',
+    response: `{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "count": 12,
+    "storageEngine": "markdown"
+  }
+}`,
+    notes: 'Existing source data is left in place as a manual backup until you remove it yourself.',
   },
 ]
 
@@ -688,6 +776,12 @@ function generate(): string {
   lines.push('```')
   lines.push('')
   lines.push('CORS is enabled for all origins.')
+  lines.push('')
+  lines.push('## Conventions')
+  lines.push('')
+  lines.push('- Card/task IDs are board-scoped; endpoints that accept `:id` generally support partial ID matching for convenience.')
+  lines.push('- `/api/tasks/*` operates on the default board, while `/api/boards/:boardId/tasks/*` targets a specific board explicitly.')
+  lines.push('- Successful responses are wrapped in `{ ok: true, data: ... }`; failed requests return `{ ok: false, error: string }`.')
   lines.push('')
   lines.push('---')
   lines.push('')

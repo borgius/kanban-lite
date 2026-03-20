@@ -830,17 +830,30 @@ through the normal SDK event/webhook pipeline.
 The target form must already be attached to the card, either as an inline
 card-local form or as a named reusable workspace form reference.
 
+**Partial-at-rest semantics:** `card.formData[formId]` may be a partial
+record at rest (containing only previously submitted or pre-seeded fields).
+The merge below always produces a full canonical object, and that full
+object is what gets persisted and returned as `result.data`.
+
 Merge order for the resolved base payload (lowest → highest priority):
 1. Workspace-config form defaults (`KanbanConfig.forms[formName].data`)
-2. Card-scoped form defaults/persisted data (`attachment.data`, then `card.formData[formId]`)
-3. Card metadata fields that are declared in the form schema
-4. The submitted payload passed to this method
+2. Card-scoped attachment defaults (`attachment.data`)
+3. Persisted per-card form data (`card.formData[formId]`, may be partial)
+4. Card metadata fields that are declared in the form schema
+5. The submitted payload passed to this method
+
+Before the merge, string values in each source layer are prepared via
+`prepareFormData()` (from `src/shared/formDataPreparation`), which resolves
+`${path}` placeholders against the full card interpolation context.
 
 Validation happens authoritatively in the SDK before persistence and before
 any event/webhook emission, so CLI/API/MCP/UI callers all share the same rules.
+After a successful submit, the SDK also appends a system card log entry that
+records the submitted payload under `payload` for audit/debug visibility.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The canonical persisted payload and event context.  
+**Returns**: The canonical persisted payload and event context. `result.data` is
+  always the full merged and validated object (never a partial snapshot).  
 **Throws**:
 
 - <code>Error</code> If the card or form cannot be found, or if validation fails.
@@ -2098,6 +2111,25 @@ generateSlug('Build Dashboard UI')
 generateSlug('Hello, World!!!')
 // => 'hello-world'
 ```
+
+* * *
+
+<a name="formatFormDisplayName"></a>
+
+### formatFormDisplayName(formKey) ⇒
+Converts a stable form key such as `'bug-report'` into a human-friendly
+display name such as `'Bug Report'`.
+
+This is used as the default display name for reusable config-backed forms
+when `FormDefinition.name` is omitted.
+
+**Kind**: global function  
+**Returns**: A human-readable title-cased name.  
+
+| Param | Description |
+| --- | --- |
+| formKey | Stable config form key or resolved form identifier. |
+
 
 * * *
 

@@ -73,6 +73,8 @@ describe('KanbanSDK.submitForm', () => {
     expect(result.boardId).toBe('default')
     expect(result.form.id).toBe('bug-report')
     expect(result.form.fromConfig).toBe(true)
+    expect(result.form.name).toBe('Bug Report')
+    expect(result.form.description).toBe('')
     expect(result.form.initialData).toEqual({
       title: 'Config Title',
       severity: 'high',
@@ -86,6 +88,19 @@ describe('KanbanSDK.submitForm', () => {
 
     const reloaded = await sdk.getCard(card.id)
     expect(reloaded?.formData?.['bug-report']).toEqual(result.data)
+    expect(reloaded?.attachments).toContain(`${card.id}.log`)
+
+    const logs = await sdk.listLogs(card.id)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toMatchObject({
+      source: 'system',
+      text: 'Form submitted: `Bug Report`',
+      object: {
+        formId: 'bug-report',
+        formName: 'Bug Report',
+        payload: result.data,
+      },
+    })
 
     const submitEvent = events.find(event => event.type === 'form.submit')
     expect(submitEvent).toBeTruthy()
@@ -94,17 +109,20 @@ describe('KanbanSDK.submitForm', () => {
       data: result.data,
       form: {
         id: 'bug-report',
-        label: 'bug-report',
+        name: 'Bug Report',
+        description: '',
+        label: 'Bug Report',
         fromConfig: true
       },
       card: {
         id: card.id,
-        boardId: 'default'
+        boardId: 'default',
+        attachments: [`${card.id}.log`],
       }
     })
   })
 
-  it('applies merge precedence collisions in the documented order and emits only form.submit', async () => {
+  it('applies merge precedence collisions in the documented order and emits log.added plus form.submit', async () => {
     const config = readConfig(workspaceDir)
     writeConfig(workspaceDir, {
       ...config,
@@ -190,7 +208,7 @@ describe('KanbanSDK.submitForm', () => {
       submitWins: 'submitted'
     })
     expect((await sdk.getCard(card.id))?.formData?.['bug-report']).toEqual(result.data)
-    expect(events.map(event => event.type)).toEqual(['form.submit'])
+    expect(events.map(event => event.type)).toEqual(['log.added', 'form.submit'])
   })
 
   it('supports inline attached forms and merges attachment defaults before validation', async () => {
@@ -310,6 +328,107 @@ describe('KanbanSDK.submitForm', () => {
     expect((await sdk.getCard(card.id))?.formData?.['database-checklist']).toEqual({
       status: 'ready',
       owner: 'DB Team'
+    })
+  })
+
+  it('interpolates ${path} placeholders in config defaults, attachment defaults, and persisted formData against card context', async () => {
+    const config = readConfig(workspaceDir)
+    writeConfig(workspaceDir, {
+      ...config,
+      forms: {
+        ticket: {
+          schema: {
+            type: 'object',
+            required: ['ref', 'team', 'label'],
+            properties: {
+              ref: { type: 'string' },
+              team: { type: 'string' },
+              label: { type: 'string' },
+            }
+          },
+          data: {
+            ref: '${id}',
+            team: '${metadata.team}',
+          }
+        }
+      }
+    })
+
+    const sdk = new KanbanSDK(kanbanDir)
+    await sdk.init()
+
+    const card = await sdk.createCard({
+      content: '# Placeholder card',
+      metadata: { team: 'platform' }
+    })
+
+    await sdk.updateCard(card.id, {
+      forms: [{
+        name: 'ticket',
+        data: { label: 'Card ${id} [${status}]' }
+      }]
+    })
+
+    const result = await sdk.submitForm({
+      cardId: card.id,
+      formId: 'ticket',
+      data: {}
+    })
+
+    expect(result.form.initialData).toEqual({
+      ref: card.id,
+      team: 'platform',
+      label: `Card ${card.id} [backlog]`,
+    })
+    expect(result.data).toEqual(result.form.initialData)
+    expect((await sdk.getCard(card.id))?.formData?.['ticket']).toEqual(result.data)
+  })
+
+  it('interpolates placeholders in persisted formData before metadata overlay, with metadata overlay taking precedence', async () => {
+    const config = readConfig(workspaceDir)
+    writeConfig(workspaceDir, {
+      ...config,
+      forms: {
+        meta: {
+          schema: {
+            type: 'object',
+            properties: {
+              owner: { type: 'string' },
+              note: { type: 'string' },
+            }
+          }
+        }
+      }
+    })
+
+    const sdk = new KanbanSDK(kanbanDir)
+    await sdk.init()
+
+    const card = await sdk.createCard({
+      content: '# Meta card',
+      metadata: { owner: 'real-owner' }
+    })
+
+    await sdk.updateCard(card.id, {
+      forms: [{ name: 'meta' }],
+      formData: {
+        meta: {
+          owner: '${id}',
+          note: 'assigned to ${assignee}',
+        }
+      }
+    })
+
+    const result = await sdk.submitForm({
+      cardId: card.id,
+      formId: 'meta',
+      data: {}
+    })
+
+    // metadata overlay (owner: 'real-owner') wins over persisted '${id}' placeholder
+    expect(result.form.initialData).toEqual({
+      owner: 'real-owner',
+      note: 'assigned to ',
     })
   })
 })

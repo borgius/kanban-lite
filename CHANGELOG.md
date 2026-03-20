@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Partial `formData` and `${path}` placeholder interpolation in form defaults**: Stored `formData` entries may now be partial at rest. During form preparation, string values in config defaults, attachment defaults, and persisted per-form data are scanned for `${path}` placeholders and resolved against full card context (`id`, `boardId`, `status`, `priority`, `assignee`, `dueDate`, `metadata.*`). Unresolved placeholders become empty strings; metadata overlay still wins last. REST, CLI, MCP, and extension submit paths inherit this behavior automatically through the SDK without new request shapes.
 - **Installable storage-plugin authoring skill**: Added the `kanban-storage-plugin-author` skills.sh-compatible skill for generating third-party kanban-lite storage plugin npm packages, including bundled contract references and starter templates.
 - **Card forms across all surfaces**: Cards can now attach reusable workspace forms from `.kanban.json` or inline card-local forms, render them as dedicated webview tabs, and submit validated payloads via the SDK, REST API, CLI, and MCP.
 - **`form.submit` webhook event**: Successful form submissions now emit a first-class `form.submit` event with board, card, resolved form descriptor, and persisted payload context.
@@ -23,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit built-in sqlite/mysql attachment providers**: `attachment.storage` now supports first-class built-in `sqlite` and `mysql` providers when explicitly selected, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Form submission audit logs**: Successful form submissions now append a system card log entry containing the submitted payload (`payload`) plus `formId` and `formName`, so the exact submitted body is visible from the card logs UI and SDK log surfaces.
+- **Form display metadata**: Reusable workspace forms now support `name` and `description` fields. `name` defaults to a capitalized form key, `description` defaults to an empty string, card tabs render as `form: <Form Name>`, and the form header shows the resolved description when provided.
 - **Generated SDK and REST docs**: Expanded the source JSDoc and API route metadata with clearer behavior notes, richer examples, attachment/upload guidance, and storage/form semantics so regenerated `docs/sdk.md` and `docs/api.md` are more useful for integrators.
 - **Polished card form UI**: The card form tab now renders with consistent spacing, theme-aware input and label styles, and clear validation-state indicators in both standalone and VS Code webview runtimes.
 - **Legacy storage compatibility**: `storageEngine` / `sqlitePath` continue to work as compatibility aliases, but per-namespace `plugins[...]` entries now take precedence and `attachment.storage` falls back to `localfs` when omitted.

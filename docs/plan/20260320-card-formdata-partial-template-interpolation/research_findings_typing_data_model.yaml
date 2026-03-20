@@ -1,0 +1,552 @@
+plan_id: 20260320-card-formdata-partial-template-interpolation
+objective: >-
+	Investigate the typing/data-model impact of changing `Card.formData` to allow
+	partial form data and adding form/template preparation support for JavaScript
+	template-literal-style interpolation across full card context (`id`, `boardId`,
+	`status`, `metadata`, and related fields).
+focus_area: typing-data-model
+created_at: 2026-03-20
+created_by: GitHub Copilot (GPT-5.4)
+status: completed
+
+tldr: |
+	- `formData` is typed consistently as `Record<string, Record<string, unknown>>` across shared, SDK, transport, and MCP layers; the type itself already permits sparse field sets, but submit-time behavior currently canonicalizes submissions into full merged objects.
+	- Form preparation logic is duplicated in `src/sdk/modules/cards.ts` and `src/webview/components/CardFormTab.tsx`; both currently merge plain objects only and only overlay schema-matching `card.metadata` keys—there is no existing interpolation/template-evaluation helper.
+	- The strongest “complete object” assumption lives in `submitForm()` and its tests: persisted `card.formData[formId]` and returned `result.data` are expected to equal the full resolved payload, not just the submitted delta.
+	- Parser/storage/API boundaries round-trip arbitrary nested `formData` records without requiring schema completeness, so the behavior change is more semantic than storage-structure-driven.
+	- The main edge cases are parity drift between SDK/UI preparation paths, ambiguity about whether interpolation applies only to strings or to nested structures, and security/escaping concerns if “JavaScript template literals” implies actual expression evaluation.
+
+research_metadata:
+	methodology: >-
+		Hybrid retrieval using semantic_search for conceptual entry points, grep_search
+		for exact symbols/merge points/tests, targeted read_file examination of type,
+		SDK, parser, UI, MCP, docs, and tests, plus wc -l file metadata collection.
+	scope: >-
+		Focused on typing + data-model boundaries for forms: shared types, SDK form
+		resolution/submission, parser/persistence round-trips, webview mirror logic,
+		MCP schema typing, and direct tests/docs that lock current behavior.
+	confidence: high
+	coverage: 88
+
+files_analyzed:
+	- file: types.ts
+		path: /Users/admin/dev/kanban-light/src/shared/types.ts
+		purpose: Shared card/form domain model consumed by SDK, extension, webview, standalone, and MCP-facing payloads.
+		key_elements:
+			- element: Card.formData
+				type: variable
+				location: src/shared/types.ts:107
+				description: Optional per-form persisted data on `Card`, typed as `CardFormDataMap`.
+			- element: CardFormDataMap
+				type: type
+				location: src/shared/types.ts:348
+				description: Current canonical type alias `Record<string, Record<string, unknown>>`.
+			- element: ResolvedFormDescriptor.initialData
+				type: variable
+				location: src/shared/types.ts:383
+				description: Prepared form payload presented to consumers; typed as a full `Record<string, unknown>`.
+			- element: CardFrontmatter.formData
+				type: variable
+				location: src/shared/types.ts:430
+				description: Frontmatter mirror of the same `CardFormDataMap` shape.
+			- element: CreateCardPayload.formData
+				type: variable
+				location: src/shared/types.ts:460
+				description: Transport payload for create-card flows; propagates the same type boundary.
+		language: TypeScript
+		lines: 559
+
+	- file: types.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/types.ts
+		purpose: SDK input/output contracts for create-card and submit-form behavior.
+		key_elements:
+			- element: CreateCardInput.formData
+				type: variable
+				location: src/sdk/types.ts:36
+				description: SDK creation input reuses `CardFormDataMap` without additional validation.
+			- element: SubmitFormInput.data
+				type: variable
+				location: src/sdk/types.ts:127
+				description: Submitted payload is a generic `Record<string, unknown>` delta.
+			- element: SubmitFormResult.data
+				type: variable
+				location: src/sdk/types.ts:140
+				description: Result is documented as the final validated payload persisted to `card.formData[form.id]`.
+		language: TypeScript
+		lines: 161
+
+	- file: cards.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+		purpose: Authoritative SDK logic for resolving form initial data and persisting submitted form state.
+		key_elements:
+			- element: getMetadataOverlay
+				type: function
+				location: src/sdk/modules/cards.ts:40
+				description: Only overlays `card.metadata` keys that are declared in `schema.properties`.
+			- element: resolveCardForms
+				type: function
+				location: src/sdk/modules/cards.ts:77
+				description: Builds `ResolvedFormDescriptor.initialData` via object-spread merges of config defaults, attachment defaults, persisted formData, and metadata overlay.
+			- element: createCard
+				type: function
+				location: src/sdk/modules/cards.ts:293
+				description: Persists `data.formData` as-is when non-empty; does not normalize or complete nested objects.
+			- element: submitForm
+				type: function
+				location: src/sdk/modules/cards.ts:440
+				description: Builds `submittedData = { ...form.initialData, ...input.data }`, validates the merged object, and overwrites `card.formData[form.id]` with the canonical full payload.
+		language: TypeScript
+		lines: 579
+
+	- file: parser.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/parser.ts
+		purpose: Markdown frontmatter parsing/serialization boundary for persisted card form data.
+		key_elements:
+			- element: parseFormData
+				type: function
+				location: src/sdk/parser.ts:34
+				description: Accepts any top-level record whose values are records; filters out non-record entries but does not require schema completeness.
+			- element: parseCardFile
+				type: function
+				location: src/sdk/parser.ts:134
+				description: Rehydrates `formData` from frontmatter into `Card.formData`.
+			- element: serializeCard
+				type: function
+				location: src/sdk/parser.ts:176
+				description: Writes `formData` back to YAML unchanged when the map is non-empty.
+		language: TypeScript
+		lines: 216
+
+	- file: CardFormTab.tsx
+		path: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx
+		purpose: Webview-side mirror of form descriptor preparation and submit-result normalization.
+		key_elements:
+			- element: getMetadataOverlay
+				type: function
+				location: src/webview/components/CardFormTab.tsx:26
+				description: Duplicates the SDK metadata-only overlay rule.
+			- element: resolveCardFormDescriptors
+				type: function
+				location: src/webview/components/CardFormTab.tsx:70
+				description: Duplicates SDK preparation logic for `initialData` with plain object spreads and no interpolation support.
+			- element: CardFormTab state initialization
+				type: pattern
+				location: src/webview/components/CardFormTab.tsx:158
+				description: Treats `form.initialData` as the complete starting object for render/reset/validation.
+			- element: persisted submit normalization
+				type: pattern
+				location: src/webview/components/CardFormTab.tsx:235
+				description: After submit, prefers `result.card.formData[form.id]` as the authoritative full object.
+		language: TypeScript React
+		lines: 375
+
+	- file: index.ts
+		path: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+		purpose: MCP schema layer for create/update card inputs.
+		key_elements:
+			- element: cardFormDataMapSchema
+				type: variable
+				location: src/mcp-server/index.ts:20
+				description: Zod schema currently requires a record of record values, matching `CardFormDataMap`.
+			- element: create_card formData parameter
+				type: pattern
+				location: src/mcp-server/index.ts:251
+				description: Exposes `formData` to MCP create-card callers.
+			- element: update_card formData parameter
+				type: pattern
+				location: src/mcp-server/index.ts:294
+				description: Exposes `formData` replacement semantics to MCP update callers.
+		language: TypeScript
+		lines: 1510
+
+	- file: submit-form.test.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/__tests__/submit-form.test.ts
+		purpose: Canonical SDK tests for form preparation, precedence, validation, and persistence.
+		key_elements:
+			- element: reusable form submit test
+				type: pattern
+				location: src/sdk/__tests__/submit-form.test.ts:22
+				description: Expects `result.form.initialData` and persisted `formData` to include merged defaults and metadata, not just submitted keys.
+			- element: precedence test
+				type: pattern
+				location: src/sdk/__tests__/submit-form.test.ts:93
+				description: Locks merge order as config → attachment → persisted formData → metadata → submitted data.
+			- element: inline form test
+				type: pattern
+				location: src/sdk/__tests__/submit-form.test.ts:197
+				description: Confirms metadata contributes to prepared data for schema-matching keys only.
+		language: TypeScript
+		lines: 315
+
+	- file: CardFormTab.test.tsx
+		path: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.test.tsx
+		purpose: Webview parity tests for resolved form descriptors and UI assumptions about initial data.
+		key_elements:
+			- element: initial-data merge order test
+				type: pattern
+				location: src/webview/components/CardFormTab.test.tsx:39
+				description: Mirrors SDK merge expectations and asserts metadata wins for schema-declared keys.
+			- element: invalid initial data render test
+				type: pattern
+				location: src/webview/components/CardFormTab.test.tsx:101
+				description: Assumes `initialData` is the ready-to-validate starting object.
+		language: TypeScript React
+		lines: 175
+
+	- file: parser.test.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/__tests__/parser.test.ts
+		purpose: Parser/serializer round-trip coverage for forms and formData.
+		key_elements:
+			- element: parse formData frontmatter test
+				type: pattern
+				location: src/sdk/__tests__/parser.test.ts:134
+				description: Verifies YAML formData maps are parsed without normalization.
+			- element: round-trip forms and formData test
+				type: pattern
+				location: src/sdk/__tests__/parser.test.ts:247
+				description: Verifies `formData` survives serialization/deserialization structurally unchanged.
+		language: TypeScript
+		lines: 584
+
+	- file: storage-sqlite.test.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/__tests__/storage-sqlite.test.ts
+		purpose: Storage-engine round-trip coverage for form-aware cards.
+		key_elements:
+			- element: round-trips forms and formData
+				type: pattern
+				location: src/sdk/__tests__/storage-sqlite.test.ts:116
+				description: Confirms nested formData records persist unchanged through SQLite storage.
+			- element: nested form upsert
+				type: pattern
+				location: src/sdk/__tests__/storage-sqlite.test.ts:143
+				description: Confirms complex nested formData objects are preserved when rewriting cards.
+		language: TypeScript
+		lines: 299
+
+	- file: forms.md
+		path: /Users/admin/dev/kanban-light/docs/forms.md
+		purpose: User-facing description of current merge/submit semantics.
+		key_elements:
+			- element: Initial data merge order
+				type: pattern
+				location: docs/forms.md:308
+				description: Documents config → attachment → persisted formData → metadata merge order.
+			- element: Submission merge and validation
+				type: pattern
+				location: docs/forms.md:355
+				description: Documents that SDK starts from resolved `initialData` and merges submitted payload on top.
+		language: Markdown
+		lines: 1187
+
+patterns_found:
+	- category: typing
+		pattern: formData is modeled as a two-level record map, not a schema-derived or strongly typed payload.
+		description: >-
+			Every boundary uses the same broad shape (`Record<string, Record<string, unknown>>`),
+			which permits sparse/nested objects at runtime but does not express “full canonical form data” versus “partial delta” in the type system.
+		examples:
+			- file: src/shared/types.ts
+				location: src/shared/types.ts:348
+				snippet: "export type CardFormDataMap = Record<string, Record<string, unknown>>"
+			- file: src/mcp-server/index.ts
+				location: src/mcp-server/index.ts:20
+				snippet: "const cardFormDataMapSchema = z.record(z.string(), z.record(z.string(), z.unknown()))"
+		prevalence: common
+
+	- category: structure
+		pattern: form preparation logic is duplicated between SDK and webview.
+		description: >-
+			Both code paths compute `initialData` independently using almost identical helper sets,
+			which means any change to partial-data semantics or interpolation support must be kept in sync manually unless centralized.
+		examples:
+			- file: src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:77
+				snippet: "const initialData = { ...cloneRecord(configForm?.data), ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined), ...cloneRecord(card.formData?.[formId]), ...getMetadataOverlay(card, schema) }"
+			- file: src/webview/components/CardFormTab.tsx
+				location: src/webview/components/CardFormTab.tsx:96
+				snippet: "initialData: { ...cloneRecord(configForm?.data), ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined), ...cloneRecord(frontmatter.formData?.[formId]), ...getMetadataOverlay(frontmatter, schema) }"
+		prevalence: common
+
+	- category: architecture
+		pattern: preparation currently overlays only schema-matching metadata, not full card context.
+		description: >-
+			The current helper surface has no concept of `id`, `boardId`, `status`, `priority`, or nested card objects during preparation; it selectively copies metadata keys that exist in schema properties.
+		examples:
+			- file: src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:40
+				snippet: "Object.entries(card.metadata).filter(([key]) => properties.has(key))"
+			- file: src/webview/components/CardFormTab.tsx
+				location: src/webview/components/CardFormTab.tsx:26
+				snippet: "function getMetadataOverlay(frontmatter: Pick<CardFrontmatter, 'metadata'>, schema: Record<string, unknown>)"
+		prevalence: common
+
+	- category: behavior
+		pattern: submit-time persistence canonicalizes to a full resolved object.
+		description: >-
+			Although storage types are permissive, the authoritative SDK submit path merges defaults into the submitted delta and overwrites persisted `formData[formId]` with the whole validated object.
+		examples:
+			- file: src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:451
+				snippet: "const submittedData = { ...cloneRecord(form.initialData), ...cloneRecord(input.data) }"
+			- file: src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:461
+				snippet: "card.formData = { ...(card.formData ?? {}), [form.id]: submittedData }"
+		prevalence: common
+
+	- category: testing
+		pattern: tests lock in full-object semantics rather than delta semantics.
+		description: >-
+			Existing SDK/webview/integration tests assert that prepared and persisted form data includes merged defaults/metadata, which will fail if persistence changes to store partial-only deltas without an equivalent reconstruction layer.
+		examples:
+			- file: src/sdk/__tests__/submit-form.test.ts
+				location: src/sdk/__tests__/submit-form.test.ts:76
+				snippet: "expect(result.form.initialData).toEqual({ title: 'Config Title', severity: 'high', reporter: 'Alice' })"
+			- file: src/sdk/__tests__/submit-form.test.ts
+				location: src/sdk/__tests__/submit-form.test.ts:88
+				snippet: "expect(reloaded?.formData?.['bug-report']).toEqual(result.data)"
+			- file: src/webview/components/CardFormTab.test.tsx
+				location: src/webview/components/CardFormTab.test.tsx:77
+				snippet: "expect(form.initialData).toEqual({ title: 'Metadata title', severity: 'critical', configOnly: 'base', attachmentOnly: 'yes', persistedOnly: true })"
+		prevalence: common
+
+related_architecture:
+	components_relevant_to_domain:
+		- component: shared form/card type model
+			responsibility: Defines the canonical shapes for cards, frontmatter, resolved forms, and create/submit payloads.
+			location: src/shared/types.ts
+			relationship_to_domain: domain depends on this
+		- component: SDK form resolution and submission
+			responsibility: Computes authoritative prepared form data, validates submissions, persists formData, and emits events.
+			location: src/sdk/modules/cards.ts
+			relationship_to_domain: domain depends on this
+		- component: markdown persistence boundary
+			responsibility: Parses and serializes card form data in YAML frontmatter.
+			location: src/sdk/parser.ts
+			relationship_to_domain: domain depends on this
+		- component: webview form descriptor preparation
+			responsibility: Mirrors SDK preparation semantics so the UI prefill matches backend submit semantics.
+			location: src/webview/components/CardFormTab.tsx
+			relationship_to_domain: this uses domain outputs
+		- component: MCP input schema layer
+			responsibility: Validates external tool input shape for `formData`.
+			location: src/mcp-server/index.ts
+			relationship_to_domain: this uses domain outputs
+	interfaces_used_by_domain:
+		- interface: Card
+			location: src/shared/types.ts:69
+			usage_pattern: Core persisted/runtime entity carrying `formData`, `metadata`, and identity fields.
+		- interface: ResolvedFormDescriptor
+			location: src/shared/types.ts:358
+			usage_pattern: Prepared form runtime object consumed by SDK submit path and webview rendering.
+		- interface: CreateCardInput
+			location: src/sdk/types.ts:12
+			usage_pattern: Initial create-card boundary that accepts `formData` without normalization.
+		- interface: SubmitFormInput
+			location: src/sdk/types.ts:122
+			usage_pattern: Accepts user-submitted delta payloads for authoritative merge/validation.
+	data_flow_involving_domain: >-
+		`formData` enters via create/update payloads, persists unchanged through parser/storage layers,
+		is read during form resolution to build `ResolvedFormDescriptor.initialData`, then `submitForm()`
+		merges submitted values on top and rewrites `card.formData[formId]` with the merged payload; the
+		webview independently reconstructs equivalent prepared data for display.
+	key_relationships_to_domain:
+		- from: src/shared/types.ts
+			to: src/sdk/types.ts
+			relationship: imports
+		- from: src/sdk/modules/cards.ts
+			to: src/shared/config.ts
+			relationship: calls
+		- from: src/sdk/modules/cards.ts
+			to: src/sdk/parser.ts
+			relationship: persisted shape must round-trip through parser/storage
+		- from: src/webview/components/CardFormTab.tsx
+			to: src/shared/types.ts
+			relationship: imports
+		- from: src/mcp-server/index.ts
+			to: src/sdk/KanbanSDK.ts
+			relationship: calls
+
+related_technology_stack:
+	languages_used_in_domain:
+		- TypeScript
+		- TSX
+		- Markdown
+	frameworks_used_in_domain:
+		- name: React
+			usage_in_domain: Webview form tab rendering and local initial-data preparation.
+	libraries_used_in_domain:
+		- name: @jsonforms/core
+			purpose_in_domain: AJV creation for schema validation in SDK and webview.
+		- name: @jsonforms/react
+			purpose_in_domain: Rendering resolved forms in the webview.
+		- name: zod
+			purpose_in_domain: MCP input schema validation for `formData` and form attachments.
+		- name: js-yaml
+			purpose_in_domain: Frontmatter parse/serialize round-trips for persisted form data.
+	external_apis_used_in_domain: []
+
+related_conventions:
+	naming_patterns_in_domain: >-
+		`formData` names persisted per-form records; `initialData` names prepared prefill state;
+		`resolveCardForms`/`resolveCardFormDescriptors` mirror one another across SDK/UI.
+	structure_of_domain: >-
+		Shared types define the contract, SDK modules own behavior, parser/storage own round-trip persistence,
+		and UI duplicates preparation logic for render parity rather than consuming a shared helper.
+	error_handling_in_domain: >-
+		Invalid submit payloads fail in SDK `submitForm()` after AJV validation; parser silently drops
+		malformed `formData` entries that are not nested objects rather than throwing.
+	testing_in_domain: >-
+		Tests are split by concern: SDK submit semantics, parser round-trip, storage round-trip, webview parity,
+		CLI passthrough, and standalone REST parity.
+	documentation_in_domain: >-
+		`docs/forms.md` explicitly documents current merge order and submit semantics; shared type comments also
+		describe the merge contract, though type docs omit the attachment-data layer in one place.
+
+related_dependencies:
+	internal:
+		- component: src/shared/types.ts
+			relationship_to_domain: Provides the shared `Card`, `CardFrontmatter`, and `ResolvedFormDescriptor` shapes.
+			direction: inbound
+		- component: src/shared/config.ts
+			relationship_to_domain: Supplies reusable workspace form definitions (`forms.<name>.data/schema/ui`).
+			direction: inbound
+		- component: src/sdk/parser.ts
+			relationship_to_domain: Persists and rehydrates `formData` maps.
+			direction: bidirectional
+		- component: src/webview/components/CardFormTab.tsx
+			relationship_to_domain: Reimplements preparation semantics for UI parity.
+			direction: outbound
+		- component: src/mcp-server/index.ts
+			relationship_to_domain: Enforces external input shape using the same nested-record concept.
+			direction: outbound
+	external:
+		- name: @jsonforms/core
+			purpose_for_domain: Schema validation setup.
+		- name: @jsonforms/react
+			purpose_for_domain: Form rendering.
+		- name: zod
+			purpose_for_domain: MCP input validation.
+		- name: js-yaml
+			purpose_for_domain: Markdown frontmatter persistence.
+
+domain_security_considerations:
+	sensitive_areas:
+		- area: template/interpolation evaluation boundary
+			location: would affect current preparation code in src/sdk/modules/cards.ts and src/webview/components/CardFormTab.tsx
+			concern: >-
+				There is no current code execution step. If “JavaScript template literals” is implemented via real
+				expression evaluation, workspace config/card data could become code-execution input.
+		- area: card context exposure
+			location: prepared form data generation
+			concern: >-
+				Expanding preparation from metadata-only overlays to full card context exposes additional fields
+				(`id`, `boardId`, timestamps, actions, etc.) into rendered/persisted payloads.
+	authentication_patterns_in_domain: No authentication logic exists in this domain slice.
+	authorization_patterns_in_domain: No authorization logic exists in this domain slice.
+	data_validation_in_domain: >-
+		Validation currently happens only after preparation/merge via AJV against the resolved schema;
+		parser and create/update inputs do not enforce schema completeness for `formData`.
+
+testing_patterns:
+	framework: Vitest
+	coverage_areas:
+		- SDK merge precedence and submit persistence
+		- parser serialize/parse round-trips
+		- SQLite storage round-trips for nested formData
+		- webview parity for initialData preparation
+		- CLI and REST passthrough coverage for formData
+	test_organization: >-
+		Behavior is covered in focused unit/integration files under `src/sdk/__tests__`,
+		`src/webview/components`, `src/cli`, and `src/standalone/__tests__`.
+	mock_patterns:
+		- Webview tests mock VS Code messaging and JSON Forms rendering.
+		- SDK tests use temporary workspaces and real config writes for merge-order assertions.
+
+current_typing_and_complete_object_assumptions:
+	formData_typing:
+		shared_type: "src/shared/types.ts:348 -> Record<string, Record<string, unknown>>"
+		card_field: "src/shared/types.ts:107 -> Card.formData?: CardFormDataMap"
+		frontmatter_field: "src/shared/types.ts:430 -> CardFrontmatter.formData?: CardFormDataMap"
+		create_sdk_input: "src/sdk/types.ts:36 -> CreateCardInput.formData?: CardFormDataMap"
+		create_transport_input: "src/shared/types.ts:460 -> CreateCardPayload.formData?: CardFormDataMap"
+		mcp_input_schema: "src/mcp-server/index.ts:20 -> z.record(z.string(), z.record(z.string(), z.unknown()))"
+	places_assuming_complete_objects:
+		- location: src/sdk/modules/cards.ts:451
+			detail: submit path expands `input.data` over `form.initialData`, producing a full canonical object before validation.
+		- location: src/sdk/modules/cards.ts:461
+			detail: persisted `card.formData[form.id]` is overwritten with the canonical merged object, not the raw submitted delta.
+		- location: src/sdk/types.ts:140
+			detail: `SubmitFormResult.data` is documented as the final payload persisted to storage.
+		- location: src/webview/components/CardFormTab.tsx:158
+			detail: UI state/validation are initialized from full `form.initialData`.
+		- location: src/webview/components/CardFormTab.tsx:235
+			detail: post-submit UI prefers persisted `result.card.formData[form.id]` as the authoritative full object.
+		- location: src/sdk/__tests__/submit-form.test.ts:76
+			detail: tests assert merged defaults + metadata are present in `result.form.initialData` and persisted payloads.
+
+minimal_change_points_observed:
+	- file: src/shared/types.ts
+		locations:
+			- src/shared/types.ts:348
+			- src/shared/types.ts:383
+		why_relevant: Type aliases and descriptor field types are the narrowest shared place where “partial persisted data” versus “prepared canonical data” can be distinguished.
+	- file: src/sdk/modules/cards.ts
+		locations:
+			- src/sdk/modules/cards.ts:40
+			- src/sdk/modules/cards.ts:77
+			- src/sdk/modules/cards.ts:440
+		why_relevant: This file currently owns both preparation semantics and canonical submit-time persistence.
+	- file: src/webview/components/CardFormTab.tsx
+		locations:
+			- src/webview/components/CardFormTab.tsx:26
+			- src/webview/components/CardFormTab.tsx:70
+		why_relevant: Any preparation/interpolation change must stay aligned with SDK-visible form prefills.
+	- file: src/sdk/types.ts
+		locations:
+			- src/sdk/types.ts:122
+			- src/sdk/types.ts:140
+		why_relevant: Submit input/result contracts currently describe delta-in/full-payload-out behavior.
+	- file: src/mcp-server/index.ts
+		locations:
+			- src/mcp-server/index.ts:20
+		why_relevant: External schema validation mirrors the current nested-record model and may need to reflect any type rename/splitting.
+	- file: docs/forms.md
+		locations:
+			- docs/forms.md:308
+			- docs/forms.md:355
+		why_relevant: Current public docs explicitly encode the metadata-only overlay and canonical submit merge order.
+
+related_tests:
+	- file: src/sdk/__tests__/submit-form.test.ts
+		coverage: SDK authoritative merge order, validation, persistence, metadata overlay, and sqlite parity.
+	- file: src/webview/components/CardFormTab.test.tsx
+		coverage: Webview parity for prepared `initialData` merge order and initial validation assumptions.
+	- file: src/sdk/__tests__/parser.test.ts
+		coverage: Markdown parse/serialize round-trip for `forms` and `formData`.
+	- file: src/sdk/__tests__/storage-sqlite.test.ts
+		coverage: SQLite round-trip and nested formData rewrite preservation.
+	- file: src/cli/index.test.ts
+		coverage: CLI passthrough of `formData` for create/edit/submit command surfaces.
+	- file: src/standalone/__tests__/server.integration.test.ts
+		coverage: REST create/update/submit parity with persisted `formData` expectations.
+
+open_questions:
+	- question: Should "partial form data" mean only stored `card.formData[formId]` may be sparse, while prepared `initialData` and submit results remain canonical full objects?
+		context: Current types use one broad alias for both persisted maps and prepared result objects, but submit behavior distinguishes them semantically.
+	- question: Should interpolation run only for string values in `FormDefinition.data` / `attachment.data`, or also within persisted `card.formData` and submitted payloads?
+		context: Current preparation is plain object spreading; there is no existing transformation stage.
+	- question: Does "JavaScript template literals / interpolation" imply simple placeholder substitution against card context or full expression evaluation?
+		context: The security and implementation surface changes materially depending on whether arbitrary expressions are allowed.
+	- question: What should happen when an interpolated expression references missing nested fields or non-string values?
+		context: Current code silently omits unrelated metadata rather than failing preparation.
+
+gaps:
+	- area: exact desired interpolation semantics
+		description: The repository has no existing interpolation helper or docs for template evaluation in form data.
+		impact: Prevents determining from code alone whether the future change should be type-only, string-only, or execution-capable.
+	- area: non-MCP API body validation
+		description: REST create/update handlers largely cast request bodies to shared payload types instead of validating a detailed formData schema in this focus slice.
+		impact: Important if the change later distinguishes persisted partial maps from prepared canonical objects at transport boundaries.
+	- area: extension/editor frontmatter editing behavior
+		description: This research did not deeply inspect manual frontmatter editing flows beyond shared type usage.
+		impact: Low for core typing/data-model analysis, but relevant if new semantics must tolerate hand-authored interpolated values.

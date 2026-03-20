@@ -103,7 +103,17 @@ export interface Card {
   actions?: string[] | Record<string, string>
   /** Forms attached to this card (named config-form references or inline definitions). */
   forms?: CardFormAttachment[]
-  /** Per-form persisted data keyed by the resolved form `id`. */
+  /**
+   * Per-form persisted data keyed by the resolved form `id`.
+   *
+   * Entries **may be partial at rest** — they may contain only a subset of the
+   * form schema properties (e.g. fields the user has previously submitted or
+   * pre-seeded values). The full canonical object is produced at runtime by
+   * `resolveCardForms()` (SDK) or `resolveCardFormDescriptors()` (webview),
+   * which merge config defaults, attachment defaults, and this stored value,
+   * then apply the metadata overlay. Submit results always persist the full
+   * canonical merged payload back to `card.formData[formId]`.
+   */
   formData?: CardFormDataMap
   /** Absolute path to the card's markdown file on disk. */
   filePath: string
@@ -176,6 +186,31 @@ export function generateSlug(title: string): string {
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-|-$/g, '') // Trim hyphens from start/end
     .slice(0, 50) || 'card' // Limit length, fallback
+}
+
+/**
+ * Converts a stable form key such as `'bug-report'` into a human-friendly
+ * display name such as `'Bug Report'`.
+ *
+ * This is used as the default display name for reusable config-backed forms
+ * when `FormDefinition.name` is omitted.
+ *
+ * @param formKey - Stable config form key or resolved form identifier.
+ * @returns A human-readable title-cased name.
+ */
+export function formatFormDisplayName(formKey: string): string {
+  const normalized = formKey
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim()
+
+  if (!normalized) return formKey
+
+  return normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ')
 }
 
 /**
@@ -345,6 +380,19 @@ export interface CardFormAttachment {
   data?: Record<string, unknown>
 }
 
+/**
+ * Per-form persisted data map used in {@link Card.formData} and transport payloads.
+ *
+ * Keys are resolved form IDs; values are the stored form field records.
+ *
+ * **Partial-at-rest semantics:** Individual form records may omit fields — they
+ * represent only the stored delta, not the full canonical form state. The
+ * prepared runtime object (`ResolvedFormDescriptor.initialData`) is always the
+ * full canonical shape produced by merging config defaults, attachment defaults,
+ * this stored record, and card metadata. String values in stored records may
+ * contain `${path}` placeholders that are resolved at preparation time via
+ * `prepareFormData()` from `src/shared/formDataPreparation`.
+ */
 export type CardFormDataMap = Record<string, Record<string, unknown>>
 
 /**
@@ -364,8 +412,24 @@ export interface ResolvedFormDescriptor {
    */
   id: string
   /**
-   * Human-readable label used for tab headings and display.
-   * Falls back to `id` when no explicit title is available.
+   * Human-readable form name used for tab headings and display.
+   * Falls back to a capitalized config key for reusable forms or to the
+   * inline schema title / resolved id for inline forms.
+   *
+   * Optional for backward compatibility with external consumers. Always
+   * populated by SDK resolution at runtime.
+   */
+  name?: string
+  /**
+   * Human-readable description shown in the card form header.
+   * Defaults to an empty string.
+   *
+   * Optional for backward compatibility with external consumers. Always
+   * populated by SDK resolution at runtime.
+   */
+  description?: string
+  /**
+   * Legacy alias for {@link name} kept for downstream compatibility.
    */
   label: string
   /** Resolved JSON Schema for AJV validation and JSON Forms rendering. */
@@ -373,12 +437,18 @@ export interface ResolvedFormDescriptor {
   /** Resolved JSON Forms UI schema, if any. */
   ui?: Record<string, unknown>
   /**
-   * Resolved initial data for the form.
+   * Fully prepared initial data for the form — always the **canonical full
+   * object**, never a partial stored snapshot.
    *
-   * Merge order (lowest → highest priority):
+   * Produced by merging (lowest → highest priority):
    * 1. Config-level `FormDefinition.data` (workspace defaults)
-   * 2. `Card.formData[id]` (persisted per-card form data)
-   * 3. `Card.metadata` fields whose keys appear in the schema properties
+   * 2. Attachment-level `CardFormAttachment.data` (card-scoped defaults)
+   * 3. `Card.formData[id]` (persisted per-card data, which may be partial at rest)
+   * 4. `Card.metadata` fields whose keys appear in the schema `properties`
+   *
+   * Before the merge, string values in each source layer are prepared via
+   * `prepareFormData()` (from `src/shared/formDataPreparation`), which resolves
+   * `${path}` placeholders against the full card interpolation context.
    */
   initialData: Record<string, unknown>
   /** `true` when this descriptor was sourced from a named config form. */
@@ -396,6 +466,8 @@ export interface CardFrontmatter {
   version: number
   /** Unique card identifier. */
   id: string
+  /** Board this card belongs to. Present when multiple boards exist. */
+  boardId?: string
   /** Current column/status of the card. */
   status: string
   /** Priority level of the card. */

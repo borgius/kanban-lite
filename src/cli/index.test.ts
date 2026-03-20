@@ -200,7 +200,9 @@ describe('CLI form-aware card commands', () => {
         card: { ...makeCard({ id: 'card-submit' }), filePath: undefined },
         form: {
           id: 'bug-report',
-          label: 'bug-report',
+          name: 'Bug Report',
+          description: '',
+          label: 'Bug Report',
           schema: { type: 'object' },
           initialData: { severity: 'medium' },
           fromConfig: true,
@@ -239,7 +241,9 @@ describe('CLI form-aware card commands', () => {
         card: { ...makeCard({ id: 'card-submit' }), filePath: undefined },
         form: {
           id: 'bug-report',
-          label: 'bug-report',
+          name: 'Bug Report',
+          description: '',
+          label: 'Bug Report',
           schema: { type: 'object' },
           initialData: { severity: 'medium' },
           fromConfig: true,

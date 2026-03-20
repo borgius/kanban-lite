@@ -80,10 +80,25 @@ export interface BoardConfig {
  *
  * Merge order for initial data (lowest → highest priority):
  * 1. `FormDefinition.data` — workspace-level defaults from this interface
- * 2. `Card.formData[id]` — per-card persisted form data
- * 3. `Card.metadata` — card metadata fields whose keys appear in the schema
+ * 2. `CardFormAttachment.data` — card-scoped attachment defaults
+ * 3. `Card.formData[id]` — per-card persisted form data (may be partial at rest)
+ * 4. `Card.metadata` — card metadata fields whose keys appear in the schema
+ *
+ * Sources 1–3 are preprocessed with `${path}` placeholder interpolation against
+ * the full card context before the merge. Placeholders that cannot be resolved
+ * (missing or `undefined` keys) are replaced with an empty string.
  */
 export interface FormDefinition {
+  /**
+   * Human-readable form name shown in the UI.
+   * Defaults to a capitalized version of the form key when omitted.
+   */
+  name?: string
+  /**
+   * Optional explanatory text shown in the card form header.
+   * Defaults to an empty string.
+   */
+  description?: string
   /** JSON Schema object describing the data shape for AJV validation. */
   schema: Record<string, unknown>
   /** Optional JSON Forms UI schema for layout/rendering hints. */

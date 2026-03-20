@@ -210,7 +210,7 @@ interface LogsSectionProps {
 export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange }: LogsSectionProps) {
   const [limit, setLimit] = useState<LogLimit>(() => (logsFilter?.limit as LogLimit) ?? 'all')
   const [order, setOrder] = useState<LogOrder>(() => logsFilter?.order ?? 'desc')
-  const [disabledSources, setDisabledSources] = useState<Set<string>>(() => new Set(logsFilter?.disabledSources ?? ['system']))
+  const [disabledSources, setDisabledSources] = useState<Set<string>>(() => new Set(logsFilter?.disabledSources ?? []))
   const [show, setShow] = useState<ShowOptions>(() => logsFilter?.show ?? {
     timestamp: true,
     source: true,

@@ -2105,6 +2105,76 @@ describe('Standalone Server Integration', () => {
       expect(fetched.data.formData).toEqual({ 'bug-report': { severity: 'medium' } })
     })
 
+    it('POST /api/tasks/:id/forms/:formId/submit interpolated config defaults resolve against card context and canonical payload reflects merged values', async () => {
+      // Regression: placeholder interpolation in config form defaults must resolve
+      // before the submit merge, and the persisted result.data must be the full
+      // canonical object (never a partial snapshot).
+      // .kanban.json lives at workspace root (parent of the cards dir).
+      // Must be a v2 config so migration does not strip the `forms` field.
+      const kanbanJson = path.join(path.dirname(tempDir), '.kanban.json')
+      fs.writeFileSync(kanbanJson, JSON.stringify({
+        version: 2,
+        boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } },
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        forms: {
+          'interp-form': {
+            schema: {
+              type: 'object',
+              title: 'Interpolation Test',
+              required: ['reporter', 'ref'],
+              properties: {
+                reporter: { type: 'string' },
+                ref: { type: 'string' },
+                region: { type: 'string' }
+              }
+            },
+            data: {
+              reporter: '${assignee}',
+              ref: '${id}',
+              region: '${metadata.region}'
+            }
+          }
+        }
+      }, null, 2), 'utf-8')
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Interpolation Regression Card',
+        status: 'backlog',
+        priority: 'medium',
+        assignee: 'bob',
+        metadata: { region: 'us-east' },
+        forms: [{ name: 'interp-form' }]
+      })
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id
+
+      // Submit with all required fields; values match what interpolation should
+      // have resolved from config defaults (assignee→reporter, id→ref, metadata→region).
+      const submitRes = await httpRequest(
+        'POST',
+        `http://localhost:${port}/api/tasks/${cardId}/forms/interp-form/submit`,
+        { data: { reporter: 'bob', ref: cardId, region: 'us-east' } }
+      )
+
+      expect(submitRes.status).toBe(200)
+      const submitted = JSON.parse(submitRes.body)
+      expect(submitted.ok).toBe(true)
+      // Canonical payload is the full merged object, not a partial.
+      expect(submitted.data.data).toEqual({ reporter: 'bob', ref: cardId, region: 'us-east' })
+      // Persisted card formData matches the canonical payload.
+      expect(submitted.data.card.formData['interp-form']).toEqual({ reporter: 'bob', ref: cardId, region: 'us-east' })
+
+      // Verify persistence via GET
+      const getRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      const fetched = JSON.parse(getRes.body)
+      expect(fetched.data.formData['interp-form']).toEqual({ reporter: 'bob', ref: cardId, region: 'us-east' })
+    })
+
     it('board-scoped REST routes keep form-aware create, update, and submit behavior in parity', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)

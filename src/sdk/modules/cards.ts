@@ -3,8 +3,9 @@ import * as path from 'path'
 import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Card, CardFormAttachment, CardSortOption, ResolvedFormDescriptor } from '../../shared/types'
-import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug } from '../../shared/types'
+import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug, formatFormDisplayName } from '../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/config'
+import { buildCardInterpolationContext, prepareFormData } from '../../shared/formDataPreparation'
 import { getCardFilePath } from '../fileUtils'
 import { matchesCardSearch } from '../metaUtils'
 import { sanitizeCard } from '../types'
@@ -54,6 +55,18 @@ function getInlineFormLabel(schema: Record<string, unknown>, fallbackId: string)
     : fallbackId
 }
 
+function getConfigFormName(formKey: string, configForm: { name?: string } | undefined): string {
+  return typeof configForm?.name === 'string' && configForm.name.trim().length > 0
+    ? configForm.name.trim()
+    : formatFormDisplayName(formKey)
+}
+
+function getConfigFormDescription(configForm: { description?: string } | undefined): string {
+  return typeof configForm?.description === 'string'
+    ? configForm.description.trim()
+    : ''
+}
+
 function createInlineFormIdResolver(): (attachment: CardFormAttachment, index: number) => string {
   const usedIds = new Set<string>()
 
@@ -91,21 +104,32 @@ function resolveCardForms(ctx: SDKContext, card: Card): ResolvedFormDescriptor[]
     if (!schema) return []
 
     const formId = resolveInlineId(attachment, index)
-    const label = attachment.name
-      ?? (typeof configForm?.schema?.title === 'string' && configForm.schema.title.trim().length > 0
-        ? configForm.schema.title.trim()
-        : getInlineFormLabel(schema, formId))
+    const name = attachment.name
+      ? getConfigFormName(attachment.name, configForm)
+      : getInlineFormLabel(schema, formatFormDisplayName(formId))
+    const description = attachment.name
+      ? getConfigFormDescription(configForm)
+      : ''
 
-    const initialData = {
+    const interpolationCtx = buildCardInterpolationContext(
+      card,
+      card.boardId || ctx._resolveBoardId(undefined),
+    )
+    const rawData = {
       ...cloneRecord(configForm?.data),
       ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined),
       ...cloneRecord(card.formData?.[formId]),
+    }
+    const initialData = {
+      ...prepareFormData(rawData, interpolationCtx),
       ...getMetadataOverlay(card, schema),
     }
 
     const descriptor: ResolvedFormDescriptor = {
       id: formId,
-      label,
+      name,
+      description,
+      label: name,
       schema,
       ...(isRecord(attachment.ui)
         ? { ui: attachment.ui }
@@ -464,10 +488,25 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
   }
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
+  await ctx.addLog(
+    card.id,
+    `Form submitted: \`${form.name}\``,
+    {
+      source: 'system',
+      object: {
+        formId: form.id,
+        formName: form.name,
+        payload: submittedData,
+      },
+    },
+    resolvedBoardId,
+  ).catch(() => {})
+
+  const persistedCard = await ctx.getCard(card.id, resolvedBoardId) ?? card
 
   const event: FormSubmitEvent = {
     boardId: resolvedBoardId,
-    card: sanitizeCard(card),
+    card: sanitizeCard(persistedCard),
     form,
     data: submittedData,
   }

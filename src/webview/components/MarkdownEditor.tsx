@@ -52,8 +52,8 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
     [boards, currentBoard],
   )
   const resolvedForms = useMemo(
-    () => (isEditMode && frontmatter ? resolveCardFormDescriptors(frontmatter, activeBoard) : []),
-    [activeBoard, frontmatter, isEditMode],
+    () => (isEditMode && frontmatter ? resolveCardFormDescriptors({ ...frontmatter, content: value }, activeBoard) : []),
+    [activeBoard, frontmatter, isEditMode, value],
   )
 
   const previewHtml = useMemo(() => {
@@ -151,7 +151,7 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
                 color: activeTab === tabId ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
               }}
             >
-              {form.label}
+                {`form: ${form.name}`}
               {activeTab === tabId && (
                 <span
                   className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"

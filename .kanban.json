@@ -58,6 +58,8 @@
   "drawerWidth": 49.65893716175586,
   "forms": {
     "test": {
+      "name": "Test Form",
+      "description": "A test form for demonstration purposes.",
       "schema": {
         "type": "object",
         "properties": {
@@ -191,9 +193,7 @@
   "logsFilter": {
     "limit": "all",
     "order": "desc",
-    "disabledSources": [
-      "system"
-    ],
+    "disabledSources": [],
     "show": {
       "timestamp": true,
       "source": true,

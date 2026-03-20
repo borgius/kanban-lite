@@ -1,0 +1,344 @@
+plan_id: 20260320-card-formdata-partial-template-interpolation
+objective: |
+  Support partial `Card.formData` entries and add template-literal-style form/template preparation
+  that can interpolate against full card context (`id`, `boardId`, `status`, `priority`, `assignee`,
+  `dueDate`, `metadata`, and related card fields) while preserving existing public submit/create APIs.
+created_at: "2026-03-20"
+created_by: gem-planner
+status: completed
+research_confidence: high
+
+tldr: |
+  The smallest safe rollout is SDK-first and dependency-free: introduce one local, browser-safe
+  interpolation/preparation helper, wire it into SDK form resolution first, then reuse the same
+  preparation contract in the webview resolver so rendered prefills and submit-time behavior stay in
+  sync. Interface layers should not need behavioral code changes because REST, CLI, MCP, and the
+  extension already delegate form submission to the SDK; the main non-code follow-up is targeted
+  regression coverage plus README/forms/changelog updates.
+
+open_questions:
+  - Should unresolved placeholders remain literal text or resolve to an empty string during preparation? The implementation should pick one rule and lock it in tests/docs.
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: Interpolation is implemented with arbitrary JavaScript evaluation (`new Function`-style) and turns card/config data into code execution input.
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Treat "template-literal-style" as `${path}` placeholder syntax only, backed by explicit path lookup
+        over card context. Keep the helper dependency-free and expression-free unless requirements are revised.
+    - scenario: SDK and webview preparation drift, causing the form tab to show different prefills than the SDK validates/persists.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Reuse one shared pure helper or one shared preparation contract, and add paired SDK/webview tests for
+        the same card/form fixture.
+    - scenario: Partial stored `formData` accidentally changes canonical submit semantics, causing missing defaults/metadata after save.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Keep the current canonical submit contract: prepared `initialData` plus submitted delta still produces
+        the validated full payload persisted to `card.formData[form.id]`.
+  assumptions:
+    - The existing `CardFormDataMap` shape can stay structurally compatible; the change is primarily semantic/JSDoc plus preparation behavior, not a breaking transport redesign.
+    - REST, CLI, MCP, and extension submit paths do not require code changes unless tests reveal contract leakage, because they already call `sdk.submitForm(...)`.
+    - A browser-safe pure helper can live in a shared module without pulling Node-only SDK dependencies into the webview bundle.
+    - Metadata overlay precedence must remain intact after interpolation is introduced.
+    - No `docs/prd.yaml` exists at planning time, so there is no PRD conflict to resolve before approval.
+
+implementation_specification:
+  code_structure: |
+    Keep the rollout surgical and SDK-first. Define a small local preparation helper that builds a card-context
+    lookup model and interpolates string leaves within nested form-data objects, then apply it in SDK form
+    resolution before touching the webview duplicate. Preserve the current public API surface and submit/result
+    shapes; only clarify semantics in JSDoc/comments where `formData` can now be partial at rest but prepared
+    form data remains canonical at runtime.
+  affected_areas:
+    - src/shared/types.ts
+    - src/shared/formDataPreparation.ts
+    - src/sdk/modules/cards.ts
+    - src/sdk/KanbanSDK.ts
+    - src/webview/components/CardFormTab.tsx
+    - src/webview/components/MarkdownEditor.tsx
+    - src/sdk/__tests__/submit-form.test.ts
+    - src/webview/components/CardFormTab.test.tsx
+    - src/standalone/__tests__/server.integration.test.ts
+    - README.md
+    - docs/forms.md
+    - CHANGELOG.md
+  component_details:
+    - component: form-data preparation helper
+      responsibility: Build the full card interpolation context and prepare nested form data by replacing string placeholders without evaluating arbitrary code.
+      interfaces:
+        - "prepareFormData(value: Record<string, unknown>, cardContext: {...}): Record<string, unknown>"
+        - "resolveTemplateString(template: string, cardContext: {...}): string"
+    - component: SDK resolved-form preparation
+      responsibility: Apply the helper to config defaults, attachment defaults, and persisted per-form data before metadata overlay and submit-time merge/validation.
+      interfaces:
+        - "resolveCardForms(ctx, card): ResolvedFormDescriptor[]"
+        - "submitForm(input): SubmitFormResult"
+    - component: webview resolved-form preparation
+      responsibility: Reuse the same preparation semantics for the card form tab so UI-prefilled data matches SDK behavior.
+      interfaces:
+        - "resolveCardFormDescriptors(frontmatter, board?): ResolvedFormDescriptor[]"
+    - component: regression/documentation layer
+      responsibility: Lock the new semantics with focused tests and document supported placeholder examples plus safety boundaries.
+      interfaces:
+        - "Vitest coverage for SDK/webview/transport parity"
+        - "README/docs/forms/CHANGELOG entries"
+  dependencies:
+    - component: form-data preparation helper
+      relationship: Blocks SDK and webview implementation because both consumers need the same placeholder-resolution contract.
+    - component: SDK resolved-form preparation
+      relationship: Blocks tests and documentation because it defines the canonical runtime behavior seen across submit surfaces.
+    - component: webview resolved-form preparation
+      relationship: Depends on the helper and SDK contract to avoid introducing a second behavior definition.
+    - component: regression/documentation layer
+      relationship: Depends on finalized SDK + webview behavior so examples and assertions match the shipped semantics.
+  integration_points:
+    - `src/sdk/modules/cards.ts` remains the authoritative form-resolution and submit path for SDK/API/CLI/MCP/extension submission.
+    - `src/webview/components/CardFormTab.tsx` remains the only UI-side duplicate resolver that needs parity work.
+    - `src/webview/components/MarkdownEditor.tsx` is the likely call-site ripple if the webview resolver needs broader card context than `forms/formData/metadata`.
+    - `README.md` and `docs/forms.md` are the user-facing documentation sources for merge order and form authoring examples.
+    - `CHANGELOG.md` must record the behavior change under `## [Unreleased]`.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "Stable, dependency-free helper contract for resolving `${...}` placeholders from full card context plus clarified partial-at-rest vs prepared-at-runtime semantics."
+    format: "TypeScript helper module + JSDoc/type comments in shared/SDK files"
+  - from_task: T2
+    to_task: T3
+    interface: "Canonical SDK preparation order and the exact context fields exposed to interpolation."
+    format: "ResolvedFormDescriptor.initialData behavior in `resolveCardForms`"
+  - from_task: T2
+    to_task: T4
+    interface: "Authoritative runtime behavior for partial stored formData, metadata precedence, and canonical submit persistence."
+    format: "Focused SDK submit behavior and expected result payloads"
+  - from_task: T3
+    to_task: T4
+    interface: "Webview resolver signature/output that matches SDK-prepared initialData for the same fixture."
+    format: "Resolved form descriptors in `CardFormTab` tests"
+  - from_task: T4
+    to_task: T5
+    interface: "Final supported interpolation examples, missing-value rule, and parity guarantees proven by tests."
+    format: "Documented examples and release-note bullets"
+
+tasks:
+  - id: T1
+    title: Define the safe preparation contract for partial stored form data
+    description: |
+      Clarify the intended semantics before behavior changes land: `Card.formData` entries may be partial when
+      stored, but prepared `initialData` and submit results remain canonical full objects. Introduce a local,
+      browser-safe helper contract for `${path}` placeholder interpolation across full card context, and avoid
+      any public API rename or transport shape change.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      /Users/admin/dev/kanban-light/src/shared/types.ts: "Shared card/form contracts and `ResolvedFormDescriptor.initialData` semantics."
+      /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts: "Public SDK JSDoc source if behavior notes need to surface in generated docs."
+      /Users/admin/dev/kanban-light/src/shared/formDataPreparation.ts: "New pure helper module for interpolation/path lookup."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 140
+    focus_area: contract_and_helper_design
+    verification:
+      - Public type names and submit/create method signatures remain unchanged.
+      - Helper contract is dependency-free, pure, and safe for both Node and webview bundles.
+      - JSDoc/comments clearly distinguish partial persisted data from prepared runtime data.
+    acceptance_criteria:
+      - Supported interpolation context includes `id`, `boardId`, `status`, `priority`, `assignee`, `dueDate`, `metadata`, and other non-file-path card fields required by the objective.
+      - The plan for interpolation does not rely on arbitrary JavaScript evaluation.
+      - No interface-layer schema changes are required at this step.
+    failure_modes:
+      - scenario: The helper is designed around full JavaScript expressions, creating a security/perf hazard.
+        likelihood: medium
+        impact: high
+        mitigation: Restrict the contract to placeholder path resolution only and document that choice.
+      - scenario: Type comment changes imply a breaking API change where none is intended.
+        likelihood: low
+        impact: medium
+        mitigation: Preserve exported type names and narrow the change to semantics/JSDoc unless implementation proves a real type split is necessary.
+    tech_stack:
+      - TypeScript
+    test_coverage: null
+
+  - id: T2
+    title: Implement SDK-owned form preparation with full card-context interpolation
+    description: |
+      Wire the helper into SDK form resolution so config defaults, attachment-level defaults, and persisted
+      `card.formData[formId]` are prepared against full card context before metadata overlay is applied. Keep
+      the current submit contract intact: `submitForm()` should still validate and persist the canonical merged
+      payload, but that payload may now originate from partial stored data plus interpolated placeholders.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts: "Authoritative resolve/submit behavior."
+      /Users/admin/dev/kanban-light/src/shared/formDataPreparation.ts: "Pure helper used by SDK."
+      /Users/admin/dev/kanban-light/src/sdk/types.ts: "Submit-form contract comments if result semantics need clarification."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: sdk_runtime_preparation
+    verification:
+      - `resolveCardForms()` still preserves existing merge precedence aside from the new interpolation pass.
+      - `submitForm()` continues to persist the validated canonical full object to `card.formData[form.id]`.
+      - No REST/CLI/MCP/extension call sites require code changes to keep submit working.
+    acceptance_criteria:
+      - Placeholders in config data, attachment data, and persisted `formData` resolve from full card context.
+      - Metadata overlay still wins for schema-declared metadata keys after preparation.
+      - Existing public SDK methods and transport result shapes remain backward compatible.
+    failure_modes:
+      - scenario: Interpolation runs after metadata overlay and unexpectedly overwrites schema-aligned metadata values.
+        likelihood: medium
+        impact: high
+        mitigation: Apply interpolation before metadata overlay and lock the order in tests.
+      - scenario: Preparing persisted partial data breaks empty-submit flows or stores only a delta.
+        likelihood: medium
+        impact: high
+        mitigation: Keep `submitForm()` canonical-merge behavior unchanged and verify it with regression coverage.
+    tech_stack:
+      - TypeScript
+      - AJV / JSON Forms existing validation stack
+    test_coverage: "Focused SDK unit coverage plus transport smoke coverage in later tasks"
+
+  - id: T3
+    title: Re-align the webview resolver with the SDK preparation contract
+    description: |
+      Update the duplicated webview resolver so the form tab renders the same prepared `initialData` that the SDK
+      will validate and persist. Pass any additional frontmatter/card context needed for interpolation, but keep
+      the UI change surgical and avoid introducing any Node-only imports into the webview bundle.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+    context_files:
+      /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx: "UI-side duplicate of form resolution."
+      /Users/admin/dev/kanban-light/src/webview/components/MarkdownEditor.tsx: "Likely resolver call-site ripple if wider card context is required."
+      /Users/admin/dev/kanban-light/src/shared/formDataPreparation.ts: "Shared helper or shared semantics entrypoint."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: webview_parity
+    verification:
+      - The webview resolver compiles in the standalone/webview bundle without pulling Node dependencies.
+      - Prepared `initialData` matches SDK behavior for the same form/card fixture.
+      - Existing inline-form id stability and tab-selection behavior remain unchanged.
+    acceptance_criteria:
+      - The form tab can interpolate placeholders using the same card fields supported by the SDK.
+      - UI-prefilled values and post-submit canonical values no longer diverge because of duplicated logic.
+      - No unrelated card-editor behavior is refactored.
+    failure_modes:
+      - scenario: The webview imports a helper from an SDK-only module and breaks the frontend build.
+        likelihood: medium
+        impact: high
+        mitigation: Keep the helper in a browser-safe shared module and verify the build after wiring it in.
+      - scenario: The current resolver input type lacks `boardId` or other card fields needed for interpolation.
+        likelihood: medium
+        impact: medium
+        mitigation: Broaden the resolver input shape minimally and update only the direct call sites.
+    tech_stack:
+      - TypeScript
+      - React
+      - JSON Forms
+    test_coverage: "Webview unit tests in T4"
+
+  - id: T4
+    title: Lock the new semantics with focused parity regressions
+    description: |
+      Add targeted tests for partial stored `formData`, placeholder expansion, missing-value behavior, metadata
+      precedence, and canonical submit persistence. Cover both the authoritative SDK path and the webview parity
+      path; add one transport-level integration assertion only if needed to prove interface layers inherit the SDK
+      change without bespoke code edits.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+      - T3
+    context_files:
+      /Users/admin/dev/kanban-light/src/sdk/__tests__/submit-form.test.ts: "Authoritative merge/persist behavior tests."
+      /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.test.tsx: "Webview resolved-form parity tests."
+      /Users/admin/dev/kanban-light/src/standalone/__tests__/server.integration.test.ts: "Optional transport-level submit regression."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: regression_coverage
+    verification:
+      - Focused Vitest runs pass for SDK and webview form tests.
+      - Any added transport-level regression proves submit results still return canonical prepared data.
+      - Edge cases for missing placeholders and partial stored maps are explicitly asserted.
+    acceptance_criteria:
+      - Tests prove partial stored `formData` is supported without regressing canonical submit persistence.
+      - Tests prove the webview resolver and SDK resolver produce matching prepared data.
+      - Tests document the final missing-placeholder rule selected in T1.
+    failure_modes:
+      - scenario: Tests only cover the happy path and miss precedence or missing-placeholder regressions.
+        likelihood: medium
+        impact: medium
+        mitigation: Use one shared fixture matrix that varies config defaults, attachment defaults, partial persisted data, metadata, and submit deltas.
+      - scenario: A transport regression appears late because only unit tests were updated.
+        likelihood: low
+        impact: medium
+        mitigation: Add one standalone integration case if unit results suggest any serialization/transport ambiguity.
+    tech_stack:
+      - TypeScript
+      - Vitest
+      - React Testing Library existing webview test setup
+    test_coverage: "SDK + webview required; standalone integration optional but recommended if behavior touches transport-visible payloads"
+
+  - id: T5
+    title: Update release notes and form authoring docs for the new preparation behavior
+    description: |
+      Document the shipped behavior once tests are green: explain that stored form data may be partial, show
+      supported `${...}` interpolation examples using card fields/metadata, and note that REST/CLI/MCP/extension
+      submit APIs inherit the SDK behavior without new request shapes. Record the change in `CHANGELOG.md` under
+      `## [Unreleased]` and refresh docs from source if SDK JSDoc changed.
+    wave: 5
+    agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - T4
+    context_files:
+      /Users/admin/dev/kanban-light/README.md: "User-facing forms feature overview and examples."
+      /Users/admin/dev/kanban-light/docs/forms.md: "Detailed form-authoring and submit-flow guide."
+      /Users/admin/dev/kanban-light/CHANGELOG.md: "Unreleased release notes entry."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 90
+    focus_area: docs_and_release_notes
+    verification:
+      - README/docs/forms examples match the tested interpolation syntax and merge order.
+      - CHANGELOG entry is concise and placed under the correct `Unreleased` subsection.
+      - If SDK JSDoc changed, `npm run docs` is rerun and generated doc diffs are reviewed before merge.
+    acceptance_criteria:
+      - Docs explicitly describe supported interpolation context and the missing-placeholder rule.
+      - Docs mention that interface layers reuse SDK submit behavior rather than adding new submit payload shapes.
+      - Release notes clearly describe the partial-formData + interpolation enhancement.
+    failure_modes:
+      - scenario: Documentation promises arbitrary JavaScript expressions or unsupported placeholder behavior.
+        likelihood: low
+        impact: high
+        mitigation: Derive examples directly from passing tests and keep the safety boundary explicit.
+      - scenario: Generated docs become stale after JSDoc updates.
+        likelihood: medium
+        impact: medium
+        mitigation: Treat `npm run docs` as part of verification whenever SDK doc source changes.
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - README feature overview and examples
+      - docs/forms authoring + submit-flow semantics
+      - CHANGELOG unreleased note

@@ -81,7 +81,8 @@ kl add --title "My first task" --priority high
 - **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
 - **Reusable and inline forms**: Attach named workspace forms from `.kanban.json` or define card-local inline forms directly on the card
-- **Per-form saved data**: Each attached form persists its submitted payload separately under `formData[formId]`, so multiple forms on one card do not collide
+- **Per-form saved data**: Each attached form persists its submitted payload separately under `formData[formId]`, so multiple forms on one card do not collide; stored entries may be partial — the full canonical form state is prepared at runtime by merging config defaults, attachment defaults, persisted data, and metadata
+- **`${path}` placeholder interpolation**: String values in config defaults, attachment defaults, and persisted form data are resolved against full card context (`${id}`, `${status}`, `${assignee}`, `${metadata.key}`, etc.) before the form tab opens; unresolved placeholders become empty strings
 - **Auto-generated IDs**: Based on title and timestamp (e.g., `implement-dark-mode-2026-01-29`)
 - **Timestamps**: Created and modified dates tracked automatically
 
@@ -579,13 +580,17 @@ For every attached form, the resolved payload is built in this order, from lowes
 4. The submitted payload
 
 The SDK validates that final payload before persistence and before any `form.submit` webhook fires.
+After a successful submission, Kanban Lite also appends a card log entry containing the submitted payload for traceability.
 
 ### Webview behavior
 
 - Every attached form renders as an extra tab in the card editor.
 - Tabs are stable and deep-linkable in standalone mode using `form:<resolved-id>` tab ids.
+- Tab labels use the resolved display name and render as `form: <Form Name>`.
 - Shared config forms show a **Shared** badge in the tab content.
+- Shared config forms may define `name` (default: capitalized form key) and `description` (default: empty string) in `.kanban.json`.
 - Submit stays disabled until validation passes, and successful submissions update the card's saved `formData`.
+- Successful submissions also append a system card log whose JSON object includes `formId`, `formName`, and the submitted `payload`.
 
 ### Programmatic submission surfaces
 

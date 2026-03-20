@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { JsonForms } from '@jsonforms/react'
-import { createAjv } from '@jsonforms/core'
+import { createAjv, type UISchemaElement } from '@jsonforms/core'
 import { vanillaCells, vanillaRenderers } from '@jsonforms/vanilla-renderers'
 import type { BoardInfo, CardFrontmatter, ExtensionMessage, ResolvedFormDescriptor, SubmitFormTransportResult } from '../../shared/types'
+import { formatFormDisplayName } from '../../shared/types'
+import { buildCardInterpolationContext, prepareFormData } from '../../shared/formDataPreparation'
 import { cn } from '../lib/utils'
 import { getVsCodeApi } from '../vsCodeApi'
 
@@ -40,6 +42,18 @@ function getInlineFormLabel(schema: Record<string, unknown>, fallbackId: string)
     : fallbackId
 }
 
+function getConfigFormName(formKey: string, configForm: { name?: string } | undefined): string {
+  return typeof configForm?.name === 'string' && configForm.name.trim().length > 0
+    ? configForm.name.trim()
+    : formatFormDisplayName(formKey)
+}
+
+function getConfigFormDescription(configForm: { description?: string } | undefined): string {
+  return typeof configForm?.description === 'string'
+    ? configForm.description.trim()
+    : ''
+}
+
 function createInlineFormIdResolver(): (name: string | undefined, schema: Record<string, unknown> | undefined, index: number) => string {
   const usedIds = new Set<string>()
 
@@ -69,12 +83,13 @@ function createInlineFormIdResolver(): (name: string | undefined, schema: Record
 }
 
 export function resolveCardFormDescriptors(
-  frontmatter: Pick<CardFrontmatter, 'forms' | 'formData' | 'metadata'>,
+  frontmatter: Pick<CardFrontmatter, 'forms' | 'formData' | 'metadata' | 'id' | 'boardId' | 'status' | 'priority' | 'assignee' | 'dueDate' | 'created' | 'modified' | 'completedAt' | 'labels' | 'attachments' | 'order' | 'actions'> & { content?: string },
   board?: BoardInfo,
 ): ResolvedFormDescriptor[] {
   const attachments = frontmatter.forms ?? []
   const workspaceForms = board?.forms ?? {}
   const resolveInlineId = createInlineFormIdResolver()
+  const interpolationCtx = buildCardInterpolationContext(frontmatter, frontmatter.boardId ?? board?.id ?? '')
 
   return attachments.flatMap((attachment, index) => {
     const configForm = attachment.name ? workspaceForms[attachment.name] : undefined
@@ -87,14 +102,24 @@ export function resolveCardFormDescriptors(
     if (!schema) return []
 
     const formId = resolveInlineId(attachment.name, schema, index)
-    const label = attachment.name
-      ?? (typeof configForm?.schema?.title === 'string' && configForm.schema.title.trim().length > 0
-        ? configForm.schema.title.trim()
-        : getInlineFormLabel(schema, formId))
+    const name = attachment.name
+      ? getConfigFormName(attachment.name, configForm)
+      : getInlineFormLabel(schema, formatFormDisplayName(formId))
+    const description = attachment.name
+      ? getConfigFormDescription(configForm)
+      : ''
+
+    const rawData = {
+      ...cloneRecord(configForm?.data),
+      ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined),
+      ...cloneRecord(frontmatter.formData?.[formId]),
+    }
 
     return [{
       id: formId,
-      label,
+      name,
+      description,
+      label: name,
       schema,
       ...(isRecord(attachment.ui)
         ? { ui: attachment.ui }
@@ -102,9 +127,7 @@ export function resolveCardFormDescriptors(
           ? { ui: configForm.ui }
           : {}),
       initialData: {
-        ...cloneRecord(configForm?.data),
-        ...cloneRecord(isRecord(attachment.data) ? attachment.data : undefined),
-        ...cloneRecord(frontmatter.formData?.[formId]),
+        ...prepareFormData(rawData, interpolationCtx),
         ...getMetadataOverlay(frontmatter, schema),
       },
       fromConfig: Boolean(attachment.name && configForm),
@@ -170,9 +193,9 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
     setErrors(validateFormData(form.schema, nextData))
     setSubmitError(null)
     setSuccessMessage((current) => shouldPreserveFormSuccessMessage(form.id, initialDataSignature, lastSuccessfulSubmissionRef.current)
-      ? current ?? `Saved ${form.label}`
+      ? current ?? `Saved ${form.name}`
       : null)
-  }, [form.id, form.label, form.schema, initialDataSignature])
+  }, [form.id, form.name, form.schema, form.initialData, initialDataSignature])
 
   useEffect(() => {
     return () => {
@@ -242,7 +265,7 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
       }
       setData(normalizedData)
       setErrors(validateFormData(form.schema, normalizedData))
-      setSuccessMessage(`Saved ${form.label}`)
+      setSuccessMessage(`Saved ${form.name}`)
       onSubmitted?.(result)
     } catch (error) {
       lastSuccessfulSubmissionRef.current = null
@@ -263,7 +286,7 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-              {form.label}
+              {form.name}
             </h3>
             {form.fromConfig && (
               <span
@@ -277,11 +300,16 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            {hasValidationErrors
-              ? `Fix ${errors.length} validation error${errors.length === 1 ? '' : 's'} before submitting.`
-              : 'Ready to submit.'}
-          </p>
+          {form.description && (
+            <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              {form.description}
+            </p>
+          )}
+          {hasValidationErrors && (
+            <p className="mt-1 text-xs font-medium" style={{ color: 'var(--vscode-errorForeground)' }}>
+              {`Fix ${errors.length} validation error${errors.length === 1 ? '' : 's'} before submitting.`}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -302,7 +330,7 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
         <div className="card-jsonforms p-4">
           <JsonForms
             schema={form.schema}
-            uischema={form.ui}
+            uischema={form.ui as UISchemaElement | undefined}
             data={data}
             renderers={vanillaRenderers}
             cells={vanillaCells}

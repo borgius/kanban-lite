@@ -1,0 +1,542 @@
+plan_id: 20260320-form-interface-contract-coverage
+objective: "Investigate whether partial form data plus interpolation with full card context can be supported across SDK/API/CLI/MCP/webview while preserving AGENTS.md parity expectations."
+focus_area: interface_and_contract_coverage
+created_at: "2026-03-20"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+	- The authoritative submit contract is SDK-owned: `SubmitFormInput` / `SubmitFormResult` in `src/sdk/types.ts` and `submitForm()` in `src/sdk/modules/cards.ts`.
+	- REST, CLI, MCP, VS Code extension transport, and standalone websocket/http submit flows all delegate to `sdk.submitForm(...)`, so submit-time merge/validation/persistence changes propagate automatically to those layers.
+	- The webview does not consume a resolved-form API from the SDK; it locally re-implements form resolution in `src/webview/components/CardFormTab.tsx`, including merge order and inline-id generation, so any new interpolation/full-card-context resolution needs an explicit UI touchpoint unless that logic is centralized.
+	- Likely non-code impact areas are `README.md`, `CHANGELOG.md`, SDK JSDoc (`src/sdk/KanbanSDK.ts` / `src/sdk/types.ts`), API docs metadata (`scripts/generate-api-docs.ts`), webhook docs metadata (`scripts/generate-webhooks-docs.ts`), manual form guide (`docs/forms.md`), and regression tests in SDK/standalone/CLI/webview.
+
+research_metadata:
+	methodology: "Hybrid retrieval using semantic_search and grep_search, followed by targeted read_file inspection of SDK contracts, interface handlers, shared transport types, tests, and documentation sources. Relationship discovery focused on callers of sdk.submitForm and duplicated form-resolution code paths."
+	scope: "Focused on interface and contract coverage for form resolution/submission across SDK, REST/standalone, CLI, MCP, extension transport, and webview; excluded unrelated kanban features."
+	confidence: high
+	coverage: 88
+
+files_analyzed:
+	- file: types.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/types.ts
+		purpose: Defines the public SDK create-card and submit-form contracts plus emitted event typing.
+		key_elements:
+			- element: SubmitFormInput
+				type: interface
+				location: src/sdk/types.ts:122
+				description: Public submit payload contract (`cardId`, `formId`, `data`, optional `boardId`).
+			- element: SubmitFormResult
+				type: interface
+				location: src/sdk/types.ts:133
+				description: Public submit result carrying `boardId`, sanitized `card`, resolved `form`, and canonical persisted `data`.
+			- element: FormSubmitEvent
+				type: type
+				location: src/sdk/types.ts:144
+				description: Event payload is aliased directly to `SubmitFormResult`.
+		language: TypeScript
+		lines: 161
+
+	- file: cards.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+		purpose: Implements form resolution, merge semantics, validation, persistence, and event emission.
+		key_elements:
+			- element: getMetadataOverlay
+				type: function
+				location: src/sdk/modules/cards.ts:40
+				description: Adds only metadata keys declared in the schema; no generic interpolation engine is present here.
+			- element: resolveCardForms
+				type: function
+				location: src/sdk/modules/cards.ts:77
+				description: Resolves schema/ui/initialData for attached forms using config defaults, attachment defaults, persisted `formData`, and metadata overlay.
+			- element: submitForm
+				type: function
+				location: src/sdk/modules/cards.ts:440
+				description: Merges partial submission data over resolved initial data, validates with AJV, persists `card.formData[form.id]`, and emits `form.submit`.
+		language: TypeScript
+		lines: 579
+
+	- file: types.ts
+		path: /Users/admin/dev/kanban-light/src/shared/types.ts
+		purpose: Defines shared form descriptor and webview/transport message contracts.
+		key_elements:
+			- element: ResolvedFormDescriptor
+				type: interface
+				location: src/shared/types.ts:358
+				description: Normalized resolved-form shape used downstream by submit results and webview rendering.
+			- element: CreateCardPayload
+				type: interface
+				location: src/shared/types.ts:433
+				description: Shared create payload includes `forms` and `formData` but not a resolved-form surface.
+			- element: SubmitFormMessage
+				type: interface
+				location: src/shared/types.ts:467
+				description: Webview submit request contract carrying raw partial `data` plus callback key.
+			- element: SubmitFormTransportResult
+				type: interface
+				location: src/shared/types.ts:479
+				description: Transport-safe mirror of SDK submit result.
+		language: TypeScript
+		lines: 559
+
+	- file: server.ts
+		path: /Users/admin/dev/kanban-light/src/standalone/server.ts
+		purpose: Exposes REST and websocket submit surfaces and delegates to the SDK.
+		key_elements:
+			- element: parseSubmitData
+				type: function
+				location: src/standalone/server.ts:234
+				description: Normalizes request `data` to an object before delegating to the SDK.
+			- element: doSubmitForm
+				type: function
+				location: src/standalone/server.ts:377
+				description: Thin wrapper around `sdk.submitForm` that reloads cards and rebroadcasts state.
+			- element: POST /api/boards/:boardId/tasks/:id/forms/:formId/submit
+				type: pattern
+				location: src/standalone/server.ts:1241
+				description: Board-scoped REST submit endpoint returning the SDK result JSON.
+			- element: POST /api/tasks/:id/forms/:formId/submit
+				type: pattern
+				location: src/standalone/server.ts:1407
+				description: Default-board REST submit endpoint returning the SDK result JSON.
+			- element: websocket submitForm handler
+				type: pattern
+				location: src/standalone/server.ts:700
+				description: Webview/standalone transport delegates to `doSubmitForm` and sends `submitFormResult` callbacks.
+		language: TypeScript
+		lines: 2149
+
+	- file: index.ts
+		path: /Users/admin/dev/kanban-light/src/cli/index.ts
+		purpose: Defines CLI contracts for editing form-aware cards and submitting form payloads.
+		key_elements:
+			- element: cmdForm
+				type: function
+				location: src/cli/index.ts:479
+				description: CLI `form submit` parses `--data` JSON or `@file` JSON and delegates to `sdk.submitForm`.
+			- element: CLI help text
+				type: pattern
+				location: src/cli/index.ts:1609
+				description: Documents `form submit <id> <form>` and form-aware edit flags (`--forms`, `--form-data`).
+		language: TypeScript
+		lines: 1896
+
+	- file: index.ts
+		path: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+		purpose: Defines MCP schemas/tools for form-aware create/update and submit operations.
+		key_elements:
+			- element: cardFormAttachmentSchema
+				type: variable
+				location: src/mcp-server/index.ts:11
+				description: Zod schema for attached form definitions.
+			- element: create_card tool
+				type: pattern
+				location: src/mcp-server/index.ts:235
+				description: Exposes `forms` and `formData` through MCP creation.
+			- element: update_card tool
+				type: pattern
+				location: src/mcp-server/index.ts:277
+				description: Exposes `forms` and `formData` replacement semantics through MCP update.
+			- element: submit_card_form tool
+				type: pattern
+				location: src/mcp-server/index.ts:342
+				description: Delegates to `sdk.submitForm` and returns the canonical submit result.
+		language: TypeScript
+		lines: 1510
+
+	- file: KanbanPanel.ts
+		path: /Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts
+		purpose: VS Code host bridge for webview submit-form messages.
+		key_elements:
+			- element: submitForm message handler
+				type: pattern
+				location: src/extension/KanbanPanel.ts:389
+				description: Forwards the webview submit payload to `submitSdk.submitForm`, reloads cards, and returns `submitFormResult`.
+		language: TypeScript
+		lines: 1269
+
+	- file: CardFormTab.tsx
+		path: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx
+		purpose: Webview-side resolved-form derivation, client-side validation, and submit callback workflow.
+		key_elements:
+			- element: resolveCardFormDescriptors
+				type: function
+				location: src/webview/components/CardFormTab.tsx:71
+				description: Duplicates SDK-aligned resolution logic locally using frontmatter + board config.
+			- element: handleSubmit
+				type: function
+				location: src/webview/components/CardFormTab.tsx:186
+				description: Sends raw partial `data` via `submitForm` message and normalizes persisted data from the returned result.
+		language: TSX
+		lines: 375
+
+	- file: submit-form.test.ts
+		path: /Users/admin/dev/kanban-light/src/sdk/__tests__/submit-form.test.ts
+		purpose: Regression coverage for SDK submit semantics.
+		key_elements:
+			- element: merge precedence tests
+				type: pattern
+				location: src/sdk/__tests__/submit-form.test.ts:24
+				description: Verifies config defaults -> attachment data -> persisted formData -> metadata overlay -> submitted payload behavior.
+			- element: invalid submission test
+				type: pattern
+				location: src/sdk/__tests__/submit-form.test.ts:198
+				description: Confirms validation failures do not persist or emit `form.submit`.
+		language: TypeScript
+		lines: 315
+
+	- file: server.integration.test.ts
+		path: /Users/admin/dev/kanban-light/src/standalone/__tests__/server.integration.test.ts
+		purpose: Integration coverage for REST and websocket form submit routes.
+		key_elements:
+			- element: REST submit success test
+				type: pattern
+				location: src/standalone/__tests__/server.integration.test.ts:2022
+				description: Confirms `POST /api/tasks/:id/forms/:formId/submit` returns canonical payload and persists `formData`.
+			- element: REST submit invalid test
+				type: pattern
+				location: src/standalone/__tests__/server.integration.test.ts:2064
+				description: Confirms invalid submit returns 400 and preserves prior data.
+			- element: websocket submit callback test
+				type: pattern
+				location: src/standalone/__tests__/server.integration.test.ts:2198
+				description: Confirms `submitFormResult` success/error callback parity.
+		language: TypeScript
+		lines: 2589
+
+	- file: index.test.ts
+		path: /Users/admin/dev/kanban-light/src/cli/index.test.ts
+		purpose: Unit coverage for CLI form submission flags and delegation.
+		key_elements:
+			- element: cmdForm success tests
+				type: pattern
+				location: src/cli/index.test.ts:213
+				description: Verifies CLI passes parsed JSON and `@file` payloads into `sdk.submitForm`.
+			- element: cmdForm error propagation test
+				type: pattern
+				location: src/cli/index.test.ts:291
+				description: Verifies SDK submit errors bubble through CLI command execution.
+		language: TypeScript
+		lines: 300
+
+	- file: CardFormTab.test.tsx
+		path: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.test.tsx
+		purpose: Unit coverage for UI-side form resolution and validation messaging.
+		key_elements:
+			- element: resolveCardFormDescriptors tests
+				type: pattern
+				location: src/webview/components/CardFormTab.test.tsx:34
+				description: Confirms webview-local resolver mirrors SDK merge order and stable inline IDs.
+		language: TSX
+		lines: 175
+
+	- file: standalone-shim.test.ts
+		path: /Users/admin/dev/kanban-light/src/webview/standalone-shim.test.ts
+		purpose: Transport coverage for standalone offline submit behavior.
+		key_elements:
+			- element: disconnected submitForm handling
+				type: pattern
+				location: src/webview/standalone-shim.test.ts:171
+				description: Confirms standalone mode fails form submissions fast while offline instead of leaving them pending.
+		language: TypeScript
+		lines: 200
+
+	- file: README.md
+		path: /Users/admin/dev/kanban-light/README.md
+		purpose: User-facing overview documenting form merge semantics and cross-surface submission paths.
+		key_elements:
+			- element: Card Forms section
+				type: pattern
+				location: README.md:516
+				description: Documents merge order, webview behavior, and SDK/CLI/REST/MCP submit surfaces.
+		language: Markdown
+		lines: 1230
+
+	- file: CHANGELOG.md
+		path: /Users/admin/dev/kanban-light/CHANGELOG.md
+		purpose: Release notes source that already tracks form parity and webhook semantics.
+		key_elements:
+			- element: Unreleased form entries
+				type: pattern
+				location: CHANGELOG.md:10
+				description: Existing form-related added/changed entries indicate this feature area is documented in release notes.
+		language: Markdown
+		lines: 352
+
+	- file: generate-api-docs.ts
+		path: /Users/admin/dev/kanban-light/scripts/generate-api-docs.ts
+		purpose: Source-of-truth metadata file for generated REST documentation.
+		key_elements:
+			- element: ROUTES metadata table
+				type: pattern
+				location: scripts/generate-api-docs.ts:45
+				description: Generated `docs/api.md` must be updated here when request/response docs change.
+		language: TypeScript
+		lines: 842
+
+	- file: generate-webhooks-docs.ts
+		path: /Users/admin/dev/kanban-light/scripts/generate-webhooks-docs.ts
+		purpose: Source-of-truth metadata file for generated webhook documentation.
+		key_elements:
+			- element: form.submit event metadata
+				type: pattern
+				location: scripts/generate-webhooks-docs.ts:41
+				description: Generated `docs/webhooks.md` reflects the canonical submit payload documented here.
+		language: TypeScript
+		lines: 520
+
+	- file: forms.md
+		path: /Users/admin/dev/kanban-light/docs/forms.md
+		purpose: Manual deep-dive documentation for form resolution, submission flow, and cross-surface usage.
+		key_elements:
+			- element: Submit flow / REST / MCP sections
+				type: pattern
+				location: docs/forms.md:560
+				description: Manual docs describe the current host→SDK submit flow and explicit cross-interface parity.
+		language: Markdown
+		lines: 1187
+
+patterns_found:
+	- category: architecture
+		pattern: Single SDK-owned submit entrypoint
+		description: Every inspected programmatic submit surface ultimately calls `sdk.submitForm(...)` and uses its return value as the external contract.
+		examples:
+			- file: /Users/admin/dev/kanban-light/src/standalone/server.ts
+				location: src/standalone/server.ts:377
+				snippet: "const result = await sdk.submitForm({ ...input, boardId: input.boardId ?? currentBoardId })"
+			- file: /Users/admin/dev/kanban-light/src/cli/index.ts
+				location: src/cli/index.ts:499
+				snippet: "const result = await sdk.submitForm({ cardId: resolvedId, formId, data, boardId })"
+			- file: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+				location: src/mcp-server/index.ts:372
+				snippet: "const result = await sdk.submitForm({ boardId, cardId: resolvedId, formId, data })"
+			- file: /Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts
+				location: src/extension/KanbanPanel.ts:393
+				snippet: "const result = await submitSdk.submitForm({ cardId, formId, data: ..., boardId: ... })"
+		prevalence: common
+
+	- category: structure
+		pattern: Shared request/response types for transport surfaces
+		description: Webview and REST-oriented layers use shared message/result types so the SDK submit result shape can cross process/runtime boundaries without redefinition.
+		examples:
+			- file: /Users/admin/dev/kanban-light/src/shared/types.ts
+				location: src/shared/types.ts:467
+				snippet: "export interface SubmitFormMessage { type: 'submitForm'; cardId: string; formId: string; data: Record<string, unknown>; ... }"
+			- file: /Users/admin/dev/kanban-light/src/shared/types.ts
+				location: src/shared/types.ts:479
+				snippet: "export interface SubmitFormTransportResult { boardId: string; card: Omit<Card, 'filePath'>; form: ResolvedFormDescriptor; data: Record<string, unknown> }"
+		prevalence: common
+
+	- category: architecture
+		pattern: Resolved-form derivation is duplicated in SDK and webview
+		description: The SDK resolves forms for authoritative submit-time behavior, but the webview separately resolves forms to render tabs and prefills before submit.
+		examples:
+			- file: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:77
+				snippet: "function resolveCardForms(ctx: SDKContext, card: Card): ResolvedFormDescriptor[] { ... }"
+			- file: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx
+				location: src/webview/components/CardFormTab.tsx:71
+				snippet: "export function resolveCardFormDescriptors(frontmatter, board?): ResolvedFormDescriptor[] { ... }"
+			- file: /Users/admin/dev/kanban-light/src/webview/components/MarkdownEditor.tsx
+				location: src/webview/components/MarkdownEditor.tsx:51
+				snippet: "const resolvedForms = useMemo(() => (isEditMode && frontmatter ? resolveCardFormDescriptors(frontmatter, activeBoard) : []), ...)"
+		prevalence: common
+
+	- category: error_handling
+		pattern: Validation authority lives in the SDK; interface layers mostly translate errors
+		description: Invalid submit payloads are rejected inside SDK submit logic and callers adapt the failure for their transport (HTTP status, CLI thrown error, MCP error response, callback error string).
+		examples:
+			- file: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+				location: src/sdk/modules/cards.ts:455
+				snippet: "if (!valid) { throw new Error(`Invalid form submission for ${form.id}: ...`) }"
+			- file: /Users/admin/dev/kanban-light/src/standalone/server.ts
+				location: src/standalone/server.ts:242
+				snippet: "function getSubmitErrorStatus(err: unknown): number { ... }"
+			- file: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+				location: src/mcp-server/index.ts:384
+				snippet: "return { content: [{ type: 'text', text: String(err) }], isError: true }"
+		prevalence: common
+
+	- category: documentation
+		pattern: Public docs are split between generated sources and hand-maintained form guides
+		description: SDK/API/webhook docs are generated from source metadata or JSDoc, while `README.md` and `docs/forms.md` carry user-facing workflow explanations.
+		examples:
+			- file: /Users/admin/dev/kanban-light/scripts/generate-api-docs.ts
+				location: scripts/generate-api-docs.ts:45
+				snippet: "// Route metadata — the single source of truth for docs/api.md"
+			- file: /Users/admin/dev/kanban-light/scripts/generate-webhooks-docs.ts
+				location: scripts/generate-webhooks-docs.ts:28
+				snippet: "// Event metadata — the single source of truth for docs/webhooks.md"
+			- file: /Users/admin/dev/kanban-light/README.md
+				location: README.md:544
+				snippet: "The SDK validates that final payload before persistence and before any `form.submit` webhook fires."
+		prevalence: common
+
+related_architecture:
+	components_relevant_to_domain:
+		- component: SDK submit contract
+			responsibility: Resolve attached forms, merge payload layers, validate, persist canonical form data, and emit `form.submit`.
+			location: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+			relationship_to_domain: domain core
+		- component: Shared transport contracts
+			responsibility: Define cross-runtime message and result shapes for form-aware create/submit flows.
+			location: /Users/admin/dev/kanban-light/src/shared/types.ts
+			relationship_to_domain: domain contract surface
+		- component: Standalone server
+			responsibility: Expose REST and websocket submit endpoints and translate errors to HTTP/callback responses.
+			location: /Users/admin/dev/kanban-light/src/standalone/server.ts
+			relationship_to_domain: domain depends on this for REST/browser transport
+		- component: CLI
+			responsibility: Parse JSON flags and invoke the stable SDK submit method.
+			location: /Users/admin/dev/kanban-light/src/cli/index.ts
+			relationship_to_domain: domain depends on this for shell usage
+		- component: MCP server
+			responsibility: Mirror form-aware create/update/submit contracts through zod-described tools.
+			location: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+			relationship_to_domain: domain depends on this for MCP exposure
+		- component: VS Code extension host
+			responsibility: Bridge webview submit messages to SDK calls inside the extension runtime.
+			location: /Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts
+			relationship_to_domain: domain depends on this for native VS Code webview transport
+		- component: Webview form renderer
+			responsibility: Resolve form tabs locally, perform immediate UI validation, and send submit callbacks.
+			location: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx
+			relationship_to_domain: this uses domain outputs and duplicates part of domain resolution logic
+	interfaces_used_by_domain:
+		- interface: SubmitFormInput
+			location: /Users/admin/dev/kanban-light/src/sdk/types.ts
+			usage_pattern: Single public SDK input shared indirectly by REST/CLI/MCP/extension submit callers.
+		- interface: SubmitFormResult
+			location: /Users/admin/dev/kanban-light/src/sdk/types.ts
+			usage_pattern: Canonical result returned directly or mirrored across all submit transports.
+		- interface: ResolvedFormDescriptor
+			location: /Users/admin/dev/kanban-light/src/shared/types.ts
+			usage_pattern: Returned in submit results and also constructed locally in the webview for rendering.
+		- interface: SubmitFormMessage
+			location: /Users/admin/dev/kanban-light/src/shared/types.ts
+			usage_pattern: Webview request envelope for both standalone websocket and VS Code extension host submit flows.
+		- interface: CreateCardPayload
+			location: /Users/admin/dev/kanban-light/src/shared/types.ts
+			usage_pattern: Shared create-card contract including `forms` and `formData` across transport-facing layers.
+	data_flow_involving_domain: "Form tabs in the webview are derived locally from card frontmatter plus board config. On submit, the webview sends a `SubmitFormMessage` to either the extension host or standalone server. That host delegates to `sdk.submitForm`, which resolves form state again, merges partial input over the resolved base payload, validates, persists `card.formData`, emits `form.submit`, and returns a canonical `SubmitFormResult`/transport mirror back to the caller. REST, CLI, and MCP skip the UI resolver and call the SDK submit contract directly."
+	key_relationships_to_domain:
+		- from: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			to: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts
+			relationship: calls
+		- from: /Users/admin/dev/kanban-light/src/standalone/server.ts
+			to: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			relationship: calls
+		- from: /Users/admin/dev/kanban-light/src/cli/index.ts
+			to: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			relationship: calls
+		- from: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+			to: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			relationship: calls
+		- from: /Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts
+			to: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			relationship: calls
+		- from: /Users/admin/dev/kanban-light/src/webview/components/MarkdownEditor.tsx
+			to: /Users/admin/dev/kanban-light/src/webview/components/CardFormTab.tsx
+			relationship: calls
+
+related_technology_stack:
+	languages_used_in_domain:
+		- TypeScript
+		- TSX
+		- Markdown
+	frameworks_used_in_domain:
+		- name: React
+			usage_in_domain: Webview form tabs and editor UI.
+		- name: VS Code Webview API
+			usage_in_domain: Extension/webview messaging for form submission callbacks.
+	libraries_used_in_domain:
+		- name: '@jsonforms/core'
+			purpose_in_domain: AJV creation and schema validation for both SDK and webview form handling.
+		- name: '@jsonforms/react'
+			purpose_in_domain: Rendering form UIs in the webview.
+		- name: '@jsonforms/vanilla-renderers'
+			purpose_in_domain: Default JSON Forms renderers/cells in the webview.
+		- name: zod
+			purpose_in_domain: MCP tool input schemas for form-aware create/update/submit contracts.
+		- name: ws
+			purpose_in_domain: Standalone websocket transport for webview submit callbacks.
+	external_apis_used_in_domain: []
+
+related_conventions:
+	naming_patterns_in_domain: "Submit surfaces consistently use `submitForm` / `submit_card_form` naming and keep request fields as `cardId`, `formId`, `data`, `boardId?`."
+	structure_of_domain: "Business logic lives in SDK modules first; REST, CLI, MCP, and extension/webview layers are mostly thin adapters, except for the webview-local form-resolution helper."
+	error_handling_in_domain: "SDK throws typed-by-message `Error`s; REST maps submit errors to 400/404-ish responses via helper logic, CLI lets errors reject, MCP returns `isError: true`, and webview transport reports callback `error` strings."
+	testing_in_domain: "Coverage is split by layer: SDK unit tests for merge/validation semantics, standalone integration tests for HTTP/websocket parity, CLI unit tests for JSON parsing/delegation, and webview tests for resolver behavior and offline transport."
+	documentation_in_domain: "SDK/API/webhook generated docs originate from JSDoc/metadata sources; user-facing form semantics are duplicated in `README.md` and `docs/forms.md`; AGENTS.md requires updating README and CHANGELOG plus regenerating docs when user-facing contracts change."
+
+related_dependencies:
+	internal:
+		- component: /Users/admin/dev/kanban-light/src/shared/config.ts
+			relationship_to_domain: Supplies workspace form definitions and board configuration used during form resolution.
+			direction: outbound
+		- component: /Users/admin/dev/kanban-light/src/sdk/parser.ts
+			relationship_to_domain: Persists and reloads `forms` and `formData` in card frontmatter/storage.
+			direction: outbound
+		- component: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+			relationship_to_domain: Public façade delegating to cards module submit logic.
+			direction: inbound
+		- component: /Users/admin/dev/kanban-light/src/webview/components/MarkdownEditor.tsx
+			relationship_to_domain: Consumes locally resolved form descriptors to render card tabs.
+			direction: inbound
+	external:
+		- name: '@jsonforms/core'
+			purpose_for_domain: AJV-based validation and JSON Forms integration.
+		- name: '@jsonforms/react'
+			purpose_for_domain: Form rendering in the webview.
+		- name: zod
+			purpose_for_domain: MCP contract validation.
+		- name: ws
+			purpose_for_domain: Standalone callback transport.
+
+domain_security_considerations:
+	sensitive_areas:
+		- area: submit payload validation
+			location: /Users/admin/dev/kanban-light/src/sdk/modules/cards.ts:455
+			concern: Validation is authoritative in the SDK before persistence and event emission.
+		- area: transport result sanitization
+			location: /Users/admin/dev/kanban-light/src/sdk/types.ts:150
+			concern: `sanitizeCard` removes `filePath` before exposing submit results/events externally.
+		- area: REST submit request normalization
+			location: /Users/admin/dev/kanban-light/src/standalone/server.ts:234
+			concern: Standalone server constrains submit `data` to an object-shaped payload before invoking SDK logic.
+	authentication_patterns_in_domain: "No authentication or authorization boundary was present in the inspected local interfaces; parity is about contract consistency rather than access control."
+	authorization_patterns_in_domain: "None observed in the inspected domain files."
+	data_validation_in_domain: "AJV validation is performed in the SDK using the resolved schema; webview also performs immediate client-side validation for UX, but authoritative enforcement remains SDK-side."
+
+testing_patterns:
+	framework: Vitest
+	coverage_areas:
+		- SDK merge precedence, inline form handling, sqlite parity, and invalid submit rejection
+		- REST submit success/failure and board-scoped parity
+		- websocket/standalone callback behavior
+		- CLI JSON parsing and delegation
+		- webview-local descriptor resolution and offline behavior
+	test_organization: "Layer-specific tests live beside their domain (`src/sdk/__tests__`, `src/standalone/__tests__`, `src/cli/index.test.ts`, `src/webview/components/CardFormTab.test.tsx`, `src/webview/standalone-shim.test.ts`)."
+	mock_patterns:
+		- "CLI tests stub `sdk.submitForm` and inspect passed payloads."
+		- "Webview tests mock `acquireVsCodeApi` / standalone globals and assert callback messages."
+		- "SDK tests create temp workspaces and real `KanbanSDK` instances to verify persistence semantics."
+
+open_questions:
+	- question: "What exact interpolation model is desired for 'full card context' beyond the current metadata overlay?"
+		context: "Inspected code only overlays top-level `card.metadata` keys that are declared in the schema; no generic string templating or broader card-context interpolation helper was found."
+	- question: "Should resolved-form derivation remain duplicated in the webview, or is centralization into a shared helper expected?"
+		context: "Both SDK and webview currently implement parallel resolver logic, which is the main place where SDK-first behavior will not automatically reach the UI."
+	- question: "Is MCP submit behavior covered by automated tests elsewhere outside the inspected files?"
+		context: "No direct MCP form-submit test file was identified during the focused search, so parity there is inferred from code structure rather than explicit regression coverage."
+
+gaps:
+	- area: MCP automated coverage
+		description: "No dedicated MCP test exercising `submit_card_form` was inspected."
+		impact: "Parity for MCP is high-confidence from the adapter code, but test-backed confidence is lower than for SDK/REST/CLI/webview."
+	- area: Generated API route metadata detail
+		description: "The generator source was inspected to confirm documentation workflow, but the exact task-submit route entry text in `ROUTES` was not exhaustively traced."
+		impact: "Documentation source touchpoint identification is reliable, but line-perfect wording for API doc changes may need a direct follow-up read when implementation starts."
+	- area: Interpolation semantics definition
+		description: "The repository currently documents merge precedence and metadata prefills, but the desired 'full card context interpolation' contract is not defined in the inspected code or docs."
+		impact: "Implementation scope cannot be reduced to a single resolver tweak until the target interpolation fields/syntax are clarified."

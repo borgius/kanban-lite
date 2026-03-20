@@ -1,3 +1,4 @@
+After a successful submission, Kanban Lite also appends a card log entry containing the submitted payload under `payload`.
 # Card Forms
 
 Card forms let a card carry one or more structured data-entry tabs backed by JSON Schema and rendered with [JSON Forms](https://jsonforms.io/).
@@ -236,6 +237,8 @@ Kanban Lite does not render raw attachments directly. It first resolves them int
 A resolved form descriptor contains:
 
 - `id`
+- `name`
+- `description`
 - `label`
 - `schema`
 - `ui` (optional)
@@ -286,10 +289,16 @@ Example:
 
 Labels shown in the card UI are resolved as follows:
 
-- named form: uses the attachment `name`
-- otherwise, if a config schema title exists, it may be used for display
+- named reusable form: uses `KanbanConfig.forms[formKey].name`
+- named reusable form without `name`: defaults to a capitalized form key (`incident-report` → `Incident Report`)
 - inline form: uses `schema.title`
-- fallback: resolved `id`
+- fallback: a humanized resolved `id`
+
+### Form descriptions
+
+- reusable workspace forms may define `description`
+- when omitted, the description defaults to an empty string
+- inline forms currently resolve to an empty description
 
 ### When a form is renderable
 
@@ -313,8 +322,12 @@ Current merge order, from lowest to highest priority:
 
 1. workspace config defaults: `KanbanConfig.forms[formName].data`
 2. attachment defaults: `attachment.data`
-3. persisted card form data: `card.formData[formId]`
+3. persisted card form data: `card.formData[formId]` _(may be partial at rest)_
 4. matching card metadata fields: `card.metadata[key]`, **only** for keys declared in `schema.properties`
+
+Sources 1–3 are subject to `${path}` placeholder interpolation against the card context before being merged.
+See [Placeholder interpolation in form data](#placeholder-interpolation-in-form-data) below for supported
+placeholder fields and the missing-value rule.
 
 In other words, metadata can intentionally overlay earlier values, but only for schema-declared fields.
 
@@ -338,6 +351,82 @@ and the schema properties are only:
 - `severity`
 
 then only `owner` is merged into `initialData`. `ignored` is skipped.
+
+### Placeholder interpolation in form data
+
+Before sources are merged, Kanban Lite prepares string values in config defaults, attachment defaults, and
+persisted `formData` entries by resolving `${path}` placeholders against the full card context.
+
+Supported context fields:
+
+| Placeholder | Resolved from |
+|---|---|
+| `${id}` | Card identifier |
+| `${boardId}` | Parent board identifier |
+| `${status}` | Current column/status |
+| `${priority}` | Priority level (`critical`, `high`, `medium`, `low`) |
+| `${assignee}` | Assignee name, or empty string if unassigned |
+| `${dueDate}` | ISO 8601 due date, or empty string if none |
+| `${created}` | ISO 8601 creation timestamp |
+| `${modified}` | ISO 8601 last-modified timestamp |
+| `${completedAt}` | ISO 8601 completion timestamp, or empty string if not completed |
+| `${order}` | Fractional index controlling sort order within a column |
+| `${content}` | Markdown body content of the card |
+| `${labels}` | Comma-separated label list (array coerced to string) |
+| `${attachments}` | Comma-separated attachment filename list (not filesystem paths) |
+| `${metadata.key}` | Any card metadata value using dot-notation (e.g. `${metadata.owner}`) |
+
+`filePath` is intentionally excluded to prevent filesystem paths from leaking into stored or rendered form data values. `actions`, `forms`, and `formData` are available for advanced dot-notation access but rarely needed in string templates.
+
+**Missing-value rule:** placeholders whose paths do not resolve (missing or `undefined` keys) are replaced with
+an **empty string**. This keeps form fields blank rather than showing a raw `${path}` fragment.
+
+**Security note:** placeholder resolution is a pure path-lookup over the card context object — no JavaScript
+expressions are evaluated and arbitrary code execution is not possible.
+
+**Interpolation scope:** Sources 1–3 in the merge order below (config defaults, attachment defaults, persisted
+form data) are interpolated before the merge. The metadata overlay (source 4) is applied after, and always
+wins for schema-declared keys.
+
+#### Interpolation example
+
+Given a config form with:
+
+```json
+{
+  "forms": {
+    "incident-report": {
+      "data": {
+        "owner": "${assignee}",
+        "region": "${metadata.region}",
+        "cardRef": "${id}"
+      }
+    }
+  }
+}
+```
+
+And a card:
+
+```yaml
+assignee: alice
+metadata:
+  region: eu-west
+```
+
+The prepared config defaults become:
+
+```json
+{
+  "owner": "alice",
+  "region": "eu-west",
+  "cardRef": "card-123"
+}
+```
+
+A placeholder with no matching key (e.g. `${metadata.missing}`) resolves to `""`.
+
+---
 
 ### Example initial-data resolution
 
@@ -526,6 +615,17 @@ When a resolved form comes from workspace config, the card form tab shows a **Sh
 
 This indicates the form is backed by a reusable definition rather than existing only inline on that card.
 
+### Tab labels
+
+Attached form tabs display the resolved form name with a `form:` prefix.
+
+Examples:
+
+- `form: Bug Report`
+- `form: Release Checklist`
+
+Inside the tab body, the header shows the resolved form name and, when present, the form description.
+
 ### JSON Forms renderer set
 
 Kanban Lite renders forms with:
@@ -544,6 +644,7 @@ After submit:
 - a successful save shows a confirmation message like `Saved Incident Report`
 - transport or SDK failures show an error message block
 - validation issues remain visible until resolved
+- a system card log entry is appended with `formId`, `formName`, and the submitted `payload`
 
 ### Standalone offline behavior
 
@@ -1138,6 +1239,10 @@ Shape:
 ```ts
 Record<string, Record<string, unknown>>
 ```
+
+> **Note:** Persisted entries may be partial. At runtime Kanban Lite prepares the full canonical
+> `initialData` by merging all four sources described above. The stored object is never required to
+> contain every schema field.
 
 ### Submit result
 

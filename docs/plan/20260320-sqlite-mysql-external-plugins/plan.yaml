@@ -1,0 +1,463 @@
+plan_id: 20260320-sqlite-mysql-external-plugins
+objective: |
+  Create real external npm packages for sqlite and mysql storage providers, modeled after
+  `/Users/admin/dev/kl-s3-attachment-storage`, add real integration tests in those plugin
+  packages, and move provider-specific tests out of the main repo while keeping host/plugin
+  contract coverage in `/Users/admin/dev/kanban-light`.
+created_at: "2026-03-20"
+created_by: gem-planner
+status: completed
+research_confidence: high
+
+tldr: |
+  The lowest-risk execution path is to externalize SQLite and MySQL into standalone sibling npm
+  packages (`/Users/admin/dev/kl-sqlite-storage` and `/Users/admin/dev/kl-mysql-storage`) while
+  keeping `markdown` and `localfs` as the only true built-ins in the core repo. Core should retain
+  shape-based contract coverage, compatibility aliases, migration/status behavior, and same-package
+  attachment fallback; provider-specific CRUD/schema/live-backend tests should live with the package
+  that owns the provider.
+
+open_questions: []
+
+verification_notes:
+  summary: |
+    Final bookkeeping state after completion: core build verification succeeded, and the
+    external MySQL package completed build and test verification successfully. Plan/task
+    statuses have been updated to reflect the finished implementation state.
+  successful_checks:
+    - "`/Users/admin/dev/kanban-light`: `npm run build` completed successfully."
+    - "`/Users/admin/dev/kl-mysql-storage`: build and test verification completed successfully."
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: Existing workspaces configured with provider ids `sqlite` / `mysql` break once the implementations are moved out of the built-in registry.
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Preserve short provider ids as compatibility aliases in core (`sqlite` -> `kl-sqlite-storage`,
+        `mysql` -> `kl-mysql-storage`), keep legacy `storageEngine` normalization intact, and add
+        regression tests that verify resolution/install errors remain actionable.
+    - scenario: Provider-specific tests move out of core, but host-level migration and capability coverage is accidentally lost.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Keep `plugin-registry`, capability normalization, config cleanup, migration contract, and
+        same-package attachment fallback tests in core; move only provider-owned CRUD/schema/live DB
+        behavior into package-local test suites.
+    - scenario: MySQL package ships without a reproducible live integration harness, so the repo still lacks real database confidence.
+      likelihood: high
+      impact: high
+      mitigation: |
+        Add package-local Docker Compose or CI service wiring plus a dedicated integration test script
+        that runs against a real MySQL server and is invoked in verification before core refactor is
+        considered complete.
+    - scenario: External-package attachment behavior diverges from current sqlite/mysql semantics and breaks logs or attachment materialization.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Require both external packages to export `cardStoragePlugin` and `attachmentStoragePlugin`,
+        and keep core contract tests for explicit `attachment.storage` selection plus implicit
+        same-package fallback when `attachment.storage` remains `localfs`.
+  assumptions:
+    - Real external packages should not live under `tmp/`; they should be standalone sibling package directories so they can be versioned and published independently.
+    - The core repo remains the host/orchestrator and should not own sqlite/mysql CRUD logic after the move.
+    - Package-local integration tests may use `kanban-lite` as a dev-only local file dependency during development, while keeping `kanban-lite` as a peer dependency for consumers.
+    - `storage-migration.test.ts` remains in core, but only for SDK migration/config-contract behavior rather than low-level provider CRUD details.
+
+implementation_specification:
+  code_structure: |
+    Keep the plugin loader and compatibility logic in `src/sdk/plugins/index.ts`, but shrink the set
+    of true built-ins to `markdown` and `localfs`. Replace sqlite/mysql implementation ownership in
+    core with compatibility alias metadata and shape-based external loading. Create two sibling npm
+    packages — `/Users/admin/dev/kl-sqlite-storage` and `/Users/admin/dev/kl-mysql-storage` — each
+    with CommonJS output (`dist/index.cjs`), TypeScript declarations, package-local integration tests,
+    and README/config docs. Each package should export both `cardStoragePlugin` and
+    `attachmentStoragePlugin` so current explicit attachment-provider behavior and same-package fallback
+    remain intact.
+  affected_areas:
+    - src/sdk/plugins/index.ts
+    - src/sdk/plugins/sqlite.ts
+    - src/sdk/plugins/mysql.ts
+    - src/sdk/__tests__/plugin-registry.test.ts
+    - src/sdk/__tests__/storage-sqlite.test.ts
+    - src/sdk/__tests__/storage-migration.test.ts
+    - README.md
+    - docs/plugins.md
+    - CHANGELOG.md
+    - /Users/admin/dev/kl-sqlite-storage/
+    - /Users/admin/dev/kl-mysql-storage/
+  component_details:
+    - component: Core compatibility and plugin resolution layer
+      responsibility: Keep backward-compatible provider ids and host-side plugin loading behavior after sqlite/mysql implementation ownership moves out of core.
+      interfaces:
+        - "Alias map for `sqlite` -> `kl-sqlite-storage` and `mysql` -> `kl-mysql-storage`"
+        - "Shape-based validation for external `cardStoragePlugin` / `attachmentStoragePlugin` exports"
+        - "Same-package attachment fallback when card provider is external and attachment provider stays `localfs`"
+    - component: SQLite external package
+      responsibility: Own SQLite engine implementation, filesystem attachment behavior, provider README, and provider-specific CRUD/schema/integration tests.
+      interfaces:
+        - "Named export `cardStoragePlugin`"
+        - "Named export `attachmentStoragePlugin`"
+        - "Provider id `sqlite` with package install target `kl-sqlite-storage`"
+    - component: MySQL external package
+      responsibility: Own MySQL engine implementation, lazy `mysql2` loading, local attachment behavior, and real live-DB integration coverage.
+      interfaces:
+        - "Named export `cardStoragePlugin`"
+        - "Named export `attachmentStoragePlugin`"
+        - "Provider id `mysql` with package install target `kl-mysql-storage`"
+    - component: Core host-contract test suite
+      responsibility: Verify that the host still resolves plugins, preserves migration/config semantics, and exposes actionable errors without re-owning provider internals.
+      interfaces:
+        - "Core regression tests for capability normalization, alias resolution, migration config cleanup, and manifest/contract validation"
+  dependencies:
+    - component: Core compatibility and plugin resolution layer
+      relationship: Must define alias and export expectations before package implementation and test relocation can proceed safely.
+    - component: SQLite external package
+      relationship: Depends on the compatibility decision so its provider id, package name, and exported shapes match core expectations.
+    - component: MySQL external package
+      relationship: Depends on the compatibility decision and on a reproducible live-backend test harness.
+    - component: Core host-contract test suite
+      relationship: Depends on both package exports existing so core can replace internal implementation tests with external-resolution contract tests.
+  integration_points:
+    - Legacy `storageEngine: sqlite` and modern `plugins['card.storage'].provider = 'sqlite'` configs must continue to resolve successfully through aliasing.
+    - `resolveCapabilityBag()` must keep explicit attachment-provider selection and same-package external attachment fallback working after the move.
+    - `storage-migration.test.ts` should keep verifying SDK migration/config cleanup behavior using the externally loaded sqlite provider path.
+    - Package-local test suites should prove provider behavior directly, while core tests only prove host/plugin contracts.
+    - README, `docs/plugins.md`, and `CHANGELOG.md` must explain install steps, provider ids, compatibility aliases, and where provider-specific tests now live.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: SQLite external-provider contract
+    format: "Package name `kl-sqlite-storage`, provider id `sqlite`, named exports `cardStoragePlugin` and `attachmentStoragePlugin`, CJS entry `dist/index.cjs`"
+  - from_task: T1
+    to_task: T4
+    interface: MySQL external-provider contract
+    format: "Package name `kl-mysql-storage`, provider id `mysql`, named exports `cardStoragePlugin` and `attachmentStoragePlugin`, lazy `mysql2` load semantics preserved"
+  - from_task: T2
+    to_task: T6
+    interface: SQLite package behavior surface
+    format: "Package-local CRUD/schema/integration tests replace core direct-engine tests; core consumes provider only via package exports"
+  - from_task: T4
+    to_task: T6
+    interface: MySQL package behavior surface
+    format: "Package-local live-DB integration tests replace missing core provider tests; core consumes provider only via package exports"
+  - from_task: T6
+    to_task: T7
+    interface: Final public compatibility story
+    format: "Documented install/alias/migration behavior for external sqlite/mysql packages across README, plugins docs, and changelog"
+
+tasks:
+  - id: T1
+    title: Lock provider ids, package locations, and compatibility alias strategy
+    description: |
+      Decide the external-package defaults up front: use sibling package directories
+      `/Users/admin/dev/kl-sqlite-storage` and `/Users/admin/dev/kl-mysql-storage`, keep short provider ids
+      `sqlite` and `mysql` for `.kanban.json` compatibility, and update core resolution to treat those ids as
+      aliases to installable external packages rather than built-in implementations. This task also fixes the
+      test-boundary rule: core keeps host-contract coverage, packages own provider internals.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      src/sdk/plugins/index.ts: "Current built-in registry and same-package attachment fallback logic."
+      src/sdk/plugins/types.ts: "Storage-engine contract that external packages must satisfy."
+      docs/plugins.md: "Current plugin-system behavior and public configuration guidance."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: compatibility boundary
+    verification:
+      - "Compatibility decision covers legacy `storageEngine` and modern `plugins[...]` provider ids without breaking current configs."
+      - "Package locations are outside `tmp/` and are publishable standalone npm packages."
+      - "The export decision explicitly covers both card and attachment capabilities for each package."
+    acceptance_criteria:
+      - "Provider ids remain `sqlite` and `mysql` for users."
+      - "Install targets are `kl-sqlite-storage` and `kl-mysql-storage`."
+      - "Core/package test ownership is documented before code moves."
+    failure_modes:
+      - scenario: Provider id and package name mismatch creates confusing docs or status output.
+        likelihood: medium
+        impact: high
+        mitigation: "Document the alias clearly and add status/error assertions that mention both provider id and install package name."
+    tech_stack:
+      - TypeScript
+      - Existing plugin loader
+    test_coverage: "Add/update alias-resolution and compatibility tests before removing built-in sqlite/mysql ownership."
+
+  - id: T2
+    title: Create the standalone SQLite package and move provider-owned SQLite coverage there
+    description: |
+      Scaffold `/Users/admin/dev/kl-sqlite-storage` as a real publishable CommonJS package modeled after the S3
+      example, implement/export both plugin objects, and move the current low-level SQLite CRUD/schema coverage
+      from `src/sdk/__tests__/storage-sqlite.test.ts` into package-local integration tests. The package should
+      retain local attachment semantics compatible with current sqlite behavior.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      /Users/admin/dev/kl-s3-attachment-storage/package.json: "Reference package structure and CommonJS packaging pattern."
+      src/sdk/plugins/sqlite.ts: "Current first-party SQLite engine and attachment behavior to externalize."
+      src/sdk/__tests__/storage-sqlite.test.ts: "Provider-owned SQLite behavior that should move with the package."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: sqlite package extraction
+    verification:
+      - "`kl-sqlite-storage` builds to `dist/index.cjs` with declarations."
+      - "Package-local SQLite integration tests pass against the package exports."
+      - "Both `cardStoragePlugin` and `attachmentStoragePlugin` satisfy the host’s shape checks."
+    acceptance_criteria:
+      - "SQLite implementation is owned by the external package, not by core test suites."
+      - "Package README documents install, provider id, and config examples."
+      - "Package test suite covers CRUD, comments, metadata/forms round-trip, and attachment-path semantics now owned by SQLite."
+    failure_modes:
+      - scenario: SQLite package silently relies on deep private imports from kanban-lite core.
+        likelihood: medium
+        impact: high
+        mitigation: "Use local structural interfaces or stable public SDK exports only; avoid importing from private core paths."
+    tech_stack:
+      - TypeScript
+      - better-sqlite3
+      - Vitest
+      - esbuild
+    test_coverage: "Move direct SQLite engine coverage into package-local integration tests and keep host-only assertions in core."
+
+  - id: T3
+    title: Retain only host-level SQLite migration and capability coverage in core
+    description: |
+      Rewrite the remaining sqlite-related tests in `/Users/admin/dev/kanban-light` so they validate host behavior
+      only: alias resolution, SDK migration/config cleanup, plugin manifests, and same-package attachment fallback.
+      Remove or trim any core test that is purely verifying SQLite’s internal CRUD/schema behavior after T2 lands.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T2
+    context_files:
+      src/sdk/__tests__/plugin-registry.test.ts: "Current host contract and manifest coverage."
+      src/sdk/__tests__/storage-migration.test.ts: "Migration/config cleanup coverage that should stay in core."
+      src/sdk/plugins/index.ts: "Alias and attachment fallback logic that core must keep testing."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: test-boundary cleanup
+    verification:
+      - "Core sqlite tests mention host/plugin contracts, not internal SQLite table behavior."
+      - "Migration tests still pass using the externalized sqlite path."
+      - "Core failure messages still guide users to install the package when missing."
+    acceptance_criteria:
+      - "Provider-specific SQLite CRUD tests are removed from core."
+      - "Core retains migration/status/config compatibility coverage."
+      - "Host contract tests still cover both explicit `attachment.storage: sqlite` and implicit same-package fallback."
+    failure_modes:
+      - scenario: Migration tests still depend on internal sqlite classes and block package extraction.
+        likelihood: medium
+        impact: medium
+        mitigation: "Rework tests to instantiate the SDK through provider resolution instead of direct class imports."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Keep migration/registry/config-contract coverage in core only."
+
+  - id: T4
+    title: Create the standalone MySQL package with real live-backend integration coverage
+    description: |
+      Scaffold `/Users/admin/dev/kl-mysql-storage` as a real publishable CommonJS package, externalize the current
+      MySQL engine/attachment logic from core, and add package-local integration tests that run against a real MySQL
+      server. Preserve lazy `mysql2` loading and actionable install errors, but move actual provider behavior
+      verification out of the main repo.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      /Users/admin/dev/kl-s3-attachment-storage/src/index.ts: "Reference external plugin shape and packaging style."
+      src/sdk/plugins/mysql.ts: "Current first-party MySQL engine and attachment behavior to externalize."
+      src/sdk/__tests__/plugin-registry.test.ts: "Current minimal MySQL host assertions that should remain in core after extraction."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 430
+    focus_area: mysql package extraction
+    verification:
+      - "`kl-mysql-storage` builds to `dist/index.cjs` with declarations."
+      - "Package-local tests pass against a real MySQL instance, not a mock."
+      - "Lazy `mysql2` install guidance remains visible when the driver is absent."
+    acceptance_criteria:
+      - "MySQL provider behavior is owned by the external package."
+      - "The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`."
+      - "The package README documents install, required options, and live test prerequisites."
+    failure_modes:
+      - scenario: MySQL tests stay unit-only and never validate a real database round trip.
+        likelihood: high
+        impact: high
+        mitigation: "Require a package-local live integration script and environment bootstrap as part of acceptance."
+    tech_stack:
+      - TypeScript
+      - mysql2
+      - Vitest
+      - esbuild
+    test_coverage: "Add package-local CRUD/comment/attachment-path tests plus live schema-init coverage against real MySQL."
+
+  - id: T5
+    title: Add reproducible MySQL test infrastructure for package-local live runs
+    description: |
+      Provide the package-local infrastructure that makes T4 repeatable: a lightweight Docker Compose or CI service
+      setup, environment template, and npm scripts so the MySQL package can run live integration tests consistently on
+      macOS and in CI. Keep this infrastructure with the package rather than re-expanding main-repo test ownership.
+    wave: 3
+    agent: gem-devops
+    priority: medium
+    status: completed
+    dependencies:
+      - T4
+    context_files:
+      package.json: "Current repo testing conventions and existing MinIO integration pattern."
+      docker-compose.yml: "Reference for lightweight local service-backed integration testing."
+      /Users/admin/dev/kl-mysql-storage/README.md: "Package doc target for local test instructions once scaffolded."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: repeatable live test harness
+    verification:
+      - "A single documented script starts MySQL, runs package tests, and tears down cleanly."
+      - "The package test harness works on macOS without manual DB setup beyond Docker."
+      - "CI/service docs match the local script semantics."
+    acceptance_criteria:
+      - "MySQL package includes reproducible local live-test instructions."
+      - "No new provider-specific live DB test ownership is added back into core."
+    failure_modes:
+      - scenario: Local and CI MySQL environments diverge and produce flaky results.
+        likelihood: medium
+        impact: medium
+        mitigation: "Use the same image/version/env defaults in both local and CI documentation."
+    environment: development
+    requires_approval: false
+    security_sensitive: false
+
+  - id: T6
+    title: Remove sqlite/mysql from true built-ins and keep only alias-driven host contract coverage in core
+    description: |
+      After both packages exist, simplify the main repo so `markdown` and `localfs` are the only true built-in storage
+      implementations. Replace sqlite/mysql hardcoded registries with alias-aware external loading, preserve explicit
+      attachment-provider selection and same-package fallback behavior, and update core tests so they assert the host
+      contract rather than provider internals.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T3
+      - T5
+    context_files:
+      src/sdk/plugins/index.ts: "Hardcoded sqlite/mysql built-in registry that must become alias-driven."
+      src/sdk/__tests__/plugin-registry.test.ts: "Core host contract suite that must survive the extraction."
+      src/sdk/__tests__/capability-normalization.test.ts: "Compatibility/provider-selection coverage that should remain."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 320
+    focus_area: core alias-based resolution
+    verification:
+      - "Core no longer owns sqlite/mysql implementation modules as built-in runtime providers."
+      - "Configs using `sqlite`/`mysql` still resolve through alias-driven external loading."
+      - "Missing-install errors instruct users to install `kl-sqlite-storage` / `kl-mysql-storage`."
+    acceptance_criteria:
+      - "Built-in registries are reduced to core-owned providers only."
+      - "Host contract tests pass without reintroducing provider-owned CRUD coverage."
+      - "Same-package attachment fallback still works for external sqlite/mysql packages."
+    failure_modes:
+      - scenario: Alias-driven resolution changes provider metadata or error text in ways that break existing tests and docs.
+        likelihood: medium
+        impact: high
+        mitigation: "Update tests/docs together and assert both provider id and install package name explicitly."
+    tech_stack:
+      - TypeScript
+      - Existing plugin loader
+    test_coverage: "Keep alias resolution, manifest validation, migration contract, and install-hint coverage in core."
+
+  - id: T7
+    title: Update user-facing docs, generated docs inputs, and changelog for the external-provider split
+    description: |
+      Update `README.md`, `docs/plugins.md`, and `CHANGELOG.md` in the main repo plus the README files in both external
+      packages so the public story matches reality: sqlite/mysql are installable external packages, provider ids remain
+      compatible, package-local tests own provider internals, and core retains only host contract coverage. If public
+      SDK/API JSDoc or route metadata changes, regenerate the autogenerated docs required by AGENTS.md.
+    wave: 5
+    agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - T6
+    context_files:
+      README.md: "Primary install/config story that must describe the new provider packaging."
+      docs/plugins.md: "Detailed plugin behavior and authoring docs that must reflect aliasing and external ownership."
+      CHANGELOG.md: "Required AGENTS.md release-note entry for the behavior change."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: docs and release notes
+    verification:
+      - "README and plugins docs explain install package names, provider ids, and test ownership split consistently."
+      - "CHANGELOG contains an Unreleased entry under the correct Added/Changed/Fixed headings."
+      - "Generated docs are regenerated if any source JSDoc or API metadata changed."
+    acceptance_criteria:
+      - "All AGENTS.md-required user-facing docs are updated in the same change."
+      - "Package READMEs document build/test/install usage for each provider."
+    failure_modes:
+      - scenario: Docs still describe sqlite/mysql as built-ins after the refactor.
+        likelihood: medium
+        impact: medium
+        mitigation: "Search for 'built-in sqlite'/'built-in mysql' wording during documentation review and update all occurrences together."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "Core install/config docs"
+      - "Plugin-system deep-dive docs"
+      - "Release notes"
+      - "Package-local READMEs"
+
+  - id: T8
+    title: Run the full verification matrix and review the extraction boundary
+    description: |
+      Perform the final verification pass across both external packages and the main repo: build/typecheck/tests for
+      each package, host-contract tests in core, migration tests, and docs generation where applicable. Review whether
+      any provider-specific behavior leaked back into core or any host-level contract was lost during the move.
+    wave: 6
+    agent: gem-reviewer
+    priority: high
+    status: completed
+    dependencies:
+      - T7
+    context_files:
+      /Users/admin/dev/kl-sqlite-storage/package.json: "Package build/test entry points to validate."
+      /Users/admin/dev/kl-mysql-storage/package.json: "Package build/test entry points to validate."
+      package.json: "Core build/test/docs commands to validate after the extraction."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: verification and boundary review
+    verification:
+      - "SQLite package: build, typecheck, and package-local integration tests all pass."
+      - "MySQL package: build, typecheck, package-local live integration tests, and environment bootstrap all pass."
+      - "Core repo: targeted host-contract tests, migration tests, build, and any required docs generation pass."
+    acceptance_criteria:
+      - "Provider-specific tests live with the provider packages."
+      - "Core retains only host/plugin contract coverage for sqlite/mysql."
+      - "The install/config/docs story is coherent across all artifacts."
+    failure_modes:
+      - scenario: Final verification passes package tests but misses a broken core migration contract.
+        likelihood: medium
+        impact: high
+        mitigation: "Keep migration/config-cleanup tests in the required core verification list rather than treating them as optional."
+    requires_review: true
+    review_depth: full
+    security_sensitive: false

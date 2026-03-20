@@ -572,7 +572,35 @@ const ROUTES: Route[] = [
       "attachment.storage": "localfs"
     },
     "isFileBacked": true,
-    "watchGlob": "boards/**/*.md"
+    "watchGlob": "boards/**/*.md",
+    "auth": {
+      "identityProvider": "noop",
+      "policyProvider": "noop",
+      "configured": false,
+      "tokenPresent": false,
+      "tokenSource": null,
+      "transport": "http"
+    }
+  }
+}`,
+  },
+  {
+    section: 'Workspace',
+    subsection: 'Get Auth Status',
+    method: 'GET',
+    path: '/api/auth',
+    description: 'Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.',
+    response: `{
+  "ok": true,
+  "data": {
+    "identityProvider": "noop",
+    "policyProvider": "noop",
+    "identityEnabled": false,
+    "policyEnabled": false,
+    "configured": false,
+    "tokenPresent": false,
+    "tokenSource": null,
+    "transport": "http"
   }
 }`,
   },

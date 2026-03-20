@@ -7,6 +7,7 @@ import { KanbanSDK } from '../sdk/KanbanSDK'
 import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { fireWebhooks } from '../sdk/webhooks'
+import { AuthError, type AuthContext } from '../sdk/types'
 
 const cardFormAttachmentSchema = z.object({
   name: z.string().optional().describe('Name of a reusable workspace-config form declared under forms.<name>.'),
@@ -68,6 +69,23 @@ async function main(): Promise<void> {
     version: '1.0.0',
   })
 
+  function resolveMcpAuthContext(): AuthContext {
+    const token = process.env.KANBAN_TOKEN
+    return token ? { token, tokenSource: 'env', transport: 'mcp' } : { transport: 'mcp' }
+  }
+
+  function getMcpAuthStatus() {
+    const auth = sdk.getAuthStatus()
+    const ctx = resolveMcpAuthContext()
+    return {
+      ...auth,
+      configured: auth.identityEnabled || auth.policyEnabled,
+      tokenPresent: Boolean(ctx.token),
+      tokenSource: ctx.tokenSource ?? null,
+      transport: ctx.transport ?? 'mcp',
+    }
+  }
+
   // --- Board Management Tools ---
 
   server.tool('list_boards', 'List all kanban boards.', {}, async () => {
@@ -85,6 +103,7 @@ async function main(): Promise<void> {
       const board = sdk.createBoard(id, name, { description, columns })
       return { content: [{ type: 'text' as const, text: JSON.stringify(board, null, 2) }] }
     } catch (err) {
+      if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
       return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
     }
   })
@@ -104,9 +123,10 @@ async function main(): Promise<void> {
     boardId: z.string().describe('Board ID to delete'),
   }, async ({ boardId }) => {
     try {
-      await sdk.deleteBoard(boardId)
+      await sdk.deleteBoard(boardId, resolveMcpAuthContext())
       return { content: [{ type: 'text' as const, text: `Deleted board: ${boardId}` }] }
     } catch (err) {
+      if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
       return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
     }
   })
@@ -118,7 +138,7 @@ async function main(): Promise<void> {
     targetStatus: z.string().optional().describe('Status in the target board (defaults to board default)'),
   }, async ({ cardId, fromBoard, toBoard, targetStatus }) => {
     try {
-      const card = await sdk.transferCard(cardId, fromBoard, toBoard, targetStatus)
+      const card = await sdk.transferCard(cardId, fromBoard, toBoard, targetStatus, resolveMcpAuthContext())
       return { content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }] }
     } catch (err) {
       return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
@@ -253,25 +273,29 @@ async function main(): Promise<void> {
     async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata, actions, forms, formData }) => {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-      const card = await sdk.createCard({
-        content,
-        status: status || undefined,
-        priority: priority as Priority | undefined,
-        assignee: assignee || null,
-        dueDate: dueDate || null,
-        labels: labels || [],
-        metadata,
-        actions,
-        boardId,
-        forms,
-        formData,
-      })
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(card, null, 2),
-        }],
+      try {
+        const card = await sdk.createCard({
+          content,
+          status: status || undefined,
+          priority: priority as Priority | undefined,
+          assignee: assignee || null,
+          dueDate: dueDate || null,
+          labels: labels || [],
+          metadata,
+          actions,
+          boardId,
+          forms,
+          formData,
+        }, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(card, null, 2),
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -327,13 +351,17 @@ async function main(): Promise<void> {
       if (forms !== undefined) updates.forms = forms
       if (formData !== undefined) updates.formData = formData
 
-      const updated = await sdk.updateCard(resolvedId, updates, boardId)
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(updated, null, 2),
-        }],
+      try {
+        const updated = await sdk.updateCard(resolvedId, updates, boardId, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(updated, null, 2),
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -374,7 +402,7 @@ async function main(): Promise<void> {
           cardId: resolvedId,
           formId,
           data,
-        })
+        }, resolveMcpAuthContext())
 
         return {
           content: [{
@@ -421,13 +449,17 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.moveCard(resolvedId, status, undefined, boardId)
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({ id: updated.id, status: updated.status, order: updated.order }, null, 2),
-        }],
+      try {
+        const updated = await sdk.moveCard(resolvedId, status, undefined, boardId, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ id: updated.id, status: updated.status, order: updated.order }, null, 2),
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -461,13 +493,17 @@ async function main(): Promise<void> {
         }
       }
 
-      await sdk.deleteCard(resolvedId, boardId)
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Soft-deleted card: ${resolvedId} (moved to deleted status)`,
-        }],
+      try {
+        await sdk.deleteCard(resolvedId, boardId, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Soft-deleted card: ${resolvedId} (moved to deleted status)`,
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -501,13 +537,17 @@ async function main(): Promise<void> {
         }
       }
 
-      await sdk.permanentlyDeleteCard(resolvedId, boardId)
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Permanently deleted card: ${resolvedId}`,
-        }],
+      try {
+        await sdk.permanentlyDeleteCard(resolvedId, boardId, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Permanently deleted card: ${resolvedId}`,
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -522,7 +562,7 @@ async function main(): Promise<void> {
     },
     async ({ card_id, action, board_id }) => {
       try {
-        await sdk.triggerAction(card_id, action, board_id)
+        await sdk.triggerAction(card_id, action, board_id, resolveMcpAuthContext())
         return {
           content: [{ type: 'text' as const, text: `Action "${action}" triggered successfully on card ${card_id}` }],
         }
@@ -584,7 +624,7 @@ async function main(): Promise<void> {
       actionKey: z.string().describe('Key of the action to trigger'),
     },
     async ({ boardId, actionKey }) => {
-      await sdk.triggerBoardAction(boardId, actionKey)
+      await sdk.triggerBoardAction(boardId, actionKey, resolveMcpAuthContext())
       return { content: [{ type: 'text', text: `Board action "${actionKey}" fired on board "${boardId}".` }] }
     }
   )
@@ -658,7 +698,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.addAttachment(resolvedId, filePath, boardId)
+      const updated = await sdk.addAttachment(resolvedId, filePath, boardId, resolveMcpAuthContext())
       return {
         content: [{
           type: 'text' as const,
@@ -697,7 +737,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.removeAttachment(resolvedId, attachment, boardId)
+      const updated = await sdk.removeAttachment(resolvedId, attachment, boardId, resolveMcpAuthContext())
       return {
         content: [{
           type: 'text' as const,
@@ -777,7 +817,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.addComment(resolvedId, author, content, boardId)
+      const updated = await sdk.addComment(resolvedId, author, content, boardId, resolveMcpAuthContext())
       const added = updated.comments[updated.comments.length - 1]
       return {
         content: [{
@@ -819,7 +859,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        const updated = await sdk.updateComment(resolvedId, commentId, content, boardId)
+        const updated = await sdk.updateComment(resolvedId, commentId, content, boardId, resolveMcpAuthContext())
         const comment = updated.comments.find(c => c.id === commentId)
         return {
           content: [{
@@ -866,7 +906,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.deleteComment(resolvedId, commentId, boardId)
+        await sdk.deleteComment(resolvedId, commentId, boardId, resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,
@@ -953,7 +993,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const entry = await sdk.addLog(resolvedId, text, { source, object }, boardId)
+      const entry = await sdk.addLog(resolvedId, text, { source, object }, boardId, resolveMcpAuthContext())
       return {
         content: [{
           type: 'text' as const,
@@ -992,7 +1032,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.clearLogs(resolvedId, boardId)
+        await sdk.clearLogs(resolvedId, boardId, resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,
@@ -1038,7 +1078,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, text, source, object }) => {
       try {
-        const entry = await sdk.addBoardLog(text, { source, object: object as Record<string, unknown> | undefined }, boardId)
+        const entry = await sdk.addBoardLog(text, { source, object: object as Record<string, unknown> | undefined }, boardId, resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,
@@ -1062,7 +1102,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId }) => {
       try {
-        await sdk.clearBoardLogs(boardId)
+        await sdk.clearBoardLogs(boardId, resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,
@@ -1148,12 +1188,17 @@ async function main(): Promise<void> {
       columnId: z.string().describe('Column ID to remove'),
     },
     async ({ boardId, columnId }) => {
-      const columns = await sdk.removeColumn(columnId, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(columns, null, 2),
-        }],
+      try {
+        const columns = await sdk.removeColumn(columnId, boardId, resolveMcpAuthContext())
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(columns, null, 2),
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1202,7 +1247,7 @@ async function main(): Promise<void> {
       columnId: z.string().describe('Column ID to clean up'),
     },
     async ({ boardId, columnId }) => {
-      const moved = await sdk.cleanupColumn(columnId, boardId)
+      const moved = await sdk.cleanupColumn(columnId, boardId, resolveMcpAuthContext())
       return {
         content: [{
           type: 'text' as const,
@@ -1234,14 +1279,14 @@ async function main(): Promise<void> {
     oldName: z.string().describe('Current label name'),
     newName: z.string().describe('New label name')
   }, async ({ oldName, newName }) => {
-    await sdk.renameLabel(oldName, newName)
+    await sdk.renameLabel(oldName, newName, resolveMcpAuthContext())
     return { content: [{ type: 'text' as const, text: `Label "${oldName}" renamed to "${newName}"` }] }
   })
 
   server.tool('delete_label', 'Remove a label definition and remove it from all cards', {
     name: z.string().describe('Label name to remove')
   }, async ({ name }) => {
-    await sdk.deleteLabel(name)
+    await sdk.deleteLabel(name, resolveMcpAuthContext())
     return { content: [{ type: 'text' as const, text: `Label "${name}" definition removed` }] }
   })
 
@@ -1392,6 +1437,20 @@ async function main(): Promise<void> {
   // --- Workspace Info Tool ---
 
   server.tool(
+    'get_auth_status',
+    'Get the active auth providers and host token-source diagnostics for the MCP server.',
+    {},
+    async () => {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(getMcpAuthStatus(), null, 2),
+        }],
+      }
+    }
+  )
+
+  server.tool(
     'get_workspace_info',
     'Get the workspace root path, cards directory, and active storage engine.',
     {},
@@ -1416,6 +1475,7 @@ async function main(): Promise<void> {
             providers,
             isFileBacked: storageStatus.isFileBacked,
             watchGlob: storageStatus.watchGlob,
+            auth: getMcpAuthStatus(),
           }, null, 2),
         }],
       }

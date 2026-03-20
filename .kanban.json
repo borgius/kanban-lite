@@ -190,6 +190,11 @@
       }
     }
   },
+  "plugins": {
+    "attachment.storage": {
+      "provider": "kl-s3-attachment-storage"
+    }
+  },
   "logsFilter": {
     "limit": "all",
     "order": "desc",

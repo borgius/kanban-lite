@@ -7,10 +7,11 @@ import type { CardStatus, Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { startServer } from '../standalone/server'
+import { AUTH_TOKEN_SECRET_KEY, resolveExtensionAuthContext } from './auth'
 import { KanbanPanel } from './KanbanPanel'
 import { SidebarViewProvider } from './SidebarViewProvider'
 
-async function createCardFromPrompts(): Promise<void> {
+async function createCardFromPrompts(context: vscode.ExtensionContext): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders
   if (!workspaceFolders || workspaceFolders.length === 0) {
     vscode.window.showErrorMessage('No workspace folder open')
@@ -73,7 +74,7 @@ async function createCardFromPrompts(): Promise<void> {
   const sdk = new KanbanSDK(kanbanDir)
 
   const content = `# ${title}${description ? '\n\n' + description : ''}`
-  const card = await sdk.createCard({ content, status, priority })
+  const card = await sdk.createCard({ content, status, priority }, await resolveExtensionAuthContext(context))
 
   const localCardPath = sdk.getLocalCardPath(card)
   if (localCardPath) {
@@ -168,7 +169,30 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('kanban-lite.addCard', () => {
-      createCardFromPrompts()
+      createCardFromPrompts(context)
+    })
+  )
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kanban-lite.setAuthToken', async () => {
+      const token = await vscode.window.showInputBox({
+        prompt: 'Kanban auth token',
+        placeHolder: 'Paste a bearer token for extension-host SDK calls',
+        password: true,
+        ignoreFocusOut: true,
+      })
+      if (!token) return
+      await context.secrets.store(AUTH_TOKEN_SECRET_KEY, token)
+      await KanbanPanel.currentPanel?.reloadState()
+      vscode.window.showInformationMessage('Kanban auth token saved securely in VS Code.')
+    })
+  )
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kanban-lite.clearAuthToken', async () => {
+      await context.secrets.delete(AUTH_TOKEN_SECRET_KEY)
+      await KanbanPanel.currentPanel?.reloadState()
+      vscode.window.showInformationMessage('Kanban auth token cleared from VS Code secure storage.')
     })
   )
 

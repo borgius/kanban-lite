@@ -8,7 +8,7 @@ import { type Comment, type Card, type Priority, type KanbanColumn, type CardFro
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, writeConfig } from '../shared/config'
-import { sanitizeCard, type SubmitFormInput, type SubmitFormResult } from '../sdk/types'
+import { sanitizeCard, type SubmitFormInput, type SubmitFormResult, AuthError, type AuthContext } from '../sdk/types'
 import { fireWebhooks } from './webhooks'
 
 type CreateCardData = CreateCardPayload
@@ -244,6 +244,32 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     return message.includes('Card not found') || message.includes('Form not found') ? 404 : 400
   }
 
+  function extractAuthContext(req: http.IncomingMessage): AuthContext {
+    const authorization = req.headers.authorization
+    if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
+      return { token: authorization.slice(7), tokenSource: 'request-header', transport: 'http' }
+    }
+    return { transport: 'http' }
+  }
+
+  function getAuthStatus(req?: http.IncomingMessage) {
+    const auth = sdk.getAuthStatus()
+    const requestAuth = req ? extractAuthContext(req) : { transport: 'http' as const }
+    return {
+      ...auth,
+      configured: auth.identityEnabled || auth.policyEnabled,
+      tokenPresent: Boolean(requestAuth.token),
+      tokenSource: requestAuth.tokenSource ?? null,
+      transport: requestAuth.transport ?? 'http',
+    }
+  }
+
+  function authErrorToHttpStatus(err: AuthError): number {
+    if (err.category === 'auth.identity.missing' || err.category === 'auth.identity.invalid' || err.category === 'auth.identity.expired') return 401
+    if (err.category === 'auth.policy.denied' || err.category === 'auth.policy.unknown') return 403
+    return 500
+  }
+
   async function sendCardContent(ws: WebSocket, card: Card): Promise<void> {
     let logs: import('../shared/types').LogEntry[] = []
     try { logs = await sdk.listLogs(card.id, currentBoardId) } catch {}
@@ -316,7 +342,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   // --- Mutation functions ---
   // Shared by both WebSocket handlers and REST API routes.
 
-  async function doCreateCard(data: CreateCardData): Promise<Card> {
+  async function doCreateCard(data: CreateCardData, auth?: AuthContext): Promise<Card> {
     migrating = true
     try {
       const card = await sdk.createCard({
@@ -331,7 +357,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         forms: data.forms,
         formData: data.formData,
         boardId: currentBoardId,
-      })
+      }, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
@@ -341,13 +367,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doMoveCard(cardId: string, newStatus: string, newOrder: number): Promise<Card | null> {
+  async function doMoveCard(cardId: string, newStatus: string, newOrder: number, auth?: AuthContext): Promise<Card | null> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.moveCard(cardId, newStatus, newOrder, currentBoardId)
+      const updated = await sdk.moveCard(cardId, newStatus, newOrder, currentBoardId, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
@@ -357,13 +383,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doUpdateCard(cardId: string, updates: Partial<Card>): Promise<Card | null> {
+  async function doUpdateCard(cardId: string, updates: Partial<Card>, auth?: AuthContext): Promise<Card | null> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.updateCard(cardId, updates, currentBoardId)
+      const updated = await sdk.updateCard(cardId, updates, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       suppressWatcherEvents()
       await loadCards()
@@ -374,13 +400,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doSubmitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
+  async function doSubmitForm(input: SubmitFormInput, auth?: AuthContext): Promise<SubmitFormResult> {
     migrating = true
     try {
       const result = await sdk.submitForm({
         ...input,
         boardId: input.boardId ?? currentBoardId,
-      })
+      }, auth)
       await loadCards()
       broadcast(buildInitMessage())
       return result
@@ -389,41 +415,43 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doDeleteCard(cardId: string): Promise<boolean> {
+  async function doDeleteCard(cardId: string, auth?: AuthContext): Promise<boolean> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
 
     try {
-      await sdk.deleteCard(cardId, currentBoardId)
+      await sdk.deleteCard(cardId, currentBoardId, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
+      if (err instanceof AuthError) throw err
       console.error('Failed to delete card:', err)
       return false
     }
   }
 
-  async function doPermanentDeleteCard(cardId: string): Promise<boolean> {
+  async function doPermanentDeleteCard(cardId: string, auth?: AuthContext): Promise<boolean> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
 
     try {
-      await sdk.permanentlyDeleteCard(cardId, currentBoardId)
+      await sdk.permanentlyDeleteCard(cardId, currentBoardId, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
     } catch (err) {
+      if (err instanceof AuthError) throw err
       console.error('Failed to permanently delete card:', err)
       return false
     }
   }
 
-  async function doPurgeDeletedCards(): Promise<boolean> {
+  async function doPurgeDeletedCards(auth?: AuthContext): Promise<boolean> {
     try {
-      await sdk.purgeDeletedCards(currentBoardId)
+      await sdk.purgeDeletedCards(currentBoardId, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
@@ -452,24 +480,25 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doRemoveColumn(columnId: string): Promise<{ removed: boolean; error?: string }> {
+  async function doRemoveColumn(columnId: string, auth?: AuthContext): Promise<{ removed: boolean; error?: string }> {
     try {
       const columns = sdk.listColumns(currentBoardId)
       if (columns.length <= 1) return { removed: false, error: 'Cannot remove last column' }
       const col = columns.find(c => c.id === columnId)
       if (!col) return { removed: false, error: 'Column not found' }
-      await sdk.removeColumn(columnId, currentBoardId)
+      await sdk.removeColumn(columnId, currentBoardId, auth)
       broadcast(buildInitMessage())
       return { removed: true }
     } catch (err) {
+      if (err instanceof AuthError) throw err
       return { removed: false, error: String(err) }
     }
   }
 
-  async function doCleanupColumn(columnId: string): Promise<boolean> {
+  async function doCleanupColumn(columnId: string, auth?: AuthContext): Promise<boolean> {
     try {
       migrating = true
-      await sdk.cleanupColumn(columnId, currentBoardId)
+      await sdk.cleanupColumn(columnId, currentBoardId, auth)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
@@ -487,7 +516,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     broadcast(buildInitMessage())
   }
 
-  async function doAddAttachment(cardId: string, filename: string, fileData: Buffer): Promise<boolean> {
+  async function doAddAttachment(cardId: string, filename: string, fileData: Buffer, auth?: AuthContext): Promise<boolean> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
 
@@ -495,7 +524,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     migrating = true
     try {
       fs.writeFileSync(tempUploadPath, fileData)
-      const updated = await sdk.addAttachment(cardId, tempUploadPath, currentBoardId)
+      const updated = await sdk.addAttachment(cardId, tempUploadPath, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       suppressWatcherEvents()
       await loadCards()
@@ -506,13 +535,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doRemoveAttachment(cardId: string, attachment: string): Promise<Card | null> {
+  async function doRemoveAttachment(cardId: string, attachment: string, auth?: AuthContext): Promise<Card | null> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return null
 
     migrating = true
     try {
-      const updated = await sdk.removeAttachment(cardId, attachment, currentBoardId)
+      const updated = await sdk.removeAttachment(cardId, attachment, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       suppressWatcherEvents()
       await loadCards()
@@ -525,41 +554,43 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   // --- Comment mutation functions ---
 
-  async function doAddComment(cardId: string, author: string, content: string): Promise<Comment | null> {
+  async function doAddComment(cardId: string, author: string, content: string, auth?: AuthContext): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.addComment(cardId, author, content, currentBoardId)
+      const updated = await sdk.addComment(cardId, author, content, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       const comment = updated.comments[updated.comments.length - 1]
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return comment
-    } catch {
+    } catch (err) {
+      if (err instanceof AuthError) throw err
       return null
     } finally {
       migrating = false
     }
   }
 
-  async function doUpdateComment(cardId: string, commentId: string, content: string): Promise<Comment | null> {
+  async function doUpdateComment(cardId: string, commentId: string, content: string, auth?: AuthContext): Promise<Comment | null> {
     migrating = true
     try {
-      const updated = await sdk.updateComment(cardId, commentId, content, currentBoardId)
+      const updated = await sdk.updateComment(cardId, commentId, content, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       const comment = (updated.comments || []).find(c => c.id === commentId)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return comment ?? null
-    } catch {
+    } catch (err) {
+      if (err instanceof AuthError) throw err
       return null
     } finally {
       migrating = false
     }
   }
 
-  async function doDeleteComment(cardId: string, commentId: string): Promise<boolean> {
+  async function doDeleteComment(cardId: string, commentId: string, auth?: AuthContext): Promise<boolean> {
     const card = cards.find(f => f.id === cardId)
     if (!card) return false
     const comment = (card.comments || []).find(c => c.id === commentId)
@@ -567,13 +598,14 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     migrating = true
     try {
-      const updated = await sdk.deleteComment(cardId, commentId, currentBoardId)
+      const updated = await sdk.deleteComment(cardId, commentId, currentBoardId, auth)
       lastWrittenContent = serializeCard(updated)
       suppressWatcherEvents()
       await loadCards()
       broadcast(buildInitMessage())
       return true
-    } catch {
+    } catch (err) {
+      if (err instanceof AuthError) throw err
       return false
     } finally {
       migrating = false
@@ -582,10 +614,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   // --- Log mutation functions ---
 
-  async function doAddLog(cardId: string, text: string, source?: string, object?: Record<string, any>, timestamp?: string) {
+  async function doAddLog(cardId: string, text: string, source?: string, object?: Record<string, any>, timestamp?: string, auth?: AuthContext) {
     migrating = true
     try {
-      const entry = await sdk.addLog(cardId, text, { source, timestamp, object }, currentBoardId)
+      const entry = await sdk.addLog(cardId, text, { source, timestamp, object }, currentBoardId, auth)
       await loadCards()
       broadcast(buildInitMessage())
       return entry
@@ -596,10 +628,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
   }
 
-  async function doClearLogs(cardId: string): Promise<boolean> {
+  async function doClearLogs(cardId: string, auth?: AuthContext): Promise<boolean> {
     migrating = true
     try {
-      await sdk.clearLogs(cardId, currentBoardId)
+      await sdk.clearLogs(cardId, currentBoardId, auth)
       await loadCards()
       broadcast(buildInitMessage())
       return true
@@ -612,7 +644,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   // --- WebSocket message handling ---
 
-  async function handleMessage(ws: WebSocket, message: unknown): Promise<void> {
+  async function handleMessage(ws: WebSocket, message: unknown, authContext: AuthContext): Promise<void> {
     const msg = message as Record<string, unknown>
     switch (msg.type) {
       case 'ready':
@@ -626,38 +658,38 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         break
 
       case 'createCard':
-        await doCreateCard(msg.data as CreateCardData)
+        await doCreateCard(msg.data as CreateCardData, authContext)
         break
 
       case 'moveCard':
-        await doMoveCard(msg.cardId as string, msg.newStatus as string, msg.newOrder as number)
+        await doMoveCard(msg.cardId as string, msg.newStatus as string, msg.newOrder as number, authContext)
         break
 
       case 'deleteCard':
-        await doDeleteCard(msg.cardId as string)
+        await doDeleteCard(msg.cardId as string, authContext)
         break
 
       case 'permanentDeleteCard':
-        await doPermanentDeleteCard(msg.cardId as string)
+        await doPermanentDeleteCard(msg.cardId as string, authContext)
         break
 
       case 'restoreCard': {
         const restoreId = msg.cardId as string
         const defaultStatus = sdk.getSettings().defaultStatus
-        await doUpdateCard(restoreId, { status: defaultStatus })
+        await doUpdateCard(restoreId, { status: defaultStatus }, authContext)
         break
       }
 
       case 'purgeDeletedCards':
-        await doPurgeDeletedCards()
+        await doPurgeDeletedCards(authContext)
         break
 
       case 'updateCard':
-        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>)
+        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>, authContext)
         break
 
       case 'bulkUpdateCard':
-        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>)
+        await doUpdateCard(msg.cardId as string, msg.updates as Partial<Card>, authContext)
         break
 
       case 'openCard': {
@@ -692,7 +724,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           actions: fm.actions,
           forms: fm.forms,
           formData: fm.formData,
-        })
+        }, authContext)
         break
       }
 
@@ -704,7 +736,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
             formId,
             data: parseSubmitData((msg as SubmitFormMessage).data),
             boardId,
-          })
+          }, authContext)
           const updatedCard = cards.find(candidate => candidate.id === cardId)
           if (updatedCard && currentEditingCardId === cardId) {
             await sendCardContent(ws, updatedCard)
@@ -745,11 +777,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         break
 
       case 'removeColumn':
-        await doRemoveColumn(msg.columnId as string)
+        await doRemoveColumn(msg.columnId as string, authContext)
         break
 
       case 'cleanupColumn':
-        await doCleanupColumn(msg.columnId as string)
+        await doCleanupColumn(msg.columnId as string, authContext)
         break
 
       case 'reorderColumns': {
@@ -770,7 +802,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
       case 'removeAttachment': {
         const cardId = msg.cardId as string
-        const card = await doRemoveAttachment(cardId, msg.attachment as string)
+        const card = await doRemoveAttachment(cardId, msg.attachment as string, authContext)
         if (card && currentEditingCardId === cardId) {
           ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
         }
@@ -778,7 +810,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'addComment': {
-        const comment = await doAddComment(msg.cardId as string, msg.author as string, msg.content as string)
+        const comment = await doAddComment(msg.cardId as string, msg.author as string, msg.content as string, authContext)
         if (!comment) break
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
@@ -788,7 +820,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'updateComment': {
-        const comment = await doUpdateComment(msg.cardId as string, msg.commentId as string, msg.content as string)
+        const comment = await doUpdateComment(msg.cardId as string, msg.commentId as string, msg.content as string, authContext)
         if (!comment) break
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
@@ -798,7 +830,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'deleteComment': {
-        await doDeleteComment(msg.cardId as string, msg.commentId as string)
+        await doDeleteComment(msg.cardId as string, msg.commentId as string, authContext)
         const card = cards.find(f => f.id === msg.cardId)
         if (card && currentEditingCardId === msg.cardId) {
           ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
@@ -813,6 +845,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           msg.source as string | undefined,
           msg.object as Record<string, any> | undefined,
           msg.timestamp as string | undefined,
+          authContext,
         )
         if (entry && currentEditingCardId === msg.cardId) {
           try {
@@ -824,7 +857,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'clearLogs': {
-        await doClearLogs(msg.cardId as string)
+        await doClearLogs(msg.cardId as string, authContext)
         ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
         break
       }
@@ -849,6 +882,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
               timestamp: msg.timestamp as string | undefined,
             },
             currentBoardId || undefined,
+            authContext,
           )
           const logs = await sdk.listBoardLogs(currentBoardId || undefined)
           ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs }))
@@ -859,7 +893,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'clearBoardLogs': {
-        await sdk.clearBoardLogs(currentBoardId || undefined)
+        await sdk.clearBoardLogs(currentBoardId || undefined, authContext)
         ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: currentBoardId, logs: [] }))
         broadcast(buildInitMessage())
         break
@@ -881,7 +915,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const targetStatus = msg.targetStatus as string
         migrating = true
         try {
-          await sdk.transferCard(cardId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus)
+          await sdk.transferCard(cardId, currentBoardId || readConfig(workspaceRoot).defaultBoard, toBoard, targetStatus, authContext)
           await loadCards()
           broadcast(buildInitMessage())
         } catch (err) {
@@ -928,7 +962,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'renameLabel': {
-        await sdk.renameLabel(msg.oldName as string, msg.newName as string)
+        await sdk.renameLabel(msg.oldName as string, msg.newName as string, authContext)
         await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
@@ -936,7 +970,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
 
       case 'deleteLabel': {
-        await sdk.deleteLabel(msg.name as string)
+        await sdk.deleteLabel(msg.name as string, authContext)
         await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
@@ -946,7 +980,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       case 'triggerAction': {
         const { cardId, action, callbackKey } = msg as { cardId: string; action: string; callbackKey: string }
         try {
-          await sdk.triggerAction(cardId, action)
+          await sdk.triggerAction(cardId, action, undefined, authContext)
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
         } catch (err) {
           ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))
@@ -957,7 +991,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       case 'triggerBoardAction': {
         const { boardId, actionKey, callbackKey } = msg as { boardId: string; actionKey: string; callbackKey: string }
         try {
-          await sdk.triggerBoardAction(boardId, actionKey)
+          await sdk.triggerBoardAction(boardId, actionKey, authContext)
           ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey }))
         } catch (err) {
           ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey, error: String(err) }))
@@ -987,7 +1021,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       res.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Max-Age': '86400'
       })
       res.end()
@@ -1050,9 +1084,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { boardId } = params
-        await sdk.deleteBoard(boardId)
+        const auth = extractAuthContext(req)
+        await sdk.deleteBoard(boardId, auth)
         return jsonOk(res, { deleted: true })
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1118,7 +1154,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { boardId, key } = params
-        await sdk.triggerBoardAction(boardId, key)
+        await sdk.triggerBoardAction(boardId, key, extractAuthContext(req))
         res.writeHead(204)
         res.end()
         return
@@ -1136,7 +1172,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const config = readConfig(workspaceRoot)
         const fromBoard = currentBoardId || config.defaultBoard
         const targetStatus = body.targetStatus as string | undefined
-        const card = await sdk.transferCard(id, fromBoard, boardId, targetStatus)
+        const card = await sdk.transferCard(id, fromBoard, boardId, targetStatus, extractAuthContext(req))
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
         return jsonError(res, 400, String(err))
@@ -1195,6 +1231,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const body = await readBody(req)
         const content = (body.content as string) || ''
         if (!content) return jsonError(res, 400, 'content is required')
+        const auth = extractAuthContext(req)
         const card = await sdk.createCard({
           content,
           status: (body.status as string) || 'backlog',
@@ -1207,9 +1244,10 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           forms: body.forms as CreateCardPayload['forms'],
           formData: body.formData as CreateCardPayload['formData'],
           boardId,
-        })
+        }, auth)
         return jsonOk(res, sanitizeCard(card), 201)
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1231,9 +1269,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       try {
         const { boardId, id } = params
         const body = await readBody(req)
-        const card = await sdk.updateCard(id, body as Partial<Card>, boardId)
+        const auth = extractAuthContext(req)
+        const card = await sdk.updateCard(id, body as Partial<Card>, boardId, auth)
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1248,7 +1288,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           formId,
           data: parseSubmitData(body.data),
           boardId,
-        })
+        }, extractAuthContext(req))
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, getSubmitErrorStatus(err), String(err))
@@ -1263,9 +1303,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const newStatus = body.status as string
         const position = body.position as number ?? 0
         if (!newStatus) return jsonError(res, 400, 'status is required')
-        const card = await sdk.moveCard(id, newStatus, position, boardId)
+        const auth = extractAuthContext(req)
+        const card = await sdk.moveCard(id, newStatus, position, boardId, auth)
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1274,7 +1316,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { boardId, id, action } = params
-        await sdk.triggerAction(id, action, boardId)
+        await sdk.triggerAction(id, action, boardId, extractAuthContext(req))
         res.writeHead(204)
         res.end()
         return
@@ -1289,11 +1331,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { boardId, id } = params
-        await sdk.permanentlyDeleteCard(id, boardId)
+        const auth = extractAuthContext(req)
+        await sdk.permanentlyDeleteCard(id, boardId, auth)
         await loadCards()
         broadcast(buildInitMessage())
         return jsonOk(res, { deleted: true, permanent: true })
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1302,11 +1346,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { boardId, id } = params
-        await sdk.deleteCard(id, boardId)
+        const auth = extractAuthContext(req)
+        await sdk.deleteCard(id, boardId, auth)
         await loadCards()
         broadcast(buildInitMessage())
         return jsonOk(res, { deleted: true })
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1376,9 +1422,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           formData: body.formData as CreateCardPayload['formData'],
         }
         if (!data.content) return jsonError(res, 400, 'content is required')
-        const card = await doCreateCard(data)
+        const auth = extractAuthContext(req)
+        const card = await doCreateCard(data, auth)
         return jsonOk(res, sanitizeCard(card), 201)
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1396,10 +1444,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       try {
         const { id } = params
         const body = await readBody(req)
-        const card = await doUpdateCard(id, body as Partial<Card>)
+        const auth = extractAuthContext(req)
+        const card = await doUpdateCard(id, body as Partial<Card>, auth)
         if (!card) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1413,7 +1463,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           cardId: id,
           formId,
           data: parseSubmitData(body.data),
-        })
+        }, extractAuthContext(req))
         return jsonOk(res, result)
       } catch (err) {
         return jsonError(res, getSubmitErrorStatus(err), String(err))
@@ -1428,10 +1478,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const newStatus = body.status as string
         const position = body.position as number ?? 0
         if (!newStatus) return jsonError(res, 400, 'status is required')
-        const card = await doMoveCard(id, newStatus, position)
+        const auth = extractAuthContext(req)
+        const card = await doMoveCard(id, newStatus, position, auth)
         if (!card) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1440,7 +1492,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const { id, action } = params
-        await sdk.triggerAction(id, action)
+        await sdk.triggerAction(id, action, undefined, extractAuthContext(req))
         res.writeHead(204)
         res.end()
         return
@@ -1453,18 +1505,30 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('DELETE', '/api/tasks/:id/permanent')
     if (params) {
-      const { id } = params
-      const ok = await doPermanentDeleteCard(id)
-      if (!ok) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, { deleted: true, permanent: true })
+      try {
+        const { id } = params
+        const auth = extractAuthContext(req)
+        const ok = await doPermanentDeleteCard(id, auth)
+        if (!ok) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, { deleted: true, permanent: true })
+      } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
+        return jsonError(res, 400, String(err))
+      }
     }
 
     params = route('DELETE', '/api/tasks/:id')
     if (params) {
-      const { id } = params
-      const ok = await doDeleteCard(id)
-      if (!ok) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, { deleted: true })
+      try {
+        const { id } = params
+        const auth = extractAuthContext(req)
+        const ok = await doDeleteCard(id, auth)
+        if (!ok) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, { deleted: true })
+      } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== ATTACHMENTS API ====================
@@ -1476,15 +1540,17 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const body = await readBody(req)
         const files = body.files as { name: string; data: string }[]
         if (!Array.isArray(files)) return jsonError(res, 400, 'files array is required')
+        const auth = extractAuthContext(req)
         for (const file of files) {
           const buf = Buffer.from(file.data, 'base64')
-          await doAddAttachment(id, file.name, buf)
+          await doAddAttachment(id, file.name, buf, auth)
         }
         broadcast(buildInitMessage())
         const card = cards.find(f => f.id === id)
         if (!card) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, sanitizeCard(card))
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1593,10 +1659,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('DELETE', '/api/tasks/:id/attachments/:filename')
     if (params) {
-      const { id, filename: attachName } = params
-      const card = await doRemoveAttachment(id, attachName)
-      if (!card) return jsonError(res, 404, 'Task not found')
-      return jsonOk(res, sanitizeCard(card))
+      try {
+        const { id, filename: attachName } = params
+        const auth = extractAuthContext(req)
+        const card = await doRemoveAttachment(id, attachName, auth)
+        if (!card) return jsonError(res, 404, 'Task not found')
+        return jsonOk(res, sanitizeCard(card))
+      } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== COMMENTS API ====================
@@ -1618,10 +1690,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const content = body.content as string
         if (!author) return jsonError(res, 400, 'author is required')
         if (!content) return jsonError(res, 400, 'content is required')
-        const comment = await doAddComment(id, author, content)
+        const auth = extractAuthContext(req)
+        const comment = await doAddComment(id, author, content, auth)
         if (!comment) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, comment, 201)
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
@@ -1633,20 +1707,28 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const body = await readBody(req)
         const content = body.content as string
         if (!content) return jsonError(res, 400, 'content is required')
-        const comment = await doUpdateComment(id, commentId, content)
+        const auth = extractAuthContext(req)
+        const comment = await doUpdateComment(id, commentId, content, auth)
         if (!comment) return jsonError(res, 404, 'Comment not found')
         return jsonOk(res, comment)
       } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
         return jsonError(res, 400, String(err))
       }
     }
 
     params = route('DELETE', '/api/tasks/:id/comments/:commentId')
     if (params) {
-      const { id, commentId } = params
-      const ok = await doDeleteComment(id, commentId)
-      if (!ok) return jsonError(res, 404, 'Comment not found')
-      return jsonOk(res, { deleted: true })
+      try {
+        const { id, commentId } = params
+        const auth = extractAuthContext(req)
+        const ok = await doDeleteComment(id, commentId, auth)
+        if (!ok) return jsonError(res, 404, 'Comment not found')
+        return jsonOk(res, { deleted: true })
+      } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== LOGS API ====================
@@ -1675,6 +1757,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           body.source as string | undefined,
           body.object as Record<string, any> | undefined,
           body.timestamp as string | undefined,
+          extractAuthContext(req),
         )
         if (!entry) return jsonError(res, 404, 'Task not found')
         return jsonOk(res, entry, 201)
@@ -1686,7 +1769,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     params = route('DELETE', '/api/tasks/:id/logs')
     if (params) {
       const { id } = params
-      const ok = await doClearLogs(id)
+      const ok = await doClearLogs(id, extractAuthContext(req))
       if (!ok) return jsonError(res, 404, 'Task not found')
       return jsonOk(res, { cleared: true })
     }
@@ -1711,7 +1794,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
           source: body.source as string | undefined,
           object: body.object as Record<string, unknown> | undefined,
           timestamp: body.timestamp as string | undefined,
-        }, bId)
+        }, bId, extractAuthContext(req))
         broadcast(buildInitMessage())
         return jsonOk(res, entry, 201)
       } catch (err) {
@@ -1722,7 +1805,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     params = route('DELETE', '/api/boards/:boardId/logs')
     if (params) {
       const bId = params.boardId as string
-      await sdk.clearBoardLogs(bId)
+      await sdk.clearBoardLogs(bId, extractAuthContext(req))
       broadcast(buildInitMessage())
       return jsonOk(res, { cleared: true })
     }
@@ -1792,10 +1875,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
     params = route('DELETE', '/api/columns/:id')
     if (params) {
-      const { id } = params
-      const result = await doRemoveColumn(id)
-      if (!result.removed) return jsonError(res, 400, result.error || 'Cannot remove column')
-      return jsonOk(res, { deleted: true })
+      try {
+        const { id } = params
+        const auth = extractAuthContext(req)
+        const result = await doRemoveColumn(id, auth)
+        if (!result.removed) return jsonError(res, 400, result.error || 'Cannot remove column')
+        return jsonOk(res, { deleted: true })
+      } catch (err) {
+        if (err instanceof AuthError) return jsonError(res, authErrorToHttpStatus(err), err.message)
+        return jsonError(res, 400, String(err))
+      }
     }
 
     // ==================== SETTINGS API ====================
@@ -1891,7 +1980,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         const body = await readBody(req)
         const newName = body.newName as string
         if (!newName) return jsonError(res, 400, 'newName is required')
-        await sdk.renameLabel(name, newName)
+        const auth = extractAuthContext(req)
+        await sdk.renameLabel(name, newName, auth)
         await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
@@ -1905,7 +1995,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       try {
         const name = decodeURIComponent(params.name)
-        await sdk.deleteLabel(name)
+        const auth = extractAuthContext(req)
+        await sdk.deleteLabel(name, auth)
         await loadCards()
         broadcast({ type: 'labelsUpdated', labels: sdk.getLabels() })
         broadcast(buildInitMessage())
@@ -1921,6 +2012,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     if (params) {
       const wsConfig = readConfig(workspaceRoot)
       const storageStatus = getStorageStatus()
+      const authStatus = getAuthStatus(req)
       const providers = storageStatus.providers
         ? {
             'card.storage': storageStatus.providers['card.storage'].provider,
@@ -1935,7 +2027,13 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
         providers,
         isFileBacked: storageStatus.isFileBacked,
         watchGlob: storageStatus.watchGlob,
+        auth: authStatus,
       })
+    }
+
+    params = route('GET', '/api/auth')
+    if (params) {
+      return jsonOk(res, getAuthStatus(req))
     }
 
     params = route('GET', '/api/storage')
@@ -2065,11 +2163,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   const wss = new WebSocketServer({ server, path: '/ws' })
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    const authContext = extractAuthContext(req)
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString())
-        handleMessage(ws, message)
+        handleMessage(ws, message, authContext)
       } catch (err) {
         console.error('Failed to handle message:', err)
       }

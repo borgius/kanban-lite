@@ -7,6 +7,8 @@ import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
+import type { AuthContext } from '../sdk/types'
+import { getExtensionAuthStatus, resolveExtensionAuthContext } from './auth'
 
 
 type CreateCardData = CreateCardPayload
@@ -74,6 +76,11 @@ export class KanbanPanel {
 
   public refresh(): void {
     this._update()
+  }
+
+  public async reloadState(): Promise<void> {
+    await this._loadCards()
+    this._sendCardsToWebview()
   }
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
@@ -303,7 +310,8 @@ export class KanbanPanel {
                 message.cardId,
                 this._currentBoardId,
                 message.toBoard,
-                message.targetStatus
+                message.targetStatus,
+                await this._getAuthContext()
               )
               // Switch to the destination board and re-open the card there
               this._currentBoardId = message.toBoard
@@ -346,7 +354,7 @@ export class KanbanPanel {
           case 'renameLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            await sdk.renameLabel(message.oldName, message.newName)
+            await sdk.renameLabel(message.oldName, message.newName, await this._getAuthContext())
             await this._loadCards()
             this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
@@ -355,7 +363,7 @@ export class KanbanPanel {
           case 'deleteLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            await sdk.deleteLabel(message.name)
+            await sdk.deleteLabel(message.name, await this._getAuthContext())
             await this._loadCards()
             this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
@@ -366,7 +374,7 @@ export class KanbanPanel {
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await triggerSdk.triggerAction(cardId, action)
+              await triggerSdk.triggerAction(cardId, action, undefined, await this._getAuthContext())
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
@@ -378,7 +386,7 @@ export class KanbanPanel {
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await triggerSdk.triggerBoardAction(boardId, actionKey)
+              await triggerSdk.triggerBoardAction(boardId, actionKey, await this._getAuthContext())
               this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey, error: String(err) })
@@ -395,7 +403,7 @@ export class KanbanPanel {
                 formId,
                 data: (message as SubmitFormMessage).data,
                 boardId: boardId ?? this._currentBoardId,
-              })
+              }, await this._getAuthContext())
               await this._loadCards()
               this._sendCardsToWebview()
               if (this._currentEditingCardId === cardId) {
@@ -585,6 +593,10 @@ export class KanbanPanel {
     return this._sdk
   }
 
+  private async _getAuthContext(): Promise<AuthContext> {
+    return resolveExtensionAuthContext(this._context)
+  }
+
   private async _loadCards(): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) {
@@ -638,7 +650,7 @@ export class KanbanPanel {
         forms: data.forms,
         formData: data.formData,
         boardId: this._currentBoardId
-      })
+      }, await this._getAuthContext())
       this._cards.push(card)
       this._sendCardsToWebview()
     } finally {
@@ -652,7 +664,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId)
+      const updated = await sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -666,7 +678,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.deleteCard(cardId, this._currentBoardId)
+      await sdk.deleteCard(cardId, this._currentBoardId, await this._getAuthContext())
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -679,7 +691,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.permanentlyDeleteCard(cardId, this._currentBoardId)
+      await sdk.permanentlyDeleteCard(cardId, this._currentBoardId, await this._getAuthContext())
       this._cards = this._cards.filter(f => f.id !== cardId)
       this._sendCardsToWebview()
     } catch (err) {
@@ -692,7 +704,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.purgeDeletedCards(this._currentBoardId)
+      await sdk.purgeDeletedCards(this._currentBoardId, await this._getAuthContext())
       this._cards = this._cards.filter(f => f.status !== 'deleted')
       this._sendCardsToWebview()
     } catch (err) {
@@ -706,7 +718,7 @@ export class KanbanPanel {
 
     try {
       const settings = sdk.getSettings()
-      await sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId)
+      await sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId, await this._getAuthContext())
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -720,7 +732,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(cardId, updates, this._currentBoardId)
+      const updated = await sdk.updateCard(cardId, updates, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -788,7 +800,7 @@ export class KanbanPanel {
               dueDate: parsed.dueDate,
               labels: parsed.labels,
               metadata: parsed.metadata
-            }, this._currentBoardId)
+            }, this._currentBoardId, await this._getAuthContext())
             const idx = this._cards.findIndex(f => f.id === cardId)
             if (idx !== -1) this._cards[idx] = updated
             this._sendCardsToWebview()
@@ -871,7 +883,7 @@ export class KanbanPanel {
         actions: frontmatter.actions,
         forms: frontmatter.forms,
         formData: frontmatter.formData,
-      }, this._currentBoardId)
+      }, this._currentBoardId, await this._getAuthContext())
       this._lastWrittenContent = serializeCard(updated)
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -897,7 +909,7 @@ export class KanbanPanel {
     try {
       let updated = card
       for (const uri of uris) {
-        updated = await sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId)
+        updated = await sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId, await this._getAuthContext())
       }
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -949,7 +961,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.removeAttachment(cardId, attachment, this._currentBoardId)
+      const updated = await sdk.removeAttachment(cardId, attachment, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -968,7 +980,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.addComment(cardId, author, content, this._currentBoardId)
+      const updated = await sdk.addComment(cardId, author, content, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -987,7 +999,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateComment(cardId, commentId, content, this._currentBoardId)
+      const updated = await sdk.updateComment(cardId, commentId, content, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1006,7 +1018,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.deleteComment(cardId, commentId, this._currentBoardId)
+      const updated = await sdk.deleteComment(cardId, commentId, this._currentBoardId, await this._getAuthContext())
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1033,7 +1045,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId)
+      await sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId, await this._getAuthContext())
       await this._sendLogs(cardId)
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to add log: ${err.message}`)
@@ -1044,7 +1056,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.clearLogs(cardId, this._currentBoardId)
+      await sdk.clearLogs(cardId, this._currentBoardId, await this._getAuthContext())
       await this._sendLogs(cardId)
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to clear logs: ${err.message}`)
@@ -1064,7 +1076,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.addBoardLog(text, { source, object, timestamp }, this._currentBoardId)
+      await sdk.addBoardLog(text, { source, object, timestamp }, this._currentBoardId, await this._getAuthContext())
       await this._sendBoardLogs()
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to add board log: ${err.message}`)
@@ -1075,7 +1087,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.clearBoardLogs(this._currentBoardId)
+      await sdk.clearBoardLogs(this._currentBoardId, await this._getAuthContext())
       await this._sendBoardLogs()
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to clear board logs: ${err.message}`)
@@ -1191,15 +1203,32 @@ export class KanbanPanel {
       settings.showBuildWithAI = false
     }
 
-    this._panel.webview.postMessage({
-      type: 'init',
-      cards: this._cards,
-      columns,
-      settings,
-      boards,
-      currentBoard,
-      labels: sdk ? sdk.getLabels() : {},
-      minimizedColumnIds: sdk ? sdk.getMinimizedColumns(this._currentBoardId) : []
+    if (!sdk) {
+      this._panel.webview.postMessage({
+        type: 'init',
+        cards: this._cards,
+        columns,
+        settings,
+        boards,
+        currentBoard,
+        labels: {},
+        minimizedColumnIds: []
+      })
+      return
+    }
+
+    void getExtensionAuthStatus(this._context, sdk).then((authStatus) => {
+      this._panel.webview.postMessage({
+        type: 'init',
+        cards: this._cards,
+        columns,
+        settings,
+        boards,
+        currentBoard,
+        labels: sdk.getLabels(),
+        minimizedColumnIds: sdk.getMinimizedColumns(this._currentBoardId),
+        authStatus,
+      })
     })
   }
 
@@ -1220,7 +1249,7 @@ export class KanbanPanel {
   private _removeColumn(columnId: string): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    sdk.removeColumn(columnId, this._currentBoardId).then(() => {
+    void this._getAuthContext().then(auth => sdk.removeColumn(columnId, this._currentBoardId, auth)).then(() => {
       this._sendCardsToWebview()
     }).catch((err: Error) => {
       vscode.window.showWarningMessage(err.message)
@@ -1233,7 +1262,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      await sdk.cleanupColumn(columnId, this._currentBoardId)
+      await sdk.cleanupColumn(columnId, this._currentBoardId, await this._getAuthContext())
       // Update in-memory cache: mark all column cards as deleted
       this._cards = this._cards.map(f =>
         f.status === columnId ? { ...f, status: 'deleted' } : f

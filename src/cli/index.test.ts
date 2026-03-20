@@ -165,7 +165,7 @@ describe('CLI form-aware card commands', () => {
       boardId: undefined,
       forms: [{ name: 'bug-report' }],
       formData: { 'bug-report': { severity: 'high' } },
-    })
+    }, { transport: 'cli' })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(card)
   })
 
@@ -188,7 +188,7 @@ describe('CLI form-aware card commands', () => {
     expect(sdk.updateCard).toHaveBeenCalledWith('card-edit', {
       forms: [{ schema: { type: 'object', title: 'Checklist' } }],
       formData: { checklist: { approved: true } },
-    }, undefined)
+    }, undefined, { transport: 'cli' })
     expect(logSpy.mock.calls[0][0]).toContain('Updated: card-edit')
   })
 

@@ -69,9 +69,9 @@ ${body}`
 }
 
 // Helper: connect WebSocket and wait for open
-function connectWs(port: number): Promise<WebSocket> {
+function connectWs(port: number, headers?: Record<string, string>): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${port}/ws`)
+    const ws = new WebSocket(`ws://localhost:${port}/ws`, { headers })
     ws.on('open', () => resolve(ws))
     ws.on('error', reject)
   })
@@ -86,6 +86,34 @@ function sendAndReceive(ws: WebSocket, message: unknown, expectedType: string, t
       try {
         const parsed = JSON.parse(data.toString())
         if (parsed.type === expectedType) {
+          clearTimeout(timer)
+          ws.off('message', handler)
+          resolve(parsed)
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    ws.on('message', handler)
+    ws.send(JSON.stringify(message))
+  })
+}
+
+function sendAndReceiveMatching(
+  ws: WebSocket,
+  message: unknown,
+  expectedType: string,
+  predicate: (parsed: Record<string, unknown>) => boolean,
+  timeout = 5000,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout waiting for ${expectedType}`)), timeout)
+
+    const handler = (data: Buffer | string) => {
+      try {
+        const parsed = JSON.parse(data.toString())
+        if (parsed.type === expectedType && predicate(parsed)) {
           clearTimeout(timer)
           ws.off('message', handler)
           resolve(parsed)
@@ -374,6 +402,65 @@ describe('Standalone Server Integration', () => {
     })
   })
 
+  describe('websocket auth context', () => {
+    it('forwards bearer auth to helper-backed card mutations', async () => {
+      writeCardFile(tempDir, 'auth-delete.md', makeCardContent({
+        id: 'auth-delete',
+        title: 'Auth Delete'
+      }), 'backlog')
+
+      const deleteSpy = vi.spyOn(KanbanSDK.prototype, 'deleteCard').mockResolvedValue(undefined)
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port, { Authorization: 'Bearer websocket-secret' })
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      await sendAndReceive(ws, {
+        type: 'deleteCard',
+        cardId: 'auth-delete'
+      }, 'init')
+
+      expect(deleteSpy).toHaveBeenCalledWith(
+        'auth-delete',
+        undefined,
+        expect.objectContaining({
+          token: 'websocket-secret',
+          tokenSource: 'request-header',
+          transport: 'http'
+        })
+      )
+    })
+
+    it('forwards bearer auth to direct action triggers', async () => {
+      const triggerSpy = vi.spyOn(KanbanSDK.prototype, 'triggerAction').mockResolvedValue(undefined)
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port, { Authorization: 'Bearer action-token' })
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      const response = await sendAndReceive(ws, {
+        type: 'triggerAction',
+        cardId: 'card-123',
+        action: 'approve',
+        callbackKey: 'cb-1'
+      }, 'actionResult')
+
+      expect(response).toEqual({ type: 'actionResult', callbackKey: 'cb-1' })
+      expect(triggerSpy).toHaveBeenCalledWith(
+        'card-123',
+        'approve',
+        undefined,
+        expect.objectContaining({
+          token: 'action-token',
+          tokenSource: 'request-header',
+          transport: 'http'
+        })
+      )
+    })
+  })
+
   // ── Create Card ──
 
   describe('createCard', () => {
@@ -655,10 +742,13 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      const response = await sendAndReceive(ws, {
+      const response = await sendAndReceiveMatching(ws, {
         type: 'deleteCard',
         cardId: 'delete-me'
-      }, 'init')
+      }, 'init', (parsed) => {
+        const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+        return Array.isArray(cards) && cards.some(card => card.id === 'delete-me' && card.status === 'deleted')
+      })
 
       const cards = response.cards as Array<Record<string, unknown>>
       // Card still exists but with deleted status
@@ -681,10 +771,13 @@ describe('Standalone Server Integration', () => {
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
-      const response = await sendAndReceive(ws, {
+      const response = await sendAndReceiveMatching(ws, {
         type: 'deleteCard',
         cardId: 'remove-me'
-      }, 'init')
+      }, 'init', (parsed) => {
+        const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+        return Array.isArray(cards) && cards.some(card => card.id === 'remove-me' && card.status === 'deleted')
+      })
 
       const cards = response.cards as Array<Record<string, unknown>>
       expect(cards.length).toBe(2)
@@ -908,7 +1001,7 @@ describe('Standalone Server Integration', () => {
         cardId: 'save-done'
       }, 'cardContent')
 
-      await sendAndReceive(ws, {
+      await sendAndReceiveMatching(ws, {
         type: 'saveCardContent',
         cardId: 'save-done',
         content: '# Save Done\n\nCompleted.',
@@ -924,7 +1017,10 @@ describe('Standalone Server Integration', () => {
           labels: [],
           order: 'a0'
         }
-      }, 'init')
+      }, 'init', (parsed) => {
+        const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+        return Array.isArray(cards) && cards.some(card => card.id === 'save-done' && card.status === 'done')
+      })
 
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'review', 'save-done.md'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'boards', 'default', 'done', 'save-done.md'))).toBe(true)

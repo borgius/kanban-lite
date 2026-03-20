@@ -28,6 +28,8 @@ export interface SDKContext {
   emitEvent(event: SDKEventType, data: unknown): void
   getLocalCardPath(card: Card): string | null
   getAttachmentStoragePath(card: Card): string | null
+  appendAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
+  materializeAttachment(card: Card, attachment: string): Promise<string | null>
   copyAttachment(sourcePath: string, card: Card): Promise<void>
 
   // Cross-module card operations (routed through KanbanSDK instance)

@@ -393,6 +393,32 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 | `GET` | `/api/tasks/:id/attachments/:filename` | Download an attachment |
 | `DELETE` | `/api/tasks/:id/attachments/:filename` | Remove an attachment |
 
+### Local MinIO attachment plugin setup
+
+For local development in this repo, the published `kl-s3-attachment-storage` package is installed and can be used as the default `attachment.storage` provider against MinIO.
+
+- local runtime settings live in a workspace `.env`
+- local provider selection lives in the workspace `.kanban.json`
+- the default local card provider stays on markdown
+
+Local defaults used by the repo:
+
+- endpoint: `http://127.0.0.1:9000`
+- console: `http://127.0.0.1:9001`
+- bucket: `kanban-local`
+- credentials: `minioadmin` / `minioadmin`
+
+Try it locally:
+
+```bash
+npm run minio:up
+npm run test:integration:minio
+```
+
+> Note: the S3 attachment plugin still does not expose a stable local attachment directory, but card log files now flow through the attachment capability itself, so MinIO-backed log attachments work too.
+
+For providers that support efficient in-place appends, `attachment.storage` plugins may also expose an optional append hook. The SDK uses that hook for card logs when available and falls back to a safe read/modify/write update when it is not.
+
 ### Example: Create a task via API
 
 ```bash
@@ -974,12 +1000,12 @@ The equivalent capability-based config is:
 
 If both forms are present, `plugins[namespace]` wins for that namespace and legacy fields remain as compatibility aliases.
 
-| Capability | Default | Built-in providers | Notes |
-|-----------|---------|--------------------|-------|
-| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Controls card/comment persistence. |
-| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql` | `sqlite` and `mysql` are explicit opt-ins and require the matching `card.storage` provider. Omitting this namespace still falls back to `localfs`, including with `sqlite` and `mysql`. |
+| Capability | Default | Core providers / compatibility ids | Notes |
+|-----------|---------|------------------------------------|-------|
+| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Core owns `markdown`. `sqlite` and `mysql` are compatibility ids that resolve to `kl-sqlite-storage` and `kl-mysql-storage`. |
+| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql` | Core owns `localfs`. `sqlite` and `mysql` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
 
-If you want attachments to route through the built-in SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
+If you want attachments to route through the SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
 
 ```json
 {
@@ -1021,14 +1047,15 @@ The same pattern applies to MySQL:
 
 ### Installing and selecting providers
 
-- Built-in providers (`markdown`, `sqlite`, `mysql`, `localfs`) do not require a separate kanban plugin package.
+- Core built-ins are `markdown` and `localfs`.
+- `sqlite` and `mysql` remain valid provider ids, but they resolve to the external packages `kl-sqlite-storage` and `kl-mysql-storage`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-s3-attachment-storage` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
 
 ### MySQL setup and runtime expectations
 
-Use the built-in MySQL card provider by selecting `provider: "mysql"` under `plugins["card.storage"]`:
+Use the MySQL compatibility provider id by selecting `provider: "mysql"` under `plugins["card.storage"]`:
 
 ```json
 {
@@ -1050,11 +1077,12 @@ Use the built-in MySQL card provider by selecting `provider: "mysql"` under `plu
 Notes:
 
 - `database` is required.
-- The `mysql2` driver is an optional runtime dependency and is loaded lazily. Install it only in environments that actually use the MySQL provider.
-- `mysql` stores cards/comments in MySQL, while attachments still default to the built-in `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mysql"`.
+- Install `kl-mysql-storage` in the host environment that loads the plugin.
+- The `mysql2` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the MySQL provider.
+- `mysql` stores cards/comments in MySQL, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mysql"`.
 
 ```bash
-npm install mysql2
+npm install kl-mysql-storage mysql2
 ```
 
 ### Provider status surfaces
@@ -1066,9 +1094,9 @@ These commands/endpoints/tools expose the active card provider id, attachment pr
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Built-in `markdown` reports `watchGlob: "boards/**/*.md"`. Built-in `sqlite` and `mysql` report `isFileBacked: false` and `watchGlob: null`. External providers declare the same file/watch hints through their plugin metadata, so host layers do not have to infer them from the storage engine name.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name.
 
-### Migrating between built-in providers
+### Migrating between compatibility-backed providers
 
 **CLI:**
 ```bash
@@ -1102,9 +1130,9 @@ console.log(`Migrated ${count} cards to SQLite`)
 await sdk.migrateToMarkdown()
 ```
 
-These migration helpers are compatibility aliases for the built-in markdown ↔ sqlite flow. Existing files / the database are **not deleted** during migration — they serve as a manual backup until you remove them.
+These migration helpers are compatibility aliases for the markdown ↔ `sqlite` flow. Existing files / the database are **not deleted** during migration — they serve as a manual backup until you remove them.
 
-If a workspace was explicitly using the built-in `sqlite` attachment provider, migrating back to markdown automatically drops that incompatible built-in attachment override so the legacy `localfs` default continues to work without manual config cleanup.
+If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibility provider, migrating back to markdown automatically drops that incompatible attachment override so the legacy `localfs` default continues to work without manual config cleanup.
 
 **MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
 
@@ -1115,7 +1143,7 @@ Kanban Lite ships a **no-op auth/authz capability contract** for the `auth.ident
 - `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
 - `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
 
-**This release is contract plumbing only.** No login UI, no token enforcement, and no request blocking are implemented yet. The namespaces exist so external auth/authz plugins can be wired in when the stage-2 enforcement work ships.
+When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface used by the Node-hosted adapters (standalone server, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
 
 Provider references for both namespaces are read from `.kanban.json` the same way storage providers are:
 
@@ -1130,7 +1158,23 @@ Provider references for both namespaces are read from `.kanban.json` the same wa
 
 Bearer tokens and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
 
-Only `noop` is supported in this release. Configuring any other provider throws an error at startup.
+### Host token sources
+
+- **Standalone REST API**: `Authorization: Bearer <token>` request header
+- **CLI**: `KANBAN_TOKEN` environment variable
+- **MCP**: `KANBAN_TOKEN` environment variable
+- **VS Code extension host**: secure `SecretStorage` (`Kanban Lite: Set Auth Token` / `Clear Auth Token` commands)
+
+Raw tokens are treated as write-only input: they are never returned in REST responses, CLI/MCP output, logs, errors, or webview messages.
+
+### Diagnostics / status
+
+- **SDK**: `sdk.getAuthStatus()`
+- **Standalone REST API**: `GET /api/auth` and `GET /api/workspace`
+- **CLI**: `kl auth status`
+- **MCP**: `get_auth_status`
+
+These status surfaces expose only safe metadata such as active provider ids, whether auth is configured, whether a host token source is currently present, and the transport/token-source label.
 
 ## Configuration
 

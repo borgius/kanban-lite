@@ -5,12 +5,14 @@ import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities } from '../shared/config'
 import type { BoardConfig, ProviderRef, ResolvedCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult } from './types'
+import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision } from './types'
+import { AuthError } from './types'
 import type { StorageEngine } from './plugins/types'
 import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
 import { resolveKanbanDir } from './fileUtils'
 import { resolveCapabilityBag } from './plugins'
 import type { ResolvedCapabilityBag } from './plugins'
+import { loadWorkspaceEnv } from '../shared/env'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
 import * as Labels from './modules/labels'
@@ -37,6 +39,30 @@ export interface StorageStatus {
   isFileBacked: boolean
   /** File-watcher glob for local card files, or `null` for non-file-backed providers. */
   watchGlob: string | null
+}
+
+/**
+ * Active auth provider metadata for diagnostics and host surfaces.
+ *
+ * Mirrors the same diagnostic-status pattern as {@link StorageStatus}.
+ * Host surfaces (REST API, CLI, MCP) can surface this to help operators
+ * understand whether token-based auth enforcement is live.
+ */
+export interface AuthStatus {
+  /** Active `auth.identity` provider id. `'noop'` when no auth plugin is configured. */
+  identityProvider: string
+  /** Active `auth.policy` provider id. `'noop'` when no auth plugin is configured. */
+  policyProvider: string
+  /**
+   * `true` when a real (non-noop) identity provider is active, meaning token
+   * validation is being performed.
+   */
+  identityEnabled: boolean
+  /**
+   * `true` when a real (non-noop) policy provider is active, meaning action-level
+   * authorization checks are being performed.
+   */
+  policyEnabled: boolean
 }
 
 /**
@@ -225,6 +251,7 @@ export class KanbanSDK {
    */
   constructor(kanbanDir?: string, options?: SDKOptions) {
     this.kanbanDir = kanbanDir ?? resolveKanbanDir()
+    loadWorkspaceEnv(path.dirname(this.kanbanDir))
     this._onEvent = options?.onEvent
     if (options?.storage) {
       this._storage = options.storage
@@ -284,6 +311,81 @@ export class KanbanSDK {
   }
 
   /**
+   * Returns auth provider metadata for host surfaces and diagnostics.
+   *
+   * Use this to inspect which identity and policy providers are active
+   * and whether real auth enforcement is enabled.
+   *
+   * @returns An {@link AuthStatus} snapshot containing the active provider ids
+   *   and boolean flags indicating whether non-noop providers are live.
+   *
+   * @example
+   * ```ts
+   * const status = sdk.getAuthStatus()
+   * console.log(status.identityProvider) // 'noop' | 'my-token-plugin' | ...
+   * console.log(status.identityEnabled)  // false when no plugin configured
+   * ```
+   */
+  getAuthStatus(): AuthStatus {
+    const identityProvider = this._capabilities?.authIdentity.manifest.id ?? 'noop'
+    const policyProvider = this._capabilities?.authPolicy.manifest.id ?? 'noop'
+    return {
+      identityProvider,
+      policyProvider,
+      identityEnabled: identityProvider !== 'noop',
+      policyEnabled: policyProvider !== 'noop',
+    }
+  }
+
+  /**
+   * Resolves caller identity and evaluates whether the named action is permitted.
+   *
+   * This is the internal SDK pre-action authorization seam. SDK methods that
+   * represent mutating or privileged operations should call this before
+   * executing their logic.
+   *
+   * When no auth plugins are configured the built-in noop path allows all
+   * actions anonymously, preserving the current open-access behavior
+   * for workspaces without an auth configuration.
+   *
+   * @param action  - Canonical action name (e.g. `'card.create'`, `'board.delete'`).
+   * @param context - Optional auth context from the inbound request.
+   * @returns Fulfilled {@link AuthDecision} when the action is permitted.
+   * @throws {AuthError} When the policy plugin denies the action.
+   *
+   * @internal
+   */
+  async _authorizeAction(action: string, context?: AuthContext): Promise<AuthDecision> {
+    if (!this._capabilities) {
+      // Pre-built storage engine injected directly — operate in noop/anonymous mode.
+      return { allowed: true }
+    }
+    const resolvedContext: AuthContext = context ?? {}
+    const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
+    const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
+    if (!decision.allowed) {
+      throw new AuthError(
+        decision.reason ?? 'auth.policy.denied',
+        `Action "${action}" denied${identity ? ` for "${identity.subject}"` : ''}`,
+        identity?.subject,
+      )
+    }
+    return { ...decision, actor: decision.actor ?? identity?.subject }
+  }
+
+  /** @internal */
+  _withAuthContext(context?: AuthContext, hints?: Partial<AuthContext>): AuthContext {
+    const merged: AuthContext = { ...(context ?? {}) }
+    if (!hints) return merged
+
+    const target = merged as Record<string, unknown>
+    for (const [key, value] of Object.entries(hints)) {
+      if (value !== undefined) target[key] = value
+    }
+    return merged
+  }
+
+  /**
    * Returns the local file path for a card when the active provider exposes one.
    *
    * This is most useful for editor integrations or diagnostics that need to open
@@ -328,6 +430,20 @@ export class KanbanSDK {
     } catch {
       return null
     }
+  }
+
+  /**
+   * Requests an efficient in-place append for an attachment when the active
+   * attachment provider supports it.
+   *
+   * Returns `true` when the provider handled the append directly and `false`
+   * when callers should fall back to rewriting the attachment through the
+   * normal copy/materialization path.
+   */
+  async appendAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean> {
+    const appendHandler = this._capabilities?.attachmentStorage.appendAttachment
+    if (!appendHandler) return false
+    return appendHandler(card, attachment, content)
   }
 
   /**
@@ -545,7 +661,8 @@ export class KanbanSDK {
    * await sdk.deleteBoard('old-sprint')
    * ```
    */
-  async deleteBoard(boardId: string): Promise<void> {
+  async deleteBoard(boardId: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('board.delete', this._withAuthContext(auth, { boardId }))
     return Boards.deleteBoard(this, boardId)
   }
 
@@ -660,7 +777,8 @@ export class KanbanSDK {
     * await sdk.triggerBoardAction('deployments', 'deploy')
     * ```
    */
-  async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
+  async triggerBoardAction(boardId: string, actionKey: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('board.action.trigger', this._withAuthContext(auth, { boardId, actionKey }))
     return Boards.triggerBoardAction(this, boardId, actionKey)
   }
 
@@ -689,7 +807,13 @@ export class KanbanSDK {
    * console.log(card.status)  // 'triage'
    * ```
    */
-  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
+  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('card.transfer', this._withAuthContext(auth, {
+      cardId,
+      fromBoardId,
+      toBoardId,
+      columnId: targetStatus,
+    }))
     return Boards.transferCard(this, cardId, fromBoardId, toBoardId, targetStatus)
   }
 
@@ -881,7 +1005,8 @@ export class KanbanSDK {
    * console.log(card.id) // '7'
    * ```
    */
-  async createCard(data: CreateCardInput): Promise<Card> {
+  async createCard(data: CreateCardInput, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('card.create', this._withAuthContext(auth, { boardId: data.boardId }))
     return Cards.createCard(this, data)
   }
 
@@ -912,7 +1037,8 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
+  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('card.update', this._withAuthContext(auth, { cardId, boardId }))
     return Cards.updateCard(this, cardId, updates, boardId)
   }
 
@@ -963,7 +1089,12 @@ export class KanbanSDK {
    * console.log(result.data.severity) // 'high'
    * ```
    */
-  async submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
+  async submitForm(input: SubmitFormInput, auth?: AuthContext): Promise<SubmitFormResult> {
+    await this._authorizeAction('form.submit', this._withAuthContext(auth, {
+      boardId: input.boardId,
+      cardId: input.cardId,
+      formId: input.formId,
+    }))
     return Cards.submitForm(this, input)
   }
 
@@ -990,7 +1121,8 @@ export class KanbanSDK {
    * await sdk.triggerAction('42', 'sendEmail', 'bugs')
    * ```
    */
-  async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
+  async triggerAction(cardId: string, action: string, boardId?: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('card.action.trigger', this._withAuthContext(auth, { cardId, boardId, actionKey: action }))
     return Cards.triggerAction(this, cardId, action, boardId)
   }
 
@@ -1018,7 +1150,8 @@ export class KanbanSDK {
    * const done = await sdk.moveCard('42', 'done')
    * ```
    */
-  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
+  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('card.move', this._withAuthContext(auth, { cardId, boardId, columnId: newStatus }))
     return Cards.moveCard(this, cardId, newStatus, position, boardId)
   }
 
@@ -1036,7 +1169,8 @@ export class KanbanSDK {
    * await sdk.deleteCard('42', 'bugs')
    * ```
    */
-  async deleteCard(cardId: string, boardId?: string): Promise<void> {
+  async deleteCard(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('card.delete', this._withAuthContext(auth, { cardId, boardId }))
     return Cards.deleteCard(this, cardId, boardId)
   }
 
@@ -1054,7 +1188,8 @@ export class KanbanSDK {
    * await sdk.permanentlyDeleteCard('42', 'bugs')
    * ```
    */
-  async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
+  async permanentlyDeleteCard(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('card.delete', this._withAuthContext(auth, { cardId, boardId }))
     return Cards.permanentlyDeleteCard(this, cardId, boardId)
   }
 
@@ -1162,7 +1297,8 @@ export class KanbanSDK {
    * await sdk.deleteLabel('bug')
    * ```
    */
-  async deleteLabel(name: string): Promise<void> {
+  async deleteLabel(name: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('label.delete', this._withAuthContext(auth, { labelName: name }))
     return Labels.deleteLabel(this, name)
   }
 
@@ -1182,7 +1318,8 @@ export class KanbanSDK {
    * // All cards with 'bug' label now have 'defect' instead
    * ```
    */
-  async renameLabel(oldName: string, newName: string): Promise<void> {
+  async renameLabel(oldName: string, newName: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('label.rename', this._withAuthContext(auth, { labelName: oldName }))
     return Labels.renameLabel(this, oldName, newName)
   }
 
@@ -1249,7 +1386,8 @@ export class KanbanSDK {
    * console.log(card.attachments) // ['screenshot.png']
    * ```
    */
-  async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
+  async addAttachment(cardId: string, sourcePath: string, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('attachment.add', this._withAuthContext(auth, { cardId, boardId }))
     return Attachments.addAttachment(this, cardId, sourcePath, boardId)
   }
 
@@ -1270,7 +1408,8 @@ export class KanbanSDK {
    * const card = await sdk.removeAttachment('42', 'old-screenshot.png')
    * ```
    */
-  async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card> {
+  async removeAttachment(cardId: string, attachment: string, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('attachment.remove', this._withAuthContext(auth, { cardId, boardId, attachment }))
     return Attachments.removeAttachment(this, cardId, attachment, boardId)
   }
 
@@ -1295,8 +1434,9 @@ export class KanbanSDK {
   /**
    * Returns the absolute path to the attachment directory for a card.
    *
-   * For the markdown engine this is `{column_dir}/attachments/`.
-   * For the SQLite engine this is `.kanban/boards/{boardId}/attachments/{cardId}/`.
+    * For the default markdown/localfs path this is typically
+    * `{column_dir}/attachments/`. Other providers may return a different local
+    * directory or `null` when attachments are not directly browseable on disk.
    *
    * @param cardId - The ID of the card.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
@@ -1353,7 +1493,8 @@ export class KanbanSDK {
    * console.log(card.comments.length) // 1
    * ```
    */
-  async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card> {
+  async addComment(cardId: string, author: string, content: string, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('comment.create', this._withAuthContext(auth, { cardId, boardId }))
     return Comments.addComment(this, cardId, author, content, boardId)
   }
 
@@ -1373,7 +1514,8 @@ export class KanbanSDK {
    * const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
    * ```
    */
-  async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card> {
+  async updateComment(cardId: string, commentId: string, content: string, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('comment.update', this._withAuthContext(auth, { cardId, boardId, commentId }))
     return Comments.updateComment(this, cardId, commentId, content, boardId)
   }
 
@@ -1391,7 +1533,8 @@ export class KanbanSDK {
    * const card = await sdk.deleteComment('42', 'c2')
    * ```
    */
-  async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card> {
+  async deleteComment(cardId: string, commentId: string, boardId?: string, auth?: AuthContext): Promise<Card> {
+    await this._authorizeAction('comment.delete', this._withAuthContext(auth, { cardId, boardId, commentId }))
     return Comments.deleteComment(this, cardId, commentId, boardId)
   }
 
@@ -1400,8 +1543,10 @@ export class KanbanSDK {
   /**
    * Returns the absolute path to the log file for a card.
    *
-   * The log file is stored alongside the card's markdown file (or in the
-   * card's attachment directory for SQLite) as `<cardId>.log`.
+    * The log file is stored as the card attachment `<cardId>.log` through the
+    * active `attachment.storage` provider. File-backed providers usually return
+    * a stable workspace path, while remote providers may return a materialized
+    * temporary local file path instead.
    *
    * @param cardId - The ID of the card.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
@@ -1437,8 +1582,11 @@ export class KanbanSDK {
   /**
    * Adds a log entry to a card.
    *
-   * Appends a new line to the card's `.log` file. If the file does not exist,
-   * it is created and automatically added to the card's attachments array.
+    * Appends a new line to the card's `.log` attachment via the active
+    * attachment-storage capability. Providers may handle this with a native
+    * append hook when available, otherwise the SDK falls back to a safe
+    * read/modify/write cycle. If the file does not exist, it is created and
+    * automatically added to the card's attachments array.
    * The timestamp defaults to the current time if not provided.
    * The source defaults to `'default'` if not provided.
    *
@@ -1465,16 +1613,19 @@ export class KanbanSDK {
     cardId: string,
     text: string,
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-    boardId?: string
+    boardId?: string,
+    auth?: AuthContext
   ): Promise<LogEntry> {
+    await this._authorizeAction('log.add', this._withAuthContext(auth, { cardId, boardId }))
     return Logs.addLog(this, cardId, text, options, boardId)
   }
 
   /**
    * Clears all log entries for a card by deleting the `.log` file.
    *
-   * The log file is removed from disk and from the card's attachments array.
-   * New log entries will recreate the file automatically.
+    * The log attachment reference is removed from the card's attachments array.
+    * When a local/materialized file exists, it is deleted best-effort as well.
+    * New log entries recreate the log attachment automatically.
    *
    * @param cardId - The ID of the card whose logs to clear.
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
@@ -1486,7 +1637,8 @@ export class KanbanSDK {
    * await sdk.clearLogs('42')
    * ```
    */
-  async clearLogs(cardId: string, boardId?: string): Promise<void> {
+  async clearLogs(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('log.clear', this._withAuthContext(auth, { cardId, boardId }))
     return Logs.clearLogs(this, cardId, boardId)
   }
 
@@ -1547,8 +1699,10 @@ export class KanbanSDK {
   async addBoardLog(
     text: string,
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-    boardId?: string
+    boardId?: string,
+    auth?: AuthContext
   ): Promise<LogEntry> {
+    await this._authorizeAction('board.log.add', this._withAuthContext(auth, { boardId }))
     return Logs.addBoardLog(this, text, options, boardId)
   }
 
@@ -1566,7 +1720,8 @@ export class KanbanSDK {
    * await sdk.clearBoardLogs()
    * ```
    */
-  async clearBoardLogs(boardId?: string): Promise<void> {
+  async clearBoardLogs(boardId?: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('board.log.clear', this._withAuthContext(auth, { boardId }))
     return Logs.clearBoardLogs(this, boardId)
   }
 
@@ -1661,7 +1816,8 @@ export class KanbanSDK {
    * const columns = await sdk.removeColumn('blocked', 'default')
    * ```
    */
-  async removeColumn(columnId: string, boardId?: string): Promise<KanbanColumn[]> {
+  async removeColumn(columnId: string, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
+    await this._authorizeAction('column.delete', this._withAuthContext(auth, { boardId, columnId }))
     return Columns.removeColumn(this, columnId, boardId)
   }
 
@@ -1683,7 +1839,8 @@ export class KanbanSDK {
    * console.log(`Moved ${moved} cards to deleted`)
    * ```
    */
-  async cleanupColumn(columnId: string, boardId?: string): Promise<number> {
+  async cleanupColumn(columnId: string, boardId?: string, auth?: AuthContext): Promise<number> {
+    await this._authorizeAction('column.cleanup', this._withAuthContext(auth, { boardId, columnId }))
     return Columns.cleanupColumn(this, columnId, boardId)
   }
 
@@ -1702,7 +1859,8 @@ export class KanbanSDK {
    * console.log(`Permanently deleted ${count} cards`)
    * ```
    */
-  async purgeDeletedCards(boardId?: string): Promise<number> {
+  async purgeDeletedCards(boardId?: string, auth?: AuthContext): Promise<number> {
+    await this._authorizeAction('card.purgeDeleted', this._withAuthContext(auth, { boardId }))
     return Columns.purgeDeletedCards(this, boardId)
   }
 
@@ -1803,9 +1961,10 @@ export class KanbanSDK {
    * Migrates all card data from the current storage engine to SQLite.
    *
    * Cards are scanned from every board using the active engine, then written
-   * to a new {@link SqliteStorageEngine}. After all data has been copied the
-   * workspace `.kanban.json` is updated with `storageEngine: 'sqlite'` and
-   * `sqlitePath` so that subsequent SDK instances use the new engine.
+    * through the configured `sqlite` compatibility provider. After all data has
+    * been copied the workspace `.kanban.json` is updated with
+    * `storageEngine: 'sqlite'` and `sqlitePath` so that subsequent SDK instances
+    * resolve the same compatibility provider.
    *
    * The existing markdown files are **not** deleted; they serve as a manual
    * backup until the caller explicitly removes them.
@@ -1826,7 +1985,8 @@ export class KanbanSDK {
   }
 
   /**
-   * Migrates all card data from the current SQLite engine back to markdown files.
+    * Migrates all card data from the current `sqlite` compatibility provider back
+    * to markdown files.
    *
    * Cards are scanned from every board in the SQLite database and written as
    * individual `.md` files under `.kanban/boards/<boardId>/<status>/`. After

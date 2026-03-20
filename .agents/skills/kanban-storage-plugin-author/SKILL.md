@@ -33,6 +33,10 @@ The package should normally export one or both of:
 - `cardStoragePlugin`
 - `attachmentStoragePlugin`
 
+If the attachment provider supports efficient append-heavy workloads (for example card logs), it may also implement the optional hook:
+
+- `appendAttachment(card, attachment, content)`
+
 ## First move
 
 Before writing files:
@@ -106,6 +110,7 @@ For an attachment plugin, the important shape is:
 - `manifest.id`
 - `manifest.provides` including `attachment.storage`
 - `copyAttachment(...)`
+- optional `appendAttachment(...)` when the backend can efficiently append in-place
 - plus either `getCardDir(...)` or `materializeAttachment(...)`
 
 Use `references/provider-contracts.md` for the compact contract summary.
@@ -121,6 +126,7 @@ That means:
 - exports map
 - source entry file
 - README with install/config instructions
+- docs that match the real contract, including any optional hooks like `appendAttachment(...)`
 
 Use the bundled templates as a starting point when they fit:
 
@@ -180,6 +186,9 @@ The README you generate for the new package should always include:
 - example `.kanban.json`
 - required options
 - whether attachments are handled by this package or left to `localfs`
+- whether optional behaviors such as `appendAttachment(...)` are supported, and when the runtime falls back to normal rewrite behavior
+
+If you are changing the core kanban-lite repo while adding or evolving plugin behavior, update the related first-party docs in the same task — especially `docs/plugins.md`, `README.md`, and `CHANGELOG.md`.
 
 ### 8. Validate before stopping
 
@@ -189,6 +198,7 @@ Whenever possible:
 - check TypeScript errors
 - ensure the exported object names are exact
 - make sure the README example matches the actual provider id and options
+- make sure any append/log behavior described in docs matches the actual runtime fallback behavior
 
 ## Output expectations
 
@@ -206,6 +216,7 @@ At the end, provide a concise summary covering:
 - Keep the package independent and installable.
 - Keep the README practical.
 - Avoid modifying kanban-lite core code unless the user explicitly asks.
+- Keep related docs in sync when the contract changes; don’t land a plugin/runtime change without updating the relevant authoring and deep-dive docs.
 
 ## Avoid these mistakes
 

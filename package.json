@@ -85,6 +85,16 @@
         "command": "kanban-lite.addCard",
         "title": "Add Card",
         "category": "Kanban Lite"
+      },
+      {
+        "command": "kanban-lite.setAuthToken",
+        "title": "Set Auth Token",
+        "category": "Kanban Lite"
+      },
+      {
+        "command": "kanban-lite.clearAuthToken",
+        "title": "Clear Auth Token",
+        "category": "Kanban Lite"
       }
     ],
     "menus": {
@@ -105,6 +115,8 @@
   "scripts": {
     "publish:all": "vsce publish && ovsx publish",
     "vscode:prepublish": "npm run build",
+    "minio:up": "docker compose up -d minio minio-init",
+    "minio:down": "docker compose down",
     "build": "npm run build:extension && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
     "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.cjs --format=cjs --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.mjs --format=esm --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && tsc -p tsconfig.sdk.json",
     "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
@@ -124,6 +136,7 @@
     "dev:standalone-vite": "vite dev --config vite.standalone.config.ts",
     "dev": "npm run build:standalone-server && concurrently \"npm run watch:extension\" \"npm run watch:standalone-server\" \"npm run dev:standalone-server\" \"npm run dev:standalone-vite\"",
     "test": "vitest run",
+    "test:integration:minio": "npm run minio:up && vitest run --config vitest.integration.config.ts src/sdk/__tests__/s3-attachment.integration.test.ts",
     "test:watch": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
@@ -140,7 +153,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.0",
@@ -176,7 +188,6 @@
     "@tiptap/pm": "^3.15.3",
     "@tiptap/react": "^3.15.3",
     "@tiptap/starter-kit": "^3.15.3",
-    "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.0",
     "clsx": "^2.1.1",
     "fractional-indexing": "^3.2.0",

@@ -2,11 +2,10 @@ import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { Card } from '../../shared/types'
 import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities } from '../../shared/config'
+import type { AuthContext, AuthDecision } from '../types'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { MARKDOWN_PLUGIN } from './markdown'
-import { SQLITE_PLUGIN, createSqliteAttachmentPlugin } from './sqlite'
-import { MYSQL_PLUGIN, createMysqlAttachmentPlugin } from './mysql'
 
 const runtimeRequire = createRequire(
   typeof __filename === 'string' && __filename
@@ -37,7 +36,7 @@ export interface AuthPluginManifest {
 /**
  * Contract for `auth.identity` capability providers.
  *
- * Resolves a raw token to a typed identity. The built-in `noop` provider
+ * Resolves an auth context to a typed identity. The built-in `noop` provider
  * always returns `null` (anonymous), preserving the current open-access
  * behavior until a real provider is configured.
  *
@@ -45,36 +44,43 @@ export interface AuthPluginManifest {
  */
 export interface AuthIdentityPlugin {
   readonly manifest: AuthPluginManifest
-  /** Resolves a token to an identity, or `null` for anonymous / invalid tokens. */
-  resolveIdentity(token: string | undefined): Promise<AuthIdentity | null>
+  /**
+   * Resolves an auth context to a caller identity, or `null` for
+   * anonymous / invalid tokens.
+   */
+  resolveIdentity(context: AuthContext): Promise<AuthIdentity | null>
 }
 
 /**
  * Contract for `auth.policy` capability providers.
  *
  * Determines whether a given identity may perform a named action. The
- * built-in `noop` provider always returns `true` (allow-all), preserving
- * the current open-access behavior until a real provider is configured.
+ * built-in `noop` provider always returns `{ allowed: true }` (allow-all),
+ * preserving the current open-access behavior until a real provider is
+ * configured.
  */
 export interface AuthPolicyPlugin {
   readonly manifest: AuthPluginManifest
-  /** Returns `true` when `identity` is authorized to perform `action`. */
-  checkPolicy(identity: AuthIdentity | null, action: string): Promise<boolean>
+  /**
+   * Returns an {@link AuthDecision} indicating whether `identity` is
+   * authorized to perform `action` in the given `context`.
+   */
+  checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision>
 }
 
 /** Built-in no-op identity provider. Always resolves to `null` (anonymous). */
 export const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'noop', provides: ['auth.identity'] },
-  async resolveIdentity(_token: string | undefined): Promise<AuthIdentity | null> {
+  async resolveIdentity(_context: AuthContext): Promise<AuthIdentity | null> {
     return null
   },
 }
 
-/** Built-in no-op policy provider. Always returns `true` (allow-all). */
+/** Built-in no-op policy provider. Always returns `{ allowed: true }` (allow-all). */
 export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'noop', provides: ['auth.policy'] },
-  async checkPolicy(_identity: AuthIdentity | null, _action: string): Promise<boolean> {
-    return true
+  async checkPolicy(_identity: AuthIdentity | null, _action: string, _context: AuthContext): Promise<AuthDecision> {
+    return { allowed: true }
   },
 }
 
@@ -134,6 +140,14 @@ export interface AttachmentStoragePlugin {
   getCardDir?(card: Card): string | null
   /** Copies `sourcePath` into the attachment directory for `card`. */
   copyAttachment(sourcePath: string, card: Card): Promise<void>
+  /**
+   * Appends `content` to an existing attachment when the provider can do so
+   * efficiently in-place (for example, an object-storage API with native append).
+   *
+   * Returns `true` when the append was handled by the provider and `false`
+   * when callers should fall back to read/modify/write via `copyAttachment`.
+   */
+  appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
   /**
    * Resolves or materializes a local file path for a named attachment.
    * Returns `null` when the provider cannot expose a safe local file.
@@ -211,8 +225,27 @@ function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace
 /** Registry of built-in card.storage plugins keyed by provider id. */
 const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
   ['markdown', MARKDOWN_PLUGIN],
-  ['sqlite', SQLITE_PLUGIN],
-  ['mysql', MYSQL_PLUGIN],
+])
+
+/**
+ * Maps short user-facing provider ids to their installable npm package names.
+ *
+ * The ids `sqlite` and `mysql` are compatibility aliases that keep the familiar
+ * user-visible provider id in `.kanban.json` while delegating implementation
+ * ownership to standalone, versioned packages. When a provider id is listed
+ * here and no built-in implementation is registered, the resolver loads the
+ * mapped package name and issues install hints that reference it.
+ *
+ * Install targets:
+ * - `sqlite` → `npm install kl-sqlite-storage`
+ * - `mysql`  → `npm install kl-mysql-storage`
+ *
+ * Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
+ * with CJS entry `dist/index.cjs`.
+ */
+export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['sqlite', 'kl-sqlite-storage'],
+  ['mysql', 'kl-mysql-storage'],
 ])
 
 // ---------------------------------------------------------------------------
@@ -220,12 +253,10 @@ const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
 // ---------------------------------------------------------------------------
 
 /** Set of provider ids that are handled as built-in attachment plugins. */
-export const BUILTIN_ATTACHMENT_IDS: ReadonlySet<string> = new Set(['localfs', 'sqlite', 'mysql'])
+export const BUILTIN_ATTACHMENT_IDS: ReadonlySet<string> = new Set(['localfs'])
 
 const BUILTIN_ATTACHMENT_PLUGINS: ReadonlyMap<string, (engine: StorageEngine) => AttachmentStoragePlugin> = new Map([
   ['localfs', createLocalFsAttachmentPlugin],
-  ['sqlite', createSqliteAttachmentPlugin],
-  ['mysql', createMysqlAttachmentPlugin],
 ])
 
 function resolveBuiltinAttachmentPlugin(providerName: string, engine: StorageEngine): AttachmentStoragePlugin {
@@ -260,6 +291,35 @@ function materializeAttachmentFromDir(
 // External plugin loaders
 // ---------------------------------------------------------------------------
 
+function isMissingRequestedModule(request: string, err: unknown): err is NodeJS.ErrnoException {
+  return (err as NodeJS.ErrnoException)?.code === 'MODULE_NOT_FOUND'
+    && typeof (err as Error)?.message === 'string'
+    && (err as Error).message.includes(`'${request}'`)
+}
+
+function tryLoadSiblingPackage(request: string): unknown {
+  const siblingPackagePath = path.resolve(process.cwd(), '..', request)
+  return runtimeRequire(siblingPackagePath)
+}
+
+function loadExternalModule(request: string): unknown {
+  try {
+    return runtimeRequire(request)
+  } catch (err: unknown) {
+    if (!isMissingRequestedModule(request, err)) throw err
+
+    try {
+      return tryLoadSiblingPackage(request)
+    } catch (siblingErr: unknown) {
+      const siblingPackagePath = path.resolve(process.cwd(), '..', request)
+      if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
+        throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
+      }
+      throw siblingErr
+    }
+  }
+}
+
 /**
  * Lazily loads an external npm card-storage plugin.
  * Returns a deterministic, actionable error when the package is not installed
@@ -268,18 +328,7 @@ function materializeAttachmentFromDir(
  * @internal
  */
 function loadExternalCardPlugin(providerName: string): CardStoragePlugin {
-  let mod: { default?: unknown; cardStoragePlugin?: unknown }
-  try {
-    mod = runtimeRequire(providerName) as typeof mod
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') {
-      throw new Error(
-        `Card storage plugin "${providerName}" is not installed. ` +
-        `Run: npm install ${providerName}`
-      )
-    }
-    throw err
-  }
+  const mod = loadExternalModule(providerName) as { default?: unknown; cardStoragePlugin?: unknown }
 
   const plugin = (mod.cardStoragePlugin ?? mod.default) as CardStoragePlugin | undefined
   if (
@@ -303,18 +352,7 @@ function loadExternalCardPlugin(providerName: string): CardStoragePlugin {
  * @internal
  */
 function loadExternalAttachmentPlugin(providerName: string): AttachmentStoragePlugin {
-  let mod: { default?: unknown; attachmentStoragePlugin?: unknown }
-  try {
-    mod = runtimeRequire(providerName) as typeof mod
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') {
-      throw new Error(
-        `Attachment storage plugin "${providerName}" is not installed. ` +
-        `Run: npm install ${providerName}`
-      )
-    }
-    throw err
-  }
+  const mod = loadExternalModule(providerName) as { default?: unknown; attachmentStoragePlugin?: unknown }
 
   const plugin = (mod.attachmentStoragePlugin ?? mod.default) as AttachmentStoragePlugin | undefined
   if (
@@ -352,7 +390,19 @@ function isRecoverableAttachmentPluginError(providerName: string, err: unknown):
 function resolveCardPlugin(ref: ProviderRef): CardStoragePlugin {
   const builtin = BUILTIN_CARD_PLUGINS.get(ref.provider)
   if (builtin) return builtin
-  return loadExternalCardPlugin(ref.provider)
+  // Translate short compatibility alias ids to their external package names so
+  // that module resolution and install hints use the correct package, not the
+  // short user-facing id.
+  const packageName = PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  return loadExternalCardPlugin(packageName)
+}
+
+function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
+  if (BUILTIN_ATTACHMENT_IDS.has(ref.provider)) {
+    throw new Error(`Built-in attachment storage provider "${ref.provider}" requires an active storage engine.`)
+  }
+  const packageName = PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  return loadExternalAttachmentPlugin(packageName)
 }
 
 /**
@@ -386,19 +436,23 @@ export function resolveCapabilityBag(
   const attachRef = capabilities['attachment.storage']
   let attachPlugin: AttachmentStoragePlugin
 
-  if (BUILTIN_ATTACHMENT_IDS.has(attachRef.provider)) {
-    if (attachRef.provider === 'localfs' && shouldAttemptSamePluginAttachmentProvider(cardRef.provider, attachRef.provider)) {
+  if (attachRef.provider === 'localfs') {
+    if (shouldAttemptSamePluginAttachmentProvider(cardRef.provider, attachRef.provider)) {
+      // Use the alias package name so the same-package attachment fallback
+      // loads from the correct external package (e.g. kl-sqlite-storage,
+      // not the short alias id 'sqlite').
+      const cardPackageName = PROVIDER_ALIASES.get(cardRef.provider) ?? cardRef.provider
       try {
-        attachPlugin = loadExternalAttachmentPlugin(cardRef.provider)
+        attachPlugin = loadExternalAttachmentPlugin(cardPackageName)
       } catch (err) {
-        if (!isRecoverableAttachmentPluginError(cardRef.provider, err)) throw err
+        if (!isRecoverableAttachmentPluginError(cardPackageName, err)) throw err
         attachPlugin = resolveBuiltinAttachmentPlugin(attachRef.provider, cardEngine)
       }
     } else {
       attachPlugin = resolveBuiltinAttachmentPlugin(attachRef.provider, cardEngine)
     }
   } else {
-    attachPlugin = loadExternalAttachmentPlugin(attachRef.provider)
+    attachPlugin = resolveAttachmentPlugin(attachRef)
   }
 
   const resolvedAuth: ResolvedAuthCapabilities = authCapabilities ?? {

@@ -1,0 +1,32 @@
+task_id: T8
+plan_id: 20260320-sqlite-mysql-external-plugins
+status: failed
+failure_type: fixable
+summary: |
+  Verification found blocker-level boundary regressions: core still contains provider-owned SQLite/MySQL implementation code and a direct SQLite engine test, and public docs still describe sqlite/mysql as built-ins in places.
+verified:
+  - core targeted host-contract tests passed: src/sdk/__tests__/plugin-registry.test.ts, src/sdk/__tests__/storage-migration.test.ts
+  - kl-sqlite-storage: build, typecheck, sqlite-storage.integration.test.ts passed
+  - kl-mysql-storage: build, typecheck, test:integration passed
+critical_issues:
+  - location: src/sdk/__tests__/storage-sqlite.test.ts
+    issue: Core still owns provider-specific SQLite engine CRUD/schema coverage via direct SqliteStorageEngine imports.
+  - location: src/sdk/plugins/sqlite.ts
+    issue: Core still contains full SQLite provider implementation instead of only host/plugin contract logic.
+  - location: src/sdk/plugins/mysql.ts
+    issue: Core still contains full MySQL provider implementation instead of only host/plugin contract logic.
+  - location: src/sdk/plugins/localfs.ts
+    issue: Core localfs attachment fallback still imports and dispatches to provider-specific sqlite/mysql helpers, leaking provider internals back into core.
+non_critical_issues:
+  - location: docs/plugins.md:1397
+    issue: Quick reference still labels sqlite/mysql as built-in providers.
+  - location: README.md:1097
+    issue: Provider status section still says built-in sqlite/mysql instead of compatibility aliases/external providers.
+recommended_next_verification:
+  - command: cd /Users/admin/dev/kanban-light && npm run typecheck
+  - command: cd /Users/admin/dev/kanban-light && npm run docs
+  - files:
+      - src/sdk/plugins/localfs.ts
+      - src/sdk/__tests__/storage-sqlite.test.ts
+      - docs/plugins.md
+      - README.md

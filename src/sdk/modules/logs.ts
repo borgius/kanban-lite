@@ -1,3 +1,4 @@
+import * as os from 'node:os'
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import type { Card } from '../../shared/types'
@@ -32,13 +33,47 @@ function serializeLogEntry(entry: LogEntry): string {
   return line
 }
 
-function getLogDir(ctx: SDKContext, card: Card): string {
-  const dir = ctx.getAttachmentStoragePath(card)
-  if (!dir) {
-    const provider = ctx.capabilities?.providers['attachment.storage'].provider ?? 'unknown'
-    throw new Error(`Attachment storage provider "${provider}" does not expose a local directory for logs.`)
+function getLogFileName(card: Card): string {
+  return `${card.id}.log`
+}
+
+async function resolveExistingLogPath(ctx: SDKContext, card: Card): Promise<string | null> {
+  const logFileName = getLogFileName(card)
+
+  if (Array.isArray(card.attachments) && card.attachments.includes(logFileName)) {
+    return ctx.materializeAttachment(card, logFileName)
   }
-  return dir
+
+  const dir = ctx.getAttachmentStoragePath(card)
+  if (!dir) return null
+  return path.join(dir, logFileName)
+}
+
+async function readLogText(ctx: SDKContext, card: Card): Promise<string> {
+  const existingPath = await resolveExistingLogPath(ctx, card)
+  if (!existingPath) return ''
+  try {
+    return await fs.readFile(existingPath, 'utf-8')
+  } catch {
+    return ''
+  }
+}
+
+async function writeLogText(ctx: SDKContext, card: Card, content: string): Promise<void> {
+  const logFileName = getLogFileName(card)
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kanban-log-'))
+  const tempPath = path.join(tempDir, logFileName)
+
+  try {
+    await fs.writeFile(tempPath, content, 'utf-8')
+    await ctx.copyAttachment(tempPath, card)
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true })
+  }
+}
+
+async function appendLogText(ctx: SDKContext, card: Card, content: string): Promise<boolean> {
+  return ctx.appendAttachment(card, getLogFileName(card), content)
 }
 
 // --- Card-level log management ---
@@ -49,27 +84,23 @@ function getLogDir(ctx: SDKContext, card: Card): string {
 export async function getLogFilePath(ctx: SDKContext, cardId: string, boardId?: string): Promise<string | null> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) return null
-  const dir = getLogDir(ctx, card)
-  return path.join(dir, `${card.id}.log`)
+  return resolveExistingLogPath(ctx, card)
 }
 
 /**
  * Lists all log entries for a card.
  */
 export async function listLogs(ctx: SDKContext, cardId: string, boardId?: string): Promise<LogEntry[]> {
-  const logPath = await getLogFilePath(ctx, cardId, boardId)
-  if (!logPath) throw new Error(`Card not found: ${cardId}`)
-  try {
-    const content = await fs.readFile(logPath, 'utf-8')
-    const entries: LogEntry[] = []
-    for (const line of content.split('\n')) {
-      const entry = parseLogLine(line)
-      if (entry) entries.push(entry)
-    }
-    return entries
-  } catch {
-    return []
+  const card = await ctx.getCard(cardId, boardId)
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const content = await readLogText(ctx, card)
+  const entries: LogEntry[] = []
+  for (const line of content.split('\n')) {
+    const entry = parseLogLine(line)
+    if (entry) entries.push(entry)
   }
+  return entries
 }
 
 /**
@@ -93,14 +124,14 @@ export async function addLog(
     ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
   }
 
-  const dir = getLogDir(ctx, card)
-  const logFileName = `${card.id}.log`
-  const logPath = path.join(dir, logFileName)
-
-  await fs.mkdir(dir, { recursive: true })
-
+  const logFileName = getLogFileName(card)
   const line = serializeLogEntry(entry) + '\n'
-  await fs.appendFile(logPath, line, 'utf-8')
+  const appendedInPlace = await appendLogText(ctx, card, line)
+  if (!appendedInPlace) {
+    const existingContent = await readLogText(ctx, card)
+    const nextContent = existingContent + line
+    await writeLogText(ctx, card, nextContent)
+  }
 
   if (!card.attachments.includes(logFileName)) {
     card.attachments.push(logFileName)
@@ -119,14 +150,15 @@ export async function clearLogs(ctx: SDKContext, cardId: string, boardId?: strin
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const logFileName = `${card.id}.log`
-  const dir = getLogDir(ctx, card)
-  const logPath = path.join(dir, logFileName)
+  const logFileName = getLogFileName(card)
+  const logPath = await resolveExistingLogPath(ctx, card)
 
-  try {
-    await fs.unlink(logPath)
-  } catch {
-    // File may not exist — that's fine
+  if (logPath) {
+    try {
+      await fs.unlink(logPath)
+    } catch {
+      // File may not exist or may only exist remotely — that's fine
+    }
   }
 
   if (card.attachments.includes(logFileName)) {

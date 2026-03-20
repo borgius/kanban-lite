@@ -830,7 +830,43 @@ Returns workspace-level connection and storage metadata, including resolved prov
       "attachment.storage": "localfs"
     },
     "isFileBacked": true,
-    "watchGlob": "boards/**/*.md"
+    "watchGlob": "boards/**/*.md",
+    "auth": {
+      "identityProvider": "noop",
+      "policyProvider": "noop",
+      "configured": false,
+      "tokenPresent": false,
+      "tokenSource": null,
+      "transport": "http"
+    }
+  }
+}
+```
+
+---
+
+### Get Auth Status
+
+```
+GET /api/auth
+```
+
+Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "identityProvider": "noop",
+    "policyProvider": "noop",
+    "identityEnabled": false,
+    "policyEnabled": false,
+    "configured": false,
+    "tokenPresent": false,
+    "tokenSource": null,
+    "transport": "http"
   }
 }
 ```

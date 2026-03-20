@@ -78,8 +78,12 @@ HTTP server are all built on top of.
     * [.capabilities](#KanbanSDK+capabilities)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
     * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
+    * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
+    * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
+    * [._withAuthContext()](#KanbanSDK+_withAuthContext)
     * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
     * [.getAttachmentStoragePath(card)](#KanbanSDK+getAttachmentStoragePath) ⇒
+    * [.appendAttachment()](#KanbanSDK+appendAttachment)
     * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
     * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
     * [.close()](#KanbanSDK+close)
@@ -236,6 +240,63 @@ console.log(status.watchGlob) // e.g. markdown card glob for board/status direct
 
 * * *
 
+<a name="KanbanSDK+getAuthStatus"></a>
+
+#### kanbanSDK.getAuthStatus() ⇒
+Returns auth provider metadata for host surfaces and diagnostics.
+
+Use this to inspect which identity and policy providers are active
+and whether real auth enforcement is enabled.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: An [AuthStatus](AuthStatus) snapshot containing the active provider ids
+  and boolean flags indicating whether non-noop providers are live.  
+**Example**  
+```ts
+const status = sdk.getAuthStatus()
+console.log(status.identityProvider) // 'noop' | 'my-token-plugin' | ...
+console.log(status.identityEnabled)  // false when no plugin configured
+```
+
+* * *
+
+<a name="KanbanSDK+_authorizeAction"></a>
+
+#### kanbanSDK.\_authorizeAction(action, context) ⇒
+Resolves caller identity and evaluates whether the named action is permitted.
+
+This is the internal SDK pre-action authorization seam. SDK methods that
+represent mutating or privileged operations should call this before
+executing their logic.
+
+When no auth plugins are configured the built-in noop path allows all
+actions anonymously, preserving the current open-access behavior
+for workspaces without an auth configuration.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: Fulfilled [AuthDecision](AuthDecision) when the action is permitted.  
+**Throws**:
+
+- <code>AuthError</code> When the policy plugin denies the action.
+
+**Internal**:   
+
+| Param | Description |
+| --- | --- |
+| action | Canonical action name (e.g. `'card.create'`, `'board.delete'`). |
+| context | Optional auth context from the inbound request. |
+
+
+* * *
+
+<a name="KanbanSDK+_withAuthContext"></a>
+
+#### kanbanSDK.\_withAuthContext()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
 <a name="KanbanSDK+getLocalCardPath"></a>
 
 #### kanbanSDK.getLocalCardPath(card) ⇒
@@ -281,6 +342,20 @@ workspace, while database-backed or remote attachment providers may return
 | --- | --- |
 | card | The resolved card object. |
 
+
+* * *
+
+<a name="KanbanSDK+appendAttachment"></a>
+
+#### kanbanSDK.appendAttachment()
+Requests an efficient in-place append for an attachment when the active
+attachment provider supports it.
+
+Returns `true` when the provider handled the append directly and `false`
+when callers should fall back to rewriting the attachment through the
+normal copy/materialization path.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -1285,8 +1360,9 @@ const files = await sdk.listAttachments('42')
 #### kanbanSDK.getAttachmentDir(cardId, boardId) ⇒
 Returns the absolute path to the attachment directory for a card.
 
-For the markdown engine this is `{column_dir}/attachments/`.
-For the SQLite engine this is `.kanban/boards/{boardId}/attachments/{cardId}/`.
+For the default markdown/localfs path this is typically
+`{column_dir}/attachments/`. Other providers may return a different local
+directory or `null` when attachments are not directly browseable on disk.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A promise resolving to the absolute directory path, or `null` if the card is not found.  
@@ -1418,8 +1494,10 @@ const card = await sdk.deleteComment('42', 'c2')
 #### kanbanSDK.getLogFilePath(cardId, boardId) ⇒
 Returns the absolute path to the log file for a card.
 
-The log file is stored alongside the card's markdown file (or in the
-card's attachment directory for SQLite) as `<cardId>.log`.
+The log file is stored as the card attachment `<cardId>.log` through the
+active `attachment.storage` provider. File-backed providers usually return
+a stable workspace path, while remote providers may return a materialized
+temporary local file path instead.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A promise resolving to the log file path, or `null` if the card is not found.  
@@ -1467,8 +1545,11 @@ for (const entry of logs) {
 #### kanbanSDK.addLog(cardId, text, options, boardId) ⇒
 Adds a log entry to a card.
 
-Appends a new line to the card's `.log` file. If the file does not exist,
-it is created and automatically added to the card's attachments array.
+Appends a new line to the card's `.log` attachment via the active
+attachment-storage capability. Providers may handle this with a native
+append hook when available, otherwise the SDK falls back to a safe
+read/modify/write cycle. If the file does not exist, it is created and
+automatically added to the card's attachments array.
 The timestamp defaults to the current time if not provided.
 The source defaults to `'default'` if not provided.
 
@@ -1505,8 +1586,9 @@ const entry2 = await sdk.addLog('42', 'Deploy complete', {
 #### kanbanSDK.clearLogs(cardId, boardId) ⇒
 Clears all log entries for a card by deleting the `.log` file.
 
-The log file is removed from disk and from the card's attachments array.
-New log entries will recreate the file automatically.
+The log attachment reference is removed from the card's attachments array.
+When a local/materialized file exists, it is deleted best-effort as well.
+New log entries recreate the log attachment automatically.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A promise that resolves when the logs have been cleared.  
@@ -1901,9 +1983,10 @@ sdk.updateSettings({
 Migrates all card data from the current storage engine to SQLite.
 
 Cards are scanned from every board using the active engine, then written
-to a new [SqliteStorageEngine](SqliteStorageEngine). After all data has been copied the
-workspace `.kanban.json` is updated with `storageEngine: 'sqlite'` and
-`sqlitePath` so that subsequent SDK instances use the new engine.
+through the configured `sqlite` compatibility provider. After all data has
+been copied the workspace `.kanban.json` is updated with
+`storageEngine: 'sqlite'` and `sqlitePath` so that subsequent SDK instances
+resolve the same compatibility provider.
 
 The existing markdown files are **not** deleted; they serve as a manual
 backup until the caller explicitly removes them.
@@ -1930,7 +2013,8 @@ console.log(`Migrated ${count} cards to SQLite`)
 <a name="KanbanSDK+migrateToMarkdown"></a>
 
 #### kanbanSDK.migrateToMarkdown() ⇒
-Migrates all card data from the current SQLite engine back to markdown files.
+Migrates all card data from the current `sqlite` compatibility provider back
+to markdown files.
 
 Cards are scanned from every board in the SQLite database and written as
 individual `.md` files under `.kanban/boards/<boardId>/<status>/`. After
@@ -2034,6 +2118,19 @@ Updates an existing webhook's configuration.
 
 
 ## Types
+
+<a name="AuthError"></a>
+
+### AuthError
+Typed error thrown by the SDK authorization seam when a policy plugin
+denies an action.
+
+Host surfaces should catch this to return appropriate error responses
+(HTTP 403, CLI error output, MCP tool error) without leaking token material.
+
+**Kind**: global class  
+
+* * *
 
 <a name="CARD_FORMAT_VERSION"></a>
 
@@ -2442,25 +2539,36 @@ writeConfig('/home/user/my-project', updated)
 
 <a name="normalizeAuthCapabilities"></a>
 
-### normalizeAuthCapabilities(config) ⇒
-Normalizes auth capability selections from config into a complete runtime map.
+### normalizeAuthCapabilities()
+Normalizes auth capability selections into a complete runtime capability map.
 
-Both `auth.identity` and `auth.policy` default to the built-in `noop`
-provider when not explicitly configured, preserving the current open-access
-behavior. Noop identity always resolves to `null` (anonymous) and noop
-policy always returns `true` (allow-all).
+Omitted auth providers default to the built-in `noop` implementations so
+behavior is unchanged when auth is not configured.
+
+The input object is never mutated.
 
 **Kind**: global function  
-**Returns**: Fully resolved auth capabilities with both namespaces present.  
 
-| Param | Description |
-| --- | --- |
-| config | A config fragment with an optional `auth` field. |
+* * *
 
-**Example**  
-```js
-normalizeAuthCapabilities({}) // => { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } }
-```
+<a name="normalizeStorageCapabilities"></a>
+
+### normalizeStorageCapabilities()
+Normalizes legacy storage settings plus capability-based plugin selections
+into a complete runtime capability map.
+
+Precedence:
+1. Explicit `plugins[namespace]`
+2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
+3. Backward-compatible defaults (`markdown` + `localfs`)
+
+Explicit built-in `attachment.storage` providers such as `sqlite` and
+`mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
+it away from the legacy `localfs` default.
+
+The input object is never mutated.
+
+**Kind**: global function  
 
 * * *
 
@@ -2662,7 +2770,29 @@ Built-in no-op identity provider. Always resolves to `null` (anonymous).
 <a name="NOOP_POLICY_PLUGIN"></a>
 
 ### NOOP\_POLICY\_PLUGIN
-Built-in no-op policy provider. Always returns `true` (allow-all).
+Built-in no-op policy provider. Always returns `{ allowed: true }` (allow-all).
+
+**Kind**: global variable  
+
+* * *
+
+<a name="PROVIDER_ALIASES"></a>
+
+### PROVIDER\_ALIASES
+Maps short user-facing provider ids to their installable npm package names.
+
+The ids `sqlite` and `mysql` are compatibility aliases that keep the familiar
+user-visible provider id in `.kanban.json` while delegating implementation
+ownership to standalone, versioned packages. When a provider id is listed
+here and no built-in implementation is registered, the resolver loads the
+mapped package name and issues install hints that reference it.
+
+Install targets:
+- `sqlite` → `npm install kl-sqlite-storage`
+- `mysql`  → `npm install kl-mysql-storage`
+
+Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
+with CJS entry `dist/index.cjs`.
 
 **Kind**: global variable  
 

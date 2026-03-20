@@ -4,16 +4,45 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
-import { SqliteStorageEngine } from '../plugins/sqlite'
-import { MysqlStorageEngine, MYSQL_PLUGIN } from '../plugins/mysql'
 import { KanbanSDK } from '../KanbanSDK'
 import { normalizeAuthCapabilities } from '../../shared/config'
+import { AuthError } from '../types'
+import type { AuthContext, AuthDecision } from '../types'
+import type { AuthIdentity } from '../plugins'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-plugin-test-'))
+}
+
+function installTempPackage(packageName: string, entrySource: string): () => void {
+  const packageDir = path.join(process.cwd(), 'node_modules', packageName)
+  const backupDir = fs.existsSync(packageDir)
+    ? fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+    : null
+
+  if (backupDir) {
+    fs.cpSync(packageDir, backupDir, { recursive: true })
+  }
+
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name: packageName, main: 'index.js' }, null, 2),
+    'utf-8',
+  )
+  fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+
+  return () => {
+    fs.rmSync(packageDir, { recursive: true, force: true })
+    if (backupDir) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.cpSync(backupDir, packageDir, { recursive: true })
+      fs.rmSync(backupDir, { recursive: true, force: true })
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +71,7 @@ describe('resolveCapabilityBag', () => {
     expect(bag.cardStorage).toBeInstanceOf(MarkdownStorageEngine)
   })
 
-  it('returns SqliteStorageEngine for sqlite provider', () => {
+  it('returns an external sqlite engine for the sqlite provider alias', () => {
     const bag = resolveCapabilityBag(
       {
         'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
@@ -50,7 +79,8 @@ describe('resolveCapabilityBag', () => {
       },
       kanbanDir,
     )
-    expect(bag.cardStorage).toBeInstanceOf(SqliteStorageEngine)
+    expect(bag.cardStorage.type).toBe('sqlite')
+    expect(bag.cardStorage.kanbanDir).toBe(kanbanDir)
   })
 
   it('sqlite provider resolves relative sqlitePath against workspaceRoot', () => {
@@ -61,7 +91,7 @@ describe('resolveCapabilityBag', () => {
       },
       kanbanDir,
     )
-    expect(bag.cardStorage).toBeInstanceOf(SqliteStorageEngine)
+    expect(bag.cardStorage.type).toBe('sqlite')
     // Engine should be created without throwing
     expect(bag.cardStorage.kanbanDir).toBe(kanbanDir)
   })
@@ -75,7 +105,7 @@ describe('resolveCapabilityBag', () => {
       },
       kanbanDir,
     )
-    expect(bag.cardStorage).toBeInstanceOf(SqliteStorageEngine)
+    expect(bag.cardStorage.type).toBe('sqlite')
   })
 
   it('providers field reflects the input capabilities', () => {
@@ -96,7 +126,7 @@ describe('resolveCapabilityBag', () => {
     expect(bag.attachmentStorage.manifest.provides).toContain('attachment.storage')
   })
 
-  it('explicit sqlite attachment provider resolves through the sqlite built-in plugin', () => {
+  it('explicit sqlite attachment provider resolves through the sqlite alias package', () => {
     const bag = resolveCapabilityBag(
       {
         'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
@@ -105,9 +135,22 @@ describe('resolveCapabilityBag', () => {
       kanbanDir,
     )
 
-    expect(bag.cardStorage).toBeInstanceOf(SqliteStorageEngine)
+    expect(bag.cardStorage.type).toBe('sqlite')
     expect(bag.attachmentStorage.manifest.id).toBe('sqlite')
     expect(bag.attachmentStorage.manifest.provides).toContain('attachment.storage')
+  })
+
+  it('uses the alias package attachment provider when sqlite card.storage keeps attachment.storage=localfs', () => {
+    const bag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      kanbanDir,
+    )
+
+    expect(bag.cardStorage.type).toBe('sqlite')
+    expect(bag.attachmentStorage.manifest.id).toBe('sqlite')
   })
 
   it('attachment plugin getCardDir delegates to card engine', () => {
@@ -159,6 +202,103 @@ describe('resolveCapabilityBag', () => {
       )
     ).toThrow(/some-external-attachment-plugin/)
   })
+
+  it('falls back to built-in localfs when an external card plugin does not export attachment.storage', () => {
+    const cleanup = installTempPackage(
+      'kanban-card-only-plugin',
+      `class CardOnlyEngine {
+  constructor(kanbanDir) { this.type = 'markdown'; this.kanbanDir = kanbanDir }
+  async init() {}
+  close() {}
+  async migrate() {}
+  async ensureBoardDirs() {}
+  async deleteBoardData() {}
+  async scanCards() { return [] }
+  async writeCard() {}
+  async moveCard() { return '' }
+  async renameCard() { return '' }
+  async deleteCard() {}
+  getCardDir() { return this.kanbanDir }
+  async copyAttachment() {}
+}
+module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-card-only-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) { return new CardOnlyEngine(kanbanDir) },
+  },
+}
+`
+    )
+
+    try {
+      const bag = resolveCapabilityBag(
+        {
+          'card.storage': { provider: 'kanban-card-only-plugin' },
+          'attachment.storage': { provider: 'localfs' },
+        },
+        kanbanDir,
+      )
+
+      expect(bag.cardStorage.type).toBe('markdown')
+      expect(bag.attachmentStorage.manifest.id).toBe('localfs')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects external card plugins with invalid manifests', () => {
+    const cleanup = installTempPackage(
+      'kanban-invalid-card-plugin',
+      `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-invalid-card-plugin', provides: ['attachment.storage'] },
+    createEngine() { return { type: 'invalid', kanbanDir: '.', init: async () => {}, close() {}, migrate: async () => {}, ensureBoardDirs: async () => {}, deleteBoardData: async () => {}, scanCards: async () => [], writeCard: async () => {}, moveCard: async () => '', renameCard: async () => '', deleteCard: async () => {}, getCardDir() { return '.' }, copyAttachment: async () => {} } },
+  },
+}
+`
+    )
+
+    try {
+      expect(() =>
+        resolveCapabilityBag(
+          {
+            'card.storage': { provider: 'kanban-invalid-card-plugin' },
+            'attachment.storage': { provider: 'localfs' },
+          },
+          kanbanDir,
+        )
+      ).toThrow(/valid cardStoragePlugin/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects external attachment plugins with invalid manifests', () => {
+    const cleanup = installTempPackage(
+      'kanban-invalid-attachment-plugin',
+      `module.exports = {
+  attachmentStoragePlugin: {
+    manifest: { id: 'kanban-invalid-attachment-plugin', provides: ['card.storage'] },
+    copyAttachment: async () => {},
+  },
+}
+`
+    )
+
+    try {
+      expect(() =>
+        resolveCapabilityBag(
+          {
+            'card.storage': { provider: 'markdown' },
+            'attachment.storage': { provider: 'kanban-invalid-attachment-plugin' },
+          },
+          kanbanDir,
+        )
+      ).toThrow(/valid attachmentStoragePlugin/)
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -170,97 +310,33 @@ describe('BUILTIN_ATTACHMENT_IDS', () => {
     expect(BUILTIN_ATTACHMENT_IDS.has('localfs')).toBe(true)
   })
 
-  it('contains sqlite and mysql', () => {
-    expect(BUILTIN_ATTACHMENT_IDS.has('sqlite')).toBe(true)
-    expect(BUILTIN_ATTACHMENT_IDS.has('mysql')).toBe(true)
+  it('does not treat sqlite and mysql as built-in attachment providers', () => {
+    expect(BUILTIN_ATTACHMENT_IDS.has('sqlite')).toBe(false)
+    expect(BUILTIN_ATTACHMENT_IDS.has('mysql')).toBe(false)
   })
 })
 
 // ---------------------------------------------------------------------------
-// MySQL plugin
+// PROVIDER_ALIASES
 // ---------------------------------------------------------------------------
 
-describe('MYSQL_PLUGIN', () => {
-  let workspaceDir: string
-  let kanbanDir: string
-
-  beforeEach(() => {
-    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mysql-test-'))
-    kanbanDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(kanbanDir, { recursive: true })
+describe('PROVIDER_ALIASES', () => {
+  it('maps sqlite to kl-sqlite-storage', () => {
+    expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-sqlite-storage')
   })
 
-  afterEach(() => {
-    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  it('maps mysql to kl-mysql-storage', () => {
+    expect(PROVIDER_ALIASES.get('mysql')).toBe('kl-mysql-storage')
   })
 
-  it('has correct manifest id and capability', () => {
-    expect(MYSQL_PLUGIN.manifest.id).toBe('mysql')
-    expect(MYSQL_PLUGIN.manifest.provides).toContain('card.storage')
+  it('has no alias for unknown provider ids', () => {
+    expect(PROVIDER_ALIASES.get('some-external-provider')).toBeUndefined()
+    expect(PROVIDER_ALIASES.get('markdown')).toBeUndefined()
+    expect(PROVIDER_ALIASES.get('localfs')).toBeUndefined()
   })
 
-  it('createEngine returns a MysqlStorageEngine', () => {
-    const engine = MYSQL_PLUGIN.createEngine(kanbanDir, { database: 'test_db' })
-    expect(engine).toBeInstanceOf(MysqlStorageEngine)
-    expect(engine.type).toBe('mysql')
-    expect(engine.kanbanDir).toBe(kanbanDir)
-  })
-
-  it('createEngine throws when database option is missing', () => {
-    expect(() => MYSQL_PLUGIN.createEngine(kanbanDir, {})).toThrow(/database/)
-  })
-
-  it('createEngine throws when options are absent', () => {
-    expect(() => MYSQL_PLUGIN.createEngine(kanbanDir)).toThrow(/database/)
-  })
-
-  it('engine.init() throws a clear error when mysql2 is not installed', async () => {
-    const engine = MYSQL_PLUGIN.createEngine(kanbanDir, { database: 'test_db' })
-    await expect(engine.init()).rejects.toThrow(/mysql2/)
-    await expect(engine.init()).rejects.toThrow(/npm install mysql2/)
-  })
-
-  it('getCardDir returns expected attachment path', () => {
-    const engine = MYSQL_PLUGIN.createEngine(kanbanDir, { database: 'test_db' })
-    const card = { id: '1', boardId: 'default', status: 'backlog' } as Parameters<MysqlStorageEngine['getCardDir']>[0]
-    const dir = engine.getCardDir(card)
-    expect(dir).toBe(path.join(kanbanDir, 'boards', 'default', 'backlog', 'attachments'))
-  })
-
-  it('resolveCapabilityBag creates MysqlStorageEngine for mysql provider', () => {
-    const bag = resolveCapabilityBag(
-      {
-        'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
-        'attachment.storage': { provider: 'localfs' },
-      },
-      kanbanDir,
-    )
-    expect(bag.cardStorage).toBeInstanceOf(MysqlStorageEngine)
-    expect(bag.cardStorage.type).toBe('mysql')
-    expect(bag.providers['card.storage'].provider).toBe('mysql')
-  })
-
-  it('explicit mysql attachment provider resolves through the mysql built-in plugin', () => {
-    const bag = resolveCapabilityBag(
-      {
-        'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
-        'attachment.storage': { provider: 'mysql' },
-      },
-      kanbanDir,
-    )
-
-    expect(bag.cardStorage).toBeInstanceOf(MysqlStorageEngine)
-    expect(bag.attachmentStorage.manifest.id).toBe('mysql')
-    expect(bag.attachmentStorage.manifest.provides).toContain('attachment.storage')
-  })
-
-  it('MySQL provider id is visible through SDK capabilities', () => {
-    const sdk = new KanbanSDK(kanbanDir, {
-      capabilities: { 'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } } },
-    })
-    expect(sdk.capabilities?.providers['card.storage'].provider).toBe('mysql')
-    expect(sdk.storageEngine.type).toBe('mysql')
-    sdk.close()
+  it('contains exactly the two expected short alias ids', () => {
+    expect([...PROVIDER_ALIASES.keys()].sort()).toEqual(['mysql', 'sqlite'])
   })
 })
 
@@ -305,6 +381,43 @@ describe('external attachment plugin loading', () => {
       )
     ).toThrow(/some-external-attachment-plugin/)
   })
+
+  it('uses the alias package attachment provider when mysql card.storage keeps attachment.storage=localfs', () => {
+    const bag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      kanbanDir,
+    )
+
+    expect(bag.cardStorage.type).toBe('mysql')
+    expect(bag.attachmentStorage.manifest.id).toBe('mysql')
+    expect(bag.providers['card.storage'].provider).toBe('mysql')
+  })
+
+  it('explicit mysql attachment provider resolves through the mysql alias package', () => {
+    const bag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
+        'attachment.storage': { provider: 'mysql' },
+      },
+      kanbanDir,
+    )
+
+    expect(bag.cardStorage.type).toBe('mysql')
+    expect(bag.attachmentStorage.manifest.id).toBe('mysql')
+    expect(bag.attachmentStorage.manifest.provides).toContain('attachment.storage')
+  })
+
+  it('MySQL provider id is visible through SDK capabilities', () => {
+    const sdk = new KanbanSDK(kanbanDir, {
+      capabilities: { 'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } } },
+    })
+    expect(sdk.capabilities?.providers['card.storage'].provider).toBe('mysql')
+    expect(sdk.storageEngine.type).toBe('mysql')
+    sdk.close()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -333,7 +446,7 @@ describe('KanbanSDK capability resolution', () => {
 
   it('resolves sqlite engine via storageEngine option', () => {
     const sdk = new KanbanSDK(kanbanDir, { storageEngine: 'sqlite' })
-    expect(sdk.storageEngine).toBeInstanceOf(SqliteStorageEngine)
+    expect(sdk.storageEngine.type).toBe('sqlite')
     sdk.close()
   })
 
@@ -351,7 +464,7 @@ describe('KanbanSDK capability resolution', () => {
         'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
       },
     })
-    expect(sdk.storageEngine).toBeInstanceOf(SqliteStorageEngine)
+    expect(sdk.storageEngine.type).toBe('sqlite')
     sdk.close()
   })
 
@@ -551,25 +664,6 @@ describe('bundled ESM SDK loader', () => {
     return import(`${pathToFileURL(bundlePath).href}?t=${Date.now()}`)
   }
 
-  it('keeps the mysql2 install hint in bundled ESM builds', async () => {
-    const { KanbanSDK: BundledKanbanSDK } = await importBundledSdk()
-    const sdk = new BundledKanbanSDK(kanbanDir, {
-      capabilities: { 'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } } },
-    })
-
-    try {
-      await sdk.init()
-      throw new Error('Expected init() to fail when mysql2 is unavailable')
-    } catch (err) {
-      const message = String(err)
-      expect(message).toContain('mysql2')
-      expect(message).toContain('npm install mysql2')
-      expect(message).not.toContain('Dynamic require')
-    } finally {
-      sdk.close()
-    }
-  })
-
   it('keeps actionable external plugin install hints in bundled ESM builds', async () => {
     const { KanbanSDK: BundledKanbanSDK } = await importBundledSdk()
 
@@ -633,26 +727,26 @@ describe('auth capability resolution', () => {
   })
 
   it('noop identity resolves to null for undefined token', async () => {
-    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity(undefined)
+    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity({})
     expect(result).toBeNull()
   })
 
   it('noop identity resolves to null for a bearer token', async () => {
-    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity('Bearer abc123')
+    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity({ token: 'Bearer abc123' })
     expect(result).toBeNull()
   })
 
   // Action names below are illustrative only; the canonical action naming contract
   // (e.g. 'card.create', 'card.delete') is deferred to the stage-2 enforcement work.
   it('noop policy allows any action for null identity', async () => {
-    const allowed = await NOOP_POLICY_PLUGIN.checkPolicy(null, 'card.create')
-    expect(allowed).toBe(true)
+    const decision = await NOOP_POLICY_PLUGIN.checkPolicy(null, 'card.create', {})
+    expect(decision.allowed).toBe(true)
   })
 
   it('noop policy allows any action for a named identity', async () => {
     const identity = { subject: 'user-1', roles: ['admin'] }
-    const allowed = await NOOP_POLICY_PLUGIN.checkPolicy(identity, 'card.delete')
-    expect(allowed).toBe(true)
+    const decision = await NOOP_POLICY_PLUGIN.checkPolicy(identity, 'card.delete', {})
+    expect(decision.allowed).toBe(true)
   })
 
   it('throws for unknown auth.identity provider', () => {
@@ -706,4 +800,172 @@ describe('KanbanSDK auth wiring', () => {
     )
     expect(() => new KanbanSDK(kanbanDir)).toThrow(/unknown auth.identity provider/i)
   })
+})
+
+// ---------------------------------------------------------------------------
+// KanbanSDK.getAuthStatus
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK.getAuthStatus', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-auth-status-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('returns noop providers and disabled flags when no auth configured', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const status = sdk.getAuthStatus()
+    expect(status.identityProvider).toBe('noop')
+    expect(status.policyProvider).toBe('noop')
+    expect(status.identityEnabled).toBe(false)
+    expect(status.policyEnabled).toBe(false)
+    sdk.close()
+  })
+
+  it('returns noop providers when pre-built storage engine is injected', () => {
+    const engine = new MarkdownStorageEngine(kanbanDir)
+    const sdk = new KanbanSDK(kanbanDir, { storage: engine })
+    const status = sdk.getAuthStatus()
+    expect(status.identityProvider).toBe('noop')
+    expect(status.policyProvider).toBe('noop')
+    expect(status.identityEnabled).toBe(false)
+    expect(status.policyEnabled).toBe(false)
+    sdk.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// KanbanSDK._authorizeAction – pre-action authorization seam
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK._authorizeAction', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-authz-seam-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('allows all actions when no auth plugins are configured (noop path)', async () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const decision = await sdk._authorizeAction('card.create')
+    expect(decision.allowed).toBe(true)
+    sdk.close()
+  })
+
+  it('allows action with an explicit empty auth context', async () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const decision = await sdk._authorizeAction('card.delete', {})
+    expect(decision.allowed).toBe(true)
+    sdk.close()
+  })
+
+  it('allows action with a token-bearing auth context (noop still allows)', async () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const ctx: AuthContext = { token: 'Bearer test-token', transport: 'http', boardId: 'default' }
+    const decision = await sdk._authorizeAction('settings.update', ctx)
+    expect(decision.allowed).toBe(true)
+    sdk.close()
+  })
+
+  it('allows when pre-built storage injected directly (no capability bag)', async () => {
+    const engine = new MarkdownStorageEngine(kanbanDir)
+    const sdk = new KanbanSDK(kanbanDir, { storage: engine })
+    const decision = await sdk._authorizeAction('board.create')
+    expect(decision.allowed).toBe(true)
+    sdk.close()
+  })
+
+  it('returns actor from resolved identity when populated by identity plugin', async () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    // Noop identity returns null, so actor is undefined in noop path
+    const decision = await sdk._authorizeAction('card.update')
+    expect(decision.actor).toBeUndefined()
+    sdk.close()
+  })
+
+  it('throws AuthError when a deny-all policy plugin is configured', async () => {
+    // Build a custom deny-all policy plugin inline
+    const denyAllPolicy = {
+      manifest: { id: 'deny-all', provides: ['auth.policy' as const] },
+      async checkPolicy(_identity: AuthIdentity | null, _action: string, _ctx: AuthContext): Promise<AuthDecision> {
+        return { allowed: false, reason: 'auth.policy.denied' as const }
+      },
+    }
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+      { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
+    )
+    // Patch bag's authPolicy with our deny-all override
+    ;(bag as any).authPolicy = denyAllPolicy
+
+    const sdk = new KanbanSDK(kanbanDir)
+    // Replace the internal capability bag to inject the deny-all policy
+    ;(sdk as any)._capabilities = bag
+
+    await expect(sdk._authorizeAction('card.create')).rejects.toBeInstanceOf(AuthError)
+  })
+
+  it('AuthError thrown by the seam carries the correct category', async () => {
+    const denyAllPolicy = {
+      manifest: { id: 'deny-all', provides: ['auth.policy' as const] },
+      async checkPolicy(_identity: AuthIdentity | null, _action: string, _ctx: AuthContext): Promise<AuthDecision> {
+        return { allowed: false, reason: 'auth.policy.denied' as const }
+      },
+    }
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+      { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
+    )
+    ;(bag as any).authPolicy = denyAllPolicy
+
+    const sdk = new KanbanSDK(kanbanDir)
+    ;(sdk as any)._capabilities = bag
+
+    try {
+      await sdk._authorizeAction('card.delete')
+      throw new Error('Expected AuthError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(AuthError)
+      expect((err as AuthError).category).toBe('auth.policy.denied')
+    }
+    sdk.close()
+  })
+
+  // Representative action name coverage — confirms the seam handles all
+  // canonical action strings without type or runtime errors.
+  const representativeActions = [
+    'card.create', 'card.update', 'card.delete', 'card.transfer',
+    'form.submit',
+    'attachment.add', 'attachment.open', 'attachment.remove',
+    'comment.add', 'comment.edit', 'comment.delete',
+    'settings.update',
+    'board.create', 'board.update', 'board.delete',
+    'webhook.create', 'webhook.update', 'webhook.delete',
+  ] as const
+
+  for (const action of representativeActions) {
+    it(`noop path allows '${action}'`, async () => {
+      const sdk = new KanbanSDK(kanbanDir)
+      const decision = await sdk._authorizeAction(action)
+      expect(decision.allowed).toBe(true)
+      sdk.close()
+    })
+  }
 })

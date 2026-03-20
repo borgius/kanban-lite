@@ -4,7 +4,6 @@ import type { StorageEngine, StorageEngineType } from './plugins/types'
 
 export type { StorageEngine, StorageEngineType } from './plugins/types'
 export { MarkdownStorageEngine } from './plugins/markdown'
-export { SqliteStorageEngine } from './plugins/sqlite'
 
 /**
  * Input data for creating a new kanban card.
@@ -158,4 +157,114 @@ export type FormSubmitEvent = SubmitFormResult
 export function sanitizeCard(card: Card): Omit<Card, 'filePath'> {
   const { filePath: _, ...rest } = card
   return rest
+}
+
+// ---------------------------------------------------------------------------
+// Auth context, decision, and error vocabulary
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical machine-readable auth error categories.
+ *
+ * Consumed by {@link AuthError} and {@link AuthDecision.reason} so that host
+ * surfaces (HTTP API, CLI, MCP, extension) can map denial semantics to their
+ * own error codes (e.g. HTTP 401 vs 403) without parsing error messages.
+ */
+export type AuthErrorCategory =
+  | 'auth.identity.missing'  // No token supplied when one is required
+  | 'auth.identity.invalid'  // Token present but failed validation
+  | 'auth.identity.expired'  // Token present but expired
+  | 'auth.policy.denied'     // Identity resolved but action not permitted
+  | 'auth.policy.unknown'    // Policy plugin could not evaluate the action
+  | 'auth.provider.error'    // Internal error from an identity or policy provider
+
+/**
+ * Authorization decision returned by {@link AuthPolicyPlugin.checkPolicy}.
+ *
+ * When {@link allowed} is `false`, {@link reason} provides a machine-readable
+ * denial code suitable for mapping to HTTP 401/403, CLI exit codes, or MCP
+ * tool error payloads.
+ */
+export interface AuthDecision {
+  /** Whether the action is permitted. */
+  allowed: boolean
+  /** Machine-readable reason code. Present when {@link allowed} is `false`. */
+  reason?: AuthErrorCategory
+  /** Resolved caller subject from the identity plugin. Present when identity was established. */
+  actor?: string
+  /** Optional provider-supplied audit metadata (safe for logging). */
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Shared auth context passed from host surfaces into SDK operations.
+ *
+ * Host adapters (standalone server, CLI, MCP, extension) extract tokens from
+ * their respective transports and construct this object before exercising the
+ * SDK authorization seam. Tokens are never persisted to `.kanban.json`.
+ */
+export interface AuthContext {
+  /**
+   * Opaque bearer token provided by the host.
+   * Never logged or surfaced in error responses.
+   */
+  token?: string
+  /**
+    * Identifies how the token was sourced (e.g. `'request-header'`, `'env'`, `'config'`, `'secret-storage'`).
+   * Informational only; used for diagnostics and logging.
+   */
+  tokenSource?: string
+  /**
+   * Transport mechanism of the incoming request (e.g. `'http'`, `'mcp'`, `'extension'`, `'cli'`).
+   * Informational only; used for diagnostics and logging.
+   */
+  transport?: string
+  /**
+   * Optional non-authoritative hint for the caller identity.
+   * Never trusted for authorization decisions; used for diagnostics and logging only.
+   */
+  actorHint?: string
+  /** Target board ID relevant to the action being authorized. */
+  boardId?: string
+  /** Target card ID relevant to the action being authorized. */
+  cardId?: string
+  /** Source board ID for transfer-style operations. */
+  fromBoardId?: string
+  /** Destination board ID for transfer-style operations. */
+  toBoardId?: string
+  /** Target column/status ID relevant to the action being authorized. */
+  columnId?: string
+  /** Target comment ID relevant to the action being authorized. */
+  commentId?: string
+  /** Target form ID relevant to the action being authorized. */
+  formId?: string
+  /** Attachment filename relevant to the action being authorized. */
+  attachment?: string
+  /** Label name relevant to the action being authorized. */
+  labelName?: string
+  /** Webhook ID relevant to the action being authorized. */
+  webhookId?: string
+  /** Action key/name relevant to the action being authorized. */
+  actionKey?: string
+}
+
+/**
+ * Typed error thrown by the SDK authorization seam when a policy plugin
+ * denies an action.
+ *
+ * Host surfaces should catch this to return appropriate error responses
+ * (HTTP 403, CLI error output, MCP tool error) without leaking token material.
+ */
+export class AuthError extends Error {
+  /** Machine-readable error category. */
+  public readonly category: AuthErrorCategory
+  /** Resolved caller subject when available (safe to include in error responses). */
+  public readonly actor?: string
+
+  constructor(category: AuthErrorCategory, message: string, actor?: string) {
+    super(message)
+    this.name = 'AuthError'
+    this.category = category
+    this.actor = actor
+  }
 }

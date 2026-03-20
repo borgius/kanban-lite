@@ -1,11 +1,10 @@
 import type { Card } from '../../shared/types'
 
 /**
- * Supported built-in storage engine types.
+ * Supported SDK constructor storage-engine override values.
  *
- * External plugins may use other string identifiers, but the SDK still exposes
- * the built-in engine override as `'markdown' | 'sqlite'` for backward-
- * compatible constructor options.
+ * `sqlite` remains available here as a legacy compatibility alias so existing
+ * constructor overrides continue to route through the external sqlite package.
  */
 export type StorageEngineType = 'markdown' | 'sqlite'
 
@@ -19,8 +18,9 @@ export type StorageEngineType = 'markdown' | 'sqlite'
 export interface StorageEngine {
   /**
    * Engine type identifier.
-   * Built-in values: `'markdown'`, `'sqlite'`, `'mysql'`.
-   * External plugins may use any string (typically their npm package name).
+    * Core built-in value: `'markdown'`.
+    * Compatibility/external providers may use ids such as `'sqlite'`, `'mysql'`,
+    * or any custom package/provider name.
    */
   readonly type: string
   /** Absolute path to the `.kanban` directory. */

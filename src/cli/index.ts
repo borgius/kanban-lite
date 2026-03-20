@@ -5,8 +5,35 @@ import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 import { readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
+import { AuthError, type AuthContext } from '../sdk/types'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
+
+function resolveCliAuthContext(): AuthContext {
+  const token = process.env.KANBAN_TOKEN
+  return token ? { token, tokenSource: 'env', transport: 'cli' } : { transport: 'cli' }
+}
+
+function getCliAuthStatus(sdk: KanbanSDK) {
+  const auth = sdk.getAuthStatus()
+  const ctx = resolveCliAuthContext()
+  return {
+    ...auth,
+    configured: auth.identityEnabled || auth.policyEnabled,
+    tokenPresent: Boolean(ctx.token),
+    tokenSource: ctx.tokenSource ?? null,
+    transport: ctx.transport ?? 'cli',
+  }
+}
+
+function handleAuthError(err: AuthError): never {
+  if (err.category === 'auth.identity.missing' || err.category === 'auth.identity.invalid' || err.category === 'auth.identity.expired') {
+    console.error(red('Error: Authentication required. Set KANBAN_TOKEN environment variable.'))
+  } else {
+    console.error(red(`Error: Access denied (${err.category})`))
+  }
+  process.exit(1)
+}
 
 type Flags = Record<string, string | true | string[]>
 
@@ -383,7 +410,7 @@ export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
 
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData })
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData }, resolveCliAuthContext())
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -414,7 +441,7 @@ async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
   const position = typeof flags.position === 'string' ? parseInt(flags.position, 10) : undefined
-  const updated = await sdk.moveCard(resolvedId, newStatus, position, boardId)
+  const updated = await sdk.moveCard(resolvedId, newStatus, position, boardId, resolveCliAuthContext())
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
@@ -472,7 +499,7 @@ export async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags
     process.exit(1)
   }
 
-  const updated = await sdk.updateCard(resolvedId, updates, boardId)
+  const updated = await sdk.updateCard(resolvedId, updates, boardId, resolveCliAuthContext())
   console.log(green(`Updated: ${updated.id}`))
 }
 
@@ -501,7 +528,7 @@ export async function cmdForm(sdk: KanbanSDK, positional: string[], flags: Flags
         formId,
         data,
         boardId,
-      })
+      }, resolveCliAuthContext())
 
       if (flags.json) {
         console.log(JSON.stringify(result, null, 2))
@@ -529,7 +556,7 @@ async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
   // Support partial ID match
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
-  await sdk.deleteCard(resolvedId, boardId)
+  await sdk.deleteCard(resolvedId, boardId, resolveCliAuthContext())
   console.log(green(`Soft-deleted: ${resolvedId} (moved to deleted)`))
 }
 
@@ -543,7 +570,7 @@ async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: F
   const boardId = getBoardId(flags)
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
-  await sdk.permanentlyDeleteCard(resolvedId, boardId)
+  await sdk.permanentlyDeleteCard(resolvedId, boardId, resolveCliAuthContext())
   console.log(green(`Permanently deleted: ${resolvedId}`))
 }
 
@@ -615,7 +642,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         console.error(red('Usage: kl boards remove <id>'))
         process.exit(1)
       }
-      await sdk.deleteBoard(boardId)
+      await sdk.deleteBoard(boardId, resolveCliAuthContext())
       console.log(green(`Removed board: ${boardId}`))
       break
     }
@@ -698,7 +725,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions fire --board <id> <key>'))
         process.exit(1)
       }
-      await sdk.triggerBoardAction(boardId, key)
+      await sdk.triggerBoardAction(boardId, key, resolveCliAuthContext())
       console.log(green(`Fired board action "${key}" on board ${boardId}`))
       break
     }
@@ -727,7 +754,7 @@ async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Flags): 
 
   const targetStatus = typeof flags.status === 'string' ? flags.status : undefined
   const resolvedId = await resolveCardId(sdk, cardId, fromBoard)
-  const card = await sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus)
+  const card = await sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus, resolveCliAuthContext())
   console.log(green(`Transferred ${card.id} from ${fromBoard} → ${toBoard} (${colorStatus(card.status)})`))
 }
 
@@ -780,7 +807,7 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const updated = await sdk.addAttachment(resolvedId, filePath, boardId)
+      const updated = await sdk.addAttachment(resolvedId, filePath, boardId, resolveCliAuthContext())
       console.log(green(`Attached to ${updated.id}: ${path.basename(filePath)}`))
       break
     }
@@ -796,7 +823,7 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const updated = await sdk.removeAttachment(resolvedId, filename, boardId)
+      const updated = await sdk.removeAttachment(resolvedId, filename, boardId, resolveCliAuthContext())
       console.log(green(`Removed from ${updated.id}: ${filename}`))
       break
     }
@@ -882,7 +909,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const card = await sdk.addComment(resolvedId, author, body, boardId)
+      const card = await sdk.addComment(resolvedId, author, body, boardId, resolveCliAuthContext())
       const added = card.comments[card.comments.length - 1]
       if (flags.json) {
         console.log(JSON.stringify(added, null, 2))
@@ -907,7 +934,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.updateComment(resolvedId, commentId, body, boardId)
+      await sdk.updateComment(resolvedId, commentId, body, boardId, resolveCliAuthContext())
       if (flags.json) {
         const comments = await sdk.listComments(resolvedId, boardId)
         const updated = comments.find(c => c.id === commentId)
@@ -929,7 +956,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.deleteComment(resolvedId, commentId, boardId)
+      await sdk.deleteComment(resolvedId, commentId, boardId, resolveCliAuthContext())
       console.log(green(`Deleted comment ${commentId}`))
       break
     }
@@ -1002,7 +1029,7 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
         }
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const entry = await sdk.addLog(resolvedId, text, { source, object: obj }, boardId)
+      const entry = await sdk.addLog(resolvedId, text, { source, object: obj }, boardId, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify(entry, null, 2))
       } else {
@@ -1016,7 +1043,7 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.clearLogs(resolvedId, boardId)
+      await sdk.clearLogs(resolvedId, boardId, resolveCliAuthContext())
       console.log(green(`Cleared logs for card ${resolvedId}`))
       break
     }
@@ -1060,7 +1087,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
           process.exit(1)
         }
       }
-      const entry = await sdk.addBoardLog(text, { source, object: obj }, boardId)
+      const entry = await sdk.addBoardLog(text, { source, object: obj }, boardId, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify(entry, null, 2))
       } else {
@@ -1069,7 +1096,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
       break
     }
     case 'clear': {
-      await sdk.clearBoardLogs(boardId)
+      await sdk.clearBoardLogs(boardId, resolveCliAuthContext())
       console.log(green('Cleared board logs'))
       break
     }
@@ -1138,7 +1165,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
         console.error(red('Usage: kl columns remove <id>'))
         process.exit(1)
       }
-      const columns = await sdk.removeColumn(columnId, boardId)
+      const columns = await sdk.removeColumn(columnId, boardId, resolveCliAuthContext())
       console.log(green(`Removed column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1149,7 +1176,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
         console.error(red('Usage: kl columns cleanup <id>'))
         process.exit(1)
       }
-      const moved = await sdk.cleanupColumn(columnId, boardId)
+      const moved = await sdk.cleanupColumn(columnId, boardId, resolveCliAuthContext())
       console.log(green(`Moved ${moved} card${moved === 1 ? '' : 's'} from "${columnId}" to deleted`))
       break
     }
@@ -1238,7 +1265,7 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         console.error(red('Usage: kl labels rename <old> <new>'))
         process.exit(1)
       }
-      await sdk.renameLabel(oldName, newName)
+      await sdk.renameLabel(oldName, newName, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify({ old: oldName, new: newName }, null, 2))
       } else {
@@ -1253,7 +1280,7 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         console.error(red('Usage: kl labels delete <name>'))
         process.exit(1)
       }
-      await sdk.deleteLabel(name)
+      await sdk.deleteLabel(name, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify({ deleted: name }, null, 2))
       } else {
@@ -1283,7 +1310,7 @@ async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
       }
       const boardId = getBoardId(flags)
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.triggerAction(resolvedId, action, boardId)
+      await sdk.triggerAction(resolvedId, action, boardId, resolveCliAuthContext())
       console.log(green(`Action "${action}" triggered on card ${resolvedId}`))
       break
     }
@@ -1680,6 +1707,9 @@ ${bold('Storage Commands:')}
   storage status              Show current storage engine
   storage migrate-to-sqlite   Migrate cards to SQLite (--sqlite-path <path>)
   storage migrate-to-markdown Migrate cards back to markdown files
+
+${bold('Auth Commands:')}
+  auth status                 Show active auth providers and token diagnostics
 `)
 }
 
@@ -1746,6 +1776,28 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
   console.error(red(`Unknown storage sub-command: ${sub}`))
   console.error('Usage: kl storage <status|migrate-to-sqlite|migrate-to-markdown>')
   process.exit(1)
+}
+
+async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const sub = positional[0] || 'status'
+  if (sub !== 'status') {
+    console.error(red(`Unknown auth sub-command: ${sub}`))
+    console.error('Usage: kl auth status')
+    process.exit(1)
+  }
+
+  const status = getCliAuthStatus(sdk)
+  if (flags.json) {
+    console.log(JSON.stringify(status, null, 2))
+    return
+  }
+
+  console.log(`Identity provider: ${bold(status.identityProvider)}`)
+  console.log(`Policy provider:   ${bold(status.policyProvider)}`)
+  console.log(`Configured:        ${status.configured ? green('yes') : yellow('no')}`)
+  console.log(`Token present:     ${status.tokenPresent ? green('yes') : yellow('no')}`)
+  if (status.tokenSource) console.log(`Token source:      ${status.tokenSource}`)
+  console.log(`Transport:         ${status.transport}`)
 }
 
 // --- Main ---
@@ -1881,6 +1933,9 @@ async function main(): Promise<void> {
     case 'storage':
       await cmdStorage(sdk, positional, flags, workspaceRoot)
       break
+    case 'auth':
+      await cmdAuth(sdk, positional, flags)
+      break
     default:
       console.error(red(`Unknown command: ${command}`))
       showHelp()
@@ -1890,6 +1945,7 @@ async function main(): Promise<void> {
 
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
   main().catch(err => {
+    if (err instanceof AuthError) handleAuthError(err)
     console.error(red(`Error: ${err.message}`))
     process.exit(1)
   })

@@ -1,6 +1,6 @@
 # Plugin System Deep Dive
 
-This document explains the storage plugin system in depth: what problem it solves, how capability resolution works, how to select and change providers in `.kanban.json`, what the built-in providers do, how attachment handling works, and how to author third-party plugins that work with the current runtime.
+This document explains the storage plugin system in depth: what problem it solves, how capability resolution works, how to select and change providers in `.kanban.json`, what the core and compatibility providers do, how attachment handling works, and how to author third-party plugins that work with the current runtime.
 
 It is intentionally more detailed than the README. Think of this as the “how the machine is built” guide.
 
@@ -34,7 +34,7 @@ That means:
 - another provider can store attachments,
 - or one provider can implement both capabilities explicitly in the plugin layer.
 
-This is the foundation that allows built-in providers like `markdown`, `sqlite`, and `mysql`, while also making room for external npm packages.
+This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, and fully external npm packages to coexist behind the same capability contract.
 
 ---
 
@@ -76,9 +76,12 @@ This capability owns card/comment persistence.
 
 A `card.storage` provider is responsible for returning a `StorageEngine` implementation.
 
-Built-in providers:
+Core built-in provider:
 
 - `markdown`
+
+Compatibility provider ids resolved through external packages:
+
 - `sqlite`
 - `mysql`
 
@@ -204,7 +207,7 @@ Even if you omit one namespace in config, the normalized map always includes bot
 
 ---
 
-## Built-in providers
+## Core and compatibility providers
 
 ## `markdown`
 
@@ -240,6 +243,16 @@ Attachments:
 - attachment files are stored on disk,
 - card/comment persistence is separate from attachment persistence.
 
+External package:
+
+The `sqlite` provider id is a compatibility alias for the `kl-sqlite-storage` npm package. Install the external package in the host environment that loads Kanban Lite:
+
+```sh
+npm install kl-sqlite-storage
+```
+
+The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`.
+
 ## `mysql`
 
 Namespace: `card.storage`
@@ -256,6 +269,16 @@ Requirements:
 - `database` is required in provider options,
 - the `mysql2` driver is loaded lazily,
 - environments that do not use MySQL do not need `mysql2` installed.
+
+External package:
+
+The `mysql` provider id is a compatibility alias for the `kl-mysql-storage` npm package. Install the external package in the host environment that loads Kanban Lite:
+
+```sh
+npm install kl-mysql-storage
+```
+
+The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `mysql2` load semantics.
 
 Example:
 
@@ -296,9 +319,9 @@ Behavior:
 
 That means:
 
-- with `markdown`, `localfs` delegates to the markdown attachment plugin,
-- with `sqlite`, `localfs` delegates to the sqlite attachment plugin,
-- with `mysql`, `localfs` delegates to the mysql attachment plugin unless you replace `attachment.storage`.
+- with core `markdown`, `localfs` delegates directly to the markdown engine,
+- with external card providers that expose the same local attachment semantics, `localfs` delegates to the active engine,
+- when `attachment.storage` stays on `localfs`, the resolver still gives the selected external card provider package a same-package chance to provide `attachment.storage` first.
 
 ---
 
@@ -417,6 +440,11 @@ interface AttachmentStoragePlugin {
   manifest: PluginManifest
   getCardDir?(card: Card): string | null
   copyAttachment(sourcePath: string, card: Card): Promise<void>
+  appendAttachment?(
+    card: Card,
+    attachment: string,
+    content: string | Uint8Array
+  ): Promise<boolean>
   materializeAttachment?(card: Card, attachment: string): Promise<string | null>
 }
 ```
@@ -426,6 +454,26 @@ interface AttachmentStoragePlugin {
 Required.
 
 This is how the SDK moves a source file into the provider-owned attachment location.
+
+### `appendAttachment(...)`
+
+Optional.
+
+Use this when your backend can append efficiently to an existing attachment without rewriting the whole object.
+
+Current intended use case:
+
+- card log attachments such as `<cardId>.log`
+
+Contract:
+
+- return `true` when the provider handled the append in-place
+- return `false` when the provider cannot do native append and the runtime should fall back to a normal read/modify/write update via `copyAttachment(...)`
+
+Examples:
+
+- S3 directory buckets / S3 Express One Zone can use `PutObject` with `WriteOffsetBytes`
+- standard S3 buckets or MinIO may not support native append, so returning `false` is correct and expected
 
 ### `getCardDir(...)`
 
@@ -442,6 +490,17 @@ Use this when:
 - you want to enforce validation or temporary file materialization.
 
 If `materializeAttachment(...)` is not implemented, the runtime falls back to building a path from `getCardDir(...)`.
+
+### Card logs and attachment providers
+
+Card logs are stored as the attachment file `<cardId>.log`.
+
+That means log behavior now follows the active `attachment.storage` provider:
+
+- file-backed providers usually store the log file in a local attachment directory
+- remote providers can materialize the log file temporarily through `materializeAttachment(...)`
+- append-capable providers may accelerate repeated log writes through `appendAttachment(...)`
+- providers without native append support still work through the runtime fallback path
 
 ---
 
@@ -509,6 +568,62 @@ Invalid plugin export:
 - explicit error describing the missing export shape or capability mismatch
 
 This is deliberate: plugin errors should be operator-friendly, not stack-trace archaeology.
+
+---
+
+## Compatibility aliases
+
+The short provider ids `sqlite` and `mysql` are compatibility aliases. They allow existing
+`.kanban.json` configurations to continue using the familiar short names while implementation
+ownership moves to standalone, versioned npm packages.
+
+| Provider id | Install target      |
+| ----------- | ------------------- |
+| `sqlite`    | `kl-sqlite-storage` |
+| `mysql`     | `kl-mysql-storage`  |
+
+The alias map lives in `PROVIDER_ALIASES` in `src/sdk/plugins/index.ts` and is exported so
+downstream tasks and tests can reference it directly.
+
+Resolution rules:
+
+1. If a core built-in implementation is registered for the provider id, use it.
+2. Otherwise, look up the provider id in `PROVIDER_ALIASES` and load that package.
+3. If there is no alias, treat the provider id as-is (bare npm package name).
+
+This means install errors for `sqlite` and `mysql` always name `kl-sqlite-storage` and
+`kl-mysql-storage`, not the short alias.
+
+Both packages must export:
+
+- `cardStoragePlugin` — implements the `CardStoragePlugin` interface
+- `attachmentStoragePlugin` — implements the `AttachmentStoragePlugin` interface
+
+CJS entry: `dist/index.cjs`
+
+---
+
+## Test ownership
+
+Core (`kanban-light`) retains host-contract coverage. Provider packages own provider internals.
+
+**Core keeps:**
+
+- Plugin capability normalization and alias resolution tests
+- Same-package attachment fallback behavior tests
+- Migration/config cleanup behavior (using the externally loaded provider path)
+- Manifest shape validation and actionable-error assertions
+- Auth capability default tests
+
+**Provider packages own:**
+
+- CRUD/schema tests for their storage engine
+- Live-database integration tests
+- Schema migration correctness
+- Provider-specific attachment behavior
+
+This boundary prevents core from owning provider internals while keeping host observable
+behavior verifiable without a running database.
 
 ---
 
@@ -743,29 +858,26 @@ When debugging a provider issue, this is your first checkpoint.
 
 There is no longer a parallel `src/sdk/storage` implementation layer.
 
-The plugin layer is now the real home of the built-in engines and built-in
-attachment providers:
+The plugin layer is now the real home of the remaining core providers:
 
 - `src/sdk/plugins/markdown.ts`
-- `src/sdk/plugins/sqlite.ts`
-- `src/sdk/plugins/mysql.ts`
 - `src/sdk/plugins/localfs.ts`
 - `src/sdk/plugins/index.ts`
 - `src/sdk/plugins/types.ts`
 
 That means:
 
-- built-in engine classes live under `src/sdk/plugins/*`
-- built-in attachment providers live under `src/sdk/plugins/*`
+- the remaining core engine class lives under `src/sdk/plugins/*`
+- the remaining core attachment provider lives under `src/sdk/plugins/*`
 - the registry resolves explicit providers from plugin-owned factories
 - there is no separate storage factory path to keep in sync
 
 If you are reading the code to understand how storage works, start in
 `src/sdk/plugins/index.ts`, not in an old storage folder.
 
-## Built-in MySQL deep dive
+## MySQL compatibility alias deep dive
 
-The built-in MySQL provider exists as a first-party plugin in `src/sdk/plugins/mysql.ts`.
+Core no longer owns a first-party MySQL implementation. The provider id `mysql` is a compatibility alias for the external package `kl-mysql-storage`.
 
 ### What it does
 
@@ -787,13 +899,13 @@ Bundling MySQL as a hard dependency would penalize all users.
 
 Instead:
 
-- the plugin is built in,
-- the driver is optional,
-- the runtime only loads `mysql2/promise` when the engine is created/initialized.
+- the provider id stays stable in `.kanban.json`,
+- the package is loaded externally at runtime,
+- the external package only loads `mysql2/promise` when the engine is created/initialized.
 
 ### Schema notes
 
-The MySQL engine stores core card fields directly in relational columns and serializes flexible fields like:
+The external MySQL engine stores core card fields directly in relational columns and serializes flexible fields like:
 
 - `labels`
 - `attachments`
@@ -802,7 +914,7 @@ The MySQL engine stores core card fields directly in relational columns and seri
 
 as JSON text.
 
-This mirrors the SQLite strategy in spirit, but uses MySQL tables and lazy pool management.
+This mirrors the SQLite package strategy in spirit, but uses MySQL tables and lazy pool management.
 
 ---
 
@@ -989,6 +1101,11 @@ export const attachmentStoragePlugin = {
     await fs.copyFile(sourcePath, path.join(dir, path.basename(sourcePath)))
   },
 
+  async appendAttachment(_card, _attachment, _content) {
+    // optional optimization for append-heavy files like card logs
+    return false
+  },
+
   async materializeAttachment(card, attachment) {
     const dir = this.getCardDir(card)
     return path.join(dir, attachment)
@@ -1004,6 +1121,17 @@ Implement it when:
 - you need validation before returning a path,
 - you may download/create a temp file first,
 - or `getCardDir(...)` is not sufficient.
+
+### When to implement `appendAttachment(...)`
+
+Implement it when your backend supports efficient native append semantics for an existing object or blob.
+
+Good candidates:
+
+- append-only object APIs
+- storage backends with server-side append or offset-write support
+
+If your backend only supports overwrite, omit the hook or return `false` so the runtime can safely fall back.
 
 ### Security recommendation
 
@@ -1101,13 +1229,13 @@ When doing this in a real workspace, remember:
 
 - changing config changes future runtime resolution,
 - it does **not** automatically migrate old data between arbitrary providers,
-- only built-in markdown ↔ sqlite compatibility helpers are currently exposed as migration commands.
+- only markdown ↔ sqlite compatibility helpers are currently exposed as migration commands.
 
 ---
 
 ## Current migration story
 
-Current migration commands are compatibility helpers for built-in flows:
+Current migration commands are compatibility helpers for the built-in-markdown / compatibility-sqlite flow:
 
 - markdown → sqlite
 - sqlite → markdown
@@ -1196,6 +1324,7 @@ Fix:
 - export either `attachmentStoragePlugin` or a default object with:
   - `manifest`
   - `copyAttachment(...)`
+  - optional `appendAttachment(...)`
   - and either `getCardDir(...)` or `materializeAttachment(...)`
 - ensure `manifest.provides` includes `attachment.storage`
 
@@ -1203,12 +1332,13 @@ Fix:
 
 Meaning:
 
-- you selected the built-in MySQL provider but have not installed `mysql2`.
+- you selected the `mysql` compatibility provider id without installing `kl-mysql-storage`, or
+- `kl-mysql-storage` is present but its peer driver `mysql2` is missing.
 
 Fix:
 
 ```bash
-npm install mysql2
+npm install kl-mysql-storage mysql2
 ```
 
 ## Watchers don’t refresh
@@ -1262,13 +1392,13 @@ If you are building a plugin today, follow these rules:
 
 ## Quick reference
 
-## Built-in providers
+## Core and compatibility providers
 
 | Namespace | Provider | File-backed | Watch glob | Notes |
 |---|---|---:|---|---|
 | `card.storage` | `markdown` | yes | `boards/**/*.md` | Default card provider |
-| `card.storage` | `sqlite` | no | `null` | Built-in DB provider |
-| `card.storage` | `mysql` | no | `null` | Built-in DB provider with lazy `mysql2` |
+| `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-sqlite-storage` |
+| `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-mysql-storage` |
 | `attachment.storage` | `localfs` | n/a | n/a | Default attachment provider |
 
 ## Resolver precedence

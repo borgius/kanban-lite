@@ -6,6 +6,15 @@ import { DEFAULT_COLUMNS } from './types'
 /** Capability namespaces supported by the storage plugin system. */
 export type CapabilityNamespace = 'card.storage' | 'attachment.storage'
 
+/** Capability namespaces for the auth plugin system. */
+export type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'
+
+/** Partial auth capability selections from config or constructor overrides. */
+export type AuthCapabilitySelections = Partial<Record<AuthCapabilityNamespace, ProviderRef>>
+
+/** Fully normalized auth capability selections used at runtime. */
+export type ResolvedAuthCapabilities = Record<AuthCapabilityNamespace, ProviderRef>
+
 /** Provider selection for a capability namespace. */
 export interface ProviderRef {
   /** Provider id (for built-ins this is e.g. `'markdown'`, `'sqlite'`, `'mysql'`, `'localfs'`). */
@@ -209,6 +218,18 @@ export interface KanbanConfig {
      * legacy omitted-default behavior, which remains `attachment.storage: localfs`.
    */
   plugins?: CapabilitySelections
+  /**
+   * Optional auth capability provider selections.
+   * When omitted, both `auth.identity` and `auth.policy` default to their
+   * built-in `noop` providers, preserving the current open-access behavior.
+   *
+   * Only `noop` is supported in this release; external auth plugins are a
+   * future slice. Token-based identity is the intended future auth mode.
+   *
+   * @example
+   * { "auth": { "auth.identity": { "provider": "my-token-plugin" } } }
+   */
+  auth?: AuthCapabilitySelections
   /**
    * Named reusable form definitions available on all boards in the workspace.
    * Cards attach forms by name via {@link Card.forms} and store their own
@@ -583,6 +604,33 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
  *
  * The input object is never mutated.
  */
+/**
+ * Normalizes auth capability selections from config into a complete runtime map.
+ *
+ * Both `auth.identity` and `auth.policy` default to the built-in `noop`
+ * provider when not explicitly configured, preserving the current open-access
+ * behavior. Noop identity always resolves to `null` (anonymous) and noop
+ * policy always returns `true` (allow-all).
+ *
+ * @param config - A config fragment with an optional `auth` field.
+ * @returns Fully resolved auth capabilities with both namespaces present.
+ *
+ * @example
+ * normalizeAuthCapabilities({}) // => { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } }
+ */
+export function normalizeAuthCapabilities(
+  config: Pick<KanbanConfig, 'auth'>,
+): ResolvedAuthCapabilities {
+  return {
+    'auth.identity': config.auth?.['auth.identity']
+      ? cloneProviderRef(config.auth['auth.identity'])
+      : { provider: 'noop' },
+    'auth.policy': config.auth?.['auth.policy']
+      ? cloneProviderRef(config.auth['auth.policy'])
+      : { provider: 'noop' },
+  }
+}
+
 export function normalizeStorageCapabilities(
   config: Pick<KanbanConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
 ): ResolvedCapabilities {

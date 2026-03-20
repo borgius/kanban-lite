@@ -4,12 +4,13 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { SqliteStorageEngine } from '../plugins/sqlite'
 import { MysqlStorageEngine, MYSQL_PLUGIN } from '../plugins/mysql'
 import { KanbanSDK } from '../KanbanSDK'
+import { normalizeAuthCapabilities } from '../../shared/config'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-plugin-test-'))
@@ -583,5 +584,126 @@ describe('bundled ESM SDK loader', () => {
       expect(message).toContain('npm install definitely-missing-plugin')
       expect(message).not.toContain('Dynamic require')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Auth plugin resolution
+// ---------------------------------------------------------------------------
+
+describe('auth capability resolution', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-auth-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  const storageCaps = {
+    'card.storage': { provider: 'markdown' },
+    'attachment.storage': { provider: 'localfs' },
+  } as const
+
+  it('bag defaults to noop identity and policy when no auth capabilities supplied', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir)
+    expect(bag.authIdentity).toBe(NOOP_IDENTITY_PLUGIN)
+    expect(bag.authPolicy).toBe(NOOP_POLICY_PLUGIN)
+  })
+
+  it('bag with explicit noop auth capabilities still returns noop singletons', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir, normalizeAuthCapabilities({}))
+    expect(bag.authIdentity).toBe(NOOP_IDENTITY_PLUGIN)
+    expect(bag.authPolicy).toBe(NOOP_POLICY_PLUGIN)
+  })
+
+  it('noop identity plugin has correct manifest', () => {
+    expect(NOOP_IDENTITY_PLUGIN.manifest.id).toBe('noop')
+    expect(NOOP_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
+  })
+
+  it('noop policy plugin has correct manifest', () => {
+    expect(NOOP_POLICY_PLUGIN.manifest.id).toBe('noop')
+    expect(NOOP_POLICY_PLUGIN.manifest.provides).toContain('auth.policy')
+  })
+
+  it('noop identity resolves to null for undefined token', async () => {
+    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity(undefined)
+    expect(result).toBeNull()
+  })
+
+  it('noop identity resolves to null for a bearer token', async () => {
+    const result = await NOOP_IDENTITY_PLUGIN.resolveIdentity('Bearer abc123')
+    expect(result).toBeNull()
+  })
+
+  // Action names below are illustrative only; the canonical action naming contract
+  // (e.g. 'card.create', 'card.delete') is deferred to the stage-2 enforcement work.
+  it('noop policy allows any action for null identity', async () => {
+    const allowed = await NOOP_POLICY_PLUGIN.checkPolicy(null, 'card.create')
+    expect(allowed).toBe(true)
+  })
+
+  it('noop policy allows any action for a named identity', async () => {
+    const identity = { subject: 'user-1', roles: ['admin'] }
+    const allowed = await NOOP_POLICY_PLUGIN.checkPolicy(identity, 'card.delete')
+    expect(allowed).toBe(true)
+  })
+
+  it('throws for unknown auth.identity provider', () => {
+    expect(() =>
+      resolveCapabilityBag(storageCaps, kanbanDir, {
+        'auth.identity': { provider: 'unknown-provider' },
+        'auth.policy': { provider: 'noop' },
+      })
+    ).toThrow(/unknown auth.identity provider/i)
+  })
+
+  it('throws for unknown auth.policy provider', () => {
+    expect(() =>
+      resolveCapabilityBag(storageCaps, kanbanDir, {
+        'auth.identity': { provider: 'noop' },
+        'auth.policy': { provider: 'unknown-provider' },
+      })
+    ).toThrow(/unknown auth.policy provider/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// KanbanSDK auth wiring from config
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK auth wiring', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-auth-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('KanbanSDK resolves noop auth plugins when auth is absent from config', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    expect(sdk.capabilities?.authIdentity).toBe(NOOP_IDENTITY_PLUGIN)
+    expect(sdk.capabilities?.authPolicy).toBe(NOOP_POLICY_PLUGIN)
+    sdk.close()
+  })
+
+  it('KanbanSDK propagates auth.identity provider from .kanban.json config', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({ version: 2, auth: { 'auth.identity': { provider: 'unknown-auth-provider' } } }),
+    )
+    expect(() => new KanbanSDK(kanbanDir)).toThrow(/unknown auth.identity provider/i)
   })
 })

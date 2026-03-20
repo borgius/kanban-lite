@@ -2,8 +2,9 @@ import * as path from 'path'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig, normalizeStorageCapabilities } from '../shared/config'
+import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities } from '../shared/config'
 import type { BoardConfig, ProviderRef, ResolvedCapabilities, Webhook } from '../shared/config'
+import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult } from './types'
 import type { StorageEngine } from './plugins/types'
 import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
@@ -132,6 +133,11 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
     : { provider: ref.provider }
 }
 
+function resolveConfiguredAuthCapabilities(kanbanDir: string): ResolvedAuthCapabilities {
+  const config = readConfig(path.dirname(kanbanDir))
+  return normalizeAuthCapabilities(config)
+}
+
 function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions): ResolvedCapabilities {
   const config = readConfig(path.dirname(kanbanDir))
   const capabilities = normalizeStorageCapabilities(config)
@@ -229,6 +235,7 @@ export class KanbanSDK {
     this._capabilities = resolveCapabilityBag(
       resolveConfiguredCapabilities(this.kanbanDir, options),
       this.kanbanDir,
+      resolveConfiguredAuthCapabilities(this.kanbanDir),
     )
     this._storage = this._capabilities.cardStorage
   }

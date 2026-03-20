@@ -1024,6 +1024,7 @@ The same pattern applies to MySQL:
 - Built-in providers (`markdown`, `sqlite`, `mysql`, `localfs`) do not require a separate kanban plugin package.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
+- This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-s3-attachment-storage` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
 
 ### MySQL setup and runtime expectations
 
@@ -1106,6 +1107,30 @@ These migration helpers are compatibility aliases for the built-in markdown ↔ 
 If a workspace was explicitly using the built-in `sqlite` attachment provider, migrating back to markdown automatically drops that incompatible built-in attachment override so the legacy `localfs` default continues to work without manual config cleanup.
 
 **MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
+
+## Auth / Authz Plugin Contract
+
+Kanban Lite ships a **no-op auth/authz capability contract** for the `auth.identity` and `auth.policy` plugin namespaces. Both default to built-in `noop` providers that preserve the current open-access behavior:
+
+- `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
+- `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
+
+**This release is contract plumbing only.** No login UI, no token enforcement, and no request blocking are implemented yet. The namespaces exist so external auth/authz plugins can be wired in when the stage-2 enforcement work ships.
+
+Provider references for both namespaces are read from `.kanban.json` the same way storage providers are:
+
+```json
+{
+  "auth": {
+    "auth.identity": { "provider": "my-identity-plugin" },
+    "auth.policy": { "provider": "my-policy-plugin", "options": { "strict": true } }
+  }
+}
+```
+
+Bearer tokens and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
+
+Only `noop` is supported in this release. Configuring any other provider throws an error at startup.
 
 ## Configuration
 

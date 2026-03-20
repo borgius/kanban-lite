@@ -1,0 +1,385 @@
+plan_id: 20260320-auth-authz-plugin-architecture
+objective: |
+  Introduce a concrete auth/authz plugin architecture that supports both identity
+  and policy capabilities, ships with token-based authentication and action-level
+  authorization in v1, keeps all enforcement SDK-first, and preserves parity
+  across the standalone server, VS Code extension, CLI, and MCP surfaces.
+created_at: "2026-03-20"
+created_by: gem-documentation-writer
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  The safest rollout is to extend the existing capability/plugin direction with two
+  new Node-hosted namespaces: `auth.identity` for token validation and principal
+  resolution, and `auth.policy` for action authorization decisions. v1 should stop
+  at pre-action authorization only—no row/card filtering, no browser-hosted plugins,
+  and no host-specific business logic forks. Hosts own token acquisition/storage,
+  but the SDK remains the single orchestrator for identity resolution, policy checks,
+  error semantics, and parity across API, CLI, MCP, extension, and standalone flows.
+
+open_questions:
+  - Should the standalone server persist bearer tokens in config only when explicitly enabled, with in-memory tokens as the default safety posture?
+  - Which read-side actions should be included in the initial authorization matrix beyond mutating operations (for example `card.get`, `card.list`, `attachment.open`)?
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: Interface layers add direct permission checks or bypass checks entirely, causing authorization drift between SDK, REST, CLI, MCP, and extension flows.
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep authorization SDK-first. Every host must translate inbound request state into
+        one shared auth context and delegate the check to SDK-owned identity/policy hooks
+        before privileged operations execute.
+    - scenario: Tokens are logged, written to insecure workspace files, or leaked back to the webview.
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep secret storage adapter-specific and outside `.kanban.json`. VS Code uses
+        SecretStorage, standalone defaults to memory/config with explicit opt-in, and CLI/MCP
+        use env/config sources. Sanitize logs/errors so tokens never appear in payloads.
+    - scenario: Browser or webview code tries to execute plugins directly, creating packaging and security problems.
+      likelihood: low
+      impact: high
+      mitigation: |
+        Restrict v1 plugin execution to Node-hosted surfaces only. The webview only renders
+        auth state and forwards user actions; it never loads or invokes auth/authz plugins.
+    - scenario: Policy plugins begin assuming row/card filtering in v1 and force list/query changes across storage providers.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Freeze v1 scope to action-level authorization checks only. Defer row/card filtering,
+        scoped query rewriting, and partial-result semantics to stage 2+ architecture work.
+  assumptions:
+    - The existing SDK/plugin direction is the reference model for new capability namespaces and provider loading.
+    - `src/sdk/KanbanSDK.ts` remains the single orchestration seam for cross-surface auth/authz behavior.
+    - Host layers can supply enough request context (token source, transport, board/card target, action name) without embedding authorization logic.
+    - Token-based identity is sufficient for the first release; interactive OAuth/browser-based login flows are not required in v1.
+    - This plan establishes stage-1 architecture and stage-2 requirements only; implementation work lands afterward.
+
+implementation_specification:
+  code_structure: |
+    Add auth/authz plugin contracts beside the existing SDK capability/plugin system so the
+    SDK resolves `auth.identity` and `auth.policy` providers during initialization. Keep
+    host-specific logic narrow: extension, standalone, CLI, and MCP adapters only acquire,
+    store, and attach tokens/context. All principal resolution, authorization decisions,
+    denial/error mapping, and parity behavior remain SDK-owned. Public surfaces should expose
+    stable auth status diagnostics, but they must not duplicate policy logic.
+  affected_areas:
+    - src/shared/config.ts
+    - src/shared/types.ts
+    - src/sdk/types.ts
+    - src/sdk/KanbanSDK.ts
+    - src/sdk/plugins/
+    - src/sdk/modules/
+    - src/standalone/server.ts
+    - src/extension/KanbanPanel.ts
+    - src/extension/index.ts
+    - src/cli/index.ts
+    - src/mcp-server/index.ts
+    - README.md
+    - CHANGELOG.md
+  component_details:
+    - component: capability contracts and config normalization
+      responsibility: Define provider references and normalized config for `auth.identity` and `auth.policy` without storing bearer tokens in `.kanban.json`.
+      interfaces:
+        - "Capability selections in `src/shared/config.ts`"
+        - "Shared auth context and authorization result types in `src/shared/types.ts` / `src/sdk/types.ts`"
+    - component: identity plugin capability
+      responsibility: Validate or interpret token-based credentials and return a normalized principal/claims object to the SDK.
+      interfaces:
+        - "`auth.identity` capability contract"
+        - "Principal/result shape returned to `KanbanSDK`"
+    - component: policy plugin capability
+      responsibility: Decide whether a named action is allowed for the resolved principal and request context.
+      interfaces:
+        - "`auth.policy` capability contract"
+        - "Action authorization decision contract with allow/deny and reason codes"
+    - component: SDK authorization runtime
+      responsibility: Resolve auth providers, build auth context, run pre-action checks, and convert denials into stable SDK/API/CLI/MCP/extension errors.
+      interfaces:
+        - "`KanbanSDK` auth runtime/context helpers"
+        - "Pre-action authorization hooks around privileged SDK methods"
+    - component: host adapters and token storage
+      responsibility: Acquire tokens from host-specific sources and map them into the shared SDK auth context without embedding policy logic.
+      interfaces:
+        - "VS Code SecretStorage adapter"
+        - "Standalone memory/config adapter"
+        - "CLI/MCP env/config adapter"
+  dependencies:
+    - component: capability contracts and config normalization
+      relationship: Must land first so SDK and host layers share one provider and context vocabulary.
+    - component: identity plugin capability
+      relationship: Depends on normalized capability loading and feeds principal data into policy checks.
+    - component: policy plugin capability
+      relationship: Depends on the identity result shape and defines the decision contract consumed by SDK methods.
+    - component: SDK authorization runtime
+      relationship: Depends on identity and policy contracts and blocks all interface-layer parity work.
+    - component: host adapters and token storage
+      relationship: Depend on the shared auth context contract and unblock end-to-end flows in standalone, extension, CLI, and MCP.
+  integration_points:
+    - `src/shared/config.ts` is the normalization seam for provider selection, but must not become a secret store.
+    - `src/sdk/KanbanSDK.ts` is the only safe place to orchestrate identity resolution and policy enforcement across interfaces.
+    - `src/standalone/server.ts` should attach bearer-token/request metadata to SDK calls, not make authorization decisions itself.
+    - `src/cli/index.ts` and `src/mcp-server/index.ts` should read token sources from env/config and delegate enforcement to SDK methods.
+    - `src/extension/KanbanPanel.ts` and `src/extension/index.ts` should use SecretStorage-backed adapters and keep the webview free of plugin execution.
+    - README and CHANGELOG remain mandatory completion surfaces once implementation begins.
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: Stable capability/config vocabulary for auth providers
+    format: "Typed provider-selection model for `auth.identity` and `auth.policy` plus host-owned token-source metadata"
+  - from_task: T2
+    to_task: T3
+    interface: Identity resolution result
+    format: "Principal object + claims + token metadata + authentication status/error shape"
+  - from_task: T3
+    to_task: T4
+    interface: Policy decision contract
+    format: "Action authorization result with allow/deny, reason code, and optional audit metadata"
+  - from_task: T4
+    to_task: T5
+    interface: Host adapter input shape
+    format: "Shared auth context passed from standalone/extension/CLI/MCP into SDK methods"
+  - from_task: T5
+    to_task: T6
+    interface: Public parity and diagnostics contract
+    format: "Stable error/status surface for API responses, CLI output, MCP tool errors, and extension UX"
+
+tasks:
+  - id: T1
+    title: Define auth/authz capability namespaces and normalized config boundaries
+    description: |
+      Extend the plugin/capability model with `auth.identity` and `auth.policy`, define
+      the shared provider reference/config contract, and document that bearer tokens are not
+      persisted in `.kanban.json`. This task should also define the shared auth context shape
+      that every host surface passes into SDK operations.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      src/shared/config.ts: "Current capability/provider normalization seam and the right place to define provider selection without storing secrets."
+      src/shared/types.ts: "Shared cross-surface types that will carry principal/auth context diagnostics."
+      src/sdk/types.ts: "SDK request/response contracts that need auth-aware context and denial semantics."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: auth_contracts_and_config
+    verification:
+      - "Provider selection supports both `auth.identity` and `auth.policy` without requiring tokens in workspace config."
+      - "All host surfaces can construct the same auth context shape."
+      - "Backward compatibility is preserved when no auth plugins are configured."
+    acceptance_criteria:
+      - "Capability namespaces for identity and policy are defined and documented."
+      - "Config normalization clearly separates provider selection from secret/token storage."
+      - "An unauthenticated/no-plugin path remains valid for current workspaces."
+    failure_modes:
+      - scenario: Secret/token fields are added to `.kanban.json`, creating an insecure baseline.
+        likelihood: medium
+        impact: critical
+        mitigation: "Keep token storage outside workspace config and document allowed host adapters explicitly."
+    tech_stack:
+      - TypeScript
+      - Node.js
+    test_coverage: null
+
+  - id: T2
+    title: Implement SDK-owned identity resolution with a no-op default path
+    description: |
+      Add the auth runtime scaffold in `KanbanSDK` so SDK methods can accept a shared auth context,
+      resolve the configured identity provider, and return a normalized principal/claims result.
+      The first implementation should include a safe no-op/default identity path so current users are
+      unaffected until providers are configured.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      src/sdk/KanbanSDK.ts: "Primary orchestration seam for capability loading and cross-surface behavior."
+      src/sdk/plugins/: "Existing plugin/capability loading pattern to extend for auth providers."
+      src/sdk/types.ts: "SDK method/context contracts and stable error/result types."
+    estimated_effort: medium
+    estimated_files: 4
+    estimated_lines: 260
+    focus_area: sdk_identity_runtime
+    verification:
+      - "Current workspaces still function when no auth plugins are configured."
+      - "Identity resolution normalizes token metadata without exposing raw secrets in logs/errors."
+      - "Standalone, extension, CLI, and MCP can all pass auth context into the same SDK seam."
+    acceptance_criteria:
+      - "`KanbanSDK` owns identity resolution."
+      - "A normalized principal/authentication result shape exists."
+      - "The default/no-op path is deterministic and backward compatible."
+    failure_modes:
+      - scenario: Host layers start resolving principals independently and drift from SDK behavior.
+        likelihood: medium
+        impact: high
+        mitigation: "Keep principal resolution inside SDK and treat host adapters as token/context suppliers only."
+    tech_stack:
+      - TypeScript
+      - Node.js
+    test_coverage: null
+
+  - id: T3
+    title: Add policy authorization contracts and pre-action SDK enforcement
+    description: |
+      Introduce `auth.policy` contracts and wire pre-action authorization checks around the SDK
+      operations that mutate state or expose privileged side effects. v1 scope stops at named action
+      checks only; list filtering, partial card visibility, and query rewriting are explicitly deferred.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T2
+    context_files:
+      src/sdk/KanbanSDK.ts: "Place to wrap privileged methods with one enforcement path."
+      src/sdk/modules/: "Mutation and side-effect seams where action names should be standardized."
+      src/shared/types.ts: "Shared action names and auth decision diagnostics exposed to hosts."
+    estimated_effort: large
+    estimated_files: 5
+    estimated_lines: 320
+    focus_area: pre_action_authorization
+    verification:
+      - "Denied actions fail consistently across SDK, REST, CLI, MCP, and extension flows."
+      - "No list/card filtering semantics are introduced in v1."
+      - "Action names are stable and documented for policy plugins."
+    acceptance_criteria:
+      - "Policy plugins receive normalized principal + action + target context."
+      - "SDK methods enforce allow/deny before privileged work executes."
+      - "Denial errors contain stable reason codes without leaking secrets."
+    failure_modes:
+      - scenario: Authorization is implemented only for one transport surface, leaving bypass paths elsewhere.
+        likelihood: medium
+        impact: critical
+        mitigation: "Enforce checks in SDK methods, not in transport handlers."
+    tech_stack:
+      - TypeScript
+      - Node.js
+    test_coverage: null
+
+  - id: T4
+    title: Build host token adapters for extension, standalone, CLI, and MCP
+    description: |
+      Add host-specific token acquisition and storage adapters that all feed the shared SDK auth
+      context. VS Code uses SecretStorage, standalone supports memory/config sources, and CLI/MCP
+      use env/config inputs. None of these adapters may embed authorization logic or execute plugins
+      outside the Node host.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      src/extension/index.ts: "Extension lifecycle and SecretStorage entry point."
+      src/extension/KanbanPanel.ts: "Webview transport/status integration without browser-hosted plugins."
+      src/standalone/server.ts: "HTTP request bearer-token ingestion and SDK call boundary."
+      src/cli/index.ts: "CLI env/config token sourcing and error display."
+      src/mcp-server/index.ts: "MCP env/config token sourcing and tool-level parity."
+    estimated_effort: large
+    estimated_files: 5
+    estimated_lines: 360
+    focus_area: host_adapters_and_storage
+    verification:
+      - "Each Node host can provide a token to the SDK through one shared auth context shape."
+      - "Secret handling follows the approved host storage decisions."
+      - "The webview remains plugin-free and never receives raw token material."
+    acceptance_criteria:
+      - "Extension uses SecretStorage."
+      - "Standalone supports memory/config token sources."
+      - "CLI and MCP support env/config token sources with consistent precedence rules."
+    failure_modes:
+      - scenario: Token precedence differs by host and makes behavior unpredictable.
+        likelihood: medium
+        impact: high
+        mitigation: "Document and test one precedence order per host, then surface it in diagnostics/help text."
+    tech_stack:
+      - TypeScript
+      - Node.js
+      - VS Code API
+    test_coverage: null
+
+  - id: T5
+    title: Expose parity diagnostics, error semantics, and operator documentation
+    description: |
+      Surface active auth providers, host token-source state, and stable denial/authentication errors
+      through the standalone API, extension UX, CLI, and MCP responses. Update README/CHANGELOG and any
+      SDK/API-generated docs via their source comments/metadata once implementation behavior is finalized.
+    wave: 5
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T4
+    context_files:
+      README.md: "User-facing auth/plugin configuration and operational guidance."
+      CHANGELOG.md: "Release-note entry for the new capability family."
+      src/standalone/server.ts: "REST diagnostics/status surface."
+      src/cli/index.ts: "CLI diagnostics/help output."
+      src/mcp-server/index.ts: "Tool error and status parity."
+    estimated_effort: medium
+    estimated_files: 5
+    estimated_lines: 180
+    focus_area: parity_and_docs
+    verification:
+      - "All four host surfaces report consistent provider/status/deny semantics."
+      - "README and CHANGELOG reflect the SDK-first rollout and v1 scope limits."
+      - "Autogenerated docs are refreshed from source comments/metadata instead of edited by hand."
+    acceptance_criteria:
+      - "Parity diagnostics exist across standalone, extension, CLI, and MCP."
+      - "Operator-facing docs describe token sources and v1 scope boundaries."
+      - "The implementation remains aligned with SDK-first, then API, CLI, MCP parity."
+    failure_modes:
+      - scenario: Host surfaces expose inconsistent denial wording or omit key diagnostics.
+        likelihood: medium
+        impact: medium
+        mitigation: "Define shared error/status helpers and validate parity in focused tests."
+    tech_stack:
+      - TypeScript
+      - Markdown
+    test_coverage: null
+
+  - id: T6
+    title: Stage 2 follow-on architecture for richer authorization and broader token flows
+    description: |
+      After the first no-op contract and v1 action-level enforcement are stable, expand the architecture
+      toward richer pre-action coverage, optional read-side authorization, stronger host adapters, token
+      refresh flows, and future row/card-filtering designs. This task is intentionally blocked on the v1
+      contracts being proven first.
+    wave: 6
+    agent: gem-architect
+    priority: medium
+    status: pending
+    dependencies:
+      - T5
+    context_files:
+      docs/plan/20260320-auth-authz-plugin-architecture/architecture-decision-record.md: "Stage-1 accepted architecture baseline."
+      docs/plan/20260320-auth-authz-plugin-architecture/architecture-requirements-stage-2.md: "Detailed stage-2 requirements and future work inventory."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 0
+    focus_area: stage_2_authorization_architecture
+    verification:
+      - "Stage 2 work stays compatible with the stage-1 capability and SDK contracts."
+      - "Future row/card filtering remains explicitly out of scope until separately approved."
+      - "Host parity remains a release gate for any stage-2 expansion."
+    acceptance_criteria:
+      - "Stage-2 implementation starts from the documented ADR and ARD baselines."
+      - "No stage-2 work regresses the v1 action-level contract."
+      - "Future extensions are sequenced instead of leaking into the v1 baseline."
+    failure_modes:
+      - scenario: Stage-2 scope creeps into v1 before the base contracts stabilize.
+        likelihood: medium
+        impact: high
+        mitigation: "Keep stage-2 work explicitly blocked on the v1 contract and parity milestones."
+    tech_stack:
+      - Markdown
+      - TypeScript
+    test_coverage: null

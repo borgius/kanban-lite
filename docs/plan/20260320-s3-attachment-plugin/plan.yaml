@@ -1,0 +1,79 @@
+plan_id: 20260320-s3-attachment-plugin
+objective: |
+  Create a real installable npm package (kl-s3-attachment-storage) that implements
+  an external S3 attachment storage plugin for kanban-lite. The package should live
+  under tmp/kl-s3-attachment-storage, conform to the attachment.storage plugin
+  contract, support AWS default credential chain plus KL_S3_* env vars for
+  bucket/region/endpoint/prefix configuration, and produce a require-compatible
+  CommonJS bundle at dist/index.cjs.
+created_at: "2026-03-20"
+created_by: gem-implementer
+status: completed
+
+tldr: |
+  Scaffold a standalone TypeScript package that exports `attachmentStoragePlugin`
+  conforming to the kanban-lite attachment.storage plugin contract. The plugin
+  uploads attachments to S3 via copyAttachment, downloads them to a deterministic
+  temp-file path via materializeAttachment, and reads all configuration from
+  KL_S3_* / AWS_* environment variables (no local getCardDir since S3 is not
+  file-backed).
+
+tasks:
+  - id: T1
+    title: Scaffold package structure
+    status: completed
+    files_changed:
+      - tmp/kl-s3-attachment-storage/package.json
+      - tmp/kl-s3-attachment-storage/tsconfig.json
+      - tmp/kl-s3-attachment-storage/README.md
+
+  - id: T2
+    title: Implement S3 attachment plugin
+    status: completed
+    files_changed:
+      - tmp/kl-s3-attachment-storage/src/index.ts
+
+  - id: T3
+    title: Build and verify compilation
+    status: completed
+    notes:
+      - Built successfully with esbuild (dist/index.cjs) + tsc declaration emit
+      - All TypeScript errors resolved
+      - Named export attachmentStoragePlugin validates at runtime shape check
+
+  - id: T4
+    title: Update documentation coverage
+    status: completed
+    files_changed:
+      - README.md
+      - CHANGELOG.md
+      - tmp/kl-s3-attachment-storage/README.md
+    notes:
+      - Kept root docs explicit that the S3 package under tmp/ is a standalone example/scaffold, not a built-in provider
+      - Updated the package README to prefer local installation guidance and corrected the AWS SDK dependency note
+
+  - id: T5-followup
+    title: Fix workspace TS diagnostics (deprecated moduleResolution)
+    status: completed
+    files_changed:
+      - tmp/kl-s3-attachment-storage/tsconfig.json
+    notes:
+      - Changed module/moduleResolution from CommonJS/Node (deprecated) to Node16/node16
+      - node16 mode resolves node: prefix imports and process global; package.json "type":"commonjs" ensures CJS treatment
+      - typecheck (tsc --noEmit) and build (esbuild + tsc --emitDeclarationOnly) both pass cleanly
+      - Retry 2/2 fix: added "types":["node"] to compilerOptions so the VS Code language server resolves node: builtins and process without needing --noEmit; @types/node was already installed; zero get_errors; build passes
+
+defaults_used:
+  - package name / provider id = kl-s3-attachment-storage
+  - capability = attachment.storage only (no card.storage)
+  - language = TypeScript
+  - output = dist/index.cjs (esbuild CJS bundle) + dist/index.d.ts (tsc declarations)
+  - named export = attachmentStoragePlugin
+  - no getCardDir (S3 is not file-backed)
+  - materializeAttachment downloads to os.tmpdir()/kl-s3/{boardId}/{cardId}/{filename}
+  - attachment name validation rejects control chars and path separators
+  - key pattern = {prefix}boards/{boardId}/{cardId}/{filename}
+  - config via KL_S3_BUCKET, KL_S3_REGION, KL_S3_ENDPOINT, KL_S3_PREFIX, KL_S3_FORCE_PATH_STYLE
+  - AWS default credential chain for auth
+
+open_questions: []

@@ -1,0 +1,219 @@
+plan_id: 20260320-auth-authz-plugin-architecture
+objective: >-
+  Investigate the repository seams, plugin/capability patterns, and host constraints
+  relevant to introducing auth/authz plugins with SDK-first parity across standalone,
+  extension, CLI, and MCP.
+focus_area: auth-authz-plugin-architecture
+created_at: "2026-03-20"
+created_by: gem-documentation-writer
+status: completed
+
+tldr: |
+  - The repository already has a capability/plugin vocabulary in `src/shared/config.ts` and `src/sdk/KanbanSDK.ts`, making it practical to introduce auth capabilities as additional Node-hosted namespaces instead of inventing a second extension point.
+  - `KanbanSDK` is the only cross-surface seam shared by standalone, extension, CLI, and MCP, so identity resolution and policy enforcement belong there if parity is a hard requirement.
+  - Each host surface has a natural token-ingestion/storage boundary: VS Code can use SecretStorage, the standalone server can bind request/config state, and CLI/MCP already rely on environment/config patterns.
+  - The webview is not a viable plugin host; the extension panel is wired to `dist/standalone-webview`, while Node-hosted code handles workspace access and privileged operations.
+  - The cleanest v1 boundary is pre-action authorization only. Row/card filtering would force storage/list/query semantics that do not exist in the current contracts.
+
+research_metadata:
+  methodology: >-
+    Targeted read-only review of planning conventions plus source entry points:
+    `src/sdk/KanbanSDK.ts`, `src/shared/config.ts`, `src/shared/types.ts`,
+    `src/standalone/server.ts`, `src/cli/index.ts`, `src/mcp-server/index.ts`,
+    and `src/extension/KanbanPanel.ts`.
+  scope: >-
+    Capability/plugin shape, SDK orchestration seams, host integration points,
+    and documentation conventions under `docs/plan/`.
+  confidence: high
+  coverage: 90
+
+files_analyzed:
+  - file: KanbanSDK.ts
+    path: /Users/admin/dev/kanban-light/src/sdk/KanbanSDK.ts
+    purpose: Core SDK orchestration seam shared by all interface layers.
+    key_elements:
+      - element: resolveConfiguredCapabilities
+        type: function
+        location: src/sdk/KanbanSDK.ts:120
+        description: Resolves provider selections from config/options and shows the existing capability-loading pattern.
+      - element: KanbanSDK
+        type: class
+        location: src/sdk/KanbanSDK.ts:173
+        description: Shared runtime used by standalone server, CLI, MCP server, and extension hosts.
+      - element: StorageStatus
+        type: interface
+        location: src/sdk/KanbanSDK.ts:27
+        description: Existing diagnostic/status pattern that auth status can mirror for supportability.
+    language: TypeScript
+
+  - file: config.ts
+    path: /Users/admin/dev/kanban-light/src/shared/config.ts
+    purpose: Workspace config and provider-selection normalization boundary.
+    key_elements:
+      - element: CapabilityNamespace
+        type: type
+        location: src/shared/config.ts:6
+        description: Existing namespace model currently used for storage plugin capabilities.
+      - element: ProviderRef
+        type: interface
+        location: src/shared/config.ts:9
+        description: Existing provider-selection contract that auth capabilities can reuse.
+      - element: KanbanConfig
+        type: interface
+        location: src/shared/config.ts:108
+        description: Workspace config surface where provider references belong, while secrets should remain out-of-band.
+    language: TypeScript
+
+  - file: types.ts
+    path: /Users/admin/dev/kanban-light/src/shared/types.ts
+    purpose: Shared cross-surface types exposed to UI and transport layers.
+    key_elements:
+      - element: BoardInfo
+        type: interface
+        location: src/shared/types.ts:111
+        description: Example of slim shared transport contracts passed across host boundaries.
+      - element: Card
+        type: interface
+        location: src/shared/types.ts:57
+        description: Illustrates existing domain-model conventions and where auth context does not currently live.
+    language: TypeScript
+
+  - file: server.ts
+    path: /Users/admin/dev/kanban-light/src/standalone/server.ts
+    purpose: Standalone HTTP host and request-to-SDK adapter layer.
+    key_elements:
+      - element: startServer
+        type: function
+        location: src/standalone/server.ts:30
+        description: Constructs `KanbanSDK` once and acts as the natural place to attach request-derived auth context.
+      - element: readBody
+        type: function
+        location: src/standalone/server.ts:145
+        description: Current request parsing helper showing where request metadata enters the host.
+    language: TypeScript
+
+  - file: index.ts
+    path: /Users/admin/dev/kanban-light/src/cli/index.ts
+    purpose: CLI command surface and environment/config consumer.
+    key_elements:
+      - element: parseArgs
+        type: function
+        location: src/cli/index.ts:13
+        description: Existing CLI flag parsing surface suitable for token-source wiring without policy logic.
+      - element: resolveKanbanDir
+        type: function
+        location: src/cli/index.ts:72
+        description: Demonstrates CLI preference for env/config-driven runtime setup.
+    language: TypeScript
+
+  - file: index.ts
+    path: /Users/admin/dev/kanban-light/src/mcp-server/index.ts
+    purpose: MCP tool server and environment/config-based runtime entry point.
+    key_elements:
+      - element: resolveKanbanDir
+        type: function
+        location: src/mcp-server/index.ts:37
+        description: Already supports environment-based resolution, aligning with token env/config sourcing.
+      - element: main
+        type: function
+        location: src/mcp-server/index.ts:57
+        description: Constructs one SDK instance and defines tool-level parity expectations.
+    language: TypeScript
+
+  - file: KanbanPanel.ts
+    path: /Users/admin/dev/kanban-light/src/extension/KanbanPanel.ts
+    purpose: Extension host/webview bridge and proof that browser code is not the right plugin host.
+    key_elements:
+      - element: createOrShow
+        type: function
+        location: src/extension/KanbanPanel.ts:36
+        description: Loads `dist/standalone-webview` into a VS Code webview rather than running privileged logic in the browser bundle.
+      - element: message handlers
+        type: pattern
+        location: src/extension/KanbanPanel.ts:92
+        description: Shows the extension host mediating webview actions and delegating real work to Node-hosted code.
+    language: TypeScript
+
+planning_convention_findings:
+  - Existing `docs/plan/*/plan.yaml` files use a repo-native structure with `objective`, `tldr`, `pre_mortem`, `implementation_specification`, `contracts`, and wave-based `tasks`.
+  - Research artifacts under `docs/plan/*/research_findings_*.yaml` favor concrete file references, confidence/coverage metadata, and explicit implications for the next planning or implementation stage.
+  - Planning docs consistently reinforce the AGENTS guidance that business logic belongs in the SDK first and that API/CLI/MCP parity follows from the SDK contract.
+
+architecture_findings:
+  capability_model:
+    observation: >-
+      The repo already normalizes provider-based capabilities for storage. Reusing that
+      mechanism for auth/authz reduces architectural novelty and keeps host-layer loading
+      behavior consistent.
+    implication: >-
+      The auth architecture should introduce two new namespaces rather than a standalone
+      auth-plugin subsystem.
+
+  sdk_as_enforcement_seam:
+    observation: >-
+      All major host surfaces construct or depend on `KanbanSDK`, while interface layers are
+      expected to delegate business logic rather than duplicate it.
+    implication: >-
+      Identity resolution and authorization checks should be SDK-owned if parity is required.
+
+  host_specific_secret_boundaries:
+    observation: >-
+      The extension host can rely on VS Code APIs, the standalone server owns HTTP request state,
+      and CLI/MCP already use env/config style initialization.
+    implication: >-
+      Token acquisition/storage should stay adapter-specific, while the SDK consumes a normalized
+      auth context and never depends on a single secret-storage mechanism.
+
+  browser_execution_limits:
+    observation: >-
+      The extension webview loads a compiled standalone webview bundle and forwards actions back
+      to the Node host; it is not a privileged runtime for workspace/plugin execution.
+    implication: >-
+      v1 auth/authz plugins should be Node-hosted only.
+
+  authorization_scope_boundary:
+    observation: >-
+      Current repository contracts and planning patterns do not define row-level visibility,
+      partial list responses, or storage-provider-specific filtering behavior.
+    implication: >-
+      v1 should stay at action-level authorization. Row/card filtering needs a later stage with
+      dedicated storage/query contract work.
+
+decisions_confirmed:
+  - "Support both identity and policy plugin capabilities."
+  - "v1 authorization scope is action-level only; row/card filtering is deferred."
+  - "v1 authentication mode is token-based."
+  - "Host storage decisions are adapter-specific: extension SecretStorage, standalone memory/config, CLI/MCP env/config."
+  - "Plugins are Node-hosted only in v1."
+  - "Stage-1 architecture docs and a stage-2 architecture requirements document are required before implementation."
+
+recommended_contract_baseline:
+  capability_namespaces:
+    - auth.identity
+    - auth.policy
+  auth_context_shape:
+    - token_source
+    - token_present
+    - raw_token (write-only at host boundary; never logged or surfaced)
+    - transport
+    - actor_hint
+    - board_id
+    - card_id
+    - action
+  principal_shape:
+    - principal_id
+    - display_name
+    - claims
+    - provider_id
+    - authenticated
+  policy_decision_shape:
+    - allowed
+    - reason_code
+    - message
+    - audit
+
+gaps:
+  - No existing auth/authz capability namespaces or provider contracts are defined today.
+  - No shared request-auth context is threaded through SDK methods yet.
+  - No stable authorization error/status vocabulary exists across standalone, extension, CLI, and MCP.
+  - No read-side filtering contract exists, which is why action-level authorization is the appropriate v1 boundary.

@@ -2440,24 +2440,27 @@ writeConfig('/home/user/my-project', updated)
 
 * * *
 
-<a name="normalizeStorageCapabilities"></a>
+<a name="normalizeAuthCapabilities"></a>
 
-### normalizeStorageCapabilities()
-Normalizes legacy storage settings plus capability-based plugin selections
-into a complete runtime capability map.
+### normalizeAuthCapabilities(config) ⇒
+Normalizes auth capability selections from config into a complete runtime map.
 
-Precedence:
-1. Explicit `plugins[namespace]`
-2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
-3. Backward-compatible defaults (`markdown` + `localfs`)
-
-Explicit built-in `attachment.storage` providers such as `sqlite` and
-`mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
-it away from the legacy `localfs` default.
-
-The input object is never mutated.
+Both `auth.identity` and `auth.policy` default to the built-in `noop`
+provider when not explicitly configured, preserving the current open-access
+behavior. Noop identity always resolves to `null` (anonymous) and noop
+policy always returns `true` (allow-all).
 
 **Kind**: global function  
+**Returns**: Fully resolved auth capabilities with both namespaces present.  
+
+| Param | Description |
+| --- | --- |
+| config | A config fragment with an optional `auth` field. |
+
+**Example**  
+```js
+normalizeAuthCapabilities({}) // => { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } }
+```
 
 * * *
 
@@ -2640,6 +2643,94 @@ relative path does not match this two-level structure, returns `null`.
 | --- | --- |
 | filePath | The absolute path to the card file. |
 | kanbanDir | The root kanban directory used to compute the relative path. |
+
+
+* * *
+
+
+## Auth Plugin Contracts
+
+<a name="NOOP_IDENTITY_PLUGIN"></a>
+
+### NOOP\_IDENTITY\_PLUGIN
+Built-in no-op identity provider. Always resolves to `null` (anonymous).
+
+**Kind**: global variable  
+
+* * *
+
+<a name="NOOP_POLICY_PLUGIN"></a>
+
+### NOOP\_POLICY\_PLUGIN
+Built-in no-op policy provider. Always returns `true` (allow-all).
+
+**Kind**: global variable  
+
+* * *
+
+<a name="BUILTIN_ATTACHMENT_IDS"></a>
+
+### BUILTIN\_ATTACHMENT\_IDS
+Set of provider ids that are handled as built-in attachment plugins.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="BUILTIN_CARD_PLUGINS"></a>
+
+### BUILTIN\_CARD\_PLUGINS
+Registry of built-in card.storage plugins keyed by provider id.
+
+**Kind**: global constant  
+
+* * *
+
+<a name="loadExternalCardPlugin"></a>
+
+### loadExternalCardPlugin()
+Lazily loads an external npm card-storage plugin.
+Returns a deterministic, actionable error when the package is not installed
+rather than letting Node throw a confusing MODULE_NOT_FOUND.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
+<a name="loadExternalAttachmentPlugin"></a>
+
+### loadExternalAttachmentPlugin()
+Lazily loads an external npm attachment-storage plugin.
+Returns a deterministic, actionable error when the package is not installed.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
+<a name="resolveCapabilityBag"></a>
+
+### resolveCapabilityBag(capabilities, kanbanDir, authCapabilities)
+Resolves a fully typed [ResolvedCapabilityBag](ResolvedCapabilityBag) from a normalized
+[ResolvedCapabilities](ResolvedCapabilities) map.
+
+Attachment storage fallback precedence:
+1. Explicit provider in `capabilities['attachment.storage']` (built-in or external)
+2. Card storage engine's explicit built-in attachment provider
+3. Built-in `localfs`
+
+Auth plugins default to the built-in `noop` providers (anonymous identity,
+allow-all policy) when `authCapabilities` is not supplied, preserving
+the current open-access behavior.
+
+**Kind**: global function  
+
+| Param | Description |
+| --- | --- |
+| capabilities | Normalized provider selections from [normalizeStorageCapabilities](normalizeStorageCapabilities). |
+| kanbanDir | Absolute path to the `.kanban` directory. |
+| authCapabilities | Optional normalized auth provider selections from                           [normalizeAuthCapabilities](normalizeAuthCapabilities). Defaults to noop providers. |
 
 
 * * *

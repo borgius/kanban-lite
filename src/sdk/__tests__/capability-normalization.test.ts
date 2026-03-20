@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities } from '../../shared/config'
+import { normalizeStorageCapabilities, normalizeAuthCapabilities } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 
@@ -101,5 +101,61 @@ describe('normalizeStorageCapabilities', () => {
       normalizeStorageCapabilities(config)
       expect(JSON.stringify(config)).toBe(before)
     })
+  })
+})
+
+describe('normalizeAuthCapabilities', () => {
+  it('defaults both namespaces to noop when auth is absent', () => {
+    const result = normalizeAuthCapabilities(makeConfig())
+    expect(result['auth.identity']).toEqual({ provider: 'noop' })
+    expect(result['auth.policy']).toEqual({ provider: 'noop' })
+  })
+
+  it('defaults auth.policy to noop when only auth.identity is configured', () => {
+    const result = normalizeAuthCapabilities(
+      makeConfig({ auth: { 'auth.identity': { provider: 'my-identity-plugin' } } })
+    )
+    expect(result['auth.identity']).toEqual({ provider: 'my-identity-plugin' })
+    expect(result['auth.policy']).toEqual({ provider: 'noop' })
+  })
+
+  it('defaults auth.identity to noop when only auth.policy is configured', () => {
+    const result = normalizeAuthCapabilities(
+      makeConfig({ auth: { 'auth.policy': { provider: 'my-policy-plugin' } } })
+    )
+    expect(result['auth.identity']).toEqual({ provider: 'noop' })
+    expect(result['auth.policy']).toEqual({ provider: 'my-policy-plugin' })
+  })
+
+  it('passes through explicit providers with options', () => {
+    const result = normalizeAuthCapabilities(
+      makeConfig({
+        auth: {
+          'auth.identity': { provider: 'my-identity', options: { realm: 'test' } },
+          'auth.policy': { provider: 'my-policy', options: { strict: true } },
+        },
+      })
+    )
+    expect(result['auth.identity']).toEqual({ provider: 'my-identity', options: { realm: 'test' } })
+    expect(result['auth.policy']).toEqual({ provider: 'my-policy', options: { strict: true } })
+  })
+
+  it('both namespaces always present in output', () => {
+    const result = normalizeAuthCapabilities(makeConfig())
+    expect(result).toHaveProperty('auth.identity')
+    expect(result).toHaveProperty('auth.policy')
+  })
+
+  it('does not mutate the input config', () => {
+    const config = makeConfig({ auth: { 'auth.identity': { provider: 'my-plugin', options: { x: 1 } } } })
+    const before = JSON.stringify(config)
+    normalizeAuthCapabilities(config)
+    expect(JSON.stringify(config)).toBe(before)
+  })
+
+  it('accepts a plain object with only auth field (Pick<KanbanConfig, "auth">)', () => {
+    const result = normalizeAuthCapabilities({})
+    expect(result['auth.identity']).toEqual({ provider: 'noop' })
+    expect(result['auth.policy']).toEqual({ provider: 'noop' })
   })
 })

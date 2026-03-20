@@ -18,10 +18,15 @@ Kanban Lite used to treat storage as a simple engine switch (`markdown` vs `sqli
 
 The plugin system splits those concerns into **capabilities**.
 
-Today there are two capability namespaces:
+Today there are two **storage** capability namespaces:
 
 - `card.storage`
 - `attachment.storage`
+
+And two **auth** capability namespaces (no-op by default):
+
+- `auth.identity`
+- `auth.policy`
 
 That means:
 
@@ -90,6 +95,30 @@ The `attachment.storage` capability does **not** currently replace all card-stor
 - where attachments live,
 - how attachments are copied,
 - whether a host can materialize a safe local file path for an attachment.
+
+---
+
+### `auth.identity`
+
+This capability resolves a raw token to a typed identity.
+
+Built-in provider:
+
+- `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
+
+Future providers will implement token-based identity resolution (e.g., JWT). External node-hosted auth plugins are the intended future extension point.
+
+### `auth.policy`
+
+This capability decides whether an identity may perform a named action.
+
+Built-in provider:
+
+- `noop` (default) — always returns `true` (allow-all); preserves current open-access behavior.
+
+Future providers will implement real authorization rules based on the resolved identity.
+
+> **Note:** Auth capability enforcement (middleware wiring, request context injection, login UX) is a future slice. This release defines the contracts and no-op resolver plumbing only.
 
 ---
 

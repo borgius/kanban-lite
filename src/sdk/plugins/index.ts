@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { Card } from '../../shared/types'
-import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef } from '../../shared/config'
+import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities } from '../../shared/config'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { MARKDOWN_PLUGIN } from './markdown'
@@ -13,6 +13,86 @@ const runtimeRequire = createRequire(
     ? __filename
     : path.join(process.cwd(), '__kanban-runtime__.cjs')
 )
+
+// ---------------------------------------------------------------------------
+// Auth plugin contracts and built-in noop implementations
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolved identity returned by {@link AuthIdentityPlugin.resolveIdentity}.
+ */
+export interface AuthIdentity {
+  /** Opaque caller identifier (e.g., user ID or client ID). */
+  subject: string
+  /** Optional list of roles or permission scopes. */
+  roles?: string[]
+}
+
+/** Plugin manifest scoped to auth capability namespaces. */
+export interface AuthPluginManifest {
+  readonly id: string
+  readonly provides: readonly AuthCapabilityNamespace[]
+}
+
+/**
+ * Contract for `auth.identity` capability providers.
+ *
+ * Resolves a raw token to a typed identity. The built-in `noop` provider
+ * always returns `null` (anonymous), preserving the current open-access
+ * behavior until a real provider is configured.
+ *
+ * Token-based identity is the intended future auth mode.
+ */
+export interface AuthIdentityPlugin {
+  readonly manifest: AuthPluginManifest
+  /** Resolves a token to an identity, or `null` for anonymous / invalid tokens. */
+  resolveIdentity(token: string | undefined): Promise<AuthIdentity | null>
+}
+
+/**
+ * Contract for `auth.policy` capability providers.
+ *
+ * Determines whether a given identity may perform a named action. The
+ * built-in `noop` provider always returns `true` (allow-all), preserving
+ * the current open-access behavior until a real provider is configured.
+ */
+export interface AuthPolicyPlugin {
+  readonly manifest: AuthPluginManifest
+  /** Returns `true` when `identity` is authorized to perform `action`. */
+  checkPolicy(identity: AuthIdentity | null, action: string): Promise<boolean>
+}
+
+/** Built-in no-op identity provider. Always resolves to `null` (anonymous). */
+export const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin = {
+  manifest: { id: 'noop', provides: ['auth.identity'] },
+  async resolveIdentity(_token: string | undefined): Promise<AuthIdentity | null> {
+    return null
+  },
+}
+
+/** Built-in no-op policy provider. Always returns `true` (allow-all). */
+export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
+  manifest: { id: 'noop', provides: ['auth.policy'] },
+  async checkPolicy(_identity: AuthIdentity | null, _action: string): Promise<boolean> {
+    return true
+  },
+}
+
+function resolveAuthIdentityPlugin(ref: ProviderRef): AuthIdentityPlugin {
+  if (ref.provider === 'noop') return NOOP_IDENTITY_PLUGIN
+  throw new Error(
+    `Unknown auth.identity provider "${ref.provider}". ` +
+    `Only "noop" is supported in this release.`
+  )
+}
+
+function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
+  if (ref.provider === 'noop') return NOOP_POLICY_PLUGIN
+  throw new Error(
+    `Unknown auth.policy provider "${ref.provider}". ` +
+    `Only "noop" is supported in this release.`
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Plugin manifest and capability interfaces
@@ -104,6 +184,16 @@ export interface ResolvedCapabilityBag {
    * require file-system watching.
    */
   getWatchGlob(): string | null
+  /**
+   * Resolved `auth.identity` plugin. Defaults to the built-in `noop` provider
+   * (always returns `null` / anonymous) when no auth plugin is configured.
+   */
+  readonly authIdentity: AuthIdentityPlugin
+  /**
+   * Resolved `auth.policy` plugin. Defaults to the built-in `noop` provider
+   * (always returns `true` / allow-all) when no auth plugin is configured.
+   */
+  readonly authPolicy: AuthPolicyPlugin
 }
 
 function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace): manifest is PluginManifest {
@@ -274,12 +364,19 @@ function resolveCardPlugin(ref: ProviderRef): CardStoragePlugin {
  * 2. Card storage engine's explicit built-in attachment provider
  * 3. Built-in `localfs`
  *
- * @param capabilities - Normalized provider selections from {@link normalizeStorageCapabilities}.
- * @param kanbanDir    - Absolute path to the `.kanban` directory.
+ * Auth plugins default to the built-in `noop` providers (anonymous identity,
+ * allow-all policy) when `authCapabilities` is not supplied, preserving
+ * the current open-access behavior.
+ *
+ * @param capabilities     - Normalized provider selections from {@link normalizeStorageCapabilities}.
+ * @param kanbanDir        - Absolute path to the `.kanban` directory.
+ * @param authCapabilities - Optional normalized auth provider selections from
+ *                           {@link normalizeAuthCapabilities}. Defaults to noop providers.
  */
 export function resolveCapabilityBag(
   capabilities: ResolvedCapabilities,
   kanbanDir: string,
+  authCapabilities?: ResolvedAuthCapabilities,
 ): ResolvedCapabilityBag {
   const cardRef = capabilities['card.storage']
   const cardPlugin = resolveCardPlugin(cardRef)
@@ -302,6 +399,11 @@ export function resolveCapabilityBag(
     }
   } else {
     attachPlugin = loadExternalAttachmentPlugin(attachRef.provider)
+  }
+
+  const resolvedAuth: ResolvedAuthCapabilities = authCapabilities ?? {
+    'auth.identity': { provider: 'noop' },
+    'auth.policy': { provider: 'noop' },
   }
 
   return {
@@ -327,5 +429,7 @@ export function resolveCapabilityBag(
       if (nodeCapabilities) return nodeCapabilities.getWatchGlob()
       return cardEngine.type === 'markdown' ? 'boards/**/*.md' : null
     },
+    authIdentity: resolveAuthIdentityPlugin(resolvedAuth['auth.identity']),
+    authPolicy: resolveAuthPolicyPlugin(resolvedAuth['auth.policy']),
   }
 }

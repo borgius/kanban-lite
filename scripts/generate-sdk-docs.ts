@@ -98,6 +98,10 @@ const SOURCE_GROUPS: { title: string; files: string[] }[] = [
     title: 'File Utilities',
     files: ['src/sdk/fileUtils.ts'],
   },
+  {
+    title: 'Auth Plugin Contracts',
+    files: ['src/sdk/plugins/index.ts'],
+  },
 ]
 
 function compileTypeScript(): void {

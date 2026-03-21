@@ -84,20 +84,170 @@ export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
   },
 }
 
+/** Built-in RBAC identity provider. Resolves caller subject and role from a host-supplied token.
+ *
+ * Token format: `"<subject>:<role>"` with an optional `"Bearer "` prefix.
+ * `role` must be one of `user`, `manager`, or `admin`.
+ * Returns `null` (anonymous) when the token is absent, malformed, or carries
+ * an unrecognised role. Never includes raw token material in any output.
+ */
+export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
+  manifest: { id: 'rbac', provides: ['auth.identity'] },
+  async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
+    if (!context.token) return null
+    const raw = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
+    const colonIdx = raw.indexOf(':')
+    if (colonIdx <= 0) return null
+    const subject = raw.slice(0, colonIdx)
+    const role = raw.slice(colonIdx + 1)
+    if (!subject || (role !== 'user' && role !== 'manager' && role !== 'admin')) return null
+    return { subject, roles: [role] }
+  },
+}
+
+/**
+ * Built-in RBAC policy provider. Enforces the fixed {@link RBAC_ROLE_MATRIX}.
+ *
+ * Denies requests from a `null` identity with `auth.identity.missing`.
+ * Denies actions not covered by the resolved role(s) with `auth.policy.denied`.
+ * The resolved caller subject is attached to allow decisions as `actor`.
+ * No token material is included in any returned {@link AuthDecision}.
+ */
+export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
+  manifest: { id: 'rbac', provides: ['auth.policy'] },
+  async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
+    if (!identity) {
+      return { allowed: false, reason: 'auth.identity.missing' }
+    }
+    const roles = identity.roles ?? []
+    for (const role of roles) {
+      const permitted = RBAC_ROLE_MATRIX[role as RbacRole]
+      if (permitted?.has(action)) {
+        return { allowed: true, actor: identity.subject }
+      }
+    }
+    return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+  },
+}
+
 function resolveAuthIdentityPlugin(ref: ProviderRef): AuthIdentityPlugin {
   if (ref.provider === 'noop') return NOOP_IDENTITY_PLUGIN
+  if (ref.provider === 'rbac') return RBAC_IDENTITY_PLUGIN
   throw new Error(
     `Unknown auth.identity provider "${ref.provider}". ` +
-    `Only "noop" is supported in this release.`
+    `Supported providers: "noop", "rbac".`
   )
 }
 
 function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
   if (ref.provider === 'noop') return NOOP_POLICY_PLUGIN
+  if (ref.provider === 'rbac') return RBAC_POLICY_PLUGIN
   throw new Error(
     `Unknown auth.policy provider "${ref.provider}". ` +
-    `Only "noop" is supported in this release.`
+    `Supported providers: "noop", "rbac".`
   )
+}
+
+// ---------------------------------------------------------------------------
+// RBAC action catalog and role matrix (first-cut built-in provider contract)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical role names for the built-in RBAC auth provider.
+ *
+ * Roles are cumulative: `manager` includes all `user` actions, and `admin`
+ * includes all `manager` and `user` actions. The built-in `rbac` provider
+ * enforces this matrix at the SDK authorization seam.
+ *
+ * Host surfaces must never replicate or extend this matrix locally.
+ */
+export type RbacRole = 'user' | 'manager' | 'admin'
+
+/**
+ * Actions available to the `user` role.
+ *
+ * Covers non-destructive card-interaction operations: form submission,
+ * comments, attachments, action triggers, and card-level log writes.
+ */
+export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
+  'form.submit',
+  'comment.create',
+  'comment.update',
+  'comment.delete',
+  'attachment.add',
+  'attachment.remove',
+  'card.action.trigger',
+  'log.add',
+])
+
+/**
+ * Actions available to the `manager` role (includes all `user` actions).
+ *
+ * Adds card lifecycle mutations (create, update, move, transfer, delete),
+ * board-action triggers, card-log clearing, and board-level log writes.
+ */
+export const RBAC_MANAGER_ACTIONS: ReadonlySet<string> = new Set([
+  ...RBAC_USER_ACTIONS,
+  'card.create',
+  'card.update',
+  'card.move',
+  'card.transfer',
+  'card.delete',
+  'board.action.trigger',
+  'log.clear',
+  'board.log.add',
+])
+
+/**
+ * Actions available to the `admin` role (includes all `manager` and `user` actions).
+ *
+ * Adds all destructive and configuration operations: board create/update/delete,
+ * settings, webhooks, labels, columns, board-action config edits, board-log
+ * clearing, migrations, default-board changes, and deleted-card purge.
+ */
+export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
+  ...RBAC_MANAGER_ACTIONS,
+  'board.create',
+  'board.update',
+  'board.delete',
+  'settings.update',
+  'webhook.create',
+  'webhook.update',
+  'webhook.delete',
+  'label.set',
+  'label.rename',
+  'label.delete',
+  'column.create',
+  'column.update',
+  'column.reorder',
+  'column.setMinimized',
+  'column.delete',
+  'column.cleanup',
+  'board.action.config.add',
+  'board.action.config.remove',
+  'board.log.clear',
+  'board.setDefault',
+  'storage.migrate',
+  'card.purgeDeleted',
+])
+
+/**
+ * Fixed RBAC role matrix keyed by {@link RbacRole}.
+ *
+ * Each entry maps to the complete set of canonical action names that the role
+ * is permitted to perform. This is the single canonical source of truth consumed
+ * by the built-in `rbac` auth provider pair and by host tests that verify denial
+ * semantics. Hosts must not replicate or extend this matrix locally.
+ *
+ * @example
+ * // Check whether a resolved role may perform an action:
+ * const allowed = RBAC_ROLE_MATRIX['manager'].has('card.create') // true
+ * const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
+ */
+export const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>> = {
+  user: RBAC_USER_ACTIONS,
+  manager: RBAC_MANAGER_ACTIONS,
+  admin: RBAC_ADMIN_ACTIONS,
 }
 
 // ---------------------------------------------------------------------------

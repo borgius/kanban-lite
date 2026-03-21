@@ -4,7 +4,8 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX } from '../plugins'
+import type { RbacRole } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK } from '../KanbanSDK'
@@ -969,3 +970,353 @@ describe('KanbanSDK._authorizeAction', () => {
     })
   }
 })
+
+// ---------------------------------------------------------------------------
+// RBAC action catalog contract (T1: fixed role matrix invariants)
+// ---------------------------------------------------------------------------
+
+describe('RBAC action catalog contract', () => {
+  // ---------------------------------------------------------------------------
+  // Role membership
+  // ---------------------------------------------------------------------------
+
+  it('user actions are a strict subset of manager actions', () => {
+    for (const action of RBAC_USER_ACTIONS) {
+      expect(RBAC_MANAGER_ACTIONS.has(action)).toBe(true)
+    }
+    // manager has additional actions beyond user
+    const managerOnly = [...RBAC_MANAGER_ACTIONS].filter(a => !RBAC_USER_ACTIONS.has(a))
+    expect(managerOnly.length).toBeGreaterThan(0)
+  })
+
+  it('manager actions are a strict subset of admin actions', () => {
+    for (const action of RBAC_MANAGER_ACTIONS) {
+      expect(RBAC_ADMIN_ACTIONS.has(action)).toBe(true)
+    }
+    // admin has additional actions beyond manager
+    const adminOnly = [...RBAC_ADMIN_ACTIONS].filter(a => !RBAC_MANAGER_ACTIONS.has(a))
+    expect(adminOnly.length).toBeGreaterThan(0)
+  })
+
+  it('RBAC_ROLE_MATRIX references the exported sets by identity', () => {
+    expect(RBAC_ROLE_MATRIX.user).toBe(RBAC_USER_ACTIONS)
+    expect(RBAC_ROLE_MATRIX.manager).toBe(RBAC_MANAGER_ACTIONS)
+    expect(RBAC_ROLE_MATRIX.admin).toBe(RBAC_ADMIN_ACTIONS)
+  })
+
+  it('RBAC_ROLE_MATRIX has exactly the three canonical roles', () => {
+    const roles = Object.keys(RBAC_ROLE_MATRIX).sort()
+    expect(roles).toEqual(['admin', 'manager', 'user'])
+  })
+
+  // ---------------------------------------------------------------------------
+  // User role — expected action membership
+  // ---------------------------------------------------------------------------
+
+  const USER_EXPECTED: string[] = [
+    'form.submit',
+    'comment.create',
+    'comment.update',
+    'comment.delete',
+    'attachment.add',
+    'attachment.remove',
+    'card.action.trigger',
+    'log.add',
+  ]
+
+  for (const action of USER_EXPECTED) {
+    it(`user role includes '${action}'`, () => {
+      expect(RBAC_USER_ACTIONS.has(action)).toBe(true)
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Manager role — actions beyond user
+  // ---------------------------------------------------------------------------
+
+  const MANAGER_ONLY_EXPECTED: string[] = [
+    'card.create',
+    'card.update',
+    'card.move',
+    'card.transfer',
+    'card.delete',
+    'board.action.trigger',
+    'log.clear',
+    'board.log.add',
+  ]
+
+  for (const action of MANAGER_ONLY_EXPECTED) {
+    it(`manager role includes '${action}'`, () => {
+      expect(RBAC_MANAGER_ACTIONS.has(action)).toBe(true)
+    })
+
+    it(`user role does NOT include '${action}'`, () => {
+      expect(RBAC_USER_ACTIONS.has(action)).toBe(false)
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin role — uncovered admin/config mutators (canonical action catalog)
+  // ---------------------------------------------------------------------------
+
+  const ADMIN_ONLY_EXPECTED: string[] = [
+    'board.create',
+    'board.update',
+    'board.delete',
+    'settings.update',
+    'webhook.create',
+    'webhook.update',
+    'webhook.delete',
+    'label.set',
+    'label.rename',
+    'label.delete',
+    'column.create',
+    'column.update',
+    'column.reorder',
+    'column.setMinimized',
+    'column.delete',
+    'column.cleanup',
+    'board.action.config.add',
+    'board.action.config.remove',
+    'board.log.clear',
+    'board.setDefault',
+    'storage.migrate',
+    'card.purgeDeleted',
+  ]
+
+  for (const action of ADMIN_ONLY_EXPECTED) {
+    it(`admin role includes '${action}'`, () => {
+      expect(RBAC_ADMIN_ACTIONS.has(action)).toBe(true)
+    })
+
+    it(`manager role does NOT include '${action}'`, () => {
+      expect(RBAC_MANAGER_ACTIONS.has(action)).toBe(false)
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Role matrix lookup helper (as used by the future rbac provider)
+  // ---------------------------------------------------------------------------
+
+  it('RBAC_ROLE_MATRIX allows lookup by role string key', () => {
+    const role: RbacRole = 'manager'
+    expect(RBAC_ROLE_MATRIX[role].has('card.create')).toBe(true)
+    expect(RBAC_ROLE_MATRIX[role].has('board.delete')).toBe(false)
+  })
+
+  it('admin role contains every user action', () => {
+    for (const action of RBAC_USER_ACTIONS) {
+      expect(RBAC_ADMIN_ACTIONS.has(action)).toBe(true)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// RBAC built-in provider pair (T2)
+// ---------------------------------------------------------------------------
+
+describe('RBAC built-in provider pair', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-rbac-t2-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  const storageCaps = {
+    'card.storage': { provider: 'markdown' },
+    'attachment.storage': { provider: 'localfs' },
+  } as const
+
+  const rbacAuthCaps = {
+    'auth.identity': { provider: 'rbac' },
+    'auth.policy': { provider: 'rbac' },
+  } as const
+
+  // -------------------------------------------------------------------------
+  // Provider resolution
+  // -------------------------------------------------------------------------
+
+  it('selecting rbac resolves a real identity plugin (not noop)', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir, rbacAuthCaps)
+    expect(bag.authIdentity).not.toBe(NOOP_IDENTITY_PLUGIN)
+    expect(bag.authIdentity.manifest.id).toBe('rbac')
+  })
+
+  it('selecting rbac resolves a real policy plugin (not noop)', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir, rbacAuthCaps)
+    expect(bag.authPolicy).not.toBe(NOOP_POLICY_PLUGIN)
+    expect(bag.authPolicy.manifest.id).toBe('rbac')
+  })
+
+  it('RBAC_IDENTITY_PLUGIN and RBAC_POLICY_PLUGIN are the resolved singletons', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir, rbacAuthCaps)
+    expect(bag.authIdentity).toBe(RBAC_IDENTITY_PLUGIN)
+    expect(bag.authPolicy).toBe(RBAC_POLICY_PLUGIN)
+  })
+
+  it('omitting auth config still resolves noop providers', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir)
+    expect(bag.authIdentity).toBe(NOOP_IDENTITY_PLUGIN)
+    expect(bag.authPolicy).toBe(NOOP_POLICY_PLUGIN)
+  })
+
+  it('rbac identity plugin has correct manifest', () => {
+    expect(RBAC_IDENTITY_PLUGIN.manifest.id).toBe('rbac')
+    expect(RBAC_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
+  })
+
+  it('rbac policy plugin has correct manifest', () => {
+    expect(RBAC_POLICY_PLUGIN.manifest.id).toBe('rbac')
+    expect(RBAC_POLICY_PLUGIN.manifest.provides).toContain('auth.policy')
+  })
+
+  // -------------------------------------------------------------------------
+  // RBAC identity plugin – identity resolution
+  // -------------------------------------------------------------------------
+
+  it('resolveIdentity returns null when token is absent', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({})
+    expect(identity).toBeNull()
+  })
+
+  it('resolveIdentity populates subject and admin role from plain token', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'alice:admin' })
+    expect(identity).not.toBeNull()
+    expect(identity!.subject).toBe('alice')
+    expect(identity!.roles).toContain('admin')
+  })
+
+  it('resolveIdentity strips Bearer prefix and resolves manager token', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'Bearer bob:manager' })
+    expect(identity!.subject).toBe('bob')
+    expect(identity!.roles).toContain('manager')
+  })
+
+  it('resolveIdentity resolves user role', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'carol:user' })
+    expect(identity!.subject).toBe('carol')
+    expect(identity!.roles).toContain('user')
+  })
+
+  it('resolveIdentity returns null for unrecognised role', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'eve:superadmin' })
+    expect(identity).toBeNull()
+  })
+
+  it('resolveIdentity returns null when token has no colon delimiter', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'admintoken' })
+    expect(identity).toBeNull()
+  })
+
+  it('resolveIdentity returns null when subject part is empty', async () => {
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: ':admin' })
+    expect(identity).toBeNull()
+  })
+
+  // -------------------------------------------------------------------------
+  // RBAC policy plugin – allow decisions for each role level
+  // -------------------------------------------------------------------------
+
+  it('admin identity is allowed an admin-only action (settings.update)', async () => {
+    const identity = { subject: 'alice', roles: ['admin'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', {})
+    expect(decision.allowed).toBe(true)
+    expect(decision.actor).toBe('alice')
+  })
+
+  it('admin identity is allowed a manager action (card.create)', async () => {
+    const identity = { subject: 'alice', roles: ['admin'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'card.create', {})
+    expect(decision.allowed).toBe(true)
+  })
+
+  it('manager identity is allowed a manager action (card.create)', async () => {
+    const identity = { subject: 'bob', roles: ['manager'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'card.create', {})
+    expect(decision.allowed).toBe(true)
+  })
+
+  it('manager identity is allowed a user action (comment.create)', async () => {
+    const identity = { subject: 'bob', roles: ['manager'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'comment.create', {})
+    expect(decision.allowed).toBe(true)
+  })
+
+  it('user identity is allowed a user action (comment.create)', async () => {
+    const identity = { subject: 'carol', roles: ['user'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'comment.create', {})
+    expect(decision.allowed).toBe(true)
+    expect(decision.actor).toBe('carol')
+  })
+
+  // -------------------------------------------------------------------------
+  // RBAC policy plugin – deny decisions
+  // -------------------------------------------------------------------------
+
+  it('user identity is denied a manager-only action (card.create)', async () => {
+    const identity = { subject: 'carol', roles: ['user'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'card.create', {})
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('auth.policy.denied')
+  })
+
+  it('user identity is denied an admin-only action (settings.update)', async () => {
+    const identity = { subject: 'carol', roles: ['user'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', {})
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('auth.policy.denied')
+  })
+
+  it('manager identity is denied an admin-only action (settings.update)', async () => {
+    const identity = { subject: 'bob', roles: ['manager'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', {})
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('auth.policy.denied')
+  })
+
+  it('null identity is denied with auth.identity.missing', async () => {
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(null, 'card.create', {})
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('auth.identity.missing')
+  })
+
+  it('deny decision for null identity has no actor field', async () => {
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(null, 'card.create', {})
+    expect(decision.actor).toBeUndefined()
+  })
+
+  it('deny decision includes resolved actor subject', async () => {
+    const identity = { subject: 'bob', roles: ['manager'] }
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', {})
+    expect(decision.actor).toBe('bob')
+  })
+
+  // -------------------------------------------------------------------------
+  // Token non-disclosure
+  // -------------------------------------------------------------------------
+
+  it('raw token value does not appear in policy denial when token is invalid', async () => {
+    const rawToken = 'OPAQUE-SECRET-ZYX987'
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: rawToken })
+    expect(identity).toBeNull()
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(null, 'card.create', { token: rawToken })
+    expect(JSON.stringify(decision)).not.toContain('OPAQUE-SECRET-ZYX987')
+  })
+
+  it('policy allow decision metadata does not contain raw token', async () => {
+    const rawToken = 'alice:admin'
+    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: rawToken })
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', { token: rawToken })
+    // metadata field (if present) must not echo the full raw token
+    const meta = JSON.stringify(decision.metadata ?? {})
+    expect(meta).not.toContain(rawToken)
+  })
+})
+

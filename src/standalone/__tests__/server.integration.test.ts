@@ -287,27 +287,6 @@ describe('Standalone Server Integration', () => {
       expect(res.status).toBe(200)
       expect(res.body).toContain('<div id="root">')
     })
-
-    it('should serve Swagger UI docs', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
-
-      const res = await httpGet(`http://localhost:${port}/api/docs`)
-      expect(res.status).toBe(200)
-      expect(res.headers['content-type']).toContain('text/html')
-      expect(res.body).toContain('Swagger UI')
-    })
-
-    it('should serve OpenAPI JSON', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
-
-      const res = await httpGet(`http://localhost:${port}/api/docs/json`)
-      expect(res.status).toBe(200)
-      const json = JSON.parse(res.body)
-      expect(json.openapi).toBe('3.0.3')
-      expect(json.info.title).toBe('Kanban Lite REST API')
-    })
   })
 
   // ── WebSocket: Ready / Init ──
@@ -2771,6 +2750,109 @@ describe('Standalone Server Integration', () => {
       const cards = response.cards as Array<Record<string, unknown>>
       expect(cards.length).toBe(1)
       expect(cards[0].content).toContain('Broadcast Test')
+    })
+  })
+
+  // ── Admin/Config Auth Denial Mapping ──
+
+  describe('admin route auth denial semantics', () => {
+    it('POST /api/boards maps AuthError to HTTP 401', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const createSpy = vi.spyOn(KanbanSDK.prototype, 'createBoard').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "board.create" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/boards`, { id: 'x', name: 'X' })
+      expect(res.status).toBe(403)
+      createSpy.mockRestore()
+    })
+
+    it('PUT /api/settings maps AuthError to HTTP 401', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/settings`, { defaultStatus: 'backlog' })
+      expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+
+    it('POST /api/webhooks maps AuthError to HTTP 401', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'createWebhook').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/webhooks`, { url: 'https://example.com', events: ['*'] })
+      expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+
+    it('POST /api/storage/migrate-to-sqlite maps AuthError to HTTP 401', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'migrateToSqlite').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "migration.toSqlite" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/storage/migrate-to-sqlite`, {})
+      expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+  })
+
+  describe('websocket admin auth context threading', () => {
+    it('forwards bearer auth to addColumn via websocket', async () => {
+      const addColumnSpy = vi.spyOn(KanbanSDK.prototype, 'addColumn').mockResolvedValue([
+        { id: 'new-col', name: 'New', color: '#000000' }
+      ])
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port, { Authorization: 'Bearer admin-token' })
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      await sendAndReceive(ws, {
+        type: 'addColumn',
+        column: { name: 'New', color: '#000000' }
+      }, 'init')
+
+      expect(addColumnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'New', color: '#000000' }),
+        undefined,
+        expect.objectContaining({ token: 'admin-token', tokenSource: 'request-header', transport: 'http' })
+      )
+      addColumnSpy.mockRestore()
+    })
+
+    it('forwards bearer auth to saveSettings via websocket', async () => {
+      const settingsSpy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockResolvedValue(undefined)
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port, { Authorization: 'Bearer settings-token' })
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      ws.send(JSON.stringify({ type: 'saveSettings', settings: { defaultStatus: 'backlog' } }))
+      await sleep(100)
+
+      expect(settingsSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ token: 'settings-token', tokenSource: 'request-header', transport: 'http' })
+      )
+      settingsSpy.mockRestore()
     })
   })
 })

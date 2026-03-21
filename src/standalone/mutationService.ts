@@ -130,20 +130,21 @@ export async function doPurgeDeletedCards(ctx: StandaloneContext, auth?: AuthCon
   }
 }
 
-export function doAddColumn(ctx: StandaloneContext, name: string, color: string): KanbanColumn {
-  const columns = ctx.sdk.addColumn({ id: '', name, color }, ctx.currentBoardId)
+export async function doAddColumn(ctx: StandaloneContext, name: string, color: string, auth?: AuthContext): Promise<KanbanColumn> {
+  const columns = await ctx.sdk.addColumn({ id: '', name, color }, ctx.currentBoardId, auth)
   const column = columns[columns.length - 1]
   broadcast(ctx, buildInitMessage(ctx))
   return column
 }
 
-export function doEditColumn(ctx: StandaloneContext, columnId: string, updates: { name: string; color: string }): KanbanColumn | null {
+export async function doEditColumn(ctx: StandaloneContext, columnId: string, updates: { name: string; color: string }, auth?: AuthContext): Promise<KanbanColumn | null> {
   try {
-    const columns = ctx.sdk.updateColumn(columnId, { name: updates.name, color: updates.color }, ctx.currentBoardId)
+    const columns = await ctx.sdk.updateColumn(columnId, { name: updates.name, color: updates.color }, ctx.currentBoardId, auth)
     const updated = columns.find(c => c.id === columnId) ?? null
     broadcast(ctx, buildInitMessage(ctx))
     return updated
-  } catch {
+  } catch (err) {
+    if (err instanceof AuthError) throw err
     return null
   }
 }
@@ -179,8 +180,8 @@ export async function doCleanupColumn(ctx: StandaloneContext, columnId: string, 
   }
 }
 
-export function doSaveSettings(ctx: StandaloneContext, newSettings: CardDisplaySettings): void {
-  ctx.sdk.updateSettings(newSettings)
+export async function doSaveSettings(ctx: StandaloneContext, newSettings: CardDisplaySettings, auth?: AuthContext): Promise<void> {
+  await ctx.sdk.updateSettings(newSettings, auth)
   broadcast(ctx, buildInitMessage(ctx))
 }
 

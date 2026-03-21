@@ -608,7 +608,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         process.exit(1)
       }
       const description = typeof flags.description === 'string' ? flags.description : undefined
-      const board = await sdk.createBoard(id, name, { description })
+      const board = await sdk.createBoard(id, name, { description }, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify(board, null, 2))
       } else {
@@ -654,8 +654,9 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         break
       }
       try {
-        sdk.setDefaultBoard(boardId)
+        await sdk.setDefaultBoard(boardId, resolveCliAuthContext())
       } catch (err) {
+        if (err instanceof AuthError) handleAuthError(err)
         console.error(red(String(err)))
         process.exit(1)
       }
@@ -699,7 +700,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions add --board <id> --key <key> --title <title>'))
         process.exit(1)
       }
-      const result = sdk.addBoardAction(boardId, key, title)
+      const result = await sdk.addBoardAction(boardId, key, title, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify(result, null, 2))
       } else {
@@ -714,7 +715,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions remove --board <id> <key>'))
         process.exit(1)
       }
-      sdk.removeBoardAction(boardId, key)
+      await sdk.removeBoardAction(boardId, key, resolveCliAuthContext())
       console.log(green(`Removed action "${key}" from board ${boardId}`))
       break
     }
@@ -1153,7 +1154,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
         console.error(red('No updates specified. Use --name or --color'))
         process.exit(1)
       }
-      const columns = await sdk.updateColumn(columnId, updates, boardId)
+      const columns = await sdk.updateColumn(columnId, updates, boardId, resolveCliAuthContext())
       console.log(green(`Updated column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1186,13 +1187,13 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
         console.error(red('Usage: kl columns reorder <id1> <id2> ...'))
         process.exit(1)
       }
-      await sdk.reorderColumns(columnIds, boardId)
+      await sdk.reorderColumns(columnIds, boardId, resolveCliAuthContext())
       console.log(green('Columns reordered.'))
       break
     }
     case 'set-minimized': {
       const columnIds = positional.slice(1)
-      sdk.setMinimizedColumns(columnIds, boardId)
+      await sdk.setMinimizedColumns(columnIds, boardId, resolveCliAuthContext())
       if (columnIds.length === 0) {
         console.log(green('Cleared all minimized columns.'))
       } else {
@@ -1250,7 +1251,7 @@ async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         process.exit(1)
       }
       const group = typeof flags.group === 'string' ? flags.group : undefined
-      sdk.setLabel(name, { color, group })
+      await sdk.setLabel(name, { color, group }, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify({ name, color, group: group || null }, null, 2))
       } else {
@@ -1352,7 +1353,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): 
       }
       const events = typeof flags.events === 'string' ? flags.events.split(',').map(e => e.trim()) : ['*']
       const secret = typeof flags.secret === 'string' ? flags.secret : undefined
-      const webhook = sdk.createWebhook({ url, events, secret })
+      const webhook = await sdk.createWebhook({ url, events, secret }, resolveCliAuthContext())
       if (flags.json) {
         console.log(JSON.stringify(webhook, null, 2))
       } else {
@@ -1370,7 +1371,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): 
         console.error(red('Usage: kl webhooks remove <id>'))
         process.exit(1)
       }
-      const removed = sdk.deleteWebhook(webhookId)
+      const removed = await sdk.deleteWebhook(webhookId, resolveCliAuthContext())
       if (removed) {
         console.log(green(`Removed webhook: ${webhookId}`))
       } else {
@@ -1390,7 +1391,7 @@ async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): 
       if (typeof flags.events === 'string') updates.events = flags.events.split(',').map(e => e.trim())
       if (typeof flags.secret === 'string') updates.secret = flags.secret
       if (typeof flags.active === 'string') updates.active = flags.active === 'true'
-      const updated = sdk.updateWebhook(webhookId, updates)
+      const updated = await sdk.updateWebhook(webhookId, updates, resolveCliAuthContext())
       if (!updated) {
         console.error(red(`Webhook not found: ${webhookId}`))
         process.exit(1)
@@ -1460,7 +1461,7 @@ async function cmdSettings(positional: string[], flags: Flags, sdk: KanbanSDK): 
         console.error(`Available: ${SETTINGS_KEYS.join(', ')}`)
         process.exit(1)
       }
-      sdk.updateSettings(settings)
+      await sdk.updateSettings(settings, resolveCliAuthContext())
       console.log(green('Settings updated.'))
       if (flags.json) {
         console.log(JSON.stringify(sdk.getSettings(), null, 2))
@@ -1751,7 +1752,7 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
   if (sub === 'migrate-to-sqlite') {
     const dbPath = typeof flags['sqlite-path'] === 'string' ? flags['sqlite-path'] : undefined
     console.log('Migrating cards to SQLite…')
-    const count = await sdk.migrateToSqlite(dbPath)
+    const count = await sdk.migrateToSqlite(dbPath, resolveCliAuthContext())
     if (flags.json) {
       console.log(JSON.stringify({ ok: true, count, storageEngine: 'sqlite' }))
     } else {
@@ -1764,7 +1765,7 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
 
   if (sub === 'migrate-to-markdown') {
     console.log('Migrating cards to markdown…')
-    const count = await sdk.migrateToMarkdown()
+    const count = await sdk.migrateToMarkdown(resolveCliAuthContext())
     if (flags.json) {
       console.log(JSON.stringify({ ok: true, count, storageEngine: 'markdown' }))
     } else {

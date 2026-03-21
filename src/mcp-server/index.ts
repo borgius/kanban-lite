@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     columns: z.array(z.object({ id: z.string(), name: z.string(), color: z.string() })).optional().describe('Board columns (defaults to standard columns)'),
   }, async ({ id, name, description, columns }) => {
     try {
-      const board = sdk.createBoard(id, name, { description, columns })
+      const board = await sdk.createBoard(id, name, { description, columns }, resolveMcpAuthContext())
       return { content: [{ type: 'text' as const, text: JSON.stringify(board, null, 2) }] }
     } catch (err) {
       if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -598,8 +598,13 @@ async function main(): Promise<void> {
       title: z.string().describe('Human-readable display title for the action'),
     },
     async ({ boardId, key, title }) => {
-      const actions = sdk.addBoardAction(boardId, key, title)
-      return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+      try {
+        const actions = await sdk.addBoardAction(boardId, key, title, resolveMcpAuthContext())
+        return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+      }
     }
   )
 
@@ -611,8 +616,13 @@ async function main(): Promise<void> {
       key: z.string().describe('Action key to remove'),
     },
     async ({ boardId, key }) => {
-      const actions = sdk.removeBoardAction(boardId, key)
-      return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+      try {
+        const actions = await sdk.removeBoardAction(boardId, key, resolveMcpAuthContext())
+        return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+      }
     }
   )
 
@@ -1147,12 +1157,12 @@ async function main(): Promise<void> {
       color: z.string().describe('Column color (hex format, e.g. "#3b82f6")'),
     },
     async ({ boardId, id, name, color }) => {
-      const columns = await sdk.addColumn({ id, name, color }, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(columns, null, 2),
-        }],
+      try {
+        const columns = await sdk.addColumn({ id, name, color }, boardId, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1170,12 +1180,12 @@ async function main(): Promise<void> {
       const updates: Record<string, string> = {}
       if (name) updates.name = name
       if (color) updates.color = color
-      const columns = await sdk.updateColumn(columnId, updates, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(columns, null, 2),
-        }],
+      try {
+        const columns = await sdk.updateColumn(columnId, updates, boardId, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1211,12 +1221,12 @@ async function main(): Promise<void> {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
     },
     async ({ columnIds, boardId }) => {
-      const columns = sdk.reorderColumns(columnIds, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(columns, null, 2),
-        }],
+      try {
+        const columns = await sdk.reorderColumns(columnIds, boardId, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1229,12 +1239,12 @@ async function main(): Promise<void> {
       boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
     },
     async ({ columnIds, boardId }) => {
-      const minimized = sdk.setMinimizedColumns(columnIds, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({ minimizedColumnIds: minimized }, null, 2),
-        }],
+      try {
+        const minimized = await sdk.setMinimizedColumns(columnIds, boardId, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ minimizedColumnIds: minimized }, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1271,8 +1281,13 @@ async function main(): Promise<void> {
     color: z.string().describe('Hex color (e.g. "#e11d48")'),
     group: z.string().optional().describe('Optional group name (e.g. "Type", "Priority")')
   }, async ({ name, color, group }) => {
-    sdk.setLabel(name, { color, group })
-    return { content: [{ type: 'text' as const, text: `Label "${name}" set with color ${color}${group ? ` in group "${group}"` : ''}` }] }
+    try {
+      await sdk.setLabel(name, { color, group }, resolveMcpAuthContext())
+      return { content: [{ type: 'text' as const, text: `Label "${name}" set with color ${color}${group ? ` in group "${group}"` : ''}` }] }
+    } catch (err) {
+      if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+      return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+    }
   })
 
   server.tool('rename_label', 'Rename a label (cascades to all cards)', {
@@ -1329,12 +1344,12 @@ async function main(): Promise<void> {
           (merged as unknown as Record<string, unknown>)[key] = value
         }
       }
-      sdk.updateSettings(merged)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(sdk.getSettings(), null, 2),
-        }],
+      try {
+        await sdk.updateSettings(merged, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify(sdk.getSettings(), null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1365,16 +1380,12 @@ async function main(): Promise<void> {
       secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
     },
     async ({ url, events, secret }) => {
-      const webhook = sdk.createWebhook({
-        url,
-        events: events || ['*'],
-        secret,
-      })
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(webhook, null, 2),
-        }],
+      try {
+        const webhook = await sdk.createWebhook({ url, events: events || ['*'], secret }, resolveMcpAuthContext())
+        return { content: [{ type: 'text' as const, text: JSON.stringify(webhook, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1386,18 +1397,15 @@ async function main(): Promise<void> {
       webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
     },
     async ({ webhookId }) => {
-      const removed = sdk.deleteWebhook(webhookId)
-      if (!removed) {
-        return {
-          content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],
-          isError: true,
+      try {
+        const removed = await sdk.deleteWebhook(webhookId, resolveMcpAuthContext())
+        if (!removed) {
+          return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
         }
-      }
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Deleted webhook: ${webhookId}`,
-        }],
+        return { content: [{ type: 'text' as const, text: `Deleted webhook: ${webhookId}` }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1418,18 +1426,15 @@ async function main(): Promise<void> {
       if (events !== undefined) updates.events = events
       if (secret !== undefined) updates.secret = secret
       if (active !== undefined) updates.active = active
-      const updated = sdk.updateWebhook(webhookId, updates)
-      if (!updated) {
-        return {
-          content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }],
-          isError: true,
+      try {
+        const updated = await sdk.updateWebhook(webhookId, updates, resolveMcpAuthContext())
+        if (!updated) {
+          return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
         }
-      }
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(updated, null, 2),
-        }],
+        return { content: [{ type: 'text' as const, text: JSON.stringify(updated, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1520,7 +1525,7 @@ async function main(): Promise<void> {
     },
     async ({ sqlitePath }) => {
       try {
-        const count = await sdk.migrateToSqlite(sqlitePath)
+        const count = await sdk.migrateToSqlite(sqlitePath, resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,
@@ -1542,7 +1547,7 @@ async function main(): Promise<void> {
     {},
     async () => {
       try {
-        const count = await sdk.migrateToMarkdown()
+        const count = await sdk.migrateToMarkdown(resolveMcpAuthContext())
         return {
           content: [{
             type: 'text' as const,

@@ -147,17 +147,17 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'saveSettings':
-      doSaveSettings(ctx, msg.settings as CardDisplaySettings)
+      await doSaveSettings(ctx, msg.settings as CardDisplaySettings, authContext)
       break
 
     case 'addColumn': {
       const col = msg.column as { name: string; color: string }
-      doAddColumn(ctx, col.name, col.color)
+      await doAddColumn(ctx, col.name, col.color, authContext)
       break
     }
 
     case 'editColumn':
-      doEditColumn(ctx, msg.columnId as string, msg.updates as { name: string; color: string })
+      await doEditColumn(ctx, msg.columnId as string, msg.updates as { name: string; color: string }, authContext)
       break
 
     case 'removeColumn':
@@ -172,7 +172,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const columnIds = msg.columnIds as string[]
       const boardId = msg.boardId as string | undefined
       if (Array.isArray(columnIds)) {
-        ctx.sdk.reorderColumns(columnIds, boardId)
+        await ctx.sdk.reorderColumns(columnIds, boardId, authContext)
         broadcast(ctx, buildInitMessage(ctx))
       }
       break
@@ -181,7 +181,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'setMinimizedColumns': {
       const columnIds = msg.columnIds as string[]
       const boardId = msg.boardId as string | undefined
-      ctx.sdk.setMinimizedColumns(Array.isArray(columnIds) ? columnIds : [], boardId)
+      await ctx.sdk.setMinimizedColumns(Array.isArray(columnIds) ? columnIds : [], boardId, authContext)
       break
     }
 
@@ -326,7 +326,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'createBoard': {
       const boardName = msg.name as string
       try {
-        const createdBoard = ctx.sdk.createBoard('', boardName)
+        const createdBoard = await ctx.sdk.createBoard('', boardName, undefined, authContext)
         ctx.currentBoardId = createdBoard.id
         ctx.migrating = true
         try {
@@ -342,7 +342,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'setLabel': {
-      ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string })
+      await ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string }, authContext)
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
       break

@@ -634,12 +634,13 @@ export class KanbanSDK {
    * })
    * ```
    */
-  createBoard(id: string, name: string, options?: {
+  async createBoard(id: string, name: string, options?: {
     description?: string
     columns?: KanbanColumn[]
     defaultStatus?: string
     defaultPriority?: Priority
-  }): BoardInfo {
+  }, auth?: AuthContext): Promise<BoardInfo> {
+    await this._authorizeAction('board.create', this._withAuthContext(auth, { boardId: id }))
     return Boards.createBoard(this, id, name, options)
   }
 
@@ -707,7 +708,8 @@ export class KanbanSDK {
    * })
    * ```
    */
-  updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>): BoardConfig {
+  async updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>, auth?: AuthContext): Promise<BoardConfig> {
+    await this._authorizeAction('board.update', this._withAuthContext(auth, { boardId }))
     return Boards.updateBoard(this, boardId, updates)
   }
 
@@ -742,7 +744,8 @@ export class KanbanSDK {
     * sdk.addBoardAction('deployments', 'deploy', 'Deploy now')
     * ```
    */
-  addBoardAction(boardId: string, key: string, title: string): Record<string, string> {
+  async addBoardAction(boardId: string, key: string, title: string, auth?: AuthContext): Promise<Record<string, string>> {
+    await this._authorizeAction('board.action.config.add', this._withAuthContext(auth, { boardId }))
     return Boards.addBoardAction(this, boardId, key, title)
   }
 
@@ -760,7 +763,8 @@ export class KanbanSDK {
     * sdk.removeBoardAction('deployments', 'deploy')
     * ```
    */
-  removeBoardAction(boardId: string, key: string): Record<string, string> {
+  async removeBoardAction(boardId: string, key: string, auth?: AuthContext): Promise<Record<string, string>> {
+    await this._authorizeAction('board.action.config.remove', this._withAuthContext(auth, { boardId }))
     return Boards.removeBoardAction(this, boardId, key)
   }
 
@@ -1282,7 +1286,8 @@ export class KanbanSDK {
    * sdk.setLabel('docs', { color: '#16a34a' })
    * ```
    */
-  setLabel(name: string, definition: LabelDefinition): void {
+  async setLabel(name: string, definition: LabelDefinition, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('label.set', this._withAuthContext(auth, { labelName: name }))
     Labels.setLabel(this, name, definition)
   }
 
@@ -1766,7 +1771,8 @@ export class KanbanSDK {
    * )
    * ```
    */
-  addColumn(column: KanbanColumn, boardId?: string): KanbanColumn[] {
+  async addColumn(column: KanbanColumn, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
+    await this._authorizeAction('column.create', this._withAuthContext(auth, { boardId, columnId: column.id }))
     return Columns.addColumn(this, column, boardId)
   }
 
@@ -1793,7 +1799,8 @@ export class KanbanSDK {
    * })
    * ```
    */
-  updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string): KanbanColumn[] {
+  async updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
+    await this._authorizeAction('column.update', this._withAuthContext(auth, { boardId, columnId }))
     return Columns.updateColumn(this, columnId, updates, boardId)
   }
 
@@ -1885,7 +1892,8 @@ export class KanbanSDK {
    * )
    * ```
    */
-  reorderColumns(columnIds: string[], boardId?: string): KanbanColumn[] {
+  async reorderColumns(columnIds: string[], boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
+    await this._authorizeAction('column.reorder', this._withAuthContext(auth, { boardId }))
     return Columns.reorderColumns(this, columnIds, boardId)
   }
 
@@ -1907,7 +1915,8 @@ export class KanbanSDK {
    * @param boardId - Board to update (uses default board if omitted).
    * @returns The sanitized list of minimized column IDs that was saved.
    */
-  setMinimizedColumns(columnIds: string[], boardId?: string): string[] {
+  async setMinimizedColumns(columnIds: string[], boardId?: string, auth?: AuthContext): Promise<string[]> {
+    await this._authorizeAction('column.setMinimized', this._withAuthContext(auth, { boardId }))
     return Columns.setMinimizedColumns(this, columnIds, boardId)
   }
 
@@ -1949,7 +1958,8 @@ export class KanbanSDK {
    * })
    * ```
    */
-  updateSettings(settings: CardDisplaySettings): void {
+  async updateSettings(settings: CardDisplaySettings, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('settings.update', this._withAuthContext(auth))
     Settings.updateSettings(this, settings)
   }
 
@@ -1980,7 +1990,8 @@ export class KanbanSDK {
    * console.log(`Migrated ${count} cards to SQLite`)
    * ```
    */
-  async migrateToSqlite(dbPath?: string): Promise<number> {
+  async migrateToSqlite(dbPath?: string, auth?: AuthContext): Promise<number> {
+    await this._authorizeAction('storage.migrate', this._withAuthContext(auth))
     return Migration.migrateToSqlite(this, dbPath)
   }
 
@@ -2005,7 +2016,8 @@ export class KanbanSDK {
    * console.log(`Migrated ${count} cards to markdown`)
    * ```
    */
-  async migrateToMarkdown(): Promise<number> {
+  async migrateToMarkdown(auth?: AuthContext): Promise<number> {
+    await this._authorizeAction('storage.migrate', this._withAuthContext(auth))
     return Migration.migrateToMarkdown(this)
   }
 
@@ -2020,7 +2032,8 @@ export class KanbanSDK {
    * sdk.setDefaultBoard('sprint-2')
    * ```
    */
-  setDefaultBoard(boardId: string): void {
+  async setDefaultBoard(boardId: string, auth?: AuthContext): Promise<void> {
+    await this._authorizeAction('board.setDefault', this._withAuthContext(auth, { boardId }))
     Settings.setDefaultBoard(this, boardId)
   }
 
@@ -2039,7 +2052,8 @@ export class KanbanSDK {
    * @param webhookConfig - The webhook configuration.
    * @returns The newly created {@link Webhook}.
    */
-  createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Webhook {
+  async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }, auth?: AuthContext): Promise<Webhook> {
+    await this._authorizeAction('webhook.create', this._withAuthContext(auth))
     return _createWebhook(this.workspaceRoot, webhookConfig)
   }
 
@@ -2049,7 +2063,8 @@ export class KanbanSDK {
    * @param id - The webhook ID to delete.
    * @returns `true` if deleted, `false` if not found.
    */
-  deleteWebhook(id: string): boolean {
+  async deleteWebhook(id: string, auth?: AuthContext): Promise<boolean> {
+    await this._authorizeAction('webhook.delete', this._withAuthContext(auth))
     return _deleteWebhook(this.workspaceRoot, id)
   }
 
@@ -2060,7 +2075,8 @@ export class KanbanSDK {
    * @param updates - Partial webhook fields to merge.
    * @returns The updated {@link Webhook}, or `null` if not found.
    */
-  updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Webhook | null {
+  async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>, auth?: AuthContext): Promise<Webhook | null> {
+    await this._authorizeAction('webhook.update', this._withAuthContext(auth))
     return _updateWebhook(this.workspaceRoot, id, updates)
   }
 

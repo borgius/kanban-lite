@@ -289,13 +289,13 @@ export class KanbanPanel {
             break
           case 'reorderColumns': {
             if (!this._sdk) break
-            this._sdk.reorderColumns(message.columnIds, message.boardId)
+            await this._sdk.reorderColumns(message.columnIds, message.boardId, await this._getAuthContext())
             this._sendCardsToWebview()
             break
           }
           case 'setMinimizedColumns': {
             if (!this._sdk) break
-            this._sdk.setMinimizedColumns(message.columnIds, message.boardId)
+            await this._sdk.setMinimizedColumns(message.columnIds, message.boardId, await this._getAuthContext())
             break
           }
           case 'cleanupColumn':
@@ -333,7 +333,7 @@ export class KanbanPanel {
           case 'createBoard': {
             if (!this._sdk) break
             try {
-              const createdBoard = this._sdk.createBoard('', message.name)
+              const createdBoard = await this._sdk.createBoard('', message.name, undefined, await this._getAuthContext())
               this._currentBoardId = createdBoard.id
               await this._loadCards()
               this._sendCardsToWebview()
@@ -345,10 +345,14 @@ export class KanbanPanel {
           case 'setLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            sdk.setLabel(message.name, message.definition)
-            await this._loadCards()
-            this._sendCardsToWebview()
-            this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
+            try {
+              await sdk.setLabel(message.name, message.definition, await this._getAuthContext())
+              await this._loadCards()
+              this._sendCardsToWebview()
+              this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to set label: ${err}`)
+            }
             break
           }
           case 'renameLabel': {
@@ -1175,10 +1179,14 @@ export class KanbanPanel {
     terminal.sendText(command)
   }
 
-  private _saveSettings(settings: CardDisplaySettings): void {
+  private async _saveSettings(settings: CardDisplaySettings): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
-    sdk.updateSettings(settings)
+    try {
+      await sdk.updateSettings(settings, await this._getAuthContext())
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to save settings: ${err.message}`)
+    }
     this._sendCardsToWebview()
   }
 
@@ -1232,18 +1240,26 @@ export class KanbanPanel {
     })
   }
 
-  private _addColumn(column: { name: string; color: string }): void {
+  private async _addColumn(column: { name: string; color: string }): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
-    sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId)
-    this._sendCardsToWebview()
+    try {
+      await sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId, await this._getAuthContext())
+      this._sendCardsToWebview()
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to add column: ${err.message}`)
+    }
   }
 
-  private _editColumn(columnId: string, updates: { name: string; color: string }): void {
+  private async _editColumn(columnId: string, updates: { name: string; color: string }): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
-    sdk.updateColumn(columnId, updates, this._currentBoardId)
-    this._sendCardsToWebview()
+    try {
+      await sdk.updateColumn(columnId, updates, this._currentBoardId, await this._getAuthContext())
+      this._sendCardsToWebview()
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Failed to update column: ${err.message}`)
+    }
   }
 
   private _removeColumn(columnId: string): void {

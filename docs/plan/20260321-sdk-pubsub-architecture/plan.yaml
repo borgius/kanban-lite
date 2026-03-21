@@ -1,0 +1,641 @@
+plan_id: "20260321-sdk-pubsub-architecture"
+objective: |
+  Re-architect KanbanSDK to use a pub/sub event-driven architecture based on EventEmitter2.
+  Replace the single-callback event system with a multi-subscriber event bus. Transform webhooks
+  from a built-in SDK function into an event-driven plugin subscribing to the same bus.
+  Auth plugin emits its own events (auth.denied, auth.allowed) observable by other plugins.
+created_at: "2026-03-21"
+created_by: "gem-planner"
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  Six-wave plan to introduce EventEmitter2 event bus into KanbanSDK:
+  (1) Install dep + create typed EventBus wrapper with SDKEvent<T> payloads,
+  (2) Integrate bus into KanbanSDK replacing single-callback dispatch while preserving backward compat,
+  (3) Define EventListenerPlugin interface + implement WebhookListenerPlugin using existing delivery logic,
+  (4) Wire webhook plugin into capability resolution and update host layers (standalone/CLI/MCP),
+  (5) Add auth event emissions from _authorizeAction + comprehensive test coverage,
+  (6) Review + documentation updates.
+
+open_questions:
+  - "Should pre-mutation (before) events be supported now or deferred to a follow-up? Plan defers to follow-up to keep scope tight."
+  - "Should the WebSocket broadcast in standalone also become an event listener plugin, or remain orthogonal? Plan keeps it orthogonal since it broadcasts full state, not individual events."
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "EventEmitter2 listener errors kill the event pipeline for subsequent listeners"
+      likelihood: medium
+      impact: high
+      mitigation: "Wrap each listener invocation in try/catch inside the EventBus.emit() method. Mirror the existing error-swallowing pattern. Set ignoreErrors:false on EE2 but catch at our wrapper layer."
+    - scenario: "Backward incompatibility — existing onEvent consumers stop receiving events"
+      likelihood: low
+      impact: critical
+      mitigation: "Wire onEvent callback as a first-class listener on the bus during construction. Keep SDKEventHandler type and SDKOptions.onEvent field unchanged. Add integration test verifying onEvent still fires."
+    - scenario: "Module emitEvent call sites break because signature changes"
+      likelihood: low
+      impact: high
+      mitigation: "Keep ctx.emitEvent(event, data) signature identical. Internally it delegates to the bus. All 28+ call sites in modules remain unchanged."
+    - scenario: "Circular dependency between event bus and plugins"
+      likelihood: low
+      impact: medium
+      mitigation: "EventBus is a standalone module with no SDK imports. Plugins receive the bus instance via init(), not via import."
+    - scenario: "Memory leak from plugins not unsubscribing listeners"
+      likelihood: medium
+      impact: medium
+      mitigation: "EventBus.destroy() calls removeAllListeners(). Plugin lifecycle requires destroy(). SDK.close() triggers plugin teardown."
+  assumptions:
+    - "EventEmitter2 is a stable, well-maintained package with no security vulnerabilities"
+    - "All existing emitEvent call sites use the same (event, data) two-arg signature"
+    - "Wildcard support with '.' delimiter maps directly to existing event naming convention"
+    - "The standalone WebSocket broadcast layer remains outside the SDK event bus"
+    - "No existing external consumers rely on fireWebhooks() being called as a direct fallback inside emitEvent()"
+
+implementation_specification:
+  code_structure: |
+    New file src/sdk/eventBus.ts contains the EventBus class wrapping EventEmitter2.
+    New file src/sdk/plugins/webhookListener.ts contains the webhook event listener plugin.
+    Types are added to src/sdk/types.ts (SDKEvent, EventListenerPlugin).
+    Plugin resolution in src/sdk/plugins/index.ts gains a new event.listener capability namespace.
+    KanbanSDK gains a private _eventBus field and exposes a public eventBus getter.
+    SDKContext.emitEvent signature stays the same — bus is an internal impl detail from the modules' perspective.
+  affected_areas:
+    - "src/sdk/ — core SDK types, event bus, KanbanSDK class"
+    - "src/sdk/plugins/ — plugin interfaces, webhook listener, capability resolution"
+    - "src/sdk/modules/context.ts — no signature change but internal routing changes"
+    - "src/standalone/internal/runtime.ts — onEvent wiring simplification"
+    - "src/sdk/__tests__/ — new event bus tests"
+    - "CHANGELOG.md, README.md, docs/sdk.md"
+  component_details:
+    - component: EventBus
+      responsibility: |
+        Thin typed wrapper around EventEmitter2. Manages listener registration, wildcard subscriptions,
+        event emission with SDKEvent<T> payloads, and listener cleanup. Provides emit(), on(), off(),
+        onAny(), removeAllListeners(), destroy() methods.
+      interfaces:
+        - "emit(event: string, payload: SDKEvent): void"
+        - "on(event: string, listener: SDKEventListener): () => void — returns unsubscribe fn"
+        - "onAny(listener: (event: string, payload: SDKEvent) => void): () => void"
+        - "destroy(): void"
+    - component: SDKEvent<T>
+      responsibility: "Typed event payload envelope carrying type, data, timestamp, optional actor and boardId"
+      interfaces:
+        - "{ type: string; data: T; timestamp: string; actor?: string; boardId?: string }"
+    - component: EventListenerPlugin
+      responsibility: "Plugin contract for event subscribers. init() receives the bus, destroy() unsubscribes."
+      interfaces:
+        - "manifest: PluginManifest"
+        - "init(bus: EventBus, workspaceRoot: string): void"
+        - "destroy(): void"
+    - component: WebhookListenerPlugin
+      responsibility: |
+        Built-in EventListenerPlugin that subscribes to all SDK events via onAny(), filters by
+        webhook event subscriptions from .kanban.json, and delivers HTTP POST payloads using
+        the existing fireWebhooks delivery logic.
+      interfaces:
+        - "Implements EventListenerPlugin"
+        - "Uses existing deliverWebhook() for HTTP POST delivery"
+  dependencies:
+    - component: EventBus
+      relationship: "Wraps EventEmitter2 (npm dependency)"
+    - component: KanbanSDK
+      relationship: "Owns an EventBus instance, wires it in constructor, delegates emitEvent to it"
+    - component: WebhookListenerPlugin
+      relationship: "Subscribes to EventBus via onAny(), uses deliverWebhook from webhooks.ts"
+    - component: SDKContext.emitEvent
+      relationship: "Internally routes to EventBus.emit() — signature unchanged for modules"
+  integration_points:
+    - "KanbanSDK constructor: create EventBus, register onEvent callback as listener, init webhook plugin"
+    - "KanbanSDK.emitEvent: delegate to EventBus.emit() instead of single callback"
+    - "KanbanSDK._authorizeAction: emit auth.allowed/auth.denied events on the bus"
+    - "resolveCapabilityBag: resolve event.listener plugins from config"
+    - "standalone runtime: simplify onEvent callback (webhooks handled by plugin)"
+
+contracts:
+  - from_task: "T1-event-bus-types"
+    to_task: "T2-event-bus-module"
+    interface: "SDKEvent<T> type, SDKEventListener type, EventBusOptions interface"
+    format: "TypeScript interfaces exported from src/sdk/types.ts"
+  - from_task: "T2-event-bus-module"
+    to_task: "T3-integrate-bus-into-sdk"
+    interface: "EventBus class with emit/on/onAny/destroy methods"
+    format: "TypeScript class exported from src/sdk/eventBus.ts"
+  - from_task: "T3-integrate-bus-into-sdk"
+    to_task: "T4-webhook-listener-plugin"
+    interface: "EventBus instance accessible from SDK, EventListenerPlugin interface"
+    format: "EventBus getter on KanbanSDK, EventListenerPlugin in types.ts"
+  - from_task: "T4-webhook-listener-plugin"
+    to_task: "T5-wire-webhook-plugin"
+    interface: "WebhookListenerPlugin class implementing EventListenerPlugin"
+    format: "TypeScript class exported from src/sdk/plugins/webhookListener.ts"
+  - from_task: "T3-integrate-bus-into-sdk"
+    to_task: "T6-auth-events"
+    interface: "EventBus wired into KanbanSDK, emit() available in _authorizeAction"
+    format: "this._eventBus.emit() callable from KanbanSDK methods"
+  - from_task: "T5-wire-webhook-plugin"
+    to_task: "T7-tests"
+    interface: "Full pub/sub pipeline functional: SDK → bus → webhook plugin"
+    format: "Working SDK with event bus and webhook listener"
+
+tasks:
+  # ========== WAVE 1: Foundation ==========
+  - id: "T1-event-bus-types"
+    title: "Add EventEmitter2 dependency and event bus types"
+    description: |
+      Install eventemitter2 + @types/eventemitter2 as dependencies. Add new types to src/sdk/types.ts:
+      - SDKEvent<T = unknown> interface: { type: string; data: T; timestamp: string; actor?: string; boardId?: string; meta?: Record<string,unknown> }
+      - SDKEventListener type: (payload: SDKEvent) => void
+      - EventListenerPlugin interface: { manifest: PluginManifest; init(bus: EventBus, workspaceRoot: string): void; destroy(): void }
+      Export the new types from src/sdk/index.ts barrel.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - "src/sdk/types.ts": "Add SDKEvent, SDKEventListener, EventListenerPlugin types"
+      - "src/sdk/index.ts": "Add exports for new types"
+      - "package.json": "Add eventemitter2 dependency"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 50
+    focus_area: "sdk-types"
+    verification:
+      - "pnpm install succeeds with eventemitter2"
+      - "TypeScript compilation passes"
+      - "New types importable from src/sdk/index.ts"
+    acceptance_criteria:
+      - "eventemitter2 added to package.json dependencies"
+      - "SDKEvent<T> interface defined with type, data, timestamp, actor?, boardId?, meta?"
+      - "SDKEventListener type defined"
+      - "EventListenerPlugin interface defined with manifest, init(bus, workspaceRoot), destroy()"
+      - "All new types exported from barrel"
+    failure_modes:
+      - scenario: "eventemitter2 types incompatible with project TS settings"
+        likelihood: low
+        impact: medium
+        mitigation: "EventEmitter2 ships its own types in the package. Verify tsconfig compatibility."
+    tech_stack:
+      - TypeScript
+      - eventemitter2
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  - id: "T2-event-bus-module"
+    title: "Create EventBus wrapper module"
+    description: |
+      Create src/sdk/eventBus.ts with an EventBus class wrapping EventEmitter2:
+      - Constructor takes optional config: { maxListeners?: number }
+      - Internally creates EventEmitter2 with { wildcard: true, delimiter: '.', maxListeners: 50, ignoreErrors: false }
+      - emit(event: string, payload: SDKEvent): void — emits with try/catch per listener error isolation
+      - on(event: string, listener: SDKEventListener): () => void — returns unsubscribe function
+      - onAny(listener: (event: string, payload: SDKEvent) => void): () => void
+      - off(event: string, listener: SDKEventListener): void
+      - destroy(): void — calls emitter.removeAllListeners()
+      - listenerCount(event?: string): number — for diagnostics
+      Export EventBus from src/sdk/index.ts barrel.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - "T1-event-bus-types"
+    context_files:
+      - "src/sdk/eventBus.ts": "New file — EventBus class"
+      - "src/sdk/index.ts": "Add EventBus export"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: "event-bus-core"
+    verification:
+      - "TypeScript compilation passes"
+      - "EventBus class instantiable with wildcard support"
+      - "on() returns working unsubscribe function"
+      - "destroy() removes all listeners"
+    acceptance_criteria:
+      - "EventBus wraps EventEmitter2 with wildcard:true, delimiter:'.'"
+      - "emit() wraps each listener in try/catch — one failing listener does not prevent others"
+      - "on() returns a callable unsubscribe function"
+      - "onAny() subscribes to all events including wildcarded"
+      - "destroy() cleans up all listeners"
+      - "listenerCount() returns accurate count"
+    failure_modes:
+      - scenario: "EventEmitter2 wildcard matching doesn't match existing event names"
+        likelihood: low
+        impact: high
+        mitigation: "Existing events already use dot-separated format (task.created, board.deleted). EE2 delimiter '.' matches exactly."
+    tech_stack:
+      - TypeScript
+      - eventemitter2
+    test_coverage: "Unit tests in Wave 5"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  # ========== WAVE 2: SDK Integration ==========
+  - id: "T3-integrate-bus-into-sdk"
+    title: "Integrate EventBus into KanbanSDK"
+    description: |
+      Modify src/sdk/KanbanSDK.ts to use the EventBus internally:
+
+      1. Add private field: `private _eventBus: EventBus`
+      2. Add public getter: `get eventBus(): EventBus { return this._eventBus }`
+      3. In constructor: create `this._eventBus = new EventBus()`
+      4. In constructor: if options.onEvent is provided, register it as a listener:
+         `this._eventBus.onAny((event, payload) => options.onEvent!(event as SDKEventType, payload.data))`
+         This preserves backward compatibility — existing onEvent consumers get the same (event, data) args.
+      5. Refactor emitEvent(event, data) to:
+         ```
+         emitEvent(event: SDKEventType, data: unknown): void {
+           this._eventBus.emit(event, { type: event, data, timestamp: new Date().toISOString() })
+         }
+         ```
+         Remove the if/else branch and the direct fireWebhooks() fallback.
+      6. Add a close() or destroy() method that calls this._eventBus.destroy() for cleanup.
+
+      SDKContext.emitEvent signature in src/sdk/modules/context.ts stays UNCHANGED.
+      All 28+ ctx.emitEvent() call sites in modules remain untouched.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - "T2-event-bus-module"
+    context_files:
+      - "src/sdk/KanbanSDK.ts": "Add _eventBus field, refactor emitEvent, add eventBus getter, add destroy()"
+      - "src/sdk/modules/context.ts": "No changes — verify emitEvent signature compatibility"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 40
+    focus_area: "sdk-integration"
+    verification:
+      - "TypeScript compilation passes"
+      - "Existing tests still pass (event handler compatibility)"
+      - "SDK emitEvent routes through EventBus"
+      - "onEvent callback receives same (event, data) as before"
+    acceptance_criteria:
+      - "KanbanSDK has a private _eventBus field initialized in constructor"
+      - "Public eventBus getter exposes the bus for plugin registration"
+      - "onEvent callback from SDKOptions is wired as a listener on the bus"
+      - "emitEvent no longer has if/else branch — always publishes to bus"
+      - "No direct fireWebhooks() fallback in emitEvent (webhooks handled by plugin in Wave 3-4)"
+      - "SDKContext.emitEvent signature unchanged — modules unaffected"
+      - "destroy() method added to tear down the bus"
+    failure_modes:
+      - scenario: "Removing the fireWebhooks fallback breaks workspaces not using onEvent"
+        likelihood: medium
+        impact: high
+        mitigation: "The webhook listener plugin (Wave 3-4) will be auto-registered. Until then, the standalone server and CLI already provide onEvent. For the interim between T3 and T5, add a temporary default webhook listener in the constructor that calls fireWebhooks. T5 replaces it with the proper plugin."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Integration tests in Wave 5"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  # ========== WAVE 3: Webhook Plugin ==========
+  - id: "T4-webhook-listener-plugin"
+    title: "Create WebhookListenerPlugin"
+    description: |
+      Create src/sdk/plugins/webhookListener.ts implementing the EventListenerPlugin interface:
+
+      1. Export a WebhookListenerPlugin class:
+         - manifest: { id: 'builtin:webhook-listener', provides: ['event.listener'] }
+         - Private fields: _unsubscribe fn, _workspaceRoot string
+         - init(bus, workspaceRoot): subscribe to all events via bus.onAny(), store unsubscribe fn
+         - The onAny handler: receives (event, payload), calls fireWebhooks(workspaceRoot, event, payload.data)
+           using the existing fireWebhooks() function from src/sdk/webhooks.ts
+         - destroy(): call stored unsubscribe fn
+
+      2. Export a factory: createWebhookListenerPlugin() → WebhookListenerPlugin
+
+      The existing fireWebhooks(), deliverWebhook(), and webhook CRUD functions in src/sdk/webhooks.ts
+      remain UNCHANGED. The plugin is a thin adapter that subscribes to bus events and delegates delivery.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - "T3-integrate-bus-into-sdk"
+    context_files:
+      - "src/sdk/plugins/webhookListener.ts": "New file — WebhookListenerPlugin implementation"
+      - "src/sdk/webhooks.ts": "No changes — reuse fireWebhooks"
+      - "src/sdk/types.ts": "Uses EventListenerPlugin interface from T1"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 50
+    focus_area: "webhook-plugin"
+    verification:
+      - "TypeScript compilation passes"
+      - "Plugin subscribes to all events via onAny"
+      - "Plugin delegates to fireWebhooks for HTTP delivery"
+      - "destroy() properly unsubscribes"
+    acceptance_criteria:
+      - "WebhookListenerPlugin implements EventListenerPlugin"
+      - "init() subscribes via bus.onAny() and stores unsubscribe handle"
+      - "Event handler calls fireWebhooks(workspaceRoot, eventType, data)"
+      - "destroy() calls unsubscribe — no dangling listeners"
+      - "No changes to existing webhook CRUD or delivery functions"
+    failure_modes:
+      - scenario: "onAny receives EventEmitter2 internal events not matching SDKEventType"
+        likelihood: low
+        impact: low
+        mitigation: "EventEmitter2 onAny fires only for user-emitted events. Verify with a unit test."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Unit test in Wave 5"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  # ========== WAVE 4: Wiring ==========
+  - id: "T5-wire-webhook-plugin"
+    title: "Wire WebhookListenerPlugin into SDK and update host layers"
+    description: |
+      Wire the webhook listener plugin into SDK lifecycle and simplify host layers:
+
+      1. src/sdk/KanbanSDK.ts — In constructor, after creating the event bus:
+         - Create WebhookListenerPlugin instance
+         - Call plugin.init(this._eventBus, this.workspaceRoot)
+         - Store reference for destroy() cleanup
+         - Remove any temporary fireWebhooks fallback added in T3
+
+      2. src/sdk/plugins/index.ts — Add 'event.listener' to the CapabilityNamespace type.
+         Add EventListenerPlugin to ResolvedCapabilityBag as eventListeners: EventListenerPlugin[].
+         Update resolveCapabilityBag() to accept and store event listener plugins.
+         (For now, only the built-in webhook listener is auto-registered. External event.listener plugins
+         from config are a future extension.)
+
+      3. src/standalone/internal/runtime.ts — Simplify the onEvent callback:
+         - Remove the fireWebhooks() call from the onEvent handler (now handled by the plugin)
+         - Keep only the log.added → WebSocket broadcast logic in onEvent
+         - The onEvent callback becomes a thin WebSocket-only bridge
+
+      4. src/sdk/index.ts — Export WebhookListenerPlugin and createWebhookListenerPlugin.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - "T4-webhook-listener-plugin"
+    context_files:
+      - "src/sdk/KanbanSDK.ts": "Auto-register WebhookListenerPlugin in constructor, cleanup in destroy()"
+      - "src/sdk/plugins/index.ts": "Add event.listener namespace, update ResolvedCapabilityBag"
+      - "src/standalone/internal/runtime.ts": "Remove fireWebhooks from onEvent callback"
+      - "src/sdk/index.ts": "Export webhook plugin"
+    estimated_effort: medium
+    estimated_files: 4
+    estimated_lines: 60
+    focus_area: "plugin-wiring"
+    verification:
+      - "TypeScript compilation passes"
+      - "Existing tests pass"
+      - "Standalone server still delivers webhooks (via plugin now)"
+      - "WebSocket broadcast still works for log.added events"
+    acceptance_criteria:
+      - "WebhookListenerPlugin auto-registered in SDK constructor"
+      - "Plugin destroyed in SDK destroy() method"
+      - "event.listener added to CapabilityNamespace"
+      - "Standalone runtime no longer calls fireWebhooks directly in onEvent"
+      - "Log.added WebSocket broadcast still functional in standalone"
+      - "CLI and MCP server continue working (they rely on onEvent or default behavior)"
+    failure_modes:
+      - scenario: "Removing fireWebhooks from standalone onEvent causes webhook delivery gap"
+        likelihood: low
+        impact: high
+        mitigation: "The WebhookListenerPlugin is auto-registered in SDK constructor before any events can fire. Verify with integration test that webhook delivery works end-to-end."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Integration tests in T7"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  # ========== WAVE 5: Auth Events + Tests ==========
+  - id: "T6-auth-events"
+    title: "Add auth event emissions from _authorizeAction"
+    description: |
+      Enhance _authorizeAction in src/sdk/KanbanSDK.ts to emit auth events on the bus:
+
+      1. After successful authorization (decision.allowed === true):
+         emit 'auth.allowed' with SDKEvent payload:
+         { type: 'auth.allowed', data: { action, actor: decision.actor, boardId: context?.boardId }, timestamp }
+
+      2. On authorization failure (before throwing AuthError):
+         emit 'auth.denied' with SDKEvent payload:
+         { type: 'auth.denied', data: { action, actor: identity?.subject, reason: decision.reason, boardId: context?.boardId }, timestamp }
+
+      3. Add 'auth.allowed' and 'auth.denied' to the SDKEventType union in src/sdk/types.ts.
+
+      These events allow webhook plugins and future audit-log plugins to observe auth decisions.
+      Auth remains a pre-action gate — these events are informational side-effects, not blocking.
+    wave: 5
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - "T5-wire-webhook-plugin"
+    context_files:
+      - "src/sdk/KanbanSDK.ts": "Add event emissions in _authorizeAction"
+      - "src/sdk/types.ts": "Add auth.allowed and auth.denied to SDKEventType"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 30
+    focus_area: "auth-events"
+    verification:
+      - "TypeScript compilation passes"
+      - "Auth events emitted on successful and failed authorization"
+      - "Webhook plugin receives auth events if subscribed"
+    acceptance_criteria:
+      - "'auth.allowed' and 'auth.denied' added to SDKEventType union"
+      - "_authorizeAction emits auth.allowed after policy check passes"
+      - "_authorizeAction emits auth.denied before throwing AuthError"
+      - "Auth events include action name, actor, and reason (for denied)"
+      - "Events are fire-and-forget — auth event listener errors don't affect auth flow"
+    failure_modes:
+      - scenario: "Auth event emission adds latency to every SDK operation"
+        likelihood: low
+        impact: medium
+        mitigation: "EventEmitter2 emit is synchronous and fire-and-forget. Webhook delivery is async. No measurable latency expected."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Covered in T7-tests"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  - id: "T7-tests"
+    title: "Add comprehensive event bus and plugin tests"
+    description: |
+      Add tests covering the new pub/sub architecture:
+
+      1. src/sdk/__tests__/eventBus.test.ts — New file:
+         - EventBus emits events to registered listeners
+         - Wildcard subscriptions (task.* matches task.created, task.updated)
+         - onAny receives all events
+         - Unsubscribe function works
+         - destroy() removes all listeners
+         - One failing listener doesn't prevent others from receiving events
+         - SDKEvent payload has correct shape (type, data, timestamp)
+
+      2. src/sdk/__tests__/webhookListener.test.ts — New file:
+         - WebhookListenerPlugin subscribes on init()
+         - Plugin calls fireWebhooks with correct args when event emitted
+         - Plugin unsubscribes on destroy()
+
+      3. Update existing SDK tests to verify:
+         - onEvent backward compatibility: onEvent callback still receives (event, data)
+         - Auth events emitted on authorize success and failure
+         - eventBus getter returns the bus instance
+
+      Run all existing tests to confirm no regressions.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - "T5-wire-webhook-plugin"
+      - "T6-auth-events"
+    context_files:
+      - "src/sdk/__tests__/eventBus.test.ts": "New file — EventBus unit tests"
+      - "src/sdk/__tests__/webhookListener.test.ts": "New file — webhook plugin tests"
+      - "src/sdk/__tests__/": "Update existing SDK test files as needed"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: "testing"
+    verification:
+      - "All new tests pass"
+      - "All existing tests pass (no regressions)"
+      - "Event bus, webhook plugin, auth events, and onEvent compat covered"
+    acceptance_criteria:
+      - "EventBus unit tests cover emit, on, onAny, wildcards, unsubscribe, destroy, error isolation"
+      - "WebhookListenerPlugin tests cover init, event handling, destroy"
+      - "Backward compatibility test confirms onEvent callback works"
+      - "Auth event tests confirm auth.allowed and auth.denied emission"
+      - "Zero regressions in existing test suite"
+    failure_modes:
+      - scenario: "Mocking EventEmitter2 internals is fragile"
+        likelihood: medium
+        impact: low
+        mitigation: "Test via the EventBus public API, not EE2 internals. Create real EventBus instances in tests."
+    tech_stack:
+      - TypeScript
+      - vitest
+    test_coverage: "Target >90% coverage for eventBus.ts and webhookListener.ts"
+    requires_review: false
+    review_depth: null
+    security_sensitive: false
+
+  # ========== WAVE 6: Review + Documentation ==========
+  - id: "T8-review"
+    title: "Code review of pub/sub architecture changes"
+    description: |
+      Full review of all changes from tasks T1-T7:
+      - Verify EventBus wraps EE2 correctly with error isolation
+      - Verify backward compatibility of onEvent callback
+      - Verify WebhookListenerPlugin lifecycle (init/destroy)
+      - Verify auth event emissions are non-blocking
+      - Verify no memory leaks (listeners cleaned up)
+      - Verify plugin interface is extensible for future event.listener plugins
+      - Verify no breaking changes to public API
+      - Security review: no event data leakage, no injection vectors
+    wave: 6
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - "T7-tests"
+    context_files:
+      - "src/sdk/eventBus.ts": "Review EventBus implementation"
+      - "src/sdk/types.ts": "Review new types"
+      - "src/sdk/KanbanSDK.ts": "Review bus integration and auth events"
+      - "src/sdk/plugins/webhookListener.ts": "Review webhook plugin"
+      - "src/sdk/plugins/index.ts": "Review capability namespace addition"
+      - "src/sdk/__tests__/eventBus.test.ts": "Review test coverage"
+      - "src/sdk/__tests__/webhookListener.test.ts": "Review test coverage"
+    estimated_effort: medium
+    estimated_files: 7
+    estimated_lines: 0
+    focus_area: "code-review"
+    verification:
+      - "All acceptance criteria from T1-T7 verified"
+      - "No security issues found"
+      - "No memory leak risks"
+    acceptance_criteria:
+      - "EventBus error isolation verified"
+      - "Backward compatibility confirmed"
+      - "Plugin lifecycle correct (init/destroy)"
+      - "No breaking changes to public SDK API"
+      - "Test coverage adequate"
+    failure_modes:
+      - scenario: "Review finds architectural issues requiring redesign"
+        likelihood: low
+        impact: high
+        mitigation: "Research findings are thorough. Plan follows existing patterns. Low risk of fundamental issues."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true
+
+  - id: "T9-documentation"
+    title: "Update documentation for pub/sub architecture"
+    description: |
+      Update all documentation to reflect the new event-driven architecture:
+
+      1. CHANGELOG.md — Add entry under [Unreleased]:
+         ### Added
+         - EventEmitter2-based pub/sub event bus in KanbanSDK
+         - EventListenerPlugin interface for event subscriber plugins
+         - WebhookListenerPlugin: webhooks now delivered via event bus subscription
+         - Auth events: sdk.auth.allowed and sdk.auth.denied emitted after authorization
+         - EventBus public API: eventBus getter on KanbanSDK for custom subscriptions
+
+      2. README.md — Update:
+         - Features section: mention event-driven architecture
+         - Add brief event bus usage example in the SDK section
+
+      3. JSDoc updates — Verify all new public types and methods have JSDoc:
+         - EventBus class and methods
+         - SDKEvent interface
+         - EventListenerPlugin interface
+         - WebhookListenerPlugin
+         - KanbanSDK.eventBus getter
+         - KanbanSDK.destroy()
+
+      4. Run `npm run docs` to regenerate docs/sdk.md from updated JSDoc.
+    wave: 6
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - "T7-tests"
+    context_files:
+      - "CHANGELOG.md": "Add pub/sub architecture entry"
+      - "README.md": "Update features and SDK sections"
+      - "src/sdk/eventBus.ts": "Verify JSDoc"
+      - "src/sdk/types.ts": "Verify JSDoc on new types"
+      - "src/sdk/KanbanSDK.ts": "Verify JSDoc on new methods"
+      - "scripts/generate-sdk-docs.ts": "Verify doc generation works"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 80
+    focus_area: "documentation"
+    verification:
+      - "CHANGELOG.md has new entry"
+      - "README.md reflects event bus feature"
+      - "npm run docs succeeds"
+      - "docs/sdk.md includes new types and methods"
+    acceptance_criteria:
+      - "CHANGELOG.md updated with Added section for pub/sub"
+      - "README.md mentions event-driven architecture in features"
+      - "All new public interfaces have JSDoc"
+      - "docs/sdk.md regenerated and includes EventBus, SDKEvent, EventListenerPlugin"
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "CHANGELOG.md"
+      - "README.md"
+      - "docs/sdk.md (auto-generated)"

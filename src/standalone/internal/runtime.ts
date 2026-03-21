@@ -4,7 +4,6 @@ import { WebSocketServer } from 'ws'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
 import type { StandaloneContext } from '../context'
 import { broadcast } from '../broadcastService'
-import { fireWebhooks } from '../webhooks'
 
 export const indexHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -42,7 +41,6 @@ export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, 
   const ctx = {} as StandaloneContext
   const sdk = new KanbanSDK(absoluteKanbanDir, {
     onEvent: (event, data) => {
-      fireWebhooks(workspaceRoot, event, data)
       if (event === 'log.added') {
         const { cardId } = data as { cardId: string }
         if (cardId === ctx.currentEditingCardId) {

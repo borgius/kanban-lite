@@ -74,6 +74,7 @@ HTTP server are all built on top of.
 
 * [KanbanSDK](#KanbanSDK)
     * [new KanbanSDK(kanbanDir, options)](#new_KanbanSDK_new)
+    * [.eventBus](#KanbanSDK+eventBus)
     * [.storageEngine](#KanbanSDK+storageEngine)
     * [.capabilities](#KanbanSDK+capabilities)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
@@ -87,6 +88,7 @@ HTTP server are all built on top of.
     * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
     * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
     * [.close()](#KanbanSDK+close)
+    * [.destroy()](#KanbanSDK+destroy)
     * [.emitEvent()](#KanbanSDK+emitEvent)
     * [._resolveBoardId()](#KanbanSDK+_resolveBoardId)
     * [._boardDir()](#KanbanSDK+_boardDir)
@@ -178,6 +180,15 @@ const sdk = new KanbanSDK('/path/to/project/.kanban')
 await sdk.init()
 const cards = await sdk.listCards()
 ```
+
+* * *
+
+<a name="KanbanSDK+eventBus"></a>
+
+#### kanbanSDK.eventBus
+The SDK event bus for subscribing to events (pub/sub).
+
+**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -410,6 +421,15 @@ card, whether that provider is local filesystem storage or a custom plugin.
 #### kanbanSDK.close()
 Closes the storage engine and releases any held resources (e.g. database
 connections). Call this when the SDK instance is no longer needed.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+destroy"></a>
+
+#### kanbanSDK.destroy()
+Tear down the SDK, destroying the event bus and all listeners.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -2776,6 +2796,96 @@ Built-in no-op policy provider. Always returns `{ allowed: true }` (allow-all).
 
 * * *
 
+<a name="RBAC_IDENTITY_PLUGIN"></a>
+
+### RBAC\_IDENTITY\_PLUGIN
+Built-in RBAC identity provider singleton.
+
+Validates opaque tokens against a runtime-owned principal registry. This
+singleton uses an **empty registry** — all tokens resolve to `null`
+(anonymous / deny) until the host supplies principal material via
+[createRbacIdentityPlugin](#createRbacIdentityPlugin).
+
+When configuring `{ "auth.identity": { "provider": "rbac" } }`, the host
+must call `createRbacIdentityPlugin(principals)` and inject the result
+through the capability bag. Token values and role assignments must never
+appear in `.kanban.json` or any diagnostics output.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_POLICY_PLUGIN"></a>
+
+### RBAC\_POLICY\_PLUGIN
+Built-in RBAC policy provider. Enforces the fixed [RBAC_ROLE_MATRIX](#RBAC_ROLE_MATRIX).
+
+Denies requests from a `null` identity with `auth.identity.missing`.
+Denies actions not covered by the resolved role(s) with `auth.policy.denied`.
+The resolved caller subject is attached to allow decisions as `actor`.
+No token material is included in any returned [AuthDecision](AuthDecision).
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_USER_ACTIONS"></a>
+
+### RBAC\_USER\_ACTIONS
+Actions available to the `user` role.
+
+Covers non-destructive card-interaction operations: form submission,
+comments, attachments, action triggers, and card-level log writes.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_MANAGER_ACTIONS"></a>
+
+### RBAC\_MANAGER\_ACTIONS
+Actions available to the `manager` role (includes all `user` actions).
+
+Adds card lifecycle mutations (create, update, move, transfer, delete),
+board-action triggers, card-log clearing, and board-level log writes.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_ADMIN_ACTIONS"></a>
+
+### RBAC\_ADMIN\_ACTIONS
+Actions available to the `admin` role (includes all `manager` and `user` actions).
+
+Adds all destructive and configuration operations: board create/update/delete,
+settings, webhooks, labels, columns, board-action config edits, board-log
+clearing, migrations, default-board changes, and deleted-card purge.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_ROLE_MATRIX"></a>
+
+### RBAC\_ROLE\_MATRIX
+Fixed RBAC role matrix keyed by [RbacRole](RbacRole).
+
+Each entry maps to the complete set of canonical action names that the role
+is permitted to perform. This is the single canonical source of truth consumed
+by the built-in `rbac` auth provider pair and by host tests that verify denial
+semantics. Hosts must not replicate or extend this matrix locally.
+
+**Kind**: global variable  
+**Example**  
+```js
+// Check whether a resolved role may perform an action:
+const allowed = RBAC_ROLE_MATRIX['manager'].has('card.create') // true
+const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
+```
+
+* * *
+
 <a name="PROVIDER_ALIASES"></a>
 
 ### PROVIDER\_ALIASES
@@ -2813,6 +2923,30 @@ Set of provider ids that are handled as built-in attachment plugins.
 Registry of built-in card.storage plugins keyed by provider id.
 
 **Kind**: global constant  
+
+* * *
+
+<a name="createRbacIdentityPlugin"></a>
+
+### createRbacIdentityPlugin(principals)
+Creates a runtime-validated RBAC identity plugin backed by a host-supplied
+principal registry.
+
+Tokens are treated as opaque strings and looked up in `principals`. A token
+present in the map resolves to the associated principal entry; any token
+absent from the map resolves to `null` (anonymous / deny). Roles are taken
+from the registry entry and are never inferred from token text.
+
+Token values and principal material — including role assignments — must
+remain in host/runtime configuration only and must never appear in
+`.kanban.json`, diagnostics, or log output.
+
+**Kind**: global function  
+
+| Param | Description |
+| --- | --- |
+| principals | Map of opaque token → [RbacPrincipalEntry](RbacPrincipalEntry), owned   and populated by the host at startup. |
+
 
 * * *
 

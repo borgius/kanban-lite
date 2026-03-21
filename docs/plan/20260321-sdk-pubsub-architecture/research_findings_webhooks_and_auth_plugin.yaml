@@ -1,0 +1,562 @@
+plan_id: "20260321-sdk-pubsub-architecture"
+objective: "Understand how webhooks and auth plugins currently work to redesign them as event-driven plugins in a pub/sub architecture"
+focus_area: "webhooks_and_auth_plugin"
+created_at: "2026-03-21"
+created_by: "gem-researcher"
+status: completed
+
+tldr: |
+  - Webhooks are a two-layer system: SDK emits events via `emitEvent()` → if an `onEvent` handler is registered it receives events (standalone server uses this to call `fireWebhooks()`), otherwise `fireWebhooks()` is called directly as a fallback inside the SDK.
+  - Auth is a capability-based plugin system with two namespaces (`auth.identity` and `auth.policy`), resolved at SDK construction time via `resolveCapabilityBag()`. Every mutating SDK method calls `_authorizeAction()` as a pre-action gate before executing logic.
+  - The event emission is tightly coupled: each SDK module (cards, boards, columns, comments, logs, etc.) calls `ctx.emitEvent()` inline after successful mutations. There is no pub/sub bus — it's a single callback.
+  - The standalone server adds a second broadcast layer (WebSocket `broadcast()` → all connected clients) that is orthogonal to webhooks but triggered at the same mutation points in `mutationService.ts`.
+  - Key coupling points: `emitEvent()` is a synchronous single-callback, auth plugins are resolved once at construction and immutable, and webhook delivery is fire-and-forget HTTP POST with no retry or acknowledgment.
+
+research_metadata:
+  methodology: "Hybrid retrieval: semantic_search + grep_search + file_search for discovery, read_file for detailed examination across 7 focus areas"
+  scope: "Complete examination of webhook SDK, standalone webhook layer, auth plugins, server routes, mutation service, broadcast service, message handlers, SDK modules, and SDK context"
+  confidence: high
+  coverage: 95
+
+files_analyzed:
+  - file: webhooks.ts
+    path: src/sdk/webhooks.ts
+    purpose: "Canonical webhook CRUD operations and HTTP delivery logic"
+    key_elements:
+      - element: fireWebhooks
+        type: function
+        location: "src/sdk/webhooks.ts:26"
+        description: "Loads webhooks from .kanban.json config, filters for active ones matching the event (or wildcard '*'), serializes payload as JSON {event, timestamp, data}, and POSTs to each matching endpoint asynchronously. Delivery failures are logged but never block."
+      - element: deliverWebhook
+        type: function
+        location: "src/sdk/webhooks.ts:62"
+        description: "Private function that performs the actual HTTP POST. Supports HMAC-SHA256 signing via X-Webhook-Signature header when webhook has a secret. Timeout is 10 seconds. Only 2xx responses are considered success."
+      - element: loadWebhooks
+        type: function
+        location: "src/sdk/webhooks.ts:110"
+        description: "Reads webhooks array from .kanban.json config. Returns Webhook[] or empty array."
+      - element: saveWebhooks
+        type: function
+        location: "src/sdk/webhooks.ts:121"
+        description: "Persists full webhooks array to .kanban.json config."
+      - element: createWebhook
+        type: function
+        location: "src/sdk/webhooks.ts:131"
+        description: "Creates a new webhook with auto-generated 'wh_' + random hex ID. Adds to persisted array."
+      - element: deleteWebhook
+        type: function
+        location: "src/sdk/webhooks.ts:152"
+        description: "Deletes webhook by ID from persisted array. Returns boolean success."
+      - element: updateWebhook
+        type: function
+        location: "src/sdk/webhooks.ts:165"
+        description: "Partial update of webhook fields (url, events, secret, active). Returns updated webhook or null."
+    language: TypeScript
+    lines: 186
+
+  - file: webhooks.ts
+    path: src/standalone/webhooks.ts
+    purpose: "Thin re-export layer — standalone server imports all webhook functions from the SDK"
+    key_elements:
+      - element: "re-exports"
+        type: pattern
+        location: "src/standalone/webhooks.ts:2"
+        description: "Re-exports fireWebhooks, loadWebhooks, saveWebhooks, createWebhook, deleteWebhook, updateWebhook from ../sdk/webhooks. Also re-exports WebhookEvent type alias for SDKEventType."
+    language: TypeScript
+    lines: 11
+
+  - file: types.ts
+    path: src/sdk/types.ts
+    purpose: "Type definitions for SDK events, auth context, auth decisions, and auth errors"
+    key_elements:
+      - element: SDKEventType
+        type: type
+        location: "src/sdk/types.ts:49-77"
+        description: "Union of 23 event string literals: task.created, form.submit, task.updated, task.moved, task.deleted, comment.created/updated/deleted, column.created/updated/deleted, attachment.added/removed, settings.updated, board.created/updated/deleted, board.action, board.log.added/cleared, log.added/cleared, storage.migrated"
+      - element: SDKEventHandler
+        type: type
+        location: "src/sdk/types.ts:84"
+        description: "Callback signature: (event: SDKEventType, data: unknown) => void"
+      - element: AuthContext
+        type: interface
+        location: "src/sdk/types.ts:219"
+        description: "Auth context passed from host surfaces into SDK operations. Contains optional token, tokenSource, transport, actorHint, plus contextual IDs (boardId, cardId, columnId, commentId, formId, attachment, labelName, webhookId, actionKey)"
+      - element: AuthDecision
+        type: interface
+        location: "src/sdk/types.ts:195"
+        description: "Authorization decision with allowed boolean, optional reason (AuthErrorCategory), actor string, and metadata"
+      - element: AuthError
+        type: class
+        location: "src/sdk/types.ts:261"
+        description: "Typed error with category (AuthErrorCategory), message, and actor. Thrown by _authorizeAction when policy denies."
+      - element: AuthErrorCategory
+        type: type
+        location: "src/sdk/types.ts:176"
+        description: "Union of 6 machine-readable auth error codes: auth.identity.missing, auth.identity.invalid, auth.identity.expired, auth.policy.denied, auth.policy.unknown, auth.provider.error"
+      - element: sanitizeCard
+        type: function
+        location: "src/sdk/types.ts:155"
+        description: "Strips filePath from card before exposing in webhook payloads or API responses."
+    language: TypeScript
+    lines: 280
+
+  - file: index.ts
+    path: src/sdk/plugins/index.ts
+    purpose: "Plugin registry, capability resolution, auth plugin contracts (identity + policy), RBAC implementation"
+    key_elements:
+      - element: AuthIdentityPlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:52-59"
+        description: "Contract for auth.identity providers. Single method: resolveIdentity(context: AuthContext) → Promise<AuthIdentity | null>"
+      - element: AuthPolicyPlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:68-75"
+        description: "Contract for auth.policy providers. Single method: checkPolicy(identity, action, context) → Promise<AuthDecision>"
+      - element: NOOP_IDENTITY_PLUGIN
+        type: variable
+        location: "src/sdk/plugins/index.ts:78"
+        description: "Built-in no-op identity provider. Always returns null (anonymous)."
+      - element: NOOP_POLICY_PLUGIN
+        type: variable
+        location: "src/sdk/plugins/index.ts:84"
+        description: "Built-in no-op policy provider. Always returns { allowed: true }."
+      - element: RBAC_IDENTITY_PLUGIN
+        type: variable
+        location: "src/sdk/plugins/index.ts:141"
+        description: "Singleton RBAC identity plugin backed by empty principal registry. Resolves tokens against a Map<string, RbacPrincipalEntry>."
+      - element: RBAC_POLICY_PLUGIN
+        type: variable
+        location: "src/sdk/plugins/index.ts:155"
+        description: "Built-in RBAC policy plugin. Denies null identity with 'auth.identity.missing', checks action against RBAC_ROLE_MATRIX per role."
+      - element: createRbacIdentityPlugin
+        type: function
+        location: "src/sdk/plugins/index.ts:119"
+        description: "Factory that builds an RBAC identity plugin backed by a host-supplied Map<token, RbacPrincipalEntry>."
+      - element: RBAC_ROLE_MATRIX
+        type: variable
+        location: "src/sdk/plugins/index.ts:294"
+        description: "Fixed role matrix: user (8 actions), manager (user + 6 card/board actions), admin (manager + all config/destructive actions). Three roles: user, manager, admin."
+      - element: resolveCapabilityBag
+        type: function
+        location: "src/sdk/plugins/index.ts:615"
+        description: "Master capability resolver that wires card.storage, attachment.storage, auth.identity, and auth.policy plugins into a ResolvedCapabilityBag. Called once at SDK construction."
+      - element: ResolvedCapabilityBag
+        type: interface
+        location: "src/sdk/plugins/index.ts:348"
+        description: "Fully resolved capability bag containing cardStorage, attachmentStorage, authIdentity, authPolicy, plus helper methods (getLocalCardPath, getAttachmentDir, materializeAttachment, getWatchGlob, isFileBacked)."
+    language: TypeScript
+    lines: ~700
+
+  - file: KanbanSDK.ts
+    path: src/sdk/KanbanSDK.ts
+    purpose: "Core SDK class — the single source of truth for all business logic"
+    key_elements:
+      - element: _onEvent
+        type: variable
+        location: "src/sdk/KanbanSDK.ts:212"
+        description: "Private SDKEventHandler callback, set at construction. When present, events route to this handler instead of directly calling fireWebhooks."
+      - element: emitEvent
+        type: function
+        location: "src/sdk/KanbanSDK.ts:513"
+        description: "Internal event emission. If _onEvent is set, calls it (try/catch for handler errors). If not, falls back to fireWebhooks(workspaceRoot, event, data) directly. This is the ONLY event dispatch point."
+      - element: _authorizeAction
+        type: function
+        location: "src/sdk/KanbanSDK.ts:358"
+        description: "Pre-action authorization seam. If no _capabilities (pre-built storage injected), returns { allowed: true } (noop). Otherwise: resolves identity via authIdentity.resolveIdentity(), then checks via authPolicy.checkPolicy(). Throws AuthError on denial."
+      - element: _withAuthContext
+        type: function
+        location: "src/sdk/KanbanSDK.ts:388"
+        description: "Merges optional AuthContext hints (boardId, cardId, etc.) into the auth context for policy evaluation."
+    language: TypeScript
+    lines: ~2020
+
+  - file: context.ts
+    path: src/sdk/modules/context.ts
+    purpose: "SDKContext interface — the minimal contract that module-level functions depend on"
+    key_elements:
+      - element: SDKContext
+        type: interface
+        location: "src/sdk/modules/context.ts:14"
+        description: "Minimal interface satisfied by KanbanSDK. Includes emitEvent(event, data), all storage helpers, and cross-module card operations. Used as first arg to all module functions."
+    language: TypeScript
+    lines: 59
+
+  - file: mutationService.ts
+    path: src/standalone/mutationService.ts
+    purpose: "Standalone server mutation pipeline — wraps SDK calls with watcher suppression, reload, and WebSocket broadcast"
+    key_elements:
+      - element: doCreateCard
+        type: function
+        location: "src/standalone/mutationService.ts:13"
+        description: "Pattern: set ctx.migrating=true → ctx.sdk.createCard(data, auth) → suppress watcher → loadCards() → broadcast(ctx, buildInitMessage) → finally migrating=false"
+      - element: doMoveCard
+        type: function
+        location: "src/standalone/mutationService.ts:35"
+        description: "Same pattern as doCreateCard for card moves."
+      - element: doUpdateCard
+        type: function
+        location: "src/standalone/mutationService.ts:49"
+        description: "Same pattern. Also caches serializeCard(updated) into ctx.lastWrittenContent."
+      - element: doDeleteCard
+        type: function
+        location: "src/standalone/mutationService.ts:64"
+        description: "Same pattern. Catches AuthError to re-throw, other errors logged."
+      - element: doSubmitForm
+        type: function
+        location: "src/standalone/mutationService.ts:77"
+        description: "Same pattern for form submissions."
+    language: TypeScript
+    lines: ~350
+
+  - file: broadcastService.ts
+    path: src/standalone/broadcastService.ts
+    purpose: "WebSocket broadcast utilities for the standalone server"
+    key_elements:
+      - element: broadcast
+        type: function
+        location: "src/standalone/broadcastService.ts:10"
+        description: "Iterates all WebSocket clients in OPEN state and sends JSON-serialized message. This is the live UI update mechanism, separate from webhooks."
+      - element: buildInitMessage
+        type: function
+        location: "src/standalone/broadcastService.ts:18"
+        description: "Builds a full state snapshot message (type:'init') with cards, columns, settings, boards, labels, minimizedColumnIds, workspace info."
+      - element: loadCards
+        type: function
+        location: "src/standalone/broadcastService.ts:7"
+        description: "Reloads all cards from SDK into ctx.cards."
+    language: TypeScript
+    lines: 55
+
+  - file: messageHandlers.ts
+    path: src/standalone/messageHandlers.ts
+    purpose: "WebSocket message handler — routes incoming WS messages to mutation service functions"
+    key_elements:
+      - element: handleMessage
+        type: function
+        location: "src/standalone/messageHandlers.ts:30"
+        description: "Giant switch on msg.type: ready, createCard, moveCard, deleteCard, permanentDeleteCard, restoreCard, purgeDeletedCards, updateCard, bulkUpdateCard, openCard, saveCardContent, submitForm, closeCard, openSettings, saveSettings, addColumn, editColumn, removeColumn, cleanupColumn, reorderColumns, setMinimizedColumns, removeAttachment, addComment, updateComment, deleteComment, addLog, clearLogs, getLogs, addBoardLog, clearBoardLogs, getBoardLogs, transferCard, switchBoard, createBoard, setLabel, renameLabel, deleteLabel"
+    language: TypeScript
+    lines: ~350
+
+  - file: runtime.ts
+    path: src/standalone/internal/runtime.ts
+    purpose: "Standalone server runtime factory — creates KanbanSDK with onEvent handler"
+    key_elements:
+      - element: createStandaloneRuntime
+        type: function
+        location: "src/standalone/internal/runtime.ts:37"
+        description: "Creates KanbanSDK with onEvent callback that: (1) calls fireWebhooks(workspaceRoot, event, data), (2) for 'log.added' events, broadcasts logsUpdated to the editing client. This is where the webhook-to-SDK binding occurs."
+    language: TypeScript
+    lines: ~60
+
+  - file: authUtils.ts
+    path: src/standalone/authUtils.ts
+    purpose: "HTTP auth context extraction and error mapping"
+    key_elements:
+      - element: extractAuthContext
+        type: function
+        location: "src/standalone/authUtils.ts:4"
+        description: "Extracts Bearer token from Authorization header, returns AuthContext with token, tokenSource='request-header', transport='http'."
+      - element: authErrorToHttpStatus
+        type: function
+        location: "src/standalone/authUtils.ts:26"
+        description: "Maps AuthErrorCategory to HTTP status: identity.missing/invalid/expired → 401, policy.denied/unknown → 403, else 500."
+    language: TypeScript
+    lines: 33
+
+  - file: websocket.ts
+    path: src/standalone/internal/websocket.ts
+    purpose: "WebSocket connection handler — extracts auth and routes messages"
+    key_elements:
+      - element: attachWebSocketHandlers
+        type: function
+        location: "src/standalone/internal/websocket.ts:6"
+        description: "On WS connection: extracts auth from upgrade request headers, parses each message, delegates to handleMessage(ctx, ws, message, authContext). AuthErrors are sent back as { type: 'authDenied', category, message }."
+    language: TypeScript
+    lines: 27
+
+patterns_found:
+  - category: architecture
+    pattern: "Single-callback event dispatch"
+    description: "The SDK uses a single optional callback (_onEvent) for event dispatch. If set, all events route through it. If not, events fall back to direct fireWebhooks() calls. There is no multi-subscriber pub/sub mechanism."
+    examples:
+      - file: KanbanSDK.ts
+        location: "src/sdk/KanbanSDK.ts:513-522"
+        snippet: |
+          emitEvent(event: SDKEventType, data: unknown): void {
+            if (this._onEvent) {
+              try { this._onEvent(event, data) }
+              catch (err) { console.error(...) }
+            } else {
+              fireWebhooks(this.workspaceRoot, event, data)
+            }
+          }
+    prevalence: common
+
+  - category: architecture
+    pattern: "Inline post-mutation event emission"
+    description: "Every SDK module function emits events inline immediately after successful mutation. Events are emitted at the module level (cards.ts, boards.ts, etc.), not centralized."
+    examples:
+      - file: cards.ts
+        location: "src/sdk/modules/cards.ts:368"
+        snippet: "ctx.emitEvent('task.created', sanitizeCard(card))"
+      - file: boards.ts
+        location: "src/sdk/modules/boards.ts:75"
+        snippet: "ctx.emitEvent('board.created', boardInfo)"
+      - file: columns.ts
+        location: "src/sdk/modules/columns.ts:39"
+        snippet: "ctx.emitEvent('column.created', column)"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Pre-action authorization gate"
+    description: "Every mutating SDK method calls _authorizeAction(actionName, context) before executing any side effects. This is a synchronous-style gate (async but awaited). It either returns an AuthDecision or throws AuthError."
+    examples:
+      - file: KanbanSDK.ts
+        location: "src/sdk/KanbanSDK.ts:1013"
+        snippet: "await this._authorizeAction('card.create', this._withAuthContext(auth, { boardId: data.boardId }))"
+      - file: KanbanSDK.ts
+        location: "src/sdk/KanbanSDK.ts:1158"
+        snippet: "await this._authorizeAction('card.move', this._withAuthContext(auth, { cardId, boardId, columnId: newStatus }))"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Mutation service wrapper pattern"
+    description: "The standalone server wraps each SDK mutation in a doXxx function that: (1) sets ctx.migrating=true, (2) calls SDK method, (3) suppresses file watcher, (4) reloads cards, (5) broadcasts full state via WebSocket, (6) finally resets migrating. This is separate from webhook dispatch."
+    examples:
+      - file: mutationService.ts
+        location: "src/standalone/mutationService.ts:13-32"
+        snippet: |
+          async function doCreateCard(ctx, data, auth) {
+            ctx.migrating = true
+            try {
+              const card = await ctx.sdk.createCard(data, auth)
+              ctx.suppressWatcherEventsUntil = Date.now() + 500
+              await loadCards(ctx)
+              broadcast(ctx, buildInitMessage(ctx))
+              return card
+            } finally { ctx.migrating = false }
+          }
+    prevalence: common
+
+  - category: architecture
+    pattern: "Dual event delivery: webhooks + WebSocket broadcast"
+    description: "Mutations trigger TWO independent notification mechanisms: (1) SDK emitEvent → onEvent callback → fireWebhooks (HTTP POST), (2) mutationService broadcast → all WS clients get full board state. These run in parallel but are wired at different layers."
+    examples:
+      - file: runtime.ts
+        location: "src/standalone/internal/runtime.ts:44-45"
+        snippet: |
+          onEvent: (event, data) => {
+            fireWebhooks(workspaceRoot, event, data)
+          }
+      - file: mutationService.ts
+        location: "src/standalone/mutationService.ts:26-27"
+        snippet: |
+          await loadCards(ctx)
+          broadcast(ctx, buildInitMessage(ctx))
+    prevalence: common
+
+  - category: architecture
+    pattern: "Capability bag immutable at construction"
+    description: "Auth plugins (and storage plugins) are resolved once during SDK construction via resolveCapabilityBag() and stored in _capabilities. They cannot be changed at runtime."
+    examples:
+      - file: plugins/index.ts
+        location: "src/sdk/plugins/index.ts:615-690"
+        snippet: "resolveCapabilityBag(capabilities, kanbanDir, authCapabilities) → ResolvedCapabilityBag (immutable)"
+    prevalence: common
+
+  - category: naming
+    pattern: "Canonical action names for auth"
+    description: "Auth actions use dot-separated namespace names matching RBAC_ROLE_MATRIX: card.create, card.update, card.move, card.delete, board.create, column.create, settings.update, webhook.create, etc."
+    examples:
+      - file: plugins/index.ts
+        location: "src/sdk/plugins/index.ts:230-289"
+        snippet: "RBAC_ADMIN_ACTIONS includes card.*, board.*, column.*, settings.update, webhook.*, label.*, storage.migrate, etc."
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Fire-and-forget webhook delivery"
+    description: "Webhook delivery is completely async and error-swallowing. deliverWebhook is called in a fire-and-forget loop; failures are caught and logged but never propagated, retried, or acknowledged."
+    examples:
+      - file: webhooks.ts
+        location: "src/sdk/webhooks.ts:39-43"
+        snippet: |
+          for (const webhook of matching) {
+            deliverWebhook(webhook, event, payload).catch(err => {
+              console.error(`Webhook delivery failed...`, err.message || err)
+            })
+          }
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: KanbanSDK
+      responsibility: "Central SDK class orchestrating all business logic, auth gating, and event emission"
+      location: "src/sdk/KanbanSDK.ts"
+      relationship_to_domain: "Owns the emitEvent() dispatch point and _authorizeAction() gate"
+    - component: SDK Modules
+      responsibility: "Domain-specific mutation logic (cards, boards, columns, comments, logs, settings, attachments, migration)"
+      location: "src/sdk/modules/"
+      relationship_to_domain: "Each module calls ctx.emitEvent() after mutations — these are the event source points"
+    - component: Plugin Registry
+      responsibility: "Resolves and wires storage + auth plugins at SDK construction"
+      location: "src/sdk/plugins/index.ts"
+      relationship_to_domain: "Owns AuthIdentityPlugin, AuthPolicyPlugin interfaces, RBAC implementations, and ResolvedCapabilityBag"
+    - component: Standalone Server
+      responsibility: "HTTP/WS server layer with Fastify, routes, and mutation orchestration"
+      location: "src/standalone/"
+      relationship_to_domain: "Wires onEvent callback to fireWebhooks, manages dual broadcast (webhooks + WS)"
+    - component: Mutation Service
+      responsibility: "Orchestrates SDK mutations with watcher suppression and WS broadcast"
+      location: "src/standalone/mutationService.ts"
+      relationship_to_domain: "Post-mutation broadcast layer, orthogonal to SDK event emission"
+    - component: Runtime Factory
+      responsibility: "Creates KanbanSDK with onEvent hook for webhook dispatch"
+      location: "src/standalone/internal/runtime.ts"
+      relationship_to_domain: "The binding point where onEvent → fireWebhooks is wired"
+
+  interfaces_used_by_domain:
+    - interface: SDKEventHandler
+      location: "src/sdk/types.ts:84"
+      usage_pattern: "Single callback: (event: SDKEventType, data: unknown) => void. Set once at construction via SDKOptions.onEvent"
+    - interface: AuthIdentityPlugin
+      location: "src/sdk/plugins/index.ts:52"
+      usage_pattern: "resolveIdentity(context) → AuthIdentity | null. Resolved once at construction."
+    - interface: AuthPolicyPlugin
+      location: "src/sdk/plugins/index.ts:68"
+      usage_pattern: "checkPolicy(identity, action, context) → AuthDecision. Resolved once at construction."
+    - interface: Webhook (config type)
+      location: "src/shared/config.ts"
+      usage_pattern: "Persisted in .kanban.json as webhooks array. Fields: id, url, events, secret?, active."
+
+  data_flow_involving_domain: |
+    MUTATION FLOW:
+    1. Host surface (HTTP route / WS message / CLI / MCP) extracts AuthContext
+    2. Calls SDK method (e.g., sdk.createCard(data, auth))
+    3. SDK method calls _authorizeAction(actionName, authContext) → resolves identity → checks policy → throws AuthError or returns
+    4. SDK method executes business logic via module function (e.g., modules/cards.ts createCard())
+    5. Module function calls ctx.emitEvent(eventType, sanitizedData)
+    6. KanbanSDK.emitEvent() → if _onEvent is set, calls _onEvent(event, data); else calls fireWebhooks() directly
+    7. In standalone: _onEvent → fireWebhooks(workspaceRoot, event, data) → HTTP POST to all matching webhook URLs
+    8. Back in mutationService: loadCards() → broadcast(ctx, buildInitMessage(ctx)) → WS broadcast to all clients
+
+    AUTH FLOW:
+    1. Host extracts token from transport (HTTP Authorization header / env var / etc.)
+    2. Constructs AuthContext { token, tokenSource, transport, ...contextualIds }
+    3. SDK._authorizeAction() → capabilities.authIdentity.resolveIdentity(context) → AuthIdentity | null
+    4. SDK._authorizeAction() → capabilities.authPolicy.checkPolicy(identity, action, context) → AuthDecision
+    5. If denied: throw AuthError(category, message, actor)
+    6. Host catches AuthError and maps to transport-specific error (HTTP 401/403, WS authDenied, CLI exit code)
+
+  key_relationships_to_domain:
+    - from: "SDK modules (cards, boards, columns, etc.)"
+      to: "KanbanSDK.emitEvent()"
+      relationship: "calls (via ctx.emitEvent)"
+    - from: "KanbanSDK.emitEvent()"
+      to: "SDKEventHandler (_onEvent callback)"
+      relationship: "calls (when handler registered)"
+    - from: "KanbanSDK.emitEvent()"
+      to: "fireWebhooks()"
+      relationship: "calls (direct fallback when no handler)"
+    - from: "createStandaloneRuntime()"
+      to: "KanbanSDK constructor"
+      relationship: "injects onEvent callback wiring"
+    - from: "KanbanSDK methods"
+      to: "_authorizeAction()"
+      relationship: "calls (pre-action gate)"
+    - from: "_authorizeAction()"
+      to: "AuthIdentityPlugin.resolveIdentity()"
+      relationship: "calls"
+    - from: "_authorizeAction()"
+      to: "AuthPolicyPlugin.checkPolicy()"
+      relationship: "calls"
+    - from: "mutationService.doXxx()"
+      to: "broadcast()"
+      relationship: "calls (additional WS broadcast after SDK mutation)"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Event types: domain.verb (e.g., task.created, board.deleted, attachment.added)
+    - Auth actions: domain.verb (e.g., card.create, column.update, settings.update)
+    - Webhook IDs: 'wh_' + random hex
+    - Plugin providers: string identifiers ('noop', 'rbac', 'markdown', 'localfs')
+  structure_of_domain: |
+    - Webhooks are a flat module (src/sdk/webhooks.ts) not inside plugins/
+    - Auth plugins live in src/sdk/plugins/index.ts alongside storage plugins
+    - Standalone re-exports webhooks from SDK (thin passthrough layer)
+    - SDK modules live in src/sdk/modules/ with SDKContext as their dependency injection surface
+  error_handling_in_domain: |
+    - Webhook delivery: catch + console.error (fire-and-forget)
+    - Auth denial: throw AuthError → caught by host surface → mapped to transport error
+    - SDK event handler errors: catch + console.error (never propagated)
+  testing_in_domain: |
+    - Webhook tests: src/standalone/__tests__/webhooks.test.ts (CRUD + fireWebhooks with HTTP mock)
+    - Auth enforcement tests: src/sdk/__tests__/auth-enforcement.test.ts (per-action denial)
+    - Plugin registry tests: src/sdk/__tests__/plugin-registry.test.ts (_authorizeAction unit tests)
+  documentation_in_domain: |
+    - docs/auth.md: comprehensive auth architecture docs
+    - docs/webhooks.md: auto-generated webhooks docs
+    - docs/sdk.md: auto-generated SDK docs including emitEvent
+
+related_dependencies:
+  internal:
+    - component: "src/shared/config (readConfig, writeConfig, Webhook type)"
+      relationship_to_domain: "Webhooks are persisted in .kanban.json via config CRUD"
+      direction: outbound
+    - component: "src/sdk/modules/ (all module files)"
+      relationship_to_domain: "Every module calls ctx.emitEvent() — they are event sources"
+      direction: inbound
+    - component: "src/standalone/internal/runtime.ts"
+      relationship_to_domain: "Wires onEvent → fireWebhooks at server startup"
+      direction: inbound
+  external:
+    - name: "crypto (node:crypto)"
+      purpose_for_domain: "HMAC-SHA256 webhook signature generation and webhook ID generation"
+    - name: "http / https (node builtins)"
+      purpose_for_domain: "HTTP/HTTPS transport for webhook delivery"
+
+testing_patterns:
+  framework: "vitest"
+  coverage_areas:
+    - "Webhook CRUD operations (create, load, save, delete, update)"
+    - "Webhook delivery with HTTP mock server"
+    - "HMAC-SHA256 signature verification"
+    - "Webhook filtering by event type and wildcard"
+    - "Auth enforcement per SDK action (deny/allow for each role)"
+    - "_authorizeAction unit tests (noop, rbac identity, rbac policy)"
+  test_organization: |
+    - src/standalone/__tests__/webhooks.test.ts: integration tests for webhook delivery
+    - src/sdk/__tests__/auth-enforcement.test.ts: per-action auth enforcement tests
+    - src/sdk/__tests__/plugin-registry.test.ts: plugin resolution and _authorizeAction unit tests
+  mock_patterns:
+    - "HTTP test server for webhook delivery verification"
+    - "Custom AuthIdentityPlugin / AuthPolicyPlugin for deny/allow testing"
+
+open_questions:
+  - question: "Should webhook CRUD operations become an event plugin themselves, or remain as configuration in .kanban.json?"
+    context: "Currently webhooks are stored as config entries with their own CRUD. In a pub/sub model, webhooks could be one subscriber type among many."
+  - question: "How should the dual broadcast (webhooks + WebSocket) be unified in a pub/sub model?"
+    context: "Currently webhooks fire from SDK via onEvent callback, while WS broadcast happens at the mutationService layer. These are two independent notification paths."
+  - question: "Should auth remain a pre-action gate pattern or become a pre-event interceptor in the pub/sub pipeline?"
+    context: "Currently auth is a synchronous gate (_authorizeAction) called before mutation logic. In pub/sub, it could be a 'before' event interceptor."
+  - question: "How to handle the SDKContext.emitEvent() pattern when module functions need to emit events — should modules emit to a bus directly?"
+    context: "Currently modules depend on SDKContext which includes emitEvent(). In pub/sub, modules would need access to the event bus."
+  - question: "What about events that currently have no emitEvent call (e.g., column reorder)?"
+    context: "Not all mutations currently emit events. A pub/sub redesign should audit and add missing events."
+
+gaps:
+  - area: "Missing event emissions"
+    description: "Some mutations don't emit events: reorderColumns, setMinimizedColumns, setDefaultBoard, renameLabel, deleteLabel, and setLabel do not all have corresponding emitEvent calls in their module functions."
+    impact: "A pub/sub redesign must audit all mutations to ensure complete event coverage."
+  - area: "No event acknowledgment or retry for webhooks"
+    description: "Webhook delivery is completely fire-and-forget with no retry, no dead letter queue, no delivery status tracking."
+    impact: "A pub/sub architecture should define delivery guarantees for different subscriber types."
+  - area: "Single-subscriber limitation"
+    description: "The current _onEvent is a single callback. Only one listener can be registered. The standalone server uses it for fireWebhooks, but if another host surface needed the same events, there's no way to add it."
+    impact: "This is the primary architectural limitation that pub/sub addresses."
+  - area: "No event metadata beyond data payload"
+    description: "Events carry only (eventType, data). No correlation ID, no auth actor information, no timestamp at the emission point, no causation chain."
+    impact: "A pub/sub system should enrich events with metadata for audit trails and debugging."
+  - area: "Auth decision not available to event subscribers"
+    description: "The auth decision (actor, roles) is resolved in _authorizeAction but not passed to emitEvent. Webhook payloads don't include who performed the action."
+    impact: "Event-driven plugins that need actor context (audit logging, notifications) can't get it from the current event payload."

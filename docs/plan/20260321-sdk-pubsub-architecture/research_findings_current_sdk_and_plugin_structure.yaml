@@ -1,0 +1,1040 @@
+plan_id: "20260321-sdk-pubsub-architecture"
+objective: "Analyze current SDK structure, plugin system, and operation flow to understand what needs to change for pub/sub event-driven architecture"
+focus_area: "current_sdk_and_plugin_structure"
+created_at: "2026-03-21"
+created_by: "researcher"
+status: completed
+
+tldr: |
+  - KanbanSDK is a monolithic facade class (~2100 lines) that delegates ALL business logic to 9 stateless module files via an SDKContext interface.
+  - Events are fired via a simple single-callback `onEvent(event, data)` pattern — one handler, no subscription, no filtering, no async/await support. The handler is set once at construction time.
+  - The plugin system supports 4 capability namespaces (card.storage, attachment.storage, auth.identity, auth.policy) resolved at construction time into a ResolvedCapabilityBag. Plugins are NOT event-aware.
+  - 24 distinct SDKEventType values exist, emitted from modules after every mutation via `ctx.emitEvent()`. The emitEvent method catches and swallows handler errors.
+  - External event consumers (webhooks, WebSocket broadcast) are wired at the host layer by providing the onEvent callback at SDK construction. There is no internal pub/sub bus.
+
+research_metadata:
+  methodology: "Hybrid retrieval: read_file for all SDK core files, grep_search for emitEvent usage across modules, directory listing for structural mapping"
+  scope: "Complete read of KanbanSDK.ts, types.ts, index.ts, plugins/ directory (6 files), modules/context.ts, webhooks.ts, and targeted grep across all modules"
+  confidence: high
+  coverage: 95
+
+files_analyzed:
+  - file: KanbanSDK.ts
+    path: src/sdk/KanbanSDK.ts
+    purpose: "Main SDK facade class — single entry point for all kanban operations"
+    key_elements:
+      - element: KanbanSDK
+        type: class
+        location: "src/sdk/KanbanSDK.ts:211"
+        description: "Core facade with ~50 public methods delegating to module functions. Holds storage engine, capability bag, and optional event handler."
+      - element: constructor
+        type: function
+        location: "src/sdk/KanbanSDK.ts:249"
+        description: "Accepts kanbanDir and SDKOptions. Resolves plugins via resolveCapabilityBag(). Sets onEvent callback. Supports injected StorageEngine."
+      - element: emitEvent
+        type: function
+        location: "src/sdk/KanbanSDK.ts:540"
+        description: "CRITICAL — Internal event dispatcher. If onEvent handler exists, calls it with try/catch (swallows errors). Otherwise falls back to fireWebhooks() directly."
+      - element: _authorizeAction
+        type: function
+        location: "src/sdk/KanbanSDK.ts:365"
+        description: "Pre-action auth seam. Resolves identity via authIdentity plugin, then checks policy via authPolicy plugin. Throws AuthError on denial."
+      - element: StorageStatus
+        type: interface
+        location: "src/sdk/KanbanSDK.ts:33"
+        description: "Diagnostic shape exposing active storage provider id, file-backed status, and watch glob."
+      - element: AuthStatus
+        type: interface
+        location: "src/sdk/KanbanSDK.ts:56"
+        description: "Diagnostic shape exposing active auth provider ids and enabled flags."
+      - element: ListCardsOptions
+        type: interface
+        location: "src/sdk/KanbanSDK.ts:82"
+        description: "Search/sort/filter options object for listCards()."
+    language: TypeScript
+    lines: 2100
+
+  - file: types.ts
+    path: src/sdk/types.ts
+    purpose: "SDK-level type definitions: event types, options, auth context, card inputs"
+    key_elements:
+      - element: SDKEventType
+        type: type
+        location: "src/sdk/types.ts:46-73"
+        description: "Union of 24 string literal event types covering tasks, forms, comments, columns, attachments, settings, boards, logs, and storage migration."
+      - element: SDKEventHandler
+        type: type
+        location: "src/sdk/types.ts:81"
+        description: "Simple callback signature: (event: SDKEventType, data: unknown) => void. No async support, no return value."
+      - element: SDKOptions
+        type: interface
+        location: "src/sdk/types.ts:88"
+        description: "Constructor config: onEvent callback, storage engine override, storageEngine type, sqlitePath, capability selections."
+      - element: CreateCardInput
+        type: interface
+        location: "src/sdk/types.ts:12"
+        description: "Input shape for card creation with all optional fields."
+      - element: SubmitFormInput
+        type: interface
+        location: "src/sdk/types.ts:119"
+        description: "Form submission input: cardId, formId, data, boardId."
+      - element: SubmitFormResult
+        type: interface
+        location: "src/sdk/types.ts:129"
+        description: "Form submission output: boardId, sanitized card, resolved form, validated data."
+      - element: AuthContext
+        type: interface
+        location: "src/sdk/types.ts:168"
+        description: "Auth context from inbound requests: token, tokenSource, transport, actorHint, and all target resource IDs."
+      - element: AuthDecision
+        type: interface
+        location: "src/sdk/types.ts:152"
+        description: "Auth decision: allowed boolean, reason code, actor string, optional metadata."
+      - element: AuthError
+        type: class
+        location: "src/sdk/types.ts:213"
+        description: "Typed Error subclass with category (AuthErrorCategory) and optional actor."
+      - element: sanitizeCard
+        type: function
+        location: "src/sdk/types.ts:141"
+        description: "Strips filePath from cards before external exposure."
+    language: TypeScript
+    lines: 225
+
+  - file: index.ts
+    path: src/sdk/index.ts
+    purpose: "Public API barrel export — defines the SDK's external surface area"
+    key_elements:
+      - element: exports
+        type: pattern
+        location: "src/sdk/index.ts:1-17"
+        description: "Re-exports KanbanSDK class, parser functions, file utils, migration, types (CreateCardInput, SDKEventType, SDKEventHandler, SDKOptions, AuthContext, AuthDecision, AuthErrorCategory, sanitizeCard, AuthError), config helpers, shared types, auth plugin types and noop singletons, StorageStatus, AuthStatus."
+    language: TypeScript
+    lines: 17
+
+  - file: "plugins/types.ts"
+    path: src/sdk/plugins/types.ts
+    purpose: "StorageEngine interface definition — the core persistence contract"
+    key_elements:
+      - element: StorageEngine
+        type: interface
+        location: "src/sdk/plugins/types.ts:14"
+        description: "Core persistence contract with lifecycle (init, close, migrate), board management (ensureBoardDirs, deleteBoardData), card I/O (scanCards, writeCard, moveCard, renameCard, deleteCard), and attachment (getCardDir, copyAttachment) methods."
+      - element: StorageEngineType
+        type: type
+        location: "src/sdk/plugins/types.ts:8"
+        description: "'markdown' | 'sqlite' — constructor override values."
+    language: TypeScript
+    lines: 70
+
+  - file: "plugins/index.ts"
+    path: src/sdk/plugins/index.ts
+    purpose: "Plugin resolution — resolves capability namespaces to concrete plugin implementations"
+    key_elements:
+      - element: resolveCapabilityBag
+        type: function
+        location: "src/sdk/plugins/index.ts:~630"
+        description: "Main entry point. Takes ResolvedCapabilities + kanbanDir + optional auth capabilities. Returns ResolvedCapabilityBag with cardStorage, attachmentStorage, authIdentity, authPolicy, and helper methods."
+      - element: ResolvedCapabilityBag
+        type: interface
+        location: "src/sdk/plugins/index.ts:~370"
+        description: "Fully resolved runtime bag: cardStorage (StorageEngine), attachmentStorage (AttachmentStoragePlugin), providers, isFileBacked, getLocalCardPath, getAttachmentDir, materializeAttachment, getWatchGlob, authIdentity, authPolicy."
+      - element: CardStoragePlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:~320"
+        description: "Plugin contract for card.storage: manifest, createEngine(kanbanDir, options), optional nodeCapabilities."
+      - element: AttachmentStoragePlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:~340"
+        description: "Plugin contract for attachment.storage: manifest, getCardDir, copyAttachment, appendAttachment, materializeAttachment."
+      - element: AuthIdentityPlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:~60"
+        description: "Auth identity contract: manifest, resolveIdentity(context) → AuthIdentity | null."
+      - element: AuthPolicyPlugin
+        type: interface
+        location: "src/sdk/plugins/index.ts:~80"
+        description: "Auth policy contract: manifest, checkPolicy(identity, action, context) → AuthDecision."
+      - element: BUILTIN_CARD_PLUGINS
+        type: variable
+        location: "src/sdk/plugins/index.ts:~410"
+        description: "Map of built-in card.storage plugins. Currently only 'markdown'."
+      - element: PROVIDER_ALIASES
+        type: variable
+        location: "src/sdk/plugins/index.ts:~430"
+        description: "Maps short ids to npm packages: sqlite→kl-sqlite-storage, mysql→kl-mysql-storage."
+      - element: loadExternalCardPlugin
+        type: function
+        location: "src/sdk/plugins/index.ts:~520"
+        description: "Dynamically requires external npm card-storage plugin via createRequire."
+      - element: loadExternalAttachmentPlugin
+        type: function
+        location: "src/sdk/plugins/index.ts:~545"
+        description: "Dynamically requires external npm attachment-storage plugin."
+      - element: RBAC_ROLE_MATRIX
+        type: variable
+        location: "src/sdk/plugins/index.ts:~270"
+        description: "Static role→action-set matrix for built-in RBAC provider. Three roles: user, manager, admin."
+      - element: createRbacIdentityPlugin
+        type: function
+        location: "src/sdk/plugins/index.ts:~130"
+        description: "Factory for token-based RBAC identity plugin from a host-supplied principal registry."
+    language: TypeScript
+    lines: ~720
+
+  - file: "plugins/markdown.ts"
+    path: src/sdk/plugins/markdown.ts
+    purpose: "Built-in markdown storage engine — persists cards as .md files with YAML frontmatter"
+    key_elements:
+      - element: MarkdownStorageEngine
+        type: class
+        location: "src/sdk/plugins/markdown.ts:30"
+        description: "Implements StorageEngine. Card I/O via fs read/write, status reconciliation, attachment directory management."
+      - element: MARKDOWN_PLUGIN
+        type: variable
+        location: "src/sdk/plugins/markdown.ts (inferred)"
+        description: "CardStoragePlugin singleton for the 'markdown' provider with nodeCapabilities."
+    language: TypeScript
+    lines: ~210
+
+  - file: "plugins/localfs.ts"
+    path: src/sdk/plugins/localfs.ts
+    purpose: "Built-in localfs attachment plugin — delegates to active card storage engine"
+    key_elements:
+      - element: createLocalFsAttachmentPlugin
+        type: function
+        location: "src/sdk/plugins/localfs.ts:13"
+        description: "Factory wrapping StorageEngine's getCardDir and copyAttachment as an AttachmentStoragePlugin."
+    language: TypeScript
+    lines: 22
+
+  - file: "modules/context.ts"
+    path: src/sdk/modules/context.ts
+    purpose: "SDKContext interface — the contract modules use to access SDK internals without circular imports"
+    key_elements:
+      - element: SDKContext
+        type: interface
+        location: "src/sdk/modules/context.ts:14"
+        description: "Minimal SDK surface for modules: workspaceRoot, kanbanDir, _storage, capabilities, board resolution helpers, emitEvent, card path helpers, attachment helpers, and cross-module card operations (listCards, getCard, updateCard, moveCard, etc)."
+    language: TypeScript
+    lines: 60
+
+  - file: webhooks.ts
+    path: src/sdk/webhooks.ts
+    purpose: "Webhook delivery engine — fires HTTP POST to registered webhooks on SDK events"
+    key_elements:
+      - element: fireWebhooks
+        type: function
+        location: "src/sdk/webhooks.ts:24"
+        description: "Loads webhooks from config, filters by event subscription, delivers payload asynchronously. Failures logged but never blocking."
+      - element: deliverWebhook
+        type: function
+        location: "src/sdk/webhooks.ts:55"
+        description: "HTTP POST with HMAC-SHA256 signing, 10s timeout, 2xx success check."
+    language: TypeScript
+    lines: ~130
+
+  - file: "standalone/internal/runtime.ts (partial)"
+    path: src/standalone/internal/runtime.ts
+    purpose: "Host-layer SDK instantiation showing how onEvent is wired"
+    key_elements:
+      - element: createStandaloneRuntime
+        type: function
+        location: "src/standalone/internal/runtime.ts:35"
+        description: "Creates SDK with onEvent callback that fires webhooks AND broadcasts WebSocket updates for log events."
+    language: TypeScript
+    lines: "~80 (partial read)"
+
+patterns_found:
+  - category: architecture
+    pattern: "Facade + stateless module delegation"
+    description: "KanbanSDK is a thin facade. All business logic lives in stateless module files (boards.ts, cards.ts, columns.ts, etc.) that receive an SDKContext as their first parameter."
+    examples:
+      - file: src/sdk/KanbanSDK.ts
+        location: "lines 580-640"
+        snippet: |
+          listBoards(): BoardInfo[] { return Boards.listBoards(this) }
+          async createBoard(...) { return Boards.createBoard(this, id, name, options) }
+    prevalence: common
+
+  - category: architecture
+    pattern: "Single-callback event dispatch"
+    description: "SDK emits events through a single optional callback (onEvent). No event bus, no multiple subscribers, no filtering. When no callback, falls through directly to fireWebhooks()."
+    examples:
+      - file: src/sdk/KanbanSDK.ts
+        location: "line 540"
+        snippet: |
+          emitEvent(event: SDKEventType, data: unknown): void {
+            if (this._onEvent) {
+              try { this._onEvent(event, data) } catch (err) { console.error(...) }
+            } else {
+              fireWebhooks(this.workspaceRoot, event, data)
+            }
+          }
+    prevalence: common
+
+  - category: architecture
+    pattern: "Post-mutation event emission in modules"
+    description: "Every module emits events AFTER the mutation succeeds, using ctx.emitEvent(). Events are fire-and-forget with no pre-event hooks."
+    examples:
+      - file: src/sdk/modules/cards.ts
+        location: "line 368"
+        snippet: "ctx.emitEvent('task.created', sanitizeCard(card))"
+      - file: src/sdk/modules/columns.ts
+        location: "line 39"
+        snippet: "ctx.emitEvent('column.created', column)"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Pre-action authorization seam"
+    description: "All mutating KanbanSDK methods call _authorizeAction() before delegating to the module. Auth is resolved at the facade layer, not inside modules."
+    examples:
+      - file: src/sdk/KanbanSDK.ts
+        location: "line 616"
+        snippet: |
+          async createBoard(id, name, options, auth?) {
+            await this._authorizeAction('board.create', this._withAuthContext(auth, { boardId: id }))
+            return Boards.createBoard(this, id, name, options)
+          }
+    prevalence: common
+
+  - category: architecture
+    pattern: "Construction-time plugin resolution"
+    description: "All plugins (storage, attachment, auth) are resolved once at SDK construction time via resolveCapabilityBag(). No hot-reloading or runtime plugin changes."
+    examples:
+      - file: src/sdk/KanbanSDK.ts
+        location: "line 260-270"
+        snippet: |
+          this._capabilities = resolveCapabilityBag(
+            resolveConfiguredCapabilities(this.kanbanDir, options),
+            this.kanbanDir,
+            resolveConfiguredAuthCapabilities(this.kanbanDir),
+          )
+          this._storage = this._capabilities.cardStorage
+    prevalence: common
+
+  - category: architecture
+    pattern: "External plugin loading via createRequire"
+    description: "Non-builtin plugins are loaded from npm packages using Node's createRequire, with sibling package fallback. Deterministic error messages guide users to install."
+    examples:
+      - file: src/sdk/plugins/index.ts
+        location: "line ~500"
+        snippet: "const mod = loadExternalModule(providerName)"
+    prevalence: occasional
+
+  - category: architecture
+    pattern: "Capability namespace organization"
+    description: "4 capability namespaces: card.storage (StorageEngine), attachment.storage (AttachmentStoragePlugin), auth.identity (AuthIdentityPlugin), auth.policy (AuthPolicyPlugin). Each has a manifest with id and provides array."
+    examples:
+      - file: src/sdk/plugins/index.ts
+        location: "PluginManifest interface"
+        snippet: |
+          interface PluginManifest {
+            readonly id: string
+            readonly provides: readonly CapabilityNamespace[]
+          }
+    prevalence: common
+
+  - category: naming
+    pattern: "SDK event names use dot-separated domain.action format"
+    description: "Event types follow 'domain.action' pattern: task.created, comment.updated, board.deleted, etc."
+    examples:
+      - file: src/sdk/types.ts
+        location: "line 46-73"
+        snippet: "'task.created' | 'task.updated' | 'task.moved' | 'task.deleted' | 'comment.created' | ..."
+    prevalence: common
+
+  - category: error_handling
+    pattern: "Event handler errors swallowed silently"
+    description: "emitEvent wraps the handler in try/catch and only logs to console.error. No retry, no dead-letter queue."
+    examples:
+      - file: src/sdk/KanbanSDK.ts
+        location: "line 542"
+        snippet: "catch (err) { console.error(`SDK event handler error for ${event}:`, err) }"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: KanbanSDK (facade)
+      responsibility: "Single public API entry point. Holds storage, capabilities, event handler. Delegates to modules."
+      location: src/sdk/KanbanSDK.ts
+      relationship_to_domain: "Primary target for pub/sub integration"
+    - component: "Module files (boards, cards, columns, comments, logs, attachments, labels, settings, migration)"
+      responsibility: "Stateless business logic. All mutations. All event emissions."
+      location: src/sdk/modules/
+      relationship_to_domain: "Event emission points — every emitEvent() call is a potential pub/sub publish point"
+    - component: SDKContext interface
+      responsibility: "Dependency injection seam between facade and modules"
+      location: src/sdk/modules/context.ts
+      relationship_to_domain: "Would need to expose event bus if modules publish directly"
+    - component: Plugin resolver
+      responsibility: "Resolves capability namespaces to concrete implementations at construction time"
+      location: src/sdk/plugins/index.ts
+      relationship_to_domain: "May need extension for event-aware plugins or a new event.bus capability"
+    - component: Webhook system
+      responsibility: "HTTP POST delivery of events to external endpoints"
+      location: src/sdk/webhooks.ts
+      relationship_to_domain: "Currently a side-effect of emitEvent — would become a subscriber in pub/sub model"
+    - component: Standalone runtime
+      responsibility: "Host layer that wires SDK onEvent to webhooks + WebSocket broadcast"
+      location: src/standalone/internal/runtime.ts
+      relationship_to_domain: "Would become a subscriber instead of providing a callback"
+
+  interfaces_used_by_domain:
+    - interface: StorageEngine
+      location: src/sdk/plugins/types.ts
+      usage_pattern: "SDK._storage — all persistence delegated here"
+    - interface: SDKEventHandler
+      location: src/sdk/types.ts
+      usage_pattern: "Single callback: (event, data) => void — set once at construction"
+    - interface: SDKContext
+      location: src/sdk/modules/context.ts
+      usage_pattern: "First param of all module functions — provides access to storage, config, and emitEvent"
+    - interface: ResolvedCapabilityBag
+      location: src/sdk/plugins/index.ts
+      usage_pattern: "SDK._capabilities — resolved bag of all active plugins"
+
+  data_flow_involving_domain: |
+    1. Host (server/CLI/MCP) creates SDK with optional onEvent handler
+    2. Host calls SDK public method (e.g. createCard)
+    3. SDK runs _authorizeAction() → auth plugins resolve identity + check policy
+    4. SDK delegates to module function (e.g. Cards.createCard(this, data))
+    5. Module performs business logic using ctx._storage (StorageEngine)
+    6. Module calls ctx.emitEvent('task.created', sanitizedData) — FIRE AND FORGET
+    7. emitEvent invokes the single onEvent callback OR falls back to fireWebhooks()
+    8. Host's onEvent callback typically: (a) forwards to fireWebhooks(), (b) broadcasts via WebSocket
+
+  key_relationships_to_domain:
+    - from: KanbanSDK
+      to: Module files
+      relationship: "delegates (passes `this` as SDKContext)"
+    - from: Module files
+      to: SDKContext.emitEvent
+      relationship: "calls after every mutation"
+    - from: KanbanSDK.emitEvent
+      to: SDKEventHandler (onEvent callback)
+      relationship: "invokes single registered handler"
+    - from: KanbanSDK.emitEvent
+      to: fireWebhooks
+      relationship: "fallback when no onEvent handler"
+    - from: Host layers
+      to: KanbanSDK constructor
+      relationship: "provide onEvent callback for event routing"
+    - from: Standalone runtime
+      to: fireWebhooks + WebSocket broadcast
+      relationship: "consumes events in onEvent callback"
+
+related_conventions:
+  naming_patterns_in_domain: "Events: 'domain.action' (task.created, comment.deleted). Plugins: manifest.id + provides array. Modules: lowercase plural nouns (boards, cards, columns)."
+  structure_of_domain: "Facade pattern — KanbanSDK class wraps modules + plugins. Modules are stateless function collections. Plugins are capability-scoped interfaces."
+  error_handling_in_domain: "Auth errors throw AuthError. Event handler errors caught and swallowed. Plugin load errors throw descriptive Error with install hints."
+  testing_in_domain: "Tests in src/sdk/__tests__/. Module functions testable via SDKContext mock."
+  documentation_in_domain: "Extensive JSDoc on all public methods. Auto-generated docs/sdk.md from JSDoc."
+
+related_dependencies:
+  internal:
+    - component: shared/config
+      relationship_to_domain: "readConfig/writeConfig used by modules for board/webhook config"
+      direction: outbound
+    - component: shared/types
+      relationship_to_domain: "Card, KanbanColumn, BoardInfo, etc. — core domain types"
+      direction: outbound
+    - component: sdk/parser
+      relationship_to_domain: "parseCardFile/serializeCard — markdown card serialization"
+      direction: outbound
+    - component: sdk/fileUtils
+      relationship_to_domain: "File path resolution and card file operations"
+      direction: outbound
+    - component: sdk/metaUtils
+      relationship_to_domain: "Metadata search/filter utilities"
+      direction: outbound
+  external:
+    - name: fractional-indexing
+      purpose_for_domain: "Card ordering within columns"
+    - name: "@jsonforms/core"
+      purpose_for_domain: "AJV-based form validation in submitForm"
+
+open_questions:
+  - question: "Should the pub/sub bus live inside KanbanSDK or be a separate injectable dependency?"
+    context: "Currently events go through a single callback on the class. A separate EventBus could be injected via SDKOptions, but that changes the constructor API."
+  - question: "Should plugins be able to subscribe to events?"
+    context: "Current plugins (storage, auth) have no event awareness. Storage plugins might want to react to events (e.g., invalidate caches). Auth plugins might want audit logging."
+  - question: "Should pre-mutation (before) events be supported alongside post-mutation (after) events?"
+    context: "Current pattern is post-mutation only. Pre-events would enable validation plugins, cancellation, or transformation pipelines."
+  - question: "Should the event handler support async/await?"
+    context: "Current SDKEventHandler is sync (void return). Async subscribers would require await-ing emitEvent(), changing the contract for all 27+ call sites in modules."
+  - question: "How should the fallback from onEvent to fireWebhooks be handled in a pub/sub model?"
+    context: "Currently emitEvent has a branching fallback. In pub/sub, webhooks would just be another subscriber, eliminating the branch."
+  - question: "Should SDKContext.emitEvent be replaced with a publish method on an injected bus?"
+    context: "All 27 module emitEvent call sites would need updating if the signature changes."
+
+gaps:
+  - area: "No event typing per event type"
+    description: "All events use `data: unknown`. There are no typed event payload interfaces per SDKEventType. E.g., task.created payload shape is not enforced."
+    impact: "Subscribers cannot get type-safe payloads without runtime checks or casting."
+  - area: "No event ordering guarantees"
+    description: "Events are emitted synchronously inline. No queue, no ordering, no deduplication."
+    impact: "A pub/sub system would need to decide on ordering semantics (FIFO per board? per card? global?)."
+  - area: "No event metadata"
+    description: "Events carry only type + data. No event ID, no timestamp, no correlation ID, no actor/auth context."
+    impact: "Pub/sub consumers often need metadata for idempotency, ordering, and audit trails."
+  - area: "Host-specific WebSocket broadcast not in SDK"
+    description: "WebSocket broadcasting of events is wired in standalone/internal/runtime.ts — outside the SDK. The extension (VS Code) has its own separate event handling."
+    impact: "Multiple host layers duplicate event routing logic that could be unified in a pub/sub bus."
+
+# --------------------------------------------------------------------------
+# Complete SDK public method inventory
+# --------------------------------------------------------------------------
+sdk_public_methods:
+  # Lifecycle
+  - method: "constructor(kanbanDir?, options?)"
+    category: lifecycle
+    auth: false
+    emits: null
+    delegates_to: "resolveCapabilityBag, resolveKanbanDir"
+
+  - method: "init(): Promise<void>"
+    category: lifecycle
+    auth: false
+    emits: null
+    delegates_to: "_storage.init(), _storage.ensureBoardDirs()"
+
+  - method: "close(): void"
+    category: lifecycle
+    auth: false
+    emits: null
+    delegates_to: "_storage.close()"
+
+  # Diagnostics
+  - method: "getStorageStatus(): StorageStatus"
+    category: diagnostics
+    auth: false
+    emits: null
+
+  - method: "getAuthStatus(): AuthStatus"
+    category: diagnostics
+    auth: false
+    emits: null
+
+  - method: "getLocalCardPath(card): string | null"
+    category: diagnostics
+    auth: false
+    emits: null
+
+  - method: "getAttachmentStoragePath(card): string | null"
+    category: diagnostics
+    auth: false
+    emits: null
+
+  # Storage access
+  - method: "get storageEngine(): StorageEngine"
+    category: accessor
+    auth: false
+    emits: null
+
+  - method: "get capabilities(): ResolvedCapabilityBag | null"
+    category: accessor
+    auth: false
+    emits: null
+
+  - method: "get workspaceRoot(): string"
+    category: accessor
+    auth: false
+    emits: null
+
+  # Boards
+  - method: "listBoards(): BoardInfo[]"
+    category: boards
+    auth: false
+    emits: null
+    delegates_to: "Boards.listBoards"
+
+  - method: "createBoard(id, name, options?, auth?): Promise<BoardInfo>"
+    category: boards
+    auth: "board.create"
+    emits: "board.created"
+    delegates_to: "Boards.createBoard"
+
+  - method: "deleteBoard(boardId, auth?): Promise<void>"
+    category: boards
+    auth: "board.delete"
+    emits: "board.deleted"
+    delegates_to: "Boards.deleteBoard"
+
+  - method: "getBoard(boardId): BoardConfig"
+    category: boards
+    auth: false
+    emits: null
+    delegates_to: "Boards.getBoard"
+
+  - method: "updateBoard(boardId, updates, auth?): Promise<BoardConfig>"
+    category: boards
+    auth: "board.update"
+    emits: "board.updated"
+    delegates_to: "Boards.updateBoard"
+
+  - method: "getBoardActions(boardId?): Record<string, string>"
+    category: boards
+    auth: false
+    emits: null
+    delegates_to: "Boards.getBoardActions"
+
+  - method: "addBoardAction(boardId, key, title, auth?): Promise<Record<string, string>>"
+    category: boards
+    auth: "board.action.config.add"
+    emits: "board.updated"
+    delegates_to: "Boards.addBoardAction"
+
+  - method: "removeBoardAction(boardId, key, auth?): Promise<Record<string, string>>"
+    category: boards
+    auth: "board.action.config.remove"
+    emits: "board.updated"
+    delegates_to: "Boards.removeBoardAction"
+
+  - method: "triggerBoardAction(boardId, actionKey, auth?): Promise<void>"
+    category: boards
+    auth: "board.action.trigger"
+    emits: "board.action"
+    delegates_to: "Boards.triggerBoardAction"
+
+  - method: "transferCard(cardId, fromBoardId, toBoardId, targetStatus?, auth?): Promise<Card>"
+    category: boards
+    auth: "card.transfer"
+    emits: "task.moved"
+    delegates_to: "Boards.transferCard"
+
+  # Cards
+  - method: "listCards(columns?, boardId?, options?): Promise<Card[]>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.listCards"
+
+  - method: "getCard(cardId, boardId?): Promise<Card | null>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.getCard"
+
+  - method: "getActiveCard(boardId?): Promise<Card | null>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.getActiveCard"
+
+  - method: "createCard(data, auth?): Promise<Card>"
+    category: cards
+    auth: "card.create"
+    emits: "task.created"
+    delegates_to: "Cards.createCard"
+
+  - method: "updateCard(cardId, updates, boardId?, auth?): Promise<Card>"
+    category: cards
+    auth: "card.update"
+    emits: "task.updated"
+    delegates_to: "Cards.updateCard"
+
+  - method: "submitForm(input, auth?): Promise<SubmitFormResult>"
+    category: cards
+    auth: "form.submit"
+    emits: "form.submit"
+    delegates_to: "Cards.submitForm"
+
+  - method: "triggerAction(cardId, action, boardId?, auth?): Promise<void>"
+    category: cards
+    auth: "card.action.trigger"
+    emits: null
+    delegates_to: "Cards.triggerAction"
+
+  - method: "moveCard(cardId, newStatus, position?, boardId?, auth?): Promise<Card>"
+    category: cards
+    auth: "card.move"
+    emits: "task.moved"
+    delegates_to: "Cards.moveCard"
+
+  - method: "deleteCard(cardId, boardId?, auth?): Promise<void>"
+    category: cards
+    auth: "card.delete"
+    emits: "task.deleted"
+    delegates_to: "Cards.deleteCard"
+
+  - method: "permanentlyDeleteCard(cardId, boardId?, auth?): Promise<void>"
+    category: cards
+    auth: "card.delete"
+    emits: "task.deleted"
+    delegates_to: "Cards.permanentlyDeleteCard"
+
+  - method: "getCardsByStatus(status, boardId?): Promise<Card[]>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.getCardsByStatus"
+
+  - method: "getUniqueAssignees(boardId?): Promise<string[]>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.getUniqueAssignees"
+
+  - method: "getUniqueLabels(boardId?): Promise<string[]>"
+    category: cards
+    auth: false
+    emits: null
+    delegates_to: "Cards.getUniqueLabels"
+
+  # Labels
+  - method: "getLabels(): Record<string, LabelDefinition>"
+    category: labels
+    auth: false
+    emits: null
+    delegates_to: "Labels.getLabels"
+
+  - method: "setLabel(name, definition, auth?): Promise<void>"
+    category: labels
+    auth: "label.set"
+    emits: null
+    delegates_to: "Labels.setLabel"
+
+  - method: "deleteLabel(name, auth?): Promise<void>"
+    category: labels
+    auth: "label.delete"
+    emits: null
+    delegates_to: "Labels.deleteLabel"
+
+  - method: "renameLabel(oldName, newName, auth?): Promise<void>"
+    category: labels
+    auth: "label.rename"
+    emits: null
+    delegates_to: "Labels.renameLabel"
+
+  - method: "getLabelsInGroup(group): string[]"
+    category: labels
+    auth: false
+    emits: null
+    delegates_to: "Labels.getLabelsInGroup"
+
+  - method: "filterCardsByLabelGroup(group, boardId?): Promise<Card[]>"
+    category: labels
+    auth: false
+    emits: null
+    delegates_to: "Labels.filterCardsByLabelGroup"
+
+  # Attachments
+  - method: "addAttachment(cardId, sourcePath, boardId?, auth?): Promise<Card>"
+    category: attachments
+    auth: "attachment.add"
+    emits: "attachment.added"
+    delegates_to: "Attachments.addAttachment"
+
+  - method: "removeAttachment(cardId, attachment, boardId?, auth?): Promise<Card>"
+    category: attachments
+    auth: "attachment.remove"
+    emits: "attachment.removed"
+    delegates_to: "Attachments.removeAttachment"
+
+  - method: "listAttachments(cardId, boardId?): Promise<string[]>"
+    category: attachments
+    auth: false
+    emits: null
+    delegates_to: "Attachments.listAttachments"
+
+  - method: "getAttachmentDir(cardId, boardId?): Promise<string | null>"
+    category: attachments
+    auth: false
+    emits: null
+    delegates_to: "Attachments.getAttachmentDir"
+
+  - method: "appendAttachment(card, attachment, content): Promise<boolean>"
+    category: attachments
+    auth: false
+    emits: null
+    delegates_to: "capabilities.attachmentStorage.appendAttachment"
+
+  - method: "copyAttachment(sourcePath, card): Promise<void>"
+    category: attachments
+    auth: false
+    emits: null
+
+  - method: "materializeAttachment(card, attachment): Promise<string | null>"
+    category: attachments
+    auth: false
+    emits: null
+
+  # Comments
+  - method: "listComments(cardId, boardId?): Promise<Comment[]>"
+    category: comments
+    auth: false
+    emits: null
+    delegates_to: "Comments.listComments"
+
+  - method: "addComment(cardId, author, content, boardId?, auth?): Promise<Card>"
+    category: comments
+    auth: "comment.create"
+    emits: "comment.created"
+    delegates_to: "Comments.addComment"
+
+  - method: "updateComment(cardId, commentId, content, boardId?, auth?): Promise<Card>"
+    category: comments
+    auth: "comment.update"
+    emits: "comment.updated"
+    delegates_to: "Comments.updateComment"
+
+  - method: "deleteComment(cardId, commentId, boardId?, auth?): Promise<Card>"
+    category: comments
+    auth: "comment.delete"
+    emits: "comment.deleted"
+    delegates_to: "Comments.deleteComment"
+
+  # Logs (card-level)
+  - method: "getLogFilePath(cardId, boardId?): Promise<string | null>"
+    category: logs
+    auth: false
+    emits: null
+    delegates_to: "Logs.getLogFilePath"
+
+  - method: "listLogs(cardId, boardId?): Promise<LogEntry[]>"
+    category: logs
+    auth: false
+    emits: null
+    delegates_to: "Logs.listLogs"
+
+  - method: "addLog(cardId, text, options?, boardId?, auth?): Promise<LogEntry>"
+    category: logs
+    auth: "log.add"
+    emits: "log.added"
+    delegates_to: "Logs.addLog"
+
+  - method: "clearLogs(cardId, boardId?, auth?): Promise<void>"
+    category: logs
+    auth: "log.clear"
+    emits: "log.cleared"
+    delegates_to: "Logs.clearLogs"
+
+  # Logs (board-level)
+  - method: "getBoardLogFilePath(boardId?): string"
+    category: board_logs
+    auth: false
+    emits: null
+    delegates_to: "Logs.getBoardLogFilePath"
+
+  - method: "listBoardLogs(boardId?): Promise<LogEntry[]>"
+    category: board_logs
+    auth: false
+    emits: null
+    delegates_to: "Logs.listBoardLogs"
+
+  - method: "addBoardLog(text, options?, boardId?, auth?): Promise<LogEntry>"
+    category: board_logs
+    auth: "board.log.add"
+    emits: "board.log.added"
+    delegates_to: "Logs.addBoardLog"
+
+  - method: "clearBoardLogs(boardId?, auth?): Promise<void>"
+    category: board_logs
+    auth: "board.log.clear"
+    emits: "board.log.cleared"
+    delegates_to: "Logs.clearBoardLogs"
+
+  # Columns
+  - method: "listColumns(boardId?): KanbanColumn[]"
+    category: columns
+    auth: false
+    emits: null
+    delegates_to: "Columns.listColumns"
+
+  - method: "addColumn(column, boardId?, auth?): Promise<KanbanColumn[]>"
+    category: columns
+    auth: "column.create"
+    emits: "column.created"
+    delegates_to: "Columns.addColumn"
+
+  - method: "updateColumn(columnId, updates, boardId?, auth?): Promise<KanbanColumn[]>"
+    category: columns
+    auth: "column.update"
+    emits: "column.updated"
+    delegates_to: "Columns.updateColumn"
+
+  - method: "removeColumn(columnId, boardId?, auth?): Promise<KanbanColumn[]>"
+    category: columns
+    auth: "column.delete"
+    emits: "column.deleted"
+    delegates_to: "Columns.removeColumn"
+
+  - method: "cleanupColumn(columnId, boardId?, auth?): Promise<number>"
+    category: columns
+    auth: "column.cleanup"
+    emits: "task.deleted (per card)"
+    delegates_to: "Columns.cleanupColumn"
+
+  - method: "purgeDeletedCards(boardId?, auth?): Promise<number>"
+    category: columns
+    auth: "card.purgeDeleted"
+    emits: "task.deleted (per card)"
+    delegates_to: "Columns.purgeDeletedCards"
+
+  - method: "reorderColumns(columnIds, boardId?, auth?): Promise<KanbanColumn[]>"
+    category: columns
+    auth: "column.reorder"
+    emits: null
+    delegates_to: "Columns.reorderColumns"
+
+  - method: "getMinimizedColumns(boardId?): string[]"
+    category: columns
+    auth: false
+    emits: null
+    delegates_to: "Columns.getMinimizedColumns"
+
+  - method: "setMinimizedColumns(columnIds, boardId?, auth?): Promise<string[]>"
+    category: columns
+    auth: "column.setMinimized"
+    emits: null
+    delegates_to: "Columns.setMinimizedColumns"
+
+  # Settings
+  - method: "getSettings(): CardDisplaySettings"
+    category: settings
+    auth: false
+    emits: null
+    delegates_to: "Settings.getSettings"
+
+  - method: "updateSettings(settings, auth?): Promise<void>"
+    category: settings
+    auth: "settings.update"
+    emits: "settings.updated"
+    delegates_to: "Settings.updateSettings"
+
+  - method: "setDefaultBoard(boardId, auth?): Promise<void>"
+    category: settings
+    auth: "board.setDefault"
+    emits: null
+    delegates_to: "Settings.setDefaultBoard"
+
+  # Migration
+  - method: "migrateToSqlite(dbPath?, auth?): Promise<number>"
+    category: migration
+    auth: "storage.migrate"
+    emits: "storage.migrated"
+    delegates_to: "Migration.migrateToSqlite"
+
+  - method: "migrateToMarkdown(auth?): Promise<number>"
+    category: migration
+    auth: "storage.migrate"
+    emits: "storage.migrated"
+    delegates_to: "Migration.migrateToMarkdown"
+
+  # Webhooks
+  - method: "listWebhooks(): Webhook[]"
+    category: webhooks
+    auth: false
+    emits: null
+
+  - method: "createWebhook(webhookConfig, auth?): Promise<Webhook>"
+    category: webhooks
+    auth: "webhook.create"
+    emits: null
+
+  - method: "deleteWebhook(id, auth?): Promise<boolean>"
+    category: webhooks
+    auth: "webhook.delete"
+    emits: null
+
+  - method: "updateWebhook(id, updates, auth?): Promise<Webhook | null>"
+    category: webhooks
+    auth: "webhook.update"
+    emits: null
+
+# --------------------------------------------------------------------------
+# Event type inventory with emission sources
+# --------------------------------------------------------------------------
+event_inventory:
+  - event: "task.created"
+    emitted_by: "modules/cards.ts:368"
+    payload_shape: "Omit<Card, 'filePath'>"
+
+  - event: "task.updated"
+    emitted_by: "modules/cards.ts:415"
+    payload_shape: "Omit<Card, 'filePath'>"
+
+  - event: "task.moved"
+    emitted_by: "modules/cards.ts:560, modules/boards.ts:258"
+    payload_shape: "Omit<Card, 'filePath'> & { previousStatus, fromBoard?, toBoard? }"
+
+  - event: "task.deleted"
+    emitted_by: "modules/cards.ts:585"
+    payload_shape: "Omit<Card, 'filePath'>"
+
+  - event: "form.submit"
+    emitted_by: "modules/cards.ts:513"
+    payload_shape: "SubmitFormResult (FormSubmitEvent)"
+
+  - event: "comment.created"
+    emitted_by: "modules/comments.ts:47"
+    payload_shape: "Comment & { cardId }"
+
+  - event: "comment.updated"
+    emitted_by: "modules/comments.ts:71"
+    payload_shape: "Comment & { cardId }"
+
+  - event: "comment.deleted"
+    emitted_by: "modules/comments.ts:93"
+    payload_shape: "Comment & { cardId }"
+
+  - event: "column.created"
+    emitted_by: "modules/columns.ts:39"
+    payload_shape: "KanbanColumn"
+
+  - event: "column.updated"
+    emitted_by: "modules/columns.ts:61"
+    payload_shape: "KanbanColumn"
+
+  - event: "column.deleted"
+    emitted_by: "modules/columns.ts:86"
+    payload_shape: "KanbanColumn"
+
+  - event: "attachment.added"
+    emitted_by: "modules/attachments.ts:25"
+    payload_shape: "{ cardId, attachment }"
+
+  - event: "attachment.removed"
+    emitted_by: "modules/attachments.ts:40"
+    payload_shape: "{ cardId, attachment }"
+
+  - event: "settings.updated"
+    emitted_by: "modules/settings.ts:20"
+    payload_shape: "CardDisplaySettings"
+
+  - event: "board.created"
+    emitted_by: "modules/boards.ts:75"
+    payload_shape: "BoardInfo"
+
+  - event: "board.updated"
+    emitted_by: "modules/boards.ts:133,158,175"
+    payload_shape: "{ id, ...BoardConfig }"
+
+  - event: "board.deleted"
+    emitted_by: "modules/boards.ts:101"
+    payload_shape: "{ id }"
+
+  - event: "board.action"
+    emitted_by: "modules/boards.ts:192"
+    payload_shape: "{ boardId, action, title }"
+
+  - event: "log.added"
+    emitted_by: "modules/logs.ts:142"
+    payload_shape: "{ cardId, entry: LogEntry }"
+
+  - event: "log.cleared"
+    emitted_by: "modules/logs.ts:170"
+    payload_shape: "{ cardId }"
+
+  - event: "board.log.added"
+    emitted_by: "modules/logs.ts:222"
+    payload_shape: "{ boardId, entry: LogEntry }"
+
+  - event: "board.log.cleared"
+    emitted_by: "modules/logs.ts:236"
+    payload_shape: "{ boardId }"
+
+  - event: "storage.migrated"
+    emitted_by: "modules/migration.ts:115,135"
+    payload_shape: "{ from, to, count }"

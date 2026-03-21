@@ -77,6 +77,8 @@ export type SDKEventType =
   | 'log.added'
   | 'log.cleared'
   | 'storage.migrated'
+  | 'auth.allowed'
+  | 'auth.denied'
 
 /**
  * Callback invoked by the SDK after every mutating operation.
@@ -85,6 +87,35 @@ export type SDKEventType =
  * @param data - The event payload (sanitized card, column, comment, or board object).
  */
 export type SDKEventHandler = (event: SDKEventType, data: unknown) => void
+
+/** Typed event payload envelope emitted on the SDK event bus. */
+export interface SDKEvent<T = unknown> {
+  /** The event type identifier (e.g. 'task.created', 'auth.denied'). */
+  readonly type: string
+  /** The event payload data. */
+  readonly data: T
+  /** ISO-8601 timestamp of when the event was emitted. */
+  readonly timestamp: string
+  /** The actor (user/principal) who triggered the event, if known. */
+  readonly actor?: string
+  /** The board context for this event, if applicable. */
+  readonly boardId?: string
+  /** Additional metadata for extensibility. */
+  readonly meta?: Record<string, unknown>
+}
+
+/** Listener callback for SDK event bus subscriptions. */
+export type SDKEventListener<T = unknown> = (payload: SDKEvent<T>) => void
+
+/** Plugin contract for event bus subscribers (e.g. webhooks, audit logging). */
+export interface EventListenerPlugin {
+  /** Plugin manifest with id and capability declarations. */
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+  /** Initialize the plugin and subscribe to events on the bus. */
+  init(bus: import('./eventBus').EventBus, workspaceRoot: string): void
+  /** Tear down the plugin and remove all event subscriptions. */
+  destroy(): void
+}
 
 /**
  * Optional configuration for the {@link KanbanSDK} constructor.

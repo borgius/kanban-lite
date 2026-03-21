@@ -397,6 +397,8 @@ export interface ResolvedCapabilityBag {
    * (always returns `true` / allow-all) when no auth plugin is configured.
    */
   readonly authPolicy: AuthPolicyPlugin
+  /** Resolved event listener plugins. Currently always empty; reserved for future use. */
+  readonly eventListeners: readonly import('../types').EventListenerPlugin[]
 }
 
 function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace): manifest is PluginManifest {
@@ -674,5 +676,6 @@ export function resolveCapabilityBag(
     },
     authIdentity: resolveAuthIdentityPlugin(resolvedAuth['auth.identity']),
     authPolicy: resolveAuthPolicyPlugin(resolvedAuth['auth.policy']),
+    eventListeners: [],
   }
 }

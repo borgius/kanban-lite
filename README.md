@@ -51,6 +51,7 @@ kl add --title "My first task" --priority high
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Layout toggle**: Switch between horizontal and vertical board layouts
+- **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
@@ -915,6 +916,26 @@ await sdk.removeColumn('testing')
 // Settings
 const settings = sdk.getSettings()
 sdk.updateSettings({ ...settings, compactMode: true })
+```
+
+### Event Bus
+
+The SDK exposes a pub/sub event bus for custom subscriptions. The legacy `onEvent` callback still works, but direct bus subscriptions offer wildcard matching and typed event envelopes:
+
+```typescript
+// Subscribe to all task events
+const unsub = sdk.eventBus.on('task.*', (event) => {
+  console.log(event.type, event.data, event.timestamp)
+})
+
+// Subscribe to auth events
+sdk.eventBus.on('auth.denied', (event) => {
+  console.warn('Access denied:', event.actor, event.meta)
+})
+
+// Clean up when done
+unsub()
+sdk.destroy()
 ```
 
 See the [full SDK documentation](docs/sdk.md) for detailed API reference, types, error handling, and file layout.

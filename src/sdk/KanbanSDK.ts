@@ -5,10 +5,12 @@ import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities } from '../shared/config'
 import type { BoardConfig, ProviderRef, ResolvedCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision } from './types'
+import { EventBus } from './eventBus'
 import { AuthError } from './types'
 import type { StorageEngine } from './plugins/types'
-import { fireWebhooks, loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
+import { loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
+import { WebhookListenerPlugin } from './plugins/webhookListener'
 import { resolveKanbanDir } from './fileUtils'
 import { resolveCapabilityBag } from './plugins'
 import type { ResolvedCapabilityBag } from './plugins'
@@ -210,6 +212,8 @@ function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions):
 export class KanbanSDK {
   private _migrated = false
   private _onEvent?: SDKEventHandler
+  private readonly _eventBus: EventBus
+  private _webhookPlugin: WebhookListenerPlugin | null = null
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
 
@@ -253,6 +257,20 @@ export class KanbanSDK {
     this.kanbanDir = kanbanDir ?? resolveKanbanDir()
     loadWorkspaceEnv(path.dirname(this.kanbanDir))
     this._onEvent = options?.onEvent
+
+    // Initialize the pub/sub event bus
+    this._eventBus = new EventBus()
+
+    // Backward compatibility: wire legacy onEvent callback as a bus listener
+    if (this._onEvent) {
+      this._eventBus.onAny((event, payload) => {
+        this._onEvent!(event as SDKEventType, (payload as SDKEvent).data)
+      })
+    }
+
+    this._webhookPlugin = new WebhookListenerPlugin()
+    this._webhookPlugin.init(this._eventBus, this.workspaceRoot)
+
     if (options?.storage) {
       this._storage = options.storage
       this._capabilities = null
@@ -266,6 +284,9 @@ export class KanbanSDK {
     )
     this._storage = this._capabilities.cardStorage
   }
+
+  /** The SDK event bus for subscribing to events (pub/sub). */
+  get eventBus(): EventBus { return this._eventBus }
 
   /**
    * The active storage engine powering this SDK instance.
@@ -364,13 +385,33 @@ export class KanbanSDK {
     const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
     const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
     if (!decision.allowed) {
+      try {
+        const reason = !identity ? 'auth.identity.missing' : (decision.reason ?? 'auth.policy.denied')
+        this._eventBus.emit('auth.denied', {
+          type: 'auth.denied',
+          data: { action, reason, actor: identity?.subject },
+          timestamp: new Date().toISOString(),
+          actor: identity?.subject,
+          boardId: context?.boardId,
+        })
+      } catch { /* ignore listener errors */ }
       throw new AuthError(
         decision.reason ?? 'auth.policy.denied',
         `Action "${action}" denied${identity ? ` for "${identity.subject}"` : ''}`,
         identity?.subject,
       )
     }
-    return { ...decision, actor: decision.actor ?? identity?.subject }
+    const result: AuthDecision = { ...decision, actor: decision.actor ?? identity?.subject }
+    try {
+      this._eventBus.emit('auth.allowed', {
+        type: 'auth.allowed',
+        data: { action, actor: result.actor },
+        timestamp: new Date().toISOString(),
+        actor: result.actor,
+        boardId: context?.boardId,
+      })
+    } catch { /* ignore listener errors */ }
+    return result
   }
 
   /** @internal */
@@ -503,6 +544,13 @@ export class KanbanSDK {
    */
   close(): void {
     this._storage.close()
+    this._webhookPlugin?.destroy()
+    this._eventBus.destroy()
+  }
+
+  /** Tear down the SDK, destroying the event bus and all listeners. */
+  destroy(): void {
+    this.close()
   }
 
   /**
@@ -511,15 +559,11 @@ export class KanbanSDK {
    */
   /** @internal */
   emitEvent(event: SDKEventType, data: unknown): void {
-    if (this._onEvent) {
-      try {
-        this._onEvent(event, data)
-      } catch (err) {
-        console.error(`SDK event handler error for ${event}:`, err)
-      }
-    } else {
-      fireWebhooks(this.workspaceRoot, event, data)
-    }
+    this._eventBus.emit(event, {
+      type: event,
+      data,
+      timestamp: new Date().toISOString(),
+    })
   }
 
   /**

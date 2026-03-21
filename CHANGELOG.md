@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **EventEmitter2-based pub/sub event bus**: `KanbanSDK` now uses an internal `EventBus` (wrapping EventEmitter2 with wildcard routing) for all event dispatch, replacing the single-callback `onEvent` pattern with a scalable pub/sub architecture.
+- **`SDKEvent<T>` typed event envelope**: All bus events are wrapped in a typed envelope carrying `type`, `data`, `timestamp`, and optional `actor`, `boardId`, and `meta` fields.
+- **`EventListenerPlugin` interface**: New plugin contract (`event.listener` capability) for event subscriber plugins that can subscribe to SDK events via the bus.
+- **`WebhookListenerPlugin`**: Webhooks are now delivered via an `EventListenerPlugin` that subscribes to all SDK events on the bus instead of being called directly from the emit path.
+- **Auth events on the bus**: `auth.allowed` and `auth.denied` events are emitted from `_authorizeAction` after every authorization decision.
+- **`eventBus` getter on `KanbanSDK`**: Exposes the SDK event bus for custom subscriptions (e.g. `sdk.eventBus.on('task.*', handler)`).
+- **`destroy()` method on `KanbanSDK`**: Tears down the event bus and all listener plugins, complementing the existing `close()` method.
 - **Built-in RBAC auth provider**: Kanban Lite now ships a first-party `rbac` provider pair for `auth.identity` and `auth.policy`. Enable it in `.kanban.json` under `auth` to enforce a fixed three-role action matrix (`user` → `manager` → `admin`) without any login flow or external identity service. The RBAC provider validates opaque host-supplied tokens against a runtime-owned principal registry, then resolves subject and role from that runtime material rather than token text. Scope is deliberately limited to action-level authorization only: no row filtering, no interactive login, and no browser execution are included in this release. Workspaces without auth configured remain fully open-access (noop default is unchanged). Token values, token-to-role maps, and role assignments are never persisted to `.kanban.json` or echoed in error bodies, logs, or API responses.
 - **SDK auth seam coverage for all admin/config mutators**: All remaining board, column, label, settings, webhook, migration, and default-board SDK methods now pass through `_authorizeAction()` before side effects, closing the previously uncovered admin action surface.
 - **Host parity for admin/config auth**: Standalone REST routes, WebSocket mutation paths, CLI admin commands, MCP tools, and the VS Code extension host all propagate auth context to the newly protected SDK methods and map `AuthError` to appropriate denial responses.

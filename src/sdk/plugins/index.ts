@@ -84,26 +84,65 @@ export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
   },
 }
 
-/** Built-in RBAC identity provider. Resolves caller subject and role from a host-supplied token.
+/**
+ * Principal entry in the runtime-owned RBAC principal registry.
  *
- * Token format: `"<subject>:<role>"` with an optional `"Bearer "` prefix.
- * `role` must be one of `user`, `manager`, or `admin`.
- * Returns `null` (anonymous) when the token is absent, malformed, or carries
- * an unrecognised role. Never includes raw token material in any output.
+ * Token values and principal entries must remain in host/runtime configuration
+ * only. They must never be serialized to `.kanban.json`, included in
+ * diagnostics, or echoed in log-safe output.
  */
-export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
-  manifest: { id: 'rbac', provides: ['auth.identity'] },
-  async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
-    if (!context.token) return null
-    const raw = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
-    const colonIdx = raw.indexOf(':')
-    if (colonIdx <= 0) return null
-    const subject = raw.slice(0, colonIdx)
-    const role = raw.slice(colonIdx + 1)
-    if (!subject || (role !== 'user' && role !== 'manager' && role !== 'admin')) return null
-    return { subject, roles: [role] }
-  },
+export interface RbacPrincipalEntry {
+  /** Caller subject identifier (e.g. user ID or service account name). */
+  subject: string
+  /** Assigned RBAC roles (valid values: `'user'`, `'manager'`, `'admin'`). */
+  roles: string[]
 }
+
+/**
+ * Creates a runtime-validated RBAC identity plugin backed by a host-supplied
+ * principal registry.
+ *
+ * Tokens are treated as opaque strings and looked up in `principals`. A token
+ * present in the map resolves to the associated principal entry; any token
+ * absent from the map resolves to `null` (anonymous / deny). Roles are taken
+ * from the registry entry and are never inferred from token text.
+ *
+ * Token values and principal material — including role assignments — must
+ * remain in host/runtime configuration only and must never appear in
+ * `.kanban.json`, diagnostics, or log output.
+ *
+ * @param principals - Map of opaque token → {@link RbacPrincipalEntry}, owned
+ *   and populated by the host at startup.
+ */
+export function createRbacIdentityPlugin(
+  principals: ReadonlyMap<string, RbacPrincipalEntry>,
+): AuthIdentityPlugin {
+  return {
+    manifest: { id: 'rbac', provides: ['auth.identity'] },
+    async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
+      if (!context.token) return null
+      const raw = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
+      const entry = principals.get(raw)
+      if (!entry) return null
+      return { subject: entry.subject, roles: [...entry.roles] }
+    },
+  }
+}
+
+/**
+ * Built-in RBAC identity provider singleton.
+ *
+ * Validates opaque tokens against a runtime-owned principal registry. This
+ * singleton uses an **empty registry** — all tokens resolve to `null`
+ * (anonymous / deny) until the host supplies principal material via
+ * {@link createRbacIdentityPlugin}.
+ *
+ * When configuring `{ "auth.identity": { "provider": "rbac" } }`, the host
+ * must call `createRbacIdentityPlugin(principals)` and inject the result
+ * through the capability bag. Token values and role assignments must never
+ * appear in `.kanban.json` or any diagnostics output.
+ */
+export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = createRbacIdentityPlugin(new Map())
 
 /**
  * Built-in RBAC policy provider. Enforces the fixed {@link RBAC_ROLE_MATRIX}.

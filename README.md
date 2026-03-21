@@ -1138,7 +1138,7 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships a **no-op auth/authz capability contract** for the `auth.identity` and `auth.policy` plugin namespaces. Both default to built-in `noop` providers that preserve the current open-access behavior:
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. Both default to built-in `noop` providers that preserve the current open-access behavior, and the release also includes a built-in starter `rbac` provider pair for runtime-validated action-level RBAC:
 
 - `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
 - `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
@@ -1156,7 +1156,44 @@ Provider references for both namespaces are read from `.kanban.json` the same wa
 }
 ```
 
-Bearer tokens and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
+Bearer tokens, token-to-role maps, and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
+
+### Built-in `rbac` provider
+
+Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pair (`rbac`) that enforces a fixed three-role action matrix without requiring a login flow or external identity service.
+
+**Enable it in `.kanban.json`:**
+
+```json
+{
+  "auth": {
+    "auth.identity": { "provider": "rbac" },
+    "auth.policy": { "provider": "rbac" }
+  }
+}
+```
+
+**Token validation:** Tokens are opaque strings validated against a runtime-owned principal registry supplied by the host at startup. Unknown or absent tokens resolve to `null` (deny). A `Bearer ` prefix is stripped before the registry lookup. Token values, token-to-role maps, and role assignments must remain in host/runtime configuration only and must never appear in `.kanban.json` or diagnostics.
+
+**Role levels:**
+
+| Role | Permitted actions |
+|------|-------------------|
+| `user` | `form.submit`, `comment.create`, `comment.update`, `comment.delete`, `attachment.add`, `attachment.remove`, `card.action.trigger`, `log.add` |
+| `manager` | All `user` actions plus `card.create`, `card.update`, `card.move`, `card.transfer`, `card.delete`, `board.action.trigger`, `log.clear`, `board.log.add` |
+| `admin` | All `manager` actions plus all board/config mutations: `board.create`, `board.update`, `board.delete`, `settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
+
+Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
+
+**Scope limits (v1):**
+
+- **Action-level only**: access decisions are made per-action, not per-row or per-card.
+- **No login flow**: the provider has no interactive authentication UI.
+- **No row filtering**: a denied action blocks the write; no partial result filtering is performed.
+- **Node-hosted only**: the RBAC provider runs exclusively in the Node host layer; no browser execution is performed.
+- Tokens are resolved from the host token source at call time and are **never** persisted to `.kanban.json`, returned in API responses, or echoed in error bodies or logs.
+
+
 
 ### Host token sources
 

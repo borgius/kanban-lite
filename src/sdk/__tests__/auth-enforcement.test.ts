@@ -348,3 +348,50 @@ describe('auth enforcement: SDK enriches auth context with target hints', () => 
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Suite 6: extension host denial path — SecretStorage token must not appear
+//          in the AuthError thrown at the SDK seam (nearest testable boundary
+//          for extension host path without requiring VS Code APIs).
+// ---------------------------------------------------------------------------
+
+describe('auth enforcement: extension host denial path does not leak token material', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    injectDenyAll(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('denied board.create with extension SecretStorage-sourced token does not expose token in AuthError message', async () => {
+    // Simulates the AuthContext produced by resolveExtensionAuthContext() in
+    // src/extension/auth.ts when the host has a token in SecretStorage.
+    const extensionAuthCtx: AuthContext = {
+      token: 'secret-extension-token-must-not-appear',
+      tokenSource: 'secret-storage',
+      transport: 'extension',
+    }
+
+    let caughtErr: AuthError | undefined
+    try {
+      await sdk.createBoard('test-board', 'Test', undefined, extensionAuthCtx)
+    } catch (err) {
+      if (err instanceof AuthError) caughtErr = err
+    }
+
+    expect(caughtErr).toBeInstanceOf(AuthError)
+    expect(caughtErr!.category).toBe('auth.policy.denied')
+    expect(caughtErr!.message).toContain('board.create')
+    expect(caughtErr!.message).not.toContain('secret-extension-token-must-not-appear')
+  })
+})

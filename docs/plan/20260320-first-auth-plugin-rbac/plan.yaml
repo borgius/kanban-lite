@@ -1,0 +1,741 @@
+plan_id: 20260320-first-auth-plugin-rbac
+objective: |
+	Implement the first real auth plugin as an SDK-first, token-driven RBAC rollout
+	with three authorization levels (`admin`, `manager`, `user`), keeping the first
+	release limited to action-level authorization only. The implementation must preserve
+	noop backward compatibility when no auth providers are configured, keep tokens out of
+	`.kanban.json`, follow the AGENTS order of SDK → API → CLI → MCP, and update
+	README/CHANGELOG for user-facing behavior.
+created_at: "2026-03-20"
+created_by: gem-planner
+status: completed
+research_confidence: high
+
+tldr: |
+	The repository already has the right seams for a first auth implementation: provider
+	selection lives in `src/shared/config.ts`, provider resolution lives in
+	`src/sdk/plugins/index.ts`, and enforcement already centralizes in
+	`KanbanSDK._authorizeAction()`. The failed T7 release gate identified four focused
+	blockers, and the remediation set closed them without widening scope: the built-in
+	`rbac` provider now validates opaque runtime-managed tokens instead of trusting token
+	format, standalone websocket auth denials map async `AuthError` rejections into stable
+	responses, `docs/auth.md`/README/CHANGELOG now match shipped behavior, and MCP plus
+	extension denial paths have focused automated coverage. The final remediation review
+	passed, so the rollout is complete with the original narrow scope intact: action-level
+	RBAC only, Node-hosted validation only, no secrets in `.kanban.json`, no login flow,
+	and no row filtering.
+
+open_questions: []
+
+pre_mortem:
+	overall_risk_level: high
+	critical_failure_modes:
+		- scenario: Uncovered SDK methods such as board/config/webhook/migration mutations remain outside `_authorizeAction`, leaving admin paths effectively open even after the RBAC plugin exists.
+			likelihood: medium
+			impact: critical
+			mitigation: |
+				Treat the canonical action catalog and the uncovered-method sweep as part of the
+				same rollout. Do not mark the feature complete until every required admin/config
+				mutator in `KanbanSDK` threads `AuthContext` and calls `_authorizeAction` before
+				side effects.
+		- scenario: Host surfaces keep calling newly protected SDK methods without an auth context, causing parity drift or accidental allow-all behavior on some transports.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Add host parity work explicitly after the SDK changes. Reuse existing auth-context
+				helpers where they already exist, extend the remaining standalone/CLI/MCP/extension
+				call sites for the newly auth-aware methods, and verify denial semantics per host.
+		- scenario: The first provider overreaches into row filtering, browser execution, or login UX, bloating the change and destabilizing the SDK contract.
+			likelihood: low
+			impact: high
+			mitigation: |
+				Freeze v1 to action-level RBAC only. Keep providers Node-hosted, rely on host-supplied
+				tokens only, and defer row filtering, browser plugin execution, and interactive login
+				to a later plan.
+		- scenario: Token material leaks into workspace config, logs, CLI output, webview messages, or API error bodies.
+			likelihood: medium
+			impact: critical
+			mitigation: |
+				Keep raw tokens write-only at the host boundary and provider seam. Provider selection
+				may live in `.kanban.json`, but token values and token-to-role mappings must remain in
+				host/runtime configuration only and never be echoed in diagnostics.
+		- scenario: The built-in `rbac` provider continues to derive roles from token text (for example `subject:role`) instead of validating opaque tokens against host-owned runtime material.
+			likelihood: medium
+			impact: critical
+			mitigation: |
+				Require explicit validation semantics for the first shipped provider: unknown tokens deny,
+				roles come from runtime-owned principal data rather than token parsing, and any starter
+				validation registry stays outside `.kanban.json`.
+		- scenario: Standalone websocket handlers still allow async `AuthError` rejections to escape the transport boundary, producing inconsistent denial payloads or broken client state.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Wrap awaited websocket mutation handling in one stable denial mapper that converts auth
+				rejections into predictable response frames without closing the connection or emitting
+				transport-specific surprises.
+	assumptions:
+		- The accepted auth architecture ADR under `docs/plan/20260320-auth-authz-plugin-architecture/` remains the governing direction for this rollout.
+		- The first built-in provider can resolve one of `admin`, `manager`, or `user` from host-supplied token input without introducing a login flow.
+		- `AuthIdentity.subject` and `AuthIdentity.roles` are sufficient for the first RBAC provider; no row-level or claims-heavy filtering is required.
+		- Existing noop auth defaults must keep current workspaces working when no auth providers are configured.
+		- The extension webview continues to be a non-plugin host; all auth logic stays in Node-hosted code.
+
+implementation_specification:
+	code_structure: |
+		Keep the rollout SDK-first and minimal. Reuse the existing auth namespaces and plugin
+		registry instead of inventing a new auth subsystem. The first concrete provider should
+		be built in beside the current noop providers in `src/sdk/plugins/index.ts`, expose a
+		stable provider id such as `rbac`, validate opaque host-supplied tokens against host-owned
+		runtime principal material, and enforce one fixed action matrix across all Node-hosted
+		surfaces. The provider must not infer roles from token text. `KanbanSDK` remains the sole
+		enforcement seam: privileged SDK methods must construct resource hints via `_withAuthContext()`,
+		call `_authorizeAction()`, then delegate into existing modules. Host layers remain thin
+		adapters that attach auth context, supply runtime validation material where required, and map
+		denial semantics; they must not perform policy decisions locally.
+	affected_areas:
+		- src/shared/config.ts
+		- src/sdk/types.ts
+		- src/sdk/plugins/index.ts
+		- src/sdk/KanbanSDK.ts
+		- src/sdk/modules/
+		- src/sdk/webhooks.ts
+		- src/standalone/internal/routes/
+		- src/standalone/messageHandlers.ts
+		- src/cli/index.ts
+		- src/mcp-server/index.ts
+		- src/extension/KanbanPanel.ts
+		- src/extension/auth.ts
+		- docs/auth.md
+		- README.md
+		- CHANGELOG.md
+	component_details:
+		- component: SDK RBAC contracts and action catalog
+			responsibility: |
+				Finalize the first implementation contract for a built-in RBAC provider, including
+				the canonical action names for the newly protected admin/config operations and the
+				fixed `user`/`manager`/`admin` matrix that the provider enforces.
+			interfaces:
+				- "Auth capability selections in `src/shared/config.ts` remain provider-only and secret-free"
+				- "Auth decision semantics continue to use `AuthDecision` / `AuthError` in `src/sdk/types.ts`"
+				- "Canonical action names are owned by `KanbanSDK` and consumed by policy checks"
+		- component: built-in RBAC identity and policy providers
+			responsibility: |
+				Add the first real provider pair for `auth.identity` and `auth.policy`, preserving
+				noop defaults but enabling a concrete `rbac` path that validates opaque tokens against
+				host-owned runtime principal data, resolves subject/role data only after validation,
+				and enforces the first-cut action matrix.
+			interfaces:
+				- "`auth.identity` provider id `rbac` returning `AuthIdentity` with `subject` and `roles`"
+				- "`auth.policy` provider id `rbac` returning allow/deny decisions for canonical SDK action names"
+				- "Provider resolution stays inside `src/sdk/plugins/index.ts` and must deny unknown/invalid tokens rather than parse roles from token text"
+		- component: standalone denial mapping
+			responsibility: |
+				Normalize standalone websocket auth denials so awaited SDK or mutation-service rejections
+				produce stable transport responses instead of escaping as unhandled async failures.
+			interfaces:
+				- "`handleMessage()` and its caller agree on one websocket denial payload contract for `AuthError` outcomes"
+				- "REST denial mapping remains unchanged and continues to reuse existing auth utilities"
+		- component: SDK auth coverage for admin/config actions
+			responsibility: |
+				Bring the currently uncovered mutating methods under `_authorizeAction()` and thread
+				`AuthContext` into their public signatures and delegate modules with minimal API churn.
+			interfaces:
+				- "`KanbanSDK` methods gain optional `auth?: AuthContext` where missing"
+				- "Delegates in `src/sdk/modules/` accept auth-aware signatures where needed"
+				- "Webhook and migration entry points adopt canonical action names before side effects"
+		- component: host parity adapters
+			responsibility: |
+				Extend standalone, CLI, MCP, and extension call sites for the newly auth-aware SDK
+				methods so each surface passes the shared auth context and reports denials consistently.
+			interfaces:
+				- "Standalone request/websocket adapters use `extractAuthContext()` on new admin/config paths"
+				- "CLI and MCP reuse existing env-based auth helpers for newly protected operations"
+				- "Extension host reuses SecretStorage-backed auth context for newly protected operations"
+		- component: validation and release sync
+			responsibility: |
+				Prove backward compatibility, RBAC enforcement, websocket denial stability, and minimal
+				host parity with focused tests, then document configuration and behavior in
+				`docs/auth.md`, README, and CHANGELOG.
+			interfaces:
+				- "SDK auth tests cover noop + RBAC allow/deny behavior"
+				- "Host tests cover denial mapping for standalone websocket handling plus the minimal MCP/extension denial paths"
+				- "`docs/auth.md`, README, and CHANGELOG describe provider selection, role levels, validation semantics, and scope limits"
+	dependencies:
+		- component: SDK RBAC contracts and action catalog
+			relationship: Must land first so the provider, SDK seam sweep, and host parity work all share one stable vocabulary.
+		- component: built-in RBAC identity and policy providers
+			relationship: Depends on the contract task and supplies the concrete auth behavior consumed by SDK methods.
+		- component: standalone denial mapping
+			relationship: Depends on the concrete provider behavior and the expanded SDK auth seam so websocket transport semantics reflect the real denial outcomes.
+		- component: SDK auth coverage for admin/config actions
+			relationship: Depends on the contract task and must complete before any host parity work can be correct.
+		- component: host parity adapters
+			relationship: Depend on both the concrete RBAC provider and the expanded SDK auth signatures.
+		- component: validation and release sync
+			relationship: Depends on the provider hardening, SDK seam coverage, websocket denial behavior, and host parity behavior being in place.
+	integration_points:
+		- `src/shared/config.ts` already owns auth capability normalization and should stay free of token values.
+		- `src/sdk/plugins/index.ts` is the preferred insertion point for the first real provider implementation.
+		- `KanbanSDK._authorizeAction()` remains the only authoritative allow/deny seam.
+		- `src/sdk/modules/boards.ts`, `columns.ts`, `labels.ts`, `settings.ts`, `migration.ts`, and `src/sdk/webhooks.ts` are the likely delegates affected by new auth-aware method signatures.
+		- Standalone websocket handling needs to keep threading per-connection auth context for newly protected mutations, per repository memory.
+		- Standalone websocket handling also needs a stable async denial mapper around `handleMessage()` so `AuthError` rejections become predictable client responses.
+		- `docs/auth.md`, README, and CHANGELOG are mandatory completion surfaces because the first real auth provider changes user-visible behavior.
+
+contracts:
+	- from_task: T1
+		to_task: T2
+		interface: Built-in RBAC provider contract
+		format: "Provider id `rbac`, resolved role set limited to `admin|manager|user`, and one canonical action matrix owned by SDK contracts"
+	- from_task: T1
+		to_task: T3
+		interface: Canonical action catalog for uncovered SDK mutators
+		format: "Stable action names and required `AuthContext` hints for board, label, column, settings, webhook, migration, and default-board mutations"
+	- from_task: T2
+		to_task: T4
+		interface: Auth decision and denial semantics
+		format: "Concrete allow/deny behavior surfaced through `AuthDecision` / `AuthError` for all Node-hosted adapters"
+	- from_task: T3
+		to_task: T4
+		interface: Auth-aware SDK method signatures
+		format: "Updated `KanbanSDK` public method signatures and delegate expectations for newly protected operations"
+	- from_task: T4
+		to_task: T5
+		interface: End-to-end host parity behavior
+		format: "Verified request/context propagation paths for standalone, CLI, MCP, and extension admin/config operations"
+	- from_task: T5
+		to_task: T6
+		interface: Verified operator-facing behavior
+		format: "Confirmed configuration, denial semantics, and compatibility notes to document in README/CHANGELOG"
+	- from_task: T6
+		to_task: T7
+		interface: Release-ready evidence pack
+		format: "Code/test/docs diff set plus remaining risk notes for final reviewer sign-off"
+	- from_task: T8
+		to_task: T9
+		interface: Runtime-validated RBAC denial contract
+		format: "Opaque-token validation semantics, unknown-token deny behavior, and log-safe denial metadata for websocket transport mapping"
+	- from_task: T8
+		to_task: T10
+		interface: Shipped built-in provider semantics
+		format: "Documented runtime-only validation model, three role tiers, and explicit no-secrets-in-.kanban.json guidance"
+	- from_task: T8
+		to_task: T11
+		interface: Stable non-HTTP denial behavior
+		format: "Validated denial categories and messages for MCP and extension host coverage"
+	- from_task: T9
+		to_task: T12
+		interface: Stable standalone websocket denial behavior
+		format: "Verified auth denial response mapping for async websocket mutations"
+	- from_task: T10
+		to_task: T12
+		interface: Synced operator documentation
+		format: "Updated auth reference and release notes matching shipped behavior"
+	- from_task: T11
+		to_task: T12
+		interface: Minimal host coverage evidence
+		format: "Automated MCP/extension denial assertions plus any remaining risk notes"
+
+tasks:
+	- id: T1
+		title: Lock the first RBAC contract and canonical action matrix in the SDK layer
+		description: |
+			Finalize the first implementation contract for the built-in auth provider without
+			widening scope. This task should define the canonical action names for the uncovered
+			admin/config mutators, codify the fixed authorization matrix for `user`, `manager`,
+			and `admin`, and keep provider selection/config secret-free. The matrix should follow
+			the requested first cut:
+			- `user`: `form.submit`, `comment.create`, `comment.update`, `comment.delete`,
+				`attachment.add`, `attachment.remove`, `card.action.trigger`, `log.add`
+			- `manager`: user + `card.create`, `card.update`, `card.move`, `card.transfer`,
+				`card.delete`, `board.action.trigger`, `log.clear`, `board.log.add`
+			- `admin`: manager + destructive/config actions such as `board.create`, `board.update`,
+				`board.delete`, `settings.update`, webhook CRUD, `label.set`, `label.rename`,
+				`label.delete`, column mutations/cleanup, board-action config edits, log purge/clear,
+				migrations, and default-board changes.
+		wave: 1
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies: []
+		context_files:
+			src/shared/config.ts: "Existing auth capability normalization seam; keep provider selection here but never token material."
+			src/sdk/types.ts: "Shared `AuthContext`, `AuthDecision`, and `AuthError` contracts that all hosts consume."
+			src/sdk/plugins/index.ts: "Current noop auth contracts and the insertion point for the first concrete provider id."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: sdk_auth_contracts
+		verification:
+			- "A stable action catalog exists for every newly protected admin/config mutator before implementation starts."
+			- "The fixed `user`/`manager`/`admin` matrix is documented in code-facing contracts or tests, not only in docs."
+			- "No token values or token maps are added to `.kanban.json` or config normalization types."
+		acceptance_criteria:
+			- "The first RBAC provider contract is explicit enough for implementation without inventing host-specific policy logic."
+			- "Canonical action names exist for the currently uncovered methods in `KanbanSDK`."
+			- "Backward-compatible noop behavior remains the documented default when no auth providers are configured."
+		failure_modes:
+			- scenario: Action names are invented ad hoc during implementation, causing tests and host handlers to drift.
+				likelihood: medium
+				impact: high
+				mitigation: "Define the catalog once in the SDK layer and reuse it everywhere else."
+		tech_stack:
+			- TypeScript
+			- Node.js
+		test_coverage: "Contract-level assertions for auth defaults and canonical action names."
+
+	- id: T2
+		title: Implement the built-in `rbac` identity and policy providers beside the noop providers
+		description: |
+			Add the first concrete provider pair in `src/sdk/plugins/index.ts` with minimal structural
+			change. The new built-in provider should preserve noop defaults when not selected, but when
+			selected it must resolve a caller subject/role set from host-supplied token input and enforce
+			the fixed first-cut RBAC action matrix. Keep the provider Node-hosted only and make sure any
+			token-to-role lookup or validation material remains outside `.kanban.json`.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			src/sdk/plugins/index.ts: "Primary implementation point for built-in auth providers and provider resolution."
+			src/sdk/KanbanSDK.ts: "Consumes the resolved identity/policy providers and exposes auth status diagnostics."
+			src/sdk/__tests__/plugin-registry.test.ts: "Existing registry/noop coverage to extend for the real provider path."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 320
+		focus_area: built_in_rbac_provider
+		verification:
+			- "Selecting `rbac` resolves a real identity/policy provider pair while omitting auth config still resolves noop providers."
+			- "The provider returns deterministic allow/deny decisions for the three role levels."
+			- "No token value appears in provider errors, SDK auth status, or log-safe metadata."
+		acceptance_criteria:
+			- "A built-in provider id such as `rbac` is resolvable through the existing auth capability mechanism."
+			- "`AuthIdentity.subject` and `AuthIdentity.roles` are populated for authenticated callers."
+			- "Policy denials use stable `AuthDecision` / `AuthError` categories already understood by hosts."
+		failure_modes:
+			- scenario: The first real provider requires browser execution or login UX to function.
+				likelihood: low
+				impact: high
+				mitigation: "Keep the provider purely token-driven and Node-hosted; hosts only pass tokens/context."
+		tech_stack:
+			- TypeScript
+			- Node.js
+		test_coverage: "Unit coverage for noop fallback, provider resolution, and role-matrix allow/deny decisions."
+
+	- id: T3
+		title: Bring the uncovered board/config/webhook/migration mutators under `_authorizeAction`
+		description: |
+			Close the known SDK coverage gaps by threading optional `auth?: AuthContext` into the
+			currently uncovered methods and their delegates, then applying canonical action checks
+			before side effects. This task should cover the mutators called out in the research input:
+			`createBoard`, `updateBoard`, `addBoardAction`, `removeBoardAction`, `setLabel`,
+			`addColumn`, `updateColumn`, `reorderColumns`, `setMinimizedColumns`, `updateSettings`,
+			`setDefaultBoard`, `createWebhook`, `updateWebhook`, `deleteWebhook`, `migrateToSqlite`,
+			and `migrateToMarkdown`.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			src/sdk/KanbanSDK.ts: "Public SDK surface where the new auth-aware signatures and `_authorizeAction()` calls belong."
+			src/sdk/modules/: "Delegate modules for boards, labels, columns, settings, and migration that must accept the new auth-aware signatures."
+			src/sdk/webhooks.ts: "Workspace webhook CRUD helper used by the SDK methods that need pre-action authorization."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 420
+		focus_area: sdk_auth_coverage_gaps
+		verification:
+			- "Each named uncovered method now reaches `_authorizeAction()` before mutation side effects occur."
+			- "Existing callers can still omit auth context and get noop behavior when no auth providers are configured."
+			- "Canonical action names for board/config admin operations are used consistently across the SDK surface."
+		acceptance_criteria:
+			- "No known board/config/webhook/migration mutator remains outside the SDK auth seam."
+			- "Public SDK signatures change only by adding optional auth context where needed."
+			- "Delegate modules remain thin and continue to rely on SDK-owned authorization decisions."
+		failure_modes:
+			- scenario: Auth is added only to `KanbanSDK` wrappers, but delegated helpers or direct utility calls still bypass the seam.
+				likelihood: medium
+				impact: critical
+				mitigation: "Audit each uncovered mutator from the public method down to the delegate/helper boundary and add focused regression tests."
+		tech_stack:
+			- TypeScript
+			- Node.js
+		test_coverage: "Regression coverage for every newly protected SDK method plus noop compatibility checks."
+
+	- id: T4
+		title: Extend standalone/API surfaces to pass auth context for the new admin/config operations
+		description: |
+			Once the SDK surface is auth-complete, update the standalone server routes and websocket-backed
+			mutation paths so newly protected board/config/webhook/migration actions pass the shared auth
+			context and preserve stable HTTP denial semantics. This includes REST routes, websocket message
+			handling, and any standalone mutation helpers that currently call the newly auth-aware SDK methods
+			without passing `extractAuthContext()`.
+		wave: 3
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T2
+			- T3
+		context_files:
+			src/standalone/internal/routes/boards.ts: "Board CRUD/action routes that already pass auth for some operations and need parity for the newly protected ones."
+			src/standalone/internal/routes/system.ts: "System/config/webhook/migration routes that currently call several uncovered methods without auth context."
+			src/standalone/messageHandlers.ts: "Websocket mutation paths that must preserve per-connection auth context for newly protected operations."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 260
+		focus_area: standalone_api_parity
+		verification:
+			- "Standalone REST routes attach `extractAuthContext(req)` to every newly auth-aware SDK call."
+			- "Websocket-driven board/config mutations keep threading the connection auth context."
+			- "Auth denials still map to stable HTTP status codes via existing auth utilities."
+		acceptance_criteria:
+			- "No standalone admin/config route bypasses the shared SDK auth seam."
+			- "Standalone websocket mutations remain parity-safe with REST behavior."
+			- "Standalone diagnostics remain secret-safe and transport-neutral."
+		failure_modes:
+			- scenario: REST is protected but websocket mutations still bypass auth for the same operation.
+				likelihood: medium
+				impact: high
+				mitigation: "Treat REST and websocket paths as one parity task and verify both for every newly protected action family."
+		tech_stack:
+			- TypeScript
+			- Node.js
+		test_coverage: "Standalone integration coverage for denied and allowed admin/config actions over HTTP, plus websocket regression checks where harness support exists."
+
+	- id: T5
+		title: Extend CLI, MCP, and extension hosts for auth-complete parity on admin/config actions
+		description: |
+			Update the remaining Node-hosted surfaces to pass auth context into the newly protected SDK
+			methods and keep denial behavior consistent. Reuse the existing CLI/MCP env-based auth helpers
+			and the extension SecretStorage-backed helper; the work here is primarily call-site parity for
+			board/config/webhook/migration/column/label operations that currently do not pass auth because
+			the SDK methods were previously unprotected.
+		wave: 3
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T2
+			- T3
+		context_files:
+			src/cli/index.ts: "CLI commands already pass auth for many card mutations and need parity for the newly protected admin/config paths."
+			src/mcp-server/index.ts: "MCP tool handlers mirror CLI behavior and need matching auth-context propagation."
+			src/extension/KanbanPanel.ts: "Extension host/webview bridge that must keep raw tokens in SecretStorage-backed host code only."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 320
+		focus_area: cli_mcp_extension_parity
+		verification:
+			- "CLI passes auth context to newly protected commands and preserves stable denial output."
+			- "MCP tool handlers pass auth context to newly protected operations and distinguish denied vs unauthenticated failures."
+			- "Extension host passes auth context for newly protected operations without leaking tokens to the webview."
+		acceptance_criteria:
+			- "CLI, MCP, and extension hosts reach parity with standalone for the newly protected actions."
+			- "No host adds local policy branching; all allow/deny outcomes still come from the SDK."
+			- "Secret storage boundaries remain unchanged: env/config for CLI/MCP, SecretStorage for extension."
+		failure_modes:
+			- scenario: One host preserves old permissive behavior because a call site was missed after SDK signatures changed.
+				likelihood: medium
+				impact: high
+				mitigation: "Use the canonical action gap list from T1/T3 as a host-parity checklist across all three files."
+		tech_stack:
+			- TypeScript
+			- Node.js
+			- VS Code extension host APIs
+		test_coverage: "Focused regression checks in CLI and host-adjacent suites for auth-context propagation and denial messaging."
+
+	- id: T6
+		title: Validate RBAC behavior, backward compatibility, and document the first provider rollout
+		description: |
+			Add focused regression coverage for noop compatibility, role-matrix enforcement, and host parity,
+			then update README and CHANGELOG to describe the first built-in auth provider, the three role levels,
+			token/config boundaries, and the deliberate scope limits. Favor the nearest existing suites: SDK auth
+			tests, plugin registry tests, standalone integration tests, and CLI regression tests. Documentation
+			must explain that this release is action-level RBAC only and does not provide login flow or row filtering.
+		wave: 4
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T4
+			- T5
+		context_files:
+			src/sdk/__tests__/auth-enforcement.test.ts: "Primary SDK authorization seam tests to extend for the RBAC provider and newly protected actions."
+			README.md: "User-facing configuration and behavior reference that must describe the first auth provider and its limits."
+			CHANGELOG.md: "Release notes surface required by AGENTS for every user-visible behavior change."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 360
+		focus_area: validation_and_docs
+		verification:
+			- "Noop/default auth behavior remains green for existing workspaces with no auth providers configured."
+			- "At least one allow and one deny case exist for each role tier against canonical actions in automated coverage."
+			- "README and CHANGELOG describe provider selection, role levels, and scope boundaries without documenting unsupported login/filtering features."
+		acceptance_criteria:
+			- "Focused automated coverage exists for provider resolution, SDK seam coverage, and host parity regressions."
+			- "README is updated for the new first-provider behavior and configuration boundaries."
+			- "CHANGELOG contains an Unreleased entry for the RBAC rollout."
+		failure_modes:
+			- scenario: Tests only cover the new provider path and miss the backward-compatible noop path.
+				likelihood: medium
+				impact: high
+				mitigation: "Pair every RBAC enforcement assertion with a corresponding noop compatibility assertion in the nearest existing suite."
+		tech_stack:
+			- TypeScript
+			- Vitest
+			- Markdown
+		test_coverage: "SDK unit tests, plugin registry tests, standalone integration tests, and targeted CLI-host regressions."
+
+	- id: T7
+		title: Perform final review against AGENTS ordering, parity, and release risk
+		description: |
+			Review the completed change set as a release gate. Confirm the work stayed SDK-first, then API,
+			then CLI, then MCP, with extension parity layered on top; verify no host performs local policy logic;
+			confirm docs are in sync; and capture any residual follow-on items (for example richer identity sources,
+			login UX, or row filtering) as explicitly deferred work rather than silent scope creep.
+		wave: 5
+		agent: gem-reviewer
+		priority: high
+		status: failed
+		dependencies:
+			- T6
+		context_files:
+			AGENTS.md: "Repository execution rules that this rollout must satisfy."
+			docs/plan/20260320-first-auth-plugin-rbac/plan.yaml: "Execution baseline and acceptance checklist for the rollout."
+			README.md: "Final user-facing documentation surface to verify against the implemented behavior."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 120
+		focus_area: final_release_review
+		verification:
+			- "Implementation order respected the AGENTS rule: SDK first, then API, CLI, MCP, with user-facing docs updated."
+			- "All Node hosts rely on the SDK auth seam rather than host-local policy branches."
+			- "Deferred scope items remain deferred and are not half-implemented."
+		acceptance_criteria:
+			- "The rollout is execution-ready or releasable without unresolved parity blockers."
+			- "Any residual risk is documented explicitly rather than hidden in incomplete behavior."
+			- "README/CHANGELOG and automated coverage align with the delivered functionality."
+		failure_modes:
+			- scenario: The code passes tests but still violates repository policy by embedding auth logic directly in hosts.
+				likelihood: medium
+				impact: high
+				mitigation: "Review file diffs specifically for host-local role/action branching and reject any drift from the SDK-first seam."
+		requires_review: true
+		review_depth: full
+		security_sensitive: true
+
+	- id: T8
+		title: Replace trust-by-format RBAC parsing with runtime-validated starter provider semantics
+		description: |
+			Remediate the critical security blocker in the built-in `rbac` provider without rolling
+			back the feature. The shipped provider must stop granting roles based on arbitrary
+			`subject:role` token text and instead validate opaque tokens against host-owned runtime
+			principal material before resolving `subject` and `roles`. Keep the first provider small
+			and practical: it only needs to satisfy `admin` / `manager` / `user`, remain Node-hosted,
+			and keep tokens plus token-to-role data out of `.kanban.json`. Unknown or invalid tokens
+			must deny rather than degrade into inferred access.
+		wave: 3
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T2
+		context_files:
+			src/sdk/plugins/index.ts: "Built-in auth provider implementation that currently needs secure validation semantics instead of trust-by-format parsing."
+			src/shared/config.ts: "Auth capability selection must remain secret-free even after runtime validation semantics are added."
+			src/sdk/__tests__/auth-enforcement.test.ts: "Nearest SDK auth suite to prove unknown-token denial, role resolution, and noop compatibility."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: secure_rbac_provider_semantics
+		verification:
+			- "The built-in `rbac` provider no longer derives roles from token text such as `subject:role`."
+			- "Opaque tokens are validated against runtime-only principal material and unknown tokens deny cleanly."
+			- "No token values or role maps are added to `.kanban.json`, config normalization output, or log-safe diagnostics."
+		acceptance_criteria:
+			- "The first shipped provider has actual validation semantics for `admin` / `manager` / `user` rather than format-based trust."
+			- "Backward-compatible noop behavior remains unchanged when no auth providers are configured."
+			- "Provider diagnostics and docs describe the provider as runtime-validated starter RBAC, not an arbitrary token parser."
+		failure_modes:
+			- scenario: Validation material is stored in workspace config for convenience, reintroducing secret leakage risk.
+				likelihood: medium
+				impact: critical
+				mitigation: "Keep selection in `.kanban.json` only; require runtime-only validation data in host config, env, or SecretStorage-backed inputs."
+		tech_stack:
+			- TypeScript
+			- Node.js
+		test_coverage: "Focused SDK auth tests for unknown-token denial, validated role resolution, and noop fallback."
+
+	- id: T9
+		title: Normalize standalone websocket auth denials into stable async responses
+		description: |
+			Remediate the high-severity transport gap in standalone websocket handling. Ensure async
+			`AuthError` rejections bubbling out of `handleMessage()` or the mutation helpers are caught
+			at one stable boundary and converted into predictable websocket denial responses instead of
+			escaping as unhandled failures or transport-specific noise. The fix should preserve the
+			existing SDK-owned policy decisions and keep the websocket connection usable after denial.
+		wave: 4
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T8
+			- T4
+		context_files:
+			src/standalone/messageHandlers.ts: "Primary websocket mutation handler where awaited auth rejections currently surface."
+			src/standalone/server.ts: "Websocket message boundary that should own stable denial mapping for async handler failures."
+			src/standalone/__tests__/server.integration.test.ts: "Existing standalone integration suite to extend with websocket denial assertions."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 200
+		focus_area: websocket_denial_mapping
+		verification:
+			- "Denied websocket mutations return one stable response contract for auth failures."
+			- "Async `AuthError` rejections from awaited handlers do not surface as unhandled promise failures."
+			- "The websocket session remains connected and subsequent safe operations still behave normally after a denial."
+		acceptance_criteria:
+			- "Standalone websocket denial behavior matches the shipped auth semantics closely enough for operators and clients to rely on it."
+			- "REST denial mapping remains unchanged and websocket mapping does not duplicate policy logic."
+			- "Integration coverage proves at least one denied admin/config websocket mutation and its stable response shape."
+		failure_modes:
+			- scenario: The fix handles direct `AuthError` throws but still misses rejections from nested async mutation helpers.
+				likelihood: medium
+				impact: high
+				mitigation: "Catch at the outer websocket message boundary around awaited `handleMessage()` calls instead of inside individual cases only."
+		tech_stack:
+			- TypeScript
+			- Node.js
+			- ws
+		test_coverage: "Standalone integration coverage for denied websocket admin/config mutations and post-denial connection stability."
+
+	- id: T10
+		title: Sync `docs/auth.md` and release docs with the shipped starter RBAC behavior
+		description: |
+			Remediate the stale documentation blocker by updating `docs/auth.md` to match the shipped
+			behavior after T8 and T9 land. The docs must clearly describe the built-in provider as a
+			runtime-validated starter RBAC implementation, spell out the `admin` / `manager` / `user`
+			scope, explain that tokens and token-to-role material stay out of `.kanban.json`, and note
+			that authorization remains action-level only. Keep README and CHANGELOG aligned with the same
+			operator-facing story.
+		wave: 5
+		agent: gem-documentation-writer
+		priority: medium
+		status: completed
+		dependencies:
+			- T8
+			- T9
+		context_files:
+			docs/auth.md: "Detailed auth reference currently stale and contradictory."
+			README.md: "User-facing configuration and behavior summary that must align with the auth reference."
+			CHANGELOG.md: "Release notes surface that must record the hardened provider semantics and denial behavior fixes."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 180
+		focus_area: auth_docs_sync
+		verification:
+			- "`docs/auth.md` no longer describes the auth system as noop-only or contradicts the shipped built-in provider behavior."
+			- "All docs clearly state that tokens and token maps stay out of `.kanban.json`."
+			- "README and CHANGELOG use the same role-tier and scope-limit language as `docs/auth.md`."
+		acceptance_criteria:
+			- "The auth reference accurately describes provider validation semantics, host ownership of tokens, and deliberate scope limits."
+			- "README and CHANGELOG stay consistent with the detailed auth reference."
+			- "The documentation does not promise login flow, row filtering, or browser-hosted plugin execution."
+		failure_modes:
+			- scenario: README is updated but `docs/auth.md` keeps older noop-only or parser-based claims, recreating operator confusion.
+				likelihood: medium
+				impact: medium
+				mitigation: "Treat `docs/auth.md`, README, and CHANGELOG as one sync task with shared acceptance language."
+		task_type: update
+		audience: developers
+		coverage_matrix:
+			- "Built-in provider behavior and validation semantics"
+			- "Host-owned token boundaries and `.kanban.json` exclusions"
+			- "Standalone websocket denial behavior and scope limits"
+
+	- id: T11
+		title: Add minimal MCP and extension denial coverage for the hardened RBAC rollout
+		description: |
+			Remediate the remaining medium coverage gap with the smallest realistic non-HTTP host
+			coverage. Add focused automated assertions that denied admin/config actions surface stable,
+			secret-safe errors through MCP and the extension host path after the hardened provider lands.
+			Keep scope intentionally tight: cover one representative denied path per host rather than
+			building a broad new harness.
+		wave: 5
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T8
+			- T5
+		context_files:
+			src/mcp-server/index.ts: "MCP tool handlers already convert `AuthError` into tool errors and need minimal regression coverage."
+			src/extension/KanbanPanel.ts: "Extension host path that threads auth context and should be covered for one representative denial."
+			src/extension/auth.ts: "Extension auth context helper and secret boundary relevant to denial-path assertions."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: non_http_host_denial_coverage
+		verification:
+			- "At least one denied admin/config action is covered for MCP with stable `isError`/message behavior."
+			- "At least one denied admin/config action is covered for the extension host path without exposing token material to the webview."
+			- "Coverage stays host-adjacent and minimal rather than introducing a large new end-to-end harness."
+		acceptance_criteria:
+			- "MCP denial behavior has automated coverage that would catch regressions in auth error mapping."
+			- "Extension denial behavior has at least one automated assertion on the host side or nearest existing seam."
+			- "Coverage remains scoped to the blocker and does not widen the rollout into full host-matrix testing."
+		failure_modes:
+			- scenario: Coverage is added only for happy-path auth propagation, leaving denied behavior effectively untested again.
+				likelihood: medium
+				impact: medium
+				mitigation: "Require one representative denied admin/config assertion per host and treat happy-path coverage as optional for this remediation."
+		tech_stack:
+			- TypeScript
+			- Vitest
+			- VS Code extension host APIs
+		test_coverage: "Targeted MCP and extension-host denial assertions for one representative admin/config action each."
+
+	- id: T12
+		title: Re-run final review after the RBAC remediation set lands
+		description: |
+			Repeat the release-gate review after the focused remediation tasks complete. Confirm the
+			hardened provider now has real validation semantics, websocket denials are transport-stable,
+			docs are synchronized, and the minimal MCP/extension denial coverage closes the last known
+			risk. This re-review should stay narrow and only evaluate the blockers called out by the
+			failed T7 review plus any new regressions introduced by their fixes.
+		wave: 6
+		agent: gem-reviewer
+		priority: high
+		status: completed
+		dependencies:
+			- T9
+			- T10
+			- T11
+		context_files:
+			AGENTS.md: "Repository sequencing and documentation rules that still govern the remediation pass."
+			docs/plan/20260320-first-auth-plugin-rbac/plan.yaml: "Updated rollout baseline including the failed T7 gate and the remediation tasks."
+			docs/auth.md: "Detailed auth reference that must now align with the shipped implementation."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 120
+		focus_area: remediation_release_review
+		verification:
+			- "The built-in `rbac` provider no longer trusts token format and instead requires runtime validation semantics."
+			- "Standalone websocket denials are stable under async rejection paths."
+			- "Docs and minimal non-HTTP host coverage match the delivered behavior."
+		acceptance_criteria:
+			- "All four blockers from the failed final review are closed or explicitly reclassified with evidence."
+			- "No new host-local policy logic was introduced while hardening the rollout."
+			- "The rollout is ready for completion review without unresolved critical or high-severity auth gaps."
+		failure_modes:
+			- scenario: The security fix lands, but reviewer evidence still relies on stale docs or missing host coverage and the rollout stalls again.
+				likelihood: medium
+				impact: high
+				mitigation: "Require T9/T10/T11 evidence before re-review and scope T12 explicitly to the known blocker list."
+		requires_review: true
+		review_depth: full
+		security_sensitive: true

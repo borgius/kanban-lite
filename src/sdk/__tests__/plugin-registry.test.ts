@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin } from '../plugins'
 import type { RbacRole } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
@@ -1186,38 +1186,53 @@ describe('RBAC built-in provider pair', () => {
     expect(identity).toBeNull()
   })
 
-  it('resolveIdentity populates subject and admin role from plain token', async () => {
+  it('RBAC_IDENTITY_PLUGIN singleton denies any unregistered token (empty registry)', async () => {
+    // The singleton uses an empty principal registry — no format-based trust.
+    // Even tokens that look like "subject:role" must not be trusted.
     const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'alice:admin' })
+    expect(identity).toBeNull()
+  })
+
+  it('createRbacIdentityPlugin resolves a registered opaque admin token', async () => {
+    const plugin = createRbacIdentityPlugin(new Map([['opaque-admin-abc', { subject: 'alice', roles: ['admin'] }]]))
+    const identity = await plugin.resolveIdentity({ token: 'opaque-admin-abc' })
     expect(identity).not.toBeNull()
     expect(identity!.subject).toBe('alice')
     expect(identity!.roles).toContain('admin')
   })
 
-  it('resolveIdentity strips Bearer prefix and resolves manager token', async () => {
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'Bearer bob:manager' })
+  it('createRbacIdentityPlugin strips Bearer prefix before registry lookup', async () => {
+    const plugin = createRbacIdentityPlugin(new Map([['opaque-mgr-xyz', { subject: 'bob', roles: ['manager'] }]]))
+    const identity = await plugin.resolveIdentity({ token: 'Bearer opaque-mgr-xyz' })
     expect(identity!.subject).toBe('bob')
     expect(identity!.roles).toContain('manager')
   })
 
-  it('resolveIdentity resolves user role', async () => {
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'carol:user' })
+  it('createRbacIdentityPlugin resolves a registered user token', async () => {
+    const plugin = createRbacIdentityPlugin(new Map([['opaque-user-tok', { subject: 'carol', roles: ['user'] }]]))
+    const identity = await plugin.resolveIdentity({ token: 'opaque-user-tok' })
     expect(identity!.subject).toBe('carol')
     expect(identity!.roles).toContain('user')
   })
 
-  it('resolveIdentity returns null for unrecognised role', async () => {
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'eve:superadmin' })
+  it('createRbacIdentityPlugin returns null for an unregistered opaque token', async () => {
+    const plugin = createRbacIdentityPlugin(new Map([['known-tok', { subject: 'alice', roles: ['admin'] }]]))
+    const identity = await plugin.resolveIdentity({ token: 'unknown-tok' })
     expect(identity).toBeNull()
   })
 
-  it('resolveIdentity returns null when token has no colon delimiter', async () => {
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: 'admintoken' })
+  it('createRbacIdentityPlugin returns null when token is absent', async () => {
+    const plugin = createRbacIdentityPlugin(new Map([['tok', { subject: 'alice', roles: ['admin'] }]]))
+    const identity = await plugin.resolveIdentity({})
     expect(identity).toBeNull()
   })
 
-  it('resolveIdentity returns null when subject part is empty', async () => {
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: ':admin' })
-    expect(identity).toBeNull()
+  it('createRbacIdentityPlugin returns a copy of roles — not a reference to the entry', async () => {
+    const entry = { subject: 'alice', roles: ['admin'] }
+    const plugin = createRbacIdentityPlugin(new Map([['tok', entry]]))
+    const identity = await plugin.resolveIdentity({ token: 'tok' })
+    expect(identity!.roles).not.toBe(entry.roles)
+    expect(identity!.roles).toEqual(['admin'])
   })
 
   // -------------------------------------------------------------------------
@@ -1311,8 +1326,9 @@ describe('RBAC built-in provider pair', () => {
   })
 
   it('policy allow decision metadata does not contain raw token', async () => {
-    const rawToken = 'alice:admin'
-    const identity = await RBAC_IDENTITY_PLUGIN.resolveIdentity({ token: rawToken })
+    const rawToken = 'opaque-admin-secret-XYZ'
+    const plugin = createRbacIdentityPlugin(new Map([[rawToken, { subject: 'alice', roles: ['admin'] }]]))
+    const identity = await plugin.resolveIdentity({ token: rawToken })
     const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'settings.update', { token: rawToken })
     // metadata field (if present) must not echo the full raw token
     const meta = JSON.stringify(decision.metadata ?? {})

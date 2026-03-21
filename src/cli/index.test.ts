@@ -4,7 +4,8 @@ import * as path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
-import { cmdActive, cmdAdd, cmdEdit, cmdForm, cmdList, parseArgs, showHelp } from './index'
+import { AuthError } from '../sdk/types'
+import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, parseArgs, showHelp } from './index'
 
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -222,7 +223,7 @@ describe('CLI form-aware card commands', () => {
       formId: 'bug-report',
       data: { severity: 'high' },
       boardId: undefined,
-    })
+    }, { transport: 'cli' })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       form: { id: 'bug-report' },
       data: { severity: 'high' },
@@ -267,7 +268,7 @@ describe('CLI form-aware card commands', () => {
       formId: 'bug-report',
       data: { severity: 'critical' },
       boardId: undefined,
-    })
+    }, { transport: 'cli' })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       data: { severity: 'critical' },
     })
@@ -302,3 +303,66 @@ describe('CLI form-aware card commands', () => {
     })).rejects.toThrow('Invalid form submission for bug-report')
   })
 })
+
+describe('CLI admin commands pass auth context', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('passes cli auth context when setting a label', async () => {
+    const sdk = {
+      setLabel: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Pick<KanbanSDK, 'setLabel'>
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdLabels(sdk as KanbanSDK, ['set', 'bug'], { color: '#e11d48' })
+
+    expect(sdk.setLabel).toHaveBeenCalledWith('bug', { color: '#e11d48', group: undefined }, { transport: 'cli' })
+  })
+
+  it('passes cli auth context when adding a column', async () => {
+    const sdk = {
+      addColumn: vi.fn().mockResolvedValue([{ id: 'col1', name: 'New', color: '#fff' }]),
+    } as unknown as Pick<KanbanSDK, 'addColumn'>
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdColumns(sdk as KanbanSDK, ['add'], { id: 'col1', name: 'New', color: '#fff' })
+
+    expect(sdk.addColumn).toHaveBeenCalledWith(
+      { id: 'col1', name: 'New', color: '#fff' },
+      undefined,
+      { transport: 'cli' },
+    )
+  })
+})
+
+describe('CLI admin commands propagate AuthError (denial mapping)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('cmdLabels set propagates AuthError when SDK denies the action', async () => {
+    const sdk = {
+      setLabel: vi.fn().mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "label.set" denied', undefined),
+      ),
+    } as unknown as Pick<KanbanSDK, 'setLabel'>
+
+    await expect(
+      cmdLabels(sdk as KanbanSDK, ['set', 'bug'], { color: '#e11d48' }),
+    ).rejects.toBeInstanceOf(AuthError)
+  })
+
+  it('cmdColumns add propagates AuthError when SDK denies the action', async () => {
+    const sdk = {
+      addColumn: vi.fn().mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "column.create" denied', undefined),
+      ),
+    } as unknown as Pick<KanbanSDK, 'addColumn'>
+
+    await expect(
+      cmdColumns(sdk as KanbanSDK, ['add'], { id: 'col1', name: 'New', color: '#fff' }),
+    ).rejects.toBeInstanceOf(AuthError)
+  })
+})
+

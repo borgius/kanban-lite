@@ -108,8 +108,9 @@ This capability resolves a raw token to a typed identity.
 Built-in provider:
 
 - `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
+- `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles }` for registered principals.
 
-Future providers will implement token-based identity resolution (e.g., JWT). External node-hosted auth plugins are the intended future extension point.
+Important nuance: the exported `RBAC_IDENTITY_PLUGIN` singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via `createRbacIdentityPlugin(principals)` and wire it in through custom capability wiring. Unknown or absent tokens resolve to `null`, and roles are never inferred from token text.
 
 ### `auth.policy`
 
@@ -118,10 +119,11 @@ This capability decides whether an identity may perform a named action.
 Built-in provider:
 
 - `noop` (default) — always returns `true` (allow-all); preserves current open-access behavior.
+- `rbac` — enforces the fixed SDK-owned `RBAC_ROLE_MATRIX` for the cumulative `user`, `manager`, and `admin` roles.
 
-Future providers will implement real authorization rules based on the resolved identity.
+The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-> **Note:** Auth capability enforcement (middleware wiring, request context injection, login UX) is a future slice. This release defines the contracts and no-op resolver plumbing only.
+> **Note:** Auth capability enforcement is live today at the SDK pre-action seam for the privileged async mutation surface used by the Node-hosted adapters. However, arbitrary external auth plugin loading and turnkey host-managed principal registries are still future work.
 
 ---
 

@@ -2855,4 +2855,57 @@ describe('Standalone Server Integration', () => {
       settingsSpy.mockRestore()
     })
   })
+
+  // ── WebSocket Auth Denial Stability ──
+
+  describe('websocket auth denial stability', () => {
+    it('sends authDenied frame when saveSettings is denied and keeps connection open', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const denial = await sendAndReceive(ws, { type: 'saveSettings', settings: { defaultStatus: 'backlog' } }, 'authDenied')
+
+      expect(denial.type).toBe('authDenied')
+      expect(denial.category).toBe('auth.policy.denied')
+      expect(typeof denial.message).toBe('string')
+
+      // Connection must remain usable after the denial
+      expect(ws.readyState).toBe(WebSocket.OPEN)
+
+      // A subsequent non-denied message should still work
+      spy.mockRestore()
+      const initMsg = await sendAndReceive(ws, { type: 'ready' }, 'init')
+      expect(initMsg.type).toBe('init')
+      expect(ws.readyState).toBe(WebSocket.OPEN)
+    })
+
+    it('sends authDenied frame when addColumn is denied and keeps connection open', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'addColumn').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "column.create" denied', undefined)
+      )
+
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const denial = await sendAndReceive(ws, { type: 'addColumn', column: { name: 'X', color: '#000' } }, 'authDenied')
+
+      expect(denial.type).toBe('authDenied')
+      expect(denial.category).toBe('auth.policy.denied')
+      expect(ws.readyState).toBe(WebSocket.OPEN)
+
+      spy.mockRestore()
+    })
+  })
 })

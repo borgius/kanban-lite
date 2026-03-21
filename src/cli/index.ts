@@ -1110,7 +1110,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
 
 // --- Column Commands ---
 
-async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
   const boardId = getBoardId(flags)
 
@@ -1136,7 +1136,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
         console.error(red('Usage: kl columns add --id <id> --name <name> [--color <hex>]'))
         process.exit(1)
       }
-      const columns = await sdk.addColumn({ id, name, color }, boardId)
+      const columns = await sdk.addColumn({ id, name, color }, boardId, resolveCliAuthContext())
       console.log(green(`Added column: ${id} (${name})`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1210,7 +1210,7 @@ async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Flags): P
 
 // --- Label Commands ---
 
-async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+export async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {

@@ -1,870 +1,221 @@
 #!/usr/bin/env npx tsx
 /**
- * Generates docs/api.md from route metadata.
+ * @deprecated Compatibility wrapper that preserves the historical
+ * `scripts/generate-api-docs.ts` entrypoint while switching the docs pipeline
+ * to the standalone Swagger/OpenAPI source of truth.
  *
- * All API documentation lives in this file as structured data.
- * To update API docs, edit the metadata below and run:
- *   npx tsx scripts/generate-api-docs.ts
+ * Source of truth: `src/standalone/internal/openapi-spec.ts`
+ * Output: `docs/api.md`
  */
 import * as fs from 'fs'
 import * as path from 'path'
 
+import { KANBAN_OPENAPI_SPEC } from '../src/standalone/internal/openapi-spec'
+
 const ROOT = path.resolve(__dirname, '..')
 const OUT = path.join(ROOT, 'docs', 'api.md')
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+type OpenAPISchema = {
+  type?: string
+  description?: string
+  enum?: readonly string[]
+  items?: OpenAPISchema
+  properties?: Record<string, OpenAPISchema>
+  required?: readonly string[]
+  additionalProperties?: boolean | OpenAPISchema
+  nullable?: boolean
+  $ref?: string
+}
 
-interface Field {
+type OpenAPIParameter = {
   name: string
-  type: string
-  required: boolean
-  default?: string
-  description: string
+  in: string
+  required?: boolean
+  description?: string
+  schema?: OpenAPISchema
 }
 
-interface Route {
-  section: string
-  sectionDescription?: string
-  subsection?: string
-  method: string
-  path: string
-  description: string
-  queryParams?: Field[]
-  bodyFields?: Field[]
-  bodyNote?: string
-  example?: string
-  exampleLabel?: string
-  responseStatus?: string
-  response?: string
-  notes?: string
+type OpenAPIRequestBody = {
+  required?: boolean
+  description?: string
+  content?: Record<string, { schema?: OpenAPISchema }>
 }
 
-// ---------------------------------------------------------------------------
-// Route metadata — the single source of truth for docs/api.md
-// ---------------------------------------------------------------------------
+type OpenAPIResponses = Record<string, { description?: string }>
 
-const ROUTES: Route[] = [
-  // ===================== Boards =====================
-  {
-    section: 'Boards',
-    subsection: 'List Boards',
-    method: 'GET',
-    path: '/api/boards',
-    description: 'Returns all boards in the workspace.',
-    response: `{
-  "ok": true,
-  "data": [
-    { "id": "default", "name": "Default Board" },
-    { "id": "bugs", "name": "Bug Tracker", "description": "Track production bugs" }
-  ]
-}`,
-  },
-  {
-    section: 'Boards',
-    subsection: 'Create Board',
-    method: 'POST',
-    path: '/api/boards',
-    description: 'Creates a new board and persists it to `.kanban.json`. When `columns` is omitted, the board inherits the default board\'s columns (or the built-in standard columns when the default board has none).',
-    bodyFields: [
-      { name: 'id', type: 'string', required: true, description: 'Unique board identifier' },
-      { name: 'name', type: 'string', required: true, description: 'Display name' },
-      { name: 'description', type: 'string', required: false, description: 'Board description' },
-      { name: 'columns', type: 'KanbanColumn[]', required: false, description: 'Custom columns (inherits from default board if omitted)' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/boards \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "id": "bugs",
-    "name": "Bug Tracker",
-    "description": "Track production bugs",
-    "columns": [
-      { "id": "new", "name": "New", "color": "#ef4444" },
-      { "id": "investigating", "name": "Investigating", "color": "#f59e0b" },
-      { "id": "fixed", "name": "Fixed", "color": "#22c55e" }
-    ]
-  }'`,
-    responseStatus: '201 Created',
-    response: `{
-  "ok": true,
-  "data": { "id": "bugs", "name": "Bug Tracker", "description": "Track production bugs" }
-}`,
-  },
-  {
-    section: 'Boards',
-    subsection: 'Get Board',
-    method: 'GET',
-    path: '/api/boards/:boardId',
-    description: 'Returns the full configuration for a board.',
-    response: `{
-  "ok": true,
-  "data": {
-    "name": "Bug Tracker",
-    "description": "Track production bugs",
-    "columns": [
-      { "id": "new", "name": "New", "color": "#ef4444" },
-      { "id": "investigating", "name": "Investigating", "color": "#f59e0b" },
-      { "id": "fixed", "name": "Fixed", "color": "#22c55e" }
-    ],
-    "nextCardId": 1,
-    "defaultStatus": "new",
-    "defaultPriority": "medium"
-  }
-}`,
-  },
-  {
-    section: 'Boards',
-    subsection: 'Update Board',
-    method: 'PUT',
-    path: '/api/boards/:boardId',
-    description: 'Updates an existing board in place. Only provided fields are changed; omitted properties keep their current values.',
-    bodyNote: 'Any subset of board config fields (`name`, `description`, `columns`, `defaultStatus`, `defaultPriority`).',
-    example: `curl -X PUT http://localhost:3000/api/boards/bugs \\
-  -H "Content-Type: application/json" \\
-  -d '{ "name": "Bug Tracker v2" }'`,
-  },
-  {
-    section: 'Boards',
-    subsection: 'Delete Board',
-    method: 'DELETE',
-    path: '/api/boards/:boardId',
-    description: 'Deletes a board. The board must be empty (no cards) and cannot be the default board.',
-    response: '{ "ok": true, "data": { "deleted": true } }',
-  },
-
-  // ===================== Tasks (Default Board) =====================
-  {
-    section: 'Tasks (Default Board)',
-    sectionDescription: 'These endpoints operate on the default board. For board-scoped operations, see [Board-Scoped Tasks](#board-scoped-tasks) below.',
-    subsection: 'List Tasks',
-    method: 'GET',
-    path: '/api/tasks',
-    description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.',
-    queryParams: [
-      { name: 'q', type: 'string', required: false, description: 'Free-text search query. May also include inline `meta.field: value` tokens.' },
-      { name: 'fuzzy', type: 'boolean', required: false, default: 'false', description: 'Enable fuzzy matching for free-text search and metadata tokens.' },
-      { name: 'meta.<field>', type: 'string', required: false, description: 'Field-scoped metadata filter. Repeat for multiple metadata fields.' },
-      { name: 'status', type: 'string', required: false, description: 'Filter by status (e.g., `todo`, `in-progress`)' },
-      { name: 'priority', type: 'string', required: false, description: 'Filter by priority (`critical`, `high`, `medium`, `low`)' },
-      { name: 'assignee', type: 'string', required: false, description: 'Filter by assignee name' },
-      { name: 'label', type: 'string', required: false, description: 'Filter by label' },
-    ],
-    example: 'curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"',
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Get Task',
-    method: 'GET',
-    path: '/api/tasks/:id',
-    description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching, which is convenient when card IDs are numeric and unique within the board.',
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Get Active Task',
-    method: 'GET',
-    path: '/api/tasks/active',
-    description: 'Returns the currently active/open task, or `null` when no task is active.',
-    response: `{
-  "ok": true,
-  "data": {
-    "id": "42",
-    "status": "in-progress",
-    "priority": "high"
-  }
-}`,
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Create Task',
-    method: 'POST',
-    path: '/api/tasks',
-    description: 'Creates a task on the default board. The title is derived from the first Markdown `# heading`, the card is appended to the target column using fractional ordering, and omitted `status` / `priority` values fall back to board defaults.',
-    bodyFields: [
-      { name: 'content', type: 'string', required: true, description: 'Markdown content (title from first `# heading`)' },
-      { name: 'status', type: 'string', required: false, default: 'backlog', description: 'Initial status' },
-      { name: 'priority', type: 'string', required: false, default: 'medium', description: 'Priority level' },
-      { name: 'assignee', type: 'string', required: false, default: 'null', description: 'Assigned team member' },
-      { name: 'dueDate', type: 'string', required: false, default: 'null', description: 'Due date (ISO 8601)' },
-      { name: 'labels', type: 'string[]', required: false, default: '[]', description: 'Labels/tags' },
-      { name: 'metadata', type: 'Record<string, any>', required: false, description: 'Arbitrary user-defined metadata' },
-      { name: 'forms', type: 'CardFormAttachment[]', required: false, description: 'Attached forms, either named workspace-form references or inline form definitions' },
-      { name: 'formData', type: 'Record<string, Record<string, unknown>>', required: false, description: 'Per-form saved data keyed by resolved form id' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/tasks \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "content": "# Investigate outage\\n\\nCollect incident details.",
-    "status": "todo",
-    "priority": "high",
-    "forms": [{ "name": "incident-report" }],
-    "formData": { "incident-report": { "service": "billing" } },
-    "metadata": { "team": "backend" }
-  }'`,
-    responseStatus: '201 Created',
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Update Task',
-    method: 'PUT',
-    path: '/api/tasks/:id',
-    description: 'Updates an existing task on the default board. Only the supplied fields are modified; omitted fields remain unchanged.',
-    bodyNote: 'Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`).',
-    example: `curl -X PUT http://localhost:3000/api/tasks/42 \\
-  -H "Content-Type: application/json" \\
-  -d '{ "forms": [{ "name": "incident-report" }], "formData": { "incident-report": { "owner": "alice" } } }'`,
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Submit Task Form',
-    method: 'POST',
-    path: '/api/tasks/:id/forms/:formId/submit',
-    description: 'Validates and persists a card form submission through the shared SDK workflow.',
-    bodyFields: [
-      { name: 'data', type: 'Record<string, unknown>', required: true, description: 'Submitted field values merged over config defaults, card form data, and matching metadata before validation' },
-    ],
-    notes: 'Merge order is `config form defaults -> card attachment defaults / existing formData -> matching card metadata -> submitted data`. Successful submissions emit the `form.submit` webhook event.',
-    example: `curl -X POST http://localhost:3000/api/tasks/42/forms/incident-report/submit \
-  -H "Content-Type: application/json" \
-  -d '{ "data": { "severity": "critical", "owner": "alice" } }'`,
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Move Task',
-    method: 'PATCH',
-    path: '/api/tasks/:id/move',
-    description: 'Moves a task to a different column and/or position.',
-    bodyFields: [
-      { name: 'status', type: 'string', required: true, description: 'Target column' },
-      { name: 'position', type: 'number', required: false, description: 'Zero-based position (default: `0`)' },
-    ],
-    example: `curl -X PATCH http://localhost:3000/api/tasks/42/move \\
-  -H "Content-Type: application/json" \\
-  -d '{ "status": "in-progress", "position": 0 }'`,
-  },
-  {
-    section: 'Tasks (Default Board)',
-    subsection: 'Delete Task',
-    method: 'DELETE',
-    path: '/api/tasks/:id',
-    description: 'Soft-deletes a task by moving it into the hidden `deleted` column. Use permanent-delete flows if you need irreversible removal.',
-    example: 'curl -X DELETE http://localhost:3000/api/tasks/42',
-  },
-
-  // ===================== Board-Scoped Tasks =====================
-  {
-    section: 'Board-Scoped Tasks',
-    subsection: '',
-    method: '',
-    path: '',
-    description: `All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. Use these routes when your integration manages multiple boards explicitly instead of relying on the workspace default. The board-scoped list endpoint supports the same query params as \`/api/tasks\`, including \`q\`, \`fuzzy\`, and \`meta.*\` filters.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| \`GET\` | \`/api/boards/:boardId/tasks\` | List tasks (supports the same \`q\`, \`fuzzy\`, \`meta.*\`, and standard filters) |
-| \`GET\` | \`/api/boards/:boardId/tasks/active\` | Get the currently active/open task for the board |
-| \`POST\` | \`/api/boards/:boardId/tasks\` | Create a task in the board |
-| \`GET\` | \`/api/boards/:boardId/tasks/:id\` | Get a task |
-| \`PUT\` | \`/api/boards/:boardId/tasks/:id\` | Update a task |
-| \`POST\` | \`/api/boards/:boardId/tasks/:id/forms/:formId/submit\` | Submit a task form in the board |
-| \`PATCH\` | \`/api/boards/:boardId/tasks/:id/move\` | Move a task |
-| \`DELETE\` | \`/api/boards/:boardId/tasks/:id\` | Delete a task |`,
-    example: `curl -X POST http://localhost:3000/api/boards/bugs/tasks/42/forms/incident-report/submit \
-  -H "Content-Type: application/json" \
-  -d '{ "data": { "severity": "high", "owner": "alice" } }'`,
-    exampleLabel: '**Example — submit a task form in the "bugs" board:**',
-  },
-
-  // ===================== Transfer Task =====================
-  {
-    section: 'Transfer Task',
-    subsection: '',
-    method: 'POST',
-    path: '/api/boards/:boardId/tasks/:id/transfer',
-    description: 'Moves a task from the current board into another board.\n\nThe `:boardId` path segment is the **destination** board. The source board is the server\'s currently active board context, so this endpoint is primarily intended for the live standalone UI and closely-coupled local integrations.',
-    bodyFields: [
-      { name: 'targetStatus', type: 'string', required: false, description: "Status in the destination board (defaults to the board's default status)" },
-    ],
-    example: `curl -X POST http://localhost:3000/api/boards/bugs/tasks/42/transfer \\
-  -H "Content-Type: application/json" \\
-  -d '{ "targetStatus": "new" }'`,
-  },
-
-  // ===================== Board-Scoped Columns =====================
-  {
-    section: 'Board-Scoped Columns',
-    subsection: '',
-    method: 'GET',
-    path: '/api/boards/:boardId/columns',
-    description: 'Returns the ordered column definitions for a specific board, including each column\'s `id`, display `name`, and `color`.',
-  },
-
-  // ===================== Columns (Default Board) =====================
-  {
-    section: 'Columns (Default Board)',
-    subsection: 'List Columns',
-    method: 'GET',
-    path: '/api/columns',
-    description: 'Returns the ordered column definitions for the default board.',
-  },
-  {
-    section: 'Columns (Default Board)',
-    subsection: 'Add Column',
-    method: 'POST',
-    path: '/api/columns',
-    description: 'Creates a new column on the default board. New columns are appended to the end of the board\'s current column order.',
-    bodyFields: [
-      { name: 'id', type: 'string', required: true, description: 'Unique column identifier' },
-      { name: 'name', type: 'string', required: true, description: 'Display name' },
-      { name: 'color', type: 'string', required: false, description: 'Hex color (default: `#6b7280`)' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/columns \\
-  -H "Content-Type: application/json" \\
-  -d '{ "id": "testing", "name": "Testing", "color": "#ff9900" }'`,
-  },
-  {
-    section: 'Columns (Default Board)',
-    subsection: 'Update Column',
-    method: 'PUT',
-    path: '/api/columns/:id',
-    description: 'Updates a column\'s display name and/or color on the default board.',
-    bodyNote: '`name` and/or `color`.',
-  },
-  {
-    section: 'Columns (Default Board)',
-    subsection: 'Delete Column',
-    method: 'DELETE',
-    path: '/api/columns/:id',
-    description: 'Fails if the column still contains tasks.',
-  },
-
-  // ===================== Comments =====================
-  {
-    section: 'Comments',
-    subsection: 'List Comments',
-    method: 'GET',
-    path: '/api/tasks/:id/comments',
-    description: 'Returns all comments currently attached to the task, in stored order.',
-  },
-  {
-    section: 'Comments',
-    subsection: 'Add Comment',
-    method: 'POST',
-    path: '/api/tasks/:id/comments',
-    description: 'Adds a new comment to the task and emits the shared `comment.created` event/webhook pipeline.',
-    bodyFields: [
-      { name: 'author', type: 'string', required: true, description: 'Comment author' },
-      { name: 'content', type: 'string', required: true, description: 'Comment body' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/tasks/42/comments \\
-  -H "Content-Type: application/json" \\
-  -d '{ "author": "alice", "content": "Looks good, needs tests" }'`,
-  },
-  {
-    section: 'Comments',
-    subsection: 'Update Comment',
-    method: 'PUT',
-    path: '/api/tasks/:id/comments/:commentId',
-    description: 'Updates the Markdown content of an existing comment.',
-    bodyNote: '`{ "content": "Updated comment" }`',
-  },
-  {
-    section: 'Comments',
-    subsection: 'Delete Comment',
-    method: 'DELETE',
-    path: '/api/tasks/:id/comments/:commentId',
-    description: 'Deletes the specified comment from the task.',
-  },
-
-  // ===================== Attachments =====================
-  {
-    section: 'Attachments',
-    subsection: 'Upload Attachment',
-    method: 'POST',
-    path: '/api/tasks/:id/attachments',
-    description: 'Uploads one or more files as task attachments. Send the request as `multipart/form-data`; each uploaded file is copied through the active attachment-storage provider.',
-    example: `curl -X POST http://localhost:3000/api/tasks/42/attachments \\
-  -F 'files=@./screenshot.png' \\
-  -F 'files=@./report.pdf'`,
-  },
-  {
-    section: 'Attachments',
-    subsection: 'Download Attachment',
-    method: 'GET',
-    path: '/api/tasks/:id/attachments/:filename',
-    description: 'Streams the named attachment back to the client. For file types the browser understands (for example PDFs or images), most browsers will render inline.',
-  },
-  {
-    section: 'Attachments',
-    subsection: 'Delete Attachment',
-    method: 'DELETE',
-    path: '/api/tasks/:id/attachments/:filename',
-    description: 'Removes the named attachment from the task and deletes the provider-backed attachment payload when supported.',
-  },
-
-  // ===================== Logs =====================
-  {
-    section: 'Logs',
-    subsection: 'List Logs',
-    method: 'GET',
-    path: '/api/tasks/:id/logs',
-    description: 'Returns all log entries for the card.',
-  },
-  {
-    section: 'Logs',
-    subsection: 'Add Log',
-    method: 'POST',
-    path: '/api/tasks/:id/logs',
-    description: 'Append a log entry to the card.',
-    bodyFields: [
-      { name: 'text', type: 'string', required: true, description: 'Log message text (supports markdown)' },
-      { name: 'source', type: 'string', required: false, default: '"default"', description: 'Source/origin label' },
-      { name: 'object', type: 'object', required: false, description: 'Structured data object (stored as JSON)' },
-      { name: 'timestamp', type: 'string', required: false, description: 'ISO 8601 timestamp (auto-generated if omitted)' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/tasks/42/logs \\
-  -H 'Content-Type: application/json' \\
-  -d '{ "text": "Build passed", "source": "ci", "object": { "version": "1.0" } }'`,
-  },
-  {
-    section: 'Logs',
-    subsection: 'Clear Logs',
-    method: 'DELETE',
-    path: '/api/tasks/:id/logs',
-    description: 'Remove all log entries for the card.',
-  },
-
-  // ===================== Board Logs =====================
-  {
-    section: 'Board Logs',
-    subsection: 'List Board Logs',
-    method: 'GET',
-    path: '/api/boards/:boardId/logs',
-    description: 'Returns all board-level log entries.',
-  },
-  {
-    section: 'Board Logs',
-    subsection: 'Add Board Log',
-    method: 'POST',
-    path: '/api/boards/:boardId/logs',
-    description: 'Append a log entry to the board.',
-    bodyFields: [
-      { name: 'text', type: 'string', required: true, description: 'Log message text' },
-      { name: 'source', type: 'string', required: false, default: '"sdk"', description: 'Source/origin label' },
-      { name: 'object', type: 'object', required: false, description: 'Structured data object (stored as JSON)' },
-      { name: 'timestamp', type: 'string', required: false, description: 'ISO 8601 timestamp (auto-generated if omitted)' },
-    ],
-    example: `curl -X POST http://localhost:3000/api/boards/default/logs \\
-  -H 'Content-Type: application/json' \\
-  -d '{ "text": "Deployment complete", "source": "ci" }'`,
-  },
-  {
-    section: 'Board Logs',
-    subsection: 'Clear Board Logs',
-    method: 'DELETE',
-    path: '/api/boards/:boardId/logs',
-    description: 'Remove all board-level log entries.',
-  },
-
-  // ===================== Settings =====================
-  {
-    section: 'Settings',
-    subsection: 'Get Settings',
-    method: 'GET',
-    path: '/api/settings',
-    description: 'Returns the workspace\'s current display and behavior settings used by the UI surfaces.',
-    response: `{
-  "ok": true,
-  "data": {
-    "showPriorityBadges": true,
-    "showAssignee": true,
-    "showDueDate": true,
-    "showLabels": true,
-    "showBuildWithAI": false,
-    "showFileName": false,
-    "compactMode": false,
-    "markdownEditorMode": false,
-    "defaultPriority": "medium",
-    "defaultStatus": "backlog"
-  }
-}`,
-  },
-  {
-    section: 'Settings',
-    subsection: 'Update Settings',
-    method: 'PUT',
-    path: '/api/settings',
-    description: 'Updates workspace display settings and immediately broadcasts the change to connected realtime clients.',
-    bodyNote: 'Full `CardDisplaySettings` object.',
-    example: `curl -X PUT http://localhost:3000/api/settings \\
-  -H "Content-Type: application/json" \\
-  -d '{ "compactMode": true, "showFileName": true }'`,
-  },
-
-  // ===================== Webhooks =====================
-  {
-    section: 'Webhooks',
-    subsection: 'List Webhooks',
-    method: 'GET',
-    path: '/api/webhooks',
-    description: 'Returns all registered webhook subscriptions from the workspace webhook registry.',
-  },
-  {
-    section: 'Webhooks',
-    subsection: 'Register Webhook',
-    method: 'POST',
-    path: '/api/webhooks',
-    description: 'Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.',
-    bodyFields: [
-      { name: 'url', type: 'string', required: true, description: 'Target URL' },
-      { name: 'events', type: 'string[]', required: false, default: '["*"]', description: 'Events to subscribe to' },
-      { name: 'secret', type: 'string', required: false, description: 'HMAC-SHA256 signing secret' },
-    ],
-    notes: '**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`, `board.action`, `board.log.added`, `board.log.cleared`',
-    example: `curl -X POST http://localhost:3000/api/webhooks \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "url": "https://example.com/hook",
-    "events": ["task.created", "task.moved"],
-    "secret": "my-signing-key"
-  }'`,
-  },
-  {
-    section: 'Webhooks',
-    subsection: 'Update Webhook',
-    method: 'PUT',
-    path: '/api/webhooks/:id',
-    description: 'Updates an existing webhook\'s URL, event subscriptions, signing secret, or active state.',
-    bodyFields: [
-      { name: 'url', type: 'string', required: false, description: 'New target URL' },
-      { name: 'events', type: 'string[]', required: false, description: 'New event subscriptions' },
-      { name: 'secret', type: 'string', required: false, description: 'New HMAC-SHA256 signing secret' },
-      { name: 'active', type: 'boolean', required: false, description: 'Enable or disable the webhook' },
-    ],
-    example: `curl -X PUT http://localhost:3000/api/webhooks/wh_abc123 \\
-  -H "Content-Type: application/json" \\
-  -d '{ "active": false }'`,
-  },
-  {
-    section: 'Webhooks',
-    subsection: 'Delete Webhook',
-    method: 'DELETE',
-    path: '/api/webhooks/:id',
-    description: 'Deletes the webhook registration permanently.',
-  },
-
-  // ===================== Workspace =====================
-  {
-    section: 'Workspace',
-    subsection: 'Get Workspace Info',
-    method: 'GET',
-    path: '/api/workspace',
-    description: 'Returns workspace-level connection and storage metadata, including resolved provider ids and filesystem watcher support.',
-    response: `{
-  "ok": true,
-  "data": {
-    "path": "/Users/admin/dev/my-project",
-    "port": 3000,
-    "storageEngine": "markdown",
-    "sqlitePath": null,
-    "providers": {
-      "card.storage": "markdown",
-      "attachment.storage": "localfs"
-    },
-    "isFileBacked": true,
-    "watchGlob": "boards/**/*.md",
-    "auth": {
-      "identityProvider": "noop",
-      "policyProvider": "noop",
-      "configured": false,
-      "tokenPresent": false,
-      "tokenSource": null,
-      "transport": "http"
-    }
-  }
-}`,
-  },
-  {
-    section: 'Workspace',
-    subsection: 'Get Auth Status',
-    method: 'GET',
-    path: '/api/auth',
-    description: 'Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.',
-    response: `{
-  "ok": true,
-  "data": {
-    "identityProvider": "noop",
-    "policyProvider": "noop",
-    "identityEnabled": false,
-    "policyEnabled": false,
-    "configured": false,
-    "tokenPresent": false,
-    "tokenSource": null,
-    "transport": "http"
-  }
-}`,
-  },
-  {
-    section: 'Workspace',
-    subsection: 'Get Storage Status',
-    method: 'GET',
-    path: '/api/storage',
-    description: 'Returns the active card provider id, attachment provider id, and host-facing file/watch metadata.',
-    response: `{
-  "ok": true,
-  "data": {
-    "type": "markdown",
-    "sqlitePath": null,
-    "providers": {
-      "card.storage": "markdown",
-      "attachment.storage": "localfs"
-    },
-    "isFileBacked": true,
-    "watchGlob": "boards/**/*.md"
-  }
-}`,
-  },
-  {
-    section: 'Workspace',
-    subsection: 'Migrate to SQLite',
-    method: 'POST',
-    path: '/api/storage/migrate-to-sqlite',
-    description: 'Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`.',
-    bodyFields: [
-      { name: 'sqlitePath', type: 'string', required: false, description: 'Optional database path relative to the workspace root.' },
-    ],
-    response: `{
-  "ok": true,
-  "data": {
-    "ok": true,
-    "count": 12,
-    "storageEngine": "sqlite"
-  }
-}`,
-    notes: 'This endpoint is a compatibility helper for the built-in markdown ↔ sqlite migration path. It does not migrate into arbitrary external providers.',
-  },
-  {
-    section: 'Workspace',
-    subsection: 'Migrate to Markdown',
-    method: 'POST',
-    path: '/api/storage/migrate-to-markdown',
-    description: 'Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields in `.kanban.json`.',
-    response: `{
-  "ok": true,
-  "data": {
-    "ok": true,
-    "count": 12,
-    "storageEngine": "markdown"
-  }
-}`,
-    notes: 'Existing source data is left in place as a manual backup until you remove it yourself.',
-  },
-]
-
-// ---------------------------------------------------------------------------
-// Renderer
-// ---------------------------------------------------------------------------
-
-function renderFieldTable(fields: Field[], hasDefault: boolean): string {
-  const lines: string[] = []
-  if (hasDefault) {
-    lines.push('| Field | Type | Required | Default | Description |')
-    lines.push('|-------|------|----------|---------|-------------|')
-    for (const f of fields) {
-      const def = f.default !== undefined ? `\`${f.default}\`` : ''
-      lines.push(`| \`${f.name}\` | \`${f.type}\` | ${f.required ? 'Yes' : 'No'} | ${def} | ${f.description} |`)
-    }
-  } else {
-    lines.push('| Field | Type | Required | Description |')
-    lines.push('|-------|------|----------|-------------|')
-    for (const f of fields) {
-      lines.push(`| \`${f.name}\` | \`${f.type}\` | ${f.required ? 'Yes' : 'No'} | ${f.description} |`)
-    }
-  }
-  return lines.join('\n')
+type OpenAPIOperation = {
+  tags?: string[]
+  summary?: string
+  description?: string
+  parameters?: OpenAPIParameter[]
+  requestBody?: OpenAPIRequestBody
+  responses?: OpenAPIResponses
 }
 
-function renderQueryTable(params: Field[]): string {
+type OpenAPISpec = {
+  info: {
+    title: string
+    description?: string
+    version?: string
+  }
+  tags?: Array<{ name: string; description?: string }>
+  paths: Record<string, Record<string, OpenAPIOperation>>
+}
+
+const spec = KANBAN_OPENAPI_SPEC as OpenAPISpec
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\n/g, '<br/>')
+}
+
+function formatSchemaType(schema?: OpenAPISchema): string {
+  if (!schema) return '—'
+  if (schema.$ref) return `\`${schema.$ref.replace('#/components/schemas/', '')}\``
+  if (schema.enum?.length) return schema.enum.map((value) => `\`${value}\``).join(' \\| ')
+  if (schema.type === 'array') return schema.items ? `${formatSchemaType(schema.items)}[]` : 'array'
+  if (schema.type === 'object' && schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    return `Record<string, ${formatSchemaType(schema.additionalProperties)}>`
+  }
+  if (schema.type === 'object' && schema.properties) return 'object'
+  const baseType = schema.type ?? 'object'
+  return schema.nullable ? `${baseType} | null` : baseType
+}
+
+function renderSchemaTable(schema?: OpenAPISchema): string[] {
+  if (!schema?.properties || Object.keys(schema.properties).length === 0) {
+    if (schema?.description) return ['', schema.description]
+    if (schema) return ['', `Schema: ${formatSchemaType(schema)}`]
+    return []
+  }
+
+  const required = new Set(schema.required ?? [])
   const lines = [
-    '| Parameter | Type | Description |',
-    '|-----------|------|-------------|',
+    '',
+    '| Field | Type | Required | Description |',
+    '|------|------|----------|-------------|',
   ]
-  for (const p of params) {
-    lines.push(`| \`${p.name}\` | \`${p.type}\` | ${p.description} |`)
+
+  for (const [fieldName, fieldSchema] of Object.entries(schema.properties)) {
+    lines.push(
+      `| \`${escapeTableCell(fieldName)}\` | ${escapeTableCell(formatSchemaType(fieldSchema))} | ${required.has(fieldName) ? 'Yes' : 'No'} | ${escapeTableCell(fieldSchema.description ?? '—')} |`,
+    )
   }
-  return lines.join('\n')
+
+  return lines
 }
 
-function renderRoute(route: Route): string {
-  const parts: string[] = []
+function renderParameters(parameters?: OpenAPIParameter[]): string[] {
+  if (!parameters?.length) return []
 
-  // Method + path
-  if (route.method && route.path) {
-    parts.push('```')
-    parts.push(`${route.method} ${route.path}`)
-    parts.push('```')
-    parts.push('')
+  const lines = [
+    '',
+    '#### Parameters',
+    '',
+    '| Name | In | Type | Required | Description |',
+    '|------|----|------|----------|-------------|',
+  ]
+
+  for (const parameter of parameters) {
+    lines.push(
+      `| \`${escapeTableCell(parameter.name)}\` | ${escapeTableCell(parameter.in)} | ${escapeTableCell(formatSchemaType(parameter.schema))} | ${parameter.required ? 'Yes' : 'No'} | ${escapeTableCell(parameter.description ?? '—')} |`,
+    )
   }
 
-  // Description
-  if (route.description) {
-    parts.push(route.description)
-    parts.push('')
-  }
-
-  // Query params
-  if (route.queryParams?.length) {
-    parts.push('**Query parameters:**')
-    parts.push('')
-    parts.push(renderQueryTable(route.queryParams))
-    parts.push('')
-  }
-
-  // Body fields
-  if (route.bodyFields?.length) {
-    parts.push('**Request body:**')
-    parts.push('')
-    const hasDefault = route.bodyFields.some(f => f.default !== undefined)
-    parts.push(renderFieldTable(route.bodyFields, hasDefault))
-    parts.push('')
-  }
-
-  // Body note
-  if (route.bodyNote) {
-    parts.push(`**Request body:** ${route.bodyNote}`)
-    parts.push('')
-  }
-
-  // Notes
-  if (route.notes) {
-    parts.push(route.notes)
-    parts.push('')
-  }
-
-  // Example
-  if (route.example) {
-    if (route.exampleLabel) {
-      parts.push(route.exampleLabel)
-    } else if (route.bodyFields?.length || route.queryParams?.length || route.bodyNote) {
-      parts.push('**Example:**')
-    }
-    parts.push('')
-    parts.push('```bash')
-    parts.push(route.example)
-    parts.push('```')
-    parts.push('')
-  }
-
-  // Response status
-  if (route.responseStatus) {
-    parts.push(`**Response:** \`${route.responseStatus}\``)
-    parts.push('')
-  }
-
-  // Response body
-  if (route.response) {
-    if (!route.responseStatus) {
-      parts.push('**Response:**')
-      parts.push('')
-    }
-    parts.push('```json')
-    parts.push(route.response)
-    parts.push('```')
-    parts.push('')
-  }
-
-  return parts.join('\n')
+  return lines
 }
 
-function generate(): string {
-  const lines: string[] = []
+function renderRequestBody(requestBody?: OpenAPIRequestBody): string[] {
+  if (!requestBody) return []
 
-  lines.push('# Kanban Lite REST API')
-  lines.push('')
-  lines.push('The standalone server exposes a full REST API for managing kanban boards programmatically.')
-  lines.push('')
-  lines.push('## Base URL')
-  lines.push('')
-  lines.push('```')
-  lines.push('http://localhost:3000/api')
-  lines.push('```')
-  lines.push('')
-  lines.push('Start the server with `kl serve` or `kanban-md`. Use `--port <number>` to change the port.')
-  lines.push('')
-  lines.push('## Response Format')
-  lines.push('')
-  lines.push('All responses follow a consistent envelope:')
-  lines.push('')
-  lines.push('```json')
-  lines.push('// Success')
-  lines.push('{ "ok": true, "data": { ... } }')
-  lines.push('')
-  lines.push('// Error')
-  lines.push('{ "ok": false, "error": "Error message" }')
-  lines.push('```')
-  lines.push('')
-  lines.push('CORS is enabled for all origins.')
-  lines.push('')
-  lines.push('## Conventions')
-  lines.push('')
-  lines.push('- Card/task IDs are board-scoped; endpoints that accept `:id` generally support partial ID matching for convenience.')
-  lines.push('- `/api/tasks/*` operates on the default board, while `/api/boards/:boardId/tasks/*` targets a specific board explicitly.')
-  lines.push('- Successful responses are wrapped in `{ ok: true, data: ... }`; failed requests return `{ ok: false, error: string }`.')
-  lines.push('')
-  lines.push('---')
-  lines.push('')
+  const schema = requestBody.content?.['application/json']?.schema
+  const lines = ['', '#### Request Body', '', `Required: ${requestBody.required ? 'Yes' : 'No'}`]
 
-  let currentSection = ''
-  for (const route of ROUTES) {
-    // Section heading
-    if (route.section !== currentSection) {
-      currentSection = route.section
-      lines.push(`## ${currentSection}`)
-      lines.push('')
-      if (route.sectionDescription) {
-        lines.push(route.sectionDescription)
-        lines.push('')
+  if (requestBody.description) {
+    lines.push('', requestBody.description)
+  }
+
+  return [...lines, ...renderSchemaTable(schema)]
+}
+
+function renderResponses(responses?: OpenAPIResponses): string[] {
+  if (!responses || Object.keys(responses).length === 0) return []
+
+  const lines = [
+    '',
+    '#### Responses',
+    '',
+    '| Status | Description |',
+    '|--------|-------------|',
+  ]
+
+  for (const [status, response] of Object.entries(responses)) {
+    lines.push(`| \`${escapeTableCell(String(status))}\` | ${escapeTableCell(response.description ?? '—')} |`)
+  }
+
+  return lines
+}
+
+function collectOperationsForTag(tagName: string): Array<{ path: string; method: string; operation: OpenAPIOperation }> {
+  const operations: Array<{ path: string; method: string; operation: OpenAPIOperation }> = []
+
+  for (const [routePath, methods] of Object.entries(spec.paths)) {
+    for (const [method, operation] of Object.entries(methods)) {
+      if (operation.tags?.includes(tagName)) {
+        operations.push({ path: routePath, method, operation })
       }
     }
-
-    // Subsection heading
-    if (route.subsection) {
-      lines.push(`### ${route.subsection}`)
-      lines.push('')
-    }
-
-    lines.push(renderRoute(route))
-    lines.push('---')
-    lines.push('')
   }
 
-  // WebSocket section
-  lines.push('## WebSocket')
-  lines.push('')
-  lines.push('The server provides a WebSocket endpoint at `ws://localhost:3000` for real-time updates. Connected clients receive live broadcasts when tasks, columns, or settings change.')
-  lines.push('')
-  lines.push('**Message format:**')
-  lines.push('')
-  lines.push('```json')
-  lines.push('{')
-  lines.push('  "type": "init",')
-  lines.push('  "features": [...],')
-  lines.push('  "columns": [...],')
-  lines.push('  "settings": {...},')
-  lines.push('  "boards": [...],')
-  lines.push('  "currentBoard": "default"')
-  lines.push('}')
-  lines.push('```')
-  lines.push('')
-
-  return lines.join('\n')
+  return operations
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+function buildMarkdown(): string {
+  const lines: string[] = [
+    `# ${spec.info.title}`,
+    '',
+    '> This file is generated from `src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.',
+    '',
+    `Version: ${spec.info.version ?? 'unversioned'}`,
+    '',
+    '- Authoritative source: Swagger/OpenAPI in `src/standalone/internal/openapi-spec.ts`',
+    '- Interactive docs: `http://localhost:3000/api/docs`',
+    '- OpenAPI JSON: `http://localhost:3000/api/docs/json`',
+    '- Base API URL: `http://localhost:3000/api`',
+  ]
 
-const content = generate()
-fs.mkdirSync(path.dirname(OUT), { recursive: true })
-fs.writeFileSync(OUT, content, 'utf-8')
-console.log(`Generated ${OUT} (${content.length} bytes)`)
+  if (spec.info.description) {
+    lines.push('', spec.info.description)
+  }
+
+  for (const tag of spec.tags ?? []) {
+    const operations = collectOperationsForTag(tag.name)
+    if (operations.length === 0) continue
+
+    lines.push('', `## ${tag.name}`)
+
+    if (tag.description) {
+      lines.push('', tag.description)
+    }
+
+    for (const { path: routePath, method, operation } of operations) {
+      lines.push('', `### ${method.toUpperCase()} \`${routePath}\``)
+
+      if (operation.summary) {
+        lines.push('', `**${operation.summary}**`)
+      }
+
+      if (operation.description) {
+        lines.push('', operation.description)
+      }
+
+      lines.push(...renderParameters(operation.parameters))
+      lines.push(...renderRequestBody(operation.requestBody))
+      lines.push(...renderResponses(operation.responses))
+    }
+  }
+
+  return `${lines.join('\n').trim()}\n`
+}
+
+fs.writeFileSync(OUT, buildMarkdown(), 'utf8')
+console.log(`Generated ${path.relative(ROOT, OUT)} from src/standalone/internal/openapi-spec.ts`)

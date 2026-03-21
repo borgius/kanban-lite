@@ -14,7 +14,7 @@ tasks:
   - id: T1
     title: Lock the standalone compatibility contract and target module map
     wave: 1
-    status: pending
+    status: completed
     dependencies: []
     owner: gem-researcher
     definition: >-
@@ -35,7 +35,7 @@ tasks:
   - id: T2
     title: Extract monolithic server internals into standalone runtime and domain modules
     wave: 2
-    status: pending
+    status: completed
     dependencies:
       - T1
     owner: gem-implementer
@@ -55,7 +55,7 @@ tasks:
   - id: T3
     title: Introduce Fastify bootstrap with a compatibility-preserving startServer adapter
     wave: 3
-    status: pending
+    status: completed
     dependencies:
       - T2
     owner: gem-implementer
@@ -74,7 +74,7 @@ tasks:
   - id: T4
     title: Reconnect stateful subsystems on top of the Fastify runtime
     wave: 4
-    status: pending
+    status: completed
     dependencies:
       - T3
     owner: gem-implementer
@@ -92,7 +92,7 @@ tasks:
   - id: T5
     title: Add OpenAPI schemas and replace handwritten API docs generation with Swagger-backed output
     wave: 4
-    status: pending
+    status: completed
     dependencies:
       - T3
     owner: gem-implementer
@@ -111,7 +111,7 @@ tasks:
   - id: T6
     title: Update repo-facing documentation and help text to reflect the new API documentation source
     wave: 5
-    status: pending
+    status: completed
     dependencies:
       - T4
       - T5
@@ -130,7 +130,7 @@ tasks:
   - id: T7
     title: Run focused regression verification and close out compatibility gaps
     wave: 6
-    status: pending
+    status: completed
     dependencies:
       - T4
       - T5

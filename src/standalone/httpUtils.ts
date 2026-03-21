@@ -19,14 +19,25 @@ export const MIME_TYPES: Record<string, string> = {
   '.map': 'application/json'
 }
 
-export function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+/** Extended IncomingMessage that may carry a pre-buffered body injected by Fastify. */
+export type IncomingMessageWithRawBody = http.IncomingMessage & { _rawBody?: Buffer }
+
+export function readBody(req: IncomingMessageWithRawBody): Promise<Record<string, unknown>> {
+  if (req._rawBody instanceof Buffer) {
+    try {
+      const text = req._rawBody.toString('utf-8')
+      return Promise.resolve(text ? JSON.parse(text) as Record<string, unknown> : {})
+    } catch (err) {
+      return Promise.reject(err as Error)
+    }
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
       try {
         const text = Buffer.concat(chunks).toString('utf-8')
-        resolve(text ? JSON.parse(text) : {})
+        resolve(text ? JSON.parse(text) as Record<string, unknown> : {})
       } catch (err) {
         reject(err)
       }

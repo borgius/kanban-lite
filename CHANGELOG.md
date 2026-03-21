@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit sqlite/mysql attachment compatibility providers**: `attachment.storage` now supports first-class `sqlite` and `mysql` compatibility-provider selections when explicitly chosen, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Swagger-backed REST API docs pipeline**: `docs/api.md` is now generated from the standalone OpenAPI spec used by Fastify Swagger, and the standalone server exposes interactive API docs at `/api/docs` plus raw OpenAPI JSON at `/api/docs/json`.
 - **Core sqlite/mysql provider boundary**: `markdown` and `localfs` are now the only true built-ins in core. The provider ids `sqlite` and `mysql` remain supported as compatibility aliases that resolve to `kl-sqlite-storage` and `kl-mysql-storage`, and core test coverage now focuses on host/plugin contracts rather than provider-owned CRUD/schema behavior.
 - **Workspace-local env loading for plugins**: `KanbanSDK` now loads `<workspaceRoot>/.env` before resolving capability plugins, so local MinIO/S3 defaults work without manually exporting variables in each shell.
 - **Form submission audit logs**: Successful form submissions now append a system card log entry containing the submitted payload (`payload`) plus `formId` and `formName`, so the exact submitted body is visible from the card logs UI and SDK log surfaces.

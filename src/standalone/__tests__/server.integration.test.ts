@@ -287,6 +287,27 @@ describe('Standalone Server Integration', () => {
       expect(res.status).toBe(200)
       expect(res.body).toContain('<div id="root">')
     })
+
+    it('should serve Swagger UI docs', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpGet(`http://localhost:${port}/api/docs`)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('text/html')
+      expect(res.body).toContain('Swagger UI')
+    })
+
+    it('should serve OpenAPI JSON', async () => {
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const res = await httpGet(`http://localhost:${port}/api/docs/json`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.openapi).toBe('3.0.3')
+      expect(json.info.title).toBe('Kanban Lite REST API')
+    })
   })
 
   // ── WebSocket: Ready / Init ──

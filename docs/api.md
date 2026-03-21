@@ -1,975 +1,1551 @@
 # Kanban Lite REST API
 
+> This file is generated from `src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.
+
+Version: 1.0.0
+
+- Authoritative source: Swagger/OpenAPI in `src/standalone/internal/openapi-spec.ts`
+- Interactive docs: `http://localhost:3000/api/docs`
+- OpenAPI JSON: `http://localhost:3000/api/docs/json`
+- Base API URL: `http://localhost:3000/api`
+
 The standalone server exposes a full REST API for managing kanban boards programmatically.
 
-## Base URL
-
-```
-http://localhost:3000/api
-```
+**Base URL:** `http://localhost:3000/api`
 
 Start the server with `kl serve` or `kanban-md`. Use `--port <number>` to change the port.
 
-## Response Format
-
-All responses follow a consistent envelope:
+**Response envelope:**
 
 ```json
-// Success
-{ "ok": true, "data": { ... } }
-
-// Error
-{ "ok": false, "error": "Error message" }
+{ "ok": true, "data": { ... } }   // success
+{ "ok": false, "error": "..." }    // error
 ```
 
 CORS is enabled for all origins.
 
-## Conventions
-
-- Card/task IDs are board-scoped; endpoints that accept `:id` generally support partial ID matching for convenience.
-- `/api/tasks/*` operates on the default board, while `/api/boards/:boardId/tasks/*` targets a specific board explicitly.
-- Successful responses are wrapped in `{ ok: true, data: ... }`; failed requests return `{ ok: false, error: string }`.
-
----
+**Conventions:** Card/task IDs support partial matching within a board.
+`/api/tasks/*` operates on the default board; `/api/boards/:boardId/tasks/*` targets a specific board explicitly.
 
 ## Boards
 
-### List Boards
+Board CRUD and board-level actions
 
-```
-GET /api/boards
-```
+### GET `/api/boards`
+
+**List boards**
 
 Returns all boards in the workspace.
 
-**Response:**
+#### Responses
 
-```json
-{
-  "ok": true,
-  "data": [
-    { "id": "default", "name": "Default Board" },
-    { "id": "bugs", "name": "Bug Tracker", "description": "Track production bugs" }
-  ]
-}
-```
+| Status | Description |
+|--------|-------------|
+| `200` | List of board summaries. |
 
----
+### POST `/api/boards`
 
-### Create Board
+**Create board**
 
-```
-POST /api/boards
-```
+Creates a new board and persists it to `.kanban.json`. When `columns` is omitted, the board inherits the default board's columns (or built-in standard columns when the default board has none).
 
-Creates a new board and persists it to `.kanban.json`. When `columns` is omitted, the board inherits the default board's columns (or the built-in standard columns when the default board has none).
+#### Request Body
 
-**Request body:**
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | `string` | Yes | Unique board identifier |
-| `name` | `string` | Yes | Display name |
-| `description` | `string` | No | Board description |
-| `columns` | `KanbanColumn[]` | No | Custom columns (inherits from default board if omitted) |
+|------|------|----------|-------------|
+| `id` | string | Yes | Unique board identifier. |
+| `name` | string | Yes | Display name. |
+| `description` | string | No | Board description. |
+| `columns` | array | No | Custom columns. Inherits from default board if omitted. |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X POST http://localhost:3000/api/boards \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "bugs",
-    "name": "Bug Tracker",
-    "description": "Track production bugs",
-    "columns": [
-      { "id": "new", "name": "New", "color": "#ef4444" },
-      { "id": "investigating", "name": "Investigating", "color": "#f59e0b" },
-      { "id": "fixed", "name": "Fixed", "color": "#22c55e" }
-    ]
-  }'
-```
+| Status | Description |
+|--------|-------------|
+| `201` | Board created. |
+| `400` | Validation error (missing id or name). |
 
-**Response:** `201 Created`
+### GET `/api/boards/{boardId}`
 
-```json
-{
-  "ok": true,
-  "data": { "id": "bugs", "name": "Bug Tracker", "description": "Track production bugs" }
-}
-```
-
----
-
-### Get Board
-
-```
-GET /api/boards/:boardId
-```
+**Get board**
 
 Returns the full configuration for a board.
 
-**Response:**
+#### Parameters
 
-```json
-{
-  "ok": true,
-  "data": {
-    "name": "Bug Tracker",
-    "description": "Track production bugs",
-    "columns": [
-      { "id": "new", "name": "New", "color": "#ef4444" },
-      { "id": "investigating", "name": "Investigating", "color": "#f59e0b" },
-      { "id": "fixed", "name": "Fixed", "color": "#22c55e" }
-    ],
-    "nextCardId": 1,
-    "defaultStatus": "new",
-    "defaultPriority": "medium"
-  }
-}
-```
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
 
----
+#### Responses
 
-### Update Board
+| Status | Description |
+|--------|-------------|
+| `200` | Board config. |
+| `404` | Board not found. |
 
-```
-PUT /api/boards/:boardId
-```
+### PUT `/api/boards/{boardId}`
+
+**Update board**
 
 Updates an existing board in place. Only provided fields are changed; omitted properties keep their current values.
 
-**Request body:** Any subset of board config fields (`name`, `description`, `columns`, `defaultStatus`, `defaultPriority`).
+#### Parameters
 
-**Example:**
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
 
-```bash
-curl -X PUT http://localhost:3000/api/boards/bugs \
-  -H "Content-Type: application/json" \
-  -d '{ "name": "Bug Tracker v2" }'
-```
+#### Request Body
 
----
+Required: Yes
 
-### Delete Board
+Any subset of board config fields: `name`, `description`, `columns`, `defaultStatus`, `defaultPriority`.
 
-```
-DELETE /api/boards/:boardId
-```
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated board. |
+| `400` | Error. |
+
+### DELETE `/api/boards/{boardId}`
+
+**Delete board**
 
 Deletes a board. The board must be empty (no cards) and cannot be the default board.
 
-**Response:**
+#### Parameters
 
-```json
-{ "ok": true, "data": { "deleted": true } }
-```
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
 
----
+#### Responses
 
-## Tasks (Default Board)
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `400` | Board not empty or is default board. |
 
-These endpoints operate on the default board. For board-scoped operations, see [Board-Scoped Tasks](#board-scoped-tasks) below.
+### GET `/api/boards/{boardId}/actions`
 
-### List Tasks
+**Get board actions**
 
-```
-GET /api/tasks
-```
+Returns the defined actions for the board as a map of key → title.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Action map. |
+| `404` | Board not found. |
+
+### POST `/api/boards/{boardId}/actions`
+
+**Set board actions**
+
+Replaces all board actions with the provided set. Keys present in the existing set but absent from the new set are removed.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `actions` | Record<string, string> | Yes | Map of action key → display title. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated action map. |
+| `400` | Error. |
+
+### PUT `/api/boards/{boardId}/actions/{key}`
+
+**Add/update board action**
+
+Adds a new board action or updates the title of an existing one.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `key` | path | string | Yes | Action key. |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `title` | string | Yes | Display title for the action. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated actions. |
+| `400` | Error. |
+
+### DELETE `/api/boards/{boardId}/actions/{key}`
+
+**Delete board action**
+
+Removes a board action by key.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `key` | path | string | Yes | Action key. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `204` | Deleted. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/actions/{key}/trigger`
+
+**Trigger board action**
+
+Fires the configured webhook for the named board action.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `key` | path | string | Yes | Action key. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `204` | Triggered. |
+| `404` | Not found. |
+
+### GET `/api/boards/{boardId}/columns`
+
+**List board columns**
+
+Returns the ordered column definitions for the specified board, including each column's `id`, display `name`, and `color`.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Ordered column list. |
+| `400` | Error. |
+
+## Tasks
+
+Task operations on the default board
+
+### GET `/api/tasks`
+
+**List tasks**
 
 Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.
 
-**Query parameters:**
+#### Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `q` | `string` | Free-text search query. May also include inline `meta.field: value` tokens. |
-| `fuzzy` | `boolean` | Enable fuzzy matching for free-text search and metadata tokens. |
-| `meta.<field>` | `string` | Field-scoped metadata filter. Repeat for multiple metadata fields. |
-| `status` | `string` | Filter by status (e.g., `todo`, `in-progress`) |
-| `priority` | `string` | Filter by priority (`critical`, `high`, `medium`, `low`) |
-| `assignee` | `string` | Filter by assignee name |
-| `label` | `string` | Filter by label |
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `q` | query | string | No | Free-text search. May include inline `meta.field: value` tokens. |
+| `fuzzy` | query | boolean | No | Enable fuzzy matching for free-text search and metadata tokens. |
+| `status` | query | string | No | Filter by status. |
+| `priority` | query | `critical` \\| `high` \\| `medium` \\| `low` | No | Filter by priority. |
+| `assignee` | query | string | No | Filter by assignee name. |
+| `label` | query | string | No | Filter by label. |
+| `labelGroup` | query | string | No | Filter by label group name. |
+| `includeDeleted` | query | boolean | No | Include soft-deleted tasks. |
+| `meta.<field>` | query | string | No | Field-scoped metadata filter. Repeat for multiple metadata fields. |
 
-**Example:**
+#### Responses
 
-```bash
-curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Task list. |
 
----
+### POST `/api/tasks`
 
-### Get Task
+**Create task**
 
-```
-GET /api/tasks/:id
-```
+Creates a task on the default board. Title is derived from the first Markdown `# heading`. Omitted `status`/`priority` fall back to board defaults.
 
-Returns a single task from the default board. The `:id` segment supports partial ID matching, which is convenient when card IDs are numeric and unique within the board.
+#### Request Body
 
----
-
-### Get Active Task
-
-```
-GET /api/tasks/active
-```
-
-Returns the currently active/open task, or `null` when no task is active.
-
-**Response:**
-
-```json
-{
-  "ok": true,
-  "data": {
-    "id": "42",
-    "status": "in-progress",
-    "priority": "high"
-  }
-}
-```
-
----
-
-### Create Task
-
-```
-POST /api/tasks
-```
-
-Creates a task on the default board. The title is derived from the first Markdown `# heading`, the card is appended to the target column using fractional ordering, and omitted `status` / `priority` values fall back to board defaults.
-
-**Request body:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `content` | `string` | Yes |  | Markdown content (title from first `# heading`) |
-| `status` | `string` | No | `backlog` | Initial status |
-| `priority` | `string` | No | `medium` | Priority level |
-| `assignee` | `string` | No | `null` | Assigned team member |
-| `dueDate` | `string` | No | `null` | Due date (ISO 8601) |
-| `labels` | `string[]` | No | `[]` | Labels/tags |
-| `metadata` | `Record<string, any>` | No |  | Arbitrary user-defined metadata |
-| `forms` | `CardFormAttachment[]` | No |  | Attached forms, either named workspace-form references or inline form definitions |
-| `formData` | `Record<string, Record<string, unknown>>` | No |  | Per-form saved data keyed by resolved form id |
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:3000/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "# Investigate outage\n\nCollect incident details.",
-    "status": "todo",
-    "priority": "high",
-    "forms": [{ "name": "incident-report" }],
-    "formData": { "incident-report": { "service": "billing" } },
-    "metadata": { "team": "backend" }
-  }'
-```
-
-**Response:** `201 Created`
-
----
-
-### Update Task
-
-```
-PUT /api/tasks/:id
-```
-
-Updates an existing task on the default board. Only the supplied fields are modified; omitted fields remain unchanged.
-
-**Request body:** Any subset of task fields (`content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`).
-
-**Example:**
-
-```bash
-curl -X PUT http://localhost:3000/api/tasks/42 \
-  -H "Content-Type: application/json" \
-  -d '{ "forms": [{ "name": "incident-report" }], "formData": { "incident-report": { "owner": "alice" } } }'
-```
-
----
-
-### Submit Task Form
-
-```
-POST /api/tasks/:id/forms/:formId/submit
-```
-
-Validates and persists a card form submission through the shared SDK workflow.
-
-**Request body:**
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `data` | `Record<string, unknown>` | Yes | Submitted field values merged over config defaults, card form data, and matching metadata before validation |
+|------|------|----------|-------------|
+| `content` | string | Yes | Markdown content. Task title is derived from the first `# heading`. |
+| `status` | string | No | Initial status (defaults to board default). |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level (default: `medium`). |
+| `assignee` | string | No | Assigned team member. |
+| `dueDate` | string | No | Due date (ISO 8601). |
+| `labels` | string[] | No | Labels/tags. |
+| `metadata` | object | No | Arbitrary user-defined key/value metadata. |
+| `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
+| `formData` | object | No | Per-form saved data keyed by resolved form ID. |
+| `actions` | array | No | Action names or map of key → title available on this card. |
 
-Merge order is `config form defaults -> card attachment defaults / existing formData -> matching card metadata -> submitted data`. Successful submissions emit the `form.submit` webhook event.
+#### Responses
 
-**Example:**
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Validation error. |
 
-```bash
-curl -X POST http://localhost:3000/api/tasks/42/forms/incident-report/submit   -H "Content-Type: application/json"   -d '{ "data": { "severity": "critical", "owner": "alice" } }'
-```
+### GET `/api/tasks/active`
 
----
+**Get active task**
 
-### Move Task
+Returns the currently active/open task on the default board, or `null` when no task is active.
 
-```
-PATCH /api/tasks/:id/move
-```
+#### Responses
 
-Moves a task to a different column and/or position.
+| Status | Description |
+|--------|-------------|
+| `200` | Active task or null. |
 
-**Request body:**
+### GET `/api/tasks/{id}`
+
+**Get task**
+
+Returns a single task from the default board. The `:id` segment supports partial ID matching.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task. |
+| `404` | Not found. |
+
+### PUT `/api/tasks/{id}`
+
+**Update task**
+
+Updates an existing task. Only the supplied fields are modified; omitted fields remain unchanged.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### DELETE `/api/tasks/{id}`
+
+**Delete task**
+
+Soft-deletes a task by moving it into the hidden deleted column.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/forms/{formId}/submit`
+
+**Submit task form**
+
+Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the `form.submit` webhook event.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `formId` | path | string | Yes | Form identifier |
+
+#### Request Body
+
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `status` | `string` | Yes | Target column |
-| `position` | `number` | No | Zero-based position (default: `0`) |
+|------|------|----------|-------------|
+| `data` | object | Yes | Submitted field values. |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X PATCH http://localhost:3000/api/tasks/42/move \
-  -H "Content-Type: application/json" \
-  -d '{ "status": "in-progress", "position": 0 }'
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Submission result. |
+| `400` | Validation error. |
 
----
+### PATCH `/api/tasks/{id}/move`
 
-### Delete Task
+**Move task**
 
-```
-DELETE /api/tasks/:id
-```
+Moves a task to a different column and/or position on the default board.
 
-Soft-deletes a task by moving it into the hidden `deleted` column. Use permanent-delete flows if you need irreversible removal.
+#### Parameters
 
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
 
-```bash
-curl -X DELETE http://localhost:3000/api/tasks/42
-```
+#### Request Body
 
----
-
-## Board-Scoped Tasks
-
-All task endpoints are also available scoped to a specific board. These behave identically to the default board endpoints but operate on the specified board. Use these routes when your integration manages multiple boards explicitly instead of relying on the workspace default. The board-scoped list endpoint supports the same query params as `/api/tasks`, including `q`, `fuzzy`, and `meta.*` filters.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/boards/:boardId/tasks` | List tasks (supports the same `q`, `fuzzy`, `meta.*`, and standard filters) |
-| `GET` | `/api/boards/:boardId/tasks/active` | Get the currently active/open task for the board |
-| `POST` | `/api/boards/:boardId/tasks` | Create a task in the board |
-| `GET` | `/api/boards/:boardId/tasks/:id` | Get a task |
-| `PUT` | `/api/boards/:boardId/tasks/:id` | Update a task |
-| `POST` | `/api/boards/:boardId/tasks/:id/forms/:formId/submit` | Submit a task form in the board |
-| `PATCH` | `/api/boards/:boardId/tasks/:id/move` | Move a task |
-| `DELETE` | `/api/boards/:boardId/tasks/:id` | Delete a task |
-
-**Example — submit a task form in the "bugs" board:**
-
-```bash
-curl -X POST http://localhost:3000/api/boards/bugs/tasks/42/forms/incident-report/submit   -H "Content-Type: application/json"   -d '{ "data": { "severity": "high", "owner": "alice" } }'
-```
-
----
-
-## Transfer Task
-
-```
-POST /api/boards/:boardId/tasks/:id/transfer
-```
-
-Moves a task from the current board into another board.
-
-The `:boardId` path segment is the **destination** board. The source board is the server's currently active board context, so this endpoint is primarily intended for the live standalone UI and closely-coupled local integrations.
-
-**Request body:**
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `targetStatus` | `string` | No | Status in the destination board (defaults to the board's default status) |
+|------|------|----------|-------------|
+| `status` | string | Yes | Target column. |
+| `position` | integer | No | Zero-based position (default: `0`). |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X POST http://localhost:3000/api/boards/bugs/tasks/42/transfer \
-  -H "Content-Type: application/json" \
-  -d '{ "targetStatus": "new" }'
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task. |
+| `404` | Not found. |
 
----
+### DELETE `/api/tasks/{id}/permanent`
 
-## Board-Scoped Columns
+**Permanently delete task**
 
-```
-GET /api/boards/:boardId/columns
-```
+Permanently and irreversibly deletes a task from the default board. This cannot be undone.
 
-Returns the ordered column definitions for a specific board, including each column's `id`, display `name`, and `color`.
+#### Parameters
 
----
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
 
-## Columns (Default Board)
+#### Responses
 
-### List Columns
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
 
-```
-GET /api/columns
-```
+### POST `/api/tasks/{id}/actions/{action}`
+
+**Trigger task action**
+
+Fires the configured webhook for the named card-level action.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `action` | path | string | Yes | Action key |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `204` | Triggered. |
+| `400` | Error. |
+| `404` | Not found. |
+
+## Board Tasks
+
+Board-scoped task operations
+
+### GET `/api/boards/{boardId}/tasks`
+
+**List tasks (board-scoped)**
+
+Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `q` | query | string | No | Free-text search. May include inline `meta.field: value` tokens. |
+| `fuzzy` | query | boolean | No | Enable fuzzy matching for free-text search and metadata tokens. |
+| `status` | query | string | No | Filter by status. |
+| `priority` | query | `critical` \\| `high` \\| `medium` \\| `low` | No | Filter by priority. |
+| `assignee` | query | string | No | Filter by assignee name. |
+| `label` | query | string | No | Filter by label. |
+| `labelGroup` | query | string | No | Filter by label group name. |
+| `includeDeleted` | query | boolean | No | Include soft-deleted tasks. |
+| `meta.<field>` | query | string | No | Field-scoped metadata filter. Repeat for multiple metadata fields. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task list. |
+| `400` | Error. |
+
+### POST `/api/boards/{boardId}/tasks`
+
+**Create task (board-scoped)**
+
+Creates a task on the specified board. Title is derived from the first Markdown `# heading`. Omitted `status`/`priority` fall back to the board defaults.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `content` | string | Yes | Markdown content. Task title is derived from the first `# heading`. |
+| `status` | string | No | Initial status (defaults to board default). |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level (default: `medium`). |
+| `assignee` | string | No | Assigned team member. |
+| `dueDate` | string | No | Due date (ISO 8601). |
+| `labels` | string[] | No | Labels/tags. |
+| `metadata` | object | No | Arbitrary user-defined key/value metadata. |
+| `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
+| `formData` | object | No | Per-form saved data keyed by resolved form ID. |
+| `actions` | array | No | Action names or map of key → title available on this card. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Validation error. |
+
+### GET `/api/boards/{boardId}/tasks/active`
+
+**Get active task (board-scoped)**
+
+Returns the currently active/open task for the board, or `null` when none is active.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Active task or null. |
+
+### GET `/api/boards/{boardId}/tasks/{id}`
+
+**Get task (board-scoped)**
+
+Returns a single task from the specified board. The `:id` segment supports partial ID matching.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task. |
+| `404` | Not found. |
+
+### PUT `/api/boards/{boardId}/tasks/{id}`
+
+**Update task (board-scoped)**
+
+Updates fields of a task. Only supplied fields are modified; omitted fields remain unchanged.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### DELETE `/api/boards/{boardId}/tasks/{id}`
+
+**Delete task (board-scoped)**
+
+Soft-deletes the task by moving it to the hidden deleted column.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
+
+### PATCH `/api/boards/{boardId}/tasks/{id}/move`
+
+**Move task (board-scoped)**
+
+Moves a task to a different column and/or position within the board.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `status` | string | Yes | Target column. |
+| `position` | integer | No | Zero-based position (default: `0`). |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit`
+
+**Submit task form (board-scoped)**
+
+Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the `form.submit` webhook event.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `formId` | path | string | Yes | Form identifier |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `data` | object | Yes | Submitted field values. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Submission result. |
+| `400` | Validation error. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/actions/{action}`
+
+**Trigger task action (board-scoped)**
+
+Fires the configured webhook for the named card-level action.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `action` | path | string | Yes | Action key |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `204` | Triggered. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### DELETE `/api/boards/{boardId}/tasks/{id}/permanent`
+
+**Permanently delete task (board-scoped)**
+
+Permanently and irreversibly removes the task. This cannot be undone.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/transfer`
+
+**Transfer task to another board**
+
+Moves a task from the current board context to the specified destination board. The `:boardId` path segment is the **destination** board. The source board is the server's currently active board context.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `targetStatus` | string | No | Status in the destination board (defaults to the board's default status). |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Transferred task. |
+| `400` | Error. |
+
+## Columns
+
+Column management for the default board
+
+### GET `/api/columns`
+
+**List columns**
 
 Returns the ordered column definitions for the default board.
 
----
+#### Responses
 
-### Add Column
+| Status | Description |
+|--------|-------------|
+| `200` | Column list. |
 
-```
-POST /api/columns
-```
+### POST `/api/columns`
+
+**Add column**
 
 Creates a new column on the default board. New columns are appended to the end of the board's current column order.
 
-**Request body:**
+#### Request Body
+
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | `string` | Yes | Unique column identifier |
-| `name` | `string` | Yes | Display name |
-| `color` | `string` | No | Hex color (default: `#6b7280`) |
+|------|------|----------|-------------|
+| `id` | string | Yes | Unique column identifier. |
+| `name` | string | Yes | Display name. |
+| `color` | string | No | Hex color (default: `#6b7280`). |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X POST http://localhost:3000/api/columns \
-  -H "Content-Type: application/json" \
-  -d '{ "id": "testing", "name": "Testing", "color": "#ff9900" }'
-```
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Validation error. |
 
----
+### PUT `/api/columns/reorder`
 
-### Update Column
+**Reorder columns**
 
-```
-PUT /api/columns/:id
-```
+Reorders the columns for the specified board (or default board if `boardId` is omitted).
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | query | string | No | Target board ID (uses default if omitted). |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `columnIds` | string[] | Yes | Ordered array of column IDs. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Reordered columns. |
+| `400` | Error. |
+
+### PUT `/api/columns/minimized`
+
+**Set minimized columns**
+
+Sets which columns are minimized for the specified board (or default board if `boardId` is omitted).
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | query | string | No | Target board ID (uses default if omitted). |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `columnIds` | string[] | Yes | IDs of columns to minimize. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated minimized columns. |
+| `400` | Error. |
+
+### PUT `/api/columns/{id}`
+
+**Update column**
 
 Updates a column's display name and/or color on the default board.
 
-**Request body:** `name` and/or `color`.
+#### Parameters
 
----
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Column identifier. |
 
-### Delete Column
+#### Request Body
 
-```
-DELETE /api/columns/:id
-```
+Required: Yes
 
-Fails if the column still contains tasks.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | No | New display name. |
+| `color` | string | No | New hex color. |
 
----
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated column. |
+| `404` | Not found. |
+
+### DELETE `/api/columns/{id}`
+
+**Delete column**
+
+Deletes a column on the default board. Fails if the column still contains tasks.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Column identifier. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `400` | Column not empty. |
 
 ## Comments
 
-### List Comments
+Task comment threads
 
-```
-GET /api/tasks/:id/comments
-```
+### GET `/api/tasks/{id}/comments`
+
+**List comments**
 
 Returns all comments currently attached to the task, in stored order.
 
----
+#### Parameters
 
-### Add Comment
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
 
-```
-POST /api/tasks/:id/comments
-```
+#### Responses
 
-Adds a new comment to the task and emits the shared `comment.created` event/webhook pipeline.
+| Status | Description |
+|--------|-------------|
+| `200` | Comment list. |
+| `404` | Task not found. |
 
-**Request body:**
+### POST `/api/tasks/{id}/comments`
+
+**Add comment**
+
+Adds a new comment to the task and emits the `comment.created` webhook event.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `author` | `string` | Yes | Comment author |
-| `content` | `string` | Yes | Comment body |
+|------|------|----------|-------------|
+| `author` | string | Yes | Comment author. |
+| `content` | string | Yes | Comment body (Markdown). |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X POST http://localhost:3000/api/tasks/42/comments \
-  -H "Content-Type: application/json" \
-  -d '{ "author": "alice", "content": "Looks good, needs tests" }'
-```
+| Status | Description |
+|--------|-------------|
+| `201` | Created comment. |
+| `400` | Validation error (missing author or content). |
+| `404` | Task not found. |
 
----
+### PUT `/api/tasks/{id}/comments/{commentId}`
 
-### Update Comment
-
-```
-PUT /api/tasks/:id/comments/:commentId
-```
+**Update comment**
 
 Updates the Markdown content of an existing comment.
 
-**Request body:** `{ "content": "Updated comment" }`
+#### Parameters
 
----
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `commentId` | path | string | Yes | Comment identifier |
 
-### Delete Comment
+#### Request Body
 
-```
-DELETE /api/tasks/:id/comments/:commentId
-```
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `content` | string | Yes | New comment body (Markdown). |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated comment. |
+| `404` | Comment not found. |
+
+### DELETE `/api/tasks/{id}/comments/{commentId}`
+
+**Delete comment**
 
 Deletes the specified comment from the task.
 
----
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `commentId` | path | string | Yes | Comment identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
 
 ## Attachments
 
-### Upload Attachment
+File attachments on tasks
 
-```
-POST /api/tasks/:id/attachments
-```
+### POST `/api/tasks/{id}/attachments`
 
-Uploads one or more files as task attachments. Send the request as `multipart/form-data`; each uploaded file is copied through the active attachment-storage provider.
+**Upload attachments**
 
+Uploads one or more files as task attachments. Files are sent as base64-encoded strings in a JSON body and stored through the active attachment-storage provider.
 
-```bash
-curl -X POST http://localhost:3000/api/tasks/42/attachments \
-  -F 'files=@./screenshot.png' \
-  -F 'files=@./report.pdf'
-```
+#### Parameters
 
----
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
 
-### Download Attachment
+#### Request Body
 
-```
-GET /api/tasks/:id/attachments/:filename
-```
+Required: Yes
 
-Streams the named attachment back to the client. For file types the browser understands (for example PDFs or images), most browsers will render inline.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `files` | object[] | Yes | Array of files to upload. |
 
----
+#### Responses
 
-### Delete Attachment
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task including new attachment references. |
+| `400` | Validation error (missing or malformed `files` array). |
+| `404` | Task not found. |
 
-```
-DELETE /api/tasks/:id/attachments/:filename
-```
+### GET `/api/tasks/{id}/attachments/{filename}`
 
-Removes the named attachment from the task and deletes the provider-backed attachment payload when supported.
+**Download attachment**
 
----
+Materializes and streams the named attachment back to the client. Most browsers render known types (PDFs, images) inline unless `?download=1` is set.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `filename` | path | string | Yes | Attachment filename |
+| `download` | query | `0` \\| `1` | No | Set to `1` to force a download prompt instead of inline display. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | File content with appropriate Content-Type. |
+| `404` | Task or attachment not found. |
+| `501` | Attachment provider does not expose a local file path. |
+
+### DELETE `/api/tasks/{id}/attachments/{filename}`
+
+**Delete attachment**
+
+Removes the named attachment from the task and deletes the provider-backed payload when supported.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `filename` | path | string | Yes | Attachment filename |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated task. |
+| `404` | Task not found. |
 
 ## Logs
 
-### List Logs
+Append-only log entries on tasks and boards
 
-```
-GET /api/tasks/:id/logs
-```
+### GET `/api/boards/{boardId}/logs`
 
-Returns all log entries for the card.
-
----
-
-### Add Log
-
-```
-POST /api/tasks/:id/logs
-```
-
-Append a log entry to the card.
-
-**Request body:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `text` | `string` | Yes |  | Log message text (supports markdown) |
-| `source` | `string` | No | `"default"` | Source/origin label |
-| `object` | `object` | No |  | Structured data object (stored as JSON) |
-| `timestamp` | `string` | No |  | ISO 8601 timestamp (auto-generated if omitted) |
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:3000/api/tasks/42/logs \
-  -H 'Content-Type: application/json' \
-  -d '{ "text": "Build passed", "source": "ci", "object": { "version": "1.0" } }'
-```
-
----
-
-### Clear Logs
-
-```
-DELETE /api/tasks/:id/logs
-```
-
-Remove all log entries for the card.
-
----
-
-## Board Logs
-
-### List Board Logs
-
-```
-GET /api/boards/:boardId/logs
-```
+**List board logs**
 
 Returns all board-level log entries.
 
----
+#### Parameters
 
-### Add Board Log
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
 
-```
-POST /api/boards/:boardId/logs
-```
+#### Responses
 
-Append a log entry to the board.
+| Status | Description |
+|--------|-------------|
+| `200` | Log entries. |
 
-**Request body:**
+### POST `/api/boards/{boardId}/logs`
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `text` | `string` | Yes |  | Log message text |
-| `source` | `string` | No | `"sdk"` | Source/origin label |
-| `object` | `object` | No |  | Structured data object (stored as JSON) |
-| `timestamp` | `string` | No |  | ISO 8601 timestamp (auto-generated if omitted) |
+**Add board log**
 
-**Example:**
+Appends a log entry to the board.
 
-```bash
-curl -X POST http://localhost:3000/api/boards/default/logs \
-  -H 'Content-Type: application/json' \
-  -d '{ "text": "Deployment complete", "source": "ci" }'
-```
+#### Parameters
 
----
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
 
-### Clear Board Logs
+#### Request Body
 
-```
-DELETE /api/boards/:boardId/logs
-```
+Required: Yes
 
-Remove all board-level log entries.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Log message text (supports Markdown). |
+| `source` | string | No | Source/origin label (default: `"default"`). |
+| `object` | object | No | Optional structured data stored as JSON. |
+| `timestamp` | string | No | ISO 8601 timestamp (auto-generated if omitted). |
 
----
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Error. |
+
+### DELETE `/api/boards/{boardId}/logs`
+
+**Clear board logs**
+
+Removes all board-level log entries.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Cleared. |
+
+### GET `/api/tasks/{id}/logs`
+
+**List task logs**
+
+Returns all log entries for the task.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Log entries. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/logs`
+
+**Add task log**
+
+Appends a log entry to the task.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Log message text (supports Markdown). |
+| `source` | string | No | Source/origin label (default: `"default"`). |
+| `object` | object | No | Optional structured data stored as JSON. |
+| `timestamp` | string | No | ISO 8601 timestamp (auto-generated if omitted). |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### DELETE `/api/tasks/{id}/logs`
+
+**Clear task logs**
+
+Removes all log entries for the task.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Cleared. |
+| `404` | Not found. |
 
 ## Settings
 
-### Get Settings
+Workspace display settings
 
-```
-GET /api/settings
-```
+### GET `/api/settings`
+
+**Get settings**
 
 Returns the workspace's current display and behavior settings used by the UI surfaces.
 
-**Response:**
+#### Responses
 
-```json
-{
-  "ok": true,
-  "data": {
-    "showPriorityBadges": true,
-    "showAssignee": true,
-    "showDueDate": true,
-    "showLabels": true,
-    "showBuildWithAI": false,
-    "showFileName": false,
-    "compactMode": false,
-    "markdownEditorMode": false,
-    "defaultPriority": "medium",
-    "defaultStatus": "backlog"
-  }
-}
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Settings object. |
 
----
+### PUT `/api/settings`
 
-### Update Settings
+**Update settings**
 
-```
-PUT /api/settings
-```
+Updates workspace display settings and immediately broadcasts the change to connected WebSocket clients.
 
-Updates workspace display settings and immediately broadcasts the change to connected realtime clients.
+#### Request Body
 
-**Request body:** Full `CardDisplaySettings` object.
+Required: Yes
 
-**Example:**
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `showPriorityBadges` | boolean | No | — |
+| `showAssignee` | boolean | No | — |
+| `showDueDate` | boolean | No | — |
+| `showLabels` | boolean | No | — |
+| `showFileName` | boolean | No | — |
+| `compactMode` | boolean | No | — |
+| `defaultPriority` | string | No | — |
+| `defaultStatus` | string | No | — |
 
-```bash
-curl -X PUT http://localhost:3000/api/settings \
-  -H "Content-Type: application/json" \
-  -d '{ "compactMode": true, "showFileName": true }'
-```
+#### Responses
 
----
+| Status | Description |
+|--------|-------------|
+| `200` | Updated settings. |
+| `400` | Error. |
 
 ## Webhooks
 
-### List Webhooks
+Webhook subscriptions
 
-```
-GET /api/webhooks
-```
+### GET `/api/webhooks`
+
+**List webhooks**
 
 Returns all registered webhook subscriptions from the workspace webhook registry.
 
----
+#### Responses
 
-### Register Webhook
+| Status | Description |
+|--------|-------------|
+| `200` | Webhook list. |
 
-```
-POST /api/webhooks
-```
+### POST `/api/webhooks`
+
+**Register webhook**
 
 Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.
 
-**Request body:**
+**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`,
+`comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`,
+`column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`,
+`settings.updated`, `board.created`, `board.updated`, `board.deleted`, `board.action`,
+`board.log.added`, `board.log.cleared`.
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `url` | `string` | Yes |  | Target URL |
-| `events` | `string[]` | No | `["*"]` | Events to subscribe to |
-| `secret` | `string` | No |  | HMAC-SHA256 signing secret |
+#### Request Body
 
-**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`, `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`, `column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`, `settings.updated`, `board.created`, `board.updated`, `board.deleted`, `board.action`, `board.log.added`, `board.log.cleared`
+Required: Yes
 
-**Example:**
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `url` | string | Yes | Target URL. |
+| `events` | string[] | Yes | Events to subscribe to (use `["*"]` for all). |
+| `secret` | string | No | Optional HMAC-SHA256 signing secret. |
 
-```bash
-curl -X POST http://localhost:3000/api/webhooks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com/hook",
-    "events": ["task.created", "task.moved"],
-    "secret": "my-signing-key"
-  }'
-```
+#### Responses
 
----
+| Status | Description |
+|--------|-------------|
+| `201` | Created. |
+| `400` | Validation error. |
 
-### Update Webhook
+### PUT `/api/webhooks/{id}`
 
-```
-PUT /api/webhooks/:id
-```
+**Update webhook**
 
 Updates an existing webhook's URL, event subscriptions, signing secret, or active state.
 
-**Request body:**
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Webhook identifier |
+
+#### Request Body
+
+Required: Yes
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `url` | `string` | No | New target URL |
-| `events` | `string[]` | No | New event subscriptions |
-| `secret` | `string` | No | New HMAC-SHA256 signing secret |
-| `active` | `boolean` | No | Enable or disable the webhook |
+|------|------|----------|-------------|
+| `url` | string | No | — |
+| `events` | string[] | No | — |
+| `secret` | string | No | — |
+| `active` | boolean | No | Enable or disable the webhook. |
 
-**Example:**
+#### Responses
 
-```bash
-curl -X PUT http://localhost:3000/api/webhooks/wh_abc123 \
-  -H "Content-Type: application/json" \
-  -d '{ "active": false }'
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Updated webhook. |
+| `404` | Not found. |
 
----
+### DELETE `/api/webhooks/{id}`
 
-### Delete Webhook
-
-```
-DELETE /api/webhooks/:id
-```
+**Delete webhook**
 
 Deletes the webhook registration permanently.
 
----
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Webhook identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `404` | Not found. |
+
+## Labels
+
+Label definitions and cascading renames
+
+### GET `/api/labels`
+
+**List labels**
+
+Returns all label definitions with their colors and groups.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Label map. |
+
+### PUT `/api/labels/{name}`
+
+**Set label**
+
+Creates or updates a label definition (color and optional group).
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `name` | path | string | Yes | Label name (URL-encoded) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `color` | string | Yes | Hex color string. |
+| `group` | string | No | Optional group name. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated label map. |
+| `400` | Error. |
+
+### PATCH `/api/labels/{name}`
+
+**Rename label**
+
+Renames a label and cascades the change to all cards that use it.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `name` | path | string | Yes | Label name (URL-encoded) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `newName` | string | Yes | New label name. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated label map after rename. |
+| `400` | Error. |
+
+### DELETE `/api/labels/{name}`
+
+**Delete label**
+
+Deletes a label definition and removes it from all cards that reference it.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `name` | path | string | Yes | Label name (URL-encoded) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Deleted. |
+| `400` | Error. |
 
 ## Workspace
 
-### Get Workspace Info
+Workspace metadata, storage, and auth status
 
-```
-GET /api/workspace
-```
+### GET `/api/workspace`
 
-Returns workspace-level connection and storage metadata, including resolved provider ids and filesystem watcher support.
+**Get workspace info**
 
-**Response:**
+Returns workspace-level connection and storage metadata, including resolved provider IDs and filesystem watcher support.
 
-```json
-{
-  "ok": true,
-  "data": {
-    "path": "/Users/admin/dev/my-project",
-    "port": 3000,
-    "storageEngine": "markdown",
-    "sqlitePath": null,
-    "providers": {
-      "card.storage": "markdown",
-      "attachment.storage": "localfs"
-    },
-    "isFileBacked": true,
-    "watchGlob": "boards/**/*.md",
-    "auth": {
-      "identityProvider": "noop",
-      "policyProvider": "noop",
-      "configured": false,
-      "tokenPresent": false,
-      "tokenSource": null,
-      "transport": "http"
-    }
-  }
-}
-```
+#### Responses
 
----
+| Status | Description |
+|--------|-------------|
+| `200` | Workspace info. |
 
-### Get Auth Status
+### GET `/api/auth`
 
-```
-GET /api/auth
-```
+**Get auth status**
 
 Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.
 
-**Response:**
+#### Responses
 
-```json
-{
-  "ok": true,
-  "data": {
-    "identityProvider": "noop",
-    "policyProvider": "noop",
-    "identityEnabled": false,
-    "policyEnabled": false,
-    "configured": false,
-    "tokenPresent": false,
-    "tokenSource": null,
-    "transport": "http"
-  }
-}
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Auth status. |
 
----
+### GET `/api/storage`
 
-### Get Storage Status
+**Get storage status**
 
-```
-GET /api/storage
-```
+Returns the active card provider ID, attachment provider ID, and host-facing file/watch metadata.
 
-Returns the active card provider id, attachment provider id, and host-facing file/watch metadata.
+#### Responses
 
-**Response:**
+| Status | Description |
+|--------|-------------|
+| `200` | Storage status. |
 
-```json
-{
-  "ok": true,
-  "data": {
-    "type": "markdown",
-    "sqlitePath": null,
-    "providers": {
-      "card.storage": "markdown",
-      "attachment.storage": "localfs"
-    },
-    "isFileBacked": true,
-    "watchGlob": "boards/**/*.md"
-  }
-}
-```
+### POST `/api/storage/migrate-to-sqlite`
 
----
+**Migrate to SQLite**
 
-### Migrate to SQLite
+Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.
 
-```
-POST /api/storage/migrate-to-sqlite
-```
+#### Request Body
 
-Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`.
-
-**Request body:**
+Required: No
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `sqlitePath` | `string` | No | Optional database path relative to the workspace root. |
+|------|------|----------|-------------|
+| `sqlitePath` | string | No | Optional database path relative to workspace root. |
 
-This endpoint is a compatibility helper for the built-in markdown ↔ sqlite migration path. It does not migrate into arbitrary external providers.
+#### Responses
 
-**Response:**
+| Status | Description |
+|--------|-------------|
+| `200` | Migration result. |
+| `400` | Error. |
 
-```json
-{
-  "ok": true,
-  "data": {
-    "ok": true,
-    "count": 12,
-    "storageEngine": "sqlite"
-  }
-}
-```
+### POST `/api/storage/migrate-to-markdown`
 
----
+**Migrate to Markdown**
 
-### Migrate to Markdown
+Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields. Existing source data is left in place as a manual backup.
 
-```
-POST /api/storage/migrate-to-markdown
-```
+#### Responses
 
-Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields in `.kanban.json`.
+| Status | Description |
+|--------|-------------|
+| `200` | Migration result. |
+| `400` | Error. |
 
-Existing source data is left in place as a manual backup until you remove it yourself.
+### GET `/api/resolve-path`
 
-**Response:**
+**Resolve path**
 
-```json
-{
-  "ok": true,
-  "data": {
-    "ok": true,
-    "count": 12,
-    "storageEngine": "markdown"
-  }
-}
-```
+Resolves a workspace-relative, absolute, or `~`-prefixed path to its canonical absolute filesystem path.
 
----
+#### Parameters
 
-## WebSocket
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `path` | query | string | Yes | Path to resolve. |
 
-The server provides a WebSocket endpoint at `ws://localhost:3000` for real-time updates. Connected clients receive live broadcasts when tasks, columns, or settings change.
+#### Responses
 
-**Message format:**
-
-```json
-{
-  "type": "init",
-  "features": [...],
-  "columns": [...],
-  "settings": {...},
-  "boards": [...],
-  "currentBoard": "default"
-}
-```
+| Status | Description |
+|--------|-------------|
+| `200` | Resolved absolute path. |
+| `400` | Path parameter missing. |

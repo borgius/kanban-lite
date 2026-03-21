@@ -179,6 +179,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1013.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
     "@jsonforms/core": "^3.5.0",
     "@jsonforms/react": "^3.5.0",
     "@jsonforms/vanilla-renderers": "^3.5.0",
@@ -190,6 +192,7 @@
     "@tiptap/starter-kit": "^3.15.3",
     "chokidar": "^4.0.0",
     "clsx": "^2.1.1",
+    "fastify": "^5.8.2",
     "fractional-indexing": "^3.2.0",
     "fuse.js": "^7.1.0",
     "js-yaml": "^4.1.1",

@@ -31,12 +31,12 @@ export interface StandaloneRuntime {
   ctx: StandaloneContext
 }
 
-export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string): StandaloneRuntime {
+export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, httpServer?: http.Server): StandaloneRuntime {
   const absoluteKanbanDir = path.resolve(kanbanDir)
   const workspaceRoot = path.dirname(absoluteKanbanDir)
   const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
 
-  const server = http.createServer()
+  const server = httpServer ?? http.createServer()
   const wss = new WebSocketServer({ server, path: '/ws' })
 
   const ctx = {} as StandaloneContext

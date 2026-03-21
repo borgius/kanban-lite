@@ -281,7 +281,7 @@ The server provides:
 
 All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "message" }`. CORS is enabled for all origins.
 
-> See the [full REST API documentation](docs/api.md) for detailed endpoint reference, request/response examples, and board-scoped routes.
+> The REST API source of truth is the standalone Swagger/OpenAPI spec. Browse the interactive docs at `http://localhost:3000/api/docs`, the raw OpenAPI JSON at `http://localhost:3000/api/docs/json`, or the generated repo copy at [docs/api.md](docs/api.md).
 
 #### Boards
 

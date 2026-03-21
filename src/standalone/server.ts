@@ -1,12 +1,18 @@
 import * as http from 'http'
+import * as fs from 'fs'
+import * as path from 'path'
+import Fastify from 'fastify'
+import swagger from '@fastify/swagger'
+import swaggerUi from '@fastify/swagger-ui'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
+import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
 import { handleCardFileRoute, setupStandaloneLifecycle } from './internal/lifecycle'
 import { createStandaloneRuntime, indexHtml } from './internal/runtime'
 import { handleBoardRoutes } from './internal/routes/boards'
 import { handleSystemRoutes } from './internal/routes/system'
 import { handleTaskRoutes } from './internal/routes/tasks'
 import { attachWebSocketHandlers } from './internal/websocket'
-import { matchRoute } from './httpUtils'
+import { matchRoute, type IncomingMessageWithRawBody } from './httpUtils'
 
 async function dispatchRequest(request: StandaloneRequestContext, handlers: StandaloneRouteHandler[]): Promise<void> {
   for (const handler of handlers) {
@@ -14,9 +20,43 @@ async function dispatchRequest(request: StandaloneRequestContext, handlers: Stan
   }
 }
 
+function resolveSwaggerUiStaticDir(): string | undefined {
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', '@fastify', 'swagger-ui', 'static'),
+    path.join(__dirname, '..', '..', 'node_modules', '@fastify', 'swagger-ui', 'static'),
+  ]
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'swagger-ui.css'))) return candidate
+  }
+
+  return undefined
+}
+
 export function startServer(kanbanDir: string, port: number, webviewDir?: string): http.Server {
-  const runtime = createStandaloneRuntime(kanbanDir, webviewDir)
-  const { server, ctx, resolvedWebviewDir } = runtime
+  const fastify = Fastify({ logger: false, forceCloseConnections: true })
+  const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
+  const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
+
+  // OpenAPI spec and interactive docs (served before the catch-all so Fastify prefers these routes)
+  fastify.register(swagger, { openapi: KANBAN_OPENAPI_SPEC as any })
+  fastify.register(swaggerUi, {
+    routePrefix: '/api/docs',
+    uiConfig: { docExpansion: 'list', deepLinking: false },
+    ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
+    ...(swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
+      ? { logo: { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) } }
+      : {}),
+  })
+
+  // Buffer all request bodies so existing handlers can read them via req._rawBody
+  fastify.removeAllContentTypeParsers()
+  fastify.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body as Buffer)
+  })
+
+  const runtime = createStandaloneRuntime(kanbanDir, webviewDir, fastify.server)
+  const { ctx, resolvedWebviewDir } = runtime
 
   const handlers: StandaloneRouteHandler[] = [
     handleBoardRoutes,
@@ -25,21 +65,30 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     handleSystemRoutes,
   ]
 
-  server.on('request', async (req, res) => {
+  // Set CORS headers on every response
+  fastify.addHook('onRequest', async (_request, reply) => {
+    reply.header('Access-Control-Allow-Origin', '*')
+    reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+    if (_request.method === 'OPTIONS') {
+      reply.header('Access-Control-Max-Age', '86400')
+      await reply.code(204).send()
+    }
+  })
+
+  // Catch-all: delegate to existing domain route handlers via raw req/res
+  fastify.all('/*', async (request, reply) => {
+    // Inject pre-buffered body so existing readBody() works without re-reading the stream
+    const req = request.raw as IncomingMessageWithRawBody
+    if (request.body instanceof Buffer && request.body.length > 0) {
+      req._rawBody = request.body
+    }
+
+    const res = reply.raw
     const url = new URL(req.url || '/', `http://${req.headers.host}`)
     const pathname = url.pathname
     const method = req.method || 'GET'
-
-    if (method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Max-Age': '86400'
-      })
-      res.end()
-      return
-    }
 
     await dispatchRequest({
       ctx,
@@ -52,16 +101,23 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       indexHtml,
       route: createRouteMatcher(method, pathname, matchRoute),
     }, handlers)
+
+    // Handlers write directly to res; tell Fastify not to touch the response
+    reply.hijack()
   })
 
   attachWebSocketHandlers(ctx)
-  setupStandaloneLifecycle(ctx, server)
+  setupStandaloneLifecycle(ctx, fastify.server)
 
-  server.listen(port, () => {
+  fastify.listen({ port, host: '0.0.0.0' }, (err) => {
+    if (err) {
+      console.error('Failed to start server:', err)
+      process.exit(1)
+    }
     console.log(`Kanban board running at http://localhost:${port}`)
     console.log(`API available at http://localhost:${port}/api`)
     console.log(`Kanban directory: ${ctx.absoluteKanbanDir}`)
   })
 
-  return server
+  return fastify.server
 }

@@ -1,9 +1,9 @@
 import * as path from 'path'
-import * as fs from 'fs/promises'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
+import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { AuthError, type AuthContext } from '../sdk/types'
@@ -19,25 +19,6 @@ const cardFormAttachmentSchema = z.object({
 
 const cardFormDataMapSchema = z.record(z.string(), z.record(z.string(), z.unknown()))
 
-// --- Resolve cards directory ---
-
-async function findWorkspaceRoot(startDir: string): Promise<string> {
-  let dir = startDir
-  while (true) {
-    try {
-      await fs.access(path.join(dir, '.git'))
-      return dir
-    } catch { /* continue */ }
-    try {
-      await fs.access(path.join(dir, 'package.json'))
-      return dir
-    } catch { /* continue */ }
-    const parent = path.dirname(dir)
-    if (parent === dir) return startDir
-    dir = parent
-  }
-}
-
 async function resolveKanbanDir(): Promise<string> {
   // 1. CLI arg --dir
   const dirIndex = process.argv.indexOf('--dir')
@@ -49,16 +30,24 @@ async function resolveKanbanDir(): Promise<string> {
   if (envDir) {
     return path.resolve(envDir)
   }
-  // 3. Auto-detect from cwd
-  const root = await findWorkspaceRoot(process.cwd())
-  return path.join(root, '.kanban')
+  // 3. Optional explicit config file
+  const configIndex = process.argv.indexOf('--config')
+  const configFilePath = configIndex !== -1 && process.argv[configIndex + 1]
+    ? path.resolve(process.argv[configIndex + 1])
+    : undefined
+  // 4. Auto-detect from cwd / config
+  return resolveDefaultKanbanDir(process.cwd(), configFilePath)
 }
 
 // --- Main ---
 
 async function main(): Promise<void> {
   const kanbanDir = await resolveKanbanDir()
-  const workspaceRoot = path.dirname(kanbanDir)
+  const configIndex = process.argv.indexOf('--config')
+  const configFilePath = configIndex !== -1 && process.argv[configIndex + 1]
+    ? path.resolve(process.argv[configIndex + 1])
+    : undefined
+  const workspaceRoot = resolveWorkspaceRoot(process.cwd(), configFilePath)
   const sdk = new KanbanSDK(kanbanDir)
 
   const server = new McpServer({

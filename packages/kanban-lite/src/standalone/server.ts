@@ -4,6 +4,7 @@ import * as path from 'path'
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
+import { configPath } from '../shared/config'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
 import { handleCardFileRoute, setupStandaloneLifecycle } from './internal/lifecycle'
@@ -33,7 +34,7 @@ function resolveSwaggerUiStaticDir(): string | undefined {
   return undefined
 }
 
-export function startServer(kanbanDir: string, port: number, webviewDir?: string): http.Server {
+export function startServer(kanbanDir: string, port: number, webviewDir?: string, resolvedConfigPath?: string): http.Server {
   const fastify = Fastify({ logger: false, forceCloseConnections: true })
   const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
   const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
@@ -109,6 +110,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   attachWebSocketHandlers(ctx)
   setupStandaloneLifecycle(ctx, fastify.server)
 
+  const effectiveConfigPath = resolvedConfigPath ?? configPath(path.dirname(ctx.absoluteKanbanDir))
+
   fastify.listen({ port, host: '0.0.0.0' }, (err) => {
     if (err) {
       console.error('Failed to start server:', err)
@@ -116,6 +119,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     }
     console.log(`Kanban board running at http://localhost:${port}`)
     console.log(`API available at http://localhost:${port}/api`)
+    console.log(`Kanban config: ${effectiveConfigPath}`)
     console.log(`Kanban directory: ${ctx.absoluteKanbanDir}`)
   })
 

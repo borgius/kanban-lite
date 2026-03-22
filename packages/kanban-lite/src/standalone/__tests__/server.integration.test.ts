@@ -250,6 +250,18 @@ describe('Standalone Server Integration', () => {
   // ── HTTP Tests ──
 
   describe('HTTP server', () => {
+    it('logs the resolved kanban config path on startup', async () => {
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = path.join(workspaceRoot, '.kanban.json')
+      fs.writeFileSync(resolvedConfigPath, JSON.stringify({ port }, null, 2), 'utf-8')
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      server = startServer(tempDir, port, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      expect(logSpy).toHaveBeenCalledWith(`Kanban config: ${resolvedConfigPath}`)
+    })
+
     it('should serve index.html at root', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)

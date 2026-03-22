@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Explicit CLI config path support**: `kl`/`kanban-md`/`kanban-mcp` startup flows now accept `--config <path>` to resolve the workspace from a specific `.kanban.json` file instead of relying only on the current working directory.
 - **Workspace verification commands**: The classic monorepo now documents and ships root-level verification flows for plugin-with-core integration tests (`test:plugins:integration`), the retained MySQL service-backed path (`test:plugins:mysql:service`), and Playwright standalone coverage (`test:e2e`).
 - **External auth provider install story**: The auth provider ids `noop` and `rbac` now resolve through the standalone `kl-auth-plugin` package, and the local-dev loader also supports the sibling-repo pattern at `../kl-auth-plugin` so linked-package verification matches the webhook-plugin workflow.
 - **External webhook provider install story**: Webhook delivery now supports the `webhook.delivery` provider id `webhooks`, which resolves to the standalone `kl-webhooks-plugin` package. The local-dev loader also supports the sibling-repo pattern at `../kl-webhooks-plugin`, so linked-package verification matches the existing storage-plugin workflow.
@@ -59,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standalone URL sync**: Browser history and deep links now persist the fuzzy-search state alongside the existing board, card, tab, filter, and search query routing state.
 
 ### Fixed
+- **Standalone startup diagnostics**: The standalone server startup banner now prints the resolved `.kanban.json` path alongside the kanban directory so local dev output shows which config file is active.
+- **Monorepo root config discovery for local dev**: workspace resolution now prefers the Git root over nested package folders, and `npm run dev` for `kanban-lite` now points the standalone server at the repo-root `.kanban.json` by default.
 - **Provider cleanup follow-through**: Removed the lingering core-owned SQLite/MySQL implementation internals from `src/sdk/plugins/sqlite.ts` and `src/sdk/plugins/mysql.ts`, and replaced `src/sdk/__tests__/storage-sqlite.test.ts` with a host-boundary alias test so SQLite/MySQL implementation and CRUD/schema coverage live only in external provider packages; core now relies solely on the compatibility-alias plugin boundary.
 - **Remote attachment providers now support card log files**: Card logs no longer require a provider-owned local attachment directory. The SDK now reads and writes `<cardId>.log` through the active `attachment.storage` capability, so S3/MinIO-backed attachment providers work for logs as well as manual file attachments.
 - **Migration config cleanup for sqlite/mysql attachment compatibility providers**: Migrating from SQLite back to markdown now removes incompatible `attachment.storage: sqlite/mysql` overrides so reopened workspaces fall back cleanly to the legacy `localfs` attachment default.

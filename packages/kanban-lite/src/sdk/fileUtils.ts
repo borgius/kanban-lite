@@ -2,41 +2,74 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as fsSync from 'fs'
 
+const CONFIG_FILENAME = '.kanban.json'
+
 /**
- * Synchronously walks up from `startDir` looking for a workspace root — a
- * directory that contains `.git`, `package.json`, or `.kanban.json`. Falls
- * back to `startDir` if the filesystem root is reached without a match.
+ * Synchronously walks up from `startDir` looking for a workspace root.
+ *
+ * Preference order:
+ * 1. A directory containing `.git` (authoritative project root)
+ * 2. The nearest directory containing `.kanban.json`
+ * 3. The nearest directory containing `package.json`
+ *
+ * This ensures monorepo package folders do not shadow the actual repository
+ * root when a `.git` directory exists higher up the tree.
  *
  * @param startDir - Directory to start scanning from.
  * @returns The detected workspace root, or `startDir` on no match.
  */
 export function findWorkspaceRootSync(startDir: string): string {
-  let dir = startDir
+  let dir = path.resolve(startDir)
+  let configRoot: string | null = null
+  let packageRoot: string | null = null
+
   while (true) {
-    if (
-      fsSync.existsSync(path.join(dir, '.git')) ||
-      fsSync.existsSync(path.join(dir, 'package.json')) ||
-      fsSync.existsSync(path.join(dir, '.kanban.json'))
-    ) {
+    if (fsSync.existsSync(path.join(dir, '.git'))) {
       return dir
     }
+
+    if (!configRoot && fsSync.existsSync(path.join(dir, CONFIG_FILENAME))) {
+      configRoot = dir
+    }
+
+    if (!packageRoot && fsSync.existsSync(path.join(dir, 'package.json'))) {
+      packageRoot = dir
+    }
+
     const parent = path.dirname(dir)
-    if (parent === dir) return startDir
+    if (parent === dir) return configRoot ?? packageRoot ?? path.resolve(startDir)
     dir = parent
   }
 }
 
 /**
- * Resolves the kanban directory without an explicit path by walking up from
- * `startDir` (defaults to `process.cwd()`) to locate the workspace root, then
- * reading `kanbanDirectory` from `.kanban.json` (defaults to `'.kanban'`).
+ * Resolves the workspace root from either an explicit config file path or the
+ * current directory tree.
  *
  * @param startDir - Optional directory to start scanning from. Defaults to `process.cwd()`.
+ * @param configFilePath - Optional path to a specific `.kanban.json` file.
+ * @returns The absolute workspace root path.
+ */
+export function resolveWorkspaceRoot(startDir?: string, configFilePath?: string): string {
+  if (configFilePath) {
+    return path.dirname(path.resolve(configFilePath))
+  }
+
+  return findWorkspaceRootSync(startDir ?? process.cwd())
+}
+
+/**
+ * Resolves the kanban directory without an explicit path by locating the
+ * workspace root, then reading `kanbanDirectory` from the effective
+ * `.kanban.json` file (defaults to `'.kanban'`).
+ *
+ * @param startDir - Optional directory to start scanning from. Defaults to `process.cwd()`.
+ * @param configFilePath - Optional path to a specific `.kanban.json` file.
  * @returns The absolute path to the kanban directory.
  */
-export function resolveKanbanDir(startDir?: string): string {
-  const root = findWorkspaceRootSync(startDir ?? process.cwd())
-  const configFile = path.join(root, '.kanban.json')
+export function resolveKanbanDir(startDir?: string, configFilePath?: string): string {
+  const root = resolveWorkspaceRoot(startDir, configFilePath)
+  const configFile = configFilePath ? path.resolve(configFilePath) : path.join(root, CONFIG_FILENAME)
   if (fsSync.existsSync(configFile)) {
     try {
       const raw = JSON.parse(fsSync.readFileSync(configFile, 'utf-8')) as Record<string, unknown>

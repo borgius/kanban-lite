@@ -63,6 +63,19 @@ describe('CLI list command', () => {
     expect(parsed.flags.meta).toEqual(['sprint=Q1', 'links.jira=PROJ-123'])
   })
 
+  it('parses --config for workspace root overrides', () => {
+    const parsed = parseArgs([
+      'node',
+      'kl',
+      'list',
+      '--config',
+      '/tmp/demo/.kanban.json',
+    ])
+
+    expect(parsed.command).toBe('list')
+    expect(parsed.flags.config).toBe('/tmp/demo/.kanban.json')
+  })
+
   it('delegates search and fuzzy matching to sdk.listCards while preserving JSON output', async () => {
     const sdk = {
       listCards: vi.fn().mockResolvedValue([makeCard()]),
@@ -96,6 +109,7 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--search <text>')
     expect(helpText).toContain('--fuzzy')
     expect(helpText).toContain('--meta key=value')
+    expect(helpText).toContain('--config <path>')
     expect(helpText).toContain('form submit <id> <form>')
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")

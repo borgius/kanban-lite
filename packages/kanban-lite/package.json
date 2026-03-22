@@ -112,7 +112,7 @@
     "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch",
     "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --external:@fastify/swagger --external:@fastify/swagger-ui --banner:js=\"#!/usr/bin/env node\" --watch",
     "dev": "pnpm run build:standalone-server && concurrently \"pnpm run watch:extension\" \"pnpm run watch:standalone-server\" \"pnpm run dev:standalone-server\" \"pnpm run dev:standalone-vite\"",
-    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 2954 --no-browser",
+    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --config ../../.kanban.json --port 2954 --no-browser",
     "dev:standalone-vite": "vite dev --config vite.standalone.config.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:e2e": "pnpm --dir ../.. run test:e2e:root",

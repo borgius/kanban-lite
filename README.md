@@ -253,7 +253,7 @@ kl help sdk                                             # Show SDK documentation
 kl help api                                             # Show REST API documentation
 ```
 
-Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
+Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory, `--config <path>` to point at a specific workspace `.kanban.json`, and `--board <id>` to target a specific board.
 
 `--forms` accepts a JSON array of attached form descriptors, and `--form-data` accepts a JSON object keyed by resolved form id. Both flags also support `@path/to/file.json`.
 
@@ -270,6 +270,7 @@ kanban-md
 
 # With options
 kanban-md --port 8080 --dir .kanban --no-browser
+kanban-md --config /path/to/.kanban.json --no-browser
 ```
 
 The server provides:

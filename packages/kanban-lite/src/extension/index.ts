@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import type { CardStatus, Priority } from '../shared/types'
-import { readConfig } from '../shared/config'
+import { configPath, readConfig } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { startServer } from '../standalone/server'
 import { AUTH_TOKEN_SECRET_KEY, resolveExtensionAuthContext } from './auth'
@@ -128,7 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
         KanbanPanel.serverPort = port
         KanbanPanel.currentPanel?.refresh()
       }
-      standaloneServer = startServer(kanbanDir, port, webviewDir)
+      standaloneServer = startServer(kanbanDir, port, webviewDir, configPath(root))
       standaloneServer.on('error', () => {
         standaloneServer = undefined
       })

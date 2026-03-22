@@ -1,9 +1,10 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
+import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
-import { readConfig } from '../shared/config'
+import { configPath, readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import { AuthError, type AuthContext } from '../sdk/types'
 
@@ -85,35 +86,28 @@ async function getValidStatuses(sdk: KanbanSDK, boardId?: string): Promise<strin
   return columns.map(c => c.id)
 }
 
-// --- Resolve cards directory ---
+// --- Resolve workspace / config paths ---
 
-async function findWorkspaceRoot(startDir: string): Promise<string> {
-  let dir = startDir
-  while (true) {
-    try {
-      await fs.access(path.join(dir, '.git'))
-      return dir
-    } catch {
-      // try package.json
-    }
-    try {
-      await fs.access(path.join(dir, 'package.json'))
-      return dir
-    } catch {
-      // continue up
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) return startDir // reached filesystem root
-    dir = parent
-  }
+function getConfigFilePath(flags: Flags): string | undefined {
+  return typeof flags.config === 'string' ? path.resolve(flags.config) : undefined
 }
 
-async function resolveKanbanDir(flags: Flags): Promise<string> {
+function resolveWorkspaceRootForFlags(flags: Flags): string {
+  const configFilePath = getConfigFilePath(flags)
+  if (configFilePath) {
+    return resolveWorkspaceRoot(process.cwd(), configFilePath)
+  }
+  if (typeof flags.dir === 'string') {
+    return path.dirname(path.resolve(flags.dir))
+  }
+  return resolveWorkspaceRoot(process.cwd())
+}
+
+function resolveKanbanDirForFlags(flags: Flags): string {
   if (typeof flags.dir === 'string') {
     return path.resolve(flags.dir)
   }
-  const root = await findWorkspaceRoot(process.cwd())
-  return path.join(root, '.kanban')
+  return resolveDefaultKanbanDir(process.cwd(), getConfigFilePath(flags))
 }
 
 async function parseJsonFlagValue(value: string, flagName: string): Promise<unknown> {
@@ -1488,14 +1482,16 @@ async function cmdMcp(flags: Flags): Promise<void> {
 }
 
 async function cmdServe(flags: Flags): Promise<void> {
-  const dir = typeof flags.dir === 'string' ? flags.dir : '.kanban'
-  const config = readConfig(process.cwd())
+  const workspaceRoot = resolveWorkspaceRootForFlags(flags)
+  const dir = resolveKanbanDirForFlags(flags)
+  const resolvedConfigFilePath = getConfigFilePath(flags) ?? configPath(workspaceRoot)
+  const config = readConfig(workspaceRoot)
   const port = typeof flags.port === 'string' ? parseInt(flags.port, 10) : config.port
   const noBrowser = !!flags['no-browser']
 
   // Dynamically import the standalone server
   const { startServer } = await import('../standalone/server')
-  const server = startServer(dir, port)
+  const server = startServer(dir, port, undefined, resolvedConfigFilePath)
 
   if (!noBrowser) {
     server.on('listening', async () => {
@@ -1656,6 +1652,7 @@ ${bold('Other:')}
 
 ${bold('Global Options:')}
   --dir <path>                Kanban directory (default: .kanban)
+  --config <path>             Path to the workspace .kanban.json file
   --board <id>                Target board (default: default board)
   --json                      Output as JSON
 
@@ -1835,8 +1832,8 @@ async function main(): Promise<void> {
     return
   }
 
-  const kanbanDir = await resolveKanbanDir(flags)
-  const workspaceRoot = path.dirname(kanbanDir)
+  const workspaceRoot = resolveWorkspaceRootForFlags(flags)
+  const kanbanDir = resolveKanbanDirForFlags(flags)
   const sdk = new KanbanSDK(kanbanDir)
 
   switch (command) {

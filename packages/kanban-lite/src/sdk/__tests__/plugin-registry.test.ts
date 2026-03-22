@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
@@ -1502,3 +1502,84 @@ describe('resolveCapabilityBag – webhookProvider', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// WORKSPACE_ROOT – monorepo detection
+// ---------------------------------------------------------------------------
+
+describe('WORKSPACE_ROOT', () => {
+  it('resolves to a non-null workspace root when running inside the monorepo', () => {
+    // Tests run from packages/kanban-lite/ which is inside the pnpm workspace tree.
+    expect(WORKSPACE_ROOT).toBeTruthy()
+    expect(typeof WORKSPACE_ROOT).toBe('string')
+  })
+
+  it('workspace root contains pnpm-workspace.yaml', () => {
+    expect(WORKSPACE_ROOT).toBeTruthy()
+    expect(fs.existsSync(path.join(WORKSPACE_ROOT!, 'pnpm-workspace.yaml'))).toBe(true)
+  })
+
+  it('workspace root contains packages/ directory with all plugin packages', () => {
+    expect(WORKSPACE_ROOT).toBeTruthy()
+    const packagesDir = path.join(WORKSPACE_ROOT!, 'packages')
+    expect(fs.existsSync(path.join(packagesDir, 'kl-sqlite-storage'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-mysql-storage'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-auth-plugin'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-webhooks-plugin'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-s3-attachment-storage'))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Monorepo workspace-local plugin resolution
+// ---------------------------------------------------------------------------
+
+describe('monorepo workspace-local plugin resolution', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-ws-loader-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('resolves kl-sqlite-storage from workspace packages/ directory', () => {
+    // kl-sqlite-storage is not published to npm but lives in packages/kl-sqlite-storage.
+    // The workspace-local resolution tier must find it there.
+    const bag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: path.join(kanbanDir, 'kanban.db') } },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      kanbanDir,
+    )
+    expect(bag.cardStorage.type).toBe('sqlite')
+  })
+
+  it('resolves kl-mysql-storage from workspace packages/ directory', () => {
+    const bag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      kanbanDir,
+    )
+    expect(bag.cardStorage.type).toBe('mysql')
+  })
+
+  it('resolves kl-auth-plugin NOOP_IDENTITY_PLUGIN from workspace packages/', () => {
+    // kl-auth-plugin is in packages/kl-auth-plugin; the NOOP/RBAC constants are
+    // loaded at module init time via the workspace-local path.
+    expect(NOOP_IDENTITY_PLUGIN.manifest.id).toBe('noop')
+    expect(NOOP_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
+  })
+
+  it('resolves kl-auth-plugin RBAC_IDENTITY_PLUGIN from workspace packages/', () => {
+    expect(RBAC_IDENTITY_PLUGIN.manifest.id).toBe('rbac')
+    expect(RBAC_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
+  })
+})

@@ -80,27 +80,27 @@ await sdk.deleteCard(card.id)
 const SOURCE_GROUPS: { title: string; files: string[] }[] = [
   {
     title: 'KanbanSDK Class',
-    files: ['src/sdk/KanbanSDK.ts'],
+    files: ['packages/kanban-lite/src/sdk/KanbanSDK.ts'],
   },
   {
     title: 'Types',
-    files: ['src/shared/types.ts', 'src/sdk/types.ts'],
+    files: ['packages/kanban-lite/src/shared/types.ts', 'packages/kanban-lite/src/sdk/types.ts'],
   },
   {
     title: 'Configuration',
-    files: ['src/shared/config.ts'],
+    files: ['packages/kanban-lite/src/shared/config.ts'],
   },
   {
     title: 'Parser',
-    files: ['src/sdk/parser.ts'],
+    files: ['packages/kanban-lite/src/sdk/parser.ts'],
   },
   {
     title: 'File Utilities',
-    files: ['src/sdk/fileUtils.ts'],
+    files: ['packages/kanban-lite/src/sdk/fileUtils.ts'],
   },
   {
     title: 'Auth Plugin Contracts',
-    files: ['src/sdk/plugins/index.ts'],
+    files: ['packages/kanban-lite/src/sdk/plugins/index.ts'],
   },
 ]
 
@@ -123,7 +123,7 @@ function compileTypeScript(): void {
       removeComments: false,
       declaration: false,
       outDir: TEMP_DIR,
-      rootDir: path.join(ROOT, 'src'),
+      rootDir: path.join(ROOT, 'packages/kanban-lite/src'),
     },
     files: allFiles,
   }
@@ -143,8 +143,8 @@ function cleanup(): void {
 }
 
 function getTempFile(tsRelativePath: string): string {
-  // src/sdk/KanbanSDK.ts → .tmp-docs/sdk/KanbanSDK.js
-  return path.join(TEMP_DIR, tsRelativePath.replace(/^src\//, '').replace(/\.ts$/, '.js'))
+  // packages/kanban-lite/src/sdk/KanbanSDK.ts → .tmp-docs/sdk/KanbanSDK.js
+  return path.join(TEMP_DIR, tsRelativePath.replace(/^packages\/kanban-lite\/src\//, '').replace(/\.ts$/, '.js'))
 }
 
 async function main() {

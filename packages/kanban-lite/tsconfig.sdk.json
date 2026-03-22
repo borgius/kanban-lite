@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/sdk",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/sdk/**/*",
+    "src/shared/types.ts",
+    "src/shared/config.ts"
+  ],
+  "exclude": [
+    "src/sdk/__tests__"
+  ]
+}

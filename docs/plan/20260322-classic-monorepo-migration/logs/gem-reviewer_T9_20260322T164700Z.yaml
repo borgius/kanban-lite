@@ -1,0 +1,35 @@
+task_id: T9
+plan_id: 20260322-classic-monorepo-migration
+agent: gem-reviewer
+timestamp: "2026-03-22T16:47:00Z"
+status: failed
+failure_type: fixable
+summary: >-
+  Review failed because the plugin verification matrix is overstated and the MySQL
+  root verification path does not execute the promised KanbanSDK workspace test.
+issues:
+  - severity: high
+    category: verification_evidence
+    location: package.json:31-32; packages/kl-mysql-storage/package.json:19-20; docs/plan/20260322-classic-monorepo-migration/plan.yaml:607-617
+    description: >-
+      `pnpm test:plugins:integration` runs `packages/kl-mysql-storage/src/index.integration.test.ts`
+      instead of `src/mysql-kanban-lite.workspace.test.ts`, so the root verification command does not
+      prove the MySQL plugin-with-core workspace consumption path claimed in T7.
+  - severity: medium
+    category: documentation_accuracy
+    location: docs/plan/20260322-classic-monorepo-migration/plan.yaml:607-617
+    description: >-
+      T7 verification notes claim 31 tests across 5 packages, but the current root command executes
+      28 tests (3 auth + 17 mysql + 3 s3 + 3 sqlite + 2 webhooks).
+  - severity: medium
+    category: shim_discipline
+    location: bin/kanban-lite; bin/kl; bin/kanban-mcp; bin/kanban-md
+    description: >-
+      The root `bin/*` entries are tracked symlinks to `../lib/node_modules/kanban-lite/dist/*` and
+      are broken in a fresh checkout, so they are not bounded compatibility shims suitable for an
+      orchestration-only root.
+passed_checks:
+  - Root package metadata is orchestration-only (`private: true`) and delegates build/test/dev flows to `packages/kanban-lite` or `packages/*`.
+  - `packages/kanban-lite/package.json` preserves the public package name, export map, and CLI bin identities.
+  - Plugin loader fallback order is implemented as installed package -> workspace package -> legacy sibling path.
+  - Playwright harness wiring is coherent, and `pnpm run test:e2e` succeeded in the current workspace session.

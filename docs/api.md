@@ -1,10 +1,10 @@
 # Kanban Lite REST API
 
-> This file is generated from `src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.
+> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.
 
 Version: 1.0.0
 
-- Authoritative source: Swagger/OpenAPI in `src/standalone/internal/openapi-spec.ts`
+- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`
 - Interactive docs: `http://localhost:3000/api/docs`
 - OpenAPI JSON: `http://localhost:3000/api/docs/json`
 - Base API URL: `http://localhost:3000/api`

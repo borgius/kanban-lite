@@ -2826,6 +2826,23 @@ relative path does not match this two-level structure, returns `null`.
 
 ## Auth Plugin Contracts
 
+<a name="WORKSPACE_ROOT"></a>
+
+### WORKSPACE\_ROOT
+The pnpm workspace root directory, resolved once at module load time.
+
+- Inside the monorepo checkout: the absolute path to the repository root
+  (contains `pnpm-workspace.yaml`).
+- Outside the monorepo (standalone npm install): `null`.
+
+Used by the plugin loader to probe `packages/{name}` as the primary
+workspace-local resolution path during the staged monorepo migration.
+
+**Kind**: global variable  
+**Internal**:   
+
+* * *
+
 <a name="RBAC_USER_ACTIONS"></a>
 
 ### RBAC\_USER\_ACTIONS
@@ -3004,6 +3021,19 @@ Registry of built-in card.storage plugins keyed by provider id.
 
 * * *
 
+<a name="findWorkspaceRoot"></a>
+
+### findWorkspaceRoot()
+Walks up from `startDir` looking for a `pnpm-workspace.yaml` file that
+marks the workspace root.  Returns the first matching ancestor directory,
+or `null` when running outside the monorepo (e.g., after a standalone npm
+install by a user).
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
 <a name="createRbacIdentityPlugin"></a>
 
 ### createRbacIdentityPlugin(principals)
@@ -3025,6 +3055,19 @@ remain in host/runtime configuration only and must never appear in
 | --- | --- |
 | principals | Map of opaque token → [RbacPrincipalEntry](RbacPrincipalEntry), owned   and populated by the host at startup. |
 
+
+* * *
+
+<a name="tryLoadWorkspacePackage"></a>
+
+### tryLoadWorkspacePackage()
+Tries to load an external plugin from the workspace-local `packages/`
+directory (monorepo layout).  Requires [WORKSPACE_ROOT](#WORKSPACE_ROOT) to be
+discovered; throws `MODULE_NOT_FOUND` when the path does not exist so the
+caller can distinguish "not present in monorepo" from other errors.
+
+**Kind**: global function  
+**Internal**:   
 
 * * *
 

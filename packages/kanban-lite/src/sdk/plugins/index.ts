@@ -15,6 +15,51 @@ const runtimeRequire = createRequire(
 )
 
 // ---------------------------------------------------------------------------
+// Monorepo workspace root detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Walks up from `startDir` looking for a `pnpm-workspace.yaml` file that
+ * marks the workspace root.  Returns the first matching ancestor directory,
+ * or `null` when running outside the monorepo (e.g., after a standalone npm
+ * install by a user).
+ *
+ * @internal
+ */
+function findWorkspaceRoot(startDir: string): string | null {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { existsSync } = require('node:fs') as typeof import('node:fs')
+  let dir = startDir
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(path.join(dir, 'pnpm-workspace.yaml'))) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+  return null
+}
+
+/**
+ * The pnpm workspace root directory, resolved once at module load time.
+ *
+ * - Inside the monorepo checkout: the absolute path to the repository root
+ *   (contains `pnpm-workspace.yaml`).
+ * - Outside the monorepo (standalone npm install): `null`.
+ *
+ * Used by the plugin loader to probe `packages/{name}` as the primary
+ * workspace-local resolution path during the staged monorepo migration.
+ *
+ * @internal
+ */
+export const WORKSPACE_ROOT: string | null = findWorkspaceRoot(
+  path.dirname(
+    typeof __filename === 'string' && __filename
+      ? __filename
+      : path.join(process.cwd(), '__kanban-runtime__.cjs'),
+  ),
+)
+
+// ---------------------------------------------------------------------------
 // Auth plugin contracts and built-in noop implementations
 // ---------------------------------------------------------------------------
 
@@ -600,21 +645,51 @@ function tryLoadSiblingPackage(request: string): unknown {
   return runtimeRequire(siblingPackagePath)
 }
 
+/**
+ * Tries to load an external plugin from the workspace-local `packages/`
+ * directory (monorepo layout).  Requires {@link WORKSPACE_ROOT} to be
+ * discovered; throws `MODULE_NOT_FOUND` when the path does not exist so the
+ * caller can distinguish "not present in monorepo" from other errors.
+ *
+ * @internal
+ */
+function tryLoadWorkspacePackage(request: string): unknown {
+  if (!WORKSPACE_ROOT) {
+    throw Object.assign(new Error(`Cannot find module '${request}'`), { code: 'MODULE_NOT_FOUND' })
+  }
+  const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
+  return runtimeRequire(workspacePackagePath)
+}
+
 function loadExternalModule(request: string): unknown {
+  // 1. Standard npm resolution (installed package or pnpm workspace symlink).
   try {
     return runtimeRequire(request)
   } catch (err: unknown) {
     if (!isMissingRequestedModule(request, err)) throw err
+  }
 
+  // 2. Workspace-local packages/{request} (monorepo layout — primary path
+  //    during the staged migration before the package is published to npm).
+  if (WORKSPACE_ROOT) {
+    const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
     try {
-      return tryLoadSiblingPackage(request)
-    } catch (siblingErr: unknown) {
-      const siblingPackagePath = path.resolve(process.cwd(), '..', request)
-      if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
-        throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
-      }
-      throw siblingErr
+      return runtimeRequire(workspacePackagePath)
+    } catch (workspaceErr: unknown) {
+      if (!isMissingRequestedModule(workspacePackagePath, workspaceErr)) throw workspaceErr
     }
+  }
+
+  // 3. Legacy sibling path ../request (backward-compat for non-monorepo
+  //    checkouts where plugin repos live as siblings of this repository).
+  const siblingPackagePath = path.resolve(process.cwd(), '..', request)
+  try {
+    return runtimeRequire(siblingPackagePath)
+  } catch (siblingErr: unknown) {
+    if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
+      throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
+    }
+    throw siblingErr
   }
 }
 

@@ -30,6 +30,19 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     return true
   }
 
+  params = route('GET', '/api/health')
+  if (params) {
+    const config = readConfig(workspaceRoot)
+    jsonOk(res, {
+      ok: true,
+      boardCount: sdk.listBoards().length,
+      defaultBoard: config.defaultBoard,
+      currentBoard: ctx.currentBoardId ?? config.defaultBoard,
+      workspaceRoot,
+    })
+    return true
+  }
+
   params = route('GET', '/api/columns')
   if (params) {
     jsonOk(res, sdk.listColumns(ctx.currentBoardId))

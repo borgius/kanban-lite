@@ -1,0 +1,130 @@
+{
+  "name": "kanban-lite",
+  "version": "1.2.0",
+  "description": "Kanban board manager - VSCode extension, CLI, MCP server, and standalone web app",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borgius/kanban-lite"
+  },
+  "bugs": {
+    "url": "https://github.com/borgius/kanban-lite/issues"
+  },
+  "homepage": "https://github.com/borgius/kanban-lite#readme",
+  "publisher": "borgius",
+  "displayName": "Kanban Lite",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onWebviewPanel:kanban-lite.panel",
+    "onView:kanban-lite.boardView"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "bin": {
+    "kanban-md": "./dist/standalone.js",
+    "kanban-lite": "./dist/cli.js",
+    "kl": "./dist/cli.js",
+    "kanban-mcp": "./dist/mcp-server.js"
+  },
+  "exports": {
+    ".": "./dist/extension.js",
+    "./sdk": {
+      "types": "./dist/sdk/sdk/index.d.ts",
+      "import": "./dist/sdk/index.mjs",
+      "require": "./dist/sdk/index.cjs"
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kanban-lite",
+          "title": "Kanban Lite",
+          "icon": "resources/kanban.svg"
+        }
+      ]
+    },
+    "views": {
+      "kanban-lite": [
+        {
+          "id": "kanban-lite.boardView",
+          "name": "Board",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "kanban-lite.open",
+        "title": "Open Kanban Board",
+        "category": "Kanban Lite",
+        "icon": {
+          "light": "resources/kanban-light.svg",
+          "dark": "resources/kanban-dark.svg"
+        }
+      },
+      {
+        "command": "kanban-lite.addCard",
+        "title": "Add Card",
+        "category": "Kanban Lite"
+      },
+      {
+        "command": "kanban-lite.setAuthToken",
+        "title": "Set Auth Token",
+        "category": "Kanban Lite"
+      },
+      {
+        "command": "kanban-lite.clearAuthToken",
+        "title": "Clear Auth Token",
+        "category": "Kanban Lite"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "kanban-lite.open",
+          "when": "resourceLangId == markdown"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run build",
+    "build": "pnpm run build:extension && pnpm run build:standalone-webview && pnpm run build:cli && pnpm run build:mcp && pnpm run build:sdk",
+    "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.cjs --format=cjs --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.mjs --format=esm --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && tsc -p tsconfig.sdk.json",
+    "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
+    "build:mcp": "esbuild src/mcp-server/index.ts --bundle --outfile=dist/mcp-server.js --format=cjs --platform=node --external:@modelcontextprotocol/sdk --external:zod --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
+    "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node",
+    "build:standalone": "pnpm run build:standalone-server && pnpm run build:standalone-webview",
+    "build:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --external:@fastify/swagger --external:@fastify/swagger-ui --banner:js=\"#!/usr/bin/env node\"",
+    "build:standalone-webview": "vite build --config vite.standalone.config.ts",
+    "cli": "tsx src/cli/index.ts",
+    "mcp": "tsx src/mcp-server/index.ts",
+    "standalone": "pnpm run build:standalone && node dist/standalone.js",
+    "standalone:e2e:serve": "pnpm run build:standalone && node dist/standalone.js --dir ../../tmp/e2e/workspace/.kanban --port 4173 --no-browser",
+    "watch": "concurrently \"pnpm run watch:extension\" \"pnpm run watch:standalone-webview\"",
+    "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node --watch",
+    "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch",
+    "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --external:@fastify/swagger --external:@fastify/swagger-ui --banner:js=\"#!/usr/bin/env node\" --watch",
+    "dev": "pnpm run build:standalone-server && concurrently \"pnpm run watch:extension\" \"pnpm run watch:standalone-server\" \"pnpm run dev:standalone-server\" \"pnpm run dev:standalone-vite\"",
+    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 2954 --no-browser",
+    "dev:standalone-vite": "vite dev --config vite.standalone.config.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "pnpm --dir ../.. run test:e2e:root",
+    "test:integration:minio": "pnpm --dir ../.. run minio:up && vitest run --config vitest.integration.config.ts src/sdk/__tests__/s3-attachment.integration.test.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sdk.json",
+    "docs": "pnpm --dir ../.. run docs:root",
+    "docs:sdk": "pnpm --dir ../.. run docs:root:sdk",
+    "docs:api": "pnpm --dir ../.. run docs:root:api",
+    "docs:webhooks": "pnpm --dir ../.. run docs:root:webhooks",
+    "package": "vsce package --no-dependencies -o ../../releases/",
+    "publish:all": "vsce publish && ovsx publish"
+  }
+}

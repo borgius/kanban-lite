@@ -4,13 +4,13 @@
  * `scripts/generate-api-docs.ts` entrypoint while switching the docs pipeline
  * to the standalone Swagger/OpenAPI source of truth.
  *
- * Source of truth: `src/standalone/internal/openapi-spec.ts`
+ * Source of truth: `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`
  * Output: `docs/api.md`
  */
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { KANBAN_OPENAPI_SPEC } from '../src/standalone/internal/openapi-spec'
+import { KANBAN_OPENAPI_SPEC } from '../packages/kanban-lite/src/standalone/internal/openapi-spec'
 
 const ROOT = path.resolve(__dirname, '..')
 const OUT = path.join(ROOT, 'docs', 'api.md')
@@ -173,11 +173,11 @@ function buildMarkdown(): string {
   const lines: string[] = [
     `# ${spec.info.title}`,
     '',
-    '> This file is generated from `src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.',
+    '> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.',
     '',
     `Version: ${spec.info.version ?? 'unversioned'}`,
     '',
-    '- Authoritative source: Swagger/OpenAPI in `src/standalone/internal/openapi-spec.ts`',
+    '- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`',
     '- Interactive docs: `http://localhost:3000/api/docs`',
     '- OpenAPI JSON: `http://localhost:3000/api/docs/json`',
     '- Base API URL: `http://localhost:3000/api`',
@@ -218,4 +218,4 @@ function buildMarkdown(): string {
 }
 
 fs.writeFileSync(OUT, buildMarkdown(), 'utf8')
-console.log(`Generated ${path.relative(ROOT, OUT)} from src/standalone/internal/openapi-spec.ts`)
+console.log(`Generated ${path.relative(ROOT, OUT)} from packages/kanban-lite/src/standalone/internal/openapi-spec.ts`)

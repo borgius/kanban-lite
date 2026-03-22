@@ -1,1 +1,3 @@
-../lib/node_modules/kanban-lite/dist/standalone.js
+#!/usr/bin/env node
+// Compatibility shim: forwards to packages/kanban-lite dist standalone server
+require('../packages/kanban-lite/dist/standalone.js')

@@ -9,17 +9,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "outDir": "dist/sdk",
-    "rootDir": "src"
-  },
-  "include": [
-    "src/sdk/**/*",
-    "src/shared/types.ts",
-    "src/shared/config.ts"
-  ],
-  "exclude": [
-    "src/sdk/__tests__"
-  ]
+    "ignoreDeprecations": "5.0"
+  }
 }

@@ -1,9 +1,8 @@
 {
-  "name": "kanban-lite",
-  "displayName": "Kanban Lite",
-  "description": "A kanban board for your codebase. Cards stored as markdown.",
+  "name": "@kanban-lite/workspace",
+  "private": true,
+  "description": "Private workspace controller for the kanban-lite monorepo.",
   "version": "1.2.0",
-  "publisher": "borgius",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,144 +12,44 @@
     "url": "https://github.com/borgius/kanban-lite/issues"
   },
   "homepage": "https://github.com/borgius/kanban-lite#readme",
-  "icon": "resources/icon.png",
-  "galleryBanner": {
-    "color": "#1e1e1e",
-    "theme": "dark"
-  },
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Other",
-    "Visualization"
-  ],
-  "keywords": [
-    "kanban",
-    "markdown",
-    "project management",
-    "task management",
-    "board"
-  ],
-  "activationEvents": [
-    "onWebviewPanel:kanban-lite.panel",
-    "onView:kanban-lite.boardView"
-  ],
-  "main": "./dist/extension.js",
-  "exports": {
-    ".": "./dist/extension.js",
-    "./sdk": {
-      "types": "./dist/sdk/sdk/index.d.ts",
-      "import": "./dist/sdk/index.mjs",
-      "require": "./dist/sdk/index.cjs"
-    }
-  },
-  "typesVersions": {
-    "*": {
-      "sdk": [
-        "./dist/sdk/sdk/index.d.ts"
-      ]
-    }
-  },
-  "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "kanban-lite",
-          "title": "Kanban Lite",
-          "icon": "resources/kanban.svg"
-        }
-      ]
-    },
-    "views": {
-      "kanban-lite": [
-        {
-          "id": "kanban-lite.boardView",
-          "name": "Board",
-          "type": "webview"
-        }
-      ]
-    },
-    "commands": [
-      {
-        "command": "kanban-lite.open",
-        "title": "Open Kanban Board",
-        "category": "Kanban Lite",
-        "icon": {
-          "light": "resources/kanban-light.svg",
-          "dark": "resources/kanban-dark.svg"
-        }
-      },
-      {
-        "command": "kanban-lite.addCard",
-        "title": "Add Card",
-        "category": "Kanban Lite"
-      },
-      {
-        "command": "kanban-lite.setAuthToken",
-        "title": "Set Auth Token",
-        "category": "Kanban Lite"
-      },
-      {
-        "command": "kanban-lite.clearAuthToken",
-        "title": "Clear Auth Token",
-        "category": "Kanban Lite"
-      }
-    ],
-    "menus": {
-      "editor/title/run": [
-        {
-          "command": "kanban-lite.open",
-          "when": "resourceLangId == markdown"
-        }
-      ]
-    }
-  },
-  "bin": {
-    "kanban-md": "./dist/standalone.js",
-    "kanban-lite": "./dist/cli.js",
-    "kl": "./dist/cli.js",
-    "kanban-mcp": "./dist/mcp-server.js"
-  },
   "scripts": {
-    "publish:all": "vsce publish && ovsx publish",
-    "vscode:prepublish": "npm run build",
     "minio:up": "docker compose up -d minio minio-init",
     "minio:down": "docker compose down",
-    "build": "npm run build:extension && npm run build:standalone-webview && npm run build:cli && npm run build:mcp && npm run build:sdk",
-    "build:sdk": "esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.cjs --format=cjs --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && esbuild src/sdk/index.ts --bundle --outfile=dist/sdk/index.mjs --format=esm --platform=node --external:better-sqlite3 --external:mysql2 --external:mysql2/promise && tsc -p tsconfig.sdk.json",
-    "build:cli": "esbuild src/cli/index.ts --bundle --outfile=dist/cli.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
-    "cli": "tsx src/cli/index.ts",
-    "mcp": "tsx src/mcp-server/index.ts",
-    "build:mcp": "esbuild src/mcp-server/index.ts --bundle --outfile=dist/mcp-server.js --format=cjs --platform=node --external:@modelcontextprotocol/sdk --external:zod --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
-    "build:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node",
-    "build:standalone": "npm run build:standalone-server && npm run build:standalone-webview",
-    "build:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\"",
-    "build:standalone-webview": "vite build --config vite.standalone.config.ts",
-    "standalone": "npm run build:standalone && node dist/standalone.js",
-    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:standalone-webview\"",
-    "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node --watch",
-    "watch:standalone-webview": "vite build --config vite.standalone.config.ts --watch",
-    "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --banner:js=\"#!/usr/bin/env node\" --watch",
-    "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 2954 --no-browser",
-    "dev:standalone-vite": "vite dev --config vite.standalone.config.ts",
-    "dev": "npm run build:standalone-server && concurrently \"npm run watch:extension\" \"npm run watch:standalone-server\" \"npm run dev:standalone-server\" \"npm run dev:standalone-vite\"",
-    "test": "vitest run",
-    "test:integration:minio": "npm run minio:up && vitest run --config vitest.integration.config.ts src/sdk/__tests__/s3-attachment.integration.test.ts",
-    "test:watch": "vitest",
-    "lint": "eslint src",
-    "typecheck": "tsc --noEmit",
-    "docs": "npm run docs:sdk && npm run docs:api && npm run docs:webhooks",
-    "docs:sdk": "npx tsx scripts/generate-sdk-docs.ts",
-    "docs:api": "npx tsx scripts/generate-api-docs.ts",
-    "docs:webhooks": "npx tsx scripts/generate-webhooks-docs.ts",
-    "package": "vsce package --no-dependencies -o releases/",
-    "release": "npm version patch && npm run build && npm publish && npm run package && npm run release:github",
-    "release:minor": "npm version minor && npm run build && npm publish && npm run package && npm run release:github",
-    "release:major": "npm version major && npm run build && npm publish && npm run package && npm run release:github",
-    "release:github": "git push origin v$(node -p \"require('./package.json').version\") && gh release create v$(node -p \"require('./package.json').version\") releases/kanban-lite-$(node -p \"require('./package.json').version\").vsix --generate-notes"
+    "build": "pnpm --filter kanban-lite build",
+    "build:workspace": "pnpm --filter './packages/*' --if-present run build",
+    "cli": "pnpm --filter kanban-lite cli",
+    "mcp": "pnpm --filter kanban-lite mcp",
+    "standalone": "pnpm --filter kanban-lite standalone",
+    "watch": "pnpm --filter kanban-lite watch",
+    "watch:workspace": "pnpm --filter './packages/*' --if-present run watch",
+    "dev": "pnpm --filter kanban-lite dev -- --dir /Users/admin/dev/kanban-light/.kanban",
+    "dev:workspace": "pnpm --filter './packages/*' --if-present run dev",
+    "test": "pnpm --filter kanban-lite test",
+    "test:workspace": "pnpm --filter './packages/*' --if-present run test",
+    "test:integration": "pnpm --filter kanban-lite --if-present run test:integration:minio",
+    "test:integration:minio": "pnpm --filter kanban-lite --if-present run test:integration:minio",
+    "test:plugins:integration": "pnpm --filter 'kl-*' --if-present run test:integration",
+    "test:plugins:mysql": "pnpm --filter kl-mysql-storage run test:integration",
+    "test:plugins:mysql:service": "pnpm --filter kl-mysql-storage run test:integration:service",
+    "test:watch": "pnpm --filter kanban-lite test:watch",
+    "test:watch:workspace": "pnpm --filter './packages/*' --if-present run test:watch",
+    "test:e2e": "playwright test --config=playwright.config.ts",
+    "test:e2e:root": "playwright test --config=playwright.config.ts",
+    "test:e2e:prepare": "tsx packages/kanban-lite/e2e/prepare-fixture.ts",
+    "standalone:e2e": "pnpm run test:e2e:prepare && pnpm --filter kanban-lite run standalone:e2e:serve",
+    "lint": "pnpm --filter kanban-lite lint",
+    "lint:workspace": "pnpm --filter './packages/*' --if-present run lint",
+    "typecheck": "pnpm --filter kanban-lite typecheck",
+    "typecheck:workspace": "pnpm --filter './packages/*' --if-present run typecheck",
+    "docs": "pnpm --filter kanban-lite docs",
+    "docs:workspace": "pnpm --filter './packages/*' --if-present run docs",
+    "docs:root": "pnpm run docs:root:sdk && pnpm run docs:root:api && pnpm run docs:root:webhooks",
+    "docs:root:sdk": "npx tsx scripts/generate-sdk-docs.ts",
+    "docs:root:api": "npx tsx scripts/generate-api-docs.ts",
+    "docs:root:webhooks": "npx tsx scripts/generate-webhooks-docs.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@eslint/js": "^9.39.2",
     "@tailwindcss/typography": "^0.5.19",
     "@types/js-yaml": "^4.0.9",

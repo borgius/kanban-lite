@@ -1,0 +1,551 @@
+plan_id: 20260321-webhooks-external-plugin
+objective: |
+	Move webhook registry CRUD and runtime listener/delivery out of kanban-light core into
+	an external npm plugin package loaded like storage plugins; remove built-in webhook
+	implementation from core as much as safely possible; preserve SDK/API/CLI/MCP/standalone
+	behavior parity; support local sibling-repo development/linking modeled on
+	`/Users/admin/dev/kl-sqlite-storage`; compile successfully; and verify linked-plugin
+	behavior before final cleanup.
+created_at: "2026-03-21"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+	The lowest-risk path is a compatibility-first extraction: introduce one dedicated
+	webhook provider capability in core, keep the existing SDK event bus and public webhook
+	methods, and delegate both webhook CRUD and runtime event delivery to an external package
+	instead of finishing a broader generic event-listener framework now. The external package
+	should preserve the current `.kanban.json` `webhooks` array shape, delivery headers,
+	HMAC signing, timeout, and fire-and-forget semantics so CLI/API/MCP/standalone behavior
+	stays the same after the plugin is linked. Core should remove the always-on built-in
+	`WebhookListenerPlugin` path and direct `fireWebhooks()` fallback, leaving at most thin,
+	temporary compatibility shims while the new provider contract settles.
+
+open_questions:
+	- "Assume package name `kl-webhooks-plugin` and provider id `webhooks`; rename is mechanical if maintainers prefer a different public name."
+
+pre_mortem:
+	overall_risk_level: high
+	critical_failure_modes:
+		- scenario: Core and the external plugin both subscribe to SDK events, causing duplicate webhook delivery.
+			likelihood: high
+			impact: critical
+			mitigation: |
+				Make the external provider the only runtime webhook subscriber, remove the built-in
+				`WebhookListenerPlugin` initialization from `KanbanSDK`, and add regression coverage
+				that proves exactly one outbound request per emitted SDK event.
+		- scenario: Existing workspaces lose webhook CRUD/runtime behavior because the new provider is not resolved automatically from legacy config.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Normalize legacy webhook behavior to a default `webhooks` provider contract, keep the
+				persisted `.kanban.json` shape unchanged, and emit deterministic install guidance when
+				the external package is absent instead of silently disabling webhooks.
+		- scenario: The plugin package exports/build shape does not match the runtime loader expectations, breaking sibling fallback or npm linking.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Mirror the `kl-sqlite-storage` package structure (CommonJS bundle, `exports`, `types`,
+				peer dependency on `kanban-lite`), verify both sibling fallback and `npm link`, and add
+				a focused loader test for alias resolution.
+		- scenario: Removing `src/sdk/webhooks.ts` too early breaks direct internal imports, tests, or generated docs before parity is proven.
+			likelihood: medium
+			impact: high
+			mitigation: |
+				Convert core webhook files to thin delegating shims first, switch all primary callers to
+				the provider contract, and only delete or hard-deprecate old entrypoints after build and
+				focused parity checks pass.
+	assumptions:
+		- The current SDK event bus is the right dispatch seam and does not need a broader pub/sub redesign in this task.
+		- Backward-compatible SDK/API/CLI/MCP behavior is more important than fully deleting every legacy symbol in the first pass.
+		- The external plugin may continue persisting the webhook registry in `.kanban.json` for parity, even though ownership moves out of core.
+		- No `docs/prd.yaml` exists today, so there is no existing PRD conflict to reconcile.
+
+implementation_specification:
+	code_structure: |
+		Keep `KanbanSDK` as the single orchestrator. Add one new webhook-provider contract to the
+		SDK plugin resolver layer, alongside provider alias mapping and sibling-package fallback
+		already used for storage plugins. The resolved capability bag should expose an optional
+		webhook provider object that owns CRUD plus creation/lifecycle of a bus subscriber built on
+		the existing `EventListenerPlugin` type. The external package should mirror the
+		`kl-sqlite-storage` packaging/build pattern and preserve the current webhook config and
+		delivery semantics. Interface layers (API, CLI, MCP) should remain thin SDK delegates.
+	affected_areas:
+		- src/shared/config.ts
+		- src/sdk/types.ts
+		- src/sdk/plugins/index.ts
+		- src/sdk/KanbanSDK.ts
+		- src/sdk/webhooks.ts
+		- src/sdk/plugins/webhookListener.ts
+		- src/sdk/index.ts
+		- src/standalone/internal/routes/system.ts
+		- src/standalone/server.ts
+		- src/cli/index.ts
+		- src/mcp-server/index.ts
+		- src/sdk/__tests__/
+		- src/cli/index.test.ts
+		- src/mcp-server/index.test.ts
+		- scripts/generate-api-docs.ts
+		- scripts/generate-sdk-docs.ts
+		- scripts/generate-webhooks-docs.ts
+		- README.md
+		- CHANGELOG.md
+		- /Users/admin/dev/kl-webhooks-plugin/
+	component_details:
+		- component: Webhook provider contract in core
+			responsibility: Define the single plugin-facing interface that owns webhook registry CRUD, provider metadata, and creation of the runtime event listener used by `KanbanSDK`.
+			interfaces:
+				- "New webhook capability namespace and provider ref normalization in `src/shared/config.ts`"
+				- "`WebhookProviderPlugin` contract exposed from the SDK plugin layer"
+				- "Resolved capability bag entry used by `KanbanSDK` and diagnostics"
+		- component: External webhook plugin package
+			responsibility: Implement current webhook behavior outside core, including loading/saving the registry, event filtering, HMAC signing, POST delivery, and listener lifecycle.
+			interfaces:
+				- "CommonJS package export compatible with runtime `createRequire` loading"
+				- "Provider manifest using id `webhooks` and the webhook capability namespace"
+				- "Optional thin compatibility helpers for migration/testing"
+		- component: SDK delegation and cleanup
+			responsibility: Replace built-in webhook logic with provider delegation while preserving public SDK methods and auth checks.
+			interfaces:
+				- "`KanbanSDK.listWebhooks/createWebhook/updateWebhook/deleteWebhook` delegating through the resolved provider"
+				- "Single event-bus subscription path for outbound webhook delivery"
+		- component: Host parity surfaces
+			responsibility: Keep REST, CLI, and MCP webhook behavior stable while surfacing deterministic install/configuration errors and provider status.
+			interfaces:
+				- "Standalone `/api/webhooks` routes"
+				- "CLI webhook commands"
+				- "MCP webhook tools"
+		- component: Documentation and generated references
+			responsibility: Update user-facing install/migration guidance and regenerate API/SDK/webhook docs from source metadata.
+			interfaces:
+				- "README and CHANGELOG"
+				- "Generated docs from scripts under `scripts/`"
+	dependencies:
+		- component: Webhook provider contract in core
+			relationship: Must land first so the sibling package and all host surfaces target a stable interface.
+		- component: External webhook plugin package
+			relationship: Depends on the core contract and provides the runtime implementation consumed by the SDK.
+		- component: SDK delegation and cleanup
+			relationship: Depends on both the contract and the external package so built-in webhook code can be removed without behavior drift.
+		- component: Host parity surfaces
+			relationship: Depend on SDK delegation; they should not implement webhook logic directly.
+		- component: Documentation and generated references
+			relationship: Depend on final CLI/API/MCP behavior and linked-plugin workflow.
+	integration_points:
+		- `src/shared/config.ts` is the safest place to normalize legacy webhook behavior into provider resolution without changing the persisted config schema.
+		- `src/sdk/plugins/index.ts` already owns provider alias mapping, `createRequire`, and sibling fallback, so webhook plugin loading should reuse that machinery.
+		- `KanbanSDK` constructor/init is the single place where event listener lifecycle should be attached and detached.
+		- `src/standalone/internal/routes/system.ts`, `src/cli/index.ts`, and `src/mcp-server/index.ts` should continue delegating webhook CRUD through the SDK only.
+		- Docs generation must remain source-driven; do not hand-edit generated docs.
+
+contracts:
+	- from_task: T1
+		to_task: T2
+		interface: Webhook provider manifest and contract
+		format: "Typed provider contract with manifest id/provides, CRUD methods, and listener factory/lifecycle returning or owning an `EventListenerPlugin`-compatible subscriber"
+	- from_task: T2
+		to_task: T3
+		interface: Loadable plugin package
+		format: "CommonJS package with `exports`, declarations, and named/default export shape accepted by core runtime loading and sibling fallback"
+	- from_task: T3
+		to_task: T4
+		interface: Stable SDK webhook API and provider status
+		format: "Existing `KanbanSDK` webhook methods plus deterministic provider install/configuration errors and runtime status metadata"
+	- from_task: T4
+		to_task: T5
+		interface: REST webhook parity
+		format: "Unchanged request/response semantics for `/api/webhooks` backed only by SDK delegation"
+	- from_task: T5
+		to_task: T6
+		interface: CLI webhook parity
+		format: "CLI command behavior/output aligned with SDK/API semantics and provider-backed errors"
+	- from_task: T6
+		to_task: T7
+		interface: Final runtime semantics for tests
+		format: "Single-delivery event flow, provider-backed CRUD, and linked-plugin loading behavior"
+	- from_task: T7
+		to_task: T8
+		interface: Final public behavior and install story
+		format: "README/CHANGELOG/doc-generator source updates reflecting plugin install, sibling linking, and compatibility notes"
+	- from_task: T8
+		to_task: T9
+		interface: Documented and implemented final flow
+		format: "Buildable repos plus explicit verification matrix and rollback checklist"
+
+rollback_notes:
+	- "Keep `src/sdk/webhooks.ts` and `src/sdk/plugins/webhookListener.ts` as temporary delegating shims until the linked-plugin build and parity tests pass."
+	- "If plugin resolution is unstable, revert the new webhook provider alias/contract wiring, restore the built-in `WebhookListenerPlugin` initialization in `KanbanSDK`, and leave docs unchanged."
+	- "If sibling linking breaks local development, unlink/remove the external package, fall back to sibling-package resolution only, and postpone deletion of legacy webhook files."
+	- "Do not delete legacy tests until provider-backed replacements prove SDK/API/CLI/MCP parity and single-delivery behavior."
+
+tasks:
+	- id: T1
+		title: Define the core webhook provider contract and compatibility normalization
+		description: |
+			Add the minimum new core contract needed to externalize webhooks without redesigning the
+			whole plugin/event system: a dedicated webhook provider capability, provider alias mapping,
+			sibling-package resolution, and legacy normalization so existing webhook behavior still maps
+			to a provider-backed flow. Reuse the existing `EventListenerPlugin` type as the listener
+			lifecycle shape instead of broadening the dormant generic `eventListeners` array in this task.
+		wave: 1
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies: []
+		context_files:
+			src/shared/config.ts: "Legacy config schema and compatibility normalization point."
+			src/sdk/types.ts: "Contains `EventListenerPlugin`, SDK event types, and public SDK options."
+			src/sdk/plugins/index.ts: "Owns provider alias mapping, createRequire loading, and capability resolution."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 260
+		focus_area: webhook provider contract
+		verification:
+			- "Legacy webhook-enabled workspaces resolve a deterministic webhook provider path without changing `.kanban.json` shape."
+			- "Provider alias resolution supports both installed package loading and sibling fallback from `../kl-webhooks-plugin`."
+			- "TypeScript surfaces remain backward-compatible for existing SDK callers that only use `KanbanSDK` methods."
+		acceptance_criteria:
+			- "A single webhook provider contract exists for CRUD plus listener lifecycle."
+			- "Core no longer needs webhook delivery details to be encoded in `KanbanSDK` itself."
+			- "The contract explicitly avoids finishing a broader generic event-listener architecture in this task."
+		failure_modes:
+			- scenario: The new contract is too generic and balloons the task into a full pub/sub/plugin redesign.
+				likelihood: medium
+				impact: high
+				mitigation: "Keep the contract webhook-specific and reuse `EventListenerPlugin` only as a returned lifecycle shape."
+			- scenario: Legacy config silently stops enabling webhook behavior.
+				likelihood: medium
+				impact: high
+				mitigation: "Normalize legacy webhook behavior to the provider contract and add loader tests before cleanup starts."
+		tech_stack:
+			- TypeScript
+			- Node.js createRequire runtime loading
+			- Existing kanban-lite plugin resolver conventions
+		test_coverage: "Add/adjust focused loader and normalization tests around webhook provider resolution."
+
+	- id: T2
+		title: Build the sibling external webhook plugin package from the storage-plugin model
+		description: |
+			Create `/Users/admin/dev/kl-webhooks-plugin` using `kl-sqlite-storage` as the packaging and
+			local-development model: CommonJS bundle, declarations, peer dependency on `kanban-lite`,
+			explicit `exports`, and package-local tests. Implement the current webhook registry CRUD and
+			delivery behavior in the package, preserving `.kanban.json` storage shape, event filtering,
+			POST payload/envelope, HMAC signature header, timeout, and non-blocking error handling.
+		wave: 2
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+		context_files:
+			/Users/admin/dev/kl-sqlite-storage/package.json: "Reference package/export/build shape to mirror."
+			/Users/admin/dev/kl-sqlite-storage/README.md: "Reference install, provider, and compatibility documentation pattern."
+			src/sdk/webhooks.ts: "Current core behavior to reproduce externally with no semantic drift."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 420
+		focus_area: external plugin implementation
+		verification:
+			- "The sibling package builds to a CommonJS entrypoint and emits declarations."
+			- "Package-local tests prove CRUD persistence and outbound delivery semantics match current core behavior."
+			- "The package can be loaded from a sibling path before any `npm link` step."
+		acceptance_criteria:
+			- "The package exports the provider in the shape expected by the core loader."
+			- "All current webhook runtime semantics are implemented outside kanban-light core."
+			- "The package readme documents install and local dev expectations."
+		failure_modes:
+			- scenario: The package export shape does not match the runtime loader.
+				likelihood: medium
+				impact: high
+				mitigation: "Mirror `kl-sqlite-storage` exports exactly and validate with a real load test from kanban-light."
+			- scenario: The package changes webhook persistence or delivery semantics.
+				likelihood: medium
+				impact: high
+				mitigation: "Port focused tests from core behavior and keep the persisted `.kanban.json` schema unchanged."
+		tech_stack:
+			- TypeScript
+			- esbuild CommonJS bundling
+			- Vitest
+		test_coverage: "Package-local unit tests for registry CRUD, filtering, HMAC signing, and error swallowing."
+
+	- id: T3
+		title: Delegate SDK webhook behavior to the provider and remove the built-in delivery path
+		description: |
+			Integrate the new provider into `KanbanSDK`: resolve it from the capability bag, wire its
+			listener lifecycle to the SDK event bus, delegate the existing webhook CRUD methods through
+			the provider, and remove the always-on built-in `WebhookListenerPlugin` plus the direct
+			`fireWebhooks()` fallback path. Keep only minimal shims where needed to avoid unnecessary
+			churn while build/test parity is still being proven.
+		wave: 3
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T1
+			- T2
+		context_files:
+			src/sdk/KanbanSDK.ts: "Current webhook initialization, event emission, and public webhook methods."
+			src/sdk/webhooks.ts: "Legacy core implementation to shrink into a shim or remove after delegation."
+			src/sdk/plugins/webhookListener.ts: "Built-in listener path that must stop being the source of delivery."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 320
+		focus_area: sdk delegation and cleanup
+		verification:
+			- "`KanbanSDK` emits events once and outbound webhook delivery happens once per event."
+			- "`listWebhooks/createWebhook/updateWebhook/deleteWebhook` keep their public signatures and auth gating."
+			- "No direct `fireWebhooks()` fallback remains in the main SDK event path."
+		acceptance_criteria:
+			- "The external provider becomes the only runtime webhook delivery implementation."
+			- "The SDK remains the single source of truth for host surfaces and auth checks."
+			- "Core webhook files are deleted or reduced to temporary compatibility shims only."
+		failure_modes:
+			- scenario: `onEvent` and the provider listener both deliver the same mutation.
+				likelihood: high
+				impact: critical
+				mitigation: "Treat `onEvent` strictly as a compatibility callback bridge and add a regression test for single delivery."
+			- scenario: Removing the built-in files breaks hidden imports or tests.
+				likelihood: medium
+				impact: high
+				mitigation: "Use thin forwarders during transition and delete only after focused parity verification."
+		tech_stack:
+			- TypeScript
+			- Existing SDK event bus
+			- Existing auth gating in KanbanSDK
+		test_coverage: "Focused SDK tests covering CRUD delegation, provider loading, and single-delivery event flow."
+
+	- id: T4
+		title: Keep standalone API and system diagnostics behavior unchanged on top of the plugin-backed SDK
+		description: |
+			Update the standalone server integration points so `/api/webhooks` and any provider/status
+			reporting continue to behave the same while relying entirely on SDK delegation. Add clear
+			install/configuration errors when the webhook provider cannot be loaded, and ensure the
+			runtime no longer assumes a built-in webhook implementation exists in core.
+		wave: 4
+		agent: gem-implementer
+		priority: high
+		status: completed
+		dependencies:
+			- T3
+		context_files:
+			src/standalone/internal/routes/system.ts: "REST webhook CRUD surface."
+			src/standalone/server.ts: "Server bootstrapping and SDK wiring."
+			src/standalone/internal/routes/common.ts: "Provider summary helpers used by system/status routes."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 180
+		focus_area: standalone/api parity
+		verification:
+			- "GET/POST/PUT/DELETE `/api/webhooks` still return the same shapes against the linked provider."
+			- "Standalone diagnostics can report the active webhook provider or a deterministic missing-plugin error."
+			- "Runtime deliveries continue through the external provider while websocket broadcast behavior remains unchanged."
+		acceptance_criteria:
+			- "Standalone webhook behavior remains parity-aligned with the SDK contract."
+			- "No standalone route reaches into legacy core webhook helpers directly."
+		failure_modes:
+			- scenario: Missing-plugin errors surface as generic 500s.
+				likelihood: medium
+				impact: medium
+				mitigation: "Map provider-load failures to actionable messages near SDK/server startup and route handling."
+		tech_stack:
+			- TypeScript
+			- Node HTTP server
+		test_coverage: "Focused standalone route/integration tests around `/api/webhooks` and provider status."
+
+	- id: T5
+		title: Preserve CLI webhook command behavior through SDK delegation only
+		description: |
+			Update the CLI so webhook commands still work unchanged while routing exclusively through the
+			SDK contract. Any provider-install problems should surface as actionable CLI errors rather
+			than requiring the CLI to know package-loading details itself.
+		wave: 5
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T4
+		context_files:
+			src/cli/index.ts: "CLI webhook command handlers."
+			src/cli/index.test.ts: "CLI parity and output expectations."
+			src/sdk/index.ts: "Public SDK barrel that CLI consumers depend on."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 140
+		focus_area: cli parity
+		verification:
+			- "CLI list/add/update/remove webhook commands still succeed with the linked plugin."
+			- "CLI error messages remain deterministic when the provider is unavailable."
+		acceptance_criteria:
+			- "CLI contains no duplicated webhook persistence or delivery logic."
+			- "Command semantics remain aligned with SDK/API behavior."
+		failure_modes:
+			- scenario: CLI output or exit behavior drifts from current expectations.
+				likelihood: medium
+				impact: medium
+				mitigation: "Preserve existing tests/output snapshots and change only install-guidance wording where necessary."
+		tech_stack:
+			- TypeScript
+			- Node CLI runtime
+		test_coverage: "Focused CLI tests for webhook CRUD happy path and missing-provider failures."
+
+	- id: T6
+		title: Preserve MCP webhook tools after the core extraction
+		description: |
+			Update MCP tool definitions and handlers so webhook CRUD behavior remains identical while
+			using the provider-backed SDK. Keep MCP responses aligned with CLI/API semantics and avoid
+			reimplementing any webhook logic in the MCP layer.
+		wave: 6
+		agent: gem-implementer
+		priority: medium
+		status: completed
+		dependencies:
+			- T5
+		context_files:
+			src/mcp-server/index.ts: "MCP tool definitions and handlers for webhook operations."
+			src/mcp-server/index.test.ts: "MCP parity expectations."
+			src/sdk/index.ts: "Public SDK exports consumed by MCP."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 160
+		focus_area: mcp parity
+		verification:
+			- "MCP webhook tools still list/create/update/delete against the linked provider."
+			- "Tool error text remains deterministic and consistent with other host surfaces."
+		acceptance_criteria:
+			- "MCP behavior remains parity-aligned with SDK/API/CLI."
+			- "No MCP layer depends on removed core webhook implementation details."
+		failure_modes:
+			- scenario: MCP tools lag behind CLI/API behavior after the extraction.
+				likelihood: medium
+				impact: medium
+				mitigation: "Use the same SDK methods and mirror focused parity tests across host layers."
+		tech_stack:
+			- TypeScript
+			- MCP server runtime
+		test_coverage: "Focused MCP tests for CRUD parity and provider-backed errors."
+
+	- id: T7
+		title: Replace legacy webhook tests with provider-backed regression coverage
+		description: |
+			Update tests so they validate the new contract instead of the removed built-in implementation:
+			convert current core listener tests into provider-contract or integration tests, add a
+			regression for no double-delivery, and cover sibling-package loading plus linked-package
+			behavior across SDK/API/CLI/MCP seams with minimal new test surface.
+		wave: 7
+		agent: gem-reviewer
+		priority: high
+		status: completed
+		dependencies:
+			- T6
+		context_files:
+			src/sdk/__tests__/webhookListener.test.ts: "Current built-in listener test coverage that needs replacement."
+			src/sdk/__tests__/KanbanSDK.test.ts: "SDK event/delegation regression coverage."
+			src/mcp-server/index.test.ts: "One of the host-level parity suites likely affected by the extraction."
+		estimated_effort: medium
+		estimated_files: 3
+		estimated_lines: 260
+		focus_area: regression coverage
+		verification:
+			- "A regression test proves one SDK mutation triggers exactly one outbound webhook delivery."
+			- "Focused suites cover provider loading from sibling path and linked package scenarios."
+			- "Removed built-in webhook paths no longer have tests asserting their old implementation details."
+		acceptance_criteria:
+			- "Coverage follows behavior, not deleted internals."
+			- "At least one end-to-end path proves CRUD + runtime delivery parity through the linked provider."
+		failure_modes:
+			- scenario: Tests remain coupled to deleted internal classes/functions.
+				likelihood: medium
+				impact: high
+				mitigation: "Rewrite them as contract/integration tests rooted at SDK or host surfaces."
+		requires_review: true
+		review_depth: full
+		security_sensitive: true
+
+	- id: T8
+		title: Update README, CHANGELOG, and generated docs for external webhook installation and compatibility
+		description: |
+			Document the new install story, provider alias, sibling-repo development model, and
+			compatibility behavior. Update the relevant doc-generation sources and regenerate `docs/api.md`,
+			`docs/sdk.md`, and `docs/webhooks.md` so public documentation matches the extracted plugin
+			implementation and any remaining compatibility shims.
+		wave: 8
+		agent: gem-documentation-writer
+		priority: medium
+		status: completed
+		dependencies:
+			- T7
+		context_files:
+			README.md: "Primary user-facing install and configuration guide."
+			CHANGELOG.md: "Required release-note entry under Unreleased."
+			scripts/generate-webhooks-docs.ts: "Generated webhook docs source metadata."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 220
+		focus_area: documentation sync
+		verification:
+			- "README documents plugin install, linking, and backward-compatibility expectations."
+			- "CHANGELOG contains a concise Unreleased entry for the extraction."
+			- "Generated docs are regenerated from source, not hand-edited."
+		acceptance_criteria:
+			- "User-facing docs clearly explain that webhook behavior now comes from an external plugin package."
+			- "Docs mention the sibling local-dev model and linked-package verification path."
+		failure_modes:
+			- scenario: Generated docs drift from source comments/routes after the refactor.
+				likelihood: medium
+				impact: medium
+				mitigation: "Update generator inputs and regenerate docs as part of the same task."
+		task_type: update
+		audience: developers
+		coverage_matrix:
+			- "Install and link workflow for `kl-webhooks-plugin`"
+			- "Compatibility story for existing `.kanban.json` webhook config"
+			- "SDK/API/CLI/MCP behavior parity and any deprecated shims"
+
+	- id: T9
+		title: Link the plugin locally, compile both repos, run parity smoke checks, and finalize rollback readiness
+		description: |
+			Build the sibling plugin, link it into kanban-light, compile the main repo, and run focused
+			smoke checks proving SDK/API/CLI/MCP/standalone behavior still works as before with the
+			externalized implementation. Capture the exact rollback path while the old shims still exist
+			so the team can back out safely if parity or packaging issues appear late.
+		wave: 9
+		agent: gem-devops
+		priority: high
+		status: completed
+		dependencies:
+			- T8
+		context_files:
+			/Users/admin/dev/kl-webhooks-plugin/package.json: "Linked package build/link contract."
+			package.json: "Main repo build/test/doc commands."
+			docs/plan/20260321-webhooks-external-plugin/plan.yaml: "Verification and rollback checklist source of truth."
+		estimated_effort: small
+		estimated_files: 3
+		estimated_lines: 120
+		focus_area: local linking and verification
+		verification:
+			- "Sibling package build succeeds, `npm link` (or equivalent local linking) succeeds, and kanban-light compiles cleanly."
+			- "Focused smoke checks prove SDK/API/CLI/MCP/standalone webhook CRUD + runtime delivery parity with no duplicate delivery."
+			- "Rollback steps are tested or at least command-complete while compatibility shims still exist."
+		acceptance_criteria:
+			- "The linked external plugin works in local development using the same model as `kl-sqlite-storage`."
+			- "Build/test evidence exists before any final hard deletion of compatibility shims."
+			- "A concise rollback path is recorded and executable."
+		failure_modes:
+			- scenario: `npm link` works but sibling fallback fails, or vice versa.
+				likelihood: medium
+				impact: high
+				mitigation: "Verify both flows explicitly and do not remove compatibility shims until both are known-good or one is intentionally deferred."
+			- scenario: Hidden tests fail because only one host surface was validated.
+				likelihood: medium
+				impact: high
+				mitigation: "Run focused parity checks across SDK, standalone/API, CLI, and MCP before calling the extraction complete."
+		environment: development
+		requires_approval: false
+		security_sensitive: true
+		execution_notes:
+			- "2026-03-21 gem-devops: /Users/admin/dev/kl-webhooks-plugin built successfully; npm link ../kl-webhooks-plugin succeeded; focused SDK sibling-fallback, standalone route, CLI, and MCP webhook smoke tests passed."
+			- "2026-03-21 gem-devops: live standalone smoke against the built dist with the linked plugin failed parity verification: GET/POST/PUT /api/webhooks succeeded, but POST /api/tasks produced zero outbound webhook deliveries, removed the top-level webhooks array from the temp workspace .kanban.json, and DELETE /api/webhooks/:id then returned 404."
+			- "2026-03-21 gem-devops: built standalone startup also required a temporary dist-only workaround (copying @fastify/swagger-ui/static/logo.svg to dist/static/logo.svg); the workaround and npm link were rolled back after verification failed."
+			- "2026-03-21 gem-implementer: root cause identified — readConfig() used !raw.version check which treated any version-absent config as v1, triggering migrateConfigV1ToV2() which does not preserve modern fields (webhooks, webhookPlugin, labels, etc.). allocateCardId() calls readConfig()+writeConfig() on every POST /api/tasks, so the migrated (stripped) config was immediately persisted, erasing the webhooks array. Fix applied in src/shared/config.ts: (1) tightened v1 detection to require absence of a boards object before classifying as v1; (2) migrateConfigV1ToV2 now preserves modern passthrough fields. Regression tests added to migration.test.ts (13 tests, all passing)."
+			- "2026-03-21 gem-devops: retry after the config migration fix passed local verification. /Users/admin/dev/kl-webhooks-plugin rebuilt cleanly, npm link ../kl-webhooks-plugin refreshed the linked package, focused webhook smoke tests passed across SDK/API/CLI/MCP/standalone (153 tests), and the live linked standalone smoke succeeded with GET/POST/PUT /api/webhooks, POST /api/tasks, exactly one task.created delivery, preserved .kanban.json webhooks, and DELETE /api/webhooks/:id. Built standalone startup still needed the temporary local dist/static/logo.svg workaround during the smoke run; the copied file was removed again after verification."

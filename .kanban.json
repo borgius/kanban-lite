@@ -3,6 +3,13 @@
   "boards": {
     "default": {
       "name": "Default",
+      "metadata": [
+        "location",
+        "company",
+        "position",
+        "jobUrl",
+        "salary"
+      ],
       "columns": [
         {
           "id": "backlog",
@@ -55,7 +62,7 @@
   "port": 2954,
   "labels": {},
   "panelMode": "drawer",
-  "drawerWidth": 49.65893716175586,
+  "drawerWidth": 42.74761435734752,
   "forms": {
     "test": {
       "name": "Test Form",

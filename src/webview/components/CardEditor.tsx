@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, Undo2, FileUp } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
-import { DELETED_STATUS_ID } from '../../shared/types'
+import { DELETED_STATUS_ID, getTitleFromContent } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
 import { useStore } from '../store'
@@ -111,10 +111,10 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
   const current = options.find(o => o.value === value)
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative', isOpen && 'z-30', className)}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
+        className="card-select-trigger"
         style={{ color: 'var(--vscode-foreground)' }}
       >
         {current?.dot && <span className={cn('w-2 h-2 rounded-full shrink-0', current.dot)} />}
@@ -123,9 +123,9 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
       </button>
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="card-floating-dismiss" onClick={() => setIsOpen(false)} />
           <div
-            className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 min-w-[140px]"
+            className="card-floating-menu absolute top-full left-0 mt-1.5 min-w-[172px]"
             style={{
               background: 'var(--vscode-dropdown-background)',
               border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
@@ -138,7 +138,7 @@ function Dropdown({ value, options, onChange, className }: DropdownProps) {
                   onChange(option.value)
                   setIsOpen(false)
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                className="card-floating-menu__item w-full flex items-center gap-2 text-[11px] transition-colors"
                 style={{
                   color: 'var(--vscode-dropdown-foreground)',
                   background: option.value === value ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
@@ -177,10 +177,10 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
   const otherBoards = boards.filter(b => b.id !== currentBoard)
 
   return (
-    <div className="relative">
+    <div className={cn('relative', isOpen && 'z-30')}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
+        className="card-select-trigger"
         style={{ color: 'var(--vscode-foreground)' }}
       >
         {(() => {
@@ -198,9 +198,9 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
       </button>
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="card-floating-dismiss" onClick={() => setIsOpen(false)} />
           <div
-            className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 min-w-[180px] max-h-[320px] overflow-y-auto"
+            className="card-floating-menu absolute top-full left-0 mt-1.5 min-w-[204px] max-h-[320px] overflow-y-auto"
             style={{
               background: 'var(--vscode-dropdown-background)',
               border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
@@ -214,7 +214,7 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
                   onChange(col.id)
                   setIsOpen(false)
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                className="card-floating-menu__item w-full flex items-center gap-2 text-[11px] transition-colors"
                 style={{
                   color: 'var(--vscode-dropdown-foreground)',
                   background: col.id === value ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
@@ -248,7 +248,7 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
                 {otherBoards.map(board => (
                   <div key={board.id}>
                     <div
-                      className="px-3 py-1 text-[10px] font-semibold"
+                      className="px-4 py-1 text-[10px] font-semibold"
                       style={{ color: 'var(--vscode-descriptionForeground)' }}
                     >
                       {board.name}
@@ -260,7 +260,7 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
                           onTransferToBoard(board.id, col.id)
                           setIsOpen(false)
                         }}
-                        className="w-full flex items-center gap-2 pl-5 pr-3 py-1.5 text-xs transition-colors"
+                        className="card-floating-menu__item w-full flex items-center gap-2 pl-5 text-[11px] transition-colors"
                         style={{ color: 'var(--vscode-dropdown-foreground)' }}
                         onMouseEnter={e => { e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -283,13 +283,13 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
 function PropertyRow({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div
-      className="flex items-center gap-3 px-4 py-[5px] transition-colors vscode-hover-bg"
+      className="card-property-row"
     >
-      <div className="flex items-center gap-2 w-[90px] shrink-0">
-        <span style={{ color: 'var(--vscode-descriptionForeground)' }}>{icon}</span>
-        <span className="text-[11px]" style={{ color: 'var(--vscode-descriptionForeground)' }}>{label}</span>
+      <div className="card-property-label-group">
+        <span className="card-property-icon" style={{ color: 'var(--vscode-descriptionForeground)' }}>{icon}</span>
+        <span className="card-property-label" style={{ color: 'var(--vscode-descriptionForeground)' }}>{label}</span>
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="card-property-value">
         {children}
       </div>
     </div>
@@ -334,11 +334,11 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
   const buttonColors = agentButtonColors[selectedTab]
 
   return (
-    <div className="relative">
+    <div className={cn('relative', isOpen && 'z-30')}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white rounded-md transition-colors',
+          'card-inline-action card-inline-action--solid',
           buttonColors.bg,
           buttonColors.hover,
           buttonColors.shadow,
@@ -352,8 +352,8 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
       </button>
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full right-0 mt-1 z-20 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl min-w-[260px] overflow-hidden">
+          <div className="card-floating-dismiss" onClick={() => setIsOpen(false)} />
+          <div className="card-floating-menu absolute top-full right-0 mt-1 min-w-[240px] overflow-hidden bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
             {/* Tabs */}
             <div className="flex">
               {aiAgentTabs.map((tab) => (
@@ -361,7 +361,7 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
                   key={tab.agent}
                   onClick={() => setSelectedTab(tab.agent)}
                   className={cn(
-                    'flex-1 px-3 py-2.5 text-xs font-medium transition-all',
+                    'flex-1 px-3 py-2 text-[11px] font-medium transition-all',
                     selectedTab === tab.agent
                       ? tab.activeColor
                       : cn('text-zinc-600 dark:text-zinc-400', tab.color)
@@ -372,7 +372,7 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
               ))}
             </div>
             {/* Options */}
-            <div className="p-2 space-y-1">
+            <div className="p-1 space-y-1">
               {modes.map((mode) => (
                 <button
                   key={mode.permissionMode}
@@ -380,9 +380,9 @@ function AIDropdown({ onSelect }: AIDropdownProps) {
                     onSelect(selectedTab, mode.permissionMode)
                     setIsOpen(false)
                   }}
-                  className="w-full text-left px-3 py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors"
+                  className="w-full text-left px-2.5 py-1.5 rounded-[8px] hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors"
                 >
-                  <div className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{mode.label}</div>
+                  <div className="text-[11px] font-medium text-zinc-900 dark:text-zinc-100">{mode.label}</div>
                   <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">{mode.description}</div>
                 </button>
               ))}
@@ -407,10 +407,10 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
     : Object.entries(actions).map(([k, v]) => ({ key: k, label: v }))
 
   return (
-    <div className="relative">
+    <div className={cn('relative', isOpen && 'z-30')}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors vscode-hover-bg"
+        className="card-inline-action"
         style={{
           color: 'var(--vscode-foreground)',
           border: '1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))',
@@ -424,11 +424,11 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
           <button
             type="button"
             aria-label="Close actions menu"
-            className="fixed inset-0 z-10 cursor-default"
+            className="card-floating-dismiss cursor-default"
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="absolute top-full right-0 mt-1 z-20 rounded-lg shadow-lg py-1"
+            className="card-floating-menu absolute top-full right-0 mt-1"
             style={{
               background: 'var(--vscode-dropdown-background)',
               border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
@@ -439,7 +439,7 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
                 type="button"
                 key={key}
                 onClick={() => { setIsOpen(false); onTriggerAction(key) }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors whitespace-nowrap"
+                className="card-floating-menu__item w-full flex items-center gap-2 text-[11px] transition-colors whitespace-nowrap"
                 style={{ color: 'var(--vscode-dropdown-foreground)' }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -460,6 +460,33 @@ function VSCodeIcon({ size = 16 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
       <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 19.88V4.12a1.5 1.5 0 0 0-.85-1.533zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" />
     </svg>
+  )
+}
+
+function CardActionButton({
+  title,
+  icon,
+  onClick,
+  variant = 'default',
+  label,
+}: {
+  title: string
+  icon: React.ReactNode
+  onClick: () => void
+  variant?: 'default' | 'danger' | 'primary'
+  label?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('card-action-button', variant !== 'default' && `card-action-button--${variant}`)}
+      title={title}
+      aria-label={title}
+    >
+      <span className="card-action-button__icon">{icon}</span>
+      {label && <span className="card-action-button__label">{label}</span>}
+    </button>
   )
 }
 
@@ -557,40 +584,19 @@ function FilePathValue({ value, onOpenFile }: { value: string; onOpenFile?: (pat
 }
 
 function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<string, any>; onOpenMetadataFile?: (path: string) => void }) {
-  const [expanded, setExpanded] = useState(false)
-
   if (!metadata || Object.keys(metadata).length === 0) return null
 
   const keys = Object.keys(metadata)
 
   return (
-    <div className="mt-3">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-      >
-        <span className="text-[10px]">{expanded ? '\u25BC' : '\u25B6'}</span>
+    <div className="card-metadata-section">
+      <div className="card-metadata-section__header">
         <span>Metadata</span>
-        <span className="text-zinc-400 dark:text-zinc-500">({keys.length})</span>
-      </button>
-      {!expanded && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-          {keys.map(key => (
-            <button
-              key={key}
-              onClick={() => setExpanded(true)}
-              className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 font-mono hover:bg-zinc-200 dark:hover:bg-zinc-600 cursor-pointer"
-            >
-              {key}
-            </button>
-          ))}
-        </div>
-      )}
-      {expanded && (
-        <div className="mt-1.5 text-xs font-mono bg-zinc-50 dark:bg-zinc-900 rounded p-2 border border-zinc-200 dark:border-zinc-700">
-          <MetadataTree data={metadata} depth={0} onOpenMetadataFile={onOpenMetadataFile} />
-        </div>
-      )}
+        <span className="card-metadata-section__count">{keys.length}</span>
+      </div>
+      <div className="card-metadata-tree-shell">
+        <MetadataTree data={metadata} depth={0} onOpenMetadataFile={onOpenMetadataFile} />
+      </div>
     </div>
   )
 }
@@ -670,13 +676,13 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   }
 
   return (
-    <div className="relative flex items-center gap-1.5 flex-wrap">
+    <div className={cn('relative flex items-center gap-2 flex-wrap', showSuggestions && 'z-30')}>
       {labels.map(label => {
         const def = labelDefs[label]
         return (
           <span
             key={label}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
+            className="card-label-pill"
             style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
               background: 'var(--vscode-badge-background)',
               color: 'var(--vscode-badge-foreground)',
@@ -707,10 +713,11 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
       })}
       <button
         onClick={() => { setIsFocused(true); setTimeout(() => inputRef.current?.focus(), 0) }}
-        className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors vscode-hover-bg"
+        className="card-label-add"
         style={{ color: 'var(--vscode-descriptionForeground)' }}
       >
         <Plus size={10} />
+        <span>Add label</span>
       </button>
       <input
         ref={inputRef}
@@ -727,12 +734,12 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
           if (e.key === 'Escape') { setNewLabel(''); inputRef.current?.blur() }
         }}
         placeholder={labels.length === 0 ? 'Add labels...' : ''}
-        className="flex-1 min-w-[60px] bg-transparent border-none outline-none text-xs"
+        className="card-label-input"
         style={{ color: 'var(--vscode-foreground)', display: isFocused || newLabel ? 'block' : 'none' }}
       />
       {showSuggestions && (
         <div
-          className="absolute top-full left-0 mt-1 z-20 rounded-lg shadow-lg py-1 max-h-[160px] overflow-auto min-w-[180px]"
+          className="card-floating-menu absolute top-full left-0 mt-1.5 max-h-[200px] overflow-auto min-w-[220px]"
           style={{
             background: 'var(--vscode-dropdown-background)',
             border: '1px solid var(--vscode-dropdown-border, var(--vscode-panel-border))',
@@ -745,13 +752,13 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
                 key={label}
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); addLabel(label) }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors"
+                className="card-floating-menu__item w-full flex items-center gap-2 text-[11px] transition-colors"
                 style={{ color: 'var(--vscode-dropdown-foreground)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <span
-                  className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded"
+                  className="card-label-pill"
                   style={def ? { backgroundColor: `${def.color}20`, color: def.color } : {
                     background: 'var(--vscode-badge-background)',
                     color: 'var(--vscode-badge-foreground)',
@@ -774,6 +781,14 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
+  const cardTitle = getTitleFromContent(currentContent)
+  const metadata = currentFrontmatter.metadata ?? {}
+  const pinnedMetadataEntries = useMemo(
+    () => pinnedMetadataKeys
+      .map((key) => ({ key, value: metadata[key] }))
+      .filter(({ value }) => value !== undefined && value !== null && String(value).trim() !== ''),
+    [metadata, pinnedMetadataKeys]
+  )
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentFrontmatterRef = useRef(currentFrontmatter)
   const currentContentRef = useRef(currentContent)
@@ -857,121 +872,58 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
   }, [save, onClose, onStartWithAI, cardSettings.showBuildWithAI])
 
   return (
-    <div
-      className="h-full flex flex-col"
-      style={{
-        background: 'var(--vscode-editor-background)',
-        borderLeft: '1px solid var(--vscode-panel-border)',
-      }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3"
-        style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>{cardId}</span>
-          {isDeleted ? (
-            confirmingPermanentDelete ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs" style={{ color: 'var(--vscode-errorForeground)' }}>Permanently delete from disk?</span>
-                <button
-                  onClick={() => { setConfirmingPermanentDelete(false); onPermanentDelete() }}
-                  className="px-2 py-1 text-xs font-medium rounded transition-colors text-white bg-red-600 hover:bg-red-700"
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setConfirmingPermanentDelete(false)}
-                  className="px-2 py-1 text-xs font-medium rounded transition-colors vscode-hover-bg"
-                  style={{ color: 'var(--vscode-foreground)' }}
-                >
-                  No
-                </button>
+    <div className="card-editor-shell h-full flex flex-col">
+      <div className="card-editor-content flex-1 min-h-0 overflow-auto">
+        <div className="card-editor-stack">
+          <header className="card-editor-hero">
+            <div className="card-editor-hero-copy">
+              <div className="card-editor-hero-meta">
+                <span className="card-editor-card-id">{cardId}</span>
+                <span className="card-editor-hero-separator" aria-hidden="true" />
+                <span title={formatVerboseRelative(currentFrontmatter.modified)}>{formatRelativeCompact(currentFrontmatter.modified)}</span>
               </div>
-            ) : (
-              <>
-                <button
-                  onClick={onRestore}
-                  className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
-                  style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                  title="Restore card"
-                >
-                  <CircleDot size={16} />
-                  <span className="text-xs">RESTORE</span>
-                </button>
-                <button
-                  onClick={() => setConfirmingPermanentDelete(true)}
-                  className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
-                  style={{ color: 'var(--vscode-errorForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                  title="Permanently delete from disk"
-                >
-                  <Trash2 size={16} />
-                  <span className="text-xs">PERMANENT DELETE</span>
-                </button>
-              </>
-            )
-          ) : (
-            <>
-              <button
-                onClick={onOpenFile}
-                className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
-                style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                title="Open in VS Code"
-              >
-                <VSCodeIcon size={16} />
-                <span className="text-xs">OPEN</span>
-              </button>
-              <button
-                onClick={onDownloadCard}
-                className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
-                style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                title="Download card as Markdown"
-              >
-                <Download size={16} />
-                <span className="text-xs">DOWNLOAD</span>
-              </button>
-              <button
-                onClick={onDelete}
-                className="p-1.5 px-2 rounded border transition-colors vscode-hover-bg flex items-center gap-1"
-                style={{ color: 'var(--vscode-descriptionForeground)', borderColor: 'var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128,128,128,0.35)))' }}
-                title="Move to deleted"
-              >
-                <Trash2 size={16} />
-                <span className="text-xs">DELETE</span>
-              </button>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {currentFrontmatter.actions && (Array.isArray(currentFrontmatter.actions) ? currentFrontmatter.actions.length > 0 : Object.keys(currentFrontmatter.actions).length > 0) && onTriggerAction && (
-            <RunActionsDropdown actions={currentFrontmatter.actions} onTriggerAction={onTriggerAction} />
-          )}
-          {cardSettings.showBuildWithAI && <AIDropdown onSelect={onStartWithAI} />}
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded transition-colors vscode-hover-bg"
-            style={{ color: 'var(--vscode-descriptionForeground)' }}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </div>
+              <h1 className="card-editor-title">{cardTitle}</h1>
+            </div>
+            <div className="card-editor-hero-actions">
+              {currentFrontmatter.actions && (Array.isArray(currentFrontmatter.actions) ? currentFrontmatter.actions.length > 0 : Object.keys(currentFrontmatter.actions).length > 0) && onTriggerAction && (
+                <RunActionsDropdown actions={currentFrontmatter.actions} onTriggerAction={onTriggerAction} />
+              )}
+              {cardSettings.showBuildWithAI && <AIDropdown onSelect={onStartWithAI} />}
+              {isDeleted ? (
+                confirmingPermanentDelete ? (
+                  <div className="card-delete-confirmation">
+                    <span className="card-delete-confirmation__text">Delete this card from disk?</span>
+                    <CardActionButton title="Confirm permanent delete" icon={<Trash2 size={15} />} label="Delete" onClick={() => { setConfirmingPermanentDelete(false); onPermanentDelete() }} variant="danger" />
+                    <CardActionButton title="Cancel permanent delete" icon={<Undo2 size={15} />} label="Keep" onClick={() => setConfirmingPermanentDelete(false)} />
+                  </div>
+                ) : (
+                  <>
+                    <CardActionButton title="Restore card" icon={<Undo2 size={15} />} label="Restore" onClick={onRestore} variant="primary" />
+                    <CardActionButton title="Permanently delete from disk" icon={<Trash2 size={15} />} label="Delete forever" onClick={() => setConfirmingPermanentDelete(true)} variant="danger" />
+                  </>
+                )
+              ) : (
+                <>
+                  <CardActionButton title="Open in VS Code" icon={<VSCodeIcon size={15} />} onClick={onOpenFile} />
+                  <CardActionButton title="Download card as Markdown" icon={<Download size={15} />} onClick={onDownloadCard} />
+                  <CardActionButton title="Move to deleted" icon={<Trash2 size={15} />} onClick={onDelete} variant="danger" />
+                </>
+              )}
+              <CardActionButton title="Close card" icon={<X size={16} />} onClick={onClose} />
+            </div>
+          </header>
 
-      {/* Properties */}
-      <div
-        className="flex flex-col py-0.5"
-        style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
-      >
-        <div
-          className="px-4 pt-2 pb-1"
-          style={{ borderBottom: '1px solid var(--vscode-panel-border, transparent)' }}
-        >
-          <span
-            className="text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--vscode-descriptionForeground)' }}
-          >Details</span>
-        </div>
+          <div className={cn('card-editor-desktop-columns', cardSettings.compactMode && 'is-compact')}>
+            <div className="card-editor-top-row">
+              <section className="card-surface card-surface--details">
+                <div className="card-surface-header">
+                  <div>
+                    <span className="card-surface-kicker">Overview</span>
+                    <h2 className="card-surface-title">Details</h2>
+                  </div>
+                </div>
+
+                <div className="card-property-list">
         <PropertyRow label="Status" icon={<CircleDot size={13} />}>
           <StatusDropdown
             value={currentFrontmatter.status}
@@ -990,22 +942,24 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         )}
         {cardSettings.showAssignee && (
           <PropertyRow label="Assignee" icon={<User size={13} />}>
-            <div className="flex items-center gap-2">
-              {currentFrontmatter.assignee && (
-                <span
-                  className="shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
-                  style={{
-                    background: 'var(--vscode-badge-background)',
-                    color: 'var(--vscode-badge-foreground)',
-                  }}
-                >{currentFrontmatter.assignee.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)}</span>
-              )}
+            <div className="card-property-chip card-property-chip--input">
+              <span
+                className="card-property-avatar"
+                style={{
+                  background: currentFrontmatter.assignee ? 'var(--vscode-badge-background)' : 'rgba(148, 163, 184, 0.18)',
+                  color: currentFrontmatter.assignee ? 'var(--vscode-badge-foreground)' : 'var(--vscode-descriptionForeground)',
+                }}
+              >
+                {currentFrontmatter.assignee
+                  ? currentFrontmatter.assignee.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)
+                  : <User size={12} />}
+              </span>
               <input
                 type="text"
                 value={currentFrontmatter.assignee || ''}
                 onChange={(e) => handleFrontmatterUpdate({ assignee: e.target.value || null })}
                 placeholder="No assignee"
-                className="bg-transparent border-none outline-none text-xs w-32"
+                className="card-property-text-input"
                 style={{ color: currentFrontmatter.assignee ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}
               />
             </div>
@@ -1017,7 +971,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
               type="date"
               value={currentFrontmatter.dueDate || ''}
               onChange={(e) => handleFrontmatterUpdate({ dueDate: e.target.value || null })}
-              className="bg-transparent border-none outline-none text-xs"
+              className="card-date-input"
               style={{ color: currentFrontmatter.dueDate ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}
             />
           </PropertyRow>
@@ -1030,67 +984,25 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           />
         </PropertyRow>
         )}
-        <PropertyRow label="Attachments" icon={<Paperclip size={13} />}>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {currentFrontmatter.attachments.map(attachment => (
-              <span
-                key={attachment}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpenAttachment(attachment)}
-                  className="inline-flex items-center gap-1 hover:underline"
-                  title={attachment}
-                >
-                  <Paperclip size={9} />
-                  {attachment}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemoveAttachment(attachment)}
-                  className="hover:text-red-500 transition-colors"
-                >
-                  <X size={9} />
-                </button>
-              </span>
-            ))}
-            <button
-              type="button"
-              onClick={onAddAttachment}
-              className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded transition-colors vscode-hover-bg"
-              style={{ color: 'var(--vscode-descriptionForeground)' }}
-            >
-              <Plus size={10} />
-            </button>
-          </div>
-        </PropertyRow>
-        {pinnedMetadataKeys.map(key => {
-          const rawVal = currentFrontmatter.metadata?.[key]
-          if (rawVal === undefined || rawVal === null) return null
+        {pinnedMetadataEntries.map(({ key, value: rawVal }) => {
           const strVal = String(rawVal)
-          const filterValue = normalizeMetadataFilterValue(rawVal)
           return (
             <PropertyRow key={key} label={key} icon={<ExternalLink size={13} />}>
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="card-metadata-highlight min-w-0">
                 {isUrl(strVal) ? (
                   <a
                     href={strVal}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs hover:underline truncate"
+                    className="card-metadata-highlight__link truncate"
                     style={{ color: 'var(--vscode-textLink-foreground)' }}
                   >
                     {strVal}
                   </a>
                 ) : (
-                  <span className="text-xs break-all" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
+                  <span className="card-metadata-highlight__value" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
                 )}
-                <MetadataFilterButton path={key} value={filterValue} />
+                <MetadataFilterButton path={key} value={normalizeMetadataFilterValue(rawVal)} />
               </div>
             </PropertyRow>
           )
@@ -1099,7 +1011,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         <button
           type="button"
           onClick={() => setShowAdvanced(v => !v)}
-          className="flex items-center gap-1.5 px-4 py-1.5 w-full text-left transition-colors"
+          className="card-advanced-toggle"
           style={{ color: 'var(--vscode-descriptionForeground)' }}
         >
           <ChevronDown
@@ -1135,31 +1047,82 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
               </div>
             </PropertyRow>
             <div className="px-4 pb-2">
-              <MetadataSection metadata={currentFrontmatter.metadata} onOpenMetadataFile={onOpenMetadataFile} />
+              <MetadataSection metadata={metadata} onOpenMetadataFile={onOpenMetadataFile} />
             </div>
           </>
         )}
-      </div>
+                </div>
+              </section>
 
-      {/* Editor */}
-      <MarkdownEditor
-        value={currentContent}
-        onChange={handleContentChange}
-        placeholder="Start writing..."
-        className="flex-1 min-h-0"
-        mode="edit"
-        comments={comments}
-        onAddComment={onAddComment}
-        onUpdateComment={onUpdateComment}
-        onDeleteComment={onDeleteComment}
-        logs={logs}
-        onClearLogs={onClearLogs}
-        logsFilter={logsFilter}
-        onLogsFilterChange={onLogsFilterChange}
-        cardId={cardId}
-        frontmatter={currentFrontmatter}
-        onFormSubmitSuccess={handleFormSubmitSuccess}
-      />
+              <section className={cn('card-surface card-surface--attachments', cardSettings.compactMode && 'card-surface--attachments-compact')}>
+                <div className="card-surface-header">
+                  <div>
+                    <span className="card-surface-kicker">Files</span>
+                    <h2 className="card-surface-title">Attachments</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onAddAttachment}
+                    className="card-inline-action"
+                  >
+                    <FileUp size={14} />
+                    <span>Add attachment</span>
+                  </button>
+                </div>
+
+                {currentFrontmatter.attachments.length > 0 ? (
+                  <div className="card-attachment-tags">
+                    {currentFrontmatter.attachments.map(attachment => (
+                      <div key={attachment} className="card-attachment-tag">
+                        <button
+                          type="button"
+                          onClick={() => onOpenAttachment(attachment)}
+                          className="card-attachment-tag__link"
+                          title={attachment}
+                        >
+                          <Paperclip size={12} />
+                          <span>{attachment}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveAttachment(attachment)}
+                          className="card-attachment-tag__remove"
+                          aria-label={`Remove ${attachment}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="card-empty-state">No attachments yet.</p>
+                )}
+              </section>
+            </div>
+
+            <section className="card-surface card-surface--editor card-editor-main-surface">
+              <MarkdownEditor
+                value={currentContent}
+                onChange={handleContentChange}
+                placeholder="Start writing..."
+                className="flex-1 min-h-[26rem]"
+                mode="edit"
+                comments={comments}
+                onAddComment={onAddComment}
+                onUpdateComment={onUpdateComment}
+                onDeleteComment={onDeleteComment}
+                logs={logs}
+                onClearLogs={onClearLogs}
+                logsFilter={logsFilter}
+                onLogsFilterChange={onLogsFilterChange}
+                cardId={cardId}
+                frontmatter={currentFrontmatter}
+                onFormSubmitSuccess={handleFormSubmitSuccess}
+              />
+            </section>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

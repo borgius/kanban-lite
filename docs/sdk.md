@@ -80,6 +80,7 @@ HTTP server are all built on top of.
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
     * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
     * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
+    * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
     * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
     * [._withAuthContext()](#KanbanSDK+_withAuthContext)
     * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
@@ -267,6 +268,26 @@ and whether real auth enforcement is enabled.
 const status = sdk.getAuthStatus()
 console.log(status.identityProvider) // 'noop' | 'my-token-plugin' | ...
 console.log(status.identityEnabled)  // false when no plugin configured
+```
+
+* * *
+
+<a name="KanbanSDK+getWebhookStatus"></a>
+
+#### kanbanSDK.getWebhookStatus() ⇒
+Returns webhook provider metadata for host surfaces and diagnostics.
+
+Use this to inspect which webhook delivery provider is active and whether
+an external provider plugin is installed or the built-in fallback is used.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A [WebhookStatus](WebhookStatus) snapshot containing the active provider id
+  and a boolean flag indicating whether the provider is an external plugin.  
+**Example**  
+```ts
+const status = sdk.getWebhookStatus()
+console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
+console.log(status.webhookProviderActive) // false when no plugin configured
 ```
 
 * * *
@@ -2084,6 +2105,9 @@ sdk.setDefaultBoard('sprint-2')
 
 #### kanbanSDK.listWebhooks() ⇒
 Lists all registered webhooks.
+Delegates to the resolved external `webhook.delivery` provider when available,
+otherwise uses the built-in compatibility registry path against the same
+`.kanban.json` `webhooks` array.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: Array of [Webhook](Webhook) objects.  
@@ -2094,6 +2118,8 @@ Lists all registered webhooks.
 
 #### kanbanSDK.createWebhook(webhookConfig) ⇒
 Creates and persists a new webhook.
+Delegates to the resolved external `webhook.delivery` provider when available,
+otherwise uses the built-in compatibility registry path.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The newly created [Webhook](Webhook).  
@@ -2109,6 +2135,8 @@ Creates and persists a new webhook.
 
 #### kanbanSDK.deleteWebhook(id) ⇒
 Deletes a webhook by its ID.
+Delegates to the resolved external `webhook.delivery` provider when available,
+otherwise uses the built-in compatibility registry path.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: `true` if deleted, `false` if not found.  
@@ -2124,6 +2152,8 @@ Deletes a webhook by its ID.
 
 #### kanbanSDK.updateWebhook(id, updates) ⇒
 Updates an existing webhook's configuration.
+Delegates to the resolved external `webhook.delivery` provider when available,
+otherwise uses the built-in compatibility registry path.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The updated [Webhook](Webhook), or `null` if not found.  
@@ -2562,8 +2592,10 @@ writeConfig('/home/user/my-project', updated)
 ### normalizeAuthCapabilities()
 Normalizes auth capability selections into a complete runtime capability map.
 
-Omitted auth providers default to the built-in `noop` implementations so
-behavior is unchanged when auth is not configured.
+Omitted auth providers default to the `noop` compatibility ids. When the
+external `kl-auth-plugin` package is installed those ids resolve there;
+otherwise core keeps a built-in compatibility fallback so behavior is
+unchanged when auth is not configured.
 
 The input object is never mutated.
 
@@ -2585,6 +2617,22 @@ Precedence:
 Explicit built-in `attachment.storage` providers such as `sqlite` and
 `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
 it away from the legacy `localfs` default.
+
+The input object is never mutated.
+
+**Kind**: global function  
+
+* * *
+
+<a name="normalizeWebhookCapabilities"></a>
+
+### normalizeWebhookCapabilities()
+Normalizes webhook capability selections into a complete runtime capability map.
+
+When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
+maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
+The built-in webhook delivery path remains active as a compatibility fallback when
+the external package is absent.
 
 The input object is never mutated.
 
@@ -2778,57 +2826,6 @@ relative path does not match this two-level structure, returns `null`.
 
 ## Auth Plugin Contracts
 
-<a name="NOOP_IDENTITY_PLUGIN"></a>
-
-### NOOP\_IDENTITY\_PLUGIN
-Built-in no-op identity provider. Always resolves to `null` (anonymous).
-
-**Kind**: global variable  
-
-* * *
-
-<a name="NOOP_POLICY_PLUGIN"></a>
-
-### NOOP\_POLICY\_PLUGIN
-Built-in no-op policy provider. Always returns `{ allowed: true }` (allow-all).
-
-**Kind**: global variable  
-
-* * *
-
-<a name="RBAC_IDENTITY_PLUGIN"></a>
-
-### RBAC\_IDENTITY\_PLUGIN
-Built-in RBAC identity provider singleton.
-
-Validates opaque tokens against a runtime-owned principal registry. This
-singleton uses an **empty registry** — all tokens resolve to `null`
-(anonymous / deny) until the host supplies principal material via
-[createRbacIdentityPlugin](#createRbacIdentityPlugin).
-
-When configuring `{ "auth.identity": { "provider": "rbac" } }`, the host
-must call `createRbacIdentityPlugin(principals)` and inject the result
-through the capability bag. Token values and role assignments must never
-appear in `.kanban.json` or any diagnostics output.
-
-**Kind**: global variable  
-
-* * *
-
-<a name="RBAC_POLICY_PLUGIN"></a>
-
-### RBAC\_POLICY\_PLUGIN
-Built-in RBAC policy provider. Enforces the fixed [RBAC_ROLE_MATRIX](#RBAC_ROLE_MATRIX).
-
-Denies requests from a `null` identity with `auth.identity.missing`.
-Denies actions not covered by the resolved role(s) with `auth.policy.denied`.
-The resolved caller subject is attached to allow decisions as `actor`.
-No token material is included in any returned [AuthDecision](AuthDecision).
-
-**Kind**: global variable  
-
-* * *
-
 <a name="RBAC_USER_ACTIONS"></a>
 
 ### RBAC\_USER\_ACTIONS
@@ -2873,7 +2870,7 @@ Fixed RBAC role matrix keyed by [RbacRole](RbacRole).
 
 Each entry maps to the complete set of canonical action names that the role
 is permitted to perform. This is the single canonical source of truth consumed
-by the built-in `rbac` auth provider pair and by host tests that verify denial
+by the shipped `rbac` auth provider pair and by host tests that verify denial
 semantics. Hosts must not replicate or extend this matrix locally.
 
 **Kind**: global variable  
@@ -2883,6 +2880,42 @@ semantics. Hosts must not replicate or extend this matrix locally.
 const allowed = RBAC_ROLE_MATRIX['manager'].has('card.create') // true
 const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
 ```
+
+* * *
+
+<a name="NOOP_IDENTITY_PLUGIN"></a>
+
+### NOOP\_IDENTITY\_PLUGIN
+No-op identity provider resolved from `kl-auth-plugin` when available.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="NOOP_POLICY_PLUGIN"></a>
+
+### NOOP\_POLICY\_PLUGIN
+No-op policy provider resolved from `kl-auth-plugin` when available.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_IDENTITY_PLUGIN"></a>
+
+### RBAC\_IDENTITY\_PLUGIN
+RBAC identity provider resolved from `kl-auth-plugin` when available.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="RBAC_POLICY_PLUGIN"></a>
+
+### RBAC\_POLICY\_PLUGIN
+RBAC policy provider resolved from `kl-auth-plugin` when available.
+
+**Kind**: global variable  
 
 * * *
 
@@ -2908,12 +2941,57 @@ with CJS entry `dist/index.cjs`.
 
 * * *
 
+<a name="WEBHOOK_PROVIDER_ALIASES"></a>
+
+### WEBHOOK\_PROVIDER\_ALIASES
+Maps short webhook provider ids to their installable npm package names.
+
+- `webhooks` → `npm install kl-webhooks-plugin`
+
+External packages must export `webhookProviderPlugin` (or a default export)
+with a manifest that provides `'webhook.delivery'`, CRUD methods, and a
+`createListener` factory.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="AUTH_PROVIDER_ALIASES"></a>
+
+### AUTH\_PROVIDER\_ALIASES
+Maps built-in auth compatibility ids to the external auth package.
+
+- `noop` → `npm install kl-auth-plugin`
+- `rbac` → `npm install kl-auth-plugin`
+
+**Kind**: global variable  
+
+* * *
+
 <a name="BUILTIN_ATTACHMENT_IDS"></a>
 
 ### BUILTIN\_ATTACHMENT\_IDS
 Set of provider ids that are handled as built-in attachment plugins.
 
 **Kind**: global variable  
+
+* * *
+
+<a name="FALLBACK_NOOP_IDENTITY_PLUGIN"></a>
+
+### FALLBACK\_NOOP\_IDENTITY\_PLUGIN
+Built-in compatibility no-op identity provider. Always resolves to `null` (anonymous).
+
+**Kind**: global constant  
+
+* * *
+
+<a name="FALLBACK_NOOP_POLICY_PLUGIN"></a>
+
+### FALLBACK\_NOOP\_POLICY\_PLUGIN
+Built-in compatibility no-op policy provider. Always returns `{ allowed: true }` (allow-all).
+
+**Kind**: global constant  
 
 * * *
 
@@ -2973,9 +3051,38 @@ Returns a deterministic, actionable error when the package is not installed.
 
 * * *
 
+<a name="loadWebhookProviderPlugin"></a>
+
+### loadWebhookProviderPlugin()
+Lazily loads an external npm webhook provider plugin.
+Returns a deterministic, actionable error when the package is not installed
+or does not export the expected shape.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
+<a name="resolveWebhookProvider"></a>
+
+### resolveWebhookProvider()
+Attempts to resolve a webhook provider from a normalized [ProviderRef](ProviderRef).
+
+Returns `null` when the package is simply not installed yet, so the built-in
+`WebhookListenerPlugin` path in `KanbanSDK` continues to function as a
+compatibility fallback until the external plugin is present.
+
+Throws for any other loading or validation error so misconfigurations surface
+immediately.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
 <a name="resolveCapabilityBag"></a>
 
-### resolveCapabilityBag(capabilities, kanbanDir, authCapabilities)
+### resolveCapabilityBag(capabilities, kanbanDir, authCapabilities, webhookCapabilities)
 Resolves a fully typed [ResolvedCapabilityBag](ResolvedCapabilityBag) from a normalized
 [ResolvedCapabilities](ResolvedCapabilities) map.
 
@@ -2984,7 +3091,7 @@ Attachment storage fallback precedence:
 2. Card storage engine's explicit built-in attachment provider
 3. Built-in `localfs`
 
-Auth plugins default to the built-in `noop` providers (anonymous identity,
+Auth plugins default to the `noop` compatibility providers (anonymous identity,
 allow-all policy) when `authCapabilities` is not supplied, preserving
 the current open-access behavior.
 
@@ -2995,6 +3102,7 @@ the current open-access behavior.
 | capabilities | Normalized provider selections from [normalizeStorageCapabilities](normalizeStorageCapabilities). |
 | kanbanDir | Absolute path to the `.kanban` directory. |
 | authCapabilities | Optional normalized auth provider selections from                           [normalizeAuthCapabilities](normalizeAuthCapabilities). Defaults to noop providers. |
+| webhookCapabilities | Optional normalized webhook provider selections from                           [normalizeWebhookCapabilities](normalizeWebhookCapabilities). When omitted, webhook                           provider resolution is skipped and `bag.webhookProvider` is `null`. |
 
 
 * * *
@@ -3019,8 +3127,7 @@ Cards are stored as markdown files with YAML frontmatter:
       new/
       investigating/
       fixed/
-  .kanban.json          # Board configuration (v2)
-  .kanban-webhooks.json # Webhook definitions
+  .kanban.json          # Board config, forms, labels, settings, and webhook definitions
 ```
 
 Each card file contains YAML frontmatter (id, status, priority, assignee, dates, labels, order) followed by markdown content and optional comment sections.

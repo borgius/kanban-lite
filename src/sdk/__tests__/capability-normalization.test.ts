@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities, normalizeAuthCapabilities } from '../../shared/config'
+import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 
@@ -157,5 +157,52 @@ describe('normalizeAuthCapabilities', () => {
     const result = normalizeAuthCapabilities({})
     expect(result['auth.identity']).toEqual({ provider: 'noop' })
     expect(result['auth.policy']).toEqual({ provider: 'noop' })
+  })
+})
+
+describe('normalizeWebhookCapabilities', () => {
+  it('defaults to webhooks provider when webhookPlugin is absent', () => {
+    const result = normalizeWebhookCapabilities(makeConfig())
+    expect(result['webhook.delivery']).toEqual({ provider: 'webhooks' })
+  })
+
+  it('defaults to webhooks provider when webhookPlugin is an empty object', () => {
+    const result = normalizeWebhookCapabilities(makeConfig({ webhookPlugin: {} }))
+    expect(result['webhook.delivery']).toEqual({ provider: 'webhooks' })
+  })
+
+  it('passes through an explicit webhook.delivery provider', () => {
+    const result = normalizeWebhookCapabilities(
+      makeConfig({ webhookPlugin: { 'webhook.delivery': { provider: 'my-webhook-plugin' } } })
+    )
+    expect(result['webhook.delivery']).toEqual({ provider: 'my-webhook-plugin' })
+  })
+
+  it('passes through explicit provider with options', () => {
+    const result = normalizeWebhookCapabilities(
+      makeConfig({
+        webhookPlugin: { 'webhook.delivery': { provider: 'my-webhook-plugin', options: { retries: 3 } } },
+      })
+    )
+    expect(result['webhook.delivery']).toEqual({ provider: 'my-webhook-plugin', options: { retries: 3 } })
+  })
+
+  it('webhook.delivery namespace is always present in output', () => {
+    const result = normalizeWebhookCapabilities(makeConfig())
+    expect(result).toHaveProperty('webhook.delivery')
+  })
+
+  it('does not mutate the input config', () => {
+    const config = makeConfig({
+      webhookPlugin: { 'webhook.delivery': { provider: 'my-plugin', options: { x: 1 } } },
+    })
+    const before = JSON.stringify(config)
+    normalizeWebhookCapabilities(config)
+    expect(JSON.stringify(config)).toBe(before)
+  })
+
+  it('accepts a plain object with only webhookPlugin field (Pick<KanbanConfig, "webhookPlugin">)', () => {
+    const result = normalizeWebhookCapabilities({})
+    expect(result['webhook.delivery']).toEqual({ provider: 'webhooks' })
   })
 })

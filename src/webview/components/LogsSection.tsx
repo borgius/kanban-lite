@@ -255,10 +255,7 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div
-        className="flex items-center gap-1 px-3 py-1.5 shrink-0 flex-wrap"
-        style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
-      >
+      <div className="card-log-toolbar shrink-0">
         {/* Clear */}
         <button
           type="button"
@@ -323,10 +320,7 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
         </DropdownButton>
 
         {/* Count */}
-        <span
-          className="ml-auto text-[10px]"
-          style={{ color: 'var(--vscode-descriptionForeground)' }}
-        >
+        <span className="card-log-count">
           {filteredLogs.length}{limit !== 'all' && logs.length > limit ? ` / ${logs.length}` : ''} entries
         </span>
       </div>
@@ -345,10 +339,7 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
             {filteredLogs.map((entry, i) => (
               <div
                 key={`${entry.timestamp}-${i}`}
-                className="px-4 py-1.5 text-xs border-b"
-                style={{
-                  borderColor: 'var(--vscode-panel-border)',
-                }}
+                className="card-log-entry px-4 py-2 text-xs"
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   {show.timestamp && (

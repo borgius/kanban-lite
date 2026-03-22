@@ -40,77 +40,63 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
   const [editingId, setEditingId] = useState<string | null>(null)
 
   return (
-    <div className="flex flex-col">
+    <div className="card-comments-shell">
       {comments.length > 0 && (
-        <div className="flex flex-col gap-2 px-4 py-3">
+        <div className="card-comment-list">
           {comments.map(comment => (
             <div
               key={comment.id}
-              className="rounded p-2 pl-3 text-xs group"
-              style={{
-                background: 'var(--vscode-input-background)',
-                borderLeft: '2px solid var(--vscode-textLink-foreground, #3b82f6)',
-              }}
+              className="card-comment-item"
             >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
-                    style={{
-                      background: 'var(--vscode-badge-background)',
-                      color: 'var(--vscode-badge-foreground)',
-                    }}
-                  >
-                    {comment.author.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                  </span>
-                  <span className="font-medium" style={{ color: 'var(--vscode-foreground)' }}>
-                    {comment.author}
-                  </span>
-                  <span className="text-[10px]" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                    {timeAgo(comment.created)}
-                  </span>
+              <span className="card-comment-avatar">
+                {comment.author.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+              </span>
+              <div className="card-comment-bubble">
+                <div className="card-comment-meta">
+                  <span className="card-comment-author">{comment.author}</span>
+                  <span className="card-comment-time">{timeAgo(comment.created)}</span>
+                  <div className="card-comment-actions">
+                    <button
+                      onClick={() => setEditingId(comment.id)}
+                      className="p-1 rounded-full transition-colors vscode-hover-bg"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      title="Edit"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      onClick={() => onDeleteComment(comment.id)}
+                      className="p-1 rounded-full transition-colors hover:text-red-500"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      title="Delete"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => setEditingId(comment.id)}
-                    className="p-0.5 rounded transition-colors vscode-hover-bg"
-                    style={{ color: 'var(--vscode-descriptionForeground)' }}
-                    title="Edit"
-                  >
-                    <Pencil size={10} />
-                  </button>
-                  <button
-                    onClick={() => onDeleteComment(comment.id)}
-                    className="p-0.5 rounded transition-colors hover:text-red-500"
-                    style={{ color: 'var(--vscode-descriptionForeground)' }}
-                    title="Delete"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                </div>
-              </div>
 
-              {editingId === comment.id ? (
-                <div className="mt-1">
-                  <CommentEditor
-                    initialContent={comment.content}
-                    submitLabel="Save"
-                    onSubmit={(_, content) => {
-                      onUpdateComment(comment.id, content)
-                      setEditingId(null)
-                    }}
-                    onCancel={() => setEditingId(null)}
-                  />
-                </div>
-              ) : (
-                <CommentBody content={comment.content} />
-              )}
+                {editingId === comment.id ? (
+                  <div className="mt-1">
+                    <CommentEditor
+                      initialContent={comment.content}
+                      submitLabel="Save"
+                      onSubmit={(_, content) => {
+                        onUpdateComment(comment.id, content)
+                        setEditingId(null)
+                      }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  </div>
+                ) : (
+                  <CommentBody content={comment.content} />
+                )}
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="px-4 pb-3">
+      <div className="card-comments-composer">
         <CommentEditor
           onSubmit={(author, content) => onAddComment(author, content)}
           submitLabel="Comment"

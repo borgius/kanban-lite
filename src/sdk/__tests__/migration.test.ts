@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { migrateFileSystemToMultiBoard } from '../migration'
-import { readConfig } from '../../shared/config'
+import { readConfig, allocateCardId } from '../../shared/config'
 import { DEFAULT_COLUMNS } from '../../shared/types'
 
 function createTempDir(): string {
@@ -267,3 +267,138 @@ describe('config migration (v1 to v2)', () => {
     expect(config.defaultBoard).toBe('default')
   })
 })
+
+describe('config v1 detection – regression: webhooks must survive read/write cycle', () => {
+  let workspaceDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-config-regression-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('should NOT migrate a versionless config that has a boards object', () => {
+    // Simulate a modern config written without version (e.g. by an older build)
+    const modernConfig = {
+      boards: {
+        default: {
+          name: 'Default',
+          columns: DEFAULT_COLUMNS,
+          nextCardId: 3,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium'
+        }
+      },
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      aiAgent: 'claude',
+      defaultPriority: 'medium',
+      defaultStatus: 'backlog',
+      nextCardId: 3,
+      webhooks: [{ id: 'wh_abc', url: 'http://example.com', events: ['*'], active: true }],
+      webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } }
+    }
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(modernConfig), 'utf-8')
+
+    const config = readConfig(workspaceDir)
+
+    expect(config.version).toBe(2)
+    // boards must be preserved, not rebuilt from scratch
+    expect(config.boards.default.nextCardId).toBe(3)
+    // webhooks must survive
+    expect(config.webhooks).toBeDefined()
+    expect(config.webhooks).toHaveLength(1)
+    expect(config.webhooks![0].id).toBe('wh_abc')
+    // webhookPlugin must survive
+    expect(config.webhookPlugin).toEqual({ 'webhook.delivery': { provider: 'webhooks' } })
+    // The file on disk must NOT have been rewritten by a spurious migration
+    const onDisk = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'))
+    expect(onDisk.webhooks).toHaveLength(1)
+  })
+
+  it('should preserve webhooks when migrating a true v1 config that has webhooks manually added', () => {
+    // An operator manually added webhooks to an old v1 config before upgrading
+    const v1WithWebhooks = {
+      kanbanDirectory: '.kanban',
+      defaultPriority: 'medium',
+      defaultStatus: 'backlog',
+      columns: DEFAULT_COLUMNS,
+      aiAgent: 'claude',
+      nextCardId: 2,
+      showPriorityBadges: true,
+      showAssignee: true,
+      showDueDate: true,
+      showLabels: true,
+      showBuildWithAI: true,
+      showFileName: false,
+      compactMode: false,
+      markdownEditorMode: false,
+      webhooks: [{ id: 'wh_x1', url: 'http://hooks.example.com/k', events: ['task.created'], active: true }]
+    }
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(v1WithWebhooks), 'utf-8')
+
+    const config = readConfig(workspaceDir)
+
+    // Version should be upgraded
+    expect(config.version).toBe(2)
+    expect(config.boards.default).toBeDefined()
+    // webhooks must be preserved through migration
+    expect(config.webhooks).toBeDefined()
+    expect(config.webhooks).toHaveLength(1)
+    expect(config.webhooks![0].id).toBe('wh_x1')
+  })
+
+  it('allocateCardId should not drop webhooks from config (T9 regression)', () => {
+    const kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    const initialConfig = {
+      version: 2,
+      boards: {
+        default: {
+          name: 'Default',
+          columns: DEFAULT_COLUMNS,
+          nextCardId: 1,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium'
+        }
+      },
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      aiAgent: 'claude',
+      defaultPriority: 'medium',
+      defaultStatus: 'backlog',
+      nextCardId: 1,
+      showPriorityBadges: true,
+      showAssignee: true,
+      showDueDate: true,
+      showLabels: true,
+      showBuildWithAI: true,
+      showFileName: false,
+      compactMode: false,
+      markdownEditorMode: false,
+      showDeletedColumn: false,
+      boardZoom: 100,
+      cardZoom: 100,
+      port: 2954,
+      labels: {},
+      webhooks: [{ id: 'wh_reg1', url: 'http://example.com/hook', events: ['*'], active: true }],
+      webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } }
+    }
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(initialConfig), 'utf-8')
+
+    // This is the call triggered by POST /api/tasks
+    const cardId = allocateCardId(workspaceDir)
+
+    expect(cardId).toBe(1)
+
+    // webhooks must still be present after allocateCardId rewrites the config
+    const onDisk = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'))
+    expect(onDisk.webhooks).toBeDefined()
+    expect(onDisk.webhooks).toHaveLength(1)
+    expect(onDisk.webhooks[0].id).toBe('wh_reg1')
+    expect(onDisk.webhookPlugin).toEqual({ 'webhook.delivery': { provider: 'webhooks' } })
+  })
+})
+

@@ -15,6 +15,8 @@ import { resolveCapabilityBag } from '../sdk/plugins'
 import { AuthError } from '../sdk/types'
 import type { AuthContext, AuthDecision } from '../sdk/types'
 import type { AuthIdentity } from '../sdk/plugins'
+import type { EventListenerPlugin } from '../sdk/types'
+import type { Webhook } from '../shared/config'
 
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 
@@ -37,6 +39,54 @@ function injectDenyAll(sdk: KanbanSDK, kanbanDir: string): void {
         _ctx: AuthContext,
       ): Promise<AuthDecision> {
         return { allowed: false, reason: 'auth.policy.denied' as const }
+      },
+    },
+  })
+}
+
+/**
+ * Injects a fully isolated in-memory webhook provider into the SDK capability
+ * bag so CRUD tests run against provider-backed delegation, not the built-in
+ * fallback that writes to `.kanban.json`.
+ */
+function injectMockWebhookProvider(sdk: KanbanSDK, kanbanDir: string): void {
+  const store: Webhook[] = []
+  let idSeq = 0
+  const noopListener: EventListenerPlugin = {
+    manifest: { id: 'mock-webhook-listener', provides: ['event.listener'] as const },
+    init: () => {},
+    destroy: () => {},
+  }
+  const bag = resolveCapabilityBag(
+    { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+    kanbanDir,
+  )
+  setCapabilities(sdk, {
+    ...bag,
+    webhookProvider: {
+      manifest: { id: 'mock-webhook-provider', provides: ['webhook.delivery'] },
+      listWebhooks(_root: string): Webhook[] {
+        return [...store]
+      },
+      createWebhook(_root: string, input: { url: string; events: string[]; secret?: string }): Webhook {
+        const wh: Webhook = { id: `wh_mock_${++idSeq}`, url: input.url, events: input.events, active: true, ...(input.secret ? { secret: input.secret } : {}) }
+        store.push(wh)
+        return { ...wh }
+      },
+      updateWebhook(_root: string, id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Webhook | null {
+        const idx = store.findIndex(w => w.id === id)
+        if (idx === -1) return null
+        Object.assign(store[idx], updates)
+        return { ...store[idx] }
+      },
+      deleteWebhook(_root: string, id: string): boolean {
+        const idx = store.findIndex(w => w.id === id)
+        if (idx === -1) return false
+        store.splice(idx, 1)
+        return true
+      },
+      createListener(_root: string): EventListenerPlugin {
+        return noopListener
       },
     },
   })
@@ -105,5 +155,112 @@ describe('MCP auth denial mapping: denied admin action produces stable isError r
 
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('board.delete')
+  })
+})
+
+describe('MCP webhook CRUD parity: SDK-backed behavior', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-webhook-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    // Inject an isolated in-memory provider so tests are provider-backed
+    // and independent of the built-in .kanban.json fallback.
+    injectMockWebhookProvider(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('list_webhooks returns empty array on fresh workspace', () => {
+    const result = sdk.listWebhooks()
+    expect(Array.isArray(result)).toBe(true)
+    expect(result).toHaveLength(0)
+  })
+
+  it('add_webhook creates a webhook with expected fields', async () => {
+    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
+    expect(webhook.id).toMatch(/^wh_/)
+    expect(webhook.url).toBe('https://example.com/hook')
+    expect(webhook.events).toEqual(['*'])
+    expect(webhook.active).toBe(true)
+
+    const listed = sdk.listWebhooks()
+    expect(listed).toHaveLength(1)
+    expect(listed[0].id).toBe(webhook.id)
+  })
+
+  it('update_webhook modifies an existing webhook', async () => {
+    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
+    const updated = await sdk.updateWebhook(webhook.id, { active: false }, { transport: 'mcp' })
+    expect(updated).not.toBeNull()
+    expect(updated!.active).toBe(false)
+    expect(updated!.id).toBe(webhook.id)
+  })
+
+  it('update_webhook returns null for a non-existent ID', async () => {
+    const result = await sdk.updateWebhook('wh_nonexistent', { active: false }, { transport: 'mcp' })
+    expect(result).toBeNull()
+  })
+
+  it('remove_webhook deletes an existing webhook and returns true', async () => {
+    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
+    const removed = await sdk.deleteWebhook(webhook.id, { transport: 'mcp' })
+    expect(removed).toBe(true)
+    expect(sdk.listWebhooks()).toHaveLength(0)
+  })
+
+  it('remove_webhook returns false for a non-existent ID', async () => {
+    const removed = await sdk.deleteWebhook('wh_nonexistent', { transport: 'mcp' })
+    expect(removed).toBe(false)
+  })
+})
+
+describe('MCP webhook auth denial: provider-backed error surfaces correctly', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-webhook-auth-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    injectDenyAll(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('denied webhook.create surfaces isError with action-stable message', async () => {
+    const result = await mcpHandler(() =>
+      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('webhook.create')
+  })
+
+  it('denied webhook.delete surfaces isError with action-stable message', async () => {
+    const result = await mcpHandler(() =>
+      sdk.deleteWebhook('wh_any', { transport: 'mcp' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('webhook.delete')
+  })
+
+  it('denied webhook.update surfaces isError with action-stable message', async () => {
+    const result = await mcpHandler(() =>
+      sdk.updateWebhook('wh_any', { active: false }, { transport: 'mcp' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('webhook.update')
   })
 })

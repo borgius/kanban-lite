@@ -1281,7 +1281,7 @@ Webhook subscriptions
 
 **List webhooks**
 
-Returns all registered webhook subscriptions from the workspace webhook registry.
+Returns all registered webhook subscriptions from the workspace `.kanban.json` webhook registry. Runtime delivery normally comes from the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`, while current releases retain a built-in compatibility fallback when the package is not installed yet.
 
 #### Responses
 
@@ -1294,6 +1294,7 @@ Returns all registered webhook subscriptions from the workspace webhook registry
 **Register webhook**
 
 Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.
+Registrations remain stored in the workspace `.kanban.json` `webhooks` array regardless of whether the external provider package or the built-in compatibility fallback is active.
 
 **Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`,
 `comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`,
@@ -1322,7 +1323,7 @@ Required: Yes
 
 **Update webhook**
 
-Updates an existing webhook's URL, event subscriptions, signing secret, or active state.
+Updates an existing webhook's URL, event subscriptions, signing secret, or active state. The persisted registry format stays the same whether delivery is handled by `kl-webhooks-plugin` or the built-in compatibility fallback.
 
 #### Parameters
 
@@ -1352,7 +1353,7 @@ Required: Yes
 
 **Delete webhook**
 
-Deletes the webhook registration permanently.
+Deletes the webhook registration permanently from the workspace `.kanban.json` registry.
 
 #### Parameters
 
@@ -1465,7 +1466,7 @@ Workspace metadata, storage, and auth status
 
 **Get workspace info**
 
-Returns workspace-level connection and storage metadata, including resolved provider IDs and filesystem watcher support.
+Returns workspace-level connection metadata plus resolved storage, auth, and webhook provider information, including filesystem watcher support.
 
 #### Responses
 
@@ -1489,7 +1490,7 @@ Returns auth provider metadata plus safe request-scoped token diagnostics for th
 
 **Get storage status**
 
-Returns the active card provider ID, attachment provider ID, and host-facing file/watch metadata.
+Returns the active card, attachment, and webhook provider IDs plus host-facing file/watch metadata.
 
 #### Responses
 

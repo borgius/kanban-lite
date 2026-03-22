@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **External auth provider install story**: The auth provider ids `noop` and `rbac` now resolve through the standalone `kl-auth-plugin` package, and the local-dev loader also supports the sibling-repo pattern at `../kl-auth-plugin` so linked-package verification matches the webhook-plugin workflow.
+- **External webhook provider install story**: Webhook delivery now supports the `webhook.delivery` provider id `webhooks`, which resolves to the standalone `kl-webhooks-plugin` package. The local-dev loader also supports the sibling-repo pattern at `../kl-webhooks-plugin`, so linked-package verification matches the existing storage-plugin workflow.
 - **EventEmitter2-based pub/sub event bus**: `KanbanSDK` now uses an internal `EventBus` (wrapping EventEmitter2 with wildcard routing) for all event dispatch, replacing the single-callback `onEvent` pattern with a scalable pub/sub architecture.
 - **`SDKEvent<T>` typed event envelope**: All bus events are wrapped in a typed envelope carrying `type`, `data`, `timestamp`, and optional `actor`, `boardId`, and `meta` fields.
 - **`EventListenerPlugin` interface**: New plugin contract (`event.listener` capability) for event subscriber plugins that can subscribe to SDK events via the bus.
@@ -40,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit sqlite/mysql attachment compatibility providers**: `attachment.storage` now supports first-class `sqlite` and `mysql` compatibility-provider selections when explicitly chosen, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Webhook compatibility behavior**: Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array with no migration required, while current releases keep a built-in webhook fallback in place until `kl-webhooks-plugin` is installed.
+- **Refreshed card detail view**: The card editor now uses a calmer desktop-first popup/drawer presentation with tighter control density, smaller type and surface rhythm on large screens, and cleaner attachment/comment composition across desktop and mobile layouts.
 - **Swagger-backed REST API docs pipeline**: `docs/api.md` is now generated from the standalone OpenAPI spec used by Fastify Swagger, and the standalone server exposes interactive API docs at `/api/docs` plus raw OpenAPI JSON at `/api/docs/json`.
 - **Core sqlite/mysql provider boundary**: `markdown` and `localfs` are now the only true built-ins in core. The provider ids `sqlite` and `mysql` remain supported as compatibility aliases that resolve to `kl-sqlite-storage` and `kl-mysql-storage`, and core test coverage now focuses on host/plugin contracts rather than provider-owned CRUD/schema behavior.
 - **Workspace-local env loading for plugins**: `KanbanSDK` now loads `<workspaceRoot>/.env` before resolving capability plugins, so local MinIO/S3 defaults work without manually exporting variables in each shell.

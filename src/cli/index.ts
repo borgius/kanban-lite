@@ -1324,7 +1324,7 @@ async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
 
 // --- Webhook Commands ---
 
-async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {
+export async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {
   const subcommand = positional[0] || 'list'
 
   switch (subcommand) {

@@ -29,12 +29,12 @@ The key rule is:
 
 > If no auth plugin is configured, behavior must not change.
 
-That rule is preserved by built-in **no-op** providers:
+That rule is preserved by **no-op** providers resolved from `kl-auth-plugin` when available (with a core compatibility fallback when the package is absent):
 
 - `auth.identity: noop` → always resolves to anonymous (`null` identity)
 - `auth.policy: noop` → always allows the action
 
-The current release also ships a built-in **starter RBAC** provider pair:
+The current release also ships a **starter RBAC** provider pair through `kl-auth-plugin`:
 
 - `auth.identity: rbac` → validates opaque tokens against a runtime-owned principal registry
 - `auth.policy: rbac` → enforces a fixed cumulative role matrix for `user`, `manager`, and `admin`
@@ -66,7 +66,7 @@ The auth design is built around a few principles:
 	 - It does not do partial filtering of card lists or board lists.
 
 5. **No-plugin = no behavior change**
-	 - The built-in default path remains anonymous + allow-all.
+	 - The default path remains anonymous + allow-all via `noop`, with a compatibility fallback when `kl-auth-plugin` is not installed yet.
 
 ---
 
@@ -110,7 +110,7 @@ export interface AuthIdentity {
 }
 ```
 
-Current built-in provider:
+Current shipped provider ids:
 
 - `noop`
 - `rbac`
@@ -154,7 +154,7 @@ export interface AuthDecision {
 }
 ```
 
-Current built-in provider:
+Current shipped provider ids:
 
 - `noop`
 - `rbac`
@@ -185,8 +185,8 @@ Today the codebase includes:
 
 - auth capability types in config,
 - auth plugin interfaces,
-- built-in no-op identity/policy plugins,
-- a built-in starter `rbac` identity/policy provider pair,
+- `kl-auth-plugin` package-backed no-op identity/policy providers,
+- a package-backed starter `rbac` identity/policy provider pair,
 - the exported `createRbacIdentityPlugin(principals)` helper for runtime-backed token validation,
 - the fixed `RBAC_USER_ACTIONS`, `RBAC_MANAGER_ACTIONS`, `RBAC_ADMIN_ACTIONS`, and `RBAC_ROLE_MATRIX` exports,
 - SDK auth status reporting,
@@ -197,15 +197,12 @@ Today the codebase includes:
 
 ### What is still intentionally limited
 
-In the current core resolver implementation, the built-in auth resolver recognizes only these provider ids:
+In the current core resolver implementation, the shipped auth compatibility ids are:
 
 - `auth.identity.provider = "noop" | "rbac"`
 - `auth.policy.provider = "noop" | "rbac"`
 
-If another auth provider id is selected, the current resolver throws an error like:
-
-- `Unknown auth.identity provider "...". Supported providers: "noop", "rbac".`
-- `Unknown auth.policy provider "...". Supported providers: "noop", "rbac".`
+If another auth provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.
 
 So the system now has:
 
@@ -216,7 +213,7 @@ So the system now has:
 
 but it is still intentionally limited in two important ways:
 
-1. The core resolver does **not** dynamically load arbitrary external auth provider packages yet.
+1. The shipped compatibility ids are still just `noop` and `rbac`; turnkey multi-provider auth packaging remains deliberately small.
 2. The shipped `RBAC_IDENTITY_PLUGIN` singleton uses an empty registry, so real token validation requires host/runtime wiring via `createRbacIdentityPlugin(principals)`.
 
 That distinction matters for docs, operators, and plugin authors: this is a shipped starter RBAC contract, not a turnkey login system.
@@ -238,7 +235,7 @@ Auth provider selection lives in `.kanban.json` under the `auth` key.
 }
 ```
 
-### Built-in starter RBAC config
+### Starter RBAC config
 
 ```json
 {
@@ -251,7 +248,7 @@ Auth provider selection lives in `.kanban.json` under the `auth` key.
 
 What this does in the current implementation:
 
-- switches both auth capability ids to the built-in RBAC provider pair
+- switches both auth capability ids to the `kl-auth-plugin` RBAC provider pair
 - enables action-level authorization using the fixed SDK-owned role matrix
 - requires the host/runtime to provide the principal registry used by `createRbacIdentityPlugin(principals)` if you want any token to resolve successfully
 
@@ -363,7 +360,7 @@ export function createRbacIdentityPlugin(
 ): AuthIdentityPlugin
 ```
 
-That helper is the runtime-backed identity path for the built-in `rbac` provider:
+That helper is the runtime-backed identity path for the shipped `rbac` provider:
 
 - keys are opaque tokens
 - values contain the resolved caller `subject` and `roles`
@@ -374,9 +371,9 @@ The built-in singleton `RBAC_IDENTITY_PLUGIN` simply calls this helper with `new
 
 ---
 
-## Built-in starter RBAC provider
+## Starter RBAC provider
 
-The current built-in RBAC contract is intentionally small and fixed.
+The current shipped RBAC contract is intentionally small and fixed.
 
 ### Canonical roles
 

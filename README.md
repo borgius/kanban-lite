@@ -57,6 +57,7 @@ kl add --title "My first task" --priority high
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
+- **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
 - **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
 - **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
 - **Column visibility controls**: Minimize a column into a narrow rail with its name and card count from the column menu, or hide/show columns from **Board options → Columns**
@@ -356,8 +357,8 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/workspace` | Get workspace root path plus active storage provider metadata |
-| `GET` | `/api/storage` | Get current card/attachment storage provider status |
+| `GET` | `/api/workspace` | Get workspace root path plus active storage, auth, and webhook provider metadata |
+| `GET` | `/api/storage` | Get current card, attachment, and webhook provider status |
 | `POST` | `/api/storage/migrate-to-sqlite` | Migrate cards to SQLite (`{ sqlitePath? }`) |
 | `POST` | `/api/storage/migrate-to-markdown` | Migrate cards back to markdown files |
 
@@ -481,6 +482,46 @@ curl "http://localhost:3000/api/boards/bugs/tasks?q=meta.team%3A%20backnd&fuzzy=
 Register webhooks to receive HTTP POST notifications when data changes. Webhooks fire from **all interfaces** — REST API, CLI, MCP server, and the web UI — ensuring consistent event delivery regardless of how a mutation is triggered.
 
 > See the [full Webhooks documentation](docs/webhooks.md) for detailed event payloads, signature verification, and delivery behavior.
+
+### Install and compatibility
+
+Webhook CRUD and runtime delivery now resolve through the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`.
+
+- Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
+- Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array; no migration is required.
+- If `webhookPlugin` is omitted, runtime normalization still defaults to `{ "webhook.delivery": { "provider": "webhooks" } }`.
+- While the package is not installed, Kanban Lite keeps a built-in compatibility fallback for webhook CRUD and delivery so existing workspaces continue to function.
+
+```bash
+npm install kl-webhooks-plugin
+```
+
+For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is resolved automatically. `npm link ../kl-webhooks-plugin` is optional, but still useful when you want an explicit local package link.
+
+```json
+{
+  "webhookPlugin": {
+    "webhook.delivery": {
+      "provider": "webhooks"
+    }
+  },
+  "webhooks": [
+    {
+      "id": "wh_a1b2c3d4e5f6",
+      "url": "https://example.com/hook",
+      "events": ["task.created", "task.updated"],
+      "active": true
+    }
+  ]
+}
+```
+
+All webhook CRUD surfaces still delegate to the same SDK methods:
+
+- SDK: `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, `sdk.getWebhookStatus()`
+- REST API: `/api/webhooks`
+- CLI: `kl webhooks`, `kl webhooks add`, `kl webhooks update`, `kl webhooks remove`
+- MCP: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
 
 ### Events
 
@@ -1074,6 +1115,26 @@ The same pattern applies to MySQL:
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-s3-attachment-storage` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
 
+### Webhook delivery provider
+
+Webhook delivery now follows the same provider-resolution model, but it uses the top-level `webhookPlugin` config key instead of the storage `plugins` map:
+
+```json
+{
+  "webhookPlugin": {
+    "webhook.delivery": {
+      "provider": "webhooks"
+    }
+  }
+}
+```
+
+- The default runtime provider id is `webhooks`.
+- The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
+- The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
+- A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
+- If the package is absent, current releases retain a built-in webhook compatibility fallback while the external install story rolls out.
+
 ### MySQL setup and runtime expectations
 
 Use the MySQL compatibility provider id by selecting `provider: "mysql"` under `plugins["card.storage"]`:
@@ -1108,14 +1169,14 @@ npm install kl-mysql-storage mysql2
 
 ### Provider status surfaces
 
-These commands/endpoints/tools expose the active card provider id, attachment provider id, whether cards are file-backed, and the filesystem watch glob when one exists:
+These commands/endpoints/tools expose provider ids and host-facing metadata without requiring callers to guess which compatibility shim or external package is active:
 
 - `kl storage status`
 - `GET /api/storage`
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active or the built-in compatibility fallback is still in use.
 
 ### Migrating between compatibility-backed providers
 
@@ -1159,7 +1220,17 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. Both default to built-in `noop` providers that preserve the current open-access behavior, and the release also includes a built-in starter `rbac` provider pair for runtime-validated action-level RBAC:
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop` and `rbac` now resolve through the external `kl-auth-plugin` package, with a built-in compatibility fallback retained so existing workspaces still behave the same until the package is installed or linked.
+
+Install the package in the environment that loads Kanban Lite:
+
+```bash
+npm install kl-auth-plugin
+```
+
+For local sibling-repo development, a checkout at `../kl-auth-plugin` is resolved automatically. `npm link ../kl-auth-plugin` is optional, but useful when you want an explicit local package link.
+
+The shipped provider ids behave as before:
 
 - `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
 - `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
@@ -1179,9 +1250,9 @@ Provider references for both namespaces are read from `.kanban.json` the same wa
 
 Bearer tokens, token-to-role maps, and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
 
-### Built-in `rbac` provider
+### `rbac` provider
 
-Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pair (`rbac`) that enforces a fixed three-role action matrix without requiring a login flow or external identity service.
+Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pair (`rbac`) in `kl-auth-plugin`. It enforces a fixed three-role action matrix without requiring a login flow or external identity service.
 
 **Enable it in `.kanban.json`:**
 

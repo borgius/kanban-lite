@@ -113,118 +113,83 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
   }
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('card-markdown-shell h-full', className)}>
       {/* Tab bar + toolbar */}
       <div
-        className="flex items-center shrink-0"
-        style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
+        className="card-markdown-header shrink-0"
       >
         {/* Tabs */}
-        {(isEditMode ? ['preview', 'write'] as const : ['write', 'preview'] as const).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className="px-3 py-2 text-xs font-medium transition-colors relative"
-            style={{
-              color: activeTab === tab ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-            }}
-          >
-            {tab === 'write' ? writeLabel : 'Preview'}
-            {activeTab === tab && (
-              <span
-                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-                style={{ background: 'var(--vscode-focusBorder)' }}
-              />
-            )}
-          </button>
-        ))}
-        {resolvedForms.map((form) => {
-          const tabId = createFormCardTabId(form.id)
-          return (
+        <div className="card-markdown-tabs">
+          {(isEditMode ? ['preview', 'write'] as const : ['write', 'preview'] as const).map(tab => (
             <button
-              key={tabId}
+              key={tab}
               type="button"
-              onClick={() => setActiveTab(tabId)}
-              className="px-3 py-2 text-xs font-medium transition-colors relative"
-              style={{
-                color: activeTab === tabId ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-              }}
+              onClick={() => setActiveTab(tab)}
+              className={cn('card-markdown-tab', activeTab === tab && 'is-active')}
             >
+              {tab === 'write' ? writeLabel : 'Preview'}
+            </button>
+          ))}
+          {resolvedForms.map((form) => {
+            const tabId = createFormCardTabId(form.id)
+            return (
+              <button
+                key={tabId}
+                type="button"
+                onClick={() => setActiveTab(tabId)}
+                className={cn('card-markdown-tab', activeTab === tabId && 'is-active')}
+              >
                 {`form: ${form.name}`}
-              {activeTab === tabId && (
+              </button>
+            )
+          })}
+          {comments && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('comments')}
+              className={cn('card-markdown-tab', activeTab === 'comments' && 'is-active')}
+            >
+              <MessageCircle size={12} />
+              Comments
+              {comments.length > 0 && (
                 <span
-                  className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-                  style={{ background: 'var(--vscode-focusBorder)' }}
-                />
+                  className="text-[10px] px-1 rounded-full"
+                  style={{
+                    background: 'var(--vscode-badge-background)',
+                    color: 'var(--vscode-badge-foreground)',
+                  }}
+                >
+                  {comments.length}
+                </span>
               )}
             </button>
-          )
-        })}
-        {comments && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('comments')}
-            className="px-3 py-2 text-xs font-medium transition-colors relative flex items-center gap-1.5"
-            style={{
-              color: activeTab === 'comments' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-            }}
-          >
-            <MessageCircle size={12} />
-            Comments
-            {comments.length > 0 && (
-              <span
-                className="text-[10px] px-1 rounded-full"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >
-                {comments.length}
-              </span>
-            )}
-            {activeTab === 'comments' && (
-              <span
-                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-                style={{ background: 'var(--vscode-focusBorder)' }}
-              />
-            )}
-          </button>
-        )}
-        {logs && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('logs')}
-            className="px-3 py-2 text-xs font-medium transition-colors relative flex items-center gap-1.5"
-            style={{
-              color: activeTab === 'logs' ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)',
-            }}
-          >
-            <ScrollText size={12} />
-            Logs
-            {logs.length > 0 && (
-              <span
-                className="text-[10px] px-1 rounded-full"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >
-                {logs.length}
-              </span>
-            )}
-            {activeTab === 'logs' && (
-              <span
-                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-                style={{ background: 'var(--vscode-focusBorder)' }}
-              />
-            )}
-          </button>
-        )}
+          )}
+          {logs && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('logs')}
+              className={cn('card-markdown-tab', activeTab === 'logs' && 'is-active')}
+            >
+              <ScrollText size={12} />
+              Logs
+              {logs.length > 0 && (
+                <span
+                  className="text-[10px] px-1 rounded-full"
+                  style={{
+                    background: 'var(--vscode-badge-background)',
+                    color: 'var(--vscode-badge-foreground)',
+                  }}
+                >
+                  {logs.length}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
 
         {/* Toolbar - only visible on Write tab */}
         {activeTab === 'write' && (
-          <div className="flex items-center ml-auto pr-2 gap-0.5">
+          <div className="card-markdown-toolbar">
             <ToolbarButton icon={<Heading size={14} />} title="Heading" onClick={() => handleFormat('heading')} />
             <ToolbarButton icon={<Bold size={14} />} title="Bold (⌘B)" onClick={() => handleFormat('bold')} />
             <ToolbarButton icon={<Italic size={14} />} title="Italic (⌘I)" onClick={() => handleFormat('italic')} />

@@ -989,7 +989,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Webhooks'],
         summary: 'List webhooks',
-        description: 'Returns all registered webhook subscriptions from the workspace webhook registry.',
+        description: 'Returns all registered webhook subscriptions from the workspace `.kanban.json` webhook registry. Runtime delivery normally comes from the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`, while current releases retain a built-in compatibility fallback when the package is not installed yet.',
         responses: { 200: { description: 'Webhook list.' } },
       },
       post: {
@@ -997,6 +997,7 @@ export const KANBAN_OPENAPI_SPEC = {
         summary: 'Register webhook',
         description: [
           'Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.',
+          'Registrations remain stored in the workspace `.kanban.json` `webhooks` array regardless of whether the external provider package or the built-in compatibility fallback is active.',
           '',
           '**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`,',
           '`comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`,',
@@ -1027,7 +1028,7 @@ export const KANBAN_OPENAPI_SPEC = {
       put: {
         tags: ['Webhooks'],
         summary: 'Update webhook',
-        description: "Updates an existing webhook's URL, event subscriptions, signing secret, or active state.",
+        description: "Updates an existing webhook's URL, event subscriptions, signing secret, or active state. The persisted registry format stays the same whether delivery is handled by `kl-webhooks-plugin` or the built-in compatibility fallback.",
         parameters: [webhookIdParam],
         requestBody: {
           required: true,
@@ -1050,7 +1051,7 @@ export const KANBAN_OPENAPI_SPEC = {
       delete: {
         tags: ['Webhooks'],
         summary: 'Delete webhook',
-        description: 'Deletes the webhook registration permanently.',
+        description: 'Deletes the webhook registration permanently from the workspace `.kanban.json` registry.',
         parameters: [webhookIdParam],
         responses: { 200: { description: 'Deleted.' }, 404: { description: 'Not found.' } },
       },
@@ -1123,7 +1124,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Workspace'],
         summary: 'Get workspace info',
-        description: 'Returns workspace-level connection and storage metadata, including resolved provider IDs and filesystem watcher support.',
+        description: 'Returns workspace-level connection metadata plus resolved storage, auth, and webhook provider information, including filesystem watcher support.',
         responses: { 200: { description: 'Workspace info.' } },
       },
     },
@@ -1139,7 +1140,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Workspace'],
         summary: 'Get storage status',
-        description: 'Returns the active card provider ID, attachment provider ID, and host-facing file/watch metadata.',
+        description: 'Returns the active card, attachment, and webhook provider IDs plus host-facing file/watch metadata.',
         responses: { 200: { description: 'Storage status.' } },
       },
     },

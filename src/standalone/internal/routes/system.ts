@@ -297,15 +297,17 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     const wsConfig = readConfig(workspaceRoot)
     const storageStatus = sdk.getStorageStatus()
+    const webhookStatus = sdk.getWebhookStatus()
     jsonOk(res, {
       path: workspaceRoot,
       port: wsConfig.port,
       storageEngine: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
-      providers: buildProviderSummary(storageStatus),
+      providers: buildProviderSummary(storageStatus, webhookStatus),
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
       auth: getAuthStatus(sdk, req),
+      webhook: webhookStatus,
     })
     return true
   }
@@ -320,10 +322,11 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     const wsConfig = readConfig(workspaceRoot)
     const storageStatus = sdk.getStorageStatus()
+    const webhookStatus = sdk.getWebhookStatus()
     jsonOk(res, {
       type: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
-      providers: buildProviderSummary(storageStatus),
+      providers: buildProviderSummary(storageStatus, webhookStatus),
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
     })

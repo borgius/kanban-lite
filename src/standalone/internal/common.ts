@@ -52,13 +52,19 @@ export function applyCommonCardFilters(cards: Card[], searchParams: URLSearchPar
   return result
 }
 
-export function buildProviderSummary(storageStatus: ReturnType<StandaloneContext['sdk']['getStorageStatus']>) {
-  return storageStatus.providers
-    ? {
-        'card.storage': storageStatus.providers['card.storage'].provider,
-        'attachment.storage': storageStatus.providers['attachment.storage'].provider,
-      }
-    : null
+export function buildProviderSummary(
+  storageStatus: ReturnType<StandaloneContext['sdk']['getStorageStatus']>,
+  webhookStatus?: ReturnType<StandaloneContext['sdk']['getWebhookStatus']>,
+) {
+  if (!storageStatus.providers) return null
+  const summary: Record<string, string> = {
+    'card.storage': storageStatus.providers['card.storage'].provider,
+    'attachment.storage': storageStatus.providers['attachment.storage'].provider,
+  }
+  if (webhookStatus) {
+    summary['webhook.delivery'] = webhookStatus.webhookProvider
+  }
+  return summary
 }
 
 export function jsonText(body: unknown): string {

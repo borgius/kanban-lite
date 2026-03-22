@@ -906,16 +906,16 @@ function App(): React.JSX.Element {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
           return (
             <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
-              {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={handleCloseEditor} />}
+              {!isDrawer && <div className="absolute inset-0 card-view-modal-backdrop" onClick={handleCloseEditor} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto'
-                  : 'relative w-full max-w-4xl h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200'}
+                  ? 'relative h-full flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto card-view-shell card-view-shell--drawer'
+                  : 'relative w-full max-w-none h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 card-view-shell card-view-shell--popup'}
                 style={{
                   fontSize: `calc(1em * var(--card-zoom, 1))`,
                   ...(isDrawer
-                    ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
-                    : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' })
+                    ? { width: `${effectiveDrawerWidth}%` }
+                    : {})
                 }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >

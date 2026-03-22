@@ -6,7 +6,6 @@ import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig } from '../shared/config'
-import { fireWebhooks } from '../sdk/webhooks'
 import { AuthError, type AuthContext } from '../sdk/types'
 
 const cardFormAttachmentSchema = z.object({
@@ -60,9 +59,7 @@ async function resolveKanbanDir(): Promise<string> {
 async function main(): Promise<void> {
   const kanbanDir = await resolveKanbanDir()
   const workspaceRoot = path.dirname(kanbanDir)
-  const sdk = new KanbanSDK(kanbanDir, {
-    onEvent: (event, data) => fireWebhooks(workspaceRoot, event, data)
-  })
+  const sdk = new KanbanSDK(kanbanDir)
 
   const server = new McpServer({
     name: 'kanban-lite',

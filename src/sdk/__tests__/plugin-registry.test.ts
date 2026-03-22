@@ -4,12 +4,12 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin } from '../plugins'
-import type { RbacRole } from '../plugins'
+import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin } from '../plugins'
+import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK } from '../KanbanSDK'
-import { normalizeAuthCapabilities } from '../../shared/config'
+import { normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
 import { AuthError } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
@@ -750,22 +750,22 @@ describe('auth capability resolution', () => {
     expect(decision.allowed).toBe(true)
   })
 
-  it('throws for unknown auth.identity provider', () => {
+  it('throws an install hint for an unknown external auth.identity provider', () => {
     expect(() =>
       resolveCapabilityBag(storageCaps, kanbanDir, {
         'auth.identity': { provider: 'unknown-provider' },
         'auth.policy': { provider: 'noop' },
       })
-    ).toThrow(/unknown auth.identity provider/i)
+    ).toThrow(/npm install unknown-provider/i)
   })
 
-  it('throws for unknown auth.policy provider', () => {
+  it('throws an install hint for an unknown external auth.policy provider', () => {
     expect(() =>
       resolveCapabilityBag(storageCaps, kanbanDir, {
         'auth.identity': { provider: 'noop' },
         'auth.policy': { provider: 'unknown-provider' },
       })
-    ).toThrow(/unknown auth.policy provider/i)
+    ).toThrow(/npm install unknown-provider/i)
   })
 })
 
@@ -799,7 +799,7 @@ describe('KanbanSDK auth wiring', () => {
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({ version: 2, auth: { 'auth.identity': { provider: 'unknown-auth-provider' } } }),
     )
-    expect(() => new KanbanSDK(kanbanDir)).toThrow(/unknown auth.identity provider/i)
+    expect(() => new KanbanSDK(kanbanDir)).toThrow(/npm install unknown-auth-provider/i)
   })
 })
 
@@ -839,6 +839,50 @@ describe('KanbanSDK.getAuthStatus', () => {
     expect(status.policyProvider).toBe('noop')
     expect(status.identityEnabled).toBe(false)
     expect(status.policyEnabled).toBe(false)
+    sdk.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// KanbanSDK.getWebhookStatus
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK.getWebhookStatus', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-webhook-status-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('returns built-in provider and inactive flag when no webhook plugin configured', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const status = sdk.getWebhookStatus()
+    // When kl-webhooks-plugin is installed as a sibling, it resolves to 'webhooks'.
+    // When it is absent, the built-in fallback is used and webhookProvider is 'built-in'.
+    expect(typeof status.webhookProvider).toBe('string')
+    expect(typeof status.webhookProviderActive).toBe('boolean')
+    // Active and provider id must be consistent with each other.
+    if (status.webhookProviderActive) {
+      expect(status.webhookProvider).not.toBe('built-in')
+    } else {
+      expect(status.webhookProvider).toBe('built-in')
+    }
+    sdk.close()
+  })
+
+  it('returns built-in provider when pre-built storage engine is injected', () => {
+    const engine = new MarkdownStorageEngine(kanbanDir)
+    const sdk = new KanbanSDK(kanbanDir, { storage: engine })
+    const status = sdk.getWebhookStatus()
+    expect(status.webhookProvider).toBe('built-in')
+    expect(status.webhookProviderActive).toBe(false)
     sdk.close()
   })
 })
@@ -1333,6 +1377,128 @@ describe('RBAC built-in provider pair', () => {
     // metadata field (if present) must not echo the full raw token
     const meta = JSON.stringify(decision.metadata ?? {})
     expect(meta).not.toContain(rawToken)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// WEBHOOK_PROVIDER_ALIASES
+// ---------------------------------------------------------------------------
+
+describe('WEBHOOK_PROVIDER_ALIASES', () => {
+  it('maps "webhooks" to "kl-webhooks-plugin"', () => {
+    expect(WEBHOOK_PROVIDER_ALIASES.get('webhooks')).toBe('kl-webhooks-plugin')
+  })
+
+  it('does not contain unknown aliases', () => {
+    expect(WEBHOOK_PROVIDER_ALIASES.has('unknown-provider')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AUTH_PROVIDER_ALIASES
+// ---------------------------------------------------------------------------
+
+describe('AUTH_PROVIDER_ALIASES', () => {
+  it('maps "noop" to "kl-auth-plugin"', () => {
+    expect(AUTH_PROVIDER_ALIASES.get('noop')).toBe('kl-auth-plugin')
+  })
+
+  it('maps "rbac" to "kl-auth-plugin"', () => {
+    expect(AUTH_PROVIDER_ALIASES.get('rbac')).toBe('kl-auth-plugin')
+  })
+
+  it('does not contain unknown aliases', () => {
+    expect(AUTH_PROVIDER_ALIASES.has('unknown-provider')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveCapabilityBag – webhook provider resolution
+// ---------------------------------------------------------------------------
+
+describe('resolveCapabilityBag – webhookProvider', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-webhook-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('returns webhookProvider=null when webhookCapabilities is omitted', () => {
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+    expect(bag.webhookProvider).toBeNull()
+  })
+
+  it('resolves webhookProvider from sibling package when installed as local sibling', () => {
+    const webhookCaps = normalizeWebhookCapabilities({})
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+      undefined,
+      webhookCaps,
+    )
+    // In dev the sibling `../kl-webhooks-plugin` is built and resolves successfully.
+    // null is only returned in environments where neither node_modules nor the sibling exists.
+    expect(bag.webhookProvider).not.toBeNull()
+    expect(bag.webhookProvider?.manifest.provides).toContain('webhook.delivery')
+  })
+
+  it('loads webhookProviderPlugin from a temp-installed package', () => {
+    const mockPlugin: WebhookProviderPlugin = {
+      manifest: { id: 'test-webhooks', provides: ['webhook.delivery'] },
+      listWebhooks: () => [],
+      createWebhook: (_root, input) => ({ id: 'wh_test', url: input.url, events: input.events, active: true }),
+      updateWebhook: () => null,
+      deleteWebhook: () => false,
+      createListener: () => ({
+        manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
+        init: () => {},
+        destroy: () => {},
+      }),
+    }
+
+    const cleanup = installTempPackage('kl-webhooks-plugin', `
+      module.exports = {
+        webhookProviderPlugin: {
+          manifest: { id: 'test-webhooks', provides: ['webhook.delivery'] },
+          listWebhooks: () => [],
+          createWebhook: (_root, input) => ({ id: 'wh_test', url: input.url, events: input.events, active: true }),
+          updateWebhook: () => null,
+          deleteWebhook: () => false,
+          createListener: () => ({
+            manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
+            init: () => {},
+            destroy: () => {},
+          }),
+        }
+      }
+    `)
+
+    try {
+      const webhookCaps = normalizeWebhookCapabilities({})
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        webhookCaps,
+      )
+      expect(bag.webhookProvider).not.toBeNull()
+      expect(bag.webhookProvider!.manifest.id).toBe('test-webhooks')
+      expect(bag.webhookProvider!.manifest.provides).toContain('webhook.delivery')
+      expect(typeof bag.webhookProvider!.listWebhooks).toBe('function')
+      expect(typeof bag.webhookProvider!.createListener).toBe('function')
+    } finally {
+      cleanup()
+    }
   })
 })
 

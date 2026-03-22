@@ -213,8 +213,7 @@ Cards are stored as markdown files with YAML frontmatter:
       new/
       investigating/
       fixed/
-  .kanban.json          # Board configuration (v2)
-  .kanban-webhooks.json # Webhook definitions
+  .kanban.json          # Board config, forms, labels, settings, and webhook definitions
 \`\`\`
 
 Each card file contains YAML frontmatter (id, status, priority, assignee, dates, labels, order) followed by markdown content and optional comment sections.

@@ -79,59 +79,36 @@ export function CommentEditor({
   const canSubmit = author.trim().length > 0 && content.trim().length > 0
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="comment-editor-shell">
       <input
         type="text"
         value={author}
         onChange={e => setAuthor(e.target.value)}
         placeholder="Your name"
         aria-label="Comment author name"
-        className="w-full rounded px-2 py-1 text-xs outline-none"
-        style={{
-          background: 'var(--vscode-input-background)',
-          color: 'var(--vscode-foreground)',
-          border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))',
-        }}
+        className="comment-editor-author outline-none"
+        style={{ color: 'var(--vscode-foreground)' }}
       />
 
       <div
-        className="flex flex-col rounded overflow-hidden"
-        style={{ border: '1px solid var(--vscode-input-border, var(--vscode-panel-border))' }}
+        className="comment-editor-frame"
       >
-        <div
-          className="flex items-center"
-          style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
-        >
+        <div className="comment-editor-tabs">
           {(['write', 'preview'] as const).map(tab => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className="px-3 py-1.5 text-xs font-medium transition-colors relative capitalize"
-              style={{
-                color: activeTab === tab
-                  ? 'var(--vscode-foreground)'
-                  : 'var(--vscode-descriptionForeground)',
-                background: 'transparent',
-              }}
+              className={`comment-editor-tab${activeTab === tab ? ' is-active' : ''}`}
             >
               {tab}
-              {activeTab === tab && (
-                <span
-                  className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t"
-                  style={{ background: 'var(--vscode-focusBorder)' }}
-                />
-              )}
             </button>
           ))}
         </div>
 
         {activeTab === 'write' ? (
           <>
-            <div
-              className="flex items-center px-1 py-0.5"
-              style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
-            >
+            <div className="comment-editor-toolbar">
               <ToolbarButton icon={<Bold size={12} />} title="Bold (Cmd+B)" onClick={() => handleFormat('bold')} />
               <ToolbarButton icon={<Italic size={12} />} title="Italic (Cmd+I)" onClick={() => handleFormat('italic')} />
               <ToolbarButton icon={<Quote size={12} />} title="Quote" onClick={() => handleFormat('quote')} separator />
@@ -147,12 +124,8 @@ export function CommentEditor({
               onChange={e => setContent(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Add a comment... (Markdown supported)"
-              className="w-full px-2 py-1.5 text-xs resize-none outline-none"
-              style={{
-                background: 'var(--vscode-input-background)',
-                color: 'var(--vscode-foreground)',
-                minHeight: '120px',
-              }}
+              className="comment-editor-textarea text-xs outline-none"
+              style={{ color: 'var(--vscode-foreground)' }}
               rows={5}
             />
           </>
@@ -160,22 +133,14 @@ export function CommentEditor({
           previewHtml ? (
             // eslint-disable-next-line react/no-danger
             <div
-              className="px-2 py-1.5 text-xs comment-markdown"
-              style={{
-                background: 'var(--vscode-input-background)',
-                color: 'var(--vscode-foreground)',
-                minHeight: '120px',
-              }}
+              className="comment-editor-preview text-xs comment-markdown"
+              style={{ color: 'var(--vscode-foreground)' }}
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
           ) : (
             <div
-              className="px-2 py-1.5 text-xs"
-              style={{
-                background: 'var(--vscode-input-background)',
-                color: 'var(--vscode-descriptionForeground)',
-                minHeight: '120px',
-              }}
+              className="comment-editor-empty text-xs"
+              style={{ color: 'var(--vscode-descriptionForeground)' }}
             >
               Nothing to preview
             </div>
@@ -183,7 +148,7 @@ export function CommentEditor({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="comment-editor-actions">
         {onCancel && (
           <button
             type="button"
@@ -200,7 +165,7 @@ export function CommentEditor({
           type="button"
           onClick={handleSubmit}
           disabled={!canSubmit}
-          className="px-2.5 py-1 text-xs font-medium rounded transition-colors disabled:opacity-30"
+          className="card-inline-action card-inline-action--solid disabled:opacity-30"
           style={{
             background: 'var(--vscode-button-background)',
             color: 'var(--vscode-button-foreground)',

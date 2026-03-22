@@ -11,7 +11,7 @@ export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shar
 export { getTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types'
 export type { AuthIdentity, AuthPluginManifest, AuthIdentityPlugin, AuthPolicyPlugin } from './plugins/index'
 export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from './plugins/index'
-export type { StorageStatus, AuthStatus } from './KanbanSDK'
+export type { StorageStatus, AuthStatus, WebhookStatus } from './KanbanSDK'
 export { EventBus } from './eventBus'
 export type { EventBusOptions } from './eventBus'
 export { WebhookListenerPlugin, createWebhookListenerPlugin } from './plugins/webhookListener'

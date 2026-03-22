@@ -23,6 +23,10 @@ Today there are two **storage** capability namespaces:
 - `card.storage`
 - `attachment.storage`
 
+There is also one **webhook delivery** capability namespace:
+
+- `webhook.delivery`
+
 And two **auth** capability namespaces (no-op by default):
 
 - `auth.identity`
@@ -32,6 +36,7 @@ That means:
 
 - one provider can store cards/comments,
 - another provider can store attachments,
+- a webhook provider can own webhook CRUD plus outbound delivery,
 - or one provider can implement both capabilities explicitly in the plugin layer.
 
 This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, and fully external npm packages to coexist behind the same capability contract.
@@ -99,16 +104,41 @@ The `attachment.storage` capability does **not** currently replace all card-stor
 - how attachments are copied,
 - whether a host can materialize a safe local file path for an attachment.
 
+### `webhook.delivery`
+
+This capability owns webhook registry CRUD and outbound HTTP delivery.
+
+Compatibility/default provider id:
+
+- `webhooks`
+
+External package:
+
+- `kl-webhooks-plugin`
+
+Behavior:
+
+- persists webhook definitions in the existing `.kanban.json` top-level `webhooks` array,
+- subscribes to the SDK event bus and delivers matching events via HTTP POST,
+- preserves the existing payload envelope and HMAC signing behavior,
+- keeps the registry format stable so existing workspaces do not need migration.
+
+Important config nuance: unlike storage capabilities, webhook delivery is currently configured under the top-level `webhookPlugin` key rather than the `plugins` map.
+
 ---
 
 ### `auth.identity`
 
 This capability resolves a raw token to a typed identity.
 
-Built-in provider:
+Compatibility/default provider ids:
 
 - `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
 - `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles }` for registered principals.
+
+External package:
+
+- `kl-auth-plugin`
 
 Important nuance: the exported `RBAC_IDENTITY_PLUGIN` singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via `createRbacIdentityPlugin(principals)` and wire it in through custom capability wiring. Unknown or absent tokens resolve to `null`, and roles are never inferred from token text.
 
@@ -116,20 +146,38 @@ Important nuance: the exported `RBAC_IDENTITY_PLUGIN` singleton is backed by an 
 
 This capability decides whether an identity may perform a named action.
 
-Built-in provider:
+Compatibility/default provider ids:
 
 - `noop` (default) — always returns `true` (allow-all); preserves current open-access behavior.
 - `rbac` — enforces the fixed SDK-owned `RBAC_ROLE_MATRIX` for the cumulative `user`, `manager`, and `admin` roles.
 
+External package:
+
+- `kl-auth-plugin`
+
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-> **Note:** Auth capability enforcement is live today at the SDK pre-action seam for the privileged async mutation surface used by the Node-hosted adapters. However, arbitrary external auth plugin loading and turnkey host-managed principal registries are still future work.
+> **Note:** Auth capability enforcement is live today at the SDK pre-action seam for the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` ids resolve through `kl-auth-plugin` when present, with a built-in compatibility fallback retained so existing workspaces and test environments do not break when the package has not been installed yet.
 
 ---
 
 ## Config model
 
 The canonical config lives in `.kanban.json`.
+
+Webhook delivery uses its own top-level config section:
+
+```json
+{
+  "webhookPlugin": {
+    "webhook.delivery": {
+      "provider": "webhooks"
+    }
+  }
+}
+```
+
+If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. Current releases also keep a built-in compatibility fallback when `kl-webhooks-plugin` is not installed yet.
 
 ### Modern capability-based config
 

@@ -2,10 +2,10 @@ import * as path from 'path'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities } from '../shared/config'
-import type { BoardConfig, ProviderRef, ResolvedCapabilities, Webhook } from '../shared/config'
+import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../shared/config'
+import type { BoardConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, EventListenerPlugin } from './types'
 import { EventBus } from './eventBus'
 import { AuthError } from './types'
 import type { StorageEngine } from './plugins/types'
@@ -65,6 +65,27 @@ export interface AuthStatus {
    * authorization checks are being performed.
    */
   policyEnabled: boolean
+}
+
+/**
+ * Active webhook provider metadata for diagnostics and host surfaces.
+ *
+ * Mirrors the same diagnostic-status pattern as {@link StorageStatus}.
+ * Host surfaces (REST API, CLI, MCP) can surface this to help operators
+ * understand whether an external webhook delivery plugin is live.
+ */
+export interface WebhookStatus {
+  /**
+   * Active `webhook.delivery` provider id.
+   * Returns `'built-in'` when the external `kl-webhooks-plugin` package is not resolved
+   * and the compatibility fallback remains active.
+   */
+  webhookProvider: string
+  /**
+   * `true` when an external webhook provider plugin is active.
+   * `false` when falling back to the built-in compatibility webhook implementation.
+   */
+  webhookProviderActive: boolean
 }
 
 /**
@@ -189,6 +210,11 @@ function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions):
   return capabilities
 }
 
+function resolveConfiguredWebhookCapabilities(kanbanDir: string): ResolvedWebhookCapabilities {
+  const config = readConfig(path.dirname(kanbanDir))
+  return normalizeWebhookCapabilities(config)
+}
+
 /**
  * Core SDK for managing kanban boards with provider-backed card storage.
  *
@@ -213,7 +239,7 @@ export class KanbanSDK {
   private _migrated = false
   private _onEvent?: SDKEventHandler
   private readonly _eventBus: EventBus
-  private _webhookPlugin: WebhookListenerPlugin | null = null
+  private _webhookPlugin: EventListenerPlugin | null = null
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
 
@@ -268,12 +294,12 @@ export class KanbanSDK {
       })
     }
 
-    this._webhookPlugin = new WebhookListenerPlugin()
-    this._webhookPlugin.init(this._eventBus, this.workspaceRoot)
-
     if (options?.storage) {
       this._storage = options.storage
       this._capabilities = null
+      // Pre-built storage engine injected: fall back to built-in webhook listener.
+      this._webhookPlugin = new WebhookListenerPlugin()
+      this._webhookPlugin.init(this._eventBus, this.workspaceRoot)
       return
     }
 
@@ -281,8 +307,20 @@ export class KanbanSDK {
       resolveConfiguredCapabilities(this.kanbanDir, options),
       this.kanbanDir,
       resolveConfiguredAuthCapabilities(this.kanbanDir),
+      resolveConfiguredWebhookCapabilities(this.kanbanDir),
     )
     this._storage = this._capabilities.cardStorage
+
+    const webhookProvider = this._capabilities.webhookProvider
+    if (webhookProvider) {
+      // External provider resolved: use its listener for webhook delivery.
+      this._webhookPlugin = webhookProvider.createListener(this.workspaceRoot)
+      this._webhookPlugin.init(this._eventBus, this.workspaceRoot)
+    } else {
+      // kl-webhooks-plugin not yet installed: fall back to built-in listener.
+      this._webhookPlugin = new WebhookListenerPlugin()
+      this._webhookPlugin.init(this._eventBus, this.workspaceRoot)
+    }
   }
 
   /** The SDK event bus for subscribing to events (pub/sub). */
@@ -355,6 +393,30 @@ export class KanbanSDK {
       policyProvider,
       identityEnabled: identityProvider !== 'noop',
       policyEnabled: policyProvider !== 'noop',
+    }
+  }
+
+  /**
+   * Returns webhook provider metadata for host surfaces and diagnostics.
+   *
+   * Use this to inspect which webhook delivery provider is active and whether
+   * an external provider plugin is installed or the built-in fallback is used.
+   *
+   * @returns A {@link WebhookStatus} snapshot containing the active provider id
+   *   and a boolean flag indicating whether the provider is an external plugin.
+   *
+   * @example
+   * ```ts
+   * const status = sdk.getWebhookStatus()
+   * console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
+   * console.log(status.webhookProviderActive) // false when no plugin configured
+   * ```
+   */
+  getWebhookStatus(): WebhookStatus {
+    const webhookProvider = this._capabilities?.webhookProvider?.manifest.id ?? 'built-in'
+    return {
+      webhookProvider,
+      webhookProviderActive: this._capabilities?.webhookProvider != null,
     }
   }
 
@@ -2083,37 +2145,55 @@ export class KanbanSDK {
 
   /**
    * Lists all registered webhooks.
+    * Delegates to the resolved external `webhook.delivery` provider when available,
+    * otherwise uses the built-in compatibility registry path against the same
+    * `.kanban.json` `webhooks` array.
    *
    * @returns Array of {@link Webhook} objects.
    */
   listWebhooks(): Webhook[] {
+    if (this._capabilities?.webhookProvider) {
+      return this._capabilities.webhookProvider.listWebhooks(this.workspaceRoot)
+    }
     return loadWebhooks(this.workspaceRoot)
   }
 
   /**
    * Creates and persists a new webhook.
+    * Delegates to the resolved external `webhook.delivery` provider when available,
+    * otherwise uses the built-in compatibility registry path.
    *
    * @param webhookConfig - The webhook configuration.
    * @returns The newly created {@link Webhook}.
    */
   async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }, auth?: AuthContext): Promise<Webhook> {
     await this._authorizeAction('webhook.create', this._withAuthContext(auth))
+    if (this._capabilities?.webhookProvider) {
+      return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, webhookConfig)
+    }
     return _createWebhook(this.workspaceRoot, webhookConfig)
   }
 
   /**
    * Deletes a webhook by its ID.
+    * Delegates to the resolved external `webhook.delivery` provider when available,
+    * otherwise uses the built-in compatibility registry path.
    *
    * @param id - The webhook ID to delete.
    * @returns `true` if deleted, `false` if not found.
    */
   async deleteWebhook(id: string, auth?: AuthContext): Promise<boolean> {
     await this._authorizeAction('webhook.delete', this._withAuthContext(auth))
+    if (this._capabilities?.webhookProvider) {
+      return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, id)
+    }
     return _deleteWebhook(this.workspaceRoot, id)
   }
 
   /**
    * Updates an existing webhook's configuration.
+    * Delegates to the resolved external `webhook.delivery` provider when available,
+    * otherwise uses the built-in compatibility registry path.
    *
    * @param id - The webhook ID to update.
    * @param updates - Partial webhook fields to merge.
@@ -2121,6 +2201,9 @@ export class KanbanSDK {
    */
   async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>, auth?: AuthContext): Promise<Webhook | null> {
     await this._authorizeAction('webhook.update', this._withAuthContext(auth))
+    if (this._capabilities?.webhookProvider) {
+      return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, id, updates)
+    }
     return _updateWebhook(this.workspaceRoot, id, updates)
   }
 

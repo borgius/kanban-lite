@@ -5,17 +5,41 @@ Kanban Lite fires webhooks on every mutation — task, comment, column, attachme
 ## Overview
 
 - Webhooks fire from **all interfaces**: REST API, CLI, MCP server, and the UI (via the standalone server).
-- Events are emitted by the SDK's `onEvent` callback, ensuring consistent behavior regardless of entry point.
+- Events are emitted by the SDK event bus and delivered by the resolved `webhook.delivery` provider, ensuring consistent behavior regardless of entry point.
+- The default runtime provider id is `webhooks`, which resolves to the external `kl-webhooks-plugin` package.
 - Webhook registrations are stored in `.kanban.json` and persist across server restarts.
 - Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).
+- Existing workspaces keep the same `.kanban.json` `webhooks` array; no migration is required.
+- Current releases retain a built-in webhook fallback while `kl-webhooks-plugin` is absent, so CRUD and delivery remain backward-compatible during the rollout.
+
+## Install and linking
+
+Install `kl-webhooks-plugin` in the same environment that loads Kanban Lite:
+
+```bash
+npm install kl-webhooks-plugin
+```
+
+For local development, a sibling checkout at `../kl-webhooks-plugin` is resolved automatically. `npm link ../kl-webhooks-plugin` is optional when you want an explicit local package link.
 
 ## Configuration
 
-Webhooks are stored in your project's `.kanban.json` file:
+Webhook delivery can be selected explicitly through `webhookPlugin`, while webhook registrations themselves stay in the existing top-level `.kanban.json` `webhooks` array:
 
 ```json
 {
-  "columns": [...],
+  "webhookPlugin": {
+    "webhook.delivery": {
+      "provider": "webhooks"
+    }
+  }
+}
+```
+
+Registered webhooks are stored in your project's `.kanban.json` file:
+
+```json
+{
   "webhooks": [
     {
       "id": "wh_a1b2c3d4e5f67890",
@@ -43,7 +67,7 @@ Webhooks are stored in your project's `.kanban.json` file:
 
 ```bash
 # List webhooks
-kl webhooks list
+kl webhooks
 
 # Register a webhook
 kl webhooks add --url https://example.com/hook --events task.created,task.moved
@@ -53,12 +77,12 @@ kl webhooks update <id> --active false
 kl webhooks update <id> --events task.created,task.deleted --url https://new-url.com
 
 # Delete a webhook
-kl webhooks delete <id>
+kl webhooks remove <id>
 ```
 
 ### MCP Server
 
-Tools: `list_webhooks`, `create_webhook`, `update_webhook`, `delete_webhook`
+Tools: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
 
 ## Payload Format
 

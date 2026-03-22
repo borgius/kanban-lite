@@ -29,6 +29,15 @@ export type AuthCapabilitySelections = Partial<Record<AuthCapabilityNamespace, P
 /** Fully normalized auth capability selections used at runtime. */
 export type ResolvedAuthCapabilities = Record<AuthCapabilityNamespace, ProviderRef>
 
+/** Capability namespace for the webhook delivery provider. */
+export type WebhookCapabilityNamespace = 'webhook.delivery'
+
+/** Partial webhook capability selections from config or constructor overrides. */
+export type WebhookCapabilitySelections = Partial<Record<WebhookCapabilityNamespace, ProviderRef>>
+
+/** Fully normalized webhook capability selections used at runtime. */
+export type ResolvedWebhookCapabilities = Record<WebhookCapabilityNamespace, ProviderRef>
+
 /**
  * A registered webhook endpoint that receives event notifications.
  *
@@ -218,7 +227,7 @@ export interface KanbanConfig {
      * legacy omitted-default behavior, which remains `attachment.storage: localfs`.
    */
   plugins?: CapabilitySelections
-  /** Optional auth provider selections. Defaults to built-in no-op providers. */
+  /** Optional auth provider selections. Defaults to noop compatibility ids resolved via `kl-auth-plugin` when available. */
   auth?: AuthCapabilitySelections
   /**
    * Named reusable form definitions available on all boards in the workspace.
@@ -229,6 +238,13 @@ export interface KanbanConfig {
    * { "bug-report": { schema: { type: "object", properties: { title: { type: "string" } } } } }
    */
   forms?: Record<string, import('./config').FormDefinition>
+  /**
+   * Optional webhook provider selection.
+   * When omitted, defaults to `{ provider: 'webhooks' }` at runtime, which maps to the
+   * `kl-webhooks-plugin` external package. The persisted `.kanban.json` webhook registry
+   * shape (`webhooks` array) is unchanged regardless of which provider is active.
+   */
+  webhookPlugin?: WebhookCapabilitySelections
 }
 
 // Legacy v1 config (for migration)
@@ -326,7 +342,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     markdownEditorMode: false
   }
   const v1 = { ...v1Defaults, ...raw } as KanbanConfigV1
-  return {
+  const v2: KanbanConfig = {
     version: 2,
     boards: {
       default: {
@@ -356,6 +372,20 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     cardZoom: 100,
     port: 2954
   }
+  // Preserve modern fields that may exist even in legacy configs
+  // (e.g. webhooks manually added before upgrading, or partially-upgraded configs)
+  const modernPassthroughKeys = [
+    'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'auth',
+    'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
+    'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'port'
+  ]
+  const passthrough = v2 as unknown as Record<string, unknown>
+  for (const key of modernPassthroughKeys) {
+    if (raw[key] !== undefined) {
+      passthrough[key] = raw[key]
+    }
+  }
+  return v2
 }
 
 /**
@@ -375,7 +405,10 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
   const defaults = { ...DEFAULT_CONFIG, boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } } }
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    if (!raw.version || raw.version === 1) {
+    // True v1: explicitly version 1, OR version absent AND no boards object
+    // A versionless modern config (has a boards object) must NOT be treated as v1
+    const isV1 = raw.version === 1 || (!raw.version && !(typeof raw.boards === 'object' && raw.boards !== null && !Array.isArray(raw.boards)))
+    if (isV1) {
       // Migrate v1 to v2 and persist
       const v2 = migrateConfigV1ToV2(raw)
       writeConfig(workspaceRoot, v2)
@@ -582,8 +615,10 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
 /**
  * Normalizes auth capability selections into a complete runtime capability map.
  *
- * Omitted auth providers default to the built-in `noop` implementations so
- * behavior is unchanged when auth is not configured.
+ * Omitted auth providers default to the `noop` compatibility ids. When the
+ * external `kl-auth-plugin` package is installed those ids resolve there;
+ * otherwise core keeps a built-in compatibility fallback so behavior is
+ * unchanged when auth is not configured.
  *
  * The input object is never mutated.
  */
@@ -632,5 +667,25 @@ export function normalizeStorageCapabilities(
     'attachment.storage': config.plugins?.['attachment.storage']
       ? cloneProviderRef(config.plugins['attachment.storage'])
       : { provider: 'localfs' },
+  }
+}
+
+/**
+ * Normalizes webhook capability selections into a complete runtime capability map.
+ *
+ * When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
+ * maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
+ * The built-in webhook delivery path remains active as a compatibility fallback when
+ * the external package is absent.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeWebhookCapabilities(
+  config: Pick<KanbanConfig, 'webhookPlugin'>,
+): ResolvedWebhookCapabilities {
+  return {
+    'webhook.delivery': config.webhookPlugin?.['webhook.delivery']
+      ? cloneProviderRef(config.webhookPlugin['webhook.delivery'])
+      : { provider: 'webhooks' },
   }
 }

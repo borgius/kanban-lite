@@ -1,0 +1,99 @@
+---
+layout: docs.njk
+title: Cards & Workflows
+description: Card structure, priority levels, labels, comments, logs, attachments, actions, and forms.
+permalink: /docs/cards/
+---
+<h1>Cards &amp; Workflows</h1>
+<p class="docs-intro">A card is a plain markdown file. Priority, comments, logs, forms — everything layers on top of that.</p>
+
+<section class="guide-section">
+  <h2>Card anatomy</h2>
+  <p>Every card is stored as a <code>.md</code> file in <code>.kanban/&lt;status&gt;/</code>. The filename derives from the title and timestamp — for example <code>implement-dark-mode-2026-01-29.md</code>.</p>
+  <p>YAML frontmatter stores metadata. The markdown body is free-form.</p>
+  <pre><code>---
+title: Implement dark mode
+status: in-progress
+priority: high
+assignee: alice
+labels: [frontend, ux]
+dueDate: "2026-04-01"
+---
+
+Free-form markdown body here.
+</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Priority levels</h2>
+  <p>Cards carry one of four priority levels: <strong>Critical, High, Medium, Low</strong>. Displayed as color-coded badges in the board and the card detail view. Set via the web UI, CLI, or API.</p>
+  <pre><code>kl add --title "Fix login bug" --priority critical
+kl edit fix-login-bug --priority high</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Assignees</h2>
+  <p>Assign one team member per card. Filter the board by assignee from the toolbar or via <code>--assignee</code> in the CLI.</p>
+  <pre><code>kl add --title "Auth refactor" --assignee alice
+kl list --assignee alice</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Labels</h2>
+  <p>Apply one or many labels to categorize cards. Labels are defined per-board in <strong>Settings &rarr; Labels</strong>. Click a label in the board or card detail panel to filter the board view instantly.</p>
+  <pre><code>kl add --title "Improve search UX" --label "frontend,search,ux"</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Due dates</h2>
+  <p>Smart relative formatting: cards show <em>Overdue</em>, <em>Today</em>, <em>Tomorrow</em>, or a compact notation like <em>5d</em>. Filter by due status from the toolbar.</p>
+  <pre><code>kl edit my-card-id --due 2026-04-15</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Comments</h2>
+  <p>Threaded discussion stored in the same markdown file. Timestamps and authors are tracked automatically.</p>
+  <pre><code>kl comment add my-card-id --author alice --body "Looks good, needs tests"
+kl comment list my-card-id</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Logs</h2>
+  <p>Timestamped append-only log entries stored in a separate <code>&lt;cardId&gt;.log</code> file. Support optional source labels and structured JSON objects — ideal for CI output, deployment events, or audit trails.</p>
+  <pre><code>kl log add my-card-id --text "Build passed" --source ci --object '{"version":"1.2.0"}'
+kl log list my-card-id</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Attachments</h2>
+  <p>Attach files to any card. File references are stored in frontmatter; the files are copied to the card's attachment directory.</p>
+  <pre><code>kl attach add my-card-id ./screenshot.png
+kl attach my-card-id    # list attachments</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Actions</h2>
+  <p>Named triggers attached to a card — for example <code>retry</code>, <code>deploy</code>, <code>notify</code>. Fire them from the web UI, CLI, REST API, or MCP server. Kanban Lite calls the configured webhook URL with the card's full context.</p>
+  <pre><code>kl add --title "Deploy service" --actions "retry,rollback,notify"
+kl action trigger deploy-service retry</code></pre>
+  <div class="guide-callout">
+    Actions are great for triggering CI pipelines, Slack notifications, or any external webhook handler directly from a Kanban card.
+  </div>
+</section>
+
+<section class="guide-section">
+  <h2>Metadata</h2>
+  <p>Attach arbitrary key-value metadata to any card. Filter with <code>meta.field: value</code> tokens from the search bar or CLI.</p>
+  <pre><code>kl add --title "User profile page" --meta sprint=Q2 --meta points=5
+kl list --search "meta.sprint: Q2"</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Forms</h2>
+  <p>Attach reusable forms from <code>.kanban.json</code> or define card-local inline forms. Each form renders as its own tab in the card editor. Submitted data is stored per-form under <code>formData[formId]</code> in the card frontmatter.</p>
+  <pre><code>kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
+kl form submit investigate-outage incident-report --data '{"severity":"high","owner":"alice"}'</code></pre>
+  <p><a href="/docs/forms/">Full forms reference &rarr;</a></p>
+</section>
+
+<p><a href="/docs/search/" class="btn btn--primary">Search &amp; Filtering &rarr;</a></p>

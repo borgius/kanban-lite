@@ -1,0 +1,160 @@
+---
+layout: base.njk
+title: Kanban Lite
+description: Lightweight kanban boards stored as markdown. Manage tasks via web UI, CLI, REST API, or MCP server for AI agents.
+permalink: /
+---
+
+<section class="hero">
+  <div class="hero__inner">
+    <p class="hero__badge">v{{ site.version }} &middot; Open source &middot; MIT</p>
+    <h1 class="hero__headline">Kanban boards<br>that live in your repo</h1>
+    <p class="hero__tagline">Plain-markdown task management with a web UI, CLI, REST API, and MCP server for AI agents. No database, no SaaS, no lock-in.</p>
+    <div class="hero__cta">
+      <a href="/docs/quick-start/" class="btn btn--primary btn--lg">Get started in 60s</a>
+      <a href="{{ site.github }}" class="btn btn--ghost btn--lg" rel="noopener noreferrer" target="_blank">View on GitHub</a>
+    </div>
+    <div class="hero__code">
+      <pre><code>npm install -g kanban-lite
+kl init &amp;&amp; kl serve</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="interfaces">
+  <div class="section-inner">
+    <p class="section-eyebrow">Pick your interface &mdash; all four ship in the same package</p>
+    <div class="interface-grid">
+      <div class="interface-tile">
+        <span class="interface-tile__icon" aria-hidden="true">&#x1F5A5;</span>
+        <h3>Web UI</h3>
+        <p>Drag-and-drop board, inline editor, real-time WebSocket sync. <code>kl serve</code></p>
+        <a href="/docs/tour/" class="tile-link">See the tour &rarr;</a>
+      </div>
+      <div class="interface-tile">
+        <span class="interface-tile__icon" aria-hidden="true">&#x2328;</span>
+        <h3>CLI</h3>
+        <p>Create, filter, move, and report from the terminal. <code>kl list</code></p>
+        <a href="/docs/cli/" class="tile-link">CLI reference &rarr;</a>
+      </div>
+      <div class="interface-tile">
+        <span class="interface-tile__icon" aria-hidden="true">&#x1F50C;</span>
+        <h3>REST API</h3>
+        <p>OpenAPI-documented JSON API with Swagger UI included. Automate anything.</p>
+        <a href="/docs/api/" class="tile-link">API reference &rarr;</a>
+      </div>
+      <div class="interface-tile">
+        <span class="interface-tile__icon" aria-hidden="true">&#x1F916;</span>
+        <h3>MCP Server</h3>
+        <p>Let Claude, Codex, or any MCP-compatible agent manage your backlog.</p>
+        <a href="/docs/mcp/" class="tile-link">MCP reference &rarr;</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="home-quickstart" id="quickstart">
+  <div class="section-inner">
+    <h2 class="section-heading">Up and running in three commands</h2>
+    <div class="steps-horizontal">
+      <div class="step-block">
+        <span class="step-block__num" aria-hidden="true">1</span>
+        <h3>Install</h3>
+        <pre><code>npm install -g kanban-lite</code></pre>
+      </div>
+      <div class="step-block">
+        <span class="step-block__num" aria-hidden="true">2</span>
+        <h3>Init</h3>
+        <pre><code>kl init</code></pre>
+        <p>Creates <code>.kanban/</code> in your project.</p>
+      </div>
+      <div class="step-block">
+        <span class="step-block__num" aria-hidden="true">3</span>
+        <h3>Go</h3>
+        <pre><code>kl serve</code></pre>
+        <p>Opens the board at <code>localhost:3000</code>.</p>
+      </div>
+    </div>
+    <p class="steps-cta"><a href="/docs/quick-start/" class="btn btn--primary">Full quick start guide &rarr;</a></p>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="section-inner">
+    <h2 class="section-heading">What you get out of the box</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Markdown-native cards</h3>
+        <p>Every card is a plain <code>.md</code> file with YAML frontmatter. Read, edit, and commit them like any source file. No hidden format.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Multi-board support</h3>
+        <p>Run separate boards for features, bugs, sprints, or any context. Each board has independent columns, settings, and labels.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Rich card model</h3>
+        <p>Priority, assignees, due dates, labels, attachments, comments, logs, card actions, and structured forms &mdash; all in plain files.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Powerful filtering</h3>
+        <p>Fuzzy search, metadata token filters (<code>meta.field: value</code>), clickable label chips, priority and assignee filters in every interface.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Plugin ecosystem</h3>
+        <p>Swap the storage backend (SQLite, MySQL, S3), add auth, or extend webhooks &mdash; all via <code>.kanban.json</code> configuration.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Git-friendly by design</h3>
+        <p>Everything lives in your repo. Diffs, blame, pull request reviews, and rollbacks work on your board exactly as they do on code.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="workflow-fit">
+  <div class="section-inner">
+    <h2 class="section-heading">Who it&rsquo;s for</h2>
+    <div class="persona-grid">
+      <div class="persona-card">
+        <h3>Individual developers</h3>
+        <p>Keep your task list next to your code. No extra tool, no browser tab, no account. Just <code>kl add</code> and commit.</p>
+        <a href="/docs/quick-start/" class="tile-link">Start solo &rarr;</a>
+      </div>
+      <div class="persona-card">
+        <h3>Engineering teams</h3>
+        <p>Shared board in the monorepo. Every status change is a commit. Sprint reviews happen in code review — no extra dashboards.</p>
+        <a href="/docs/examples/#team-sprint" class="tile-link">Team sprint example &rarr;</a>
+      </div>
+      <div class="persona-card">
+        <h3>AI agents</h3>
+        <p>Claude, Codex, and OpenCode can read your backlog, create cards, and move tasks through the workflow using the built-in MCP server.</p>
+        <a href="/docs/mcp/" class="tile-link">Set up MCP &rarr;</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="trust-strip">
+  <div class="section-inner">
+    <ul class="trust-list" aria-label="Key facts about Kanban Lite">
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x1F4C4;</span> Markdown-native storage</li>
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x1F510;</span> MIT licensed</li>
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x1F5C4;</span> No database required</li>
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x1F9E9;</span> VS Code extension included</li>
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x2601;</span> Zero cloud dependency</li>
+      <li class="trust-item"><span class="trust-item__icon" aria-hidden="true">&#x1F504;</span> Real-time WebSocket sync</li>
+    </ul>
+  </div>
+</section>
+
+<section class="home-cta">
+  <div class="section-inner section-inner--narrow">
+    <h2>Ready to try it?</h2>
+    <p>Install the CLI, init a board, and be running in under a minute.</p>
+    <div class="hero__cta">
+      <a href="/docs/quick-start/" class="btn btn--primary btn--lg">Get started</a>
+      <a href="/docs/faq/" class="btn btn--ghost btn--lg">Read the FAQ</a>
+    </div>
+  </div>
+</section>
+

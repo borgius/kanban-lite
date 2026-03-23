@@ -1,0 +1,47 @@
+---
+layout: docs.njk
+title: Plugin System
+description: Capability-based plugin system for card storage, attachment storage, webhooks, and auth.
+permalink: /docs/plugins/
+---
+<div class="ref-intro">
+  <h1>Plugin System</h1>
+  <p>The plugin system splits storage, webhook delivery, and auth into independently swappable <strong>capability namespaces</strong>. You can run markdown-backed cards with S3 attachments, or SQLite cards with a custom auth policy — without touching application code.</p>
+  <div class="capability-grid">
+    <div class="capability-card">
+      <strong>card.storage</strong>
+      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-mysql-storage</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>attachment.storage</strong>
+      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-s3-attachment-storage</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>webhook.delivery</strong>
+      <span>Outbound HTTP delivery for kanban events. External: <code>kl-webhooks-plugin</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>auth.identity / auth.policy</strong>
+      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-auth-plugin</code>.</span>
+    </div>
+  </div>
+  <div class="usage-example">
+    <strong>Select providers in <code>.kanban.json</code></strong>
+    <pre><code>{
+  "storage": {
+    "card.storage":        { "provider": "sqlite" },
+    "attachment.storage": { "provider": "kl-s3-attachment-storage" },
+    "webhook.delivery":   { "provider": "webhooks" }
+  }
+}</code></pre>
+  </div>
+</div>
+
+{{ docsContent.plugins | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/storage/">Storage Providers</a> ·
+  <a href="/docs/auth/">Auth</a> ·
+  <a href="/docs/webhooks/">Webhooks</a>
+</div>

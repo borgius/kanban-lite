@@ -1,0 +1,41 @@
+---
+layout: docs.njk
+title: CLI Reference
+description: Command-line interface reference for Kanban Lite — manage boards, cards, columns, and more.
+permalink: /docs/cli/
+---
+<div class="ref-intro">
+  <h1>CLI Reference</h1>
+  <p>The <code>kl</code> (or <code>kanban-lite</code>) CLI gives you full control of every board resource from the terminal. All mutations fire the same webhooks as the UI and REST API, making the CLI a first-class citizen in your automation pipelines.</p>
+  <ul class="capability-list">
+    <li>Create, update, move, and delete cards with <code>kl add</code> / <code>kl edit</code> / <code>kl move</code></li>
+    <li>Fuzzy and metadata-scoped search: <code>kl list --search "meta.team: backend" --fuzzy</code></li>
+    <li>Manage columns, webhooks, settings, and storage migrations</li>
+    <li><code>--json</code> flag for machine-readable output in scripts</li>
+    <li>Start the web server or MCP server with <code>kl serve</code> / <code>kl mcp</code></li>
+  </ul>
+  <div class="usage-example">
+    <strong>Common commands</strong>
+    <pre><code># Install
+npm install -g kanban-lite
+
+# Create and work with cards
+kl add --title "Implement search" --priority high --label frontend
+kl list --status todo
+kl move implement-search in-progress
+kl edit implement-search --assignee alice
+
+# Start the board UI
+kl serve</code></pre>
+  </div>
+</div>
+
+{{ docsContent.cli | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/mcp/">MCP Server</a> ·
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/storage/">Storage Providers</a>
+</div>

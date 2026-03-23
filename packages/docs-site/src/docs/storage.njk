@@ -1,0 +1,79 @@
+---
+layout: docs.njk
+title: Storage Providers
+description: Switch between markdown, SQLite, MySQL, or S3-backed storage with a single .kanban.json config change.
+permalink: /docs/storage/
+---
+<div class="ref-intro">
+  <h1>Storage Providers</h1>
+  <p>Kanban Lite decouples <em>what</em> you store from <em>where</em> you store it through the capability-based plugin system. Two namespaces control storage: <code>card.storage</code> for cards and comments, and <code>attachment.storage</code> for file attachments. Swap providers in <code>.kanban.json</code> without changing any application code.</p>
+  <div class="capability-grid">
+    <div class="capability-card">
+      <strong>markdown <span class="badge badge--default">default</span></strong>
+      <span>Cards stored as plain <code>.md</code> files with YAML frontmatter. Human-readable, git-friendly, zero dependencies.</span>
+    </div>
+    <div class="capability-card">
+      <strong>sqlite</strong>
+      <span>Built-in SQLite provider via <code>kl-sqlite-storage</code>. Better query performance for large boards. Single-file database.</span>
+    </div>
+    <div class="capability-card">
+      <strong>kl-mysql-storage</strong>
+      <span>External npm package for MySQL/MariaDB-backed card storage. Suitable for shared team deployments.</span>
+    </div>
+    <div class="capability-card">
+      <strong>kl-s3-attachment-storage</strong>
+      <span>External npm package — store attachments in S3 or any S3-compatible object storage (MinIO, Cloudflare R2, etc.).</span>
+    </div>
+  </div>
+</div>
+
+<h2>Configure providers</h2>
+<p>Select providers in <code>.kanban.json</code> at your workspace root:</p>
+<pre><code>{
+  "storage": {
+    "card.storage":        { "provider": "sqlite" },
+    "attachment.storage": { "provider": "kl-s3-attachment-storage" }
+  }
+}</code></pre>
+
+<h2>Migrate between providers</h2>
+<p>Migrate in place without losing data using the CLI or REST API:</p>
+<pre><code># Check the current provider status
+kl storage status
+
+# Migrate cards to SQLite
+kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db
+
+# Migrate back to markdown files
+kl storage migrate-to-markdown</code></pre>
+<p>REST API equivalents:</p>
+<pre><code>GET  /api/storage                                   # provider status
+POST /api/storage/migrate-to-sqlite                 # { "sqlitePath": ".kanban/kanban.db" }
+POST /api/storage/migrate-to-markdown</code></pre>
+
+<h2>S3 / MinIO attachment storage</h2>
+<p>Install the package and point it at any S3-compatible endpoint via environment variables or <code>.kanban.json</code>:</p>
+<pre><code>npm install kl-s3-attachment-storage</code></pre>
+<pre><code>{
+  "storage": {
+    "attachment.storage": {
+      "provider": "kl-s3-attachment-storage",
+      "config": {
+        "endpoint": "http://127.0.0.1:9000",
+        "bucket":   "kanban",
+        "region":   "us-east-1"
+      }
+    }
+  }
+}</code></pre>
+
+<h2>Build your own provider</h2>
+<p>Any npm package that implements the <code>card.storage</code> or <code>attachment.storage</code> capability contract can be used as a provider. See the <a href="/docs/plugins/">Plugin System</a> deep dive and the <code>kanban-storage-plugin-author</code> skill for scaffolding a new plugin package.</p>
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/plugins/">Plugin System</a> &middot;
+  <a href="/docs/cli/">CLI</a> &middot;
+  <a href="/docs/api/">REST API</a> &middot;
+  <a href="/docs/examples/">Examples</a>
+</div>

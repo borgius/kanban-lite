@@ -1,0 +1,69 @@
+---
+layout: docs.njk
+title: Boards & Columns
+description: Multi-board support, column management, board settings, and standalone vs VS Code usage.
+permalink: /docs/boards/
+---
+<h1>Boards &amp; Columns</h1>
+<p class="docs-intro">Run multiple independent boards, configure columns per board, and tailor settings to your workflow.</p>
+
+<section class="guide-section">
+  <h2>Multiple boards</h2>
+  <p>Every project can have as many boards as it needs. Boards live side by side in the same <code>.kanban/</code> directory, each with its own column set, labels, settings, and card namespace.</p>
+  <pre><code>kl boards                                    # list all boards
+kl boards add --id bugs --name "Bug Tracker"
+kl boards show bugs
+kl boards default bugs                       # set the active board
+kl list --board bugs                         # target a specific board</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Column management</h2>
+  <p>The five default columns (<strong>Backlog, To Do, In Progress, Review, Done</strong>) can be renamed, recolored, added, or removed.</p>
+  <pre><code>kl columns                                              # list columns
+kl columns add --id testing --name Testing --color "#ff9900"
+kl columns update testing --color "#00cc66"
+kl columns remove testing                               # only removes empty columns</code></pre>
+  <div class="guide-callout">
+    Removing a column only succeeds when it has no cards. Move or delete the cards first, or clean the column from the web UI column menu.
+  </div>
+</section>
+
+<section class="guide-section">
+  <h2>Column visibility controls</h2>
+  <p>Open the column menu (<strong>&hellip;</strong>) and choose <strong>Minimize</strong> to collapse a column to a slim rail showing the name and card count. Use <strong>Board options &rarr; Columns</strong> to toggle visibility of any column without removing it.</p>
+</section>
+
+<section class="guide-section">
+  <h2>Board settings</h2>
+  <p>A tabbed settings panel provides three areas:</p>
+  <ul>
+    <li><strong>General</strong> &mdash; board name, default priority, compact card mode, background theme</li>
+    <li><strong>Defaults</strong> &mdash; default column for new cards, display options, zoom preset</li>
+    <li><strong>Labels</strong> &mdash; define label names and hex colors used across the board</li>
+  </ul>
+  <pre><code>kl settings                                  # print current settings
+kl settings update --compactMode true        # update via CLI</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Standalone server</h2>
+  <p>Run <code>kl serve</code> to start the standalone web server. Anyone on your local network (or VPN) can open the board in their browser. Suitable for team use, CI pipelines, and scripting via the REST API.</p>
+  <pre><code>kl serve                          # start on port 3000, auto-open browser
+kl serve --port 8080 --no-browser # custom port, headless</code></pre>
+  <p>The server provides the full React web UI at <code>/</code>, the REST API at <code>/api</code>, Swagger UI at <code>/api/docs</code>, and a WebSocket endpoint for real-time sync.</p>
+</section>
+
+<section class="guide-section">
+  <h2>VS Code extension</h2>
+  <p>The extension is bundled in the same npm package. It renders the board as a webview panel inside VS Code — no browser tab required. The extension runs the same server process as <code>kl serve</code> and reads from the same <code>.kanban/</code> directory.</p>
+  <p>Works in remote SSH and devcontainer sessions because the server runs in the remote environment and the webview opens in the VS Code UI.</p>
+</section>
+
+<section class="guide-section">
+  <h2>Card transfer between boards</h2>
+  <p>Move a card from one board to another with a single command:</p>
+  <pre><code>kl transfer card-42 --from default --to bugs</code></pre>
+</section>
+
+<p><a href="/docs/examples/" class="btn btn--primary">Examples &amp; Recipes &rarr;</a></p>

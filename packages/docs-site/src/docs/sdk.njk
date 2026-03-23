@@ -1,0 +1,42 @@
+---
+layout: docs.njk
+title: SDK Reference
+description: JavaScript/TypeScript SDK for Kanban Lite — full method reference and examples.
+permalink: /docs/sdk/
+---
+<div class="ref-intro">
+  <h1>SDK Reference</h1>
+  <p>The <code>KanbanSDK</code> class is the single source of truth for all Kanban Lite business logic. Every interface — CLI, REST API, MCP server, and VS Code extension — delegates to the same SDK methods, so your code uses the same proven paths that power the web UI.</p>
+  <ul class="capability-list">
+    <li>Create and manage boards, cards, columns, and settings programmatically</li>
+    <li>Full webhook CRUD and event subscription via <code>sdk.on()</code></li>
+    <li>Storage-agnostic: works with markdown, SQLite, MySQL, or custom providers</li>
+    <li>TypeScript-first with full type exports</li>
+    <li>Auth and policy hooks for access control</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Quick usage</strong>
+    <pre><code>import { KanbanSDK } from 'kanban-lite';
+
+const sdk = new KanbanSDK({ dir: '.kanban' });
+
+// Create a card
+const card = await sdk.createCard({ title: 'Fix login bug', priority: 'high', status: 'todo' });
+
+// Move it
+await sdk.moveCard(card.id, 'in-progress');
+
+// Subscribe to events
+sdk.on('task.created', (card) => console.log('New card:', card.id));</code></pre>
+  </div>
+</div>
+
+{{ docsContent.sdk | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/mcp/">MCP Server</a> ·
+  <a href="/docs/plugins/">Plugin System</a>
+</div>

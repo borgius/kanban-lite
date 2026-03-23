@@ -1,0 +1,31 @@
+<nav class="sidebar-nav" aria-label="Documentation sidebar">
+  {% for section in nav.sidebar %}
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">{{ section.label }}</p>
+    <ul class="sidebar-section__list">
+      {% for item in section.items %}
+      <li class="sidebar-item{% if item.children %} sidebar-item--has-children{% endif %}">
+        <a
+          href="{{ item.href }}"
+          class="sidebar-link{% if item.children %} sidebar-link--parent{% endif %}"
+          {% if page.url == item.href %}aria-current="page"{% endif %}
+        >{{ item.label }}</a>
+        {% if item.children %}
+        <ul class="sidebar-subnav" aria-label="{{ item.label }} subsections">
+          {% for child in item.children %}
+          <li class="sidebar-subitem">
+            <a
+              href="{{ child.href }}"
+              class="sidebar-sublink"
+              {% if page.url == child.href %}aria-current="page"{% endif %}
+            >{{ child.label }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</nav>

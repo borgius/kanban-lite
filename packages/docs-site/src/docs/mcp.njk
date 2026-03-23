@@ -1,0 +1,38 @@
+---
+layout: docs.njk
+title: MCP Server
+description: Model Context Protocol server tools for AI agents — Claude, Codex, and any MCP-compatible client.
+permalink: /docs/mcp/
+---
+<div class="ref-intro">
+  <h1>MCP Server</h1>
+  <p>Kanban Lite ships a first-class <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer">Model Context Protocol</a> server so AI agents can read and mutate your boards using natural language. Works with Claude Code, Cursor, OpenCode, and any MCP-compatible client.</p>
+  <ul class="capability-list">
+    <li>40+ tools covering boards, cards, columns, comments, logs, attachments, webhooks, and storage</li>
+    <li>Consistent search semantics shared with the CLI and REST API (<code>searchQuery</code>, <code>fuzzy</code>, <code>metaFilter</code>)</li>
+    <li>Stdio transport — start with <code>kl mcp</code> or via <code>npx kanban-lite mcp</code></li>
+    <li>All mutations go through the same SDK paths as the UI and CLI</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Claude Code setup (<code>.claude/settings.json</code>)</strong>
+    <pre><code>{
+  "mcpServers": {
+    "kanban": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["kanban-lite", "mcp"],
+      "env": { "KANBAN_DIR": "/path/to/your/project/.kanban" }
+    }
+  }
+}</code></pre>
+  </div>
+</div>
+
+{{ docsContent.mcp | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/sdk/">SDK</a>
+</div>

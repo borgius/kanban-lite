@@ -1,0 +1,16 @@
+{
+  "name": "@kanban-lite/docs-site",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Eleventy-powered product and documentation website for kanban-lite.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "eleventy",
+    "dev": "eleventy --serve --incremental",
+    "clean": "node -e \"require('fs').rmSync('_site', { recursive: true, force: true })\""
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.0"
+  }
+}

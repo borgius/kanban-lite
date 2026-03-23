@@ -1,0 +1,34 @@
+---
+layout: docs.njk
+title: Webhooks
+description: Outbound webhook delivery for kanban board events — configuration, payloads, and retry behavior.
+permalink: /docs/webhooks/
+---
+<div class="ref-intro">
+  <h1>Webhooks</h1>
+  <p>Register HTTP endpoints to receive real-time notifications when boards, cards, columns, or attachments change. Webhooks fire from <strong>all interfaces</strong> — web UI, CLI, REST API, MCP server, and SDK — ensuring consistent delivery regardless of how a mutation is triggered.</p>
+  <ul class="capability-list">
+    <li>20+ event types covering boards, cards, columns, comments, attachments, and forms</li>
+    <li>HMAC-SHA256 signature verification with optional per-webhook secrets</li>
+    <li>Manage via CLI (<code>kl webhooks add</code>), REST API, SDK, or MCP tools</li>
+    <li>Powered by the <code>kl-webhooks-plugin</code> package with built-in fallback</li>
+    <li>Registrations stored in <code>.kanban.json</code> and persist across restarts</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Register a webhook</strong>
+    <pre><code>kl webhooks add \
+  --url https://example.com/hook \
+  --events task.created,task.moved \
+  --secret mykey</code></pre>
+  </div>
+</div>
+
+{{ docsContent.webhooks | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/plugins/">Plugin System</a> ·
+  <a href="/docs/forms/">Forms</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/examples/">Examples</a>
+</div>

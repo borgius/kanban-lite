@@ -1,0 +1,25 @@
+---
+layout: docs.njk
+title: Auth
+description: Identity and policy plugin contract for action-level authorization in Kanban Lite.
+permalink: /docs/auth/
+---
+<div class="ref-intro">
+  <h1>Auth</h1>
+  <p>Kanban Lite's auth layer is a two-part plugin contract: <code>auth.identity</code> resolves who is making the request, and <code>auth.policy</code> decides whether that identity is allowed to perform an action. Both default to no-op pass-through, so zero configuration is needed for local or single-user setups.</p>
+  <ul class="capability-list">
+    <li>Plug in any identity source — JWT, API key, session cookie, or custom header</li>
+    <li>Policy plugins receive the resolved identity and the requested action for fine-grained RBAC</li>
+    <li>First-party <code>kl-auth-plugin</code> package for RBAC and common identity strategies</li>
+    <li>Auth events integrate with the SDK event bus for audit logging via webhooks</li>
+  </ul>
+</div>
+
+{{ docsContent.auth | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/plugins/">Plugin System</a> ·
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/api/">REST API</a>
+</div>

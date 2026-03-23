@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% if title %}{{ title }} — {{ site.name }}{% else %}{{ site.name }} — {{ site.tagline }}{% endif %}</title>
+    <meta name="description" content="{{ description | default(site.description) }}" />
+    <link rel="stylesheet" href="/assets/css/main.css" />
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">{{ site.name }}</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            {% for item in nav.topNav %}
+            <li>
+              <a href="{{ item.href }}"{% if item.external %} rel="noopener noreferrer" target="_blank"{% endif %}>{{ item.label }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+        </nav>
+        <a href="{{ nav.ctaTargets.primary.href }}" class="btn btn--primary">{{ nav.ctaTargets.primary.label }}</a>
+      </div>
+    </header>
+    {% set isDocsRoute = page and page.url and (page.url == '/docs/' or page.url.startsWith('/docs/')) %}
+    <main id="main-content">
+      {% if isDocsRoute %}
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          {% include "sitenav.njk" %}
+        </aside>
+        <article class="docs-content prose">
+          {{ content | safe }}
+        </article>
+      </div>
+      {% else %}
+      {{ content | safe }}
+      {% endif %}
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="{{ site.github }}">GitHub</a> ·
+          <a href="{{ site.npm }}">npm</a> ·
+          MIT licensed · v{{ site.version }}
+        </p>
+        <p>&copy; {{ site.currentYear }} Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+---
+layout: docs.njk
+title: Search & Filtering
+description: Toolbar search, fuzzy mode, metadata token filters, label chips, priority and assignee filters.
+permalink: /docs/search/
+---
+<h1>Search &amp; Filtering</h1>
+<p class="docs-intro">Find cards fast. Filters compose, persist in URL history, and work the same way across the web UI, CLI, and REST API.</p>
+
+<section class="guide-section">
+  <h2>Basic toolbar search</h2>
+  <p>Type any text in the search bar to filter cards by title, body, labels, and metadata values. Exact substring match is the default.</p>
+  <pre><code>kl list --search "release"</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Fuzzy mode</h2>
+  <p>Enable the <strong>Fuzzy</strong> toggle in the web UI or pass <code>--fuzzy</code> in the CLI to match near-misses. Useful for typos and partial keywords.</p>
+  <pre><code>kl list --search "authetication" --fuzzy</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Metadata token filters</h2>
+  <p>Use <code>meta.field: value</code> tokens to filter by any card metadata field. Tokens are substring-matched and case-insensitive. Combine multiple tokens in one query.</p>
+  <pre><code>kl list --search "meta.team: backend"
+kl list --search "meta.sprint: Q2 meta.team: frontend"</code></pre>
+  <p>In the web UI, mixed queries split into removable chips so you can drop one constraint without clearing the whole search.</p>
+</section>
+
+<section class="guide-section">
+  <h2>Clickable label and metadata filters</h2>
+  <p>Click a label badge on a board card or in the card detail panel to instantly inject a label filter. Click the filter icon next to a rendered metadata value to inject a <code>meta.*</code> token into the shared search box — no typing required.</p>
+</section>
+
+<section class="guide-section">
+  <h2>Structured filter flags (CLI &amp; API)</h2>
+  <p>For scripts and automation, target-filter flags are more legible than embedding tokens in a search string:</p>
+  <pre><code>kl list --status todo --priority high --assignee alice
+kl list --label "security" --meta sprint=Q2 --meta links.jira=PROJ-42</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2>Due date filters</h2>
+  <p>Toolbar shortcuts for common date-relative views: <strong>Overdue, Due Today, Due This Week, No Due Date</strong>.</p>
+</section>
+
+<section class="guide-section">
+  <h2>Column-level sorting</h2>
+  <p>Sort cards within any column by <strong>priority, due date, or creation date</strong> from the column menu. Sorting applies visually without moving cards to different status columns.</p>
+</section>
+
+<section class="guide-section">
+  <h2>URL persistence</h2>
+  <p>In standalone mode, the active board, selected card, applied filters, search query, and fuzzy mode are persisted in browser history and deep links. Bookmark a filtered view or share a link with a pre-applied search state.</p>
+</section>
+
+<p><a href="/docs/boards/" class="btn btn--primary">Boards &amp; Columns &rarr;</a></p>

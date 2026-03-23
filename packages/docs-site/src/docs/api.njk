@@ -1,0 +1,33 @@
+---
+layout: docs.njk
+title: REST API Reference
+description: Full OpenAPI-documented REST API for the Kanban Lite standalone server.
+permalink: /docs/api/
+---
+<div class="ref-intro">
+  <h1>REST API Reference</h1>
+  <p>The standalone server exposes a complete REST API at <code>/api</code>. All responses follow <code>{ "ok": true, "data": ... }</code> or <code>{ "ok": false, "error": "message" }</code>. CORS is enabled for all origins. An interactive Swagger/OpenAPI UI is available at <code>http://localhost:3000/api/docs</code> when the server is running.</p>
+  <ul class="capability-list">
+    <li>Full CRUD for boards, cards, columns, comments, logs, and attachments</li>
+    <li>Fuzzy and metadata-scoped search: <code>?q=release&amp;fuzzy=true&amp;meta.team=backend</code></li>
+    <li>Card forms submission and webhook management</li>
+    <li>Storage migration endpoints</li>
+    <li>Board-scoped variants for every card operation</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Create a card via API</strong>
+    <pre><code>curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# My task", "status": "todo", "priority": "high"}'</code></pre>
+  </div>
+</div>
+
+{{ docsContent.api | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/auth/">Auth</a>
+</div>

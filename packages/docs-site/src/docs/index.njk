@@ -1,0 +1,18 @@
+---
+layout: docs.njk
+title: Documentation
+description: Full documentation for Kanban Lite — web UI, CLI, REST API, MCP server, SDK, plugins, and more.
+permalink: /docs/
+---
+<h1>Documentation</h1>
+<p class="docs-intro">
+  Welcome to the Kanban Lite documentation. Choose a section below or use the sidebar to navigate.
+</p>
+<div class="section-grid">
+  {% for section in nav.sections %}
+  <a href="{{ section.href }}" class="section-card">
+    <strong>{{ section.title }}</strong>
+    <span>{{ section.description }}</span>
+  </a>
+  {% endfor %}
+</div>

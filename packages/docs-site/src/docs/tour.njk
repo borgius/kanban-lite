@@ -1,0 +1,109 @@
+---
+layout: docs.njk
+title: Product Tour
+description: A visual walkthrough of Kanban Lite — boards, cards, search, and all four interfaces.
+permalink: /docs/tour/
+---
+<h1>Product Tour</h1>
+<p class="docs-intro">A quick look at what you will be working with before you install.</p>
+
+<section class="tour-section">
+  <h2>The board view</h2>
+  <div class="tour-split">
+    <div>
+      <p>The default board shows five status columns: <strong>Backlog, To Do, In Progress, Review, Done</strong>. Column count and names are fully configurable per board.</p>
+      <ul class="tour-feature-list">
+        <li>Drag cards between columns</li>
+        <li>Sort within columns by priority, due date, or creation date</li>
+        <li>Minimize or hide columns from the column menu</li>
+        <li>Switch between horizontal and vertical layouts</li>
+        <li>Custom background themes, zoom controls (75&ndash;150%)</li>
+      </ul>
+    </div>
+    <figure class="tour-screenshot">
+      <img src="/docs/images/board-overview.png" alt="Kanban Lite board showing five columns with cards" loading="lazy" />
+    </figure>
+  </div>
+</section>
+
+<section class="tour-section">
+  <h2>Card editor</h2>
+  <div class="tour-split">
+    <figure class="tour-screenshot">
+      <img src="/docs/images/editor-view.png" alt="Kanban Lite inline card editor with markdown body and metadata panel" loading="lazy" />
+    </figure>
+    <div>
+      <p>Each card opens a split-view editor or a right-side drawer. Edit the markdown body inline while the metadata panel stays visible.</p>
+      <ul class="tour-feature-list">
+        <li>Priority, assignee, due date, labels</li>
+        <li>Comments and timestamped logs</li>
+        <li>File attachments</li>
+        <li>Named actions (trigger webhooks, CI, deploys)</li>
+        <li>Structured forms with per-card saved data</li>
+      </ul>
+      <p><a href="/docs/cards/">Full cards guide &rarr;</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="tour-section">
+  <h2>Search &amp; filtering</h2>
+  <p>The toolbar search works in exact and fuzzy mode. Type a query, or use structured tokens to narrow by metadata field:</p>
+  <pre><code>meta.team: backend</code></pre>
+  <p>Filters appear as removable chips. Click a label or a metadata value in the card panel to inject the filter automatically.</p>
+  <p><a href="/docs/search/">Full search guide &rarr;</a></p>
+</section>
+
+<section class="tour-section">
+  <h2>Storage is just markdown</h2>
+  <p>Every card is a plain <code>.md</code> file. YAML frontmatter stores metadata; the body is free-form markdown. No hidden database, no binary blob, no migration required to get started.</p>
+  <pre><code>---
+title: Ship dark mode
+status: in-progress
+priority: high
+assignee: alice
+labels: [frontend, ux]
+dueDate: "2026-04-01"
+---
+
+## Context
+Users have been requesting this for two sprints.
+
+## Acceptance criteria
+- [ ] Follows system preference by default
+- [ ] Manual toggle in settings
+</code></pre>
+  <p>Swap to SQLite or MySQL with a single config line when you need concurrent write performance. <a href="/docs/plugins/#card-storage">Storage plugin docs &rarr;</a></p>
+</section>
+
+<section class="tour-section">
+  <h2>All four interfaces</h2>
+  <p>Every interface ships in the same package. No add-ons, no separate installs.</p>
+  <div class="interface-grid" style="margin-top: 1rem;">
+    <div class="interface-tile">
+      <span class="interface-tile__icon" aria-hidden="true">&#x1F5A5;</span>
+      <h3>Web UI</h3>
+      <p>React board, WebSocket sync, drag-and-drop. <code>kl serve</code></p>
+    </div>
+    <div class="interface-tile">
+      <span class="interface-tile__icon" aria-hidden="true">&#x2328;</span>
+      <h3>CLI</h3>
+      <p>Every board operation available from the terminal. <code>kl --help</code></p>
+    </div>
+    <div class="interface-tile">
+      <span class="interface-tile__icon" aria-hidden="true">&#x1F50C;</span>
+      <h3>REST API</h3>
+      <p>OpenAPI JSON API with interactive Swagger UI at <code>/api/docs</code>.</p>
+    </div>
+    <div class="interface-tile">
+      <span class="interface-tile__icon" aria-hidden="true">&#x1F916;</span>
+      <h3>MCP</h3>
+      <p>Full board operations for AI agents. <code>kl mcp</code></p>
+    </div>
+  </div>
+</section>
+
+<p style="margin-top: 2rem;">
+  <a href="/docs/quick-start/" class="btn btn--primary">Get started &rarr;</a>
+  <a href="/docs/cards/" class="btn btn--outline" style="margin-left: 0.5rem;">Cards &amp; Workflows &rarr;</a>
+</p>

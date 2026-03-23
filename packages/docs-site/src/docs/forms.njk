@@ -1,0 +1,27 @@
+---
+layout: docs.njk
+title: Forms
+description: Reusable card forms — define, attach, render, and submit structured data from cards.
+permalink: /docs/forms/
+---
+<div class="ref-intro">
+  <h1>Forms</h1>
+  <p>Forms let you attach structured JSON Schema-driven workflows directly to cards. Each attachment becomes its own tab in the card editor, is validated by the SDK, and can be submitted from any interface. Submitted data is persisted per-form on the card and fires a <code>form.submit</code> webhook event.</p>
+  <ul class="capability-list">
+    <li>Define reusable workspace forms in <code>.kanban.json</code> under the <code>forms</code> key</li>
+    <li>Attach named or inline forms in card YAML frontmatter</li>
+    <li>Full JSON Schema validation before persistence</li>
+    <li><code>${path}</code> placeholder interpolation against card metadata at runtime</li>
+    <li>Submit from UI, CLI (<code>kl form submit</code>), REST API, SDK, or MCP</li>
+  </ul>
+</div>
+
+{{ docsContent.forms | renderMarkdown | safe }}
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/examples/">Examples</a>
+</div>

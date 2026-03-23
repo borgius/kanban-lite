@@ -7,12 +7,61 @@ export interface AuthErrorLike {
   message: string
 }
 
+const REQUEST_AUTH_CONTEXT = Symbol.for('kanban-lite.request-auth-context')
+
+interface IncomingMessageWithAuthContext extends http.IncomingMessage {
+  [REQUEST_AUTH_CONTEXT]?: AuthContext
+}
+
+function cloneIdentity(auth: AuthContext | undefined): AuthContext['identity'] | undefined {
+  return auth?.identity
+    ? {
+        subject: auth.identity.subject,
+        ...(Array.isArray(auth.identity.roles) ? { roles: [...auth.identity.roles] } : {}),
+      }
+    : undefined
+}
+
+export function getRequestAuthContext(req: http.IncomingMessage): AuthContext {
+  const auth = (req as IncomingMessageWithAuthContext)[REQUEST_AUTH_CONTEXT]
+  return {
+    ...(auth ?? {}),
+    ...(cloneIdentity(auth) ? { identity: cloneIdentity(auth) } : {}),
+  }
+}
+
+export function setRequestAuthContext(req: http.IncomingMessage, auth: AuthContext): AuthContext {
+  const next: AuthContext = {
+    ...auth,
+    ...(auth.identity ? { identity: cloneIdentity(auth) } : {}),
+    transport: auth.transport ?? 'http',
+  }
+  ;(req as IncomingMessageWithAuthContext)[REQUEST_AUTH_CONTEXT] = next
+  return next
+}
+
+export function mergeRequestAuthContext(req: http.IncomingMessage, auth: Partial<AuthContext>): AuthContext {
+  const current = getRequestAuthContext(req)
+  return setRequestAuthContext(req, {
+    ...current,
+    ...auth,
+    ...(auth.identity ? { identity: cloneIdentity(auth as AuthContext) } : current.identity ? { identity: cloneIdentity(current) } : {}),
+    transport: auth.transport ?? current.transport ?? 'http',
+  })
+}
+
 export function extractAuthContext(req: http.IncomingMessage): AuthContext {
+  const requestAuth = getRequestAuthContext(req)
   const authorization = req.headers.authorization
   if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
-    return { token: authorization.slice(7), tokenSource: 'request-header', transport: 'http' }
+    return {
+      ...requestAuth,
+      token: authorization.slice(7),
+      tokenSource: 'request-header',
+      transport: 'http',
+    }
   }
-  return { transport: 'http' }
+  return { ...requestAuth, transport: requestAuth.transport ?? 'http' }
 }
 
 export function getAuthStatus(sdk: KanbanSDK, req?: http.IncomingMessage) {

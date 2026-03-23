@@ -143,6 +143,7 @@ Compatibility/default provider ids:
 
 - `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
 - `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles }` for registered principals.
+- `local` — trusts host-validated standalone session identity, or the shared `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` API token for CLI, MCP, and bearer-authenticated HTTP calls.
 
 External package:
 
@@ -158,6 +159,7 @@ Compatibility/default provider ids:
 
 - `noop` (default) — always returns `true` (allow-all); preserves current open-access behavior.
 - `rbac` — enforces the fixed SDK-owned `RBAC_ROLE_MATRIX` for the cumulative `user`, `manager`, and `admin` roles.
+- `local` — requires a non-null identity and otherwise allows the action.
 
 External package:
 
@@ -165,7 +167,7 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` ids resolve through `kl-auth-plugin` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet.
+> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-auth-plugin` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
 ---
 

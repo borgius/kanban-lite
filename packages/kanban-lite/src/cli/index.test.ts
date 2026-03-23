@@ -470,12 +470,13 @@ describe('CLI denial UX regression', () => {
         '--config',
         configPath,
       ], {
+        KANBAN_LITE_TOKEN: undefined,
         KANBAN_TOKEN: undefined,
       })
 
       expect(result.exitCode).toBe(1)
       expect(stripAnsi(result.stdout)).toBe('')
-      expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_TOKEN environment variable.')
+      expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_LITE_TOKEN environment variable.')
     } finally {
       cleanup()
     }
@@ -698,4 +699,3 @@ describe('CLI webhook commands — missing provider / error paths', () => {
     ).rejects.toThrow('Webhook provider not available')
   })
 })
-

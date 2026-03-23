@@ -826,6 +826,18 @@ describe('KanbanSDK auth wiring', () => {
     )
     expect(() => new KanbanSDK(kanbanDir)).toThrow(/npm install unknown-auth-provider/i)
   })
+
+  it('resolveCapabilityBag loads standalone HTTP plugins from active auth packages', () => {
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+      {
+        'auth.identity': { provider: 'local', options: { users: [{ username: 'alice', password: '$2b$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }] } },
+        'auth.policy': { provider: 'local' },
+      },
+    )
+    expect(bag.standaloneHttpPlugins.some((plugin) => plugin.manifest.id === 'kl-auth-plugin-standalone')).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------

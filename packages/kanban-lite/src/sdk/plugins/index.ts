@@ -1,3 +1,4 @@
+import * as http from 'node:http'
 import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { Card } from '../../shared/types'
@@ -5,6 +6,7 @@ import type { Webhook } from '../../shared/config'
 import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities } from '../../shared/config'
 import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin } from '../types'
 import { AuthError } from '../types'
+import type { KanbanSDK } from '../KanbanSDK'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { MARKDOWN_PLUGIN } from './markdown'
@@ -130,6 +132,13 @@ interface AuthPluginModule {
   readonly RBAC_ADMIN_ACTIONS?: unknown
   readonly RBAC_ROLE_MATRIX?: unknown
   readonly createRbacIdentityPlugin?: unknown
+  readonly default?: unknown
+}
+
+/** Module shape supported for optional standalone HTTP integrations. */
+interface StandaloneHttpPluginModule {
+  readonly standaloneHttpPlugin?: unknown
+  readonly createStandaloneHttpPlugin?: ((options: StandaloneHttpPluginRegistrationOptions) => unknown) | unknown
   readonly default?: unknown
 }
 
@@ -464,6 +473,82 @@ export interface AttachmentStoragePlugin {
 }
 
 /**
+ * Standalone HTTP request context exposed to plugin-provided middleware and routes.
+ *
+ * This standalone-only contract lets plugin packages inspect requests, respond
+ * directly, and thread request-scoped auth state into the SDK's existing auth
+ * pipeline without depending on Fastify internals.
+ */
+export interface StandaloneHttpRequestContext {
+  /** Active SDK instance backing the standalone runtime. */
+  readonly sdk: KanbanSDK
+  /** Absolute workspace root containing `.kanban.json`. */
+  readonly workspaceRoot: string
+  /** Absolute workspace `.kanban` directory. */
+  readonly kanbanDir: string
+  /** Raw incoming HTTP request. */
+  readonly req: http.IncomingMessage
+  /** Raw outgoing HTTP response. */
+  readonly res: http.ServerResponse
+  /** Parsed request URL. */
+  readonly url: URL
+  /** URL pathname convenience field. */
+  readonly pathname: string
+  /** Uppercase HTTP method convenience field. */
+  readonly method: string
+  /** Resolved standalone webview directory. */
+  readonly resolvedWebviewDir: string
+  /** Loaded standalone `index.html` shell contents. */
+  readonly indexHtml: string
+  /** Route matcher helper matching the built-in standalone handlers. */
+  readonly route: (expectedMethod: string, pattern: string) => Record<string, string> | null
+  /** True when the request targets the standalone REST/API surface. */
+  readonly isApiRequest: boolean
+  /** True when the request is a browser page/navigation request. */
+  readonly isPageRequest: boolean
+  /** Returns the request-scoped auth context accumulated so far. */
+  getAuthContext(): AuthContext
+  /** Replaces the request-scoped auth context for downstream handlers. */
+  setAuthContext(auth: AuthContext): AuthContext
+  /** Shallow-merges request-scoped auth fields for downstream handlers. */
+  mergeAuthContext(auth: Partial<AuthContext>): AuthContext
+}
+
+/** Request middleware/route handlers return `true` when they fully handled the request. */
+export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => Promise<boolean>
+
+/**
+ * Registration options passed to standalone HTTP plugins after the SDK has
+ * resolved the active workspace capability selections.
+ */
+export interface StandaloneHttpPluginRegistrationOptions {
+  /** Absolute workspace root containing `.kanban.json`. */
+  readonly workspaceRoot: string
+  /** Absolute workspace `.kanban` directory. */
+  readonly kanbanDir: string
+  /** Resolved storage capability selections. */
+  readonly capabilities: ResolvedCapabilities
+  /** Resolved auth capability selections. */
+  readonly authCapabilities: ResolvedAuthCapabilities
+  /** Resolved webhook capability selections when webhook plugins are active. */
+  readonly webhookCapabilities: ResolvedWebhookCapabilities | null
+}
+
+/**
+ * Optional standalone-only integration exported by active plugin packages.
+ *
+ * Packages that already provide another capability (for example `auth.identity`
+ * / `auth.policy`) may also contribute request middleware and HTTP routes to the
+ * standalone server. Middleware runs before the built-in standalone route table;
+ * plugin routes are matched before built-in routes.
+ */
+export interface StandaloneHttpPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
+  registerMiddleware?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
+  registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
+}
+
+/**
  * Fully resolved capability bag produced by {@link resolveCapabilityBag}.
  *
  * Passed to the SDK so it no longer branches directly on storage type at call
@@ -507,14 +592,16 @@ export interface ResolvedCapabilityBag {
    */
   getWatchGlob(): string | null
   /**
-  * Resolved `auth.identity` plugin. Defaults to the `noop` compatibility id
-  * (always returns `null` / anonymous) when no auth plugin is configured.
-   */
+   * Resolved `auth.identity` plugin. Defaults to the `noop` compatibility id
+   * (always returns `null` / anonymous) when no auth plugin is configured.
+    */
   readonly authIdentity: AuthIdentityPlugin
+  /** Raw resolved auth provider selections used to resolve auth plugins. */
+  readonly authProviders: ResolvedAuthCapabilities
   /**
-  * Resolved `auth.policy` plugin. Defaults to the `noop` compatibility id
-  * (always returns `true` / allow-all) when no auth plugin is configured.
-   */
+   * Resolved `auth.policy` plugin. Defaults to the `noop` compatibility id
+   * (always returns `true` / allow-all) when no auth plugin is configured.
+    */
   readonly authPolicy: AuthPolicyPlugin
   /** Resolved event listener plugins. Currently always empty; reserved for future use. */
   /** Resolved event listener plugins. Reserved for future use; currently empty. */
@@ -527,6 +614,8 @@ export interface ResolvedCapabilityBag {
    * is wired via {@link webhookListener}.
    */
   readonly webhookProvider: WebhookProviderPlugin | null
+  /** Raw resolved webhook provider selection used to resolve webhook plugins. */
+  readonly webhookProviders: ResolvedWebhookCapabilities | null
   /**
    * Resolved webhook runtime delivery listener, or `null` when no webhook package
    * is installed. When `null`, the SDK falls back to the built-in
@@ -536,8 +625,10 @@ export interface ResolvedCapabilityBag {
    * SDK startup to subscribe to after-events and deliver outbound HTTP webhooks.
    */
   readonly webhookListener: SDKEventListenerPlugin | null
+  /** Standalone-only middleware/routes exported by active capability packages. */
+  readonly standaloneHttpPlugins: readonly StandaloneHttpPlugin[]
   /**
-   * Built-in auth event listener plugin.
+    * Built-in auth event listener plugin.
    *
    * Establishes the {@link SDKEventListenerPlugin} registration seam for
    * authorization. Active per-before-event auth checking will be wired in T9
@@ -605,6 +696,7 @@ export const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
 export const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['noop', 'kl-auth-plugin'],
   ['rbac', 'kl-auth-plugin'],
+  ['local', 'kl-auth-plugin'],
 ])
 
 // ---------------------------------------------------------------------------
@@ -653,7 +745,10 @@ function materializeAttachmentFromDir(
 function isMissingRequestedModule(request: string, err: unknown): err is NodeJS.ErrnoException {
   return (err as NodeJS.ErrnoException)?.code === 'MODULE_NOT_FOUND'
     && typeof (err as Error)?.message === 'string'
-    && (err as Error).message.includes(`'${request}'`)
+    && (
+      (err as Error).message.includes(`'${request}'`)
+      || (err as Error).message.includes(request)
+    )
 }
 
 function tryLoadSiblingPackage(request: string): unknown {
@@ -773,6 +868,90 @@ function loadExternalAuthPolicyPlugin(packageName: string, providerId: string): 
     )
   }
   return plugin
+}
+
+function isValidStandaloneHttpPlugin(plugin: unknown): plugin is StandaloneHttpPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as StandaloneHttpPlugin
+  return typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && candidate.manifest.provides.includes('standalone.http')
+    && (candidate.registerMiddleware === undefined || typeof candidate.registerMiddleware === 'function')
+    && (candidate.registerRoutes === undefined || typeof candidate.registerRoutes === 'function')
+}
+
+function loadStandaloneHttpPlugin(
+  packageName: string,
+  options: StandaloneHttpPluginRegistrationOptions,
+): StandaloneHttpPlugin | null {
+  let mod: StandaloneHttpPluginModule
+  try {
+    mod = loadExternalModule(packageName) as StandaloneHttpPluginModule
+  } catch (err) {
+    if (err instanceof Error && err.message.includes(`Plugin package "${packageName}" is not installed.`)) {
+      return null
+    }
+    throw err
+  }
+  const direct = mod.standaloneHttpPlugin ?? mod.default
+  if (isValidStandaloneHttpPlugin(direct)) return direct
+
+  if (typeof mod.createStandaloneHttpPlugin === 'function') {
+    const created = mod.createStandaloneHttpPlugin(options)
+    if (isValidStandaloneHttpPlugin(created)) return created
+    throw new Error(
+      `Plugin "${packageName}" exported createStandaloneHttpPlugin() but it did not return ` +
+      'a valid standalone HTTP plugin.'
+    )
+  }
+
+  return null
+}
+
+function collectStandaloneHttpPackageNames(
+  capabilities: ResolvedCapabilities,
+  authCapabilities: ResolvedAuthCapabilities,
+  webhookCapabilities: ResolvedWebhookCapabilities | null,
+): string[] {
+  const packageNames = new Set<string>()
+  const add = (packageName: string | undefined): void => {
+    if (packageName) packageNames.add(packageName)
+  }
+
+  const cardProvider = capabilities['card.storage'].provider
+  if (!BUILTIN_CARD_PLUGINS.has(cardProvider)) {
+    add(PROVIDER_ALIASES.get(cardProvider) ?? cardProvider)
+  }
+
+  const attachmentProvider = capabilities['attachment.storage'].provider
+  if (!BUILTIN_ATTACHMENT_IDS.has(attachmentProvider)) {
+    add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
+  }
+
+  add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.identity'].provider) ?? authCapabilities['auth.identity'].provider)
+  add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.policy'].provider) ?? authCapabilities['auth.policy'].provider)
+
+  if (webhookCapabilities) {
+    const webhookProvider = webhookCapabilities['webhook.delivery'].provider
+    add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+  }
+
+  return [...packageNames]
+}
+
+function resolveStandaloneHttpPlugins(
+  options: StandaloneHttpPluginRegistrationOptions,
+): StandaloneHttpPlugin[] {
+  const resolved: StandaloneHttpPlugin[] = []
+  for (const packageName of collectStandaloneHttpPackageNames(
+    options.capabilities,
+    options.authCapabilities,
+    options.webhookCapabilities,
+  )) {
+    const plugin = loadStandaloneHttpPlugin(packageName, options)
+    if (plugin) resolved.push(plugin)
+  }
+  return resolved
 }
 
 function isValidRoleActionSet(value: unknown): value is ReadonlySet<string> {
@@ -1089,7 +1268,10 @@ function withAuthHints(
 ): AuthContext {
   const merged: AuthContext = { ...(context ?? {}) }
   const input = payload.input
-  const setString = (key: keyof AuthContext, value: unknown): void => {
+  const setString = (
+    key: 'actorHint' | 'boardId' | 'cardId' | 'fromBoardId' | 'toBoardId' | 'columnId' | 'labelName' | 'commentId' | 'attachment' | 'actionKey' | 'formId',
+    value: unknown,
+  ): void => {
     if (typeof value === 'string' && value.length > 0) merged[key] = value
   }
 
@@ -1274,9 +1456,17 @@ export function resolveCapabilityBag(
 
   const resolvedAuthIdentity = resolveAuthIdentityPlugin(resolvedAuth['auth.identity'])
   const resolvedAuthPolicy = resolveAuthPolicyPlugin(resolvedAuth['auth.policy'])
+  const workspaceRoot = path.dirname(kanbanDir)
   const webhookPlugins = webhookCapabilities
-    ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], path.dirname(kanbanDir))
+    ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], workspaceRoot)
     : null
+  const standaloneHttpPlugins = resolveStandaloneHttpPlugins({
+    workspaceRoot,
+    kanbanDir,
+    capabilities,
+    authCapabilities: resolvedAuth,
+    webhookCapabilities: webhookCapabilities ?? null,
+  })
 
   return {
     cardStorage: cardEngine,
@@ -1302,10 +1492,13 @@ export function resolveCapabilityBag(
       return cardEngine.type === 'markdown' ? 'boards/**/*.md' : null
     },
     authIdentity: resolvedAuthIdentity,
+    authProviders: resolvedAuth,
     authPolicy: resolvedAuthPolicy,
     eventListeners: [],
     webhookProvider: webhookPlugins?.provider ?? null,
+    webhookProviders: webhookCapabilities ?? null,
     webhookListener: webhookPlugins?.listener ?? null,
+    standaloneHttpPlugins,
     authListener: createBuiltinAuthListenerPlugin(resolvedAuthIdentity, resolvedAuthPolicy),
   }
 }

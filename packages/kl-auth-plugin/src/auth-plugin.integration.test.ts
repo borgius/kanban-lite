@@ -9,6 +9,8 @@
 import type { BeforeEventPayload } from '../../kanban-lite/src/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  LOCAL_IDENTITY_PLUGIN,
+  LOCAL_POLICY_PLUGIN,
   NOOP_IDENTITY_PLUGIN,
   NOOP_POLICY_PLUGIN,
   RBAC_IDENTITY_PLUGIN,
@@ -74,11 +76,13 @@ describe('kl-auth-plugin: manifest shape (kanban-lite loader contract)', () => {
   })
 
   it('authIdentityPlugins map exposes noop and rbac providers', () => {
+    expect(authIdentityPlugins['local']).toBe(LOCAL_IDENTITY_PLUGIN)
     expect(authIdentityPlugins['noop']).toBe(NOOP_IDENTITY_PLUGIN)
     expect(authIdentityPlugins['rbac']).toBe(RBAC_IDENTITY_PLUGIN)
   })
 
   it('authPolicyPlugins map exposes noop and rbac providers', () => {
+    expect(authPolicyPlugins['local']).toBe(LOCAL_POLICY_PLUGIN)
     expect(authPolicyPlugins['noop']).toBe(NOOP_POLICY_PLUGIN)
     expect(authPolicyPlugins['rbac']).toBe(RBAC_POLICY_PLUGIN)
   })
@@ -151,6 +155,45 @@ describe('kl-auth-plugin: NOOP providers (kanban-lite open-access default)', () 
     const identity: AuthIdentity = { subject: 'alice', roles: [] }
     const decision = await NOOP_POLICY_PLUGIN.checkPolicy(identity, 'board.delete', ctx)
     expect(decision.allowed).toBe(true)
+  })
+})
+
+describe('kl-auth-plugin: local providers', () => {
+  it('LOCAL_IDENTITY_PLUGIN trusts pre-resolved identity from middleware', async () => {
+    const identity = await LOCAL_IDENTITY_PLUGIN.resolveIdentity({
+      transport: 'http',
+      identity: { subject: 'alice' },
+    })
+    expect(identity).toEqual({ subject: 'alice' })
+  })
+
+  it('LOCAL_IDENTITY_PLUGIN resolves the shared API token from env', async () => {
+    const previous = process.env.KANBAN_LITE_TOKEN
+    process.env.KANBAN_LITE_TOKEN = 'kl-test-token'
+    try {
+      await expect(LOCAL_IDENTITY_PLUGIN.resolveIdentity({
+        transport: 'cli',
+        token: 'kl-test-token',
+      })).resolves.toEqual({ subject: 'api-token' })
+    } finally {
+      if (previous === undefined) {
+        delete process.env.KANBAN_LITE_TOKEN
+      } else {
+        process.env.KANBAN_LITE_TOKEN = previous
+      }
+    }
+  })
+
+  it('LOCAL_POLICY_PLUGIN requires an authenticated identity', async () => {
+    await expect(LOCAL_POLICY_PLUGIN.checkPolicy(null, 'card.create', { transport: 'http' })).resolves.toMatchObject({
+      allowed: false,
+      reason: 'auth.identity.missing',
+    })
+
+    await expect(LOCAL_POLICY_PLUGIN.checkPolicy({ subject: 'alice' }, 'card.create', { transport: 'http' })).resolves.toMatchObject({
+      allowed: true,
+      actor: 'alice',
+    })
   })
 })
 

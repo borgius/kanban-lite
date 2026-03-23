@@ -4,10 +4,12 @@ A [kanban-lite](https://github.com/borgius/kanban-lite) auth plugin package that
 
 - `auth.identity`
 - `auth.policy`
+- optional standalone-only `standalone.http` middleware/routes for login flows
 - listener-only auth runtime helpers for SDK-owned async before-events
 
-The package currently ships two provider ids:
+The package currently ships three provider ids:
 
+- `local`
 - `noop`
 - `rbac`
 
@@ -21,12 +23,14 @@ npm install kl-auth-plugin
 
 - `auth.identity`
 - `auth.policy`
+- `standalone.http` (optional, auto-loaded from active auth packages by the standalone server)
 
 ## Listener runtime helpers
 
 The package also exports listener-only auth helpers for the SDK before-event pipeline:
 
 - `createAuthListenerPlugin(identity, policy, options)`
+- `createLocalAuthListenerPlugin(options?)`
 - `createNoopAuthListenerPlugin(options?)`
 - `createRbacAuthListenerPlugin(principals?, options?)`
 
@@ -48,13 +52,44 @@ This preserves Kanban Lite's open-access behavior.
 - `auth.identity` → validates opaque tokens against a runtime-owned principal registry
 - `auth.policy` → enforces the fixed `user` → `manager` → `admin` action matrix
 
-## `.kanban.json` example
+### `local`
+
+- `auth.identity` → trusts host-validated standalone session identity, or the shared `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` API token
+- `auth.policy` → allows any authenticated identity and denies anonymous callers
+- `standalone.http` → serves `/auth/login`, handles login/logout, redirects unauthenticated standalone browser requests, and accepts cookie auth for standalone API calls
+
+When `local` starts inside the standalone server and `KANBAN_LITE_TOKEN` is missing, it creates a `kl-...` token and persists it to `<workspaceRoot>/.env`.
+
+## `.kanban.json` examples
+
+### RBAC
 
 ```json
 {
   "auth": {
     "auth.identity": { "provider": "rbac" },
     "auth.policy": { "provider": "rbac" }
+  }
+}
+```
+
+### Local standalone login + API token
+
+```json
+{
+  "auth": {
+    "auth.identity": {
+      "provider": "local",
+      "options": {
+        "users": [
+          {
+            "username": "alice",
+            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH"
+          }
+        ]
+      }
+    },
+    "auth.policy": { "provider": "local" }
   }
 }
 ```

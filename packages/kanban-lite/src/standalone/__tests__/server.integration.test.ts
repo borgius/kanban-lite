@@ -151,13 +151,18 @@ function waitForMessage(ws: WebSocket, expectedType: string, timeout = 5000): Pr
 }
 
 // Helper: fetch HTTP response
-function httpGet(url: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+function httpGet(
+  url: string,
+  headers?: http.OutgoingHttpHeaders,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
+    const req = http.request(url, { method: 'GET', headers }, (res) => {
       let body = ''
       res.on('data', (chunk) => body += chunk)
       res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }))
-    }).on('error', reject)
+    })
+    req.on('error', reject)
+    req.end()
   })
 }
 
@@ -165,21 +170,28 @@ function httpGet(url: string): Promise<{ status: number; headers: http.IncomingH
 function httpRequest(
   method: string,
   url: string,
-  body?: unknown
+  body?: unknown,
+  headers?: http.OutgoingHttpHeaders,
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
-    const payload = body ? JSON.stringify(body) : undefined
+    const payload = body === undefined
+      ? undefined
+      : typeof body === 'string'
+        ? body
+        : JSON.stringify(body)
+    const resolvedHeaders: http.OutgoingHttpHeaders = {
+      ...(payload ? { 'Content-Length': Buffer.byteLength(payload).toString() } : {}),
+      ...(typeof body === 'string' ? {} : payload ? { 'Content-Type': 'application/json' } : {}),
+      ...(headers ?? {}),
+    }
     const req = http.request(
       {
         hostname: parsed.hostname,
         port: parsed.port,
         path: parsed.pathname + parsed.search,
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(payload ? { 'Content-Length': Buffer.byteLength(payload).toString() } : {})
-        }
+        headers: resolvedHeaders,
       },
       (res) => {
         let data = ''
@@ -206,6 +218,7 @@ function getPort(): Promise<number> {
 
 // Helper: wait a bit
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+const LOCAL_AUTH_TEST_PASSWORD_HASH = '$2b$04$jg1y2jvcM0s3Zr0q/vhBc.HvbMAXNDTS52.VJdC/GfbB2AIYnpWmK'
 
 // Helper: create a temp webview directory with dummy static files
 function createTempWebviewDir(): string {
@@ -2826,6 +2839,80 @@ describe('Standalone Server Integration', () => {
       const cards = response.cards as Array<Record<string, unknown>>
       expect(cards.length).toBe(1)
       expect(cards[0].content).toContain('Broadcast Test')
+    })
+  })
+
+  // ── Local standalone auth plugin ──
+
+  describe('local standalone auth plugin', () => {
+    function writeLocalAuthConfig(): string {
+      const workspaceRoot = path.dirname(tempDir)
+      const configPath = path.join(workspaceRoot, '.kanban.json')
+      fs.writeFileSync(configPath, JSON.stringify({
+        version: 2,
+        port,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              users: [{ username: 'alice', password: LOCAL_AUTH_TEST_PASSWORD_HASH }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      }, null, 2), 'utf-8')
+      return workspaceRoot
+    }
+
+    it('redirects unauthenticated browser requests to the plugin login page', async () => {
+      writeLocalAuthConfig()
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const homeRes = await httpGet(`http://localhost:${port}/`)
+      expect(homeRes.status).toBe(302)
+      expect(homeRes.headers.location).toContain('/auth/login')
+
+      const loginRes = await httpGet(`http://localhost:${port}/auth/login`)
+      expect(loginRes.status).toBe(200)
+      expect(loginRes.body).toContain('Sign in')
+    })
+
+    it('requires auth for API requests, creates a workspace token, and accepts cookie sessions', async () => {
+      const workspaceRoot = writeLocalAuthConfig()
+      server = startServer(tempDir, port, webviewDir)
+      await sleep(200)
+
+      const unauthorizedRes = await httpGet(`http://localhost:${port}/api/health`)
+      expect(unauthorizedRes.status).toBe(401)
+      expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
+
+      const envContent = fs.readFileSync(path.join(workspaceRoot, '.env'), 'utf-8')
+      const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
+      expect(token).toMatch(/^kl-/)
+
+      const bearerRes = await httpGet(`http://localhost:${port}/api/health`, {
+        Authorization: `Bearer ${token}`,
+      })
+      expect(bearerRes.status).toBe(200)
+
+      const loginRes = await httpRequest(
+        'POST',
+        `http://localhost:${port}/auth/login`,
+        'username=alice&password=secret123&returnTo=%2F',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+      )
+      expect(loginRes.status).toBe(302)
+      const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
+        ? loginRes.headers['set-cookie'][0]
+        : loginRes.headers['set-cookie']
+      expect(typeof setCookieHeader).toBe('string')
+      const cookieHeader = String(setCookieHeader).split(';')[0]
+
+      const cookieRes = await httpGet(`http://localhost:${port}/api/health`, {
+        Cookie: cookieHeader,
+      })
+      expect(cookieRes.status).toBe(200)
     })
   })
 

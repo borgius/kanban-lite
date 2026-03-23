@@ -426,14 +426,19 @@ export interface AuthContext {
    */
   tokenSource?: string
   /**
-   * Transport mechanism of the incoming request (e.g. `'http'`, `'mcp'`, `'extension'`, `'cli'`).
-   * Informational only; used for diagnostics and logging.
-   */
+    * Transport mechanism of the incoming request (e.g. `'http'`, `'mcp'`, `'extension'`, `'cli'`).
+    * Informational only; used for diagnostics and logging.
+    */
   transport?: string
   /**
-   * Optional non-authoritative hint for the caller identity.
-   * Never trusted for authorization decisions; used for diagnostics and logging only.
+   * Pre-resolved identity supplied by a trusted host integration such as
+   * standalone middleware after validating a cookie-backed session.
    */
+  identity?: { subject: string; roles?: string[] }
+  /**
+    * Optional non-authoritative hint for the caller identity.
+    * Never trusted for authorization decisions; used for diagnostics and logging only.
+    */
   actorHint?: string
   /** Target board ID relevant to the action being authorized. */
   boardId?: string

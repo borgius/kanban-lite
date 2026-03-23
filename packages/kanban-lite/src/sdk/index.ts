@@ -10,6 +10,12 @@ export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardCo
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types'
 export { getTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types'
 export type { AuthIdentity, AuthPluginManifest, AuthIdentityPlugin, AuthPolicyPlugin } from './plugins/index'
+export type {
+  StandaloneHttpPlugin,
+  StandaloneHttpHandler,
+  StandaloneHttpRequestContext,
+  StandaloneHttpPluginRegistrationOptions,
+} from './plugins/index'
 export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from './plugins/index'
 export type { StorageStatus, AuthStatus, WebhookStatus } from './KanbanSDK'
 export { EventBus } from './eventBus'

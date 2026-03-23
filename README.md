@@ -1263,7 +1263,7 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop` and `rbac` resolve through the external `kl-auth-plugin` package, and the SDK now enforces authorization through listener-only before-events that run before a write is committed.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop`, `rbac`, and `local` resolve through the external `kl-auth-plugin` package, and the SDK now enforces authorization through listener-only before-events that run before a write is committed.
 
 That means the runtime contract changed for plugin authors even though the user experience did not: auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host. Current releases still retain the compatibility provider path when the package is not installed so existing workspaces behave the same.
 
@@ -1295,7 +1295,7 @@ Provider references for both namespaces are read from `.kanban.json` the same wa
 }
 ```
 
-Bearer tokens, token-to-role maps, and other secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory for standalone).
+Raw bearer tokens, token-to-role maps, and other live secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory or cookies for standalone). Password *hashes* for the `local` provider may be stored in config.
 
 ### `rbac` provider
 
@@ -1332,13 +1332,45 @@ Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
 - **Node-hosted only**: the RBAC provider runs exclusively in the Node host layer; no browser execution is performed.
 - Tokens are resolved from the host token source at call time and are **never** persisted to `.kanban.json`, returned in API responses, or echoed in error bodies or logs.
 
+### `local` provider
+
+Kanban Lite also ships a first-party **local workspace auth** provider pair (`local`) in `kl-auth-plugin`.
+
+- **Standalone UI**: unauthenticated browser requests redirect to a plugin-served `/auth/login` page.
+- **Standalone API**: every `/api/*` request requires either `Authorization: Bearer <token>` or an authenticated standalone session cookie.
+- **CLI / MCP**: use the shared workspace token from `KANBAN_LITE_TOKEN` (with `KANBAN_TOKEN` still accepted as a compatibility alias).
+- **Workspace token bootstrap**: when the standalone auth plugin starts and `KANBAN_LITE_TOKEN` is missing, it generates a `kl-...` token and saves it to `<workspaceRoot>/.env`.
+
+Enable it in `.kanban.json` with bcrypt-hashed passwords:
+
+```json
+{
+  "auth": {
+    "auth.identity": {
+      "provider": "local",
+      "options": {
+        "users": [
+          {
+            "username": "alice",
+            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH"
+          }
+        ]
+      }
+    },
+    "auth.policy": { "provider": "local" }
+  }
+}
+```
+
+The `local` policy is intentionally simple: any authenticated identity is allowed to perform SDK actions, and anonymous callers are denied with `auth.identity.missing`.
+
 
 
 ### Host token sources
 
-- **Standalone REST API**: `Authorization: Bearer <token>` request header
-- **CLI**: `KANBAN_TOKEN` environment variable
-- **MCP**: `KANBAN_TOKEN` environment variable
+- **Standalone REST API**: `Authorization: Bearer <token>` request header, or authenticated standalone cookie session
+- **CLI**: `KANBAN_LITE_TOKEN` environment variable (`KANBAN_TOKEN` still accepted as an alias)
+- **MCP**: `KANBAN_LITE_TOKEN` environment variable (`KANBAN_TOKEN` still accepted as an alias)
 - **VS Code extension host**: secure `SecretStorage` (`Kanban Lite: Set Auth Token` / `Clear Auth Token` commands)
 
 Raw tokens are treated as write-only input: they are never returned in REST responses, CLI/MCP output, logs, errors, or webview messages.

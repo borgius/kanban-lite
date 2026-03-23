@@ -11,7 +11,7 @@ import { AuthError, type AuthContext } from '../sdk/types'
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
 function resolveCliAuthContext(): AuthContext {
-  const token = process.env.KANBAN_TOKEN
+  const token = process.env.KANBAN_LITE_TOKEN || process.env.KANBAN_TOKEN
   return token ? { token, tokenSource: 'env', transport: 'cli' } : { transport: 'cli' }
 }
 
@@ -33,7 +33,7 @@ function getCliAuthStatus(sdk: KanbanSDK) {
 
 function handleAuthError(err: AuthError): never {
   if (err.category === 'auth.identity.missing' || err.category === 'auth.identity.invalid' || err.category === 'auth.identity.expired') {
-    console.error(red('Error: Authentication required. Set KANBAN_TOKEN environment variable.'))
+    console.error(red('Error: Authentication required. Set KANBAN_LITE_TOKEN environment variable.'))
   } else {
     console.error(red(`Error: Access denied (${err.category})`))
   }

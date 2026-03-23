@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Standalone plugin HTTP integration hooks**: Active plugin packages can now contribute standalone-only request middleware and HTTP routes, allowing features such as plugin-owned login pages and cookie-backed auth flows without introducing a separate user-facing config namespace.
+- **Local auth provider with standalone login flow**: `kl-auth-plugin` now ships a first-party `local` auth provider pair plus standalone `/auth/login` / `/auth/logout` handling. Browser requests redirect to the plugin-served login page when unauthenticated, standalone API requests accept authenticated cookies or bearer tokens, and CLI/MCP can use the shared workspace token.
+- **Workspace API token bootstrap**: The standalone local auth flow now creates `KANBAN_LITE_TOKEN=kl-...` in `<workspaceRoot>/.env` when missing, making the same token available to standalone API, CLI, and MCP clients.
 - **First-party n8n integration package**: Added `n8n-nodes-kanban-lite`, which ships a `Kanban Lite` app node plus a `Kanban Lite Trigger` node for n8n community/private-node installs.
 - **Dual n8n transport modes**: The new n8n integration supports both remote standalone-server API transport and same-machine local SDK transport, with the app node covering boards, cards, columns, comments, attachments, labels, settings, storage, forms, webhooks, workspace info, and auth status.
 - **Transport-aware n8n trigger coverage**: n8n trigger subscriptions now follow the SDK event catalog parity rules: local SDK mode can observe before- and after-events, while remote API mode receives committed after-events only via webhook registration.
@@ -50,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit sqlite/mysql attachment compatibility providers**: `attachment.storage` now supports first-class `sqlite` and `mysql` compatibility-provider selections when explicitly chosen, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Canonical CLI/MCP token env name**: CLI and MCP now prefer `KANBAN_LITE_TOKEN` as the canonical workspace API token variable while still accepting `KANBAN_TOKEN` as a compatibility alias.
 - **Auth before-event execution model**: Request auth is now carried through scoped `runWithAuth(...)` execution instead of `_withAuthContext()` / payload-carried auth, and first-party auth listeners resolve identity from that scoped carrier rather than `BeforeEventPayload.auth`.
 - **Before-event input merge semantics**: `_runBeforeEvent()` now owns immutable deep-merge behavior for listener overrides while preserving the original mutation input when listeners return no effective changes.
 - **Plugin runtime model (breaking for plugin authors)**: `KanbanSDK` now owns async before-event dispatch and post-commit after-event emission. Runtime auth/webhook integrations are listener-only (`register` / `unregister`) rather than legacy direct runtime seams, while end-user denial behavior and webhook delivery timing remain consistent across SDK, CLI, MCP, standalone, and extension-host flows.

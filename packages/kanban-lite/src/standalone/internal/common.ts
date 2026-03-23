@@ -2,20 +2,13 @@ import * as http from 'http'
 import * as os from 'os'
 import * as path from 'path'
 import type { Card } from '../../shared/types'
+import type { StandaloneHttpRequestContext } from '../../sdk'
 import { sanitizeCard } from '../../sdk/types'
 import type { StandaloneContext } from '../context'
 import type { MIME_TYPES } from '../httpUtils'
 
-export interface StandaloneRequestContext {
+export interface StandaloneRequestContext extends StandaloneHttpRequestContext {
   ctx: StandaloneContext
-  req: http.IncomingMessage
-  res: http.ServerResponse
-  url: URL
-  pathname: string
-  method: string
-  resolvedWebviewDir: string
-  indexHtml: string
-  route: (expectedMethod: string, pattern: string) => Record<string, string> | null
 }
 
 export type StandaloneRouteHandler = (request: StandaloneRequestContext) => Promise<boolean>

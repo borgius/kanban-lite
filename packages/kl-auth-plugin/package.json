@@ -37,6 +37,9 @@
     "typescript": "^5.3.0",
     "vitest": "^4.0.18"
   },
+  "dependencies": {
+    "bcryptjs": "^3.0.2"
+  },
   "peerDependencies": {
     "kanban-lite": ">=1.0.0"
   },

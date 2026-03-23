@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   })
 
   function resolveMcpAuthContext(): AuthContext {
-    const token = process.env.KANBAN_TOKEN
+    const token = process.env.KANBAN_LITE_TOKEN || process.env.KANBAN_TOKEN
     return token ? { token, tokenSource: 'env', transport: 'mcp' } : { transport: 'mcp' }
   }
 

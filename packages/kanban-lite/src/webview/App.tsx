@@ -12,7 +12,7 @@ import { BulkActionsBar } from './components/BulkActionsBar'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { DrawerResizeHandle } from './components/DrawerResizeHandle'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
-import { DELETED_STATUS_ID, getTitleFromContent } from '../shared/types'
+import { DELETED_STATUS_ID, getTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
@@ -299,6 +299,13 @@ function App(): React.JSX.Element {
     root.style.setProperty('--board-zoom', String(cardSettings.boardZoom / 100))
     root.style.setProperty('--card-zoom', String(cardSettings.cardZoom / 100))
   }, [cardSettings.boardZoom, cardSettings.cardZoom])
+
+  useEffect(() => {
+    const root = document.documentElement
+    const background = normalizeBoardBackgroundSettings(cardSettings.boardBackgroundMode, cardSettings.boardBackgroundPreset)
+    root.dataset.kbBoardMode = background.boardBackgroundMode
+    root.dataset.kbBoardPreset = background.boardBackgroundPreset
+  }, [cardSettings.boardBackgroundMode, cardSettings.boardBackgroundPreset])
 
   // Listen for messages from extension
   useEffect(() => {
@@ -835,9 +842,9 @@ function App(): React.JSX.Element {
         onTriggerBoardAction={handleTriggerBoardAction}
         onOpenShortcutHelp={() => setShortcutHelpOpen(open => !open)}
       />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="kb-board-stage flex-1 flex overflow-hidden">
         <div
-          className="board-zoom-scope w-full"
+          className="board-zoom-scope w-full min-w-0"
           style={(cardSettings.panelMode ?? 'drawer') === 'drawer' && selectedCardIds.length === 0 && (editingCard !== null || boardLogsOpen)
             ? { width: `${100 - effectiveDrawerWidth}%` }
             : undefined}

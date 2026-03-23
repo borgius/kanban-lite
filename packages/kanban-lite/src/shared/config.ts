@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { KanbanColumn, CardDisplaySettings, Priority, LabelDefinition } from './types'
-import { DEFAULT_COLUMNS } from './types'
+import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from './types'
 
 /** Capability namespaces supported by the storage plugin system. */
 export type CapabilityNamespace = 'card.storage' | 'attachment.storage'
@@ -172,6 +172,10 @@ export interface KanbanConfig {
   boardZoom: number
   /** Zoom level for the card detail panel (75–150). */
   cardZoom: number
+  /** Whether the board canvas uses a plain or fancy background preset. */
+  boardBackgroundMode: import('./types').BoardBackgroundMode
+  /** Selected board background preset within the active background mode. */
+  boardBackgroundPreset: import('./types').BoardBackgroundPreset
   /** Port number for the standalone HTTP server. */
   port: number
   /** Registered webhook endpoints for event notifications. */
@@ -301,6 +305,8 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showDeletedColumn: false,
   boardZoom: 100,
   cardZoom: 100,
+  boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
+  boardBackgroundPreset: getDefaultBoardBackgroundPreset(DEFAULT_BOARD_BACKGROUND_MODE),
   port: 2954,
   labels: {}
 }
@@ -370,6 +376,8 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showDeletedColumn: false,
     boardZoom: 100,
     cardZoom: 100,
+    boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
+    boardBackgroundPreset: getDefaultBoardBackgroundPreset(DEFAULT_BOARD_BACKGROUND_MODE),
     port: 2954
   }
   // Preserve modern fields that may exist even in legacy configs
@@ -377,6 +385,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   const modernPassthroughKeys = [
     'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'auth',
     'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
+    'boardBackgroundMode', 'boardBackgroundPreset',
     'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'port'
   ]
   const passthrough = v2 as unknown as Record<string, unknown>
@@ -553,6 +562,8 @@ export function syncCardIdCounter(workspaceRoot: string, boardId: string, existi
  * console.log(settings.compactMode) // => true
  */
 export function configToSettings(config: KanbanConfig): CardDisplaySettings {
+  const background = normalizeBoardBackgroundSettings(config.boardBackgroundMode, config.boardBackgroundPreset)
+
   return {
     showPriorityBadges: config.showPriorityBadges,
     showAssignee: config.showAssignee,
@@ -567,6 +578,8 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     defaultStatus: config.defaultStatus,
     boardZoom: config.boardZoom ?? 100,
     cardZoom: config.cardZoom ?? 100,
+    boardBackgroundMode: background.boardBackgroundMode,
+    boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: config.panelMode,
     drawerWidth: config.drawerWidth,
     logsFilter: config.logsFilter
@@ -587,6 +600,8 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
  * writeConfig('/home/user/my-project', updated)
  */
 export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySettings): KanbanConfig {
+  const background = normalizeBoardBackgroundSettings(settings.boardBackgroundMode, settings.boardBackgroundPreset)
+
   return {
     ...config,
     showPriorityBadges: settings.showPriorityBadges,
@@ -600,6 +615,8 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     defaultStatus: settings.defaultStatus,
     boardZoom: settings.boardZoom,
     cardZoom: settings.cardZoom,
+    boardBackgroundMode: background.boardBackgroundMode,
+    boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: settings.panelMode,
     drawerWidth: settings.drawerWidth,
     logsFilter: settings.logsFilter

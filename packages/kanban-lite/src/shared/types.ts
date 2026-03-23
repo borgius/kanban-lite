@@ -285,6 +285,43 @@ export const DEFAULT_COLUMNS: KanbanColumn[] = [
 export const DELETED_STATUS_ID = 'deleted'
 export const DELETED_COLUMN: KanbanColumn = { id: DELETED_STATUS_ID, name: 'Deleted', color: '#ef4444' }
 
+export const BOARD_BACKGROUND_MODES = ['fancy', 'plain'] as const
+export type BoardBackgroundMode = (typeof BOARD_BACKGROUND_MODES)[number]
+
+export const FANCY_BOARD_BACKGROUND_PRESETS = ['aurora', 'sunset', 'meadow'] as const
+export type FancyBoardBackgroundPreset = (typeof FANCY_BOARD_BACKGROUND_PRESETS)[number]
+
+export const PLAIN_BOARD_BACKGROUND_PRESETS = ['paper', 'mist', 'sand'] as const
+export type PlainBoardBackgroundPreset = (typeof PLAIN_BOARD_BACKGROUND_PRESETS)[number]
+
+export type BoardBackgroundPreset = FancyBoardBackgroundPreset | PlainBoardBackgroundPreset
+
+export const DEFAULT_BOARD_BACKGROUND_MODE: BoardBackgroundMode = 'fancy'
+export const DEFAULT_FANCY_BOARD_BACKGROUND_PRESET: FancyBoardBackgroundPreset = 'aurora'
+export const DEFAULT_PLAIN_BOARD_BACKGROUND_PRESET: PlainBoardBackgroundPreset = 'paper'
+
+export function getDefaultBoardBackgroundPreset(mode: BoardBackgroundMode): BoardBackgroundPreset {
+  return mode === 'plain' ? DEFAULT_PLAIN_BOARD_BACKGROUND_PRESET : DEFAULT_FANCY_BOARD_BACKGROUND_PRESET
+}
+
+export function isBoardBackgroundPresetForMode(mode: BoardBackgroundMode, preset: BoardBackgroundPreset): boolean {
+  return mode === 'plain'
+    ? (PLAIN_BOARD_BACKGROUND_PRESETS as readonly string[]).includes(preset)
+    : (FANCY_BOARD_BACKGROUND_PRESETS as readonly string[]).includes(preset)
+}
+
+export function normalizeBoardBackgroundSettings(
+  mode?: BoardBackgroundMode,
+  preset?: BoardBackgroundPreset,
+): { boardBackgroundMode: BoardBackgroundMode; boardBackgroundPreset: BoardBackgroundPreset } {
+  const boardBackgroundMode = mode ?? DEFAULT_BOARD_BACKGROUND_MODE
+  const boardBackgroundPreset = preset && isBoardBackgroundPresetForMode(boardBackgroundMode, preset)
+    ? preset
+    : getDefaultBoardBackgroundPreset(boardBackgroundMode)
+
+  return { boardBackgroundMode, boardBackgroundPreset }
+}
+
 /**
  * UI display preferences controlling which card fields are visible and
  * how the board renders cards.
@@ -316,6 +353,10 @@ export interface CardDisplaySettings {
   boardZoom: number
   /** Zoom level for the card detail panel as a percentage (75–150). Default 100. */
   cardZoom: number
+  /** Whether the board canvas uses a plain or fancy background preset. Default `fancy`. */
+  boardBackgroundMode: BoardBackgroundMode
+  /** Selected board background preset within the active background mode. */
+  boardBackgroundPreset: BoardBackgroundPreset
   /** Whether panels open as a centered popup or a right-side drawer. Default 'drawer'. */
   panelMode?: 'popup' | 'drawer'
   /** Width of the right-side drawer as a percentage of the viewport (20–80). Default 50. */

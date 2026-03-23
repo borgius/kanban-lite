@@ -16,6 +16,8 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   defaultStatus: 'backlog',
   boardZoom: 100,
   cardZoom: 100,
+  boardBackgroundMode: 'fancy',
+  boardBackgroundPreset: 'aurora',
   panelMode: 'drawer',
   drawerWidth: 50,
 }

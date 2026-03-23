@@ -78,6 +78,17 @@ HTTP server are all built on top of.
     * [.storageEngine](#KanbanSDK+storageEngine)
     * [.capabilities](#KanbanSDK+capabilities)
     * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
+    * [.on()](#KanbanSDK+on)
+    * [.once()](#KanbanSDK+once)
+    * [.many()](#KanbanSDK+many)
+    * [.onAny()](#KanbanSDK+onAny)
+    * [.off()](#KanbanSDK+off)
+    * [.offAny()](#KanbanSDK+offAny)
+    * [.removeAllListeners()](#KanbanSDK+removeAllListeners)
+    * [.eventNames()](#KanbanSDK+eventNames)
+    * [.listenerCount()](#KanbanSDK+listenerCount)
+    * [.hasListeners()](#KanbanSDK+hasListeners)
+    * [.waitFor()](#KanbanSDK+waitFor)
     * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
     * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
     * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
@@ -187,7 +198,12 @@ const cards = await sdk.listCards()
 <a name="KanbanSDK+eventBus"></a>
 
 #### kanbanSDK.eventBus
-The SDK event bus for subscribing to events (pub/sub).
+The underlying SDK event bus for advanced event workflows.
+
+Most consumers can use the convenience proxy methods on `KanbanSDK`
+itself (`on`, `once`, `many`, `onAny`, `waitFor`, etc.). Access the
+raw bus directly when you specifically need the shared `EventBus`
+instance.
 
 **Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -228,6 +244,105 @@ This is the project root where `.kanban.json` configuration lives.
 const sdk = new KanbanSDK('/home/user/my-project/.kanban')
 console.log(sdk.workspaceRoot) // '/home/user/my-project'
 ```
+
+* * *
+
+<a name="KanbanSDK+on"></a>
+
+#### kanbanSDK.on()
+Subscribe to an SDK event or wildcard pattern.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+once"></a>
+
+#### kanbanSDK.once()
+Subscribe to the next matching SDK event only once.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+many"></a>
+
+#### kanbanSDK.many()
+Subscribe to an SDK event a fixed number of times.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+onAny"></a>
+
+#### kanbanSDK.onAny()
+Subscribe to every SDK event regardless of name.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+off"></a>
+
+#### kanbanSDK.off()
+Remove a specific event listener.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+offAny"></a>
+
+#### kanbanSDK.offAny()
+Remove a specific catch-all listener.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+removeAllListeners"></a>
+
+#### kanbanSDK.removeAllListeners()
+Remove all event listeners for one event, or all listeners when omitted.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+eventNames"></a>
+
+#### kanbanSDK.eventNames()
+Return the registered event names currently tracked by the bus.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+listenerCount"></a>
+
+#### kanbanSDK.listenerCount()
+Get the number of listeners for a specific event, or all listeners when omitted.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+hasListeners"></a>
+
+#### kanbanSDK.hasListeners()
+Check whether any listeners are registered for an event or for the bus overall.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+waitFor"></a>
+
+#### kanbanSDK.waitFor()
+Wait for the next matching SDK event and resolve with its payload.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -2689,9 +2804,15 @@ card are appended as additional `---` delimited sections at the end of the file.
 <a name="findWorkspaceRootSync"></a>
 
 ### findWorkspaceRootSync(startDir) ⇒
-Synchronously walks up from `startDir` looking for a workspace root — a
-directory that contains `.git`, `package.json`, or `.kanban.json`. Falls
-back to `startDir` if the filesystem root is reached without a match.
+Synchronously walks up from `startDir` looking for a workspace root.
+
+Preference order:
+1. A directory containing `.git` (authoritative project root)
+2. The nearest directory containing `.kanban.json`
+3. The nearest directory containing `package.json`
+
+This ensures monorepo package folders do not shadow the actual repository
+root when a `.git` directory exists higher up the tree.
 
 **Kind**: global function  
 **Returns**: The detected workspace root, or `startDir` on no match.  
@@ -2703,12 +2824,29 @@ back to `startDir` if the filesystem root is reached without a match.
 
 * * *
 
+<a name="resolveWorkspaceRoot"></a>
+
+### resolveWorkspaceRoot(startDir, configFilePath) ⇒
+Resolves the workspace root from either an explicit config file path or the
+current directory tree.
+
+**Kind**: global function  
+**Returns**: The absolute workspace root path.  
+
+| Param | Description |
+| --- | --- |
+| startDir | Optional directory to start scanning from. Defaults to `process.cwd()`. |
+| configFilePath | Optional path to a specific `.kanban.json` file. |
+
+
+* * *
+
 <a name="resolveKanbanDir"></a>
 
-### resolveKanbanDir(startDir) ⇒
-Resolves the kanban directory without an explicit path by walking up from
-`startDir` (defaults to `process.cwd()`) to locate the workspace root, then
-reading `kanbanDirectory` from `.kanban.json` (defaults to `'.kanban'`).
+### resolveKanbanDir(startDir, configFilePath) ⇒
+Resolves the kanban directory without an explicit path by locating the
+workspace root, then reading `kanbanDirectory` from the effective
+`.kanban.json` file (defaults to `'.kanban'`).
 
 **Kind**: global function  
 **Returns**: The absolute path to the kanban directory.  
@@ -2716,6 +2854,7 @@ reading `kanbanDirectory` from `.kanban.json` (defaults to `'.kanban'`).
 | Param | Description |
 | --- | --- |
 | startDir | Optional directory to start scanning from. Defaults to `process.cwd()`. |
+| configFilePath | Optional path to a specific `.kanban.json` file. |
 
 
 * * *

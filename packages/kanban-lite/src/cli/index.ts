@@ -1411,7 +1411,8 @@ export async function cmdWebhooks(positional: string[], flags: Flags, sdk: Kanba
 
 const SETTINGS_KEYS = [
   'showPriorityBadges', 'showAssignee', 'showDueDate', 'showLabels',
-  'showFileName', 'compactMode', 'showDeletedColumn', 'defaultPriority', 'defaultStatus'
+  'showFileName', 'compactMode', 'showDeletedColumn', 'defaultPriority', 'defaultStatus',
+  'boardBackgroundMode', 'boardBackgroundPreset'
 ] as const
 
 async function cmdSettings(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
-import { generateSlug } from '../../shared/types'
+import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
@@ -370,6 +370,8 @@ export const useStore = create<KanbanState>((set, get) => ({
     defaultStatus: 'backlog',
     boardZoom: 100,
     cardZoom: 100,
+    boardBackgroundMode: 'fancy',
+    boardBackgroundPreset: 'aurora',
     panelMode: 'drawer' as const,
     drawerWidth: 50
   },
@@ -527,11 +529,18 @@ export const useStore = create<KanbanState>((set, get) => ({
   setIsDarkMode: (dark) => set({ isDarkMode: dark }),
   setCardSettings: (settings) => set((state) => {
     const nextDrawerWidth = clampDrawerWidthPercent(settings.drawerWidth ?? state.cardSettings.drawerWidth ?? 50)
+    const background = normalizeBoardBackgroundSettings(
+      settings.boardBackgroundMode ?? state.cardSettings.boardBackgroundMode,
+      settings.boardBackgroundPreset ?? state.cardSettings.boardBackgroundPreset,
+    )
+
     return {
       cardSettings: {
         ...settings,
         boardZoom: settings.boardZoom ?? state.cardSettings.boardZoom,
         cardZoom: settings.cardZoom ?? state.cardSettings.cardZoom,
+        boardBackgroundMode: background.boardBackgroundMode,
+        boardBackgroundPreset: background.boardBackgroundPreset,
         panelMode: settings.panelMode ?? state.cardSettings.panelMode,
         drawerWidth: nextDrawerWidth,
       },

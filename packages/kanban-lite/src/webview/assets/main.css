@@ -22,6 +22,15 @@ body {
 }
 
 :root {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 14% 12%, rgba(59, 130, 246, 0.16), transparent 30%),
+    radial-gradient(circle at 84% 16%, rgba(168, 85, 247, 0.12), transparent 24%),
+    radial-gradient(circle at 78% 78%, rgba(245, 158, 11, 0.12), transparent 28%),
+    radial-gradient(circle at 22% 88%, rgba(34, 197, 94, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(148, 163, 184, 0.08);
+  --kb-board-grid-opacity: 1;
   --card-view-border: rgba(148, 163, 184, 0.22);
   --card-view-border-strong: rgba(148, 163, 184, 0.34);
   --card-view-row-border: rgba(148, 163, 184, 0.16);
@@ -40,6 +49,15 @@ body {
 .dark,
 body.vscode-dark,
 body.vscode-high-contrast {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 12% 12%, rgba(56, 189, 248, 0.18), transparent 30%),
+    radial-gradient(circle at 84% 14%, rgba(167, 139, 250, 0.14), transparent 24%),
+    radial-gradient(circle at 76% 82%, rgba(245, 158, 11, 0.14), transparent 28%),
+    radial-gradient(circle at 18% 86%, rgba(34, 197, 94, 0.1), transparent 22%),
+    linear-gradient(180deg, rgba(30, 41, 59, 0.34), rgba(15, 23, 42, 0.08)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(148, 163, 184, 0.06);
+  --kb-board-grid-opacity: 1;
   --card-view-border: rgba(148, 163, 184, 0.18);
   --card-view-border-strong: rgba(148, 163, 184, 0.3);
   --card-view-row-border: rgba(148, 163, 184, 0.12);
@@ -74,6 +92,132 @@ body.vscode-high-contrast {
 #root {
   height: 100%;
   width: 100%;
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='sunset'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 12% 10%, rgba(244, 114, 182, 0.14), transparent 28%),
+    radial-gradient(circle at 84% 16%, rgba(251, 146, 60, 0.18), transparent 26%),
+    radial-gradient(circle at 72% 84%, rgba(250, 204, 21, 0.14), transparent 30%),
+    linear-gradient(180deg, rgba(255, 248, 241, 0.92), rgba(255, 255, 255, 0.78)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(251, 146, 60, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='meadow'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 16%, rgba(45, 212, 191, 0.16), transparent 30%),
+    radial-gradient(circle at 82% 14%, rgba(96, 165, 250, 0.12), transparent 24%),
+    radial-gradient(circle at 78% 80%, rgba(74, 222, 128, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(245, 255, 250, 0.94), rgba(255, 255, 255, 0.78)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(45, 212, 191, 0.08);
+}
+
+:root[data-kb-board-mode='plain'][data-kb-board-preset='paper'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(249, 250, 251, 0.92)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(148, 163, 184, 0.06);
+  --kb-board-grid-opacity: 0.72;
+}
+
+:root[data-kb-board-mode='plain'][data-kb-board-preset='mist'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(244, 249, 255, 0.94), rgba(236, 245, 255, 0.88)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(96, 165, 250, 0.08);
+  --kb-board-grid-opacity: 0.66;
+}
+
+:root[data-kb-board-mode='plain'][data-kb-board-preset='sand'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.94), rgba(254, 243, 199, 0.72)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(217, 119, 6, 0.08);
+  --kb-board-grid-opacity: 0.62;
+}
+
+:root.dark[data-kb-board-mode='fancy'][data-kb-board-preset='sunset'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 12% 10%, rgba(244, 114, 182, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 16%, rgba(249, 115, 22, 0.18), transparent 24%),
+    radial-gradient(circle at 74% 82%, rgba(250, 204, 21, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(48, 22, 34, 0.42), rgba(15, 23, 42, 0.16)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(251, 146, 60, 0.08);
+}
+
+:root.dark[data-kb-board-mode='fancy'][data-kb-board-preset='meadow'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 16%, rgba(45, 212, 191, 0.18), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(96, 165, 250, 0.12), transparent 24%),
+    radial-gradient(circle at 78% 80%, rgba(74, 222, 128, 0.1), transparent 26%),
+    linear-gradient(180deg, rgba(14, 46, 40, 0.34), rgba(15, 23, 42, 0.14)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(45, 212, 191, 0.08);
+}
+
+:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='paper'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(24, 24, 27, 0.94), rgba(39, 39, 42, 0.88)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(148, 163, 184, 0.05);
+  --kb-board-grid-opacity: 0.58;
+}
+
+:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='mist'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(17, 24, 39, 0.94), rgba(30, 41, 59, 0.86)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(96, 165, 250, 0.07);
+  --kb-board-grid-opacity: 0.56;
+}
+
+:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='sand'] {
+  --kb-board-ambient-bg:
+    linear-gradient(180deg, rgba(41, 30, 17, 0.92), rgba(68, 64, 60, 0.82)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(245, 158, 11, 0.08);
+  --kb-board-grid-opacity: 0.54;
+}
+
+.kb-board-stage {
+  position: relative;
+  min-width: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+
+.kb-board-stage::before,
+.kb-board-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kb-board-stage::before {
+  z-index: 0;
+  background: var(--kb-board-ambient-bg);
+}
+
+.kb-board-stage::after {
+  z-index: 0;
+  opacity: var(--kb-board-grid-opacity);
+  background-image:
+    linear-gradient(to right, var(--kb-board-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--kb-board-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.12));
+}
+
+.kb-board-stage > .board-zoom-scope,
+.kb-board-scroll {
+  position: relative;
+  z-index: 1;
 }
 
 .card-view-modal-backdrop {

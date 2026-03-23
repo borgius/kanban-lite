@@ -59,6 +59,8 @@
   "showDeletedColumn": false,
   "boardZoom": 100,
   "cardZoom": 100,
+  "boardBackgroundMode": "plain",
+  "boardBackgroundPreset": "sand",
   "port": 2954,
   "labels": {},
   "panelMode": "drawer",

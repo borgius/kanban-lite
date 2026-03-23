@@ -1263,8 +1263,11 @@ Required: Yes
 | `showLabels` | boolean | No | — |
 | `showFileName` | boolean | No | — |
 | `compactMode` | boolean | No | — |
+| `showDeletedColumn` | boolean | No | — |
 | `defaultPriority` | string | No | — |
 | `defaultStatus` | string | No | — |
+| `boardBackgroundMode` | `fancy` \\| `plain` | No | — |
+| `boardBackgroundPreset` | `aurora` \\| `sunset` \\| `meadow` \\| `paper` \\| `mist` \\| `sand` | No | — |
 
 #### Responses
 

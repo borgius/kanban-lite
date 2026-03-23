@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit sqlite/mysql attachment compatibility providers**: `attachment.storage` now supports first-class `sqlite` and `mysql` compatibility-provider selections when explicitly chosen, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Custom board background presets**: Added a board background selector to settings with default-enabled `fancy` mode, plus multiple fancy ambient presets and simpler plain color presets so each workspace can switch between more decorative and more minimal board canvases.
 - **Webhook compatibility behavior**: Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array with no migration required, while current releases keep a built-in webhook fallback in place until `kl-webhooks-plugin` is installed.
 - **Refreshed card detail view**: The card editor now uses a calmer desktop-first popup/drawer presentation with tighter control density, smaller type and surface rhythm on large screens, and cleaner attachment/comment composition across desktop and mobile layouts.
 - **Swagger-backed REST API docs pipeline**: `docs/api.md` is now generated from the standalone OpenAPI spec used by Fastify Swagger, and the standalone server exposes interactive API docs at `/api/docs` plus raw OpenAPI JSON at `/api/docs/json`.

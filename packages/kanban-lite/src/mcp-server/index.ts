@@ -1321,6 +1321,8 @@ async function main(): Promise<void> {
       showDeletedColumn: z.boolean().optional().describe('Show the deleted cards column on the board'),
       defaultPriority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Default priority for new cards'),
       defaultStatus: z.string().optional().describe('Default status for new cards'),
+      boardBackgroundMode: z.enum(['fancy', 'plain']).optional().describe('Whether the board canvas uses fancy or plain presets'),
+      boardBackgroundPreset: z.enum(['aurora', 'sunset', 'meadow', 'paper', 'mist', 'sand']).optional().describe('Selected board background preset'),
     },
     async (updates) => {
       const settings = sdk.getSettings()

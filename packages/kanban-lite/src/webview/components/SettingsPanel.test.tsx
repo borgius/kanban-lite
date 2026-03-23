@@ -16,6 +16,8 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   defaultStatus: 'backlog',
   boardZoom: 100,
   cardZoom: 100,
+  boardBackgroundMode: 'fancy',
+  boardBackgroundPreset: 'aurora',
   panelMode: 'drawer',
   drawerWidth: 50,
 }
@@ -49,6 +51,8 @@ describe('SettingsPanel drawer resize integration', () => {
 
     expect(markup).toContain('data-panel-resize-handle')
     expect(markup).toContain('width:62%')
+    expect(markup).toContain('Background Style')
+    expect(markup).toContain('Background Preset')
   })
 
   it('does not render a resize handle in popup mode', () => {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
-import type { CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
-import { LABEL_PRESET_COLORS, DELETED_STATUS_ID } from '../../shared/types'
+import type { BoardBackgroundMode, BoardBackgroundPreset, CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
@@ -11,6 +11,23 @@ const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'high', label: 'High', dot: 'bg-orange-500' },
   { value: 'medium', label: 'Medium', dot: 'bg-yellow-500' },
   { value: 'low', label: 'Low', dot: 'bg-green-500' }
+]
+
+const backgroundModeOptions: { value: BoardBackgroundMode; label: string }[] = [
+  { value: 'fancy', label: 'Fancy' },
+  { value: 'plain', label: 'Plain' },
+]
+
+const fancyBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] = [
+  { value: 'aurora', label: 'Aurora Glow' },
+  { value: 'sunset', label: 'Sunset Blend' },
+  { value: 'meadow', label: 'Meadow Mist' },
+]
+
+const plainBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] = [
+  { value: 'paper', label: 'Paper White' },
+  { value: 'mist', label: 'Mist Blue' },
+  { value: 'sand', label: 'Soft Sand' },
 ]
 
 interface SettingsPanelProps {
@@ -561,6 +578,10 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
     () => columns.filter(c => c.id !== DELETED_STATUS_ID).map(c => ({ value: c.id, label: c.name, dotColor: c.color })),
     [columns]
   )
+  const backgroundPresetOptions = useMemo(
+    () => local.boardBackgroundMode === 'plain' ? plainBackgroundOptions : fancyBackgroundOptions,
+    [local.boardBackgroundMode]
+  )
 
   useEffect(() => { setLocal(settings) }, [settings])
 
@@ -722,6 +743,24 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                     onChange={v => update({ drawerWidth: v })}
                   />
                 )}
+                <SettingsDropdown
+                  label="Background Style"
+                  value={local.boardBackgroundMode}
+                  options={backgroundModeOptions}
+                  onChange={v => {
+                    const background = normalizeBoardBackgroundSettings(v as BoardBackgroundMode)
+                    update(background)
+                  }}
+                />
+                <SettingsDropdown
+                  label="Background Preset"
+                  value={local.boardBackgroundPreset}
+                  options={backgroundPresetOptions}
+                  onChange={v => {
+                    const background = normalizeBoardBackgroundSettings(local.boardBackgroundMode, v as BoardBackgroundPreset)
+                    update(background)
+                  }}
+                />
               </SettingsSection>
               <div style={{ borderTop: '1px solid var(--vscode-panel-border)' }} />
               <SettingsSection title="Zoom">

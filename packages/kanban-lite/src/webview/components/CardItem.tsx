@@ -1,4 +1,3 @@
-import { marked } from 'marked'
 import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Card, Priority } from '../../shared/types'
@@ -27,17 +26,30 @@ const priorityLabels: Record<Priority, string> = {
 }
 
 function getDescriptionFromContent(content: string): string {
-  // Remove the first # heading line, then grab the remaining content
   const lines = content.split('\n')
   const headingIndex = lines.findIndex(l => /^#\s+/.test(l))
   const afterHeading = headingIndex >= 0 ? lines.slice(headingIndex + 1) : lines
-  // Trim leading/trailing blank lines but preserve internal structure (lists, etc.)
-  const trimmed = afterHeading.join('\n').trim()
-  return trimmed
+  return afterHeading.join('\n').trim()
 }
 
-function renderDescriptionHtml(text: string): string {
-  return marked.parse(text, { async: false, gfm: true, breaks: true }) as string
+/** Strip markdown syntax and return scannable plain text — safe, no HTML rendered. */
+function getPlainTextExcerpt(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, '[code]')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^#{1,6}\s+(.+)$/gm, '$1')
+    .replace(/^>\s*/gm, '')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\n+/g, ' ')
+    .trim()
 }
 
 export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
@@ -91,17 +103,20 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col bg-white dark:bg-zinc-800 rounded-lg border ${isSelected ? 'border-blue-500 dark:border-blue-400 ring-1 ring-blue-500 dark:ring-blue-400' : 'border-zinc-200 dark:border-zinc-700'} p-3 min-h-[5.5rem] cursor-pointer hover:shadow-md transition-shadow ${
-        isDragging ? 'shadow-lg opacity-90' : ''
-      }`}
+      className={[
+        'group kb-card',
+        `kb-card-priority--${card.priority}`,
+        isSelected ? 'kb-card--selected' : '',
+        isDragging ? 'shadow-lg opacity-90' : '',
+      ].filter(Boolean).join(' ')}
     >
       {/* Title & Content */}
       <div className="flex-1">
         {/* File Name + Priority badge row (when fileName enabled) */}
         {cardSettings.showFileName && fileName && (
           <div className="flex items-center gap-1.5 mb-1">
-            <FileText size={10} className="shrink-0 text-zinc-400 dark:text-zinc-500" />
-            <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 truncate flex-1">
+            <FileText size={10} className="shrink-0 text-zinc-400 dark:text-zinc-400" />
+            <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-400 truncate flex-1">
               {fileName}
             </span>
             {cardSettings.showPriorityBadges && (
@@ -127,19 +142,17 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           )}
         </div>
 
-        {/* Description */}
-        {/* eslint-disable-next-line react/no-danger */}
+        {/* Description — plain-text excerpt (markdown stripped, no HTML rendered) */}
         {description && (
-          <div
-            className={`text-xs text-zinc-500 dark:text-zinc-400 ${cardSettings.compactMode ? 'line-clamp-1' : 'line-clamp-2'} mb-1.5 card-inline-markdown`}
-            dangerouslySetInnerHTML={{ __html: renderDescriptionHtml(description) }}
-          />
+          <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${cardSettings.compactMode ? 'line-clamp-1' : 'line-clamp-2'} mb-1.5`}>
+            {getPlainTextExcerpt(description)}
+          </p>
         )}
 
         {/* Labels */}
         {cardSettings.showLabels && card.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {(cardSettings.compactMode ? card.labels.slice(0, 2) : card.labels).map((label) => {
+            {(cardSettings.compactMode ? card.labels.slice(0, 2) : card.labels.slice(0, 4)).map((label) => {
               const def = labelDefs[label]
               return (
                 <button
@@ -159,8 +172,10 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
                 </button>
               )
             })}
-            {cardSettings.compactMode && card.labels.length > 2 && (
-              <span className="text-xs text-zinc-400">+{card.labels.length - 2}</span>
+            {(cardSettings.compactMode ? card.labels.length > 2 : card.labels.length > 4) && (
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-400 px-0.5 py-0.5 leading-tight">
+                +{card.labels.length - (cardSettings.compactMode ? 2 : 4)}
+              </span>
             )}
           </div>
         )}
@@ -179,13 +194,13 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           )}
         </div>
         {card.attachments.length > 0 && (
-          <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
             <Paperclip size={12} />
             <span>{card.attachments.length}</span>
           </div>
         )}
         {card.metadata && Object.keys(card.metadata).length > 0 && (
-          <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
             <span className="text-[10px] font-mono">{`{${Object.keys(card.metadata).length}}`}</span>
           </div>
         )}
@@ -202,7 +217,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           </div>
         )}
         <div
-          className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500"
+          className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400"
           title={buildDateTooltip(card.created, card.modified)}
         >
           <Clock size={12} />

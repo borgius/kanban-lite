@@ -49,9 +49,9 @@ export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
     return (
       <button
         onClick={() => setIsEditing(true)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+        className="kb-quick-add-btn"
       >
-        <Plus size={14} />
+        <Plus size={13} />
         <span>Add card</span>
       </button>
     )
@@ -66,7 +66,7 @@ export function QuickAddInput({ status, onAdd }: QuickAddInputProps) {
       onBlur={handleSubmit}
       onKeyDown={handleKeyDown}
       placeholder="Card title..."
-      className="w-full px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+      className="kb-quick-add-input"
     />
   )
 }

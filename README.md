@@ -51,6 +51,7 @@ kl add --title "My first task" --priority high
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Layout toggle**: Switch between horizontal and vertical board layouts
+- **Premium board/card refresh**: Board lanes, sticky column shells, cards, and quick-add inputs use a more polished dashboard presentation with stronger visual hierarchy while keeping the existing card details drawer design and behavior unchanged
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support

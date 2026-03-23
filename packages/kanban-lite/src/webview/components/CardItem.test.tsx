@@ -1,0 +1,148 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it, vi } from 'vitest'
+import type { Card, CardDisplaySettings } from '../../shared/types'
+
+const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
+  showPriorityBadges: true,
+  showAssignee: true,
+  showDueDate: true,
+  showLabels: true,
+  showBuildWithAI: true,
+  showFileName: false,
+  compactMode: false,
+  markdownEditorMode: false,
+  showDeletedColumn: false,
+  defaultPriority: 'medium',
+  defaultStatus: 'backlog',
+  boardZoom: 100,
+  cardZoom: 100,
+  panelMode: 'drawer',
+  drawerWidth: 50,
+}
+
+const storeState = {
+  cardSettings: { ...DEFAULT_CARD_SETTINGS },
+  labelDefs: {},
+  applyLabelFilter: vi.fn(),
+}
+
+vi.mock('../store', () => ({
+  useStore: Object.assign((selector?: (state: typeof storeState) => unknown) => selector ? selector(storeState) : storeState, {
+    getState: () => storeState,
+  }),
+}))
+
+vi.mock('marked', () => ({
+  marked: { parse: (text: string) => `<p>${text}</p>` },
+}))
+
+import { CardItem } from './CardItem'
+
+function makeCard(overrides: Partial<Card> = {}): Card {
+  return {
+    version: 1,
+    id: 'test-1',
+    status: 'todo',
+    priority: 'medium',
+    assignee: null,
+    dueDate: null,
+    created: '2026-03-01T12:00:00.000Z',
+    modified: '2026-03-22T10:00:00.000Z',
+    completedAt: null,
+    labels: [],
+    attachments: [],
+    comments: [],
+    order: 'a0',
+    content: '# Test Card',
+    ...overrides,
+  } as Card
+}
+
+describe('CardItem — premium card surface', () => {
+  it('renders kb-card base class on outer element', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard()} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('kb-card')
+  })
+
+  it('renders kb-card-priority class for each priority level', () => {
+    for (const priority of ['critical', 'high', 'medium', 'low'] as const) {
+      const markup = renderToStaticMarkup(
+        <CardItem card={makeCard({ priority })} onClick={vi.fn()} />,
+      )
+      expect(markup).toContain(`kb-card-priority--${priority}`)
+    }
+  })
+
+  it('renders kb-card--selected when isSelected=true', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard()} onClick={vi.fn()} isSelected />,
+    )
+    expect(markup).toContain('kb-card--selected')
+  })
+
+  it('does NOT render kb-card--selected when isSelected=false', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard()} onClick={vi.fn()} isSelected={false} />,
+    )
+    expect(markup).not.toContain('kb-card--selected')
+  })
+
+  it('renders all labels when count <= 4 in normal mode', () => {
+    const labels = ['alpha', 'beta', 'gamma', 'delta']
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ labels })} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('alpha')
+    expect(markup).toContain('delta')
+    expect(markup).not.toContain('+')
+  })
+
+  it('clamps to 4 labels with +N overflow indicator in normal mode', () => {
+    const labels = ['a', 'b', 'c', 'd', 'e', 'f']
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ labels })} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('a')
+    expect(markup).toContain('d')
+    // 5th and 6th labels should be hidden (clipped at 4)
+    expect(markup).toContain('+2')
+    expect(markup).not.toContain('>e<')
+  })
+
+  it('clamps to 2 labels with +N overflow indicator in compact mode', () => {
+    storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS, compactMode: true }
+    const labels = ['a', 'b', 'c', 'd']
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ labels })} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('+2')
+    storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS }
+  })
+
+  it('renders card title from markdown content', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ content: '# My Task Title' })} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('My Task Title')
+  })
+
+  it('renders description preview when content has body after heading', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ content: '# Title\nSome details here' })} onClick={vi.fn()} />,
+    )
+    expect(markup).toContain('Some details here')
+  })
+
+  it('preserves selected-state when isSelected prop changes', () => {
+    const selected = renderToStaticMarkup(
+      <CardItem card={makeCard()} onClick={vi.fn()} isSelected={true} />,
+    )
+    const plain = renderToStaticMarkup(
+      <CardItem card={makeCard()} onClick={vi.fn()} isSelected={false} />,
+    )
+    expect(selected).toContain('kb-card--selected')
+    expect(plain).not.toContain('kb-card--selected')
+  })
+})

@@ -141,8 +141,8 @@ export function KanbanColumn({
         className={
           [
             isVertical
-              ? 'flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-2 py-1.5'
-              : 'flex-shrink-0 w-10 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg',
+              ? 'flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm px-2 py-1.5'
+              : 'flex-shrink-0 w-10 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm',
             isBeingDragged ? 'opacity-40' : '',
             isColumnDropBefore ? 'border-l-2 border-blue-500' : '',
             isColumnDropAfter ? 'border-r-2 border-blue-500' : '',
@@ -225,8 +225,8 @@ export function KanbanColumn({
       className={
         [
           isVertical
-            ? "flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg"
-            : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-100 dark:bg-zinc-800 rounded-lg",
+            ? "flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm"
+            : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm",
           isBeingDragged ? "opacity-40" : "",
           isColumnDropBefore ? "border-l-2 border-blue-500" : "",
           isColumnDropAfter ? "border-r-2 border-blue-500" : "",
@@ -240,9 +240,9 @@ export function KanbanColumn({
         if (isColumnDragEvent(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
       }}
     >
-      {/* Column Header */}
+      {/* Column Header — sticky so it stays visible when the lane scrolls (vertical mode) */}
       <div
-        className="flex items-center justify-between w-full px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing"
+        className="sticky top-0 z-10 flex items-center justify-between w-full px-3 py-2.5 border-b border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing bg-zinc-50 dark:bg-zinc-800 rounded-t-xl"
         draggable={!isDeletedColumn}
         onDragStart={(e) => { if (!isDeletedColumn) onColumnDragStart(e, column.id) }}
         onDragOver={(e) => {
@@ -387,8 +387,8 @@ export function KanbanColumn({
       <div
         className={
           isVertical
-            ? "flex-1 p-2 flex flex-wrap gap-2"
-            : "flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]"
+            ? "flex-1 p-3 flex flex-wrap gap-2"
+            : "flex-1 overflow-y-auto p-3 space-y-2 min-h-[200px]"
         }
       >
         {cards.map((card, index) => (

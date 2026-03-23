@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit sqlite/mysql attachment compatibility providers**: `attachment.storage` now supports first-class `sqlite` and `mysql` compatibility-provider selections when explicitly chosen, while omitted configs still keep the legacy `localfs` default.
 
 ### Changed
+- **Premium board/card refresh**: Refined the board lanes, sticky column shells, cards, and quick-add affordance with a more polished dashboard presentation while keeping the existing card details drawer unchanged.
 - **Classic monorepo layout**: The repository root is now a private pnpm workspace controller, the publishable product package lives at `packages/kanban-lite`, and all first-party plugin packages live under `packages/*`. Root `bin/` entrypoints intentionally remain as bounded forwarding shims into `packages/kanban-lite/dist/*` for checkout compatibility while the staged migration settles.
 - **Webhook compatibility behavior**: Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array with no migration required, while current releases keep a built-in webhook fallback in place until `kl-webhooks-plugin` is installed.
 - **Refreshed card detail view**: The card editor now uses a calmer desktop-first popup/drawer presentation with tighter control density, smaller type and surface rhythm on large screens, and cleaner attachment/comment composition across desktop and mobile layouts.

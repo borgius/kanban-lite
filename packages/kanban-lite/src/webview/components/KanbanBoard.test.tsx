@@ -237,3 +237,29 @@ describe('KanbanBoard hidden column reorder behavior', () => {
     clearTimeoutSpy.mockRestore()
   })
 })
+
+describe('KanbanBoard minimized column prop propagation', () => {
+  it('passes isMinimized=true only to columns present in the minimized set', () => {
+    storeState.getMinimizedColumnIds.mockReturnValueOnce(['todo'])
+    const { columns } = renderBoard()
+    const todoProps = columns.find((p) => (p.column as { id: string }).id === 'todo')
+    const doneProps = columns.find((p) => (p.column as { id: string }).id === 'done')
+    expect(todoProps?.isMinimized).toBe(true)
+    expect(doneProps?.isMinimized).toBe(false)
+  })
+
+  it('renders all visible (non-hidden) columns regardless of minimized state', () => {
+    storeState.getMinimizedColumnIds.mockReturnValueOnce(['todo'])
+    const { columns } = renderBoard()
+    const ids = columns.map((p) => (p.column as { id: string }).id)
+    expect(ids).toEqual(['todo', 'done'])
+  })
+})
+
+describe('KanbanBoard scroll container structure', () => {
+  it('wraps columns in a horizontal overflow-scroll container with a min-width flex row', () => {
+    const { markup } = renderBoard()
+    expect(markup).toContain('overflow-x-auto')
+    expect(markup).toContain('min-w-max')
+  })
+})

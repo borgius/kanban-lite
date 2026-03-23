@@ -247,9 +247,9 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
   return (
     <div
       ref={scrollContainerRef}
-      className={isVertical ? "h-full overflow-y-auto p-4" : "h-full overflow-x-auto p-4"}
+      className={isVertical ? "h-full overflow-y-auto px-5 py-4" : "h-full overflow-x-auto px-5 py-4"}
     >
-      <div className={isVertical ? "flex flex-col gap-4" : "flex gap-4 h-full min-w-max"}>
+      <div className={isVertical ? "flex flex-col gap-5" : "flex gap-5 h-full min-w-max"}>
         {columns.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 py-20 text-zinc-400 dark:text-zinc-500">
             <Columns size={40} className="opacity-30" />

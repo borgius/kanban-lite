@@ -54,6 +54,23 @@ body.vscode-high-contrast {
   --card-view-shadow-soft: 0 10px 24px rgba(2, 6, 23, 0.24);
 }
 
+/* Board lane surface tokens — scoped to .kb-board, safe to extend without touching card-view */
+:root {
+  --kb-lane-bg: #fafafa;
+  --kb-lane-border: rgba(228, 228, 231, 0.9);
+  --kb-lane-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --kb-lane-header-divider: rgba(228, 228, 231, 1);
+}
+
+.dark,
+body.vscode-dark,
+body.vscode-high-contrast {
+  --kb-lane-bg: rgb(39, 39, 42);
+  --kb-lane-border: rgba(63, 63, 70, 0.9);
+  --kb-lane-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.14);
+  --kb-lane-header-divider: rgba(63, 63, 70, 0.8);
+}
+
 #root {
   height: 100%;
   width: 100%;
@@ -1180,6 +1197,143 @@ body.vscode-high-contrast {
 /* Hover background matching VSCode theme */
 .vscode-hover-bg:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+/* ─── Board card surface tokens ─────────────────────────────────────── */
+:root {
+  --kb-card-bg: #ffffff;
+  --kb-card-border: rgba(228, 228, 231, 0.85);
+  --kb-card-hover-border: rgba(148, 163, 184, 0.55);
+  --kb-card-hover-shadow: 0 3px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --kb-card-selected-border: var(--vscode-focusBorder, #007acc);
+  --kb-card-selected-bg: rgba(59, 130, 246, 0.04);
+  --kb-card-selected-ring: rgba(0, 122, 204, 0.3);
+}
+
+.dark,
+body.vscode-dark,
+body.vscode-high-contrast {
+  --kb-card-bg: rgb(45, 45, 49);
+  --kb-card-border: rgba(75, 75, 84, 0.75);
+  --kb-card-hover-border: rgba(100, 100, 112, 0.8);
+  --kb-card-hover-shadow: 0 3px 10px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.16);
+  --kb-card-selected-border: var(--vscode-focusBorder, #007acc);
+  --kb-card-selected-bg: rgba(59, 130, 246, 0.07);
+  --kb-card-selected-ring: rgba(0, 122, 204, 0.42);
+}
+
+/* ─── Board card component ───────────────────────────────────────────── */
+.kb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-card-bg);
+  border: 1px solid var(--kb-card-border);
+  border-radius: 8px;
+  padding: 10px 11px 9px;
+  min-height: 5rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+/* Priority accent strip across top edge */
+.kb-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: 8px 8px 0 0;
+  background: var(--kb-card-priority-color, transparent);
+}
+
+.kb-card:hover {
+  border-color: var(--kb-card-hover-border);
+  box-shadow: var(--kb-card-hover-shadow);
+}
+
+.kb-card--selected {
+  background: var(--kb-card-selected-bg);
+  border-color: var(--kb-card-selected-border);
+  box-shadow: 0 0 0 2px var(--kb-card-selected-ring);
+}
+
+.kb-card--selected:hover {
+  box-shadow: 0 0 0 2px var(--kb-card-selected-ring), var(--kb-card-hover-shadow);
+}
+
+/* Priority top-accent colours */
+.kb-card-priority--critical { --kb-card-priority-color: #ef4444; }
+.kb-card-priority--high     { --kb-card-priority-color: #f97316; }
+.kb-card-priority--medium   { --kb-card-priority-color: #eab308; }
+.kb-card-priority--low      { --kb-card-priority-color: #22c55e; }
+
+/* ─── Card description markdown preview ─────────────────────────────── */
+.card-inline-markdown p { margin: 0 0 2px; }
+.card-inline-markdown ul,
+.card-inline-markdown ol { margin: 0; padding-left: 14px; }
+.card-inline-markdown li { margin: 0 0 1px; }
+.card-inline-markdown h1,
+.card-inline-markdown h2,
+.card-inline-markdown h3 { margin: 0; font-size: inherit; font-weight: 600; }
+.card-inline-markdown strong { color: var(--vscode-foreground); }
+.card-inline-markdown a { color: var(--vscode-textLink-foreground, #3b82f6); text-decoration: none; }
+.card-inline-markdown code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.88em;
+  background: color-mix(in srgb, var(--vscode-textBlockQuote-background, rgba(128,128,128,0.18)) 80%, transparent);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+/* ─── Quick-add affordance ───────────────────────────────────────────── */
+.kb-quick-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px dashed var(--kb-lane-header-divider);
+  background: transparent;
+  color: color-mix(in srgb, var(--vscode-foreground) 38%, transparent);
+  font-size: 0.78rem;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.kb-quick-add-btn:hover {
+  border-color: var(--kb-card-hover-border);
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-list-hoverBackground, rgba(128,128,128,0.1)) 60%, transparent);
+}
+
+.kb-quick-add-input {
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--kb-card-selected-border);
+  background: var(--kb-card-bg);
+  color: var(--vscode-foreground);
+  font-size: 0.82rem;
+  box-shadow: 0 0 0 2px var(--kb-card-selected-ring);
+  outline: none;
+}
+
+.kb-quick-add-input::placeholder {
+  color: color-mix(in srgb, var(--vscode-foreground) 32%, transparent);
+}
+
+/* Dark-mode contrast lift — raise quick-add text to accessible levels */
+.dark .kb-quick-add-btn,
+body.vscode-dark .kb-quick-add-btn,
+body.vscode-high-contrast .kb-quick-add-btn {
+  color: color-mix(in srgb, var(--vscode-foreground) 68%, transparent);
+}
+
+.dark .kb-quick-add-input::placeholder,
+body.vscode-dark .kb-quick-add-input::placeholder,
+body.vscode-high-contrast .kb-quick-add-input::placeholder {
+  color: color-mix(in srgb, var(--vscode-foreground) 55%, transparent);
 }
 
 /* Focus visible for accessibility */

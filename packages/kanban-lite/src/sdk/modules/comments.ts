@@ -6,7 +6,7 @@ import type { SDKContext } from './context'
 /**
  * Lists all comments on a card.
  */
-export async function listComments(ctx: SDKContext, cardId: string, boardId?: string): Promise<Comment[]> {
+export async function listComments(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Comment[]> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   return card.comments || []
@@ -17,10 +17,7 @@ export async function listComments(ctx: SDKContext, cardId: string, boardId?: st
  */
 export async function addComment(
   ctx: SDKContext,
-  cardId: string,
-  author: string,
-  content: string,
-  boardId?: string
+  { cardId, author, content, boardId }: { cardId: string; author: string; content: string; boardId?: string }
 ): Promise<Card> {
   if (!content?.trim()) throw new Error('Comment content cannot be empty')
   const card = await ctx.getCard(cardId, boardId)
@@ -52,10 +49,7 @@ export async function addComment(
  */
 export async function updateComment(
   ctx: SDKContext,
-  cardId: string,
-  commentId: string,
-  content: string,
-  boardId?: string
+  { cardId, commentId, content, boardId }: { cardId: string; commentId: string; content: string; boardId?: string }
 ): Promise<Card> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -75,9 +69,7 @@ export async function updateComment(
  */
 export async function deleteComment(
   ctx: SDKContext,
-  cardId: string,
-  commentId: string,
-  boardId?: string
+  { cardId, commentId, boardId }: { cardId: string; commentId: string; boardId?: string }
 ): Promise<Card> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)

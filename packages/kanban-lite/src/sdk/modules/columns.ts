@@ -8,7 +8,7 @@ import type { SDKContext } from './context'
 /**
  * Lists all columns defined for a board.
  */
-export function listColumns(ctx: SDKContext, boardId?: string): KanbanColumn[] {
+export function listColumns(ctx: SDKContext, { boardId }: { boardId?: string } = {}): KanbanColumn[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -18,7 +18,7 @@ export function listColumns(ctx: SDKContext, boardId?: string): KanbanColumn[] {
 /**
  * Adds a new column to a board.
  */
-export function addColumn(ctx: SDKContext, column: KanbanColumn, boardId?: string): KanbanColumn[] {
+export function addColumn(ctx: SDKContext, { column, boardId }: { column: KanbanColumn; boardId?: string }): KanbanColumn[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -44,9 +44,7 @@ export function addColumn(ctx: SDKContext, column: KanbanColumn, boardId?: strin
  */
 export function updateColumn(
   ctx: SDKContext,
-  columnId: string,
-  updates: Partial<Omit<KanbanColumn, 'id'>>,
-  boardId?: string
+  { columnId, updates, boardId }: { columnId: string; updates: Partial<Omit<KanbanColumn, 'id'>>; boardId?: string }
 ): KanbanColumn[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
@@ -63,7 +61,7 @@ export function updateColumn(
 /**
  * Removes a column from a board. The column must be empty.
  */
-export async function removeColumn(ctx: SDKContext, columnId: string, boardId?: string): Promise<KanbanColumn[]> {
+export async function removeColumn(ctx: SDKContext, { columnId, boardId }: { columnId: string; boardId?: string }): Promise<KanbanColumn[]> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -87,7 +85,7 @@ export async function removeColumn(ctx: SDKContext, columnId: string, boardId?: 
 /**
  * Moves all cards in the specified column to the `deleted` (soft-delete) column.
  */
-export async function cleanupColumn(ctx: SDKContext, columnId: string, boardId?: string): Promise<number> {
+export async function cleanupColumn(ctx: SDKContext, { columnId, boardId }: { columnId: string; boardId?: string }): Promise<number> {
   if (columnId === DELETED_STATUS_ID) return 0
   const cards = await ctx.listCards(undefined, boardId)
   const cardsToMove = cards.filter(c => c.status === columnId)
@@ -100,7 +98,7 @@ export async function cleanupColumn(ctx: SDKContext, columnId: string, boardId?:
 /**
  * Permanently deletes all cards currently in the `deleted` column.
  */
-export async function purgeDeletedCards(ctx: SDKContext, boardId?: string): Promise<number> {
+export async function purgeDeletedCards(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<number> {
   const cards = await ctx.listCards(undefined, boardId)
   const deleted = cards.filter(c => c.status === DELETED_STATUS_ID)
   for (const card of deleted) {
@@ -112,7 +110,7 @@ export async function purgeDeletedCards(ctx: SDKContext, boardId?: string): Prom
 /**
  * Reorders the columns of a board.
  */
-export function reorderColumns(ctx: SDKContext, columnIds: string[], boardId?: string): KanbanColumn[] {
+export function reorderColumns(ctx: SDKContext, { columnIds, boardId }: { columnIds: string[]; boardId?: string }): KanbanColumn[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -134,7 +132,7 @@ export function reorderColumns(ctx: SDKContext, columnIds: string[], boardId?: s
 /**
  * Returns the minimized column IDs for a board.
  */
-export function getMinimizedColumns(ctx: SDKContext, boardId?: string): string[] {
+export function getMinimizedColumns(ctx: SDKContext, { boardId }: { boardId?: string } = {}): string[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -146,7 +144,7 @@ export function getMinimizedColumns(ctx: SDKContext, boardId?: string): string[]
  * Sets the minimized column IDs for a board, persisting the state to config.
  * Only IDs that correspond to existing columns are retained.
  */
-export function setMinimizedColumns(ctx: SDKContext, columnIds: string[], boardId?: string): string[] {
+export function setMinimizedColumns(ctx: SDKContext, { columnIds, boardId }: { columnIds: string[]; boardId?: string }): string[] {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]

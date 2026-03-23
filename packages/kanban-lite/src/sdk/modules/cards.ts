@@ -191,12 +191,14 @@ async function writeActiveCardState(ctx: SDKContext, state: ActiveCardState): Pr
  */
 export async function listCards(
   ctx: SDKContext,
-  columns?: string[],
-  boardId?: string,
-  metaFilter?: Record<string, string>,
-  sort?: CardSortOption,
-  searchQuery?: string,
-  fuzzy?: boolean
+  { columns, boardId, metaFilter, sort, searchQuery, fuzzy }: {
+    columns?: string[]
+    boardId?: string
+    metaFilter?: Record<string, string>
+    sort?: CardSortOption
+    searchQuery?: string
+    fuzzy?: boolean
+  } = {}
 ): Promise<Card[]> {
   await ctx._ensureMigrated()
   const boardDir = ctx._boardDir(boardId)
@@ -252,15 +254,15 @@ export async function listCards(
 /**
  * Retrieves a single card by its ID. Supports partial ID matching.
  */
-export async function getCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<Card | null> {
-  const cards = await listCards(ctx, undefined, boardId)
+export async function getCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+  const cards = await listCards(ctx, { boardId })
   return cards.find(c => c.id === cardId) || null
 }
 
 /**
  * Retrieves the card currently marked as active/open in this workspace.
  */
-export async function getActiveCard(ctx: SDKContext, boardId?: string): Promise<Card | null> {
+export async function getActiveCard(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<Card | null> {
   const state = await readActiveCardState(ctx)
   if (!state) return null
 
@@ -268,9 +270,9 @@ export async function getActiveCard(ctx: SDKContext, boardId?: string): Promise<
     return null
   }
 
-  const card = await getCard(ctx, state.cardId, state.boardId)
+  const card = await getCard(ctx, { cardId: state.cardId, boardId: state.boardId })
   if (!card) {
-    await clearActiveCard(ctx, state.boardId)
+    await clearActiveCard(ctx, { boardId: state.boardId })
     return null
   }
 
@@ -280,8 +282,8 @@ export async function getActiveCard(ctx: SDKContext, boardId?: string): Promise<
 /**
  * Marks a card as the active/open card for this workspace.
  */
-export async function setActiveCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<Card> {
-  const card = await getCard(ctx, cardId, boardId)
+export async function setActiveCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card> {
+  const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   await writeActiveCardState(ctx, {
@@ -296,7 +298,7 @@ export async function setActiveCard(ctx: SDKContext, cardId: string, boardId?: s
 /**
  * Clears the tracked active/open card for this workspace.
  */
-export async function clearActiveCard(ctx: SDKContext, boardId?: string): Promise<void> {
+export async function clearActiveCard(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<void> {
   const state = await readActiveCardState(ctx)
   if (!state) return
 
@@ -330,7 +332,7 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
   const filename = generateCardFilename(numericId, title)
   const now = new Date().toISOString()
 
-  const cards = await listCards(ctx, undefined, resolvedBoardId)
+  const cards = await listCards(ctx, { boardId: resolvedBoardId })
   const cardsInStatus = cards
     .filter(c => c.status === status)
     .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
@@ -373,11 +375,9 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
  */
 export async function updateCard(
   ctx: SDKContext,
-  cardId: string,
-  updates: Partial<Card>,
-  boardId?: string
+  { cardId, updates, boardId }: { cardId: string; updates: Partial<Card>; boardId?: string }
 ): Promise<Card> {
-  const card = await getCard(ctx, cardId, boardId)
+  const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
@@ -422,9 +422,7 @@ export async function updateCard(
  */
 export async function triggerAction(
   ctx: SDKContext,
-  cardId: string,
-  action: string,
-  boardId?: string
+  { cardId, action, boardId }: { cardId: string; action: string; boardId?: string }
 ): Promise<void> {
   const config = readConfig(ctx.workspaceRoot)
   const { actionWebhookUrl } = config
@@ -432,7 +430,7 @@ export async function triggerAction(
     throw new Error('No action webhook URL configured. Set actionWebhookUrl in .kanban.json')
   }
 
-  const card = await getCard(ctx, cardId, boardId)
+  const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
@@ -460,7 +458,7 @@ export async function triggerAction(
  * Validates and persists a card form submission, then emits `form.submit`.
  */
 export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promise<SubmitFormResult> {
-  const card = await getCard(ctx, input.cardId, input.boardId)
+  const card = await getCard(ctx, { cardId: input.cardId, boardId: input.boardId })
   if (!card) throw new Error(`Card not found: ${input.cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(input.boardId)
@@ -517,12 +515,9 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
  */
 export async function moveCard(
   ctx: SDKContext,
-  cardId: string,
-  newStatus: string,
-  position?: number,
-  boardId?: string
+  { cardId, newStatus, position, boardId }: { cardId: string; newStatus: string; position?: number; boardId?: string }
 ): Promise<Card> {
-  const cards = await listCards(ctx, undefined, boardId)
+  const cards = await listCards(ctx, { boardId })
   const card = cards.find(c => c.id === cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -563,18 +558,18 @@ export async function moveCard(
 /**
  * Soft-deletes a card by moving it to the `deleted` status column.
  */
-export async function deleteCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<void> {
-  const card = await getCard(ctx, cardId, boardId)
+export async function deleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
+  const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   if (card.status === DELETED_STATUS_ID) return
-  await updateCard(ctx, cardId, { status: DELETED_STATUS_ID }, boardId)
+  await updateCard(ctx, { cardId, updates: { status: DELETED_STATUS_ID }, boardId })
 }
 
 /**
  * Permanently deletes a card's file from disk.
  */
-export async function permanentlyDeleteCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<void> {
-  const card = await getCard(ctx, cardId, boardId)
+export async function permanentlyDeleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
+  const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   await ctx._storage.deleteCard(card)
 }
@@ -582,16 +577,16 @@ export async function permanentlyDeleteCard(ctx: SDKContext, cardId: string, boa
 /**
  * Returns all cards in a specific status column.
  */
-export async function getCardsByStatus(ctx: SDKContext, status: string, boardId?: string): Promise<Card[]> {
-  const cards = await listCards(ctx, undefined, boardId)
+export async function getCardsByStatus(ctx: SDKContext, { status, boardId }: { status: string; boardId?: string }): Promise<Card[]> {
+  const cards = await listCards(ctx, { boardId })
   return cards.filter(c => c.status === status)
 }
 
 /**
  * Returns a sorted list of unique assignee names across all cards on a board.
  */
-export async function getUniqueAssignees(ctx: SDKContext, boardId?: string): Promise<string[]> {
-  const cards = await listCards(ctx, undefined, boardId)
+export async function getUniqueAssignees(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<string[]> {
+  const cards = await listCards(ctx, { boardId })
   const assignees = new Set<string>()
   for (const c of cards) {
     if (c.assignee) assignees.add(c.assignee)
@@ -602,8 +597,8 @@ export async function getUniqueAssignees(ctx: SDKContext, boardId?: string): Pro
 /**
  * Returns a sorted list of unique labels across all cards on a board.
  */
-export async function getUniqueLabels(ctx: SDKContext, boardId?: string): Promise<string[]> {
-  const cards = await listCards(ctx, undefined, boardId)
+export async function getUniqueLabels(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<string[]> {
+  const cards = await listCards(ctx, { boardId })
   const labels = new Set<string>()
   for (const c of cards) {
     for (const l of c.labels) labels.add(l)

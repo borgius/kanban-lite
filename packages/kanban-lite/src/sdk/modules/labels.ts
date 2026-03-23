@@ -15,7 +15,7 @@ export function getLabels(ctx: SDKContext): Record<string, LabelDefinition> {
 /**
  * Creates or updates a label definition in the workspace configuration.
  */
-export function setLabel(ctx: SDKContext, name: string, definition: LabelDefinition): void {
+export function setLabel(ctx: SDKContext, { name, definition }: { name: string; definition: LabelDefinition }): void {
   const config = readConfig(ctx.workspaceRoot)
   if (!config.labels) config.labels = {}
   config.labels[name] = definition
@@ -25,7 +25,7 @@ export function setLabel(ctx: SDKContext, name: string, definition: LabelDefinit
 /**
  * Removes a label definition and cascades the deletion to all cards.
  */
-export async function deleteLabel(ctx: SDKContext, name: string): Promise<void> {
+export async function deleteLabel(ctx: SDKContext, { name }: { name: string }): Promise<void> {
   const config = readConfig(ctx.workspaceRoot)
   if (config.labels) {
     delete config.labels[name]
@@ -43,7 +43,7 @@ export async function deleteLabel(ctx: SDKContext, name: string): Promise<void> 
 /**
  * Renames a label in the configuration and cascades the change to all cards.
  */
-export async function renameLabel(ctx: SDKContext, oldName: string, newName: string): Promise<void> {
+export async function renameLabel(ctx: SDKContext, { oldName, newName }: { oldName: string; newName: string }): Promise<void> {
   const config = readConfig(ctx.workspaceRoot)
   if (config.labels && config.labels[oldName]) {
     config.labels[newName] = config.labels[oldName]
@@ -63,7 +63,7 @@ export async function renameLabel(ctx: SDKContext, oldName: string, newName: str
 /**
  * Returns a sorted list of label names that belong to the given group.
  */
-export function getLabelsInGroup(ctx: SDKContext, group: string): string[] {
+export function getLabelsInGroup(ctx: SDKContext, { group }: { group: string }): string[] {
   const labels = getLabels(ctx)
   return Object.entries(labels)
     .filter(([, def]) => def.group === group)
@@ -74,8 +74,8 @@ export function getLabelsInGroup(ctx: SDKContext, group: string): string[] {
 /**
  * Returns all cards that have at least one label belonging to the given group.
  */
-export async function filterCardsByLabelGroup(ctx: SDKContext, group: string, boardId?: string): Promise<Card[]> {
-  const groupLabels = getLabelsInGroup(ctx, group)
+export async function filterCardsByLabelGroup(ctx: SDKContext, { group, boardId }: { group: string; boardId?: string }): Promise<Card[]> {
+  const groupLabels = getLabelsInGroup(ctx, { group })
   if (groupLabels.length === 0) return []
   const cards = await ctx.listCards(undefined, boardId)
   return cards.filter(c => c.labels.some(l => groupLabels.includes(l)))

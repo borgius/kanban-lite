@@ -93,7 +93,7 @@ async function migrateToProvider(
 /**
  * Migrates all card data from the current storage engine to SQLite.
  */
-export async function migrateToSqlite(ctx: SDKContext, dbPath?: string): Promise<number> {
+export async function migrateToSqlite(ctx: SDKContext, { dbPath }: { dbPath?: string } = {}): Promise<number> {
   if (ctx._storage.type === 'sqlite') {
     throw new Error('Storage engine is already sqlite')
   }

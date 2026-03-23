@@ -32,13 +32,15 @@ export function listBoards(ctx: SDKContext): BoardInfo[] {
  */
 export function createBoard(
   ctx: SDKContext,
-  id: string,
-  name: string,
-  options?: {
-    description?: string
-    columns?: KanbanColumn[]
-    defaultStatus?: string
-    defaultPriority?: Priority
+  { id, name, options }: {
+    id: string
+    name: string
+    options?: {
+      description?: string
+      columns?: KanbanColumn[]
+      defaultStatus?: string
+      defaultPriority?: Priority
+    }
   }
 ): BoardInfo {
   const config = readConfig(ctx.workspaceRoot)
@@ -78,7 +80,7 @@ export function createBoard(
 /**
  * Deletes a board and its directory from the filesystem.
  */
-export async function deleteBoard(ctx: SDKContext, boardId: string): Promise<void> {
+export async function deleteBoard(ctx: SDKContext, { boardId }: { boardId: string }): Promise<void> {
   const config = readConfig(ctx.workspaceRoot)
   if (!config.boards[boardId]) {
     throw new Error(`Board not found: ${boardId}`)
@@ -102,7 +104,7 @@ export async function deleteBoard(ctx: SDKContext, boardId: string): Promise<voi
 /**
  * Retrieves the full configuration for a specific board.
  */
-export function getBoard(ctx: SDKContext, boardId: string): BoardConfig {
+export function getBoard(ctx: SDKContext, { boardId }: { boardId: string }): BoardConfig {
   return getBoardConfig(ctx.workspaceRoot, boardId)
 }
 
@@ -111,8 +113,7 @@ export function getBoard(ctx: SDKContext, boardId: string): BoardConfig {
  */
 export function updateBoard(
   ctx: SDKContext,
-  boardId: string,
-  updates: Partial<Omit<BoardConfig, 'nextCardId'>>
+  { boardId, updates }: { boardId: string; updates: Partial<Omit<BoardConfig, 'nextCardId'>> }
 ): BoardConfig {
   const config = readConfig(ctx.workspaceRoot)
   const board = config.boards[boardId]
@@ -134,7 +135,7 @@ export function updateBoard(
 /**
  * Returns the named actions defined on a board.
  */
-export function getBoardActions(ctx: SDKContext, boardId?: string): Record<string, string> {
+export function getBoardActions(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Record<string, string> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -145,7 +146,7 @@ export function getBoardActions(ctx: SDKContext, boardId?: string): Record<strin
 /**
  * Adds or updates a named action on a board.
  */
-export function addBoardAction(ctx: SDKContext, boardId: string, key: string, title: string): Record<string, string> {
+export function addBoardAction(ctx: SDKContext, { boardId, key, title }: { boardId: string; key: string; title: string }): Record<string, string> {
   const config = readConfig(ctx.workspaceRoot)
   const board = config.boards[boardId]
   if (!board) throw new Error(`Board not found: ${boardId}`)
@@ -158,7 +159,7 @@ export function addBoardAction(ctx: SDKContext, boardId: string, key: string, ti
 /**
  * Removes a named action from a board.
  */
-export function removeBoardAction(ctx: SDKContext, boardId: string, key: string): Record<string, string> {
+export function removeBoardAction(ctx: SDKContext, { boardId, key }: { boardId: string; key: string }): Record<string, string> {
   const config = readConfig(ctx.workspaceRoot)
   const board = config.boards[boardId]
   if (!board) throw new Error(`Board not found: ${boardId}`)
@@ -175,7 +176,7 @@ export function removeBoardAction(ctx: SDKContext, boardId: string, key: string)
  * Fires the `board.action` webhook event for a named board action.
  * Returns the resolved boardId and action title so the SDK can emit the after-event.
  */
-export async function triggerBoardAction(ctx: SDKContext, boardId: string, actionKey: string): Promise<{ boardId: string; action: string; title: string }> {
+export async function triggerBoardAction(ctx: SDKContext, { boardId, actionKey }: { boardId: string; actionKey: string }): Promise<{ boardId: string; action: string; title: string }> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -192,10 +193,7 @@ export async function triggerBoardAction(ctx: SDKContext, boardId: string, actio
  */
 export async function transferCard(
   ctx: SDKContext,
-  cardId: string,
-  fromBoardId: string,
-  toBoardId: string,
-  targetStatus?: string
+  { cardId, fromBoardId, toBoardId, targetStatus }: { cardId: string; fromBoardId: string; toBoardId: string; targetStatus?: string }
 ): Promise<Card> {
   const toBoardDir = ctx._boardDir(toBoardId)
 

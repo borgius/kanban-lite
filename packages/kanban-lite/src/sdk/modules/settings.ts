@@ -14,7 +14,7 @@ export function getSettings(ctx: SDKContext): CardDisplaySettings {
 /**
  * Updates the global card display settings for the workspace.
  */
-export function updateSettings(ctx: SDKContext, settings: CardDisplaySettings): void {
+export function updateSettings(ctx: SDKContext, { settings }: { settings: CardDisplaySettings }): void {
   const config = readConfig(ctx.workspaceRoot)
   writeConfig(ctx.workspaceRoot, settingsToConfig(config, settings))
 }
@@ -22,7 +22,7 @@ export function updateSettings(ctx: SDKContext, settings: CardDisplaySettings): 
 /**
  * Sets the default board for the workspace.
  */
-export function setDefaultBoard(ctx: SDKContext, boardId: string): void {
+export function setDefaultBoard(ctx: SDKContext, { boardId }: { boardId: string }): void {
   const config = readConfig(ctx.workspaceRoot)
   if (!config.boards[boardId]) throw new Error(`Board not found: ${boardId}`)
   config.defaultBoard = boardId

@@ -81,7 +81,7 @@ async function appendLogText(ctx: SDKContext, card: Card, content: string): Prom
 /**
  * Returns the absolute path to the log file for a card.
  */
-export async function getLogFilePath(ctx: SDKContext, cardId: string, boardId?: string): Promise<string | null> {
+export async function getLogFilePath(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string | null> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) return null
   return resolveExistingLogPath(ctx, card)
@@ -90,7 +90,7 @@ export async function getLogFilePath(ctx: SDKContext, cardId: string, boardId?: 
 /**
  * Lists all log entries for a card.
  */
-export async function listLogs(ctx: SDKContext, cardId: string, boardId?: string): Promise<LogEntry[]> {
+export async function listLogs(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<LogEntry[]> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -108,10 +108,12 @@ export async function listLogs(ctx: SDKContext, cardId: string, boardId?: string
  */
 export async function addLog(
   ctx: SDKContext,
-  cardId: string,
-  text: string,
-  options?: { source?: string; timestamp?: string; object?: Record<string, any> },
-  boardId?: string
+  { cardId, text, options, boardId }: {
+    cardId: string
+    text: string
+    options?: { source?: string; timestamp?: string; object?: Record<string, any> }
+    boardId?: string
+  }
 ): Promise<LogEntry> {
   if (!text?.trim()) throw new Error('Log text cannot be empty')
   const card = await ctx.getCard(cardId, boardId)
@@ -145,7 +147,7 @@ export async function addLog(
 /**
  * Clears all log entries for a card by deleting the `.log` file.
  */
-export async function clearLogs(ctx: SDKContext, cardId: string, boardId?: string): Promise<void> {
+export async function clearLogs(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -172,15 +174,15 @@ export async function clearLogs(ctx: SDKContext, cardId: string, boardId?: strin
 /**
  * Returns the absolute path to the board-level log file for a given board.
  */
-export function getBoardLogFilePath(ctx: SDKContext, boardId?: string): string {
+export function getBoardLogFilePath(ctx: SDKContext, { boardId }: { boardId?: string } = {}): string {
   return path.join(ctx._boardDir(boardId), 'board.log')
 }
 
 /**
  * Lists all log entries from the board-level log file.
  */
-export async function listBoardLogs(ctx: SDKContext, boardId?: string): Promise<LogEntry[]> {
-  const logPath = getBoardLogFilePath(ctx, boardId)
+export async function listBoardLogs(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<LogEntry[]> {
+  const logPath = getBoardLogFilePath(ctx, { boardId })
   let content: string
   try {
     content = await fs.readFile(logPath, 'utf-8')
@@ -202,9 +204,11 @@ export async function listBoardLogs(ctx: SDKContext, boardId?: string): Promise<
  */
 export async function addBoardLog(
   ctx: SDKContext,
-  text: string,
-  options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-  boardId?: string
+  { text, options, boardId }: {
+    text: string
+    options?: { source?: string; timestamp?: string; object?: Record<string, unknown> }
+    boardId?: string
+  }
 ): Promise<LogEntry> {
   const entry: LogEntry = {
     timestamp: options?.timestamp ?? new Date().toISOString(),
@@ -212,7 +216,7 @@ export async function addBoardLog(
     text,
     ...(options?.object ? { object: options.object } : {}),
   }
-  const logPath = getBoardLogFilePath(ctx, boardId)
+  const logPath = getBoardLogFilePath(ctx, { boardId })
   await fs.mkdir(path.dirname(logPath), { recursive: true })
   const line = serializeLogEntry(entry) + '\n'
   await fs.appendFile(logPath, line, 'utf-8')
@@ -222,8 +226,8 @@ export async function addBoardLog(
 /**
  * Clears all log entries for a board by deleting the board-level `board.log` file.
  */
-export async function clearBoardLogs(ctx: SDKContext, boardId?: string): Promise<void> {
-  const logPath = getBoardLogFilePath(ctx, boardId)
+export async function clearBoardLogs(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<void> {
+  const logPath = getBoardLogFilePath(ctx, { boardId })
   try {
     await fs.unlink(logPath)
   } catch {

@@ -88,16 +88,10 @@ type ServiceMethodArgs<TMethod> =
   TMethod extends (ctx: any, ...args: infer TArgs) => any ? TArgs : never
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-type MethodInput<
-  TMethod,
-  TKeys extends readonly string[] = readonly [],
-> = [TKeys] extends [readonly []]
-  ? Record<string, unknown>
-  : ServiceMethodArgs<TMethod> extends infer TArgs extends readonly unknown[]
-    ? {
-        [TIndex in Extract<keyof TKeys & `${number}`, keyof TArgs> as TKeys[TIndex] & string]: TArgs[TIndex]
-      }
-    : never
+type MethodInput<TMethod> =
+  ServiceMethodArgs<TMethod> extends [infer TFirst, ...unknown[]]
+    ? TFirst
+    : Record<string, unknown>
 
 /**
  * Active webhook provider metadata for diagnostics and host surfaces.
@@ -1007,16 +1001,8 @@ export class KanbanSDK {
     defaultStatus?: string
     defaultPriority?: Priority
   }): Promise<BoardInfo> {
-    const mergedInput = await this._runBeforeEvent('board.create', { id, name, ...(options ?? {}) } as unknown as Record<string, unknown>, undefined, id)
-    const resolvedId = (mergedInput.id as string) ?? id
-    const resolvedName = (mergedInput.name as string) ?? name
-    const resolvedOptions = {
-      description: mergedInput.description as string | undefined,
-      columns: mergedInput.columns as KanbanColumn[] | undefined,
-      defaultStatus: mergedInput.defaultStatus as string | undefined,
-      defaultPriority: mergedInput.defaultPriority as Priority | undefined,
-    }
-    const board = Boards.createBoard(this, resolvedId, resolvedName, resolvedOptions)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.createBoard>>('board.create', { id, name, options }, undefined, id)
+    const board = Boards.createBoard(this, mergedInput)
     this._runAfterEvent('board.created', board, undefined, board.id)
     return board
   }
@@ -1040,10 +1026,9 @@ export class KanbanSDK {
    * ```
    */
   async deleteBoard(boardId: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('board.delete', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
-    await Boards.deleteBoard(this, resolvedBoardId)
-    this._runAfterEvent('board.deleted', { id: resolvedBoardId }, undefined, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.deleteBoard>>('board.delete', { boardId }, undefined, boardId)
+    await Boards.deleteBoard(this, mergedInput)
+    this._runAfterEvent('board.deleted', { id: mergedInput.boardId }, undefined, mergedInput.boardId)
   }
 
   /**
@@ -1060,7 +1045,7 @@ export class KanbanSDK {
    * ```
    */
   getBoard(boardId: string): BoardConfig {
-    return Boards.getBoard(this, boardId)
+    return Boards.getBoard(this, { boardId })
   }
 
   /**
@@ -1088,12 +1073,9 @@ export class KanbanSDK {
    * ```
    */
   async updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>): Promise<BoardConfig> {
-    const mergedInput = await this._runBeforeEvent('board.update', { boardId, ...updates } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
-    const resolvedUpdates = { ...mergedInput }
-    delete (resolvedUpdates as { boardId?: unknown }).boardId
-    const board = Boards.updateBoard(this, resolvedBoardId, resolvedUpdates as unknown as Partial<Omit<BoardConfig, 'nextCardId'>>)
-    this._runAfterEvent('board.updated', { id: resolvedBoardId, ...board }, undefined, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.updateBoard>>('board.update', { boardId, updates }, undefined, boardId)
+    const board = Boards.updateBoard(this, mergedInput)
+    this._runAfterEvent('board.updated', { id: mergedInput.boardId, ...board }, undefined, mergedInput.boardId)
     return board
   }
 
@@ -1111,7 +1093,7 @@ export class KanbanSDK {
     * ```
    */
   getBoardActions(boardId?: string): Record<string, string> {
-    return Boards.getBoardActions(this, boardId)
+    return Boards.getBoardActions(this, { boardId })
   }
 
   /**
@@ -1129,10 +1111,9 @@ export class KanbanSDK {
     * ```
    */
   async addBoardAction(boardId: string, key: string, title: string): Promise<Record<string, string>> {
-    const mergedInput = await this._runBeforeEvent('board.action.config.add', { boardId, key, title } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
-    const actions = Boards.addBoardAction(this, resolvedBoardId, (mergedInput.key as string) ?? key, (mergedInput.title as string) ?? title)
-    this._runAfterEvent('board.updated', { id: resolvedBoardId, actions }, undefined, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.addBoardAction>>('board.action.config.add', { boardId, key, title }, undefined, boardId)
+    const actions = Boards.addBoardAction(this, mergedInput)
+    this._runAfterEvent('board.updated', { id: mergedInput.boardId, actions }, undefined, mergedInput.boardId)
     return actions
   }
 
@@ -1151,10 +1132,9 @@ export class KanbanSDK {
     * ```
    */
   async removeBoardAction(boardId: string, key: string): Promise<Record<string, string>> {
-    const mergedInput = await this._runBeforeEvent('board.action.config.remove', { boardId, key } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
-    const actions = Boards.removeBoardAction(this, resolvedBoardId, (mergedInput.key as string) ?? key)
-    this._runAfterEvent('board.updated', { id: resolvedBoardId, actions }, undefined, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.removeBoardAction>>('board.action.config.remove', { boardId, key }, undefined, boardId)
+    const actions = Boards.removeBoardAction(this, mergedInput)
+    this._runAfterEvent('board.updated', { id: mergedInput.boardId, actions }, undefined, mergedInput.boardId)
     return actions
   }
 
@@ -1172,12 +1152,8 @@ export class KanbanSDK {
     * ```
    */
   async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('board.action.trigger', { boardId, actionKey } as unknown as Record<string, unknown>, undefined, boardId)
-    const actionData = await Boards.triggerBoardAction(
-      this,
-      (mergedInput.boardId as string) ?? boardId,
-      (mergedInput.actionKey as string) ?? actionKey,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.triggerBoardAction>>('board.action.trigger', { boardId, actionKey }, undefined, boardId)
+    const actionData = await Boards.triggerBoardAction(this, mergedInput)
     this._runAfterEvent('board.action', actionData, undefined, actionData.boardId)
   }
 
@@ -1207,28 +1183,18 @@ export class KanbanSDK {
    * ```
    */
   async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('card.transfer', {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.transferCard>>('card.transfer', {
       cardId,
       fromBoardId,
       toBoardId,
       targetStatus,
-    } as unknown as Record<string, unknown>, undefined, fromBoardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedFromBoardId = (mergedInput.fromBoardId as string) ?? fromBoardId
-    const resolvedToBoardId = (mergedInput.toBoardId as string) ?? toBoardId
-    const resolvedTargetStatus = (mergedInput.targetStatus as string | undefined) ?? targetStatus
-    const snapshot = await this.getCard(resolvedCardId, resolvedFromBoardId)
-    const card = await Boards.transferCard(
-      this,
-      resolvedCardId,
-      resolvedFromBoardId,
-      resolvedToBoardId,
-      resolvedTargetStatus,
-    )
+    }, undefined, fromBoardId)
+    const snapshot = await this.getCard(mergedInput.cardId, mergedInput.fromBoardId)
+    const card = await Boards.transferCard(this, mergedInput)
     this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId, {
       previousStatus: snapshot?.status,
-      fromBoard: resolvedFromBoardId,
-      toBoard: resolvedToBoardId,
+      fromBoard: mergedInput.fromBoardId,
+      toBoard: mergedInput.toBoardId,
       transfer: true,
     })
     return card
@@ -1323,12 +1289,7 @@ export class KanbanSDK {
 
     return Cards.listCards(
       this,
-      columns,
-      boardId,
-      options.metaFilter,
-      options.sort,
-      options.searchQuery,
-      options.fuzzy
+      { columns, boardId, metaFilter: options.metaFilter, sort: options.sort, searchQuery: options.searchQuery, fuzzy: options.fuzzy }
     )
   }
 
@@ -1351,7 +1312,7 @@ export class KanbanSDK {
    * ```
    */
   async getCard(cardId: string, boardId?: string): Promise<Card | null> {
-    return Cards.getCard(this, cardId, boardId)
+    return Cards.getCard(this, { cardId, boardId })
   }
 
   /**
@@ -1374,17 +1335,17 @@ export class KanbanSDK {
    * ```
    */
   async getActiveCard(boardId?: string): Promise<Card | null> {
-    return Cards.getActiveCard(this, boardId)
+    return Cards.getActiveCard(this, { boardId })
   }
 
   /** @internal */
   async setActiveCard(cardId: string, boardId?: string): Promise<Card> {
-    return Cards.setActiveCard(this, cardId, boardId)
+    return Cards.setActiveCard(this, { cardId, boardId })
   }
 
   /** @internal */
   async clearActiveCard(boardId?: string): Promise<void> {
-    return Cards.clearActiveCard(this, boardId)
+    return Cards.clearActiveCard(this, { boardId })
   }
 
   /**
@@ -1423,8 +1384,8 @@ export class KanbanSDK {
    * ```
    */
   async createCard(data: CreateCardInput): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('card.create', { ...data } as unknown as Record<string, unknown>, undefined, data.boardId)
-    const card = await Cards.createCard(this, mergedInput as unknown as CreateCardInput)
+    const mergedInput = await this._runBeforeEvent<CreateCardInput & Record<string, unknown>>('card.create', { ...data } as CreateCardInput & Record<string, unknown>, undefined, data.boardId)
+    const card = await Cards.createCard(this, mergedInput)
     this._runAfterEvent('task.created', sanitizeCard(card), undefined, card.boardId)
     return card
   }
@@ -1457,8 +1418,8 @@ export class KanbanSDK {
    * ```
    */
   async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
-    const mergedUpdates = await this._runBeforeEvent('card.update', { ...updates } as unknown as Record<string, unknown>, undefined, boardId)
-    const card = await Cards.updateCard(this, cardId, mergedUpdates as unknown as Partial<Card>, boardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.updateCard>>('card.update', { cardId, updates, boardId }, undefined, boardId)
+    const card = await Cards.updateCard(this, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return card
   }
@@ -1511,8 +1472,8 @@ export class KanbanSDK {
    * ```
    */
   async submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
-    const mergedInput = await this._runBeforeEvent('form.submit', { ...input } as unknown as Record<string, unknown>, undefined, input.boardId)
-    const result = await Cards.submitForm(this, mergedInput as unknown as SubmitFormInput)
+    const mergedInput = await this._runBeforeEvent<SubmitFormInput & Record<string, unknown>>('form.submit', { ...input } as SubmitFormInput & Record<string, unknown>, undefined, input.boardId)
+    const result = await Cards.submitForm(this, mergedInput)
     this._runAfterEvent('form.submitted', result, undefined, result.boardId)
     return result
   }
@@ -1541,13 +1502,8 @@ export class KanbanSDK {
    * ```
    */
   async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('card.action.trigger', { cardId, boardId, actionKey: action } as unknown as Record<string, unknown>, undefined, boardId)
-    return Cards.triggerAction(
-      this,
-      (mergedInput.cardId as string) ?? cardId,
-      (mergedInput.actionKey as string) ?? action,
-      (mergedInput.boardId as string | undefined) ?? boardId,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.triggerAction>>('card.action.trigger', { cardId, action, boardId }, undefined, boardId)
+    return Cards.triggerAction(this, mergedInput)
   }
 
   /**
@@ -1575,11 +1531,8 @@ export class KanbanSDK {
    * ```
    */
   async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('card.move', { cardId, newStatus, position, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedStatus = (mergedInput.newStatus as string) ?? newStatus
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const card = await Cards.moveCard(this, resolvedCardId, resolvedStatus, mergedInput.position as number | undefined ?? position, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.moveCard>>('card.move', { cardId, newStatus, position, boardId }, undefined, boardId)
+    const card = await Cards.moveCard(this, mergedInput)
     this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId)
     return card
   }
@@ -1599,8 +1552,8 @@ export class KanbanSDK {
    * ```
    */
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard, ['cardId', 'boardId']>>('card.delete', { cardId, boardId }, undefined, boardId)
-    await Cards.deleteCard(this, mergedInput.cardId, mergedInput.boardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
+    await Cards.deleteCard(this, mergedInput)
     const deleted = await this.getCard(mergedInput.cardId, mergedInput.boardId)
     if (deleted) this._runAfterEvent('task.deleted', sanitizeCard(deleted), undefined, deleted.boardId)
   }
@@ -1620,9 +1573,9 @@ export class KanbanSDK {
    * ```
    */
   async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
-    const snapshot = await this.getCard(mergedInput.cardId as string, mergedInput.boardId as string | undefined)
-    await Cards.permanentlyDeleteCard(this, mergedInput.cardId as string, mergedInput.boardId as string | undefined)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.permanentlyDeleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
+    const snapshot = await this.getCard(mergedInput.cardId, mergedInput.boardId)
+    await Cards.permanentlyDeleteCard(this, mergedInput)
     if (snapshot) this._runAfterEvent('task.deleted', sanitizeCard(snapshot), undefined, snapshot.boardId)
   }
 
@@ -1643,7 +1596,7 @@ export class KanbanSDK {
    * ```
    */
   async getCardsByStatus(status: string, boardId?: string): Promise<Card[]> {
-    return Cards.getCardsByStatus(this, status, boardId)
+    return Cards.getCardsByStatus(this, { status, boardId })
   }
 
   /**
@@ -1661,7 +1614,7 @@ export class KanbanSDK {
    * ```
    */
   async getUniqueAssignees(boardId?: string): Promise<string[]> {
-    return Cards.getUniqueAssignees(this, boardId)
+    return Cards.getUniqueAssignees(this, { boardId })
   }
 
   /**
@@ -1677,7 +1630,7 @@ export class KanbanSDK {
    * ```
    */
   async getUniqueLabels(boardId?: string): Promise<string[]> {
-    return Cards.getUniqueLabels(this, boardId)
+    return Cards.getUniqueLabels(this, { boardId })
   }
 
   // --- Label definition management ---
@@ -1716,12 +1669,8 @@ export class KanbanSDK {
    * ```
    */
   async setLabel(name: string, definition: LabelDefinition): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('label.set', { name, definition: { ...definition } } as unknown as Record<string, unknown>)
-    Labels.setLabel(
-      this,
-      (mergedInput.name as string) ?? name,
-      (mergedInput.definition as LabelDefinition) ?? definition,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Labels.setLabel>>('label.set', { name, definition: { ...definition } })
+    Labels.setLabel(this, mergedInput)
   }
 
   /**
@@ -1736,8 +1685,8 @@ export class KanbanSDK {
    * ```
    */
   async deleteLabel(name: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('label.delete', { name } as unknown as Record<string, unknown>)
-    return Labels.deleteLabel(this, (mergedInput.name as string) ?? name)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Labels.deleteLabel>>('label.delete', { name })
+    return Labels.deleteLabel(this, mergedInput)
   }
 
   /**
@@ -1757,12 +1706,8 @@ export class KanbanSDK {
    * ```
    */
   async renameLabel(oldName: string, newName: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('label.rename', { oldName, newName } as unknown as Record<string, unknown>)
-    return Labels.renameLabel(
-      this,
-      (mergedInput.oldName as string) ?? oldName,
-      (mergedInput.newName as string) ?? newName,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Labels.renameLabel>>('label.rename', { oldName, newName })
+    return Labels.renameLabel(this, mergedInput)
   }
 
   /**
@@ -1784,7 +1729,7 @@ export class KanbanSDK {
    * ```
    */
   getLabelsInGroup(group: string): string[] {
-    return Labels.getLabelsInGroup(this, group)
+    return Labels.getLabelsInGroup(this, { group })
   }
 
   /**
@@ -1804,7 +1749,7 @@ export class KanbanSDK {
    * ```
    */
   async filterCardsByLabelGroup(group: string, boardId?: string): Promise<Card[]> {
-    return Labels.filterCardsByLabelGroup(this, group, boardId)
+    return Labels.filterCardsByLabelGroup(this, { group, boardId })
   }
 
   // --- Attachment management ---
@@ -1829,12 +1774,9 @@ export class KanbanSDK {
    * ```
    */
   async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('attachment.add', { cardId, sourcePath, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedSourcePath = (mergedInput.sourcePath as string) ?? sourcePath
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const card = await Attachments.addAttachment(this, resolvedCardId, resolvedSourcePath, resolvedBoardId)
-    this._runAfterEvent('attachment.added', { cardId: resolvedCardId, attachment: path.basename(resolvedSourcePath) }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Attachments.addAttachment>>('attachment.add', { cardId, sourcePath, boardId }, undefined, boardId)
+    const card = await Attachments.addAttachment(this, mergedInput)
+    this._runAfterEvent('attachment.added', { cardId: mergedInput.cardId, attachment: path.basename(mergedInput.sourcePath) }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
     return card
   }
 
@@ -1856,12 +1798,9 @@ export class KanbanSDK {
    * ```
    */
   async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('attachment.remove', { cardId, attachment, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedAttachment = (mergedInput.attachment as string) ?? attachment
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const card = await Attachments.removeAttachment(this, resolvedCardId, resolvedAttachment, resolvedBoardId)
-    this._runAfterEvent('attachment.removed', { cardId: resolvedCardId, attachment: resolvedAttachment }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Attachments.removeAttachment>>('attachment.remove', { cardId, attachment, boardId }, undefined, boardId)
+    const card = await Attachments.removeAttachment(this, mergedInput)
+    this._runAfterEvent('attachment.removed', { cardId: mergedInput.cardId, attachment: mergedInput.attachment }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
     return card
   }
 
@@ -1880,7 +1819,7 @@ export class KanbanSDK {
    * ```
    */
   async listAttachments(cardId: string, boardId?: string): Promise<string[]> {
-    return Attachments.listAttachments(this, cardId, boardId)
+    return Attachments.listAttachments(this, { cardId, boardId })
   }
 
   /**
@@ -1901,7 +1840,7 @@ export class KanbanSDK {
    * ```
    */
   async getAttachmentDir(cardId: string, boardId?: string): Promise<string | null> {
-    return Attachments.getAttachmentDir(this, cardId, boardId)
+    return Attachments.getAttachmentDir(this, { cardId, boardId })
   }
 
   // --- Comment management ---
@@ -1923,7 +1862,7 @@ export class KanbanSDK {
    * ```
    */
   async listComments(cardId: string, boardId?: string): Promise<Comment[]> {
-    return Comments.listComments(this, cardId, boardId)
+    return Comments.listComments(this, { cardId, boardId })
   }
 
   /**
@@ -1946,18 +1885,10 @@ export class KanbanSDK {
    * ```
    */
   async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('comment.create', { cardId, author, content, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const card = await Comments.addComment(
-      this,
-      resolvedCardId,
-      (mergedInput.author as string) ?? author,
-      (mergedInput.content as string) ?? content,
-      resolvedBoardId,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Comments.addComment>>('comment.create', { cardId, author, content, boardId }, undefined, boardId)
+    const card = await Comments.addComment(this, mergedInput)
     const newComment = card.comments[card.comments.length - 1]
-    if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
+    if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
     return card
   }
 
@@ -1978,13 +1909,10 @@ export class KanbanSDK {
    * ```
    */
   async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('comment.update', { cardId, commentId, content, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedCommentId = (mergedInput.commentId as string) ?? commentId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const card = await Comments.updateComment(this, resolvedCardId, resolvedCommentId, (mergedInput.content as string) ?? content, resolvedBoardId)
-    const updatedComment = card.comments?.find(c => c.id === resolvedCommentId)
-    if (updatedComment) this._runAfterEvent('comment.updated', { ...updatedComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Comments.updateComment>>('comment.update', { cardId, commentId, content, boardId }, undefined, boardId)
+    const card = await Comments.updateComment(this, mergedInput)
+    const updatedComment = card.comments?.find(c => c.id === mergedInput.commentId)
+    if (updatedComment) this._runAfterEvent('comment.updated', { ...updatedComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
     return card
   }
 
@@ -2003,14 +1931,11 @@ export class KanbanSDK {
    * ```
    */
   async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent('comment.delete', { cardId, commentId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedCommentId = (mergedInput.commentId as string) ?? commentId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const cardBefore = await this.getCard(resolvedCardId, resolvedBoardId)
-    const deletedComment = cardBefore?.comments?.find(c => c.id === resolvedCommentId)
-    const card = await Comments.deleteComment(this, resolvedCardId, resolvedCommentId, resolvedBoardId)
-    if (deletedComment) this._runAfterEvent('comment.deleted', { ...deletedComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Comments.deleteComment>>('comment.delete', { cardId, commentId, boardId }, undefined, boardId)
+    const cardBefore = await this.getCard(mergedInput.cardId, mergedInput.boardId)
+    const deletedComment = cardBefore?.comments?.find(c => c.id === mergedInput.commentId)
+    const card = await Comments.deleteComment(this, mergedInput)
+    if (deletedComment) this._runAfterEvent('comment.deleted', { ...deletedComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
     return card
   }
 
@@ -2029,7 +1954,7 @@ export class KanbanSDK {
    * @returns A promise resolving to the log file path, or `null` if the card is not found.
    */
   async getLogFilePath(cardId: string, boardId?: string): Promise<string | null> {
-    return Logs.getLogFilePath(this, cardId, boardId)
+    return Logs.getLogFilePath(this, { cardId, boardId })
   }
 
   /**
@@ -2052,7 +1977,7 @@ export class KanbanSDK {
    * ```
    */
   async listLogs(cardId: string, boardId?: string): Promise<LogEntry[]> {
-    return Logs.listLogs(this, cardId, boardId)
+    return Logs.listLogs(this, { cardId, boardId })
   }
 
   /**
@@ -2091,13 +2016,9 @@ export class KanbanSDK {
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
     boardId?: string,
   ): Promise<LogEntry> {
-    const mergedInput = await this._runBeforeEvent('log.add', { cardId, text, boardId, options } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedText = (mergedInput.text as string) ?? text
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const resolvedOptions = (mergedInput.options as { source?: string; timestamp?: string; object?: Record<string, unknown> } | undefined) ?? options
-    const entry = await Logs.addLog(this, resolvedCardId, resolvedText, resolvedOptions, resolvedBoardId)
-    this._runAfterEvent('log.added', { cardId: resolvedCardId, entry }, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Logs.addLog>>('log.add', { cardId, text, boardId, options }, undefined, boardId)
+    const entry = await Logs.addLog(this, mergedInput)
+    this._runAfterEvent('log.added', { cardId: mergedInput.cardId, entry }, undefined, this._resolveBoardId(mergedInput.boardId))
     return entry
   }
 
@@ -2119,11 +2040,9 @@ export class KanbanSDK {
    * ```
    */
   async clearLogs(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('log.clear', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    await Logs.clearLogs(this, resolvedCardId, resolvedBoardId)
-    this._runAfterEvent('log.cleared', { cardId: resolvedCardId }, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Logs.clearLogs>>('log.clear', { cardId, boardId }, undefined, boardId)
+    await Logs.clearLogs(this, mergedInput)
+    this._runAfterEvent('log.cleared', { cardId: mergedInput.cardId }, undefined, this._resolveBoardId(mergedInput.boardId))
   }
 
   // --- Board-level log management ---
@@ -2144,7 +2063,7 @@ export class KanbanSDK {
    * ```
    */
   getBoardLogFilePath(boardId?: string): string {
-    return Logs.getBoardLogFilePath(this, boardId)
+    return Logs.getBoardLogFilePath(this, { boardId })
   }
 
   /**
@@ -2162,7 +2081,7 @@ export class KanbanSDK {
    * ```
    */
   async listBoardLogs(boardId?: string): Promise<LogEntry[]> {
-    return Logs.listBoardLogs(this, boardId)
+    return Logs.listBoardLogs(this, { boardId })
   }
 
   /**
@@ -2185,12 +2104,9 @@ export class KanbanSDK {
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
     boardId?: string,
   ): Promise<LogEntry> {
-    const mergedInput = await this._runBeforeEvent('board.log.add', { text, boardId, options } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedText = (mergedInput.text as string) ?? text
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const resolvedOptions = (mergedInput.options as { source?: string; timestamp?: string; object?: Record<string, unknown> } | undefined) ?? options
-    const entry = await Logs.addBoardLog(this, resolvedText, resolvedOptions, resolvedBoardId)
-    this._runAfterEvent('board.log.added', { boardId: this._resolveBoardId(resolvedBoardId), entry }, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Logs.addBoardLog>>('board.log.add', { text, boardId, options }, undefined, boardId)
+    const entry = await Logs.addBoardLog(this, mergedInput)
+    this._runAfterEvent('board.log.added', { boardId: this._resolveBoardId(mergedInput.boardId), entry }, undefined, this._resolveBoardId(mergedInput.boardId))
     return entry
   }
 
@@ -2209,10 +2125,9 @@ export class KanbanSDK {
    * ```
    */
   async clearBoardLogs(boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('board.log.clear', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    await Logs.clearBoardLogs(this, resolvedBoardId)
-    this._runAfterEvent('board.log.cleared', { boardId: this._resolveBoardId(resolvedBoardId) }, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Logs.clearBoardLogs>>('board.log.clear', { boardId }, undefined, boardId)
+    await Logs.clearBoardLogs(this, mergedInput)
+    this._runAfterEvent('board.log.cleared', { boardId: this._resolveBoardId(mergedInput.boardId as string | undefined) }, undefined, this._resolveBoardId(mergedInput.boardId as string | undefined))
   }
 
   // --- Column management (board-scoped) ---
@@ -2230,7 +2145,7 @@ export class KanbanSDK {
    * ```
    */
   listColumns(boardId?: string): KanbanColumn[] {
-    return Columns.listColumns(this, boardId)
+    return Columns.listColumns(this, { boardId })
   }
 
   /**
@@ -2257,13 +2172,10 @@ export class KanbanSDK {
    * ```
    */
   async addColumn(column: KanbanColumn, boardId?: string): Promise<KanbanColumn[]> {
-    const mergedInput = await this._runBeforeEvent('column.create', { ...column, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const mergedColumn = { ...mergedInput }
-    delete (mergedColumn as { boardId?: unknown }).boardId
-    const columns = Columns.addColumn(this, mergedColumn as unknown as KanbanColumn, resolvedBoardId)
-    const added = columns.find(c => c.id === (mergedColumn.id as string | undefined)) ?? columns[columns.length - 1]
-    if (added) this._runAfterEvent('column.created', added, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.addColumn>>('column.create', { column, boardId }, undefined, boardId)
+    const columns = Columns.addColumn(this, mergedInput)
+    const added = columns.find(c => c.id === mergedInput.column.id) ?? columns[columns.length - 1]
+    if (added) this._runAfterEvent('column.created', added, undefined, this._resolveBoardId(mergedInput.boardId))
     return columns
   }
 
@@ -2291,15 +2203,10 @@ export class KanbanSDK {
    * ```
    */
   async updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string): Promise<KanbanColumn[]> {
-    const mergedUpdates = await this._runBeforeEvent('column.update', { columnId, boardId, ...updates } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedColumnId = (mergedUpdates.columnId as string) ?? columnId
-    const resolvedBoardId = (mergedUpdates.boardId as string | undefined) ?? boardId
-    const mergedFields = { ...mergedUpdates }
-    delete (mergedFields as { columnId?: unknown }).columnId
-    delete (mergedFields as { boardId?: unknown }).boardId
-    const columns = Columns.updateColumn(this, resolvedColumnId, mergedFields as unknown as Partial<Omit<KanbanColumn, 'id'>>, resolvedBoardId)
-    const updated = columns.find(c => c.id === resolvedColumnId)
-    if (updated) this._runAfterEvent('column.updated', updated, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.updateColumn>>('column.update', { columnId, updates, boardId }, undefined, boardId)
+    const columns = Columns.updateColumn(this, mergedInput)
+    const updated = columns.find(c => c.id === mergedInput.columnId)
+    if (updated) this._runAfterEvent('column.updated', updated, undefined, this._resolveBoardId(mergedInput.boardId))
     return columns
   }
 
@@ -2323,12 +2230,10 @@ export class KanbanSDK {
    * ```
    */
   async removeColumn(columnId: string, boardId?: string): Promise<KanbanColumn[]> {
-    const mergedInput = await this._runBeforeEvent('column.delete', { columnId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedColumnId = (mergedInput.columnId as string) ?? columnId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const colSnapshot = Columns.listColumns(this, resolvedBoardId).find(c => c.id === resolvedColumnId)
-    const columns = await Columns.removeColumn(this, resolvedColumnId, resolvedBoardId)
-    if (colSnapshot) this._runAfterEvent('column.deleted', colSnapshot, undefined, this._resolveBoardId(resolvedBoardId))
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.removeColumn>>('column.delete', { columnId, boardId }, undefined, boardId)
+    const colSnapshot = Columns.listColumns(this, { boardId: mergedInput.boardId }).find(c => c.id === mergedInput.columnId)
+    const columns = await Columns.removeColumn(this, mergedInput)
+    if (colSnapshot) this._runAfterEvent('column.deleted', colSnapshot, undefined, this._resolveBoardId(mergedInput.boardId))
     return columns
   }
 
@@ -2351,12 +2256,8 @@ export class KanbanSDK {
    * ```
    */
   async cleanupColumn(columnId: string, boardId?: string): Promise<number> {
-    const mergedInput = await this._runBeforeEvent('column.cleanup', { columnId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    return Columns.cleanupColumn(
-      this,
-      (mergedInput.columnId as string) ?? columnId,
-      (mergedInput.boardId as string | undefined) ?? boardId,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.cleanupColumn>>('column.cleanup', { columnId, boardId }, undefined, boardId)
+    return Columns.cleanupColumn(this, mergedInput)
   }
 
   /**
@@ -2375,8 +2276,8 @@ export class KanbanSDK {
    * ```
    */
   async purgeDeletedCards(boardId?: string): Promise<number> {
-    const mergedInput = await this._runBeforeEvent('card.purgeDeleted', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    return Columns.purgeDeletedCards(this, (mergedInput.boardId as string | undefined) ?? boardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.purgeDeletedCards>>('card.purgeDeleted', { boardId }, undefined, boardId)
+    return Columns.purgeDeletedCards(this, mergedInput)
   }
 
   /**
@@ -2401,12 +2302,8 @@ export class KanbanSDK {
    * ```
    */
   async reorderColumns(columnIds: string[], boardId?: string): Promise<KanbanColumn[]> {
-    const mergedInput = await this._runBeforeEvent('column.reorder', { columnIds, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    return Columns.reorderColumns(
-      this,
-      (mergedInput.columnIds as string[]) ?? columnIds,
-      (mergedInput.boardId as string | undefined) ?? boardId,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.reorderColumns>>('column.reorder', { columnIds, boardId }, undefined, boardId)
+    return Columns.reorderColumns(this, mergedInput)
   }
 
   /**
@@ -2416,7 +2313,7 @@ export class KanbanSDK {
    * @returns Array of column IDs currently marked as minimized.
    */
   getMinimizedColumns(boardId?: string): string[] {
-    return Columns.getMinimizedColumns(this, boardId)
+    return Columns.getMinimizedColumns(this, { boardId })
   }
 
   /**
@@ -2428,12 +2325,8 @@ export class KanbanSDK {
    * @returns The sanitized list of minimized column IDs that was saved.
    */
   async setMinimizedColumns(columnIds: string[], boardId?: string): Promise<string[]> {
-    const mergedInput = await this._runBeforeEvent('column.setMinimized', { columnIds, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    return Columns.setMinimizedColumns(
-      this,
-      (mergedInput.columnIds as string[]) ?? columnIds,
-      (mergedInput.boardId as string | undefined) ?? boardId,
-    )
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Columns.setMinimizedColumns>>('column.setMinimized', { columnIds, boardId }, undefined, boardId)
+    return Columns.setMinimizedColumns(this, mergedInput)
   }
 
   // --- Settings management (global) ---
@@ -2475,9 +2368,9 @@ export class KanbanSDK {
    * ```
    */
   async updateSettings(settings: CardDisplaySettings): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('settings.update', { ...settings } as unknown as Record<string, unknown>)
-    Settings.updateSettings(this, mergedInput as unknown as CardDisplaySettings)
-    this._runAfterEvent('settings.updated', mergedInput)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Settings.updateSettings>>('settings.update', { settings })
+    Settings.updateSettings(this, mergedInput)
+    this._runAfterEvent('settings.updated', mergedInput.settings)
   }
 
   // ---------------------------------------------------------------------------
@@ -2509,8 +2402,8 @@ export class KanbanSDK {
    */
   async migrateToSqlite(dbPath?: string): Promise<number> {
     const from = this._capabilities?.providers['card.storage'].provider ?? this._storage.type
-    const mergedInput = await this._runBeforeEvent('storage.migrate', { to: 'sqlite', from, dbPath } as unknown as Record<string, unknown>)
-    const count = await Migration.migrateToSqlite(this, (mergedInput.dbPath as string | undefined) ?? dbPath)
+    const mergedInput = await this._runBeforeEvent<{ to: string; from: string; dbPath?: string }>('storage.migrate', { to: 'sqlite', from, dbPath })
+    const count = await Migration.migrateToSqlite(this, { dbPath: mergedInput.dbPath })
     this._runAfterEvent('storage.migrated', { from, to: 'sqlite', count })
     return count
   }
@@ -2538,7 +2431,7 @@ export class KanbanSDK {
    */
   async migrateToMarkdown(): Promise<number> {
     const from = this._capabilities?.providers['card.storage'].provider ?? this._storage.type
-    await this._runBeforeEvent('storage.migrate', { to: 'markdown', from } as unknown as Record<string, unknown>)
+    await this._runBeforeEvent<{ to: string; from: string }>('storage.migrate', { to: 'markdown', from })
     const count = await Migration.migrateToMarkdown(this)
     this._runAfterEvent('storage.migrated', { from, to: 'markdown', count })
     return count
@@ -2556,8 +2449,8 @@ export class KanbanSDK {
    * ```
    */
   async setDefaultBoard(boardId: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('board.setDefault', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    Settings.setDefaultBoard(this, (mergedInput.boardId as string) ?? boardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Settings.setDefaultBoard>>('board.setDefault', { boardId }, undefined, boardId)
+    Settings.setDefaultBoard(this, mergedInput)
   }
 
   /**
@@ -2584,12 +2477,11 @@ export class KanbanSDK {
    * @returns The newly created {@link Webhook}.
    */
   async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Promise<Webhook> {
-    const mergedInput = await this._runBeforeEvent('webhook.create', { ...webhookConfig } as unknown as Record<string, unknown>)
-    const resolvedConfig = mergedInput as unknown as { url: string; events: string[]; secret?: string }
+    const mergedInput = await this._runBeforeEvent<{ url: string; events: string[]; secret?: string }>('webhook.create', { ...webhookConfig })
     if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, resolvedConfig)
+      return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, mergedInput)
     }
-    return _createWebhook(this.workspaceRoot, resolvedConfig)
+    return _createWebhook(this.workspaceRoot, mergedInput)
   }
 
   /**
@@ -2601,12 +2493,11 @@ export class KanbanSDK {
    * @returns `true` if deleted, `false` if not found.
    */
   async deleteWebhook(id: string): Promise<boolean> {
-    const mergedInput = await this._runBeforeEvent('webhook.delete', { id } as unknown as Record<string, unknown>)
-    const resolvedId = (mergedInput.id as string) ?? id
+    const mergedInput = await this._runBeforeEvent<{ id: string }>('webhook.delete', { id })
     if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, resolvedId)
+      return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, mergedInput.id)
     }
-    return _deleteWebhook(this.workspaceRoot, resolvedId)
+    return _deleteWebhook(this.workspaceRoot, mergedInput.id)
   }
 
   /**
@@ -2619,14 +2510,12 @@ export class KanbanSDK {
    * @returns The updated {@link Webhook}, or `null` if not found.
    */
   async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null> {
-    const mergedInput = await this._runBeforeEvent('webhook.update', { id, ...updates } as unknown as Record<string, unknown>)
-    const resolvedId = (mergedInput.id as string) ?? id
-    const resolvedUpdates = { ...mergedInput }
-    delete (resolvedUpdates as { id?: unknown }).id
+    const mergedInput = await this._runBeforeEvent<{ id: string; url?: string; events?: string[]; secret?: string; active?: boolean }>('webhook.update', { id, ...updates })
+    const { id: resolvedId, ...resolvedUpdates } = mergedInput
     if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates as Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>)
+      return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
     }
-    return _updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates as Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>)
+    return _updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
   }
 
 }

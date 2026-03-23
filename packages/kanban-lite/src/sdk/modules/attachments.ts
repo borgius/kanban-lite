@@ -7,7 +7,7 @@ import type { SDKContext } from './context'
 /**
  * Adds a file attachment to a card.
  */
-export async function addAttachment(ctx: SDKContext, cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
+export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: { cardId: string; sourcePath: string; boardId?: string }): Promise<Card> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -28,7 +28,7 @@ export async function addAttachment(ctx: SDKContext, cardId: string, sourcePath:
 /**
  * Removes an attachment reference from a card's metadata.
  */
-export async function removeAttachment(ctx: SDKContext, cardId: string, attachment: string, boardId?: string): Promise<Card> {
+export async function removeAttachment(ctx: SDKContext, { cardId, attachment, boardId }: { cardId: string; attachment: string; boardId?: string }): Promise<Card> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -42,7 +42,7 @@ export async function removeAttachment(ctx: SDKContext, cardId: string, attachme
 /**
  * Lists all attachment filenames for a card.
  */
-export async function listAttachments(ctx: SDKContext, cardId: string, boardId?: string): Promise<string[]> {
+export async function listAttachments(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string[]> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   return card.attachments
@@ -51,7 +51,7 @@ export async function listAttachments(ctx: SDKContext, cardId: string, boardId?:
 /**
  * Returns the absolute path to the attachment directory for a card.
  */
-export async function getAttachmentDir(ctx: SDKContext, cardId: string, boardId?: string): Promise<string | null> {
+export async function getAttachmentDir(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string | null> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) return null
   return ctx.getAttachmentStoragePath(card)

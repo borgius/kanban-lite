@@ -1267,7 +1267,7 @@ Required: Yes
 | `defaultPriority` | string | No | — |
 | `defaultStatus` | string | No | — |
 | `boardBackgroundMode` | `fancy` \\| `plain` | No | — |
-| `boardBackgroundPreset` | `aurora` \\| `sunset` \\| `meadow` \\| `paper` \\| `mist` \\| `sand` | No | — |
+| `boardBackgroundPreset` | `aurora` \\| `sunset` \\| `meadow` \\| `nebula` \\| `lagoon` \\| `candy` \\| `ember` \\| `violet` \\| `paper` \\| `mist` \\| `sand` | No | — |
 
 #### Responses
 

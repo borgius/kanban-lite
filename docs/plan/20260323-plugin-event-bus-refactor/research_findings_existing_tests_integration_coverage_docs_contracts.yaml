@@ -1,0 +1,507 @@
+plan_id: "20260323-plugin-event-bus-refactor"
+objective: "Determine best verification strategy for plugin event bus refactor"
+focus_area: "existing_tests_integration_coverage_docs_contracts"
+created_at: "2026-03-23"
+created_by: "GitHub Copilot"
+status: completed
+
+tldr: |
+  - The current event bus contract is explicit and already externally visible: `EventBus`, `KanbanSDK` event proxy methods, and `EventListenerPlugin.init(bus, workspaceRoot)` are documented and tested.
+  - Highest-signal regression coverage already exists in SDK tests for bus semantics, webhook listener lifecycle, webhook provider delegation, and single-delivery behavior; host-surface parity is covered separately in CLI, MCP, and standalone tests.
+  - Plugin workspace integration tests require prebuilt artifacts (`pnpm build`) and mainly verify provider resolution through the monorepo workspace, not deep event semantics.
+  - Per AGENTS.md, any refactor that changes event/plugin behavior must keep README, CHANGELOG, docs/plugins.md, SDK JSDoc/generated docs, and possibly external plugin package READMEs in sync.
+
+research_metadata:
+  methodology: "Hybrid retrieval: semantic_search, grep_search, file_search, targeted read_file across SDK, tests, plugin packages, README/docs, and prior plan research"
+  scope: "Focused on event bus contracts, webhook/auth plugin wiring, host-surface tests, package scripts, and doc sources relevant to a plugin event bus refactor"
+  confidence: high
+  coverage: 88
+
+files_analyzed:
+  - file: package.json
+    path: packages/kanban-lite/package.json
+    purpose: "Authoritative build/test/docs scripts for the main package"
+    key_elements:
+      - element: scripts.build
+        type: variable
+        location: "packages/kanban-lite/package.json:98"
+        description: "Builds extension, standalone webview/server, CLI, MCP, and SDK bundles"
+      - element: scripts.test
+        type: variable
+        location: "packages/kanban-lite/package.json:117"
+        description: "Runs vitest suite for kanban-lite"
+      - element: scripts.test:integration:minio
+        type: variable
+        location: "packages/kanban-lite/package.json:119"
+        description: "Runs MinIO-backed integration test only; unrelated to event bus except attachment side effects"
+      - element: scripts.docs
+        type: variable
+        location: "packages/kanban-lite/package.json:123"
+        description: "Regenerates root docs via scripts in repository root"
+    language: JSON
+    lines: 140
+
+  - file: eventBus.ts
+    path: packages/kanban-lite/src/sdk/eventBus.ts
+    purpose: "Core pub/sub implementation wrapping EventEmitter2"
+    key_elements:
+      - element: EventBus
+        type: class
+        location: "packages/kanban-lite/src/sdk/eventBus.ts:31"
+        description: "Implements emit/on/once/many/onAny/off/offAny/removeAllListeners/eventNames/listenerCount/hasListeners/waitFor/destroy"
+      - element: emit
+        type: function
+        location: "packages/kanban-lite/src/sdk/eventBus.ts:49"
+        description: "Manually invokes specific listeners and onAny listeners with error isolation"
+      - element: waitFor
+        type: function
+        location: "packages/kanban-lite/src/sdk/eventBus.ts:159"
+        description: "Promise-based event waiting with timeout/filter support"
+    language: TypeScript
+    lines: 178
+
+  - file: types.ts
+    path: packages/kanban-lite/src/sdk/types.ts
+    purpose: "Defines externally visible SDK event envelope and event listener plugin contract"
+    key_elements:
+      - element: SDKEvent
+        type: interface
+        location: "packages/kanban-lite/src/sdk/types.ts:91"
+        description: "Typed event envelope with type/data/timestamp/actor/boardId/meta"
+      - element: EventListenerPlugin
+        type: interface
+        location: "packages/kanban-lite/src/sdk/types.ts:109"
+        description: "Plugin contract requiring init(bus, workspaceRoot) and destroy()"
+      - element: SDKOptions.onEvent
+        type: variable
+        location: "packages/kanban-lite/src/sdk/types.ts:123"
+        description: "Legacy callback seam still supported alongside the event bus"
+    language: TypeScript
+    lines: 170
+
+  - file: KanbanSDK.ts
+    path: packages/kanban-lite/src/sdk/KanbanSDK.ts
+    purpose: "SDK facade that instantiates EventBus and wires webhook/event listeners"
+    key_elements:
+      - element: constructor
+        type: function
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:280"
+        description: "Creates EventBus, wires legacy onEvent via onAny, resolves capability bag, and initializes either built-in or provider-supplied event listener"
+      - element: event proxy methods
+        type: pattern
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:332"
+        description: "Public event API: eventBus getter, on/once/many/onAny/off/offAny/removeAllListeners/eventNames/listenerCount/hasListeners/waitFor"
+      - element: auth event emission
+        type: pattern
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:515"
+        description: "Auth allow/deny emits onto the same bus and is part of current observable behavior"
+    language: TypeScript
+    lines: 420
+
+  - file: webhookListener.ts
+    path: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+    purpose: "Built-in EventListenerPlugin compatibility fallback"
+    key_elements:
+      - element: WebhookListenerPlugin
+        type: class
+        location: "packages/kanban-lite/src/sdk/plugins/webhookListener.ts:19"
+        description: "Subscribes to bus.onAny and forwards event payloads to fireWebhooks"
+      - element: init
+        type: function
+        location: "packages/kanban-lite/src/sdk/plugins/webhookListener.ts:34"
+        description: "Current lifecycle expectation is exactly one onAny subscription"
+    language: TypeScript
+    lines: 53
+
+  - file: plugin-registry.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts
+    purpose: "Provider alias and capability resolution coverage"
+    key_elements:
+      - element: WEBHOOK_PROVIDER_ALIASES tests
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts:1385"
+        description: "Locks alias `webhooks -> kl-webhooks-plugin`"
+      - element: resolveCapabilityBag webhookProvider tests
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts:1412"
+        description: "Confirms omitted webhook capability yields null provider; sibling or temp-installed package resolves provider with createListener"
+    language: TypeScript
+    lines: 1510
+
+  - file: eventBus.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts
+    purpose: "Direct semantic contract tests for EventBus behavior"
+    key_elements:
+      - element: wildcard and onAny coverage
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts:20"
+        description: "Covers specific event, wildcard, multi-level wildcard, and onAny"
+      - element: listener lifecycle coverage
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts:43"
+        description: "Covers unsubscribe, once, many, off, offAny, removeAllListeners, destroy"
+      - element: reliability coverage
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts:82"
+        description: "Covers listener error isolation, listener counts, eventNames, waitFor with filter/timeout"
+    language: TypeScript
+    lines: 200
+
+  - file: KanbanSDK.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts
+    purpose: "SDK facade regression tests including event proxy surface"
+    key_elements:
+      - element: event proxies describe block
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts:72"
+        description: "Verifies sdk.on, sdk.once, sdk.waitFor, listener tracking via proxy methods on actual mutations"
+    language: TypeScript
+    lines: 180
+
+  - file: webhookListener.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts
+    purpose: "Lifecycle contract for built-in event listener plugin"
+    key_elements:
+      - element: init lifecycle
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts:28"
+        description: "Asserts init attaches exactly one bus subscription"
+      - element: destroy lifecycle
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts:38"
+        description: "Asserts destroy safely unsubscribes and is idempotent"
+    language: TypeScript
+    lines: 60
+
+  - file: webhook-delegation.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts
+    purpose: "Most important end-to-end event listener/provider regression suite"
+    key_elements:
+      - element: built-in fallback coverage
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts:117"
+        description: "Injected storage path must initialize built-in WebhookListenerPlugin and read .kanban.json webhooks"
+      - element: single delivery regression
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts:177"
+        description: "One createCard mutation must cause exactly one outbound POST"
+      - element: provider delegation coverage
+        type: test
+        location: "packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts:247"
+        description: "Provider path must avoid built-in listener, delegate CRUD methods, and call createListener(workspaceRoot)"
+    language: TypeScript
+    lines: 420
+
+  - file: index.test.ts
+    path: packages/kanban-lite/src/cli/index.test.ts
+    purpose: "CLI webhook/error mapping coverage"
+    key_elements:
+      - element: cmdWebhooks auth/provider error tests
+        type: test
+        location: "packages/kanban-lite/src/cli/index.test.ts:552"
+        description: "Locks CLI behavior around create/delete/update webhook delegation and error propagation"
+    language: TypeScript
+    lines: 640
+
+  - file: index.test.ts
+    path: packages/kanban-lite/src/mcp-server/index.test.ts
+    purpose: "MCP parity and denial mapping coverage"
+    key_elements:
+      - element: injectMockWebhookProvider
+        type: pattern
+        location: "packages/kanban-lite/src/mcp-server/index.test.ts:46"
+        description: "Provider-backed isolated webhook CRUD tests use EventListenerPlugin-compatible provider mock"
+      - element: webhook parity tests
+        type: test
+        location: "packages/kanban-lite/src/mcp-server/index.test.ts:151"
+        description: "List/create/update/delete webhook behavior is verified through SDK-backed provider path"
+      - element: webhook denial tests
+        type: test
+        location: "packages/kanban-lite/src/mcp-server/index.test.ts:227"
+        description: "Stable MCP isError mapping for webhook create/delete/update denials"
+    language: TypeScript
+    lines: 320
+
+  - file: webhooks.test.ts
+    path: packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts
+    purpose: "Standalone/server-facing webhook fallback behavior through public SDK seam"
+    key_elements:
+      - element: CRUD fallback coverage
+        type: test
+        location: "packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts:68"
+        description: "Verifies built-in .kanban.json webhook CRUD behavior using SDK with injected storage"
+      - element: built-in delivery coverage
+        type: test
+        location: "packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts:187"
+        description: "Verifies matching SDK mutation triggers one POST through built-in listener path"
+    language: TypeScript
+    lines: 220
+
+  - file: server.integration.test.ts
+    path: packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts
+    purpose: "Standalone websocket/API integration coverage"
+    key_elements:
+      - element: websocket auth context
+        type: test
+        location: "packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts:417"
+        description: "Asserts auth context is forwarded into SDK mutations triggered over WebSocket"
+      - element: board/card action message paths
+        type: test
+        location: "packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts:452"
+        description: "Covers server paths that invoke SDK triggerAction/triggerBoardAction"
+    language: TypeScript
+    lines: 220
+
+  - file: webhooks-kanban-lite.workspace.test.ts
+    path: packages/kl-webhooks-plugin/src/webhooks-kanban-lite.workspace.test.ts
+    purpose: "Workspace integration proving monorepo plugin resolution after build"
+    key_elements:
+      - element: provider activation tests
+        type: test
+        location: "packages/kl-webhooks-plugin/src/webhooks-kanban-lite.workspace.test.ts:43"
+        description: "Asserts KanbanSDK resolves `webhooks` provider as active and not built-in fallback"
+    language: TypeScript
+    lines: 69
+
+  - file: auth-kanban-lite.workspace.test.ts
+    path: packages/kl-auth-plugin/src/auth-kanban-lite.workspace.test.ts
+    purpose: "Workspace integration for auth plugin resolution"
+    key_elements:
+      - element: auth provider activation tests
+        type: test
+        location: "packages/kl-auth-plugin/src/auth-kanban-lite.workspace.test.ts:44"
+        description: "Shows plugin workspace pattern used for monorepo-resolved capability packages"
+    language: TypeScript
+    lines: 89
+
+  - file: README.md
+    path: README.md
+    purpose: "Primary user-facing contract and examples"
+    key_elements:
+      - element: Event-driven pub/sub feature docs
+        type: documentation
+        location: "README.md:54"
+        description: "Advertises EventEmitter2-based wildcard event bus behavior"
+      - element: Event Bus section
+        type: documentation
+        location: "README.md:963"
+        description: "Documents legacy onEvent compatibility, sdk.eventBus, and KanbanSDK convenience methods"
+      - element: Webhook delivery provider section
+        type: documentation
+        location: "README.md:1129"
+        description: "Documents webhook provider resolution and top-level webhookPlugin config"
+    language: Markdown
+    lines: 1200
+
+  - file: docs/plugins.md
+    path: docs/plugins.md
+    purpose: "Deep plugin contract and provider behavior documentation"
+    key_elements:
+      - element: webhook.delivery section
+        type: documentation
+        location: "docs/plugins.md:107"
+        description: "States provider owns CRUD and delivery, subscribes to SDK event bus, and preserves payload/HMAC behavior"
+      - element: config model section
+        type: documentation
+        location: "docs/plugins.md:168"
+        description: "Documents webhookPlugin top-level config and fallback semantics"
+    language: Markdown
+    lines: 240
+
+  - file: docs/sdk.md
+    path: docs/sdk.md
+    purpose: "Generated SDK reference from JSDoc"
+    key_elements:
+      - element: eventBus and onAny docs
+        type: documentation
+        location: "docs/sdk.md:198"
+        description: "Publishes the event bus public API"
+      - element: webhook provider contract docs
+        type: documentation
+        location: "docs/sdk.md:3108"
+        description: "Documents external packages exporting webhook provider with `createListener` factory"
+    language: Markdown
+    lines: 3200
+
+patterns_found:
+  - category: testing
+    pattern: "Layered verification from unit semantics to provider-backed integration"
+    description: "Event behavior is checked at multiple layers: raw EventBus unit tests, SDK façade/event listener lifecycle tests, provider delegation tests, then host-surface parity tests."
+    examples:
+      - file: packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts
+        location: "1-200"
+        snippet: "supports wildcard subscriptions / onAny receives all events / waitFor() supports a payload filter"
+      - file: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts
+        location: "177-236"
+        snippet: "single SDK mutation -> exactly one outbound webhook POST"
+      - file: packages/kanban-lite/src/mcp-server/index.test.ts
+        location: "151-264"
+        snippet: "SDK-backed provider CRUD parity and denial mapping"
+    prevalence: common
+
+  - category: testing
+    pattern: "Provider-backed tests inject isolated mocks instead of reaching into internals"
+    description: "CLI/MCP/standalone tests validate surface behavior through SDK seams with injected providers or injected storage engines."
+    examples:
+      - file: packages/kanban-lite/src/mcp-server/index.test.ts
+        location: "46-89"
+        snippet: "injectMockWebhookProvider(... createListener returns noopListener ...)"
+      - file: packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts
+        location: "58-66"
+        snippet: "createSDK(... new MarkdownStorageEngine(...))"
+    prevalence: common
+
+  - category: structure
+    pattern: "Workspace integration tests depend on prebuilt dist artifacts"
+    description: "Plugin package workspace tests require `pnpm build` because they import the built SDK bundle from `packages/kanban-lite/dist/sdk/index.cjs`."
+    examples:
+      - file: packages/kl-webhooks-plugin/src/webhooks-kanban-lite.workspace.test.ts
+        location: "1-31"
+        snippet: "throw new Error(... Run: pnpm build)"
+      - file: packages/kl-auth-plugin/src/auth-kanban-lite.workspace.test.ts
+        location: "1-31"
+        snippet: "throw new Error(... Run: pnpm build)"
+    prevalence: occasional
+
+  - category: documentation
+    pattern: "Public event/plugin behavior is duplicated across README, deep plugin docs, and generated SDK docs"
+    description: "A refactor must update narrative docs and generated JSDoc-derived docs together to avoid drift."
+    examples:
+      - file: README.md
+        location: "963-991"
+        snippet: "legacy onEvent callback still works ... sdk.eventBus.onAny(...)"
+      - file: docs/plugins.md
+        location: "107-126"
+        snippet: "webhook.delivery subscribes to the SDK event bus"
+      - file: docs/sdk.md
+        location: "3108-3109"
+        snippet: "createListener factory"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: EventBus
+      responsibility: "Core event dispatch semantics"
+      location: "packages/kanban-lite/src/sdk/eventBus.ts"
+      relationship_to_domain: "Domain under refactor"
+    - component: KanbanSDK
+      responsibility: "Instantiates the bus and exposes public event API"
+      location: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+      relationship_to_domain: "Owns current behavior consumed by tests and host layers"
+    - component: WebhookListenerPlugin
+      responsibility: "Built-in compatibility listener for outbound webhook delivery"
+      location: "packages/kanban-lite/src/sdk/plugins/webhookListener.ts"
+      relationship_to_domain: "Primary built-in event listener implementation"
+    - component: External webhook provider
+      responsibility: "Provider-backed webhook CRUD and listener creation"
+      location: "packages/kl-webhooks-plugin and provider mocks in tests"
+      relationship_to_domain: "Implements current plugin event listener seam"
+    - component: CLI/MCP/standalone surfaces
+      responsibility: "Expose SDK-backed behavior over user-facing interfaces"
+      location: "packages/kanban-lite/src/cli/index.ts, src/mcp-server/index.ts, src/standalone/**"
+      relationship_to_domain: "Need parity verification because they rely on SDK behavior, not their own event layer"
+  interfaces_used_by_domain:
+    - interface: EventListenerPlugin
+      location: "packages/kanban-lite/src/sdk/types.ts"
+      usage_pattern: "Built-in and provider listeners implement init(bus, workspaceRoot) and destroy()"
+    - interface: WebhookProviderPlugin
+      location: "packages/kanban-lite/src/sdk/plugins/index.ts"
+      usage_pattern: "Providers expose CRUD plus createListener(workspaceRoot)"
+  data_flow_involving_domain: "SDK mutation -> KanbanSDK emits SDKEvent on EventBus -> built-in WebhookListenerPlugin or provider-created listener receives event -> webhook delivery side effect; host layers call SDK methods and depend on this behavior remaining stable"
+  key_relationships_to_domain:
+    - from: "KanbanSDK"
+      to: "EventBus"
+      relationship: "composes"
+    - from: "KanbanSDK"
+      to: "WebhookListenerPlugin"
+      relationship: "instantiates as fallback"
+    - from: "WebhookProviderPlugin"
+      to: "EventListenerPlugin"
+      relationship: "creates"
+    - from: "CLI/MCP/standalone"
+      to: "KanbanSDK"
+      relationship: "calls"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - Markdown
+    - JSON
+  frameworks_used_in_domain:
+    - name: Vitest
+      usage_in_domain: "Unit and integration tests across SDK and plugin packages"
+    - name: EventEmitter2
+      usage_in_domain: "Underlying wildcard-capable event emitter for EventBus"
+  libraries_used_in_domain:
+    - name: ws
+      purpose_in_domain: "Standalone websocket integration tests and runtime broadcasting"
+    - name: esbuild
+      purpose_in_domain: "Build step required before workspace plugin integration tests"
+  external_apis_used_in_domain:
+    - name: HTTP webhook endpoints
+      integration_point: "Webhook delivery tests spin up local HTTP servers to assert outbound POST behavior"
+
+related_conventions:
+  naming_patterns_in_domain: "Tests use explicit behavior-first names such as 'single delivery regression', 'provider-backed parity', and 'action-stable message'."
+  structure_of_domain: "Core SDK tests live under src/sdk/__tests__; host-specific tests live beside each surface; external plugin packages each carry their own workspace/integration tests."
+  error_handling_in_domain: "Error mapping is intentionally stable at host surfaces (notably MCP and CLI auth/provider errors). EventBus isolates listener failures and logs to console instead of failing sibling listeners."
+  testing_in_domain: "Most high-value tests exercise public seams, avoiding direct imports of internal helpers. Provider tests prefer injected mocks or temp-installed packages."
+  documentation_in_domain: "JSDoc is source of truth for docs/sdk.md; README and docs/plugins.md carry narrative contracts for public/plugin behavior."
+
+related_dependencies:
+  internal:
+    - component: packages/kanban-lite/src/sdk/plugins/index.ts
+      relationship_to_domain: "Resolves webhook providers and createListener contract"
+      direction: outbound
+    - component: packages/kanban-lite/src/cli/index.ts
+      relationship_to_domain: "Surface delegates webhook operations to SDK"
+      direction: inbound
+    - component: packages/kanban-lite/src/mcp-server/index.ts
+      relationship_to_domain: "Surface delegates webhook operations to SDK"
+      direction: inbound
+    - component: packages/kanban-lite/src/standalone/server.ts
+      relationship_to_domain: "Starts server that ultimately delegates mutations to SDK"
+      direction: inbound
+    - component: packages/kl-webhooks-plugin
+      relationship_to_domain: "Implements external webhook.delivery provider"
+      direction: bidirectional
+  external:
+    - name: eventemitter2
+      purpose_for_domain: "Wildcard event routing and listener registry"
+    - name: vitest
+      purpose_for_domain: "Test runner"
+
+testing_patterns:
+  framework: Vitest
+  coverage_areas:
+    - "Event bus semantics"
+    - "SDK proxy API"
+    - "Built-in listener lifecycle"
+    - "Provider resolution and delegation"
+    - "Host-surface parity and auth/provider error mapping"
+    - "Workspace plugin resolution after build"
+  test_organization: "Unit tests for semantics, integration tests for provider/runtime edges, workspace tests for monorepo-built plugin consumption"
+  mock_patterns:
+    - "spyOn(WebhookListenerPlugin.prototype, 'init') to detect fallback wiring"
+    - "Temp-installed node_modules package to simulate provider package resolution"
+    - "Injected in-memory webhook provider with EventListenerPlugin-compatible createListener"
+    - "Injected MarkdownStorageEngine to force built-in fallback path"
+
+open_questions:
+  - question: "Whether the refactor will preserve the legacy `SDKOptions.onEvent` callback exactly or re-route it through the new plugin bus semantics"
+    context: "README and constructor wiring currently document backward compatibility; several users may rely on side-effect timing."
+  - question: "Whether auth event emission (`auth.allowed` / `auth.denied`) is intended to remain on the same public bus and be consumable by external listeners"
+    context: "KanbanSDK emits auth events today, but host-surface tests mostly validate denial mapping rather than bus-level auth listeners."
+  - question: "Whether standalone websocket fan-out relies on any ordering guarantees relative to event bus/webhook delivery"
+    context: "Current standalone coverage proves websocket behavior and auth forwarding, but not interaction ordering against bus listeners."
+
+gaps:
+  - area: "CLI event-specific regression coverage"
+    description: "CLI tests cover webhook CRUD/error propagation but not direct event subscription semantics, which is appropriate because CLI does not expose the bus."
+    impact: "Low for the refactor unless CLI command output or timing changes because of event-side effects."
+  - area: "MCP/standalone tests for duplicate delivery prevention"
+    description: "Single-delivery prevention is asserted in SDK tests, not repeated at every host surface."
+    impact: "Medium if the refactor accidentally reintroduces double listener wiring outside SDK construction."
+  - area: "Non-webhook event listener plugins"
+    description: "Current evidence centers on webhook listeners; there is little repository evidence of a second real event.listener plugin implementation."
+    impact: "Medium because generalized plugin event bus behavior may need broader contract examples than webhook-only coverage provides."

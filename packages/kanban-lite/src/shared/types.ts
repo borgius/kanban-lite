@@ -288,7 +288,7 @@ export const DELETED_COLUMN: KanbanColumn = { id: DELETED_STATUS_ID, name: 'Dele
 export const BOARD_BACKGROUND_MODES = ['fancy', 'plain'] as const
 export type BoardBackgroundMode = (typeof BOARD_BACKGROUND_MODES)[number]
 
-export const FANCY_BOARD_BACKGROUND_PRESETS = ['aurora', 'sunset', 'meadow'] as const
+export const FANCY_BOARD_BACKGROUND_PRESETS = ['aurora', 'sunset', 'meadow', 'nebula', 'lagoon', 'candy', 'ember', 'violet'] as const
 export type FancyBoardBackgroundPreset = (typeof FANCY_BOARD_BACKGROUND_PRESETS)[number]
 
 export const PLAIN_BOARD_BACKGROUND_PRESETS = ['paper', 'mist', 'sand'] as const

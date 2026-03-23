@@ -276,6 +276,7 @@ beforeEach(() => {
       },
     },
     documentElement: {
+      dataset: {},
       classList: {
         add: vi.fn(),
         remove: vi.fn(),
@@ -470,6 +471,37 @@ describe('App connection notices', () => {
 
     expect(markup).not.toContain('data-panel-drawer')
     expect(markup).not.toContain('data-panel-resize-handle')
+  })
+
+  it('syncs the dark theme state onto the root dataset for background presets', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    const bodyContains = vi.fn((className: string) => className === 'vscode-dark')
+    const rootDataset = {} as Record<string, string>
+
+    vi.stubGlobal('document', {
+      body: {
+        classList: {
+          contains: bodyContains,
+        },
+      },
+      documentElement: {
+        dataset: rootDataset,
+        classList: {
+          add: vi.fn(),
+          remove: vi.fn(),
+        },
+        style: {
+          setProperty: vi.fn(),
+        },
+      },
+    })
+
+    renderApp()
+
+    expect(storeState.setIsDarkMode).toHaveBeenCalledWith(true)
+    expect(rootDataset.kbTheme).toBe('dark')
+    expect(rootDataset.kbBoardMode).toBe('fancy')
+    expect(rootDataset.kbBoardPreset).toBe('aurora')
   })
 })
 

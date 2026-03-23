@@ -1,0 +1,715 @@
+plan_id: "20260323-plugin-event-bus-refactor"
+objective: |
+  Refactor the plugin runtime so auth/webhook-style plugins react to SDK-owned before/after events
+  instead of being called through direct runtime seams. The SDK must own before/after emission,
+  the event bus must support async before-event dispatch that awaits plugin responses and merges
+  the initial payload with all plugin-returned objects, backward compatibility is not required,
+  and the resulting behavior must preserve clean auth denials and avoid duplicate side effects.
+created_at: "2026-03-23"
+created_by: "gem-planner"
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  Seven-wave plan centered on a new SDK-owned action pipeline:
+  (1) define before/after event vocabulary and merge/response contracts,
+  (2) add async event-bus primitives with deterministic response aggregation,
+  (3) move authorization and action orchestration into shared SDK helpers,
+  (4) migrate mutating SDK surfaces so modules stop self-emitting,
+  (5) convert core and first-party auth/webhook runtime plugins to listener-only behavior,
+  (6) lock in host-surface regression coverage, and
+  (7) sync docs/changelog and finish with architectural review.
+  Storage and attachment provider capabilities remain direct capability adapters in this plan;
+  the runtime refactor is scoped to event-driven plugin behavior and SDK mutation orchestration.
+
+open_questions:
+  - "Confirm whether webhook registry CRUD remains capability-based while webhook delivery becomes listener-only. This plan assumes yes to avoid conflating runtime event handling with persistence/provider CRUD responsibilities."
+  - "Choose one canonical event naming convention for paired mutation events (`before.task.create`/`after.task.create` versus `task.beforeCreate` style). This plan assumes a consistent before/after prefix model."
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: "Before-event response merging is non-deterministic or overly permissive, causing silent payload corruption or conflicting overrides between plugins."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Limit mergeable responses to plain objects, document deterministic listener order,
+        and enforce one merge algorithm in EventBus unit tests. Start with shallow merge
+        semantics where later listener responses override earlier keys.
+    - scenario: "A partial migration leaves both legacy post-write emits and new after-events active, producing duplicate webhook deliveries or repeated plugin side effects."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Remove module-owned emit calls as each action family migrates, and keep a dedicated
+        single-delivery regression suite that fails if one mutation triggers duplicate after-event work.
+    - scenario: "Authorization moves onto before-events but denials stop surfacing as stable AuthError-driven user messages across standalone, CLI, and MCP surfaces."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep AuthError as the blocking denial type, ensure before-listener throws pass through
+        the SDK action runner unchanged, and extend host-surface regression tests before docs are updated.
+    - scenario: "First-party external plugin packages drift from core contract changes because they duplicate structural interfaces locally."
+      likelihood: high
+      impact: high
+      mitigation: |
+        Treat `kl-auth-plugin` and `kl-webhooks-plugin` as explicit migration tasks with workspace
+        integration coverage after core runtime changes land.
+  assumptions:
+    - "Async response aggregation is required for before-events only; after-events remain non-blocking side-effect notifications with listener-level error isolation."
+    - "Only plain-object plugin responses participate in payload merging; thrown errors abort the action before mutation occurs."
+    - "Backward compatibility for `SDKOptions.onEvent`, legacy `EventListenerPlugin.init(...)`, and direct auth runtime seams is not required."
+    - "Storage and attachment plugins stay capability-based in this refactor; they are not reworked into event listeners."
+    - "Existing AuthError categories and host-layer status mapping remain the public denial contract."
+
+implementation_specification:
+  code_structure: |
+    Put the new event vocabulary, listener response types, and action-runner payload contracts in
+    `packages/kanban-lite/src/sdk/types.ts` and `src/sdk/modules/context.ts`. Extend
+    `src/sdk/eventBus.ts` with awaited before-event emission and deterministic merge behavior.
+    Centralize orchestration in `KanbanSDK.ts` via shared before/after helpers so SDK entry points,
+    not leaf modules, own emission timing. Mutating module files should become pure domain workers
+    that return results without firing events directly. Core plugin loading stays in
+    `src/sdk/plugins/index.ts`, but auth/webhook runtime behavior shifts to listener-only contracts.
+    First-party external runtime plugins (`kl-auth-plugin`, `kl-webhooks-plugin`) then align to the
+    new listener contract and are verified through workspace tests.
+  affected_areas:
+    - "packages/kanban-lite/src/sdk/types.ts"
+    - "packages/kanban-lite/src/sdk/modules/context.ts"
+    - "packages/kanban-lite/src/sdk/eventBus.ts"
+    - "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+    - "packages/kanban-lite/src/sdk/modules/*"
+    - "packages/kanban-lite/src/sdk/plugins/*"
+    - "packages/kanban-lite/src/sdk/__tests__/*"
+    - "packages/kl-auth-plugin/src/*"
+    - "packages/kl-webhooks-plugin/src/*"
+    - "packages/kanban-lite/src/cli/index.test.ts"
+    - "packages/kanban-lite/src/mcp-server/index.test.ts"
+    - "packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts"
+    - "README.md"
+    - "CHANGELOG.md"
+    - "docs/plugins.md"
+  component_details:
+    - component: event contract layer
+      responsibility: |
+        Define the before/after event names, payload envelope, mergeable before-response type,
+        and module-facing action context so every mutation path uses one contract.
+      interfaces:
+        - "Before-event payload type that starts from the SDK input payload and accepts merged plugin overrides"
+        - "After-event payload type carrying the committed result and audit metadata"
+        - "Listener response type restricted to plain-object overrides or void"
+    - component: EventBus async dispatcher
+      responsibility: |
+        Provide awaited before-event emission with deterministic merge behavior while preserving
+        non-blocking after-event dispatch and per-listener error isolation.
+      interfaces:
+        - "emitAsync(eventName, payload): Promise<mergedPayload>"
+        - "emit(eventName, payload): void | Promise<void> for non-blocking notifications"
+        - "Listener registration APIs for specific events and catch-all listeners"
+    - component: SDK action runner
+      responsibility: |
+        Own action sequencing: build the before payload, await plugin responses, execute the mutation,
+        then publish the after payload exactly once. Translate plugin denials into stable SDK errors.
+      interfaces:
+        - "runBeforeEvent(...) helper returning merged input/context"
+        - "runAfterEvent(...) helper for fire-and-log post-commit notifications"
+        - "Shared authorization path that treats veto/deny as blocking before-event failures"
+    - component: runtime plugin contract
+      responsibility: |
+        Replace direct auth runtime calls and webhook listener factories with listener-only plugin hooks.
+        Auth listeners can veto or override before payloads; webhook listeners react to after-events only.
+      interfaces:
+        - "Core listener registration contract used by built-in and external runtime plugins"
+        - "Provider loading/validation rules in `src/sdk/plugins/index.ts`"
+    - component: regression and docs layer
+      responsibility: |
+        Prove no duplicate side effects, preserve denial UX, and keep README/CHANGELOG/plugin docs aligned.
+      interfaces:
+        - "Unit/integration/workspace regression suites"
+        - "README, docs/plugins.md, generated SDK docs via JSDoc sources"
+  dependencies:
+    - component: event contract layer
+      relationship: "Must land first so EventBus, SDK orchestration, and plugins share one payload/response vocabulary."
+    - component: EventBus async dispatcher
+      relationship: "Depends on event contracts and feeds awaited merged payloads into SDK action runners."
+    - component: SDK action runner
+      relationship: "Depends on the async dispatcher and blocks every mutation-family migration."
+    - component: runtime plugin contract
+      relationship: "Depends on the action runner and finalized before/after event taxonomy from migrated SDK actions."
+    - component: regression and docs layer
+      relationship: "Depends on core runtime and plugin migrations so behavior and public docs reflect final semantics."
+  integration_points:
+    - "`KanbanSDK.ts` is the sole orchestration seam for before/after emission timing."
+    - "`src/sdk/modules/*` stop emitting events directly and instead return results to SDK-owned runners."
+    - "`src/sdk/plugins/index.ts` becomes the validation seam for listener-only auth/webhook runtime plugins."
+    - "`kl-auth-plugin` and `kl-webhooks-plugin` remain first-party contract canaries because they duplicate core interface shapes."
+    - "Standalone/CLI/MCP tests verify denial and duplicate-side-effect behavior through public SDK-backed surfaces, not internal helpers."
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "Typed before/after event payloads, mergeable response shape, and naming conventions"
+    format: "TypeScript interfaces and exported aliases in sdk/types + module context"
+  - from_task: T2
+    to_task: T3
+    interface: "Awaitable event-bus API with deterministic merged before payloads"
+    format: "EventBus methods and bus-level regression tests"
+  - from_task: T3
+    to_task: T4
+    interface: "SDK action-runner helpers for card/comment/form mutations"
+    format: "Shared `KanbanSDK` before/after orchestration pattern"
+  - from_task: T3
+    to_task: T5
+    interface: "SDK action-runner helpers for board/column mutations"
+    format: "Shared `KanbanSDK` before/after orchestration pattern"
+  - from_task: T3
+    to_task: T6
+    interface: "SDK action-runner helpers for attachment/log mutations"
+    format: "Shared `KanbanSDK` before/after orchestration pattern"
+  - from_task: T3
+    to_task: T7
+    interface: "SDK action-runner helpers for settings/storage migration mutations"
+    format: "Shared `KanbanSDK` before/after orchestration pattern"
+  - from_task: T4
+    to_task: T8
+    interface: "Canonical card/comment/form before/after event names and committed payloads"
+    format: "Mutation-family event taxonomy used by runtime listeners"
+  - from_task: T5
+    to_task: T8
+    interface: "Canonical board/column before/after event names and committed payloads"
+    format: "Mutation-family event taxonomy used by runtime listeners"
+  - from_task: T6
+    to_task: T8
+    interface: "Canonical attachment/log before/after event names and committed payloads"
+    format: "Mutation-family event taxonomy used by runtime listeners"
+  - from_task: T7
+    to_task: T8
+    interface: "Canonical settings/storage-migration before/after event names and committed payloads"
+    format: "Mutation-family event taxonomy used by runtime listeners"
+  - from_task: T8
+    to_task: T9
+    interface: "Listener-only auth runtime contract and deny/override semantics"
+    format: "Core plugin-loader validation rules plus listener registration API"
+  - from_task: T8
+    to_task: T10
+    interface: "Listener-only webhook runtime contract for after-event delivery"
+    format: "Core plugin-loader validation rules plus listener registration API"
+  - from_task: T9
+    to_task: T11
+    interface: "Migrated auth runtime behavior"
+    format: "First-party plugin package compatible with core listener contract"
+  - from_task: T10
+    to_task: T11
+    interface: "Migrated webhook runtime behavior"
+    format: "First-party plugin package compatible with core listener contract"
+  - from_task: T11
+    to_task: T12
+    interface: "Verified public behavior and stable denial/side-effect semantics"
+    format: "Passing regression suite and validated user-facing behavior notes"
+  - from_task: T11
+    to_task: T13
+    interface: "Implementation verification evidence for final review"
+    format: "Build/test results and risk checklist"
+
+tasks:
+  - id: T1
+    title: Define before/after event vocabulary and merge contract
+    description: |
+      Replace the current event types with a contract that explicitly models blocking before-events,
+      non-blocking after-events, and mergeable plugin responses. This task should define the payload
+      envelope, listener response rules, and module-facing context needed for SDK-owned orchestration.
+      It should also remove or retire legacy runtime types that assume init/destroy listener factories
+      or direct auth runtime calls.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - packages/kanban-lite/src/sdk/types.ts: "Canonical place for event vocabulary, payload types, and plugin response contracts."
+      - packages/kanban-lite/src/sdk/modules/context.ts: "Module-facing context that currently exposes emitEvent and will need a new action-runner-aware contract."
+      - packages/kanban-lite/src/sdk/index.ts: "Barrel exports for the public SDK contract."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: event_contracts
+    verification:
+      - "TypeScript compiles with one authoritative before/after event and response vocabulary."
+      - "The mergeable response type only accepts plain-object overrides or void."
+      - "Module context no longer requires leaf modules to decide event timing."
+    acceptance_criteria:
+      - "A typed before/after event contract exists and is exported from the SDK."
+      - "The merge contract documents deterministic override order."
+      - "Legacy runtime types that conflict with listener-only behavior are removed or clearly superseded."
+    failure_modes:
+      - scenario: "The contract leaves merge semantics vague, forcing later tasks to guess override precedence."
+        likelihood: medium
+        impact: high
+        mitigation: "Encode merge order and allowed response shapes directly in types and doc comments before EventBus work begins."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Type-level compile coverage plus follow-on runtime tests in T2/T3"
+
+  - id: T2
+    title: Implement async EventBus emission and merge semantics
+    description: |
+      Extend the shared EventBus so before-events can await async listeners and merge their object
+      responses into a single payload, while after-events keep error-isolated notification behavior.
+      This task should establish deterministic listener ordering, validate response shapes, and add
+      direct unit coverage for awaited emission, merge precedence, wildcard subscriptions, and error isolation.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    context_files:
+      - packages/kanban-lite/src/sdk/eventBus.ts: "Core dispatcher that must gain awaited before-event support."
+      - packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts: "Primary contract suite for bus semantics."
+      - packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts: "SDK-facing proxy coverage that should reflect the new bus behavior."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: async_dispatch
+    verification:
+      - "Awaited before-event emission returns one merged payload in listener-registration order."
+      - "Non-object listener responses are rejected or ignored according to the contract, not silently merged."
+      - "After-event dispatch still isolates listener errors and does not prevent sibling listeners from running."
+    acceptance_criteria:
+      - "EventBus exposes an awaited emission path for before-events."
+      - "Merge behavior is covered by unit tests, including conflicting keys and empty responses."
+      - "Wildcard/onAny semantics still work with the new dispatcher."
+    failure_modes:
+      - scenario: "Async listeners complete out of order and make merge results nondeterministic."
+        likelihood: medium
+        impact: critical
+        mitigation: "Await listeners in a deterministic sequence and encode the order contract in tests."
+    tech_stack:
+      - TypeScript
+      - EventEmitter2
+      - Vitest
+    test_coverage: "Direct unit coverage for awaited emission, merge precedence, and listener error behavior"
+
+  - id: T3
+    title: Introduce SDK-owned action runners and preserve AuthError semantics
+    description: |
+      Add shared before/after orchestration helpers in `KanbanSDK.ts` so every privileged mutation
+      goes through one action runner. This runner must build the before payload, await merged plugin
+      responses, execute the write only after the before phase succeeds, and publish exactly one
+      after-event afterward. Auth denials must continue surfacing as AuthError-driven failures.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+      - T2
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Central SDK orchestration seam for auth, mutations, and event ownership."
+      - packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts: "Existing denial contract that must keep passing with before-event auth listeners."
+      - packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts: "Regression coverage for SDK event surface and shared orchestration behavior."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 320
+    focus_area: sdk_action_runner
+    verification:
+      - "A denied before-event prevents the write and surfaces as AuthError."
+      - "A successful mutation emits one after-event and no module-level duplicate event."
+      - "Shared orchestration helpers are reused instead of reimplemented per method."
+    acceptance_criteria:
+      - "KanbanSDK owns before/after timing for mutating actions."
+      - "Auth denials still map through the existing AuthError contract."
+      - "The action runner returns merged before payloads to downstream mutation logic."
+    failure_modes:
+      - scenario: "Plugins throw generic errors that leak raw provider failures or bypass AuthError mapping."
+        likelihood: medium
+        impact: high
+        mitigation: "Preserve AuthError as the stable deny path and normalize unexpected listener failures separately."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "SDK-level regression coverage for blocked writes, after-event emission, and event proxy behavior"
+
+  - id: T4
+    title: Migrate card, comment, and form mutations to SDK-owned before/after events
+    description: |
+      Remove module-owned emits from the card/comment/form mutation flow and route those actions through
+      the shared SDK runner. The goal is to make payload overrides, denial, and after-event publication
+      happen exactly once for create/update/delete/move/submit-form style operations.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Method-level orchestration for card/comment/form entry points."
+      - packages/kanban-lite/src/sdk/modules/cards.ts: "Leaf card/form mutations that currently self-emit post-write events."
+      - packages/kanban-lite/src/sdk/modules/comments.ts: "Leaf comment mutations that currently self-emit post-write events."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: card_comment_form_flow
+    verification:
+      - "Card/comment/form writes no longer self-emit events inside leaf modules."
+      - "One mutation produces one after-event and honors before-event overrides."
+      - "Single-delivery webhook regressions still pass for these event families once T8/T10 land."
+    acceptance_criteria:
+      - "Card/comment/form mutations execute only after successful before-events."
+      - "Leaf modules return results to the SDK without deciding event timing."
+      - "Committed after-event payloads match the final written state."
+    failure_modes:
+      - scenario: "Card update paths continue emitting inside modules and duplicate after-event delivery."
+        likelihood: medium
+        impact: critical
+        mitigation: "Remove all direct ctx.emitEvent calls for the migrated family in the same task and assert single-delivery behavior later."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Covered downstream by webhook delegation and SDK regression suites"
+
+  - id: T5
+    title: Migrate board and column mutations to SDK-owned before/after events
+    description: |
+      Apply the same action-runner pattern to board and column mutations so these families stop
+      self-emitting and instead rely on one SDK-owned before/after lifecycle. This includes create,
+      update, delete, and action-triggered board/column writes that should remain observable exactly once.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Board/column entry points that must move to the shared runner."
+      - packages/kanban-lite/src/sdk/modules/boards.ts: "Board mutations that currently emit after writes."
+      - packages/kanban-lite/src/sdk/modules/columns.ts: "Column mutations that currently emit after writes."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 240
+    focus_area: board_column_flow
+    verification:
+      - "Board/column actions no longer emit from leaf modules."
+      - "Before-event denials prevent config/storage writes for these families."
+      - "After-events continue exposing the committed board/column state."
+    acceptance_criteria:
+      - "Board and column mutation paths use the shared SDK runner."
+      - "Before/after events exist for each supported board/column mutation family."
+      - "No duplicate delivery occurs when board actions trigger downstream listeners."
+    failure_modes:
+      - scenario: "Board action helpers bypass the shared runner and keep old timing semantics."
+        likelihood: medium
+        impact: high
+        mitigation: "Audit every KanbanSDK board/column write entry point and route it through the same helper before moving on."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Validated by SDK and host-surface regression once listener migration is complete"
+
+  - id: T6
+    title: Migrate attachment and log mutations to SDK-owned before/after events
+    description: |
+      Convert attachment and log mutation flows so before-events can veto or augment the action
+      and after-events remain single-shot side-effect triggers. This task is especially important for
+      preventing duplicate webhook or audit behavior around attachment/log writes.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Attachment/log entry points that must use the shared runner."
+      - packages/kanban-lite/src/sdk/modules/attachments.ts: "Attachment mutations currently emitting after writes."
+      - packages/kanban-lite/src/sdk/modules/logs.ts: "Card/board log mutations currently emitting after writes."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: attachment_log_flow
+    verification:
+      - "Attachment/log writes stop self-emitting inside modules."
+      - "After-events fire once per committed attachment/log mutation."
+      - "Listener failures stay isolated from sibling listeners during after-events."
+    acceptance_criteria:
+      - "Attachment and log write paths use SDK-owned before/after orchestration."
+      - "The committed payload exposed in after-events matches the final persisted state."
+      - "No duplicate side effects appear for attachment/log listener paths."
+    failure_modes:
+      - scenario: "Log-clearing or attachment-removal paths are missed because they are less frequently used than create/update flows."
+        likelihood: medium
+        impact: medium
+        mitigation: "Enumerate every mutating method in these modules during migration and add regression assertions for edge actions."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Covered by targeted SDK regressions plus downstream side-effect tests"
+
+  - id: T7
+    title: Migrate settings and storage-migration flows to SDK-owned before/after events
+    description: |
+      Finish the leaf-module migration by moving settings updates and storage migration operations onto
+      the shared SDK runner. These paths are lower-volume but still need consistent before/after timing,
+      especially because storage-migration side effects can be expensive if fired twice.
+    wave: 3
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T3
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Settings and migration entry points that must use the shared runner."
+      - packages/kanban-lite/src/sdk/modules/settings.ts: "Settings update path currently emitting after write."
+      - packages/kanban-lite/src/sdk/modules/migration.ts: "Storage migration path currently emitting after completion."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: settings_migration_flow
+    verification:
+      - "Settings and storage-migration writes no longer emit from leaf modules."
+      - "Before-event denial prevents migration/settings writes from starting."
+      - "After-events are emitted once with committed result metadata."
+    acceptance_criteria:
+      - "Settings and storage migration paths use the shared runner."
+      - "After-event payloads include final migration/settings state only once."
+      - "These lower-volume flows no longer depend on module-owned event timing."
+    failure_modes:
+      - scenario: "Migration events are left on the old path because they are outside the common card/board flows."
+        likelihood: medium
+        impact: medium
+        mitigation: "Treat settings and migration as a dedicated migration task rather than an afterthought inside another family."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Targeted regression via SDK and host-level tests where relevant"
+
+  - id: T8
+    title: Rework core auth/webhook runtime plugin loading to listener-only behavior
+    description: |
+      Update the core plugin loader and built-in runtime plugin behavior so auth and webhook delivery
+      consume the new event system as listeners instead of mixing direct auth calls with listener factories.
+      This task should define how auth veto/override listeners are registered, keep webhook delivery on
+      after-events only, and remove the legacy `createListener`-style runtime seam.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+      - T4
+      - T5
+      - T6
+      - T7
+    context_files:
+      - packages/kanban-lite/src/sdk/plugins/index.ts: "Canonical runtime plugin contracts, validation, and capability resolution."
+      - packages/kanban-lite/src/sdk/plugins/webhookListener.ts: "Built-in runtime listener implementation that must align to after-event-only behavior."
+      - packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts: "Highest-value single-delivery and provider-delegation regression suite."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 320
+    focus_area: runtime_plugin_contracts
+    verification:
+      - "Core runtime no longer depends on direct auth calls or createListener factory semantics."
+      - "Webhook delivery remains after-event-only and still fires exactly once per committed mutation."
+      - "Provider-resolution tests cover the new listener-only contract."
+    acceptance_criteria:
+      - "Auth and webhook runtime plugins register through one listener-centric contract."
+      - "Built-in webhook delivery listens to after-events and does not block mutations."
+      - "Single-delivery regression remains explicit in core tests."
+    failure_modes:
+      - scenario: "Webhook delivery accidentally subscribes to both before and after phases and posts duplicate payloads."
+        likelihood: medium
+        impact: critical
+        mitigation: "Restrict webhook runtime listeners to after-events only and keep a single-delivery regression as a release gate."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Core runtime integration coverage for plugin resolution, listener registration, and single delivery"
+
+  - id: T9
+    title: Migrate the first-party auth plugin package to the listener-only contract
+    description: |
+      Update `kl-auth-plugin` so its runtime behavior is expressed as before-event listeners that resolve
+      identity, decide authorization, and veto by throwing stable AuthError-compatible failures or by
+      returning approved overrides when appropriate. This package remains a contract canary because it
+      duplicates core interfaces locally.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T8
+    context_files:
+      - packages/kl-auth-plugin/src/index.ts: "First-party external auth package mirroring the core runtime contract."
+      - packages/kl-auth-plugin/src/auth-plugin.integration.test.ts: "Auth package behavior and contract coverage."
+      - packages/kl-auth-plugin/src/auth-kanban-lite.workspace.test.ts: "Workspace integration proving the built SDK resolves the migrated plugin package."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: auth_plugin_migration
+    verification:
+      - "The auth package registers listener-only runtime hooks compatible with core validation."
+      - "Deny/allow behavior still matches current workspace and integration expectations."
+      - "Workspace tests pass after a build, confirming external-package compatibility."
+    acceptance_criteria:
+      - "kl-auth-plugin no longer depends on direct resolveIdentity/checkPolicy runtime seams."
+      - "Auth denials remain stable and machine-readable from the consumer perspective."
+      - "The package continues to load through the monorepo plugin-resolution path."
+    failure_modes:
+      - scenario: "The package preserves old direct interfaces locally and silently diverges from core validation."
+        likelihood: high
+        impact: high
+        mitigation: "Update local structural copies in the same task as the tests so drift is immediately detected."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Package integration and workspace compatibility coverage"
+
+  - id: T10
+    title: Migrate the first-party webhook plugin package to the listener-only contract
+    description: |
+      Update `kl-webhooks-plugin` so it registers after-event listeners directly under the new core
+      contract instead of exporting a `createListener`-style runtime factory. The plugin must preserve
+      existing webhook delivery behavior, including HMAC signing and non-blocking side effects.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T8
+    context_files:
+      - packages/kl-webhooks-plugin/src/index.ts: "First-party external webhook runtime package mirroring the core contract."
+      - packages/kl-webhooks-plugin/src/webhooks-kanban-lite.workspace.test.ts: "Workspace integration test proving the built SDK resolves the migrated webhook plugin."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 240
+    focus_area: webhook_plugin_migration
+    verification:
+      - "The webhook package registers after-event listeners through the listener-only contract."
+      - "Delivery remains non-blocking and continues to use existing signing/delivery behavior."
+      - "Workspace plugin-resolution coverage passes after build output is refreshed."
+    acceptance_criteria:
+      - "kl-webhooks-plugin no longer exports a listener factory runtime seam."
+      - "Webhook delivery still occurs exactly once for each committed matching mutation."
+      - "The package remains compatible with the core plugin loader."
+    failure_modes:
+      - scenario: "The plugin reuses old catch-all wiring in a way that subscribes twice or sees both legacy and new event families."
+        likelihood: medium
+        impact: critical
+        mitigation: "Remove the old runtime seam entirely and assert one committed mutation produces one outbound delivery."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Workspace compatibility and downstream single-delivery regression"
+
+  - id: T11
+    title: Lock in host-surface regression coverage for denial UX and duplicate-side-effect prevention
+    description: |
+      Update the public-surface tests that are most likely to catch regressions in auth denial behavior,
+      webhook delivery timing, and provider-backed behavior. This task should verify that CLI, MCP, and
+      standalone behavior still looks correct to users even though the runtime contract underneath changed.
+    wave: 6
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T9
+      - T10
+    context_files:
+      - packages/kanban-lite/src/cli/index.test.ts: "CLI-facing denial and webhook-provider behavior coverage."
+      - packages/kanban-lite/src/mcp-server/index.test.ts: "MCP parity and denial mapping coverage."
+      - packages/kanban-lite/src/standalone/__tests__/webhooks.test.ts: "Standalone single-delivery and fallback behavior coverage."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: host_surface_regressions
+    verification:
+      - "Auth denials still surface cleanly through CLI, MCP, and standalone behaviors."
+      - "Webhook delivery remains single-shot through public SDK-backed flows."
+      - "Provider-backed and built-in runtime paths both pass regression coverage."
+    acceptance_criteria:
+      - "User-visible denial behavior stays stable across supported host surfaces."
+      - "No host surface reintroduces duplicate side effects after the runtime refactor."
+      - "Regression coverage exercises both built-in and external plugin paths where available."
+    failure_modes:
+      - scenario: "Host layers pass because they do not directly assert duplicate-side-effect behavior, letting a regression slip through SDK-only tests."
+        likelihood: medium
+        impact: high
+        mitigation: "Promote duplicate-delivery and denial-UX checks into at least one public-surface regression suite before sign-off."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Public-surface regression coverage across CLI, MCP, and standalone"
+
+  - id: T12
+    title: Update public docs and changelog for the new plugin runtime model
+    description: |
+      Refresh the narrative docs so they describe the listener-only runtime model, SDK-owned before/after
+      events, and the intentional lack of backward compatibility for legacy runtime seams. Generated SDK
+      docs should be regenerated from updated JSDoc in the implementation tasks; this task focuses on the
+      required narrative surfaces and release notes.
+    wave: 7
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - T11
+    context_files:
+      - README.md: "Primary public contract for event bus behavior and plugin capabilities."
+      - CHANGELOG.md: "Required release-note entry under Unreleased."
+      - docs/plugins.md: "Detailed plugin model documentation that must reflect the listener-only runtime."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: docs_sync
+    verification:
+      - "README, CHANGELOG, and docs/plugins.md describe the same runtime model and breaking behavior."
+      - "Doc text matches the verified single-delivery and denial semantics from T11."
+      - "Implementation tasks have updated the JSDoc sources needed for regenerated docs/sdk output."
+    acceptance_criteria:
+      - "README explains SDK-owned before/after events and listener-only runtime plugins."
+      - "CHANGELOG records the refactor under Unreleased with clear breaking-change wording."
+      - "docs/plugins.md reflects the new auth/webhook runtime contract without referencing removed seams."
+    failure_modes:
+      - scenario: "Narrative docs retain legacy createListener/direct-auth language and mislead plugin authors after the refactor ships."
+        likelihood: medium
+        impact: medium
+        mitigation: "Treat docs as a gated completion task after runtime verification instead of a best-effort follow-up."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "Listener-only runtime plugin model"
+      - "SDK-owned before/after event lifecycle"
+      - "Breaking changes and migration expectations"
+
+  - id: T13
+    title: Perform final architectural review and release-readiness check
+    description: |
+      Review the completed implementation against the plan: verify task sequencing, ensure no legacy
+      runtime seams remain, confirm the regression evidence covers clean denials and duplicate-side-effect
+      prevention, and identify any follow-up work that should be split into a separate plan rather than
+      squeezed into this refactor.
+    wave: 8
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - T12
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Primary orchestration seam to review for legacy leakage and double-emission risks."
+      - packages/kanban-lite/src/sdk/plugins/index.ts: "Core runtime contract and loader validation to review for completeness."
+      - docs/plan/20260323-plugin-event-bus-refactor/plan.yaml: "Source plan to validate against completed work."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: final_review
+    verification:
+      - "All planned tasks are either completed or explicitly deferred with rationale."
+      - "No legacy runtime seam remains in core or first-party runtime plugins without documentation."
+      - "Build/test/doc evidence supports release readiness for the refactor."
+    acceptance_criteria:
+      - "Review identifies no unresolved high-risk gaps in denial UX or duplicate-side-effect handling."
+      - "Any remaining follow-up work is documented as a separate concern, not silently left in scope."
+      - "The implementation matches the approved plan or deviations are called out explicitly."
+    failure_modes:
+      - scenario: "The refactor appears green at unit-test level but still contains a hidden legacy path or undocumented contract deviation."
+        likelihood: medium
+        impact: high
+        mitigation: "Use the review gate to compare shipped behavior against the plan and the updated public docs, not only against passing tests."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true

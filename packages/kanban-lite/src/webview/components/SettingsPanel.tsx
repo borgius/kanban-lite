@@ -22,6 +22,11 @@ const fancyBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] 
   { value: 'aurora', label: 'Aurora Glow' },
   { value: 'sunset', label: 'Sunset Blend' },
   { value: 'meadow', label: 'Meadow Mist' },
+  { value: 'nebula', label: 'Nebula Bloom' },
+  { value: 'lagoon', label: 'Lagoon Light' },
+  { value: 'candy', label: 'Candy Pop' },
+  { value: 'ember', label: 'Ember Sky' },
+  { value: 'violet', label: 'Violet Pulse' },
 ]
 
 const plainBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] = [

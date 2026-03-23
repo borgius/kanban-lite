@@ -976,7 +976,7 @@ export const KANBAN_OPENAPI_SPEC = {
                   defaultPriority: { type: 'string' },
                   defaultStatus: { type: 'string' },
                   boardBackgroundMode: { type: 'string', enum: ['fancy', 'plain'] },
-                  boardBackgroundPreset: { type: 'string', enum: ['aurora', 'sunset', 'meadow', 'paper', 'mist', 'sand'] },
+                  boardBackgroundPreset: { type: 'string', enum: ['aurora', 'sunset', 'meadow', 'nebula', 'lagoon', 'candy', 'ember', 'violet', 'paper', 'mist', 'sand'] },
                 },
               },
             },

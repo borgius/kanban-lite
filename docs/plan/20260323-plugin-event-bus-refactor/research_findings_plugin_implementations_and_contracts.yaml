@@ -1,0 +1,491 @@
+plan_id: 20260323-plugin-event-bus-refactor
+objective: Refactor all plugins to a model where they only listen for emitted before/after events and may return overrides or throw errors.
+focus_area: plugin implementations and contracts across workspace packages
+created_at: 2026-03-23
+created_by: GitHub Copilot
+status: completed
+
+tldr: |
+  - Current first-party plugin contracts are split: auth uses direct request/decision interfaces, webhook delivery mixes direct CRUD methods with an event-bus listener factory, and storage/attachment plugins are capability adapters with no event-bus role.
+  - The only existing event-driven plugin behavior is webhook delivery via `EventListenerPlugin`/`bus.onAny(...)`; mutation events are emitted after writes, and auth additionally emits `auth.allowed`/`auth.denied` after the authorization decision.
+  - A before/after event-only refactor would primarily touch `kanban-lite` core contracts plus `kl-auth-plugin` and `kl-webhooks-plugin`; storage packages (`kl-sqlite-storage`, `kl-mysql-storage`, `kl-s3-attachment-storage`) appear largely unaffected unless the plugin manifest or shared capability vocabulary changes.
+  - Core update pressure is concentrated in `KanbanSDK.ts`, `sdk/types.ts`, `sdk/plugins/index.ts`, and every SDK module that currently emits only post-mutation events.
+  - Documentation and tests mirror the current direct-call model and would need synchronized updates wherever auth/webhook contracts are described or asserted.
+
+research_metadata:
+  methodology: Hybrid retrieval using semantic search, regex search, targeted file reads, and relationship tracing from core contracts to first-party plugin packages and tests.
+  scope: Focused on plugin contracts, plugin package implementations, core SDK plugin-loading and event-bus seams, and contract-oriented tests/docs.
+  confidence: high
+  coverage: 88
+
+files_analyzed:
+  - file: types.ts
+    path: packages/kanban-lite/src/sdk/types.ts
+    purpose: Defines SDK event vocabulary and the generic event-listener plugin lifecycle shape.
+    key_elements:
+      - element: SDKEventType
+        type: type
+        location: packages/kanban-lite/src/sdk/types.ts:39
+        description: Enumerates only post-write mutation events plus `auth.allowed` and `auth.denied`.
+      - element: EventListenerPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/types.ts:110
+        description: Current bus-subscriber plugin contract with `init(bus, workspaceRoot)` and `destroy()`.
+    language: TypeScript
+    lines: 220
+  - file: index.ts
+    path: packages/kanban-lite/src/sdk/plugins/index.ts
+    purpose: Canonical plugin contract definitions and provider loading/validation logic.
+    key_elements:
+      - element: AuthIdentityPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:83
+        description: Direct identity resolution contract consumed synchronously by `_authorizeAction`.
+      - element: AuthPolicyPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:103
+        description: Direct authorization decision contract consumed synchronously by `_authorizeAction`.
+      - element: WebhookProviderPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:153
+        description: Hybrid contract with direct CRUD plus `createListener()` for event delivery.
+      - element: CardStoragePlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:411
+        description: Storage engine factory contract.
+      - element: AttachmentStoragePlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:427
+        description: Attachment operations contract with optional `appendAttachment`/`materializeAttachment` hooks.
+      - element: resolveCapabilityBag
+        type: function
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:1017
+        description: Resolves auth, webhook, card, and attachment providers into the capability bag used by `KanbanSDK`.
+    language: TypeScript
+    lines: 1180
+  - file: KanbanSDK.ts
+    path: packages/kanban-lite/src/sdk/KanbanSDK.ts
+    purpose: Main SDK integration seam for provider resolution, event emission, auth enforcement, and webhook delegation.
+    key_elements:
+      - element: constructor
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:288
+        description: Wires legacy `onEvent`, resolves capabilities, and initializes either external webhook listener or built-in fallback listener.
+      - element: _authorizeAction
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:504
+        description: Directly calls auth plugins, then emits `auth.denied` or `auth.allowed` after the decision.
+      - element: emitEvent
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:686
+        description: Emits only a single post-operation event envelope.
+      - element: webhook CRUD methods
+        type: pattern
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:2217
+        description: Delegate directly to `webhookProvider` CRUD methods when present, else to built-in helpers.
+    language: TypeScript
+    lines: 2270
+  - file: eventBus.ts
+    path: packages/kanban-lite/src/sdk/eventBus.ts
+    purpose: Typed wrapper around EventEmitter2 used by the SDK and event-listener plugins.
+    key_elements:
+      - element: EventBus
+        type: class
+        location: packages/kanban-lite/src/sdk/eventBus.ts:25
+        description: Supports `on`, `onAny`, wildcard routing, `waitFor`, and listener error isolation.
+    language: TypeScript
+    lines: 168
+  - file: webhookListener.ts
+    path: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+    purpose: Built-in compatibility listener that forwards all SDK events to webhook delivery.
+    key_elements:
+      - element: WebhookListenerPlugin
+        type: class
+        location: packages/kanban-lite/src/sdk/plugins/webhookListener.ts:18
+        description: Subscribes via `bus.onAny(...)` and forwards `payload.data` to `fireWebhooks(...)`.
+    language: TypeScript
+    lines: 56
+  - file: index.ts
+    path: packages/kl-webhooks-plugin/src/index.ts
+    purpose: External webhook provider package that mirrors core's hybrid webhook contract.
+    key_elements:
+      - element: WebhookProviderPlugin
+        type: interface
+        location: packages/kl-webhooks-plugin/src/index.ts:58
+        description: Local structural copy of the core webhook contract.
+      - element: createListener
+        type: function
+        location: packages/kl-webhooks-plugin/src/index.ts:243
+        description: Returns an object with `init/destroy` that subscribes to the SDK bus with `onAny`.
+      - element: webhookProviderPlugin
+        type: variable
+        location: packages/kl-webhooks-plugin/src/index.ts:286
+        description: Exports direct CRUD and event-listener factory under provider id `webhooks`.
+    language: TypeScript
+    lines: 297
+  - file: index.ts
+    path: packages/kl-auth-plugin/src/index.ts
+    purpose: External auth provider package that mirrors the direct auth contracts.
+    key_elements:
+      - element: AuthIdentityPlugin
+        type: interface
+        location: packages/kl-auth-plugin/src/index.ts:34
+        description: Local structural copy of the direct identity contract.
+      - element: AuthPolicyPlugin
+        type: interface
+        location: packages/kl-auth-plugin/src/index.ts:39
+        description: Local structural copy of the direct policy contract.
+      - element: authIdentityPlugins/authPolicyPlugins
+        type: variable
+        location: packages/kl-auth-plugin/src/index.ts:153
+        description: Export maps used by core loader validation.
+    language: TypeScript
+    lines: 164
+  - file: index.ts
+    path: packages/kl-sqlite-storage/src/index.ts
+    purpose: External card/attachment storage plugin package.
+    key_elements:
+      - element: AttachmentStoragePlugin
+        type: interface
+        location: packages/kl-sqlite-storage/src/index.ts:123
+        description: Local structural copy of the attachment-storage contract.
+      - element: cardStoragePlugin
+        type: variable
+        location: packages/kl-sqlite-storage/src/index.ts:814
+        description: Storage engine provider for `card.storage`.
+      - element: attachmentStoragePlugin
+        type: variable
+        location: packages/kl-sqlite-storage/src/index.ts:866
+        description: Attachment provider with optional append/materialize support.
+    language: TypeScript
+    lines: 900
+  - file: index.ts
+    path: packages/kl-mysql-storage/src/index.ts
+    purpose: External MySQL-backed card/attachment storage provider package.
+    key_elements:
+      - element: CardStoragePlugin
+        type: interface
+        location: packages/kl-mysql-storage/src/index.ts:65
+        description: Local structural copy of the card-storage contract.
+      - element: AttachmentStoragePlugin
+        type: interface
+        location: packages/kl-mysql-storage/src/index.ts:77
+        description: Local structural copy of the attachment-storage contract.
+    language: TypeScript
+    lines: 240
+  - file: index.ts
+    path: packages/kl-s3-attachment-storage/src/index.ts
+    purpose: External S3 attachment provider package.
+    key_elements:
+      - element: AttachmentStoragePlugin
+        type: interface
+        location: packages/kl-s3-attachment-storage/src/index.ts:25
+        description: Local structural copy of the attachment-storage contract.
+      - element: attachmentStoragePlugin
+        type: variable
+        location: packages/kl-s3-attachment-storage/src/index.ts:147
+        description: Implements copy/materialize/optional append against S3.
+    language: TypeScript
+    lines: 240
+  - file: webhookListener.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts
+    purpose: Verifies built-in event-listener lifecycle contract.
+    key_elements:
+      - element: WebhookListenerPlugin contract tests
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts:13
+        description: Asserts `event.listener`, `init()`, and `destroy()` behavior.
+    language: TypeScript
+    lines: 59
+  - file: webhook-delegation.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts
+    purpose: Verifies provider-backed webhook delegation and single-delivery behavior.
+    key_elements:
+      - element: single delivery regression
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts:176
+        description: Confirms one mutation results in one outbound POST through the listener seam.
+      - element: provider delegation assertions
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts:229
+        description: Confirms `KanbanSDK` skips built-in listener when provider exists and delegates direct CRUD.
+    language: TypeScript
+    lines: 320
+  - file: auth-plugin.integration.test.ts
+    path: packages/kl-auth-plugin/src/auth-plugin.integration.test.ts
+    purpose: Documents and verifies the direct auth contract expected by core.
+    key_elements:
+      - element: RBAC/NOOP tests
+        type: test
+        location: packages/kl-auth-plugin/src/auth-plugin.integration.test.ts:26
+        description: Validates direct `resolveIdentity` and `checkPolicy` semantics.
+    language: TypeScript
+    lines: 259
+  - file: auth-enforcement.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts
+    purpose: Proves privileged SDK methods call the direct auth-policy seam.
+    key_elements:
+      - element: deny-all policy injection
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts:22
+        description: Injects a custom `authPolicy` into the capability bag to assert action-name dispatch and AuthError behavior.
+    language: TypeScript
+    lines: 260
+  - file: README.md
+    path: README.md
+    purpose: Top-level user-facing docs describing event bus, auth, webhook delivery, and storage providers.
+    key_elements:
+      - element: Event-driven pub/sub feature description
+        type: doc
+        location: README.md:49
+        description: Publicly documents the current EventEmitter2-based bus.
+    language: Markdown
+    lines: 260
+  - file: plugins.md
+    path: docs/plugins.md
+    purpose: Detailed plugin system documentation for current storage/webhook/auth capability model.
+    key_elements:
+      - element: capability namespaces
+        type: doc
+        location: docs/plugins.md:1
+        description: Documents current namespaces and direct/hybrid responsibilities.
+    language: Markdown
+    lines: 260
+
+patterns_found:
+  - category: architecture
+    pattern: Direct auth provider invocation
+    description: Auth plugins are not event listeners. Core resolves providers and calls them directly at `_authorizeAction` before mutations proceed.
+    examples:
+      - file: packages/kanban-lite/src/sdk/KanbanSDK.ts
+        location: line 510
+        snippet: const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
+      - file: packages/kanban-lite/src/sdk/KanbanSDK.ts
+        location: line 511
+        snippet: const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
+      - file: packages/kl-auth-plugin/src/index.ts
+        location: line 36
+        snippet: resolveIdentity(context: AuthContext): Promise<AuthIdentity | null>
+    prevalence: common
+  - category: architecture
+    pattern: Hybrid webhook provider contract
+    description: Webhook plugins combine direct CRUD methods with an event-listener factory for runtime delivery.
+    examples:
+      - file: packages/kanban-lite/src/sdk/plugins/index.ts
+        location: line 153
+        snippet: interface WebhookProviderPlugin { ... createListener(workspaceRoot: string) }
+      - file: packages/kanban-lite/src/sdk/KanbanSDK.ts
+        location: line 318
+        snippet: this._webhookPlugin = webhookProvider.createListener(this.workspaceRoot)
+      - file: packages/kanban-lite/src/sdk/KanbanSDK.ts
+        location: line 2235
+        snippet: return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, webhookConfig)
+    prevalence: common
+  - category: architecture
+    pattern: Post-operation event emission
+    description: SDK modules emit events only after successful writes; there is no existing before/after paired event vocabulary for mutations.
+    examples:
+      - file: packages/kanban-lite/src/sdk/modules/cards.ts
+        location: line 368
+        snippet: ctx.emitEvent('task.created', sanitizeCard(card))
+      - file: packages/kanban-lite/src/sdk/modules/comments.ts
+        location: line 47
+        snippet: ctx.emitEvent('comment.created', { ...comment, cardId })
+      - file: packages/kanban-lite/src/sdk/modules/migration.ts
+        location: line 115
+        snippet: ctx.emitEvent('storage.migrated', { from, to: 'sqlite', count })
+    prevalence: common
+  - category: architecture
+    pattern: Event-listener plugins subscribe with catch-all bus listeners
+    description: Existing event-driven plugin behavior uses `bus.onAny(...)` rather than per-event registration.
+    examples:
+      - file: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+        location: line 33
+        snippet: this._unsubscribe = bus.onAny((event: string, payload: SDKEvent) => { ... })
+      - file: packages/kl-webhooks-plugin/src/index.ts
+        location: line 250
+        snippet: unsubscribe = bus.onAny((event, payload) => { fireWebhooks(workspaceRoot, event, payload.data) })
+    prevalence: occasional
+  - category: structure
+    pattern: Structural type copies in external packages
+    description: First-party external plugin packages duplicate minimal interface shapes instead of importing deep core internals.
+    examples:
+      - file: packages/kl-webhooks-plugin/src/index.ts
+        location: line 31
+        snippet: interface EventBus { onAny(listener: ...): () => void }
+      - file: packages/kl-auth-plugin/src/index.ts
+        location: line 1
+        snippet: export interface AuthIdentity { subject: string; roles?: string[] }
+      - file: packages/kl-s3-attachment-storage/src/index.ts
+        location: line 25
+        snippet: interface AttachmentStoragePlugin { ... }
+    prevalence: common
+  - category: testing
+    pattern: Contract-centric integration tests
+    description: Tests validate export shapes and runtime behavior against the current plugin loader and direct-call seams.
+    examples:
+      - file: packages/kl-auth-plugin/src/auth-plugin.integration.test.ts
+        location: line 26
+        snippet: manifest shape (kanban-lite loader contract)
+      - file: packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts
+        location: line 229
+        snippet: resolves webhookProvider from capability bag when package is installed
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: KanbanSDK
+      responsibility: Orchestrates provider resolution, authorization, event emission, and webhook delegation.
+      location: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      relationship_to_domain: Core runtime that consumes every plugin contract.
+    - component: plugin loader / capability bag
+      responsibility: Validates external package exports and resolves active providers.
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      relationship_to_domain: Defines and enforces current plugin contracts.
+    - component: EventBus
+      responsibility: Pub/sub substrate for event-listener plugins and legacy `onEvent` callback wiring.
+      location: packages/kanban-lite/src/sdk/eventBus.ts
+      relationship_to_domain: Bus used by current event-driven plugin behavior.
+    - component: kl-auth-plugin
+      responsibility: Provides direct identity and policy implementations for noop/RBAC auth.
+      location: packages/kl-auth-plugin/src/index.ts
+      relationship_to_domain: First-party external auth provider package.
+    - component: kl-webhooks-plugin
+      responsibility: Provides webhook registry CRUD and runtime listener-based delivery.
+      location: packages/kl-webhooks-plugin/src/index.ts
+      relationship_to_domain: First-party external webhook provider package.
+    - component: storage provider packages
+      responsibility: Provide card/attachment persistence backends.
+      location: packages/kl-sqlite-storage, packages/kl-mysql-storage, packages/kl-s3-attachment-storage
+      relationship_to_domain: Capability plugins adjacent to, but not bus-driven like, webhook/auth behavior.
+  interfaces_used_by_domain:
+    - interface: EventListenerPlugin
+      location: packages/kanban-lite/src/sdk/types.ts
+      usage_pattern: Runtime bus subscriber with `init`/`destroy`.
+    - interface: WebhookProviderPlugin
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      usage_pattern: Direct CRUD + listener factory.
+    - interface: AuthIdentityPlugin
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      usage_pattern: Direct identity lookup before privileged actions.
+    - interface: AuthPolicyPlugin
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      usage_pattern: Direct authorization decision before privileged actions.
+    - interface: CardStoragePlugin / AttachmentStoragePlugin
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      usage_pattern: Engine factory and attachment operations; no event-bus integration.
+  data_flow_involving_domain: Mutation methods call `_authorizeAction` first, then perform storage work, then emit a single post-write SDK event. Webhook delivery consumes those events through listener plugins, while auth providers are called directly before any event emission. Storage providers are invoked through the resolved capability bag and do not participate in the event bus.
+  key_relationships_to_domain:
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kanban-lite/src/sdk/plugins/index.ts
+      relationship: imports and consumes provider contracts
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kanban-lite/src/sdk/eventBus.ts
+      relationship: constructs and exposes shared bus
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kl-auth-plugin/src/index.ts
+      relationship: indirectly loads/export-validates auth providers via plugin loader
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kl-webhooks-plugin/src/index.ts
+      relationship: indirectly loads/export-validates webhook provider and listener factory
+    - from: packages/kanban-lite/src/sdk/modules/*.ts
+      to: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      relationship: use context `emitEvent` seam for post-write events
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+    - Markdown
+  frameworks_used_in_domain:
+    - name: EventEmitter2
+      usage_in_domain: Provides wildcard event bus implementation used by SDK event listeners.
+    - name: Vitest
+      usage_in_domain: Contract and integration testing for plugin seams.
+  libraries_used_in_domain:
+    - name: eventemitter2
+      purpose_in_domain: Wildcard event routing and listener management.
+    - name: better-sqlite3
+      purpose_in_domain: Persistence backend for sqlite storage provider.
+    - name: mysql2/promise
+      purpose_in_domain: Persistence backend for mysql storage provider.
+    - name: @aws-sdk/client-s3
+      purpose_in_domain: Remote attachment persistence for S3 plugin.
+  external_apis_used_in_domain:
+    - name: HTTP/HTTPS outbound webhook delivery
+      integration_point: packages/kl-webhooks-plugin/src/index.ts
+    - name: AWS S3
+      integration_point: packages/kl-s3-attachment-storage/src/index.ts
+
+related_conventions:
+  naming_patterns_in_domain: Capability namespaces use dotted strings (`auth.identity`, `webhook.delivery`, `card.storage`, `attachment.storage`); emitted SDK events also use dotted strings (`task.created`, `auth.denied`).
+  structure_of_domain: Core declares canonical interfaces in `kanban-lite/src/sdk/plugins/index.ts` and `kanban-lite/src/sdk/types.ts`; first-party external packages duplicate minimal structural interfaces locally rather than importing deep internals.
+  error_handling_in_domain: Auth denies by returning `AuthDecision` that `KanbanSDK` converts to `AuthError`; event-bus listener failures are swallowed/logged; webhook delivery failures are logged and do not block mutations.
+  testing_in_domain: Tests focus on manifest shape, runtime loader compatibility, delegation, and lifecycle behavior rather than abstract mock-only unit tests.
+  documentation_in_domain: Public docs describe current capability namespaces and provider ids in `README.md` and `docs/plugins.md`; generated SDK/webhook docs derive from JSDoc and generator scripts.
+
+related_dependencies:
+  internal:
+    - component: packages/kanban-lite/src/shared/config.ts
+      relationship_to_domain: Normalizes capability selections including auth/webhook provider refs.
+      direction: inbound
+    - component: packages/kanban-lite/src/sdk/modules/*
+      relationship_to_domain: Emit the current post-write events that plugins can observe.
+      direction: inbound
+    - component: packages/kanban-lite/src/cli, src/standalone, src/mcp-server
+      relationship_to_domain: Depend on SDK behavior and surfaced auth/webhook/storage status semantics.
+      direction: inbound
+  external:
+    - name: kl-auth-plugin
+      purpose_for_domain: First-party external auth provider package loaded by core.
+    - name: kl-webhooks-plugin
+      purpose_for_domain: First-party external webhook provider package loaded by core.
+    - name: kl-sqlite-storage
+      purpose_for_domain: First-party external storage provider alias target.
+    - name: kl-mysql-storage
+      purpose_for_domain: First-party external storage provider alias target.
+    - name: kl-s3-attachment-storage
+      purpose_for_domain: First-party external attachment provider package.
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: auth principal and token handling
+      location: packages/kanban-lite/src/sdk/plugins/index.ts, packages/kl-auth-plugin/src/index.ts
+      concern: Direct auth plugins currently resolve identity from opaque tokens before actions; contract changes must preserve denial semantics and avoid leaking tokens.
+    - area: outbound webhook signing and delivery
+      location: packages/kl-webhooks-plugin/src/index.ts
+      concern: Delivery uses HMAC signing and intentionally swallows transport failures.
+  authentication_patterns_in_domain: Token-based identity resolution via `AuthIdentityPlugin.resolveIdentity(context)`.
+  authorization_patterns_in_domain: Synchronous per-action decision via `AuthPolicyPlugin.checkPolicy(identity, action, context)` before mutations, with `auth.allowed`/`auth.denied` emitted afterward.
+  data_validation_in_domain: Plugin loaders validate manifest ids, provided namespaces, and required method presence before accepting external packages.
+
+testing_patterns:
+  framework: Vitest
+  coverage_areas:
+    - webhook listener lifecycle
+    - webhook provider delegation and single delivery
+    - auth provider manifest/behavior compatibility
+    - auth enforcement and action-name dispatch
+    - workspace loading of first-party plugin packages
+  test_organization: Core SDK tests live under `packages/kanban-lite/src/sdk/__tests__`; first-party plugin packages keep contract/integration tests beside their `src/index.ts`.
+  mock_patterns:
+    - Inline deny-all auth policy injected into resolved capability bag
+    - Temporary mock `kl-webhooks-plugin` package installed into `node_modules`
+    - Fake bus objects with `onAny` spies/unsubscribe fakes
+
+open_questions:
+  - question: What is the intended replacement for direct webhook CRUD methods under an event-only plugin model?
+    context: `WebhookProviderPlugin` currently owns both runtime listening and registry CRUD; the objective mentions plugins only listening to emitted before/after events, which leaves CRUD ownership unspecified.
+  - question: Should authorization decisions move entirely to before-events, or should auth remain a distinct pre-action contract outside the generic plugin bus?
+    context: Current auth flow is synchronous and blocking, while the current bus implementation is listener-oriented and fire-and-forget.
+  - question: Are storage/attachment plugins expected to observe before/after events, or remain pure capability providers?
+    context: First-party storage packages currently have no event-bus dependency and no auth/webhook responsibilities.
+  - question: Will before/after events require richer payloads than current post-write sanitized snapshots?
+    context: Current event emitters often send only the final object; before-events would need intent/context and override semantics.
+
+gaps:
+  - area: formal target contract for override semantics
+    description: No existing interface or test fixture describes how event listeners would return overrides back into the mutation pipeline.
+    impact: Exact files needing signature changes beyond the currently direct auth/webhook contracts cannot be pinned down with full certainty.
+  - area: host-layer expectations for synchronous plugin vetoes
+    description: Current event bus is sync in implementation but modeled as side-effect delivery rather than request/response interception.
+    impact: Unknown whether CLI/API/MCP error mapping needs deeper changes than SDK core and tests.

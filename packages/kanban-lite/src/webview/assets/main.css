@@ -46,6 +46,7 @@ body {
   --card-view-title-font: 'Avenir Next', 'Segoe UI Variable Display', 'SF Pro Display', 'Trebuchet MS', sans-serif;
 }
 
+:root[data-kb-theme='dark'],
 .dark,
 body.vscode-dark,
 body.vscode-high-contrast {
@@ -80,6 +81,7 @@ body.vscode-high-contrast {
   --kb-lane-header-divider: rgba(228, 228, 231, 1);
 }
 
+:root[data-kb-theme='dark'],
 .dark,
 body.vscode-dark,
 body.vscode-high-contrast {
@@ -92,6 +94,17 @@ body.vscode-high-contrast {
 #root {
   height: 100%;
   width: 100%;
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='aurora'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 10% 12%, rgba(59, 130, 246, 0.18), transparent 28%),
+    radial-gradient(circle at 86% 14%, rgba(168, 85, 247, 0.16), transparent 24%),
+    radial-gradient(circle at 74% 80%, rgba(245, 158, 11, 0.12), transparent 26%),
+    radial-gradient(circle at 20% 84%, rgba(34, 197, 94, 0.11), transparent 22%),
+    linear-gradient(180deg, rgba(247, 250, 255, 0.94), rgba(255, 255, 255, 0.82)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(99, 102, 241, 0.08);
 }
 
 :root[data-kb-board-mode='fancy'][data-kb-board-preset='sunset'] {
@@ -112,6 +125,56 @@ body.vscode-high-contrast {
     linear-gradient(180deg, rgba(245, 255, 250, 0.94), rgba(255, 255, 255, 0.78)),
     var(--vscode-editor-background);
   --kb-board-grid: rgba(45, 212, 191, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='nebula'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 14% 14%, rgba(192, 132, 252, 0.2), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(59, 130, 246, 0.16), transparent 24%),
+    radial-gradient(circle at 62% 74%, rgba(236, 72, 153, 0.14), transparent 26%),
+    linear-gradient(180deg, rgba(248, 245, 255, 0.94), rgba(255, 255, 255, 0.8)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(168, 85, 247, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='lagoon'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 12%, rgba(6, 182, 212, 0.18), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(14, 165, 233, 0.14), transparent 24%),
+    radial-gradient(circle at 74% 82%, rgba(34, 197, 94, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(240, 253, 250, 0.94), rgba(255, 255, 255, 0.82)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(6, 182, 212, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='candy'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 18% 12%, rgba(244, 114, 182, 0.18), transparent 28%),
+    radial-gradient(circle at 82% 20%, rgba(96, 165, 250, 0.14), transparent 24%),
+    radial-gradient(circle at 70% 84%, rgba(250, 204, 21, 0.14), transparent 26%),
+    linear-gradient(180deg, rgba(255, 244, 251, 0.94), rgba(255, 250, 240, 0.82)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(244, 114, 182, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='ember'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 14%, rgba(251, 146, 60, 0.18), transparent 28%),
+    radial-gradient(circle at 84% 16%, rgba(239, 68, 68, 0.14), transparent 24%),
+    radial-gradient(circle at 72% 82%, rgba(250, 204, 21, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 247, 237, 0.94), rgba(255, 255, 255, 0.8)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(249, 115, 22, 0.08);
+}
+
+:root[data-kb-board-mode='fancy'][data-kb-board-preset='violet'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 18% 12%, rgba(167, 139, 250, 0.2), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(236, 72, 153, 0.14), transparent 24%),
+    radial-gradient(circle at 74% 82%, rgba(59, 130, 246, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(250, 245, 255, 0.94), rgba(255, 255, 255, 0.8)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(139, 92, 246, 0.08);
 }
 
 :root[data-kb-board-mode='plain'][data-kb-board-preset='paper'] {
@@ -138,27 +201,88 @@ body.vscode-high-contrast {
   --kb-board-grid-opacity: 0.62;
 }
 
-:root.dark[data-kb-board-mode='fancy'][data-kb-board-preset='sunset'] {
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='sunset'] {
   --kb-board-ambient-bg:
-    radial-gradient(circle at 12% 10%, rgba(244, 114, 182, 0.16), transparent 28%),
-    radial-gradient(circle at 84% 16%, rgba(249, 115, 22, 0.18), transparent 24%),
-    radial-gradient(circle at 74% 82%, rgba(250, 204, 21, 0.12), transparent 26%),
-    linear-gradient(180deg, rgba(48, 22, 34, 0.42), rgba(15, 23, 42, 0.16)),
+    radial-gradient(circle at 14% 12%, rgba(251, 113, 133, 0.28), transparent 26%),
+    radial-gradient(circle at 84% 16%, rgba(249, 115, 22, 0.3), transparent 22%),
+    radial-gradient(circle at 74% 82%, rgba(250, 204, 21, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(78, 24, 38, 0.58), rgba(35, 17, 36, 0.32)),
     var(--vscode-editor-background);
   --kb-board-grid: rgba(251, 146, 60, 0.08);
 }
 
-:root.dark[data-kb-board-mode='fancy'][data-kb-board-preset='meadow'] {
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='aurora'] {
   --kb-board-ambient-bg:
-    radial-gradient(circle at 16% 16%, rgba(45, 212, 191, 0.18), transparent 28%),
-    radial-gradient(circle at 82% 14%, rgba(96, 165, 250, 0.12), transparent 24%),
-    radial-gradient(circle at 78% 80%, rgba(74, 222, 128, 0.1), transparent 26%),
-    linear-gradient(180deg, rgba(14, 46, 40, 0.34), rgba(15, 23, 42, 0.14)),
+    radial-gradient(circle at 10% 12%, rgba(56, 189, 248, 0.28), transparent 28%),
+    radial-gradient(circle at 86% 14%, rgba(167, 139, 250, 0.24), transparent 24%),
+    radial-gradient(circle at 76% 82%, rgba(245, 158, 11, 0.16), transparent 26%),
+    radial-gradient(circle at 20% 86%, rgba(34, 197, 94, 0.12), transparent 22%),
+    linear-gradient(180deg, rgba(24, 36, 68, 0.56), rgba(16, 24, 48, 0.3)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(129, 140, 248, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='meadow'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 16%, rgba(45, 212, 191, 0.28), transparent 26%),
+    radial-gradient(circle at 82% 14%, rgba(96, 165, 250, 0.18), transparent 22%),
+    radial-gradient(circle at 78% 80%, rgba(74, 222, 128, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(11, 61, 52, 0.52), rgba(14, 38, 44, 0.28)),
     var(--vscode-editor-background);
   --kb-board-grid: rgba(45, 212, 191, 0.08);
 }
 
-:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='paper'] {
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='nebula'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 14% 14%, rgba(192, 132, 252, 0.3), transparent 26%),
+    radial-gradient(circle at 84% 18%, rgba(59, 130, 246, 0.22), transparent 22%),
+    radial-gradient(circle at 62% 74%, rgba(236, 72, 153, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(52, 24, 86, 0.58), rgba(25, 19, 56, 0.3)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(168, 85, 247, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='lagoon'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 12%, rgba(6, 182, 212, 0.32), transparent 26%),
+    radial-gradient(circle at 84% 18%, rgba(14, 165, 233, 0.2), transparent 22%),
+    radial-gradient(circle at 74% 82%, rgba(34, 197, 94, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(5, 68, 76, 0.54), rgba(10, 35, 49, 0.28)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(6, 182, 212, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='candy'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 18% 12%, rgba(244, 114, 182, 0.3), transparent 26%),
+    radial-gradient(circle at 82% 20%, rgba(96, 165, 250, 0.18), transparent 22%),
+    radial-gradient(circle at 70% 84%, rgba(250, 204, 21, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(76, 24, 54, 0.56), rgba(46, 23, 50, 0.3)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(244, 114, 182, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='ember'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 16% 14%, rgba(251, 146, 60, 0.3), transparent 26%),
+    radial-gradient(circle at 84% 16%, rgba(239, 68, 68, 0.22), transparent 22%),
+    radial-gradient(circle at 72% 82%, rgba(250, 204, 21, 0.16), transparent 22%),
+    linear-gradient(180deg, rgba(82, 36, 14, 0.58), rgba(51, 27, 22, 0.32)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(249, 115, 22, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='fancy'][data-kb-board-preset='violet'] {
+  --kb-board-ambient-bg:
+    radial-gradient(circle at 18% 12%, rgba(167, 139, 250, 0.3), transparent 26%),
+    radial-gradient(circle at 84% 18%, rgba(236, 72, 153, 0.18), transparent 22%),
+    radial-gradient(circle at 74% 82%, rgba(59, 130, 246, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(67, 28, 98, 0.58), rgba(32, 20, 58, 0.3)),
+    var(--vscode-editor-background);
+  --kb-board-grid: rgba(139, 92, 246, 0.1);
+}
+
+:root[data-kb-theme='dark'][data-kb-board-mode='plain'][data-kb-board-preset='paper'] {
   --kb-board-ambient-bg:
     linear-gradient(180deg, rgba(24, 24, 27, 0.94), rgba(39, 39, 42, 0.88)),
     var(--vscode-editor-background);
@@ -166,7 +290,7 @@ body.vscode-high-contrast {
   --kb-board-grid-opacity: 0.58;
 }
 
-:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='mist'] {
+:root[data-kb-theme='dark'][data-kb-board-mode='plain'][data-kb-board-preset='mist'] {
   --kb-board-ambient-bg:
     linear-gradient(180deg, rgba(17, 24, 39, 0.94), rgba(30, 41, 59, 0.86)),
     var(--vscode-editor-background);
@@ -174,7 +298,7 @@ body.vscode-high-contrast {
   --kb-board-grid-opacity: 0.56;
 }
 
-:root.dark[data-kb-board-mode='plain'][data-kb-board-preset='sand'] {
+:root[data-kb-theme='dark'][data-kb-board-mode='plain'][data-kb-board-preset='sand'] {
   --kb-board-ambient-bg:
     linear-gradient(180deg, rgba(41, 30, 17, 0.92), rgba(68, 64, 60, 0.82)),
     var(--vscode-editor-background);

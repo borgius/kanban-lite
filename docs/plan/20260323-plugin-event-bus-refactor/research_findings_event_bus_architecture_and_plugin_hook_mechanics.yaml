@@ -1,0 +1,466 @@
+plan_id: 20260323-plugin-event-bus-refactor
+objective: >-
+  Plugins should only listen for events; SDK actions should emit async before/after
+  events; emitEvent/emitAsync should merge plugin responses for before-events and
+  await them; backward compatibility is not required.
+focus_area: event bus architecture and plugin hook mechanics
+created_at: 2026-03-23
+created_by: GitHub Copilot
+status: completed
+
+tldr: |
+  - `EventBus` is a thin synchronous wrapper over `EventEmitter2`; it has `emit()` only and no async dispatch API.
+  - `KanbanSDK.emitEvent()` is defined once and used by SDK modules only for post-mutation events; auth events bypass it and emit directly on `_eventBus`.
+  - Plugin mechanics currently model listeners as side-effect subscribers (`EventListenerPlugin.init/destroy`) with no return channel, no request/response contract, and no response merging.
+  - Webhook delivery is implemented as an event-listener plugin (built-in or external provider-created), attached in the SDK constructor via `onAny`.
+  - Existing authorization support centers on `AuthError` plus HTTP status mapping; no RFC 7807/problem-details class exists in core.
+
+research_metadata:
+  methodology: hybrid retrieval using semantic_search, grep_search, targeted read_file, plus repo memory cross-check
+  scope: SDK event bus core, plugin registry/loader, webhook listener contract, emitting module call sites, auth error plumbing, related tests
+  confidence: high
+  coverage: 88
+
+files_analyzed:
+  - file: eventBus.ts
+    path: packages/kanban-lite/src/sdk/eventBus.ts
+    purpose: Defines the shared SDK event bus wrapper around EventEmitter2.
+    key_elements:
+      - element: EventBus.emit
+        type: function
+        location: packages/kanban-lite/src/sdk/eventBus.ts:43
+        description: Synchronously iterates matched listeners and onAny listeners with per-listener try/catch isolation.
+      - element: EventBus.on/onAny/waitFor
+        type: function
+        location: packages/kanban-lite/src/sdk/eventBus.ts:66
+        description: Subscription and wait primitives; waitFor resolves next matching emitted payload but does not change emit behavior.
+    language: TypeScript
+    lines: 176
+  - file: KanbanSDK.ts
+    path: packages/kanban-lite/src/sdk/KanbanSDK.ts
+    purpose: Owns EventBus lifecycle, plugin listener wiring, auth seam, and SDK-level emitEvent helper.
+    key_elements:
+      - element: constructor
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:284
+        description: Creates EventBus, wires legacy onEvent via onAny, and initializes either external webhook listener or built-in listener.
+      - element: _authorizeAction
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:503
+        description: Emits auth.allowed/auth.denied directly on _eventBus and throws AuthError on denial.
+      - element: emitEvent
+        type: function
+        location: packages/kanban-lite/src/sdk/KanbanSDK.ts:686
+        description: Emits post-mutation event envelope with type/data/timestamp; returns void.
+    language: TypeScript
+    lines: 720
+  - file: types.ts
+    path: packages/kanban-lite/src/sdk/types.ts
+    purpose: Defines SDK event names, event envelope, EventListenerPlugin contract, and auth error vocabulary.
+    key_elements:
+      - element: SDKEventType
+        type: type
+        location: packages/kanban-lite/src/sdk/types.ts:47
+        description: Union of current emitted event names; includes mutating events plus auth.allowed/auth.denied.
+      - element: SDKEvent
+        type: interface
+        location: packages/kanban-lite/src/sdk/types.ts:95
+        description: Event envelope with type, data, timestamp, optional actor, optional boardId, optional meta.
+      - element: EventListenerPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/types.ts:110
+        description: Listener-only lifecycle contract with init(bus, workspaceRoot) and destroy(); no return payload hook.
+      - element: AuthError
+        type: class
+        location: packages/kanban-lite/src/sdk/types.ts:289
+        description: Machine-readable auth error carrying category and optional actor.
+    language: TypeScript
+    lines: 300
+  - file: context.ts
+    path: packages/kanban-lite/src/sdk/modules/context.ts
+    purpose: Defines the minimal SDKContext consumed by module functions.
+    key_elements:
+      - element: SDKContext.emitEvent
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/context.ts:28
+        description: Narrow module-facing contract exposing only emitEvent(event, data): void.
+    language: TypeScript
+    lines: 54
+  - file: webhookListener.ts
+    path: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+    purpose: Built-in event listener plugin implementation for webhook delivery.
+    key_elements:
+      - element: WebhookListenerPlugin.init
+        type: function
+        location: packages/kanban-lite/src/sdk/plugins/webhookListener.ts:34
+        description: Subscribes once via bus.onAny and forwards payload.data to fireWebhooks.
+    language: TypeScript
+    lines: 53
+  - file: index.ts
+    path: packages/kanban-lite/src/sdk/plugins/index.ts
+    purpose: Defines plugin contracts and resolves external auth/webhook providers.
+    key_elements:
+      - element: WebhookProviderPlugin
+        type: interface
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:167
+        description: Provider contract exposing webhook CRUD plus createListener(workspaceRoot).
+      - element: loadWebhookProviderPlugin
+        type: function
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:901
+        description: Validates external plugin export shape including createListener.
+      - element: resolveWebhookProvider
+        type: function
+        location: packages/kanban-lite/src/sdk/plugins/index.ts:936
+        description: Returns null when plugin package is absent, enabling built-in fallback listener.
+    language: TypeScript
+    lines: 1000
+  - file: cards.ts
+    path: packages/kanban-lite/src/sdk/modules/cards.ts
+    purpose: Emits task/form events after card mutations.
+    key_elements:
+      - element: createCard/updateCard/moveCard/deleteCard/submitForm
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/cards.ts:368
+        description: Emits task.created/task.updated/task.moved/task.deleted/form.submit after persistence.
+    language: TypeScript
+    lines: 620
+  - file: boards.ts
+    path: packages/kanban-lite/src/sdk/modules/boards.ts
+    purpose: Emits board lifecycle/action events and transfer-driven task.moved events.
+    key_elements:
+      - element: createBoard/updateBoard/deleteBoard/triggerBoardAction/transferCard
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/boards.ts:75
+        description: Emits board.created/updated/deleted/board.action and cross-board task.moved.
+    language: TypeScript
+    lines: 270
+  - file: comments.ts
+    path: packages/kanban-lite/src/sdk/modules/comments.ts
+    purpose: Emits comment lifecycle events.
+    key_elements:
+      - element: addComment/updateComment/deleteComment
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/comments.ts:47
+        description: Emits comment.created/comment.updated/comment.deleted with embedded cardId.
+    language: TypeScript
+    lines: 95
+  - file: columns.ts
+    path: packages/kanban-lite/src/sdk/modules/columns.ts
+    purpose: Emits column lifecycle events.
+    key_elements:
+      - element: addColumn/updateColumn/removeColumn
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/columns.ts:39
+        description: Emits column.created/updated/deleted using column objects.
+    language: TypeScript
+    lines: 120
+  - file: attachments.ts
+    path: packages/kanban-lite/src/sdk/modules/attachments.ts
+    purpose: Emits attachment events.
+    key_elements:
+      - element: addAttachment/removeAttachment
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/attachments.ts:25
+        description: Emits attachment.added/attachment.removed with cardId and attachment filename.
+    language: TypeScript
+    lines: 58
+  - file: logs.ts
+    path: packages/kanban-lite/src/sdk/modules/logs.ts
+    purpose: Emits card-log and board-log events.
+    key_elements:
+      - element: addLog/clearLogs/addBoardLog/clearBoardLogs
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/logs.ts:142
+        description: Emits log.added/log.cleared/board.log.added/board.log.cleared.
+    language: TypeScript
+    lines: 250
+  - file: settings.ts
+    path: packages/kanban-lite/src/sdk/modules/settings.ts
+    purpose: Emits settings.updated.
+    key_elements:
+      - element: updateSettings
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/settings.ts:14
+        description: Emits settings.updated after writeConfig.
+    language: TypeScript
+    lines: 25
+  - file: migration.ts
+    path: packages/kanban-lite/src/sdk/modules/migration.ts
+    purpose: Emits storage.migrated.
+    key_elements:
+      - element: migrateToSqlite/migrateToMarkdown
+        type: function
+        location: packages/kanban-lite/src/sdk/modules/migration.ts:115
+        description: Emits storage.migrated with from/to/count payload.
+    language: TypeScript
+    lines: 145
+  - file: authUtils.ts
+    path: packages/kanban-lite/src/standalone/authUtils.ts
+    purpose: Maps AuthError categories to HTTP status codes.
+    key_elements:
+      - element: authErrorToHttpStatus
+        type: function
+        location: packages/kanban-lite/src/standalone/authUtils.ts:25
+        description: Maps identity errors to 401, policy errors to 403, provider errors to 500.
+    language: TypeScript
+    lines: 24
+  - file: httpUtils.ts
+    path: packages/kanban-lite/src/standalone/httpUtils.ts
+    purpose: Shared HTTP JSON helpers for standalone server.
+    key_elements:
+      - element: jsonError
+        type: function
+        location: packages/kanban-lite/src/standalone/httpUtils.ts:78
+        description: Sends { ok: false, error } JSON; not RFC 7807 problem-details.
+    language: TypeScript
+    lines: 79
+  - file: eventBus.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts
+    purpose: Verifies synchronous event bus semantics, wildcard routing, waitFor, and error isolation.
+    key_elements:
+      - element: EventBus tests
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts:1
+        description: Confirms emit reaches wildcard listeners and isolates listener exceptions.
+    language: TypeScript
+    lines: 220
+  - file: webhookListener.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts
+    purpose: Verifies listener lifecycle contract.
+    key_elements:
+      - element: WebhookListenerPlugin contract tests
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/webhookListener.test.ts:1
+        description: Confirms init uses onAny and destroy unsubscribes safely.
+    language: TypeScript
+    lines: 58
+  - file: auth-enforcement.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts
+    purpose: Verifies AuthError denial semantics and action-name dispatch.
+    key_elements:
+      - element: auth enforcement suites
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts:1
+        description: Exercises deny-all auth policy across all mutating SDK methods.
+    language: TypeScript
+    lines: 400
+  - file: KanbanSDK.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts
+    purpose: Verifies SDK proxy methods over the event bus.
+    key_elements:
+      - element: event proxies tests
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts:70
+        description: Tests sdk.on/once/onAny/waitFor/listenerCount/removeAllListeners.
+    language: TypeScript
+    lines: 180
+  - file: plugin-registry.test.ts
+    path: packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts
+    purpose: Verifies external webhook provider loading and listener factory expectations.
+    key_elements:
+      - element: webhook provider loading tests
+        type: test
+        location: packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts:1441
+        description: Asserts webhook providers expose webhook.delivery and createListener.
+    language: TypeScript
+    lines: 1515
+
+patterns_found:
+  - category: architecture
+    pattern: synchronous event dispatch with error swallowing
+    description: Event emission is synchronous and per-listener failures are logged/swallowed.
+    examples:
+      - file: packages/kanban-lite/src/sdk/eventBus.ts
+        location: ':43-61'
+        snippet: emit() loops listeners and onAny listeners with try/catch around each callback.
+      - file: packages/kanban-lite/src/sdk/KanbanSDK.ts
+        location: ':514-537'
+        snippet: auth.allowed/auth.denied emits are wrapped in try/catch and ignore listener errors.
+    prevalence: common
+  - category: architecture
+    pattern: post-write event emission from module functions
+    description: SDK modules call ctx.emitEvent only after persistence or config write completes.
+    examples:
+      - file: packages/kanban-lite/src/sdk/modules/cards.ts
+        location: ':368, :415, :513, :560, :585'
+        snippet: task/form events fire after writeCard/deleteCard.
+      - file: packages/kanban-lite/src/sdk/modules/boards.ts
+        location: ':75, :101, :133, :192, :258'
+        snippet: board/task events fire after config/storage changes.
+    prevalence: common
+  - category: plugin
+    pattern: plugins subscribe by lifecycle init/destroy, not by intercepting method calls
+    description: Listener plugins get EventBus in init() and register subscriptions themselves.
+    examples:
+      - file: packages/kanban-lite/src/sdk/types.ts
+        location: ':110-115'
+        snippet: EventListenerPlugin has only manifest/init/destroy.
+      - file: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+        location: ':34-38'
+        snippet: init(bus, workspaceRoot) stores unsubscribe from onAny.
+    prevalence: common
+  - category: plugin
+    pattern: webhook provider owns listener factory
+    description: webhook.delivery plugins expose CRUD plus createListener(workspaceRoot).
+    examples:
+      - file: packages/kanban-lite/src/sdk/plugins/index.ts
+        location: ':167-186'
+        snippet: WebhookProviderPlugin interface includes createListener.
+      - file: packages/kl-webhooks-plugin/src/index.ts
+        location: ':242-271'
+        snippet: external provider returns lifecycle object whose init subscribes via onAny.
+    prevalence: occasional
+  - category: error_handling
+    pattern: auth denial represented as AuthError plus status mapper, not problem-details object
+    description: authorization failures are typed inside SDK and translated per host.
+    examples:
+      - file: packages/kanban-lite/src/sdk/types.ts
+        location: ':204-299'
+        snippet: AuthErrorCategory + AuthError class.
+      - file: packages/kanban-lite/src/standalone/authUtils.ts
+        location: ':25-29'
+        snippet: maps categories to 401/403/500.
+      - file: packages/kanban-lite/src/standalone/httpUtils.ts
+        location: ':78-84'
+        snippet: jsonError sends { ok:false, error }.
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: EventBus
+      responsibility: wildcard pub/sub and listener lifecycle
+      location: packages/kanban-lite/src/sdk/eventBus.ts
+      relationship_to_domain: core dispatcher used by SDK and plugins
+    - component: KanbanSDK
+      responsibility: event bus ownership and plugin initialization
+      location: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      relationship_to_domain: creates bus and emits SDK/auth events
+    - component: SDK module functions
+      responsibility: perform mutations and call ctx.emitEvent
+      location: packages/kanban-lite/src/sdk/modules/
+      relationship_to_domain: primary emit call sites
+    - component: webhook provider / listener plugins
+      responsibility: subscribe to event bus and perform external side effects
+      location: packages/kanban-lite/src/sdk/plugins/ and packages/kl-webhooks-plugin/src/index.ts
+      relationship_to_domain: current plugin-listener mechanism
+  interfaces_used_by_domain:
+    - interface: SDKEvent
+      location: packages/kanban-lite/src/sdk/types.ts
+      usage_pattern: canonical event envelope passed to bus listeners
+    - interface: EventListenerPlugin
+      location: packages/kanban-lite/src/sdk/types.ts
+      usage_pattern: lifecycle-only listener contract
+    - interface: WebhookProviderPlugin
+      location: packages/kanban-lite/src/sdk/plugins/index.ts
+      usage_pattern: plugin registration plus listener factory for webhook delivery
+  data_flow_involving_domain: >-
+    SDK module mutates storage/config -> module calls ctx.emitEvent(event, data) ->
+    KanbanSDK.emitEvent wraps data in SDKEvent envelope -> EventBus.emit synchronously
+    invokes matching listeners and onAny subscribers -> built-in or external webhook
+    listener forwards payload.data to fireWebhooks. Auth decisions bypass ctx.emitEvent
+    and emit directly on _eventBus inside _authorizeAction.
+  key_relationships_to_domain:
+    - from: packages/kanban-lite/src/sdk/modules/*
+      to: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      relationship: calls ctx.emitEvent via SDKContext
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kanban-lite/src/sdk/eventBus.ts
+      relationship: composes
+    - from: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      to: packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+      relationship: instantiates fallback listener plugin
+    - from: packages/kanban-lite/src/sdk/plugins/index.ts
+      to: packages/kl-webhooks-plugin/src/index.ts
+      relationship: loads external webhook provider by contract
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript
+  frameworks_used_in_domain:
+    - name: EventEmitter2
+      usage_in_domain: underlying wildcard emitter implementation used by EventBus
+  libraries_used_in_domain:
+    - name: eventemitter2
+      purpose_in_domain: wildcard event routing, onAny, once, many
+    - name: vitest
+      purpose_in_domain: unit testing event bus, plugin lifecycle, auth behavior
+  external_apis_used_in_domain:
+    - name: fetch / HTTP POST webhook delivery
+      integration_point: packages/kanban-lite/src/sdk/webhooks.ts and packages/kl-webhooks-plugin/src/index.ts
+
+related_conventions:
+  naming_patterns_in_domain: >-
+    Event names use dotted strings (`task.created`, `auth.denied`, `board.log.added`).
+    Mutating SDK action names for auth policy use separate dotted verbs (`card.create`, `column.update`).
+  structure_of_domain: >-
+    Event bus core lives in `src/sdk/eventBus.ts`; SDK-level orchestration in `KanbanSDK.ts`;
+    emitting operations in `src/sdk/modules/*`; plugin contracts/loaders in `src/sdk/plugins/*`.
+  error_handling_in_domain: >-
+    Listener failures are intentionally swallowed/logged. Auth failures throw `AuthError`.
+    Standalone HTTP maps auth categories to status codes then uses plain `jsonError`.
+  testing_in_domain: >-
+    Tests are colocated in `src/sdk/__tests__` and focus on synchronous emission semantics,
+    lifecycle hooks, provider loading, and auth denial coverage.
+  documentation_in_domain: >-
+    README and docs/sdk.md describe event-bus usage as public SDK surface, including on/once/onAny/waitFor.
+
+related_dependencies:
+  internal:
+    - component: packages/kanban-lite/src/sdk/webhooks.ts
+      relationship_to_domain: webhook listener delegates payload.data delivery here
+      direction: outbound
+    - component: packages/kanban-lite/src/standalone/authUtils.ts
+      relationship_to_domain: maps AuthError categories for HTTP hosts
+      direction: outbound
+    - component: packages/kanban-lite/src/standalone/httpUtils.ts
+      relationship_to_domain: shapes standalone error responses
+      direction: outbound
+  external:
+    - name: eventemitter2
+      purpose_for_domain: event routing and listener registration primitives
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: auth event emission
+      location: packages/kanban-lite/src/sdk/KanbanSDK.ts
+      concern: auth.denied/auth.allowed payloads include action, reason, actor, boardId; plugin hooks must avoid leaking tokens or sensitive context.
+    - area: plugin-thrown auth errors
+      location: packages/kanban-lite/src/sdk/types.ts and host adapters
+      concern: any new before-event authorization failure path should remain compatible with AuthError category mapping.
+  authentication_patterns_in_domain: Auth identity/policy resolution occurs before privileged SDK actions in _authorizeAction.
+  authorization_patterns_in_domain: Policy denials throw AuthError and also emit auth.denied.
+  data_validation_in_domain: Event payloads are ad hoc per emitter call site; there is no central schema validation for listener payloads.
+
+testing_patterns:
+  framework: vitest
+  coverage_areas:
+    - synchronous emit and wildcard routing
+    - catch-all listener lifecycle
+    - waitFor behavior
+    - webhook listener lifecycle
+    - external webhook provider loading contract
+    - auth denial error categories and action dispatch
+  test_organization: SDK domain tests under packages/kanban-lite/src/sdk/__tests__ with additional standalone host tests for HTTP auth mapping.
+  mock_patterns:
+    - vi.fn listeners and spies on onAny/console.error
+    - temp plugin packages exporting webhookProviderPlugin
+    - injected deny-all auth policy plugins
+
+open_questions:
+  - question: What exact contract should before-event listeners use for merged responses?
+    context: Current EventListenerPlugin returns nothing and SDKEvent payloads are heterogeneous, so merge semantics are undefined by existing code.
+  - question: Should auth.allowed/auth.denied remain special-case direct emits or move onto the same before/after helper path?
+    context: They currently bypass KanbanSDK.emitEvent and may diverge from any new async dispatch semantics.
+  - question: Should legacy onEvent be removed entirely or reimplemented atop after-events only?
+    context: Backward compatibility is declared unnecessary, but the constructor still wires onEvent via onAny today.
+
+gaps:
+  - area: response merge shape for before-events
+    description: No existing listener/plugin API returns data to the caller, so there is no precedent for merge order, conflict resolution, or typing.
+    impact: High; this is the core contract the refactor must invent.
+  - area: typed event payload schemas
+    description: SDKEvent.data is `unknown` and each event family uses ad hoc object shapes from module call sites.
+    impact: Medium; adding before/after hooks without stronger typing risks inconsistent plugin expectations.
+  - area: problem-details support
+    description: Standalone server uses plain `{ ok:false, error }` responses and there is no reusable ProblemDetails class/helper.
+    impact: Medium; plugin-thrown authorization errors can reuse AuthError but not a preexisting RFC 7807 abstraction.

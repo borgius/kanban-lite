@@ -274,13 +274,15 @@ function App(): React.JSX.Element {
   // Listen for VSCode theme changes
   useEffect(() => {
     const updateTheme = () => {
+      const root = document.documentElement
       const isDark = document.body.classList.contains('vscode-dark') ||
                      document.body.classList.contains('vscode-high-contrast')
       setIsDarkMode(isDark)
+      root.dataset.kbTheme = isDark ? 'dark' : 'light'
       if (isDark) {
-        document.documentElement.classList.add('dark')
+        root.classList.add('dark')
       } else {
-        document.documentElement.classList.remove('dark')
+        root.classList.remove('dark')
       }
     }
 

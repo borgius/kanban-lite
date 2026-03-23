@@ -57,14 +57,14 @@
   "compactMode": false,
   "markdownEditorMode": false,
   "showDeletedColumn": false,
-  "boardZoom": 100,
+  "boardZoom": 120,
   "cardZoom": 100,
-  "boardBackgroundMode": "plain",
-  "boardBackgroundPreset": "sand",
+  "boardBackgroundMode": "fancy",
+  "boardBackgroundPreset": "meadow",
   "port": 2954,
   "labels": {},
   "panelMode": "drawer",
-  "drawerWidth": 34.68487771182972,
+  "drawerWidth": 33.42537991199345,
   "forms": {
     "test": {
       "name": "Test Form",

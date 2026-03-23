@@ -58,7 +58,7 @@ kl add --title "My first task" --priority high
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
-- **Custom board backgrounds**: Choose between simple plain canvases and fancy ambient presets from the settings panel, with multiple light/dark-friendly background options for different moods
+- **Custom board backgrounds**: Choose between simple plain canvases and a richer library of fancy colorful ambient presets from the settings panel, with multiple light/dark-friendly moods for different boards and preferences
 - **Zoom controls**: Scale the board view and card detail panel independently between 75–150% via settings sliders or keyboard shortcuts
 - **Column sorting**: Sort cards within a column by priority, due date, or creation date from the column menu
 - **Column visibility controls**: Minimize a column into a narrow rail with its name and card count from the column menu, or hide/show columns from **Board options → Columns**

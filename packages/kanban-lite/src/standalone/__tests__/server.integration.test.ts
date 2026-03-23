@@ -456,6 +456,7 @@ describe('Standalone Server Integration', () => {
         title: 'Auth Delete'
       }), 'backlog')
 
+      const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const deleteSpy = vi.spyOn(KanbanSDK.prototype, 'deleteCard').mockResolvedValue(undefined)
 
       server = startServer(tempDir, port, webviewDir)
@@ -468,18 +469,23 @@ describe('Standalone Server Integration', () => {
         cardId: 'auth-delete'
       }, 'init')
 
-      expect(deleteSpy).toHaveBeenCalledWith(
-        'auth-delete',
-        undefined,
+      expect(runWithAuthSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           token: 'websocket-secret',
           tokenSource: 'request-header',
           transport: 'http'
-        })
+        }),
+        expect.any(Function)
       )
+      expect(deleteSpy).toHaveBeenCalledWith(
+        'auth-delete',
+        undefined,
+      )
+      runWithAuthSpy.mockRestore()
     })
 
     it('forwards bearer auth to direct action triggers', async () => {
+      const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const triggerSpy = vi.spyOn(KanbanSDK.prototype, 'triggerAction').mockResolvedValue(undefined)
 
       server = startServer(tempDir, port, webviewDir)
@@ -495,16 +501,20 @@ describe('Standalone Server Integration', () => {
       }, 'actionResult')
 
       expect(response).toEqual({ type: 'actionResult', callbackKey: 'cb-1' })
-      expect(triggerSpy).toHaveBeenCalledWith(
-        'card-123',
-        'approve',
-        undefined,
+      expect(runWithAuthSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           token: 'action-token',
           tokenSource: 'request-header',
           transport: 'http'
-        })
+        }),
+        expect.any(Function)
       )
+      expect(triggerSpy).toHaveBeenCalledWith(
+        'card-123',
+        'approve',
+        undefined,
+      )
+      runWithAuthSpy.mockRestore()
     })
   })
 
@@ -752,12 +762,15 @@ describe('Standalone Server Integration', () => {
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
       // Move feat-move to todo column between feat-a (position 0) and feat-c (position 1)
-      const response = await sendAndReceive(ws, {
+      const response = await sendAndReceiveMatching(ws, {
         type: 'moveCard',
         cardId: 'feat-move',
         newStatus: 'todo',
         newOrder: 1
-      }, 'init')
+      }, 'init', (parsed) => {
+        const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+        return Array.isArray(cards) && cards.filter(card => card.status === 'todo').length === 3
+      })
 
       const cards = response.cards as Array<Record<string, unknown>>
       const todoCards = cards
@@ -1334,7 +1347,23 @@ describe('Standalone Server Integration', () => {
         await sendAndReceive(ws2, { type: 'ready' }, 'init')
 
         // Client 2 listens for update
-        const ws2Update = waitForMessage(ws2, 'init', 3000)
+        const ws2Update = new Promise<Record<string, unknown>>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('Timeout waiting for broadcast with both cards')), 3000)
+          const handler = (data: Buffer | string) => {
+            try {
+              const parsed = JSON.parse(data.toString())
+              const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+              if (parsed.type === 'init' && Array.isArray(cards) && cards.length === 2) {
+                clearTimeout(timer)
+                ws2.off('message', handler)
+                resolve(parsed)
+              }
+            } catch {
+              // ignore parse errors
+            }
+          }
+          ws2.on('message', handler)
+        })
 
         // Client 1 creates a card
         ws1.send(JSON.stringify({
@@ -2803,7 +2832,7 @@ describe('Standalone Server Integration', () => {
   // ── Admin/Config Auth Denial Mapping ──
 
   describe('admin route auth denial semantics', () => {
-    it('POST /api/boards maps AuthError to HTTP 401', async () => {
+    it('POST /api/boards maps AuthError to HTTP 403', async () => {
       const { AuthError } = await import('../../sdk/types')
       const createSpy = vi.spyOn(KanbanSDK.prototype, 'createBoard').mockRejectedValue(
         new AuthError('auth.policy.denied', 'Action "board.create" denied', undefined)
@@ -2817,7 +2846,7 @@ describe('Standalone Server Integration', () => {
       createSpy.mockRestore()
     })
 
-    it('PUT /api/settings maps AuthError to HTTP 401', async () => {
+    it('PUT /api/settings maps AuthError to HTTP 403', async () => {
       const { AuthError } = await import('../../sdk/types')
       const spy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockRejectedValue(
         new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined)
@@ -2831,7 +2860,7 @@ describe('Standalone Server Integration', () => {
       spy.mockRestore()
     })
 
-    it('POST /api/webhooks maps AuthError to HTTP 401', async () => {
+    it('POST /api/webhooks maps AuthError to HTTP 403', async () => {
       const { AuthError } = await import('../../sdk/types')
       const spy = vi.spyOn(KanbanSDK.prototype, 'createWebhook').mockRejectedValue(
         new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined)
@@ -2845,7 +2874,7 @@ describe('Standalone Server Integration', () => {
       spy.mockRestore()
     })
 
-    it('POST /api/storage/migrate-to-sqlite maps AuthError to HTTP 401', async () => {
+    it('POST /api/storage/migrate-to-sqlite maps AuthError to HTTP 403', async () => {
       const { AuthError } = await import('../../sdk/types')
       const spy = vi.spyOn(KanbanSDK.prototype, 'migrateToSqlite').mockRejectedValue(
         new AuthError('auth.policy.denied', 'Action "migration.toSqlite" denied', undefined)
@@ -2862,6 +2891,7 @@ describe('Standalone Server Integration', () => {
 
   describe('websocket admin auth context threading', () => {
     it('forwards bearer auth to addColumn via websocket', async () => {
+      const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const addColumnSpy = vi.spyOn(KanbanSDK.prototype, 'addColumn').mockResolvedValue([
         { id: 'new-col', name: 'New', color: '#000000' }
       ])
@@ -2876,15 +2906,20 @@ describe('Standalone Server Integration', () => {
         column: { name: 'New', color: '#000000' }
       }, 'init')
 
+      expect(runWithAuthSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'admin-token', tokenSource: 'request-header', transport: 'http' }),
+        expect.any(Function)
+      )
       expect(addColumnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'New', color: '#000000' }),
         undefined,
-        expect.objectContaining({ token: 'admin-token', tokenSource: 'request-header', transport: 'http' })
       )
+      runWithAuthSpy.mockRestore()
       addColumnSpy.mockRestore()
     })
 
     it('forwards bearer auth to saveSettings via websocket', async () => {
+      const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const settingsSpy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockResolvedValue(undefined)
 
       server = startServer(tempDir, port, webviewDir)
@@ -2895,10 +2930,14 @@ describe('Standalone Server Integration', () => {
       ws.send(JSON.stringify({ type: 'saveSettings', settings: { defaultStatus: 'backlog' } }))
       await sleep(100)
 
+      expect(runWithAuthSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'settings-token', tokenSource: 'request-header', transport: 'http' }),
+        expect.any(Function)
+      )
       expect(settingsSpy).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ token: 'settings-token', tokenSource: 'request-header', transport: 'http' })
       )
+      runWithAuthSpy.mockRestore()
       settingsSpy.mockRestore()
     })
   })

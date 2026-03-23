@@ -38,9 +38,11 @@ export interface CreateCardInput {
 /**
  * Before-event names emitted by the SDK immediately before a mutation is committed.
  *
- * Plugins may listen to these events and return plain-object overrides to influence
- * the pending mutation payload (shallow-merged in listener-registration order).
- * Throwing from a before-event listener aborts the action before any write occurs.
+ * Plugins may listen to these events and return plain-object partial overrides that
+ * are collected by `EventBus.emitAsync` in listener-registration order and
+ * deep-merged by `KanbanSDK._runBeforeEvent()` to influence the pending mutation
+ * input. Throwing from a before-event listener aborts the action before any write
+ * occurs.
  *
  * Naming convention: `resource.verb` (present tense).
  *
@@ -189,10 +191,18 @@ export interface EventListenerPlugin {
  * Payload envelope for before-events dispatched immediately before a mutation is
  * committed. This is the object passed to every registered before-event listener.
  *
- * Plugins may return a plain `Record<string, unknown>` override from their listener;
- * all plugin responses are **shallow-merged in listener-registration order** so that
- * later-registered listeners can override keys set by earlier ones. Returning `void`
- * leaves the payload unchanged. Throwing any `Error` aborts the mutation.
+ * Plugins may return a plain `Record<string, unknown>` partial override from their
+ * listener. `EventBus.emitAsync` collects all plain-object responses in
+ * listener-registration order and returns them as an ordered array.
+ * `KanbanSDK._runBeforeEvent()` is the sole owner of cloning the input,
+ * deep-merging those ordered outputs over it, and preserving the original input
+ * when no listeners return meaningful overrides. Returning `void` contributes
+ * nothing to the merge. Throwing any `Error` aborts the mutation entirely.
+ *
+ * **Auth note:** Authorization context is not carried in this payload. The SDK
+ * resolves request identity through its own scoped carrier before dispatching
+ * before-events; plugins that perform authorization checks should use the
+ * `auth.allowed`/`auth.denied` after-events or the dedicated auth plugin contract.
  *
  * @typeParam TInput - The shape of the pending mutation's input data.
  *
@@ -204,11 +214,10 @@ export interface BeforeEventPayload<TInput = Record<string, unknown>> {
   readonly event: SDKBeforeEventType
   /**
    * The input data for the pending mutation.
-   * Plugin overrides returned from listeners are shallow-merged into this object.
+   * Listener responses are collected and deep-merged by `_runBeforeEvent()`,
+   * not by the event bus itself.
    */
   readonly input: TInput
-  /** Host/runtime auth context for the pending mutation, if any. */
-  readonly auth?: AuthContext
   /** Resolved acting principal (e.g. a username or subject claim), if available. */
   readonly actor?: string
   /** Board context for this action, if applicable. */
@@ -244,14 +253,17 @@ export interface AfterEventPayload<TResult = unknown> {
 /**
  * Allowed return type from a plugin listener registered for a before-event.
  *
- * - **`Record<string, unknown>`** — plain-object override whose keys are
- *   shallow-merged into `BeforeEventPayload.input` in listener-registration order
- *   (later-registered listeners override keys set by earlier ones).
- * - **`void` / `undefined`** — the payload is left unchanged.
+ * - **`Record<string, unknown>`** — plain-object partial override. `EventBus.emitAsync`
+ *   collects all such responses in listener-registration order and returns them as
+ *   an ordered array. `KanbanSDK._runBeforeEvent()` then deep-merges those outputs
+ *   over a fresh clone of the original input so that later-registered listeners
+ *   override keys set by earlier ones.
+ * - **`void` / `undefined`** — contributes nothing to the merge; `_runBeforeEvent()`
+ *   falls back to the original input when all listeners return nothing meaningful.
  * - **Thrown `Error`** — aborts the pending mutation before any write occurs.
  *
  * Non-plain-object return values (arrays, class instances, primitives) are
- * silently ignored and treated as `void`.
+ * silently ignored and do not appear in the collected outputs.
  */
 export type BeforeEventListenerResponse = Record<string, unknown> | void
 

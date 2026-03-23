@@ -1,0 +1,597 @@
+plan_id: "20260323-auth-before-event-refactor"
+objective: "Remove auth passthrough from KanbanSDK before-events and method signatures, delete _withAuthContext, move input merge responsibility into _runBeforeEvent with original-input preservation when listeners return nothing or {}, and normalize _runBeforeEvent/_runAfterEvent usage across action methods."
+focus_area: "sdk_auth_event_pipeline"
+created_at: "2026-03-23T00:00:00Z"
+created_by: "gem-researcher"
+status: "completed"
+
+tldr: |
+	- `KanbanSDK` currently centralizes auth/event plumbing in `_withAuthContext()` (`packages/kanban-lite/src/sdk/KanbanSDK.ts:545`) and `_runBeforeEvent()` (`packages/kanban-lite/src/sdk/KanbanSDK.ts:578`), but the actual before-event merge logic still lives in `EventBus.emitAsync()` (`packages/kanban-lite/src/sdk/eventBus.ts:78-109`) and is explicitly shallow, sequential, and listener-order dependent.
+	- The current public SDK mutation surface threads `auth?: AuthContext` through 35+ mutator signatures, and host adapters in CLI, MCP, standalone, and extension code pass resolved auth contexts directly into those SDK methods.
+	- `BeforeEventPayload.auth` is part of the published SDK contract (`packages/kanban-lite/src/sdk/types.ts:202-217`) and the shipped auth listener plugin resolves identity/policy from `payload.auth` (`packages/kl-auth-plugin/src/index.ts:387-436`), so removing auth passthrough is a direct contract break for plugin runtime code and host callers.
+	- Several mutators already use `_runBeforeEvent()` but do not pair it with `_runAfterEvent()` at all (`transferCard`, `triggerAction`, label/webhook/default-board/reorder/minimized/purge/cleanup methods), while others emit after-events only conditionally when snapshots/results exist.
+	- Existing tests and docs assume the current contract: internal helper tests target `_runBeforeEvent(auth, actor, boardId)`, auth-enforcement tests assert auth-context hint enrichment, host tests spy on SDK calls receiving `AuthContext`, and `docs/auth.md` still documents `_withAuthContext()` / `_authorizeAction()` as the primary seam.
+
+research_metadata:
+	methodology: "Hybrid retrieval with one semantic_search pass, targeted grep_search passes over SDK/tests/docs/host adapters, and narrow read_file inspection of only the helper/mutator/doc slices needed for this domain. One small python pass summarized the KanbanSDK mutator inventory and line counts."
+	scope: "Focused on `packages/kanban-lite/src/sdk/*`, auth-listener plugin integration, host adapter call sites that currently pass `AuthContext`, selected regression/integration tests, and user-facing docs/changelog entries describing the current seam. No whole-repo scan was performed."
+	confidence: "high"
+	coverage: 88
+
+context_map:
+	exact_files_and_symbols_likely_affected:
+		- file: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+			symbols:
+				- "_withAuthContext"
+				- "_runBeforeEvent"
+				- "_runAfterEvent"
+				- "all mutators currently taking `auth?: AuthContext`"
+		- file: "packages/kanban-lite/src/sdk/eventBus.ts"
+			symbols:
+				- "EventBus.emitAsync"
+				- "isPlainObject"
+		- file: "packages/kanban-lite/src/sdk/types.ts"
+			symbols:
+				- "BeforeEventPayload.auth"
+				- "BeforeEventListenerResponse"
+				- "SDKBeforeEventType"
+				- "SDKAfterEventType"
+		- file: "packages/kl-auth-plugin/src/index.ts"
+			symbols:
+				- "ProviderBackedAuthListenerPlugin"
+				- "SDK_BEFORE_EVENT_NAMES"
+				- "payload.auth usage"
+		- file: "packages/kanban-lite/src/cli/index.ts"
+			symbols:
+				- "resolveCliAuthContext"
+				- "all SDK mutator calls currently passing auth as the last argument"
+		- file: "packages/kanban-lite/src/mcp-server/index.ts"
+			symbols:
+				- "resolveMcpAuthContext"
+				- "all SDK mutator calls currently passing auth as the last argument"
+		- file: "packages/kanban-lite/src/extension/KanbanPanel.ts"
+			symbols:
+				- "_getAuthContext"
+				- "SDK mutator calls passing auth"
+		- file: "packages/kanban-lite/src/extension/index.ts"
+			symbols:
+				- "resolveExtensionAuthContext"
+				- "sdk.createCard(..., auth)"
+		- file: "packages/kanban-lite/src/standalone/internal/routes/boards.ts"
+			symbols:
+				- "extractAuthContext"
+				- "SDK mutator calls passing auth"
+		- file: "packages/kanban-lite/src/standalone/internal/routes/tasks.ts"
+			symbols:
+				- "extractAuthContext"
+				- "SDK mutator calls passing auth"
+		- file: "packages/kanban-lite/src/standalone/internal/routes/system.ts"
+			symbols:
+				- "extractAuthContext"
+				- "SDK mutator calls passing auth"
+		- file: "packages/kanban-lite/src/standalone/messageHandlers.ts"
+			symbols:
+				- "authContext forwarded into helper-backed and direct SDK mutations"
+		- file: "packages/kanban-lite/src/standalone/mutationService.ts"
+			symbols:
+				- "helper wrappers with `auth?: AuthContext` parameters"
+		- file: "README.md"
+			symbols:
+				- "event-bus lifecycle docs"
+				- "before-event merge semantics"
+		- file: "docs/auth.md"
+			symbols:
+				- "_withAuthContext()"
+				- "_authorizeAction()"
+				- "host-supplied AuthContext narrative"
+		- file: "CHANGELOG.md"
+			symbols:
+				- "Unreleased auth/event-bus entries describing the current runtime model"
+
+	kanban_sdk_method_matrix:
+		internal_helper_symbols:
+			- "_authorizeAction(action, context?) — `packages/kanban-lite/src/sdk/KanbanSDK.ts:506-543`"
+			- "_withAuthContext(context?, hints?) — `packages/kanban-lite/src/sdk/KanbanSDK.ts:545-553`"
+			- "_runBeforeEvent(event, input, auth?, actor?, boardId?) — `packages/kanban-lite/src/sdk/KanbanSDK.ts:578-593`"
+			- "_runAfterEvent(event, data, actor?, boardId?, meta?) — `packages/kanban-lite/src/sdk/KanbanSDK.ts:606+`"
+		public_methods_accepting_auth_and_using_before_events:
+			- "createBoard (889)"
+			- "deleteBoard (922)"
+			- "updateBoard (970)"
+			- "addBoardAction (1009)"
+			- "removeBoardAction (1031)"
+			- "triggerBoardAction (1052)"
+			- "transferCard (1088)"
+			- "createCard (1298)"
+			- "updateCard (1333)"
+			- "submitForm (1388)"
+			- "triggerAction (1423)"
+			- "moveCard (1458)"
+			- "deleteCard (1481)"
+			- "permanentlyDeleteCard (1503)"
+			- "setLabel (1600)"
+			- "deleteLabel (1621)"
+			- "renameLabel (1643)"
+			- "addAttachment (1716)"
+			- "removeAttachment (1741)"
+			- "addComment (1829)"
+			- "updateComment (1860)"
+			- "deleteComment (1883)"
+			- "addLog (1963-1974)"
+			- "clearLogs (1995)"
+			- "addBoardLog (2054-2065)"
+			- "clearBoardLogs (2083)"
+			- "addColumn (2131)"
+			- "updateColumn (2165)"
+			- "removeColumn (2195)"
+			- "cleanupColumn (2222)"
+			- "purgeDeletedCards (2247)"
+			- "reorderColumns (2274)"
+			- "setMinimizedColumns (2302)"
+			- "updateSettings (2350)"
+			- "migrateToSqlite (2384)"
+			- "migrateToMarkdown (2414)"
+			- "setDefaultBoard (2434)"
+			- "createWebhook (2463)"
+			- "deleteWebhook (2481)"
+			- "updateWebhook (2500)"
+		before_and_after_used_unconditionally:
+			- "createBoard"
+			- "deleteBoard"
+			- "updateBoard"
+			- "addBoardAction"
+			- "removeBoardAction"
+			- "triggerBoardAction"
+			- "createCard"
+			- "updateCard"
+			- "submitForm"
+			- "moveCard"
+			- "addAttachment"
+			- "removeAttachment"
+			- "addLog"
+			- "clearLogs"
+			- "addBoardLog"
+			- "clearBoardLogs"
+			- "updateSettings"
+			- "migrateToSqlite"
+			- "migrateToMarkdown"
+		before_used_but_no_after_event_call_present:
+			- "transferCard"
+			- "triggerAction"
+			- "setLabel"
+			- "deleteLabel"
+			- "renameLabel"
+			- "cleanupColumn"
+			- "purgeDeletedCards"
+			- "reorderColumns"
+			- "setMinimizedColumns"
+			- "setDefaultBoard"
+			- "createWebhook"
+			- "deleteWebhook"
+			- "updateWebhook"
+		before_used_with_conditional_after_event:
+			- "deleteCard — emits only if deleted snapshot can be re-read"
+			- "permanentlyDeleteCard — emits only if pre-delete snapshot exists"
+			- "addComment — emits only if a trailing comment snapshot exists"
+			- "updateComment — emits only if updated comment can be found"
+			- "deleteComment — emits only if deleted pre-snapshot exists"
+			- "addColumn — emits only if inserted column is found in returned array"
+			- "updateColumn — emits only if updated column is found in returned array"
+			- "removeColumn — emits only if a pre-delete snapshot exists"
+
+	eventbus_merge_behavior:
+		location: "`packages/kanban-lite/src/sdk/eventBus.ts:78-109`"
+		current_behavior:
+			- "`emitAsync()` starts with `let merged = { ...payload.input }`, so a new top-level object is always returned even with no listeners."
+			- "Each matching listener receives `{ ...payload, input: merged }` sequentially in registration order."
+			- "Only plain-object listener returns are applied. Arrays, primitives, class instances, and `void` are ignored."
+			- "Merge is shallow: `merged = { ...merged, ...result }`. Nested objects are replaced, not deep-merged."
+			- "Returning `{}` preserves the current merged payload contents because the spread adds no keys; original top-level fields remain intact."
+			- "Errors thrown by specific-event listeners abort immediately; `onAny` listeners run later, non-blocking, and do not affect merge outcome."
+		tests_proving_current_behavior:
+			- "`packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts:238-369`"
+			- "`packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts:48-153`"
+
+	related_tests_likely_to_change:
+		direct_sdk_helper_and_merge_tests:
+			- "`packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts` — helper signature assumptions (`runBefore(..., auth, actor, boardId)`) and `_runBeforeEvent` merge semantics."
+			- "`packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts` — currently asserts merge responsibility and semantics at `EventBus.emitAsync()`."
+		auth_contract_tests:
+			- "`packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts` — asserts auth-context hint enrichment, stable action routing, and extension/MCP token redaction."
+			- "`packages/kl-auth-plugin/src/auth-plugin.integration.test.ts` — constructs `BeforeEventPayload` with `auth` and expects auth listeners to resolve from `payload.auth`."
+		regression_tests_for formerly-bypassing mutators:
+			- "`packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts:1069-1155` — denial-path coverage for label/cleanup/reorder/minimized/purge/default-board/webhook methods."
+		host/integration tests tied to public method signatures:
+			- "`packages/kanban-lite/src/mcp-server/index.test.ts:141-274` — directly calls SDK mutators with `{ transport: 'mcp' }` auth objects."
+			- "`packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts:452-497` — spies on `deleteCard()` / `triggerAction()` being called with extracted auth context from WebSocket headers."
+
+	docs_and_changelog_likely_impacted:
+		source_docs:
+			- "`docs/auth.md` — explicitly documents `_withAuthContext(...)`, `_authorizeAction(...)`, host-supplied `AuthContext`, and the old sequence diagram."
+			- "`README.md` — documents before-event merge semantics and the SDK-owned lifecycle."
+			- "`docs/plugins.md` — already states auth providers enforce through SDK-owned before-events and documents plain-object override behavior."
+			- "`packages/kl-auth-plugin/README.md` — says auth helpers run off `payload.auth` in before-events."
+			- "`CHANGELOG.md` — Unreleased entries describe the current listener-only auth/runtime model and full auth-aware SDK surface."
+		generated_docs_or_tables_with downstream impact:
+			- "`docs/sdk.md` — generated from SDK JSDoc; any signature/helper contract change in `KanbanSDK.ts` or `types.ts` will regenerate here."
+
+	risks_and_edge_cases:
+		public_api_breakage:
+			- "Removing `auth?: AuthContext` from SDK mutator signatures breaks direct callers in CLI, MCP, standalone, and extension code paths that currently pass auth as the final argument."
+			- "Removing `BeforeEventPayload.auth` breaks `kl-auth-plugin` listener runtime code and any third-party listener plugins following the same published contract."
+			- "Deleting `_withAuthContext()` is a documented/internal seam removal; tests and docs refer to it directly."
+		semantic_edge_cases:
+			- "Current merge semantics are shallow and centralized in `EventBus.emitAsync()`; moving merge into `_runBeforeEvent()` while also requiring deep merge changes the effective plugin contract for nested objects such as `definition`, `updates`, `metadata`, `formData`, and webhook payloads."
+			- "Several mutators ignore parts of `mergedInput` today: e.g. `createBoard()` only applies merged `id`/`name` but still passes original `options`; `addAttachment()` ignores merged `sourcePath`; comment methods mainly honor content/author overrides, not ID/board overrides."
+			- "Some operations currently have no declared after-event type (`label.*`, `webhook.*`, `board.setDefault`, `column.cleanup`, `column.reorder`, `column.setMinimized`, `card.purgeDeleted`, `card.transfer`, `card.action.trigger`), so making after-event usage fully consistent may also require event-type expansion or remapping."
+			- "Conditional after-event emission means some successful mutations intentionally produce no after-event if no snapshot/result can be resolved; changing to unconditional emission would alter observable bus/webhook behavior."
+		security_and_error_handling:
+			- "Auth tests explicitly verify token material is not leaked in `AuthError` messages for MCP and extension-host scenarios."
+			- "Current auth listener behavior derives identity/policy input from `payload.auth`; if auth moves elsewhere, redaction and actor resolution behavior will change unless equivalent context survives."
+
+files_analyzed:
+	- file: "KanbanSDK.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/KanbanSDK.ts"
+		purpose: "Primary SDK action runner containing auth passthrough, before/after event helpers, and all affected mutators."
+		key_elements:
+			- element: "_withAuthContext"
+				type: "function"
+				location: "KanbanSDK.ts:545-553"
+				description: "Shallowly merges host auth context with resource hints such as boardId/cardId/commentId."
+			- element: "_runBeforeEvent"
+				type: "function"
+				location: "KanbanSDK.ts:578-593"
+				description: "Builds `BeforeEventPayload` with `auth`, `actor`, `boardId`, and delegates merge behavior to `EventBus.emitAsync()`."
+			- element: "mutation method inventory"
+				type: "pattern"
+				location: "KanbanSDK.ts:889-2507"
+				description: "39+ mutators currently thread auth, call `_withAuthContext()`, and mostly call `_runBeforeEvent()`, with mixed after-event coverage."
+		language: "TypeScript"
+		lines: 2512
+
+	- file: "eventBus.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/eventBus.ts"
+		purpose: "Internal event bus whose async path currently owns before-event merge semantics."
+		key_elements:
+			- element: "EventBus.emitAsync"
+				type: "function"
+				location: "eventBus.ts:78-109"
+				description: "Sequentially awaits listeners and shallow-merges plain-object results into a copied input object."
+			- element: "isPlainObject"
+				type: "function"
+				location: "eventBus.ts:12-17"
+				description: "Gate that filters which listener return values may participate in merge."
+		language: "TypeScript"
+		lines: 251
+
+	- file: "types.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/types.ts"
+		purpose: "Published SDK event/auth contracts and event-name unions."
+		key_elements:
+			- element: "BeforeEventPayload"
+				type: "interface"
+				location: "types.ts:202-217"
+				description: "Published before-event envelope; includes `auth?: AuthContext`, `actor`, `boardId`, and timestamp."
+			- element: "SDKBeforeEventType"
+				type: "type"
+				location: "types.ts:45-88"
+				description: "Canonical before-event names for all mutation families."
+			- element: "SDKAfterEventType"
+				type: "type"
+				location: "types.ts:96-124"
+				description: "Canonical after-event names; notably lacks label/webhook/default-board/reorder/minimized/purge/cleanup/transfer/card-action after-events."
+		language: "TypeScript"
+		lines: 469
+
+	- file: "index.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kl-auth-plugin/src/index.ts"
+		purpose: "Auth listener plugin implementation consuming the current before-event auth contract."
+		key_elements:
+			- element: "ProviderBackedAuthListenerPlugin"
+				type: "class"
+				location: "index.ts:385-447"
+				description: "Registers a listener across all SDK before-events and resolves auth from `payload.auth`."
+			- element: "SDK_BEFORE_EVENT_NAMES"
+				type: "variable"
+				location: "index.ts:262+"
+				description: "Enumerates every before-event the auth plugin subscribes to."
+		language: "TypeScript"
+		lines: 491
+
+	- file: "action-runner.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts"
+		purpose: "Unit coverage for internal helper signatures and before/after event semantics."
+		key_elements:
+			- element: "runBefore helper"
+				type: "function"
+				location: "action-runner.test.ts:16-28"
+				description: "Casts into `_runBeforeEvent(event, input, auth?, actor?, boardId?)`, fixing the current helper signature in tests."
+			- element: "KanbanSDK._runBeforeEvent suite"
+				type: "pattern"
+				location: "action-runner.test.ts:48-153"
+				description: "Asserts copy-on-no-listener behavior, shallow merge order, async sequencing, and auth/actor/boardId payload fields."
+		language: "TypeScript"
+		lines: 718
+
+	- file: "eventBus.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts"
+		purpose: "Unit coverage for `EventBus.emitAsync()` merge semantics."
+		key_elements:
+			- element: "EventBus.emitAsync suite"
+				type: "pattern"
+				location: "eventBus.test.ts:225-369"
+				description: "Proves merge currently lives in the bus and remains shallow, sequential, and abort-on-error."
+		language: "TypeScript"
+		lines: 373
+
+	- file: "auth-enforcement.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+		purpose: "Authorization regression coverage, including auth-context hints and token redaction."
+		key_elements:
+			- element: "admin/config mutation denial matrix"
+				type: "pattern"
+				location: "auth-enforcement.test.ts:220-403"
+				description: "Asserts current canonical before-event names for privileged mutators."
+			- element: "auth-context hint enrichment"
+				type: "pattern"
+				location: "auth-enforcement.test.ts:472-528"
+				description: "Asserts `_withAuthContext()`-style board/card/comment/transfer hints are passed into policy evaluation."
+			- element: "extension-host token redaction"
+				type: "pattern"
+				location: "auth-enforcement.test.ts:559-579"
+				description: "Verifies `AuthError` does not leak token material."
+		language: "TypeScript"
+		lines: 579
+
+	- file: "KanbanSDK.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts"
+		purpose: "SDK regression tests for formerly bypassing privileged mutations."
+		key_elements:
+			- element: "formerly bypassing privileged mutations suite"
+				type: "pattern"
+				location: "KanbanSDK.test.ts:1069-1155"
+				description: "Asserts before-event denial preserves state for labels, cleanup/reorder/minimized, purge, default-board, and webhook CRUD."
+		language: "TypeScript"
+		lines: 1158
+
+	- file: "mcp-server/index.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/mcp-server/index.test.ts"
+		purpose: "Integration-style coverage for MCP-facing auth behavior using direct SDK calls with MCP auth contexts."
+		key_elements:
+			- element: "MCP auth error surface tests"
+				type: "pattern"
+				location: "index.test.ts:141-274"
+				description: "Calls `sdk.createBoard/deleteBoard/createWebhook/updateWebhook/deleteWebhook(..., { transport: 'mcp' })` and asserts stable denial messaging."
+		language: "TypeScript"
+		lines: 279
+
+	- file: "server.integration.test.ts"
+		path: "/Users/admin/dev/kanban-light/packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts"
+		purpose: "Standalone websocket integration coverage for auth-context forwarding."
+		key_elements:
+			- element: "websocket auth context suite"
+				type: "pattern"
+				location: "server.integration.test.ts:452-497"
+				description: "Spies on `KanbanSDK.deleteCard()` and `triggerAction()` receiving extracted bearer auth as the last argument."
+		language: "TypeScript"
+		lines: 2958
+
+	- file: "README.md"
+		path: "/Users/admin/dev/kanban-light/README.md"
+		purpose: "Public SDK/event lifecycle documentation."
+		key_elements:
+			- element: "Event Bus docs"
+				type: "pattern"
+				location: "README.md:963-972"
+				description: "Documents shallow merge override behavior and committed after-event semantics."
+		language: "Markdown"
+		lines: 1470
+
+	- file: "auth.md"
+		path: "/Users/admin/dev/kanban-light/docs/auth.md"
+		purpose: "Detailed auth architecture narrative, currently describing the pre-listener seam."
+		key_elements:
+			- element: "_withAuthContext / _authorizeAction narrative"
+				type: "pattern"
+				location: "auth.md:486-760"
+				description: "States protected SDK methods enrich `AuthContext` with `_withAuthContext()` and call `_authorizeAction()` before side effects."
+		language: "Markdown"
+		lines: 1193
+
+	- file: "CHANGELOG.md"
+		path: "/Users/admin/dev/kanban-light/CHANGELOG.md"
+		purpose: "Release notes describing the current auth/event-bus model."
+		key_elements:
+			- element: "Unreleased plugin runtime model entry"
+				type: "pattern"
+				location: "CHANGELOG.md:50-56"
+				description: "Describes the current SDK-owned async before-event and listener-only auth/webhook runtime model."
+		language: "Markdown"
+		lines: 388
+
+patterns_found:
+	- category: "architecture"
+		pattern: "auth and resource-hint enrichment precede before-event dispatch"
+		description: "Mutators typically build `authContext = _withAuthContext(auth, hints)` and then call `_runBeforeEvent(event, input, authContext, auth?.actorHint, boardId)`."
+		examples:
+			- file: "KanbanSDK.ts"
+				location: "895-900"
+				snippet: "const authContext = this._withAuthContext(auth, { boardId: id }); const mergedInput = await this._runBeforeEvent('board.create', ... , authContext, auth?.actorHint, id)"
+			- file: "KanbanSDK.ts"
+				location: "1458-1463"
+				snippet: "const authContext = this._withAuthContext(auth, { cardId, boardId, columnId: newStatus }); const mergedInput = await this._runBeforeEvent('card.move', ...)"
+		prevalence: "common"
+
+	- category: "architecture"
+		pattern: "merge semantics currently live in EventBus.emitAsync rather than the SDK helper"
+		description: "`_runBeforeEvent()` only packages payload; `EventBus.emitAsync()` performs the actual copy, listener sequencing, and shallow merge."
+		examples:
+			- file: "eventBus.ts"
+				location: "87-94"
+				snippet: "let merged: TInput = { ...payload.input }; const result = await listener({ ...payload, input: merged }); if (isPlainObject(result)) merged = { ...merged, ...result }"
+		prevalence: "common"
+
+	- category: "structure"
+		pattern: "after-event coverage is mixed across mutation families"
+		description: "Some mutators emit after-events unconditionally, some only conditionally, and some not at all despite using before-events."
+		examples:
+			- file: "KanbanSDK.ts"
+				location: "1088-1107"
+				snippet: "transferCard(...) ... await this._runBeforeEvent('card.transfer', ...); return Boards.transferCard(...)"
+			- file: "KanbanSDK.ts"
+				location: "2463-2507"
+				snippet: "webhook CRUD methods call `_runBeforeEvent(...)` but do not call `_runAfterEvent(...)`."
+		prevalence: "common"
+
+	- category: "testing"
+		pattern: "tests bind tightly to current helper signatures and auth payload shape"
+		description: "Internal tests call `_runBeforeEvent(event, input, auth?, actor?, boardId?)`, and auth/plugin tests build payloads containing `auth`."
+		examples:
+			- file: "action-runner.test.ts"
+				location: "16-28"
+				snippet: "_runBeforeEvent(event: string, input: T, auth?: Record<string, unknown>, actor?: string, boardId?: string)"
+			- file: "auth-plugin.integration.test.ts"
+				location: "334-358"
+				snippet: "bus.emitAsync('board.create', makeBeforePayload({ event: 'board.create', auth: { token: 'secret-user', transport: 'http' }, input: { ... } }))"
+		prevalence: "common"
+
+	- category: "documentation"
+		pattern: "docs lag across old auth seam and new listener-only runtime"
+		description: "README/changelog describe SDK-owned before-events, but `docs/auth.md` still presents `_withAuthContext()` + `_authorizeAction()` as the main execution path."
+		examples:
+			- file: "docs/auth.md"
+				location: "486-760"
+				snippet: "Protected SDK methods call `_withAuthContext(...)` ... `_authorizeAction(action, context)` before side effects happen."
+			- file: "CHANGELOG.md"
+				location: "50-56"
+				snippet: "`KanbanSDK` now owns async before-event dispatch and post-commit after-event emission."
+		prevalence: "occasional"
+
+related_architecture:
+	components_relevant_to_domain:
+		- component: "KanbanSDK action runner"
+			responsibility: "Owns mutation entry points and packages before/after event payloads."
+			location: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+			relationship_to_domain: "primary domain"
+		- component: "EventBus"
+			responsibility: "Dispatches SDK events; currently owns async before-event merge mechanics."
+			location: "packages/kanban-lite/src/sdk/eventBus.ts"
+			relationship_to_domain: "domain depends on this"
+		- component: "Auth listener plugin"
+			responsibility: "Subscribes to all before-events and authorizes via payload auth context."
+			location: "packages/kl-auth-plugin/src/index.ts"
+			relationship_to_domain: "this uses domain outputs"
+		- component: "Host auth resolvers"
+			responsibility: "Normalize tokens into `AuthContext` and pass them to SDK methods."
+			location: "packages/kanban-lite/src/{cli,mcp-server,standalone,extension}/**"
+			relationship_to_domain: "domain is called by these"
+	interfaces_used_by_domain:
+		- interface: "BeforeEventPayload<TInput>"
+			location: "packages/kanban-lite/src/sdk/types.ts:202-217"
+			usage_pattern: "Payload envelope passed into before-event listeners and auth plugin."
+		- interface: "AfterEventPayload<TResult>"
+			location: "packages/kanban-lite/src/sdk/types.ts:229-240"
+			usage_pattern: "Envelope emitted by `_runAfterEvent()` after successful mutations."
+		- interface: "SDKEventListenerPlugin"
+			location: "packages/kanban-lite/src/sdk/types.ts:260+"
+			usage_pattern: "Listener-only plugin contract used by auth/webhook runtime code."
+	data_flow_involving_domain: "Host adapter resolves `AuthContext` -> SDK mutator receives auth as a public argument -> `_withAuthContext()` injects target hints -> `_runBeforeEvent()` constructs `BeforeEventPayload` -> `EventBus.emitAsync()` sequentially merges listener responses -> auth listener plugin resolves identity/policy from `payload.auth` and may veto via `AuthError` -> mutation executes -> `_runAfterEvent()` may emit a committed event for listeners/webhooks."
+	key_relationships_to_domain:
+		- from: "CLI / MCP / standalone / extension adapters"
+			to: "KanbanSDK mutators"
+			relationship: "calls"
+		- from: "KanbanSDK._runBeforeEvent"
+			to: "EventBus.emitAsync"
+			relationship: "calls"
+		- from: "ProviderBackedAuthListenerPlugin"
+			to: "BeforeEventPayload.auth"
+			relationship: "reads"
+		- from: "KanbanSDK._runAfterEvent"
+			to: "EventBus.emit"
+			relationship: "calls"
+
+related_technology_stack:
+	languages_used_in_domain:
+		- "TypeScript"
+		- "Markdown"
+	frameworks_used_in_domain:
+		- name: "Vitest"
+			usage_in_domain: "Unit and integration tests for SDK/event/auth/host behavior."
+	libraries_used_in_domain:
+		- name: "eventemitter2"
+			purpose_in_domain: "Wildcard-capable event bus implementation behind `EventBus`."
+		- name: "VS Code API"
+			purpose_in_domain: "Extension host resolves auth context and forwards it into SDK mutators."
+	external_apis_used_in_domain: []
+
+related_conventions:
+	naming_patterns_in_domain: "Before-events use `resource.verb`; after-events use `resource.pastTense`. Auth helper names use leading underscores for internal seams. Host auth resolvers are named `resolve*AuthContext` or `extractAuthContext`."
+	structure_of_domain: "Public mutators live in `KanbanSDK.ts`; event contracts in `types.ts`; dispatch mechanics in `eventBus.ts`; runtime auth listener implementation in external package `kl-auth-plugin`; host adapters call SDK directly."
+	error_handling_in_domain: "Before-event listener failures propagate and abort mutations; after-event listener failures are isolated/logged; auth denial uses `AuthError` with stable categories and token-redaction tests."
+	testing_in_domain: "Helper semantics are covered in SDK unit tests; auth routing and denial are covered in SDK/auth plugin tests; host auth forwarding is covered in MCP and standalone integration tests."
+	documentation_in_domain: "README and changelog partially reflect the listener-only runtime; `docs/auth.md` still documents the earlier `_authorizeAction`-centric flow; `docs/sdk.md` is generated from JSDoc."
+
+related_dependencies:
+	internal:
+		- component: "packages/kanban-lite/src/sdk/eventBus.ts"
+			relationship_to_domain: "provides async before-event merge and sync after-event emit"
+			direction: "outbound"
+		- component: "packages/kanban-lite/src/sdk/types.ts"
+			relationship_to_domain: "declares auth/event payload and event-name contracts"
+			direction: "bidirectional"
+		- component: "packages/kl-auth-plugin/src/index.ts"
+			relationship_to_domain: "consumes current before-event auth contract"
+			direction: "inbound"
+		- component: "packages/kanban-lite/src/{cli,mcp-server,standalone,extension}"
+			relationship_to_domain: "pass host auth contexts into public SDK mutator signatures"
+			direction: "inbound"
+	external:
+		- name: "eventemitter2"
+			purpose_for_domain: "Wildcard event dispatch and listener registry."
+		- name: "vitest"
+			purpose_for_domain: "Behavioral verification of helper signatures, merge semantics, and auth propagation."
+
+domain_security_considerations:
+	sensitive_areas:
+		- area: "Before-event auth payload"
+			location: "packages/kanban-lite/src/sdk/types.ts:202-217"
+			concern: "Carries normalized token-bearing `AuthContext` into listener plugins."
+		- area: "Host auth extraction"
+			location: "packages/kanban-lite/src/standalone/authUtils.ts and extension/CLI/MCP auth resolvers"
+			concern: "Bearer/token material is normalized here before being forwarded into SDK mutators."
+		- area: "Auth listener plugin"
+			location: "packages/kl-auth-plugin/src/index.ts:416-430"
+			concern: "Identity/policy resolution currently depends on `payload.auth`; contract movement changes the authorization data source."
+	authentication_patterns_in_domain: "Standalone extracts bearer headers, CLI/MCP resolve environment/host auth context, and extension host resolves auth from VS Code storage; all currently converge on `AuthContext` passed into SDK methods."
+	authorization_patterns_in_domain: "Authorization currently happens in before-event listeners for the listener-only runtime, while `docs/auth.md` still documents `_authorizeAction()` as the main seam."
+	data_validation_in_domain: "Before-event overrides are only shape-checked as plain objects in `EventBus.emitAsync()`; non-plain returns are ignored silently."
+
+testing_patterns:
+	framework: "Vitest"
+	coverage_areas:
+		- "before-event merge semantics"
+		- "after-event emission/isolation"
+		- "auth-denial routing and stable action names"
+		- "host auth-context forwarding"
+		- "auth-plugin listener contract"
+	test_organization: "Focused per-domain suites under `packages/kanban-lite/src/sdk/__tests__`, plus host-specific tests in standalone and MCP packages and auth-plugin integration tests in `packages/kl-auth-plugin`."
+	mock_patterns:
+		- "`vi.spyOn(KanbanSDK.prototype, ...)` for host forwarding assertions"
+		- "`sdk.on(event, vi.fn().mockImplementation(...))` for before-event veto tests"
+		- "direct `bus.emitAsync(...)` payload construction for auth-plugin listener tests"
+
+open_questions:
+	- question: "What is the intended replacement source for authorization input if `BeforeEventPayload.auth` and SDK mutator `auth?: AuthContext` parameters are removed?"
+		context: "The inspected auth listener plugin, host adapters, and several tests all currently rely on those exact surfaces; no alternate auth carrier was found in the examined files."
+	- question: "Which canonical after-event names should represent webhook CRUD, label mutations, default-board changes, column cleanup/reorder/minimized, card purge, transfer, and card action trigger if those methods are made fully after-event-consistent?"
+		context: "`SDKAfterEventType` currently declares no event names for those mutation families, yet the objective calls for consistent `_runAfterEvent()` usage."
+	- question: "How should deep merge treat nested objects and arrays in before-event overrides?"
+		context: "Current published contract and tests are explicitly shallow; moving to deep merge changes semantics for nested fields such as label definitions, metadata, form payloads, and webhook updates."
+
+gaps:
+	- area: "generated docs re-sync"
+		description: "`docs/sdk.md` was not read directly because it is generated from JSDoc and the source-of-truth files were inspected instead."
+		impact: "Low; the source files already establish the contract changes that would force regeneration."
+	- area: "full host test inventory"
+		description: "Only the targeted MCP and standalone auth-forwarding tests were read in detail; other host tests were identified via grep rather than line-by-line inspection."
+		impact: "Low to medium; exact assertion text outside the inspected auth-focused suites may still need adjustment if public signatures change broadly."

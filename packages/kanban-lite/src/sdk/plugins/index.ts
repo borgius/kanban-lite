@@ -1083,6 +1083,37 @@ function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity
   return identity ? 'auth.policy.denied' : 'auth.identity.missing'
 }
 
+function withAuthHints(
+  context: AuthContext | undefined,
+  payload: BeforeEventPayload<Record<string, unknown>>,
+): AuthContext {
+  const merged: AuthContext = { ...(context ?? {}) }
+  const input = payload.input
+  const setString = (key: keyof AuthContext, value: unknown): void => {
+    if (typeof value === 'string' && value.length > 0) merged[key] = value
+  }
+
+  setString('boardId', payload.boardId)
+  setString('boardId', input.boardId)
+  setString('cardId', input.cardId)
+  setString('fromBoardId', input.fromBoardId)
+  setString('toBoardId', input.toBoardId)
+  setString('columnId', input.columnId)
+  setString('commentId', input.commentId)
+  setString('attachment', input.attachment)
+  setString('actionKey', input.actionKey)
+  setString('formId', input.formId)
+  setString('labelName', input.labelName)
+
+  if (!merged.columnId) setString('columnId', input.targetStatus)
+  if (!merged.actionKey) setString('actionKey', input.action)
+  if (!merged.actionKey) setString('actionKey', input.key)
+  if (!merged.labelName) setString('labelName', input.name)
+  if (!merged.labelName) setString('labelName', input.oldName)
+
+  return merged
+}
+
 // ---------------------------------------------------------------------------
 // Capability bag resolver (main entry point)
 // ---------------------------------------------------------------------------
@@ -1091,18 +1122,21 @@ function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity
  * Creates the built-in auth event listener plugin that enforces authorization
  * during the before-event phase.
  *
- * The listener resolves identity from {@link BeforeEventPayload.auth}, evaluates
+ * The listener resolves identity from the active request-scoped auth carrier,
+ * evaluates
  * the configured policy for {@link BeforeEventPayload.event}, emits
  * `auth.allowed` / `auth.denied`, and throws {@link AuthError} when a mutation
  * must be vetoed.
  *
  * @param authIdentity - Resolved identity provider used to establish the caller.
  * @param authPolicy   - Resolved policy provider used to authorize each action.
+ * @param getAuthContext - Optional accessor for the active scoped auth context.
  * @returns A registered {@link SDKEventListenerPlugin} for the auth runtime seam.
  */
 export function createBuiltinAuthListenerPlugin(
   authIdentity: AuthIdentityPlugin,
   authPolicy: AuthPolicyPlugin,
+  getAuthContext?: () => AuthContext | undefined,
 ): SDKEventListenerPlugin {
   const subscriptions: Array<() => void> = []
   return {
@@ -1113,7 +1147,7 @@ export function createBuiltinAuthListenerPlugin(
       const listener = async (payload: BeforeEventPayload<Record<string, unknown>>): Promise<void> => {
         if (!isBeforeEventPayload(payload)) return
 
-        const context = payload.auth ?? {}
+        const context = withAuthHints(getAuthContext?.(), payload)
         const action = payload.event
         const identity = await authIdentity.resolveIdentity(context)
         const decision = await authPolicy.checkPolicy(identity, action, context)

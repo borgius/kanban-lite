@@ -1,7 +1,6 @@
 import { readConfig } from '../../../shared/config'
 import type { CardDisplaySettings } from '../../../shared/types'
-import { AuthError } from '../../../sdk/types'
-import { authErrorToHttpStatus, extractAuthContext, getAuthStatus } from '../../authUtils'
+import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike, getAuthStatus } from '../../authUtils'
 import { broadcast, buildInitMessage, loadCards } from '../../broadcastService'
 import { buildCardFrontmatter } from '../../cardHelpers'
 import {
@@ -18,6 +17,7 @@ import { buildProviderSummary, getContentType, resolveStaticFilePath, resolveWor
 export async function handleSystemRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url, pathname, resolvedWebviewDir, indexHtml } = request
   const { sdk, workspaceRoot } = ctx
+  const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
 
   let params = route('GET', '/api/resolve-path')
   if (params) {
@@ -58,11 +58,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       if (!name) {
         jsonError(res, 400, 'name is required')
       } else {
-        jsonOk(res, await doAddColumn(ctx, name, color || '#6b7280', extractAuthContext(req)), 201)
+        jsonOk(res, await runWithRequestAuth(() => doAddColumn(ctx, name, color || '#6b7280')), 201)
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -79,13 +80,14 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       if (!Array.isArray(columnIds)) {
         jsonError(res, 400, 'columnIds must be an array')
       } else {
-        const columns = await sdk.reorderColumns(columnIds, boardId, extractAuthContext(req))
+        const columns = await runWithRequestAuth(() => sdk.reorderColumns(columnIds, boardId))
         broadcast(ctx, buildInitMessage(ctx))
         jsonOk(res, columns)
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 500, String(err))
       }
@@ -102,11 +104,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       if (!Array.isArray(columnIds)) {
         jsonError(res, 400, 'columnIds must be an array')
       } else {
-        jsonOk(res, { minimizedColumnIds: await sdk.setMinimizedColumns(columnIds, boardId, extractAuthContext(req)) })
+        jsonOk(res, { minimizedColumnIds: await runWithRequestAuth(() => sdk.setMinimizedColumns(columnIds, boardId)) })
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 500, String(err))
       }
@@ -117,16 +120,18 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('PUT', '/api/columns/:id')
   if (params) {
     try {
+      const { id } = params
       const body = await readBody(req)
-      const column = await doEditColumn(ctx, params.id, { name: body.name as string, color: body.color as string }, extractAuthContext(req))
+      const column = await runWithRequestAuth(() => doEditColumn(ctx, id, { name: body.name as string, color: body.color as string }))
       if (!column) {
         jsonError(res, 404, 'Column not found')
       } else {
         jsonOk(res, column)
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -137,15 +142,17 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('DELETE', '/api/columns/:id')
   if (params) {
     try {
-      const result = await doRemoveColumn(ctx, params.id, extractAuthContext(req))
+      const { id } = params
+      const result = await runWithRequestAuth(() => doRemoveColumn(ctx, id))
       if (!result.removed) {
         jsonError(res, 400, result.error || 'Cannot remove column')
       } else {
         jsonOk(res, { deleted: true })
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -166,11 +173,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     try {
       const body = await readBody(req)
-      await doSaveSettings(ctx, body as unknown as CardDisplaySettings, extractAuthContext(req))
+      await runWithRequestAuth(() => doSaveSettings(ctx, body as unknown as CardDisplaySettings))
       jsonOk(res, sdk.getSettings())
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -198,10 +206,11 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
         jsonError(res, 400, 'events array is required')
         return true
       }
-      jsonOk(res, await sdk.createWebhook({ url: webhookUrl, events, secret: body.secret as string | undefined }, extractAuthContext(req)), 201)
+      jsonOk(res, await runWithRequestAuth(() => sdk.createWebhook({ url: webhookUrl, events, secret: body.secret as string | undefined })), 201)
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -213,15 +222,17 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     try {
       const body = await readBody(req)
-      const webhook = await sdk.updateWebhook(params.id, body as Partial<{ url: string; events: string[]; secret: string; active: boolean }>, extractAuthContext(req))
+      const { id } = params
+      const webhook = await runWithRequestAuth(() => sdk.updateWebhook(id, body as Partial<{ url: string; events: string[]; secret: string; active: boolean }>))
       if (!webhook) {
         jsonError(res, 404, 'Webhook not found')
       } else {
         jsonOk(res, webhook)
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -232,15 +243,17 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('DELETE', '/api/webhooks/:id')
   if (params) {
     try {
-      const ok = await sdk.deleteWebhook(params.id, extractAuthContext(req))
+      const { id } = params
+      const ok = await runWithRequestAuth(() => sdk.deleteWebhook(id))
       if (!ok) {
         jsonError(res, 404, 'Webhook not found')
       } else {
         jsonOk(res, { deleted: true })
       }
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -258,11 +271,13 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     try {
       const body = await readBody(req)
-      await sdk.setLabel(decodeURIComponent(params.name), { color: body.color as string, group: body.group as string | undefined }, extractAuthContext(req))
+      const name = decodeURIComponent(params.name)
+      await runWithRequestAuth(() => sdk.setLabel(name, { color: body.color as string, group: body.group as string | undefined }))
       jsonOk(res, sdk.getLabels())
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -274,14 +289,13 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     try {
       const body = await readBody(req)
-      const auth = extractAuthContext(req)
       const name = decodeURIComponent(params.name)
       const newName = body.newName as string
       if (!newName) {
         jsonError(res, 400, 'newName is required')
         return true
       }
-      await sdk.renameLabel(name, newName, auth)
+      await runWithRequestAuth(() => sdk.renameLabel(name, newName))
       await loadCards(ctx)
       broadcast(ctx, { type: 'labelsUpdated', labels: sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
@@ -295,7 +309,8 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('DELETE', '/api/labels/:name')
   if (params) {
     try {
-      await sdk.deleteLabel(decodeURIComponent(params.name), extractAuthContext(req))
+      const name = decodeURIComponent(params.name)
+      await runWithRequestAuth(() => sdk.deleteLabel(name))
       await loadCards(ctx)
       broadcast(ctx, { type: 'labelsUpdated', labels: sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
@@ -351,11 +366,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     try {
       const body = await readBody(req)
       const dbPath = typeof body.sqlitePath === 'string' ? body.sqlitePath : undefined
-      const count = await sdk.migrateToSqlite(dbPath, extractAuthContext(req))
+      const count = await runWithRequestAuth(() => sdk.migrateToSqlite(dbPath))
       jsonOk(res, { ok: true, count, storageEngine: 'sqlite' })
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -366,11 +382,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('POST', '/api/storage/migrate-to-markdown')
   if (params) {
     try {
-      const count = await sdk.migrateToMarkdown(extractAuthContext(req))
+      const count = await runWithRequestAuth(() => sdk.migrateToMarkdown())
       jsonOk(res, { ok: true, count, storageEngine: 'markdown' })
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }

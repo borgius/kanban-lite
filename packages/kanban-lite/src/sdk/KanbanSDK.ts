@@ -1,4 +1,5 @@
 import * as path from 'path'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
@@ -13,7 +14,7 @@ import type { StorageEngine } from './plugins/types'
 import { loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
 import { WebhookListenerPlugin } from './plugins/webhookListener'
 import { resolveKanbanDir } from './fileUtils'
-import { resolveCapabilityBag } from './plugins'
+import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from './plugins'
 import type { ResolvedCapabilityBag } from './plugins'
 import { loadWorkspaceEnv } from '../shared/env'
 import * as Boards from './modules/boards'
@@ -25,6 +26,20 @@ import * as Logs from './modules/logs'
 import * as Columns from './modules/columns'
 import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
+
+/**
+ * Returns `true` when `value` is a plain-object merge candidate.
+ *
+ * Accepts `{}` literals and `Object.create(null)` objects. Rejects arrays,
+ * class instances, primitives, and `null`. Used by `KanbanSDK._deepMerge`.
+ *
+ * @internal
+ */
+function _isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
 
 /**
  * Resolved storage/provider metadata for diagnostics and host surfaces.
@@ -243,6 +258,18 @@ export class KanbanSDK {
   private _webhookPlugin: SDKEventListenerPlugin | null = null
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
+  /** @internal Async-scoped auth carrier. Installed per request scope via {@link runWithAuth}. */
+  private static readonly _authStorage = new AsyncLocalStorage<AuthContext>()
+
+  /** @internal */
+  private static _runWithScopedAuth<T>(auth: AuthContext, fn: () => Promise<T>): Promise<T> {
+    return KanbanSDK._authStorage.run(auth, fn)
+  }
+
+  /** @internal */
+  private static _getScopedAuth(): AuthContext | undefined {
+    return KanbanSDK._authStorage.getStore()
+  }
 
   /**
    * Absolute path to the `.kanban` kanban directory.
@@ -304,12 +331,20 @@ export class KanbanSDK {
       return
     }
 
-    this._capabilities = resolveCapabilityBag(
+    const capabilityBag = resolveCapabilityBag(
       resolveConfiguredCapabilities(this.kanbanDir, options),
       this.kanbanDir,
       resolveConfiguredAuthCapabilities(this.kanbanDir),
       resolveConfiguredWebhookCapabilities(this.kanbanDir),
     )
+    this._capabilities = {
+      ...capabilityBag,
+      authListener: createBuiltinAuthListenerPlugin(
+        capabilityBag.authIdentity,
+        capabilityBag.authPolicy,
+        () => this._currentAuthContext,
+      ),
+    }
     this._storage = this._capabilities.cardStorage
 
     const webhookListener = this._capabilities.webhookListener
@@ -508,7 +543,7 @@ export class KanbanSDK {
       // Pre-built storage engine injected directly — operate in noop/anonymous mode.
       return { allowed: true }
     }
-    const resolvedContext: AuthContext = context ?? {}
+    const resolvedContext: AuthContext = context ?? this._currentAuthContext ?? {}
     const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
     const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
     if (!decision.allowed) {
@@ -541,56 +576,119 @@ export class KanbanSDK {
     return result
   }
 
-  /** @internal */
-  _withAuthContext(context?: AuthContext, hints?: Partial<AuthContext>): AuthContext {
-    const merged: AuthContext = { ...(context ?? {}) }
-    if (!hints) return merged
+  /**
+   * Runs `fn` within an async scope where `auth` is the active auth context.
+   *
+   * Use this on host surfaces (REST routes, CLI commands, MCP handlers) to
+   * bind a request-scoped {@link AuthContext} before calling SDK mutators.
+   * The context is propagated automatically through every `await` in the call
+   * tree without being threaded through method signatures.
+   *
+   * @param auth - Request-scoped auth context to install for the duration of `fn`.
+   * @param fn   - Async callback to execute with the auth context active.
+   * @returns The promise returned by `fn`.
+   *
+   * @example
+   * ```ts
+   * const card = await sdk.runWithAuth({ token: req.headers.authorization }, () =>
+   *   sdk.createCard({ boardId: 'default', title: 'New task' })
+   * )
+   * ```
+   */
+  runWithAuth<T>(auth: AuthContext, fn: () => Promise<T>): Promise<T> {
+    return KanbanSDK._runWithScopedAuth(auth, fn)
+  }
 
-    const target = merged as Record<string, unknown>
-    for (const [key, value] of Object.entries(hints)) {
-      if (value !== undefined) target[key] = value
+  /** Returns the auth context installed by the nearest enclosing {@link runWithAuth} call, if any. @internal */
+  get _currentAuthContext(): AuthContext | undefined {
+    return KanbanSDK._getScopedAuth()
+  }
+
+  /** @internal */
+  private _resolveEventActor(actor?: string): string | undefined {
+    return actor ?? this._currentAuthContext?.actorHint
+  }
+
+  /** @internal */
+  private static _cloneMergeValue(value: unknown): unknown {
+    if (Array.isArray(value) || _isPlainObject(value)) {
+      return structuredClone(value)
     }
-    return merged
+    return value
   }
 
   /**
-   * Dispatches a before-event to all registered listeners and returns the merged input.
+   * Recursively deep-merges `source` into a shallow copy of `target`.
    *
-   * Builds a {@link BeforeEventPayload} from `event`, `input`, `actor`, and `boardId`,
-   * then awaits all registered before-event listeners in registration order via
-   * {@link EventBus.emitAsync}. Each listener may return a plain-object override that
-   * is shallow-merged into the accumulated input; later-registered listeners override
-   * keys set by earlier ones. Returning `void` leaves the payload unchanged.
+   * - Plain objects are merged recursively; later keys override earlier keys at
+   *   every depth.
+   * - Arrays, primitives, and class instances in `source` **replace** the
+   *   corresponding value in `target` (no concatenation of arrays).
+   * - `target` itself is never mutated; the caller receives the merged clone.
    *
-   * **Throwing aborts the mutation:** any error thrown by a listener — including
-   * {@link AuthError} — propagates immediately to the SDK action runner caller.
-   * No subsequent listeners are executed and no mutation write occurs.
+   * @internal
+   */
+  private static _deepMerge<T extends Record<string, unknown>>(
+    target: T,
+    source: Record<string, unknown>,
+  ): T {
+    const result: Record<string, unknown> = { ...target }
+    for (const key of Object.keys(source)) {
+      const tv = target[key]
+      const sv = source[key]
+      result[key] =
+        _isPlainObject(sv) && _isPlainObject(tv)
+          ? KanbanSDK._deepMerge(tv as Record<string, unknown>, sv)
+          : KanbanSDK._cloneMergeValue(sv)
+    }
+    return result as T
+  }
+
+  /**
+   * Dispatches a before-event to all registered listeners and returns a
+   * deep-merged clone of the input.
    *
-  * @param event   - Before-event name (e.g. `'card.create'`).
-   * @param input   - Initial mutation input used as the merge base.
-  * @param auth    - Opaque host auth context passed through to listeners.
+   * Clones `input` immediately with `structuredClone` so the caller's object
+   * is never mutated. Awaits all registered before-event listeners in
+   * registration order via {@link EventBus.emitAsync}. Each plain-object
+   * listener response is deep-merged in registration order over the clone so
+   * that later-registered listeners override earlier ones at every nesting
+   * depth. Arrays in listener responses **replace** (no concatenation).
+   * Non-plain-object, `void`, or empty `{}` responses contribute no keys and
+   * the accumulated input stays effectively unchanged.
+   *
+   * **Throwing aborts the mutation:** any error thrown by a listener —
+   * including {@link AuthError} — propagates immediately to the caller.
+   * No subsequent listeners execute and no mutation write occurs.
+   *
+   * @param event   - Before-event name (e.g. `'card.create'`).
+   * @param input   - Initial mutation input used as the clone/merge base.
    * @param actor   - Resolved acting principal, if known.
    * @param boardId - Board context for this action, if applicable.
-   * @returns Promise resolving to the merged input after all listeners have settled.
+   * @returns Promise resolving to the deep-merged input clone after all listeners settle.
    *
    * @internal
    */
   async _runBeforeEvent<TInput extends Record<string, unknown>>(
     event: SDKBeforeEventType,
     input: TInput,
-    auth?: AuthContext,
     actor?: string,
     boardId?: string,
   ): Promise<TInput> {
+    const baseInput = structuredClone(input)
+    const resolvedActor = this._resolveEventActor(actor)
     const payload: BeforeEventPayload<TInput> = {
       event,
-      input,
-      auth,
-      actor,
+      input: baseInput,
+      actor: resolvedActor,
       boardId,
       timestamp: new Date().toISOString(),
     }
-    return this._eventBus.emitAsync(event, payload)
+    const outputs = await this._eventBus.emitAsync(event, payload)
+    return outputs.reduce<TInput>(
+      (acc, override) => KanbanSDK._deepMerge(acc, override) as TInput,
+      baseInput,
+    )
   }
 
   /**
@@ -616,10 +714,11 @@ export class KanbanSDK {
     boardId?: string,
     meta?: Record<string, unknown>,
   ): void {
+    const resolvedActor = this._resolveEventActor(actor)
     const afterPayload: AfterEventPayload<TResult> = {
       event,
       data,
-      actor,
+      actor: resolvedActor,
       boardId,
       timestamp: new Date().toISOString(),
       meta,
@@ -628,7 +727,7 @@ export class KanbanSDK {
       type: event,
       data: afterPayload,
       timestamp: afterPayload.timestamp,
-      actor,
+      actor: resolvedActor,
       boardId,
     })
   }
@@ -891,13 +990,18 @@ export class KanbanSDK {
     columns?: KanbanColumn[]
     defaultStatus?: string
     defaultPriority?: Priority
-  }, auth?: AuthContext): Promise<BoardInfo> {
-    const authContext = this._withAuthContext(auth, { boardId: id })
-    const mergedInput = await this._runBeforeEvent('board.create', { id, name, ...(options ?? {}) } as unknown as Record<string, unknown>, authContext, auth?.actorHint, id)
+  }): Promise<BoardInfo> {
+    const mergedInput = await this._runBeforeEvent('board.create', { id, name, ...(options ?? {}) } as unknown as Record<string, unknown>, undefined, id)
     const resolvedId = (mergedInput.id as string) ?? id
     const resolvedName = (mergedInput.name as string) ?? name
-    const board = Boards.createBoard(this, resolvedId, resolvedName, options)
-    this._runAfterEvent('board.created', board, auth?.actorHint, board.id)
+    const resolvedOptions = {
+      description: mergedInput.description as string | undefined,
+      columns: mergedInput.columns as KanbanColumn[] | undefined,
+      defaultStatus: mergedInput.defaultStatus as string | undefined,
+      defaultPriority: mergedInput.defaultPriority as Priority | undefined,
+    }
+    const board = Boards.createBoard(this, resolvedId, resolvedName, resolvedOptions)
+    this._runAfterEvent('board.created', board, undefined, board.id)
     return board
   }
 
@@ -919,11 +1023,11 @@ export class KanbanSDK {
    * await sdk.deleteBoard('old-sprint')
    * ```
    */
-  async deleteBoard(boardId: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    await this._runBeforeEvent('board.delete', { boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    await Boards.deleteBoard(this, boardId)
-    this._runAfterEvent('board.deleted', { id: boardId }, auth?.actorHint, boardId)
+  async deleteBoard(boardId: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('board.delete', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
+    await Boards.deleteBoard(this, resolvedBoardId)
+    this._runAfterEvent('board.deleted', { id: resolvedBoardId }, undefined, resolvedBoardId)
   }
 
   /**
@@ -967,11 +1071,13 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>, auth?: AuthContext): Promise<BoardConfig> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedUpdates = await this._runBeforeEvent('board.update', { ...updates } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const board = Boards.updateBoard(this, boardId, mergedUpdates as unknown as Partial<Omit<BoardConfig, 'nextCardId'>>)
-    this._runAfterEvent('board.updated', { id: boardId, ...board }, auth?.actorHint, boardId)
+  async updateBoard(boardId: string, updates: Partial<Omit<BoardConfig, 'nextCardId'>>): Promise<BoardConfig> {
+    const mergedInput = await this._runBeforeEvent('board.update', { boardId, ...updates } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
+    const resolvedUpdates = { ...mergedInput }
+    delete (resolvedUpdates as { boardId?: unknown }).boardId
+    const board = Boards.updateBoard(this, resolvedBoardId, resolvedUpdates as unknown as Partial<Omit<BoardConfig, 'nextCardId'>>)
+    this._runAfterEvent('board.updated', { id: resolvedBoardId, ...board }, undefined, resolvedBoardId)
     return board
   }
 
@@ -1006,11 +1112,11 @@ export class KanbanSDK {
     * sdk.addBoardAction('deployments', 'deploy', 'Deploy now')
     * ```
    */
-  async addBoardAction(boardId: string, key: string, title: string, auth?: AuthContext): Promise<Record<string, string>> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('board.action.config.add', { boardId, key, title } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const actions = Boards.addBoardAction(this, boardId, (mergedInput.key as string) ?? key, (mergedInput.title as string) ?? title)
-    this._runAfterEvent('board.updated', { id: boardId, actions }, auth?.actorHint, boardId)
+  async addBoardAction(boardId: string, key: string, title: string): Promise<Record<string, string>> {
+    const mergedInput = await this._runBeforeEvent('board.action.config.add', { boardId, key, title } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
+    const actions = Boards.addBoardAction(this, resolvedBoardId, (mergedInput.key as string) ?? key, (mergedInput.title as string) ?? title)
+    this._runAfterEvent('board.updated', { id: resolvedBoardId, actions }, undefined, resolvedBoardId)
     return actions
   }
 
@@ -1028,11 +1134,11 @@ export class KanbanSDK {
     * sdk.removeBoardAction('deployments', 'deploy')
     * ```
    */
-  async removeBoardAction(boardId: string, key: string, auth?: AuthContext): Promise<Record<string, string>> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('board.action.config.remove', { boardId, key } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const actions = Boards.removeBoardAction(this, boardId, (mergedInput.key as string) ?? key)
-    this._runAfterEvent('board.updated', { id: boardId, actions }, auth?.actorHint, boardId)
+  async removeBoardAction(boardId: string, key: string): Promise<Record<string, string>> {
+    const mergedInput = await this._runBeforeEvent('board.action.config.remove', { boardId, key } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string) ?? boardId
+    const actions = Boards.removeBoardAction(this, resolvedBoardId, (mergedInput.key as string) ?? key)
+    this._runAfterEvent('board.updated', { id: resolvedBoardId, actions }, undefined, resolvedBoardId)
     return actions
   }
 
@@ -1049,15 +1155,14 @@ export class KanbanSDK {
     * await sdk.triggerBoardAction('deployments', 'deploy')
     * ```
    */
-  async triggerBoardAction(boardId: string, actionKey: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { boardId, actionKey })
-    const mergedInput = await this._runBeforeEvent('board.action.trigger', { boardId, actionKey } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async triggerBoardAction(boardId: string, actionKey: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('board.action.trigger', { boardId, actionKey } as unknown as Record<string, unknown>, undefined, boardId)
     const actionData = await Boards.triggerBoardAction(
       this,
       (mergedInput.boardId as string) ?? boardId,
       (mergedInput.actionKey as string) ?? actionKey,
     )
-    this._runAfterEvent('board.action', actionData, auth?.actorHint, actionData.boardId)
+    this._runAfterEvent('board.action', actionData, undefined, actionData.boardId)
   }
 
   /**
@@ -1085,26 +1190,32 @@ export class KanbanSDK {
    * console.log(card.status)  // 'triage'
    * ```
    */
-  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, {
-      cardId,
-      fromBoardId,
-      toBoardId,
-      columnId: targetStatus,
-    })
+  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
     const mergedInput = await this._runBeforeEvent('card.transfer', {
       cardId,
       fromBoardId,
       toBoardId,
       targetStatus,
-    } as unknown as Record<string, unknown>, authContext, auth?.actorHint, fromBoardId)
-    return Boards.transferCard(
+    } as unknown as Record<string, unknown>, undefined, fromBoardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedFromBoardId = (mergedInput.fromBoardId as string) ?? fromBoardId
+    const resolvedToBoardId = (mergedInput.toBoardId as string) ?? toBoardId
+    const resolvedTargetStatus = (mergedInput.targetStatus as string | undefined) ?? targetStatus
+    const snapshot = await this.getCard(resolvedCardId, resolvedFromBoardId)
+    const card = await Boards.transferCard(
       this,
-      (mergedInput.cardId as string) ?? cardId,
-      (mergedInput.fromBoardId as string) ?? fromBoardId,
-      (mergedInput.toBoardId as string) ?? toBoardId,
-      (mergedInput.targetStatus as string | undefined) ?? targetStatus,
+      resolvedCardId,
+      resolvedFromBoardId,
+      resolvedToBoardId,
+      resolvedTargetStatus,
     )
+    this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId, {
+      previousStatus: snapshot?.status,
+      fromBoard: resolvedFromBoardId,
+      toBoard: resolvedToBoardId,
+      transfer: true,
+    })
+    return card
   }
 
   // --- Card CRUD ---
@@ -1295,11 +1406,10 @@ export class KanbanSDK {
    * console.log(card.id) // '7'
    * ```
    */
-  async createCard(data: CreateCardInput, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { boardId: data.boardId })
-    const mergedInput = await this._runBeforeEvent('card.create', { ...data } as unknown as Record<string, unknown>, authContext, auth?.actorHint, data.boardId)
+  async createCard(data: CreateCardInput): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('card.create', { ...data } as unknown as Record<string, unknown>, undefined, data.boardId)
     const card = await Cards.createCard(this, mergedInput as unknown as CreateCardInput)
-    this._runAfterEvent('task.created', sanitizeCard(card), auth?.actorHint, card.boardId)
+    this._runAfterEvent('task.created', sanitizeCard(card), undefined, card.boardId)
     return card
   }
 
@@ -1330,11 +1440,10 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    const mergedUpdates = await this._runBeforeEvent('card.update', { ...updates } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
+    const mergedUpdates = await this._runBeforeEvent('card.update', { ...updates } as unknown as Record<string, unknown>, undefined, boardId)
     const card = await Cards.updateCard(this, cardId, mergedUpdates as unknown as Partial<Card>, boardId)
-    this._runAfterEvent('task.updated', sanitizeCard(card), auth?.actorHint, card.boardId)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return card
   }
 
@@ -1385,15 +1494,10 @@ export class KanbanSDK {
    * console.log(result.data.severity) // 'high'
    * ```
    */
-  async submitForm(input: SubmitFormInput, auth?: AuthContext): Promise<SubmitFormResult> {
-    const authContext = this._withAuthContext(auth, {
-      boardId: input.boardId,
-      cardId: input.cardId,
-      formId: input.formId,
-    })
-    const mergedInput = await this._runBeforeEvent('form.submit', { ...input } as unknown as Record<string, unknown>, authContext, auth?.actorHint, input.boardId)
+  async submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
+    const mergedInput = await this._runBeforeEvent('form.submit', { ...input } as unknown as Record<string, unknown>, undefined, input.boardId)
     const result = await Cards.submitForm(this, mergedInput as unknown as SubmitFormInput)
-    this._runAfterEvent('form.submitted', result, auth?.actorHint, result.boardId)
+    this._runAfterEvent('form.submitted', result, undefined, result.boardId)
     return result
   }
 
@@ -1420,9 +1524,8 @@ export class KanbanSDK {
    * await sdk.triggerAction('42', 'sendEmail', 'bugs')
    * ```
    */
-  async triggerAction(cardId: string, action: string, boardId?: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId, actionKey: action })
-    const mergedInput = await this._runBeforeEvent('card.action.trigger', { cardId, boardId, actionKey: action } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('card.action.trigger', { cardId, boardId, actionKey: action } as unknown as Record<string, unknown>, undefined, boardId)
     return Cards.triggerAction(
       this,
       (mergedInput.cardId as string) ?? cardId,
@@ -1455,12 +1558,13 @@ export class KanbanSDK {
    * const done = await sdk.moveCard('42', 'done')
    * ```
    */
-  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId, columnId: newStatus })
-    const mergedInput = await this._runBeforeEvent('card.move', { cardId, newStatus, position, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('card.move', { cardId, newStatus, position, boardId } as unknown as Record<string, unknown>, undefined, boardId)
     const resolvedStatus = (mergedInput.newStatus as string) ?? newStatus
-    const card = await Cards.moveCard(this, cardId, resolvedStatus, mergedInput.position as number | undefined ?? position, mergedInput.boardId as string | undefined ?? boardId)
-    this._runAfterEvent('task.moved', sanitizeCard(card), auth?.actorHint, card.boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const card = await Cards.moveCard(this, resolvedCardId, resolvedStatus, mergedInput.position as number | undefined ?? position, resolvedBoardId)
+    this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId)
     return card
   }
 
@@ -1478,12 +1582,13 @@ export class KanbanSDK {
    * await sdk.deleteCard('42', 'bugs')
    * ```
    */
-  async deleteCard(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    await Cards.deleteCard(this, cardId, boardId)
-    const deleted = await this.getCard(cardId, boardId)
-    if (deleted) this._runAfterEvent('task.deleted', sanitizeCard(deleted), auth?.actorHint, deleted.boardId)
+  async deleteCard(cardId: string, boardId?: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    await Cards.deleteCard(this, resolvedCardId, resolvedBoardId)
+    const deleted = await this.getCard(resolvedCardId, resolvedBoardId)
+    if (deleted) this._runAfterEvent('task.deleted', sanitizeCard(deleted), undefined, deleted.boardId)
   }
 
   /**
@@ -1500,12 +1605,13 @@ export class KanbanSDK {
    * await sdk.permanentlyDeleteCard('42', 'bugs')
    * ```
    */
-  async permanentlyDeleteCard(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    const snapshot = await this.getCard(cardId, boardId)
-    await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    await Cards.permanentlyDeleteCard(this, cardId, boardId)
-    if (snapshot) this._runAfterEvent('task.deleted', sanitizeCard(snapshot), auth?.actorHint, snapshot.boardId)
+  async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const snapshot = await this.getCard(resolvedCardId, resolvedBoardId)
+    await Cards.permanentlyDeleteCard(this, resolvedCardId, resolvedBoardId)
+    if (snapshot) this._runAfterEvent('task.deleted', sanitizeCard(snapshot), undefined, snapshot.boardId)
   }
 
   /**
@@ -1597,9 +1703,8 @@ export class KanbanSDK {
    * sdk.setLabel('docs', { color: '#16a34a' })
    * ```
    */
-  async setLabel(name: string, definition: LabelDefinition, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { labelName: name })
-    const mergedInput = await this._runBeforeEvent('label.set', { name, definition: { ...definition } } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async setLabel(name: string, definition: LabelDefinition): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('label.set', { name, definition: { ...definition } } as unknown as Record<string, unknown>)
     Labels.setLabel(
       this,
       (mergedInput.name as string) ?? name,
@@ -1618,9 +1723,8 @@ export class KanbanSDK {
    * await sdk.deleteLabel('bug')
    * ```
    */
-  async deleteLabel(name: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { labelName: name })
-    const mergedInput = await this._runBeforeEvent('label.delete', { name } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async deleteLabel(name: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('label.delete', { name } as unknown as Record<string, unknown>)
     return Labels.deleteLabel(this, (mergedInput.name as string) ?? name)
   }
 
@@ -1640,9 +1744,8 @@ export class KanbanSDK {
    * // All cards with 'bug' label now have 'defect' instead
    * ```
    */
-  async renameLabel(oldName: string, newName: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { labelName: oldName })
-    const mergedInput = await this._runBeforeEvent('label.rename', { oldName, newName } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async renameLabel(oldName: string, newName: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('label.rename', { oldName, newName } as unknown as Record<string, unknown>)
     return Labels.renameLabel(
       this,
       (mergedInput.oldName as string) ?? oldName,
@@ -1713,11 +1816,13 @@ export class KanbanSDK {
    * console.log(card.attachments) // ['screenshot.png']
    * ```
    */
-  async addAttachment(cardId: string, sourcePath: string, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    await this._runBeforeEvent('attachment.add', { cardId, sourcePath, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const card = await Attachments.addAttachment(this, cardId, sourcePath, boardId)
-    this._runAfterEvent('attachment.added', { cardId, attachment: path.basename(sourcePath) }, auth?.actorHint, this._resolveBoardId(boardId))
+  async addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('attachment.add', { cardId, sourcePath, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedSourcePath = (mergedInput.sourcePath as string) ?? sourcePath
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const card = await Attachments.addAttachment(this, resolvedCardId, resolvedSourcePath, resolvedBoardId)
+    this._runAfterEvent('attachment.added', { cardId: resolvedCardId, attachment: path.basename(resolvedSourcePath) }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
     return card
   }
 
@@ -1738,11 +1843,13 @@ export class KanbanSDK {
    * const card = await sdk.removeAttachment('42', 'old-screenshot.png')
    * ```
    */
-  async removeAttachment(cardId: string, attachment: string, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId, attachment })
-    await this._runBeforeEvent('attachment.remove', { cardId, attachment, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const card = await Attachments.removeAttachment(this, cardId, attachment, boardId)
-    this._runAfterEvent('attachment.removed', { cardId, attachment }, auth?.actorHint, this._resolveBoardId(boardId))
+  async removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('attachment.remove', { cardId, attachment, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedAttachment = (mergedInput.attachment as string) ?? attachment
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const card = await Attachments.removeAttachment(this, resolvedCardId, resolvedAttachment, resolvedBoardId)
+    this._runAfterEvent('attachment.removed', { cardId: resolvedCardId, attachment: resolvedAttachment }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
     return card
   }
 
@@ -1826,18 +1933,19 @@ export class KanbanSDK {
    * console.log(card.comments.length) // 1
    * ```
    */
-  async addComment(cardId: string, author: string, content: string, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    const mergedInput = await this._runBeforeEvent('comment.create', { cardId, author, content, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('comment.create', { cardId, author, content, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
     const card = await Comments.addComment(
       this,
-      cardId,
+      resolvedCardId,
       (mergedInput.author as string) ?? author,
       (mergedInput.content as string) ?? content,
-      boardId,
+      resolvedBoardId,
     )
     const newComment = card.comments[card.comments.length - 1]
-    if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId }, auth?.actorHint, card.boardId ?? this._resolveBoardId(boardId))
+    if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
     return card
   }
 
@@ -1857,12 +1965,14 @@ export class KanbanSDK {
    * const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
    * ```
    */
-  async updateComment(cardId: string, commentId: string, content: string, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId, commentId })
-    const mergedInput = await this._runBeforeEvent('comment.update', { cardId, commentId, content, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const card = await Comments.updateComment(this, cardId, commentId, (mergedInput.content as string) ?? content, boardId)
-    const updatedComment = card.comments?.find(c => c.id === commentId)
-    if (updatedComment) this._runAfterEvent('comment.updated', { ...updatedComment, cardId }, auth?.actorHint, card.boardId ?? this._resolveBoardId(boardId))
+  async updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('comment.update', { cardId, commentId, content, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedCommentId = (mergedInput.commentId as string) ?? commentId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const card = await Comments.updateComment(this, resolvedCardId, resolvedCommentId, (mergedInput.content as string) ?? content, resolvedBoardId)
+    const updatedComment = card.comments?.find(c => c.id === resolvedCommentId)
+    if (updatedComment) this._runAfterEvent('comment.updated', { ...updatedComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
     return card
   }
 
@@ -1880,13 +1990,15 @@ export class KanbanSDK {
    * const card = await sdk.deleteComment('42', 'c2')
    * ```
    */
-  async deleteComment(cardId: string, commentId: string, boardId?: string, auth?: AuthContext): Promise<Card> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId, commentId })
-    const cardBefore = await this.getCard(cardId, boardId)
-    const deletedComment = cardBefore?.comments?.find(c => c.id === commentId)
-    await this._runBeforeEvent('comment.delete', { cardId, commentId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const card = await Comments.deleteComment(this, cardId, commentId, boardId)
-    if (deletedComment) this._runAfterEvent('comment.deleted', { ...deletedComment, cardId }, auth?.actorHint, card.boardId ?? this._resolveBoardId(boardId))
+  async deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent('comment.delete', { cardId, commentId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedCommentId = (mergedInput.commentId as string) ?? commentId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const cardBefore = await this.getCard(resolvedCardId, resolvedBoardId)
+    const deletedComment = cardBefore?.comments?.find(c => c.id === resolvedCommentId)
+    const card = await Comments.deleteComment(this, resolvedCardId, resolvedCommentId, resolvedBoardId)
+    if (deletedComment) this._runAfterEvent('comment.deleted', { ...deletedComment, cardId: resolvedCardId }, undefined, card.boardId ?? this._resolveBoardId(resolvedBoardId))
     return card
   }
 
@@ -1966,12 +2078,14 @@ export class KanbanSDK {
     text: string,
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
     boardId?: string,
-    auth?: AuthContext
   ): Promise<LogEntry> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    await this._runBeforeEvent('log.add', { cardId, text, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const entry = await Logs.addLog(this, cardId, text, options, boardId)
-    this._runAfterEvent('log.added', { cardId, entry }, auth?.actorHint, this._resolveBoardId(boardId))
+    const mergedInput = await this._runBeforeEvent('log.add', { cardId, text, boardId, options } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedText = (mergedInput.text as string) ?? text
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const resolvedOptions = (mergedInput.options as { source?: string; timestamp?: string; object?: Record<string, unknown> } | undefined) ?? options
+    const entry = await Logs.addLog(this, resolvedCardId, resolvedText, resolvedOptions, resolvedBoardId)
+    this._runAfterEvent('log.added', { cardId: resolvedCardId, entry }, undefined, this._resolveBoardId(resolvedBoardId))
     return entry
   }
 
@@ -1992,11 +2106,12 @@ export class KanbanSDK {
    * await sdk.clearLogs('42')
    * ```
    */
-  async clearLogs(cardId: string, boardId?: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { cardId, boardId })
-    await this._runBeforeEvent('log.clear', { cardId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    await Logs.clearLogs(this, cardId, boardId)
-    this._runAfterEvent('log.cleared', { cardId }, auth?.actorHint, this._resolveBoardId(boardId))
+  async clearLogs(cardId: string, boardId?: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('log.clear', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    await Logs.clearLogs(this, resolvedCardId, resolvedBoardId)
+    this._runAfterEvent('log.cleared', { cardId: resolvedCardId }, undefined, this._resolveBoardId(resolvedBoardId))
   }
 
   // --- Board-level log management ---
@@ -2057,12 +2172,13 @@ export class KanbanSDK {
     text: string,
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
     boardId?: string,
-    auth?: AuthContext
   ): Promise<LogEntry> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    await this._runBeforeEvent('board.log.add', { text, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const entry = await Logs.addBoardLog(this, text, options, boardId)
-    this._runAfterEvent('board.log.added', { boardId: this._resolveBoardId(boardId), entry }, auth?.actorHint, this._resolveBoardId(boardId))
+    const mergedInput = await this._runBeforeEvent('board.log.add', { text, boardId, options } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedText = (mergedInput.text as string) ?? text
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const resolvedOptions = (mergedInput.options as { source?: string; timestamp?: string; object?: Record<string, unknown> } | undefined) ?? options
+    const entry = await Logs.addBoardLog(this, resolvedText, resolvedOptions, resolvedBoardId)
+    this._runAfterEvent('board.log.added', { boardId: this._resolveBoardId(resolvedBoardId), entry }, undefined, this._resolveBoardId(resolvedBoardId))
     return entry
   }
 
@@ -2080,11 +2196,11 @@ export class KanbanSDK {
    * await sdk.clearBoardLogs()
    * ```
    */
-  async clearBoardLogs(boardId?: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    await this._runBeforeEvent('board.log.clear', { boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    await Logs.clearBoardLogs(this, boardId)
-    this._runAfterEvent('board.log.cleared', { boardId: this._resolveBoardId(boardId) }, auth?.actorHint, this._resolveBoardId(boardId))
+  async clearBoardLogs(boardId?: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('board.log.clear', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    await Logs.clearBoardLogs(this, resolvedBoardId)
+    this._runAfterEvent('board.log.cleared', { boardId: this._resolveBoardId(resolvedBoardId) }, undefined, this._resolveBoardId(resolvedBoardId))
   }
 
   // --- Column management (board-scoped) ---
@@ -2128,14 +2244,14 @@ export class KanbanSDK {
    * )
    * ```
    */
-  async addColumn(column: KanbanColumn, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
-    const authContext = this._withAuthContext(auth, { boardId, columnId: column.id })
-    const mergedInput = await this._runBeforeEvent('column.create', { ...column, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async addColumn(column: KanbanColumn, boardId?: string): Promise<KanbanColumn[]> {
+    const mergedInput = await this._runBeforeEvent('column.create', { ...column, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
     const mergedColumn = { ...mergedInput }
     delete (mergedColumn as { boardId?: unknown }).boardId
-    const columns = Columns.addColumn(this, mergedColumn as unknown as KanbanColumn, boardId)
-    const added = columns.find(c => c.id === (mergedColumn.id as string ?? column.id))
-    if (added) this._runAfterEvent('column.created', added, auth?.actorHint, this._resolveBoardId(boardId))
+    const columns = Columns.addColumn(this, mergedColumn as unknown as KanbanColumn, resolvedBoardId)
+    const added = columns.find(c => c.id === (mergedColumn.id as string | undefined)) ?? columns[columns.length - 1]
+    if (added) this._runAfterEvent('column.created', added, undefined, this._resolveBoardId(resolvedBoardId))
     return columns
   }
 
@@ -2162,14 +2278,16 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
-    const authContext = this._withAuthContext(auth, { boardId, columnId })
-    const mergedUpdates = await this._runBeforeEvent('column.update', { columnId, ...updates } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async updateColumn(columnId: string, updates: Partial<Omit<KanbanColumn, 'id'>>, boardId?: string): Promise<KanbanColumn[]> {
+    const mergedUpdates = await this._runBeforeEvent('column.update', { columnId, boardId, ...updates } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedColumnId = (mergedUpdates.columnId as string) ?? columnId
+    const resolvedBoardId = (mergedUpdates.boardId as string | undefined) ?? boardId
     const mergedFields = { ...mergedUpdates }
     delete (mergedFields as { columnId?: unknown }).columnId
-    const columns = Columns.updateColumn(this, columnId, mergedFields as unknown as Partial<Omit<KanbanColumn, 'id'>>, boardId)
-    const updated = columns.find(c => c.id === columnId)
-    if (updated) this._runAfterEvent('column.updated', updated, auth?.actorHint, this._resolveBoardId(boardId))
+    delete (mergedFields as { boardId?: unknown }).boardId
+    const columns = Columns.updateColumn(this, resolvedColumnId, mergedFields as unknown as Partial<Omit<KanbanColumn, 'id'>>, resolvedBoardId)
+    const updated = columns.find(c => c.id === resolvedColumnId)
+    if (updated) this._runAfterEvent('column.updated', updated, undefined, this._resolveBoardId(resolvedBoardId))
     return columns
   }
 
@@ -2192,12 +2310,13 @@ export class KanbanSDK {
    * const columns = await sdk.removeColumn('blocked', 'default')
    * ```
    */
-  async removeColumn(columnId: string, boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
-    const authContext = this._withAuthContext(auth, { boardId, columnId })
-    const colSnapshot = Columns.listColumns(this, boardId).find(c => c.id === columnId)
-    await this._runBeforeEvent('column.delete', { columnId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
-    const columns = await Columns.removeColumn(this, columnId, boardId)
-    if (colSnapshot) this._runAfterEvent('column.deleted', colSnapshot, auth?.actorHint, this._resolveBoardId(boardId))
+  async removeColumn(columnId: string, boardId?: string): Promise<KanbanColumn[]> {
+    const mergedInput = await this._runBeforeEvent('column.delete', { columnId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
+    const resolvedColumnId = (mergedInput.columnId as string) ?? columnId
+    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
+    const colSnapshot = Columns.listColumns(this, resolvedBoardId).find(c => c.id === resolvedColumnId)
+    const columns = await Columns.removeColumn(this, resolvedColumnId, resolvedBoardId)
+    if (colSnapshot) this._runAfterEvent('column.deleted', colSnapshot, undefined, this._resolveBoardId(resolvedBoardId))
     return columns
   }
 
@@ -2219,9 +2338,8 @@ export class KanbanSDK {
    * console.log(`Moved ${moved} cards to deleted`)
    * ```
    */
-  async cleanupColumn(columnId: string, boardId?: string, auth?: AuthContext): Promise<number> {
-    const authContext = this._withAuthContext(auth, { boardId, columnId })
-    const mergedInput = await this._runBeforeEvent('column.cleanup', { columnId, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async cleanupColumn(columnId: string, boardId?: string): Promise<number> {
+    const mergedInput = await this._runBeforeEvent('column.cleanup', { columnId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
     return Columns.cleanupColumn(
       this,
       (mergedInput.columnId as string) ?? columnId,
@@ -2244,9 +2362,8 @@ export class KanbanSDK {
    * console.log(`Permanently deleted ${count} cards`)
    * ```
    */
-  async purgeDeletedCards(boardId?: string, auth?: AuthContext): Promise<number> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('card.purgeDeleted', { boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async purgeDeletedCards(boardId?: string): Promise<number> {
+    const mergedInput = await this._runBeforeEvent('card.purgeDeleted', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
     return Columns.purgeDeletedCards(this, (mergedInput.boardId as string | undefined) ?? boardId)
   }
 
@@ -2271,9 +2388,8 @@ export class KanbanSDK {
    * )
    * ```
    */
-  async reorderColumns(columnIds: string[], boardId?: string, auth?: AuthContext): Promise<KanbanColumn[]> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('column.reorder', { columnIds, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async reorderColumns(columnIds: string[], boardId?: string): Promise<KanbanColumn[]> {
+    const mergedInput = await this._runBeforeEvent('column.reorder', { columnIds, boardId } as unknown as Record<string, unknown>, undefined, boardId)
     return Columns.reorderColumns(
       this,
       (mergedInput.columnIds as string[]) ?? columnIds,
@@ -2299,9 +2415,8 @@ export class KanbanSDK {
    * @param boardId - Board to update (uses default board if omitted).
    * @returns The sanitized list of minimized column IDs that was saved.
    */
-  async setMinimizedColumns(columnIds: string[], boardId?: string, auth?: AuthContext): Promise<string[]> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('column.setMinimized', { columnIds, boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async setMinimizedColumns(columnIds: string[], boardId?: string): Promise<string[]> {
+    const mergedInput = await this._runBeforeEvent('column.setMinimized', { columnIds, boardId } as unknown as Record<string, unknown>, undefined, boardId)
     return Columns.setMinimizedColumns(
       this,
       (mergedInput.columnIds as string[]) ?? columnIds,
@@ -2347,11 +2462,10 @@ export class KanbanSDK {
    * })
    * ```
    */
-  async updateSettings(settings: CardDisplaySettings, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth)
-    const mergedInput = await this._runBeforeEvent('settings.update', { ...settings } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async updateSettings(settings: CardDisplaySettings): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('settings.update', { ...settings } as unknown as Record<string, unknown>)
     Settings.updateSettings(this, mergedInput as unknown as CardDisplaySettings)
-    this._runAfterEvent('settings.updated', mergedInput, auth?.actorHint)
+    this._runAfterEvent('settings.updated', mergedInput)
   }
 
   // ---------------------------------------------------------------------------
@@ -2381,12 +2495,11 @@ export class KanbanSDK {
    * console.log(`Migrated ${count} cards to SQLite`)
    * ```
    */
-  async migrateToSqlite(dbPath?: string, auth?: AuthContext): Promise<number> {
-    const authContext = this._withAuthContext(auth)
+  async migrateToSqlite(dbPath?: string): Promise<number> {
     const from = this._capabilities?.providers['card.storage'].provider ?? this._storage.type
-    await this._runBeforeEvent('storage.migrate', { to: 'sqlite', from, dbPath } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
-    const count = await Migration.migrateToSqlite(this, dbPath)
-    this._runAfterEvent('storage.migrated', { from, to: 'sqlite', count }, auth?.actorHint)
+    const mergedInput = await this._runBeforeEvent('storage.migrate', { to: 'sqlite', from, dbPath } as unknown as Record<string, unknown>)
+    const count = await Migration.migrateToSqlite(this, (mergedInput.dbPath as string | undefined) ?? dbPath)
+    this._runAfterEvent('storage.migrated', { from, to: 'sqlite', count })
     return count
   }
 
@@ -2411,12 +2524,11 @@ export class KanbanSDK {
    * console.log(`Migrated ${count} cards to markdown`)
    * ```
    */
-  async migrateToMarkdown(auth?: AuthContext): Promise<number> {
-    const authContext = this._withAuthContext(auth)
+  async migrateToMarkdown(): Promise<number> {
     const from = this._capabilities?.providers['card.storage'].provider ?? this._storage.type
-    await this._runBeforeEvent('storage.migrate', { to: 'markdown', from } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+    await this._runBeforeEvent('storage.migrate', { to: 'markdown', from } as unknown as Record<string, unknown>)
     const count = await Migration.migrateToMarkdown(this)
-    this._runAfterEvent('storage.migrated', { from, to: 'markdown', count }, auth?.actorHint)
+    this._runAfterEvent('storage.migrated', { from, to: 'markdown', count })
     return count
   }
 
@@ -2431,9 +2543,8 @@ export class KanbanSDK {
    * sdk.setDefaultBoard('sprint-2')
    * ```
    */
-  async setDefaultBoard(boardId: string, auth?: AuthContext): Promise<void> {
-    const authContext = this._withAuthContext(auth, { boardId })
-    const mergedInput = await this._runBeforeEvent('board.setDefault', { boardId } as unknown as Record<string, unknown>, authContext, auth?.actorHint, boardId)
+  async setDefaultBoard(boardId: string): Promise<void> {
+    const mergedInput = await this._runBeforeEvent('board.setDefault', { boardId } as unknown as Record<string, unknown>, undefined, boardId)
     Settings.setDefaultBoard(this, (mergedInput.boardId as string) ?? boardId)
   }
 
@@ -2460,9 +2571,8 @@ export class KanbanSDK {
    * @param webhookConfig - The webhook configuration.
    * @returns The newly created {@link Webhook}.
    */
-  async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }, auth?: AuthContext): Promise<Webhook> {
-    const authContext = this._withAuthContext(auth)
-    const mergedInput = await this._runBeforeEvent('webhook.create', { ...webhookConfig } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Promise<Webhook> {
+    const mergedInput = await this._runBeforeEvent('webhook.create', { ...webhookConfig } as unknown as Record<string, unknown>)
     const resolvedConfig = mergedInput as unknown as { url: string; events: string[]; secret?: string }
     if (this._capabilities?.webhookProvider) {
       return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, resolvedConfig)
@@ -2478,9 +2588,8 @@ export class KanbanSDK {
    * @param id - The webhook ID to delete.
    * @returns `true` if deleted, `false` if not found.
    */
-  async deleteWebhook(id: string, auth?: AuthContext): Promise<boolean> {
-    const authContext = this._withAuthContext(auth)
-    const mergedInput = await this._runBeforeEvent('webhook.delete', { id } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async deleteWebhook(id: string): Promise<boolean> {
+    const mergedInput = await this._runBeforeEvent('webhook.delete', { id } as unknown as Record<string, unknown>)
     const resolvedId = (mergedInput.id as string) ?? id
     if (this._capabilities?.webhookProvider) {
       return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, resolvedId)
@@ -2497,9 +2606,8 @@ export class KanbanSDK {
    * @param updates - Partial webhook fields to merge.
    * @returns The updated {@link Webhook}, or `null` if not found.
    */
-  async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>, auth?: AuthContext): Promise<Webhook | null> {
-    const authContext = this._withAuthContext(auth)
-    const mergedInput = await this._runBeforeEvent('webhook.update', { id, ...updates } as unknown as Record<string, unknown>, authContext, auth?.actorHint)
+  async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null> {
+    const mergedInput = await this._runBeforeEvent('webhook.update', { id, ...updates } as unknown as Record<string, unknown>)
     const resolvedId = (mergedInput.id as string) ?? id
     const resolvedUpdates = { ...mergedInput }
     delete (resolvedUpdates as { id?: unknown }).id

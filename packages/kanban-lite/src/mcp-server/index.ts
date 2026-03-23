@@ -60,6 +60,10 @@ async function main(): Promise<void> {
     return token ? { token, tokenSource: 'env', transport: 'mcp' } : { transport: 'mcp' }
   }
 
+  function runWithMcpAuth<T>(fn: () => Promise<T>): Promise<T> {
+    return sdk.runWithAuth(resolveMcpAuthContext(), fn)
+  }
+
   function getMcpAuthStatus() {
     const auth = sdk.getAuthStatus()
     const ctx = resolveMcpAuthContext()
@@ -86,7 +90,7 @@ async function main(): Promise<void> {
     columns: z.array(z.object({ id: z.string(), name: z.string(), color: z.string() })).optional().describe('Board columns (defaults to standard columns)'),
   }, async ({ id, name, description, columns }) => {
     try {
-      const board = await sdk.createBoard(id, name, { description, columns }, resolveMcpAuthContext())
+      const board = await runWithMcpAuth(() => sdk.createBoard(id, name, { description, columns }))
       return { content: [{ type: 'text' as const, text: JSON.stringify(board, null, 2) }] }
     } catch (err) {
       if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -109,7 +113,7 @@ async function main(): Promise<void> {
     boardId: z.string().describe('Board ID to delete'),
   }, async ({ boardId }) => {
     try {
-      await sdk.deleteBoard(boardId, resolveMcpAuthContext())
+      await runWithMcpAuth(() => sdk.deleteBoard(boardId))
       return { content: [{ type: 'text' as const, text: `Deleted board: ${boardId}` }] }
     } catch (err) {
       if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -124,7 +128,7 @@ async function main(): Promise<void> {
     targetStatus: z.string().optional().describe('Status in the target board (defaults to board default)'),
   }, async ({ cardId, fromBoard, toBoard, targetStatus }) => {
     try {
-      const card = await sdk.transferCard(cardId, fromBoard, toBoard, targetStatus, resolveMcpAuthContext())
+      const card = await runWithMcpAuth(() => sdk.transferCard(cardId, fromBoard, toBoard, targetStatus))
       return { content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }] }
     } catch (err) {
       return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
@@ -260,7 +264,7 @@ async function main(): Promise<void> {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
       try {
-        const card = await sdk.createCard({
+        const card = await runWithMcpAuth(() => sdk.createCard({
           content,
           status: status || undefined,
           priority: priority as Priority | undefined,
@@ -272,7 +276,7 @@ async function main(): Promise<void> {
           boardId,
           forms,
           formData,
-        }, resolveMcpAuthContext())
+        }))
         return {
           content: [{
             type: 'text' as const,
@@ -338,7 +342,7 @@ async function main(): Promise<void> {
       if (formData !== undefined) updates.formData = formData
 
       try {
-        const updated = await sdk.updateCard(resolvedId, updates, boardId, resolveMcpAuthContext())
+        const updated = await runWithMcpAuth(() => sdk.updateCard(resolvedId, updates, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -383,12 +387,12 @@ async function main(): Promise<void> {
           }
         }
 
-        const result = await sdk.submitForm({
+        const result = await runWithMcpAuth(() => sdk.submitForm({
           boardId,
           cardId: resolvedId,
           formId,
           data,
-        }, resolveMcpAuthContext())
+        }))
 
         return {
           content: [{
@@ -436,7 +440,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        const updated = await sdk.moveCard(resolvedId, status, undefined, boardId, resolveMcpAuthContext())
+        const updated = await runWithMcpAuth(() => sdk.moveCard(resolvedId, status, undefined, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -480,7 +484,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.deleteCard(resolvedId, boardId, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.deleteCard(resolvedId, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -524,7 +528,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.permanentlyDeleteCard(resolvedId, boardId, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.permanentlyDeleteCard(resolvedId, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -548,7 +552,7 @@ async function main(): Promise<void> {
     },
     async ({ card_id, action, board_id }) => {
       try {
-        await sdk.triggerAction(card_id, action, board_id, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.triggerAction(card_id, action, board_id))
         return {
           content: [{ type: 'text' as const, text: `Action "${action}" triggered successfully on card ${card_id}` }],
         }
@@ -585,7 +589,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, key, title }) => {
       try {
-        const actions = await sdk.addBoardAction(boardId, key, title, resolveMcpAuthContext())
+        const actions = await runWithMcpAuth(() => sdk.addBoardAction(boardId, key, title))
         return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -603,7 +607,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, key }) => {
       try {
-        const actions = await sdk.removeBoardAction(boardId, key, resolveMcpAuthContext())
+        const actions = await runWithMcpAuth(() => sdk.removeBoardAction(boardId, key))
         return { content: [{ type: 'text', text: JSON.stringify(actions, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -620,7 +624,7 @@ async function main(): Promise<void> {
       actionKey: z.string().describe('Key of the action to trigger'),
     },
     async ({ boardId, actionKey }) => {
-      await sdk.triggerBoardAction(boardId, actionKey, resolveMcpAuthContext())
+      await runWithMcpAuth(() => sdk.triggerBoardAction(boardId, actionKey))
       return { content: [{ type: 'text', text: `Board action "${actionKey}" fired on board "${boardId}".` }] }
     }
   )
@@ -694,7 +698,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.addAttachment(resolvedId, filePath, boardId, resolveMcpAuthContext())
+      const updated = await runWithMcpAuth(() => sdk.addAttachment(resolvedId, filePath, boardId))
       return {
         content: [{
           type: 'text' as const,
@@ -733,7 +737,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.removeAttachment(resolvedId, attachment, boardId, resolveMcpAuthContext())
+      const updated = await runWithMcpAuth(() => sdk.removeAttachment(resolvedId, attachment, boardId))
       return {
         content: [{
           type: 'text' as const,
@@ -813,7 +817,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const updated = await sdk.addComment(resolvedId, author, content, boardId, resolveMcpAuthContext())
+      const updated = await runWithMcpAuth(() => sdk.addComment(resolvedId, author, content, boardId))
       const added = updated.comments[updated.comments.length - 1]
       return {
         content: [{
@@ -855,7 +859,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        const updated = await sdk.updateComment(resolvedId, commentId, content, boardId, resolveMcpAuthContext())
+        const updated = await runWithMcpAuth(() => sdk.updateComment(resolvedId, commentId, content, boardId))
         const comment = updated.comments.find(c => c.id === commentId)
         return {
           content: [{
@@ -902,7 +906,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.deleteComment(resolvedId, commentId, boardId, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.deleteComment(resolvedId, commentId, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -989,7 +993,7 @@ async function main(): Promise<void> {
         }
       }
 
-      const entry = await sdk.addLog(resolvedId, text, { source, object }, boardId, resolveMcpAuthContext())
+      const entry = await runWithMcpAuth(() => sdk.addLog(resolvedId, text, { source, object }, boardId))
       return {
         content: [{
           type: 'text' as const,
@@ -1028,7 +1032,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        await sdk.clearLogs(resolvedId, boardId, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.clearLogs(resolvedId, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -1074,7 +1078,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, text, source, object }) => {
       try {
-        const entry = await sdk.addBoardLog(text, { source, object: object as Record<string, unknown> | undefined }, boardId, resolveMcpAuthContext())
+        const entry = await runWithMcpAuth(() => sdk.addBoardLog(text, { source, object: object as Record<string, unknown> | undefined }, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -1098,7 +1102,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId }) => {
       try {
-        await sdk.clearBoardLogs(boardId, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.clearBoardLogs(boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -1144,7 +1148,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, id, name, color }) => {
       try {
-        const columns = await sdk.addColumn({ id, name, color }, boardId, resolveMcpAuthContext())
+        const columns = await runWithMcpAuth(() => sdk.addColumn({ id, name, color }, boardId))
         return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1167,7 +1171,7 @@ async function main(): Promise<void> {
       if (name) updates.name = name
       if (color) updates.color = color
       try {
-        const columns = await sdk.updateColumn(columnId, updates, boardId, resolveMcpAuthContext())
+        const columns = await runWithMcpAuth(() => sdk.updateColumn(columnId, updates, boardId))
         return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1185,7 +1189,7 @@ async function main(): Promise<void> {
     },
     async ({ boardId, columnId }) => {
       try {
-        const columns = await sdk.removeColumn(columnId, boardId, resolveMcpAuthContext())
+        const columns = await runWithMcpAuth(() => sdk.removeColumn(columnId, boardId))
         return {
           content: [{
             type: 'text' as const,
@@ -1208,7 +1212,7 @@ async function main(): Promise<void> {
     },
     async ({ columnIds, boardId }) => {
       try {
-        const columns = await sdk.reorderColumns(columnIds, boardId, resolveMcpAuthContext())
+        const columns = await runWithMcpAuth(() => sdk.reorderColumns(columnIds, boardId))
         return { content: [{ type: 'text' as const, text: JSON.stringify(columns, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1226,7 +1230,7 @@ async function main(): Promise<void> {
     },
     async ({ columnIds, boardId }) => {
       try {
-        const minimized = await sdk.setMinimizedColumns(columnIds, boardId, resolveMcpAuthContext())
+        const minimized = await runWithMcpAuth(() => sdk.setMinimizedColumns(columnIds, boardId))
         return { content: [{ type: 'text' as const, text: JSON.stringify({ minimizedColumnIds: minimized }, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1243,7 +1247,7 @@ async function main(): Promise<void> {
       columnId: z.string().describe('Column ID to clean up'),
     },
     async ({ boardId, columnId }) => {
-      const moved = await sdk.cleanupColumn(columnId, boardId, resolveMcpAuthContext())
+      const moved = await runWithMcpAuth(() => sdk.cleanupColumn(columnId, boardId))
       return {
         content: [{
           type: 'text' as const,
@@ -1268,7 +1272,7 @@ async function main(): Promise<void> {
     group: z.string().optional().describe('Optional group name (e.g. "Type", "Priority")')
   }, async ({ name, color, group }) => {
     try {
-      await sdk.setLabel(name, { color, group }, resolveMcpAuthContext())
+      await runWithMcpAuth(() => sdk.setLabel(name, { color, group }))
       return { content: [{ type: 'text' as const, text: `Label "${name}" set with color ${color}${group ? ` in group "${group}"` : ''}` }] }
     } catch (err) {
       if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1280,14 +1284,14 @@ async function main(): Promise<void> {
     oldName: z.string().describe('Current label name'),
     newName: z.string().describe('New label name')
   }, async ({ oldName, newName }) => {
-    await sdk.renameLabel(oldName, newName, resolveMcpAuthContext())
+    await runWithMcpAuth(() => sdk.renameLabel(oldName, newName))
     return { content: [{ type: 'text' as const, text: `Label "${oldName}" renamed to "${newName}"` }] }
   })
 
   server.tool('delete_label', 'Remove a label definition and remove it from all cards', {
     name: z.string().describe('Label name to remove')
   }, async ({ name }) => {
-    await sdk.deleteLabel(name, resolveMcpAuthContext())
+    await runWithMcpAuth(() => sdk.deleteLabel(name))
     return { content: [{ type: 'text' as const, text: `Label "${name}" definition removed` }] }
   })
 
@@ -1333,7 +1337,7 @@ async function main(): Promise<void> {
         }
       }
       try {
-        await sdk.updateSettings(merged, resolveMcpAuthContext())
+        await runWithMcpAuth(() => sdk.updateSettings(merged))
         return { content: [{ type: 'text' as const, text: JSON.stringify(sdk.getSettings(), null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1369,7 +1373,7 @@ async function main(): Promise<void> {
     },
     async ({ url, events, secret }) => {
       try {
-        const webhook = await sdk.createWebhook({ url, events: events || ['*'], secret }, resolveMcpAuthContext())
+        const webhook = await runWithMcpAuth(() => sdk.createWebhook({ url, events: events || ['*'], secret }))
         return { content: [{ type: 'text' as const, text: JSON.stringify(webhook, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1386,7 +1390,7 @@ async function main(): Promise<void> {
     },
     async ({ webhookId }) => {
       try {
-        const removed = await sdk.deleteWebhook(webhookId, resolveMcpAuthContext())
+        const removed = await runWithMcpAuth(() => sdk.deleteWebhook(webhookId))
         if (!removed) {
           return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
         }
@@ -1415,7 +1419,7 @@ async function main(): Promise<void> {
       if (secret !== undefined) updates.secret = secret
       if (active !== undefined) updates.active = active
       try {
-        const updated = await sdk.updateWebhook(webhookId, updates, resolveMcpAuthContext())
+        const updated = await runWithMcpAuth(() => sdk.updateWebhook(webhookId, updates))
         if (!updated) {
           return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
         }
@@ -1513,7 +1517,7 @@ async function main(): Promise<void> {
     },
     async ({ sqlitePath }) => {
       try {
-        const count = await sdk.migrateToSqlite(sqlitePath, resolveMcpAuthContext())
+        const count = await runWithMcpAuth(() => sdk.migrateToSqlite(sqlitePath))
         return {
           content: [{
             type: 'text' as const,
@@ -1535,7 +1539,7 @@ async function main(): Promise<void> {
     {},
     async () => {
       try {
-        const count = await sdk.migrateToMarkdown(resolveMcpAuthContext())
+        const count = await runWithMcpAuth(() => sdk.migrateToMarkdown())
         return {
           content: [{
             type: 'text' as const,

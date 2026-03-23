@@ -1,0 +1,557 @@
+plan_id: "20260323-auth-before-event-refactor"
+objective: "Identify the smallest viable replacement carrier for request-scoped auth after removing mutator `auth?: AuthContext` params, deleting `_withAuthContext`, and removing `BeforeEventPayload.auth`, while preserving first-party auth listener behavior and denial UX."
+focus_area: "replacement carrier for request-scoped auth after removing all `auth?: AuthContext` mutator params, deleting `_withAuthContext`, and removing `BeforeEventPayload.auth`"
+created_at: "2026-03-23"
+created_by: "gem-researcher"
+status: "completed"
+
+tldr: |
+  - Current source uses a direct per-call auth threading model: each host surface creates an `AuthContext` and passes it into nearly every SDK mutator, while the SDK enriches it with board/card/action hints via `_withAuthContext()` before dispatching before-events.
+  - Both the built-in auth listener in `packages/kanban-lite/src/sdk/plugins/index.ts` and the first-party external listener in `packages/kl-auth-plugin/src/index.ts` currently depend on `payload.auth`; there is no existing request-local storage, request decorator, or plugin lifecycle context carrier already in place.
+  - The standalone server shares a single `KanbanSDK` instance across HTTP and WebSocket traffic, so a plain mutable instance field would be the least code churn but is concurrency-sensitive; an SDK-owned async-scoped carrier is the next-smallest option and better matches the shared-instance runtime.
+  - The refactor blast radius is centered in `packages/kanban-lite/src/sdk/KanbanSDK.ts`, `packages/kanban-lite/src/sdk/types.ts`, `packages/kanban-lite/src/sdk/plugins/index.ts`, and `packages/kl-auth-plugin/src/index.ts`, then fans out into host call sites and auth-related regression tests.
+
+research_metadata:
+  methodology: "Hybrid retrieval across the auth/event seam: semantic search for entry points, regex search for exact carrier usage and host call sites, targeted file reads for SDK/contracts/listeners/tests, plus one short terminal pass for exact line counts. Relationship discovery focused on callers of `_runBeforeEvent`, `extractAuthContext`, `resolveCliAuthContext`, `resolveMcpAuthContext`, and auth listener factories."
+  scope: "Focused on the SDK auth/event pipeline, first-party auth listener implementations, first-party host adapters (standalone HTTP/WebSocket, CLI, MCP, extension), and the regression tests that lock current auth behavior."
+  confidence: "high"
+  coverage: 89
+
+files_analyzed:
+  - file: "KanbanSDK.ts"
+    path: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+    purpose: "Main SDK orchestration layer; owns auth helper methods, event dispatch, capability registration, and all mutator call sites."
+    key_elements:
+      - element: "constructor"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:276"
+        description: "Constructs a single shared `EventBus`, resolves capability bag, and registers webhook + auth listener plugins once per SDK instance."
+      - element: "_authorizeAction"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:506"
+        description: "Legacy direct auth seam that resolves identity/policy from an `AuthContext` and emits `auth.allowed`/`auth.denied`."
+      - element: "_withAuthContext"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:545"
+        description: "Shallow-enriches host-provided auth context with board/card/action hints before before-event dispatch."
+      - element: "_runBeforeEvent"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:581"
+        description: "Builds `BeforeEventPayload` including `auth`, `actor`, and `boardId`, then delegates merge behavior to `EventBus.emitAsync()`."
+      - element: "mutator auth fan-out"
+        type: "pattern"
+        location: "packages/kanban-lite/src/sdk/KanbanSDK.ts:894-2502"
+        description: "Dozens of mutators call `_withAuthContext(...)` then `_runBeforeEvent(...)`, forwarding `auth?.actorHint` and board hints."
+    language: "TypeScript"
+    lines: 2512
+
+  - file: "types.ts"
+    path: "packages/kanban-lite/src/sdk/types.ts"
+    purpose: "Defines public SDK auth/event contracts consumed by hosts and plugins."
+    key_elements:
+      - element: "BeforeEventPayload"
+        type: "interface"
+        location: "packages/kanban-lite/src/sdk/types.ts:202"
+        description: "Public before-event envelope; currently includes `auth?: AuthContext` plus actor/board metadata."
+      - element: "BeforeEventListenerResponse"
+        type: "type"
+        location: "packages/kanban-lite/src/sdk/types.ts:248"
+        description: "Documents plain-object override semantics for before-event listeners."
+      - element: "SDKEventListenerPlugin"
+        type: "interface"
+        location: "packages/kanban-lite/src/sdk/types.ts:274"
+        description: "Listener plugin contract is only `register(bus)` / `unregister()`, with no direct SDK or request context access."
+      - element: "AuthContext"
+        type: "interface"
+        location: "packages/kanban-lite/src/sdk/types.ts:404"
+        description: "Carrier for token, transport, tokenSource, actorHint, and target hints such as board/card/comment/action identifiers."
+    language: "TypeScript"
+    lines: 469
+
+  - file: "eventBus.ts"
+    path: "packages/kanban-lite/src/sdk/eventBus.ts"
+    purpose: "Typed event bus for before/after event listeners."
+    key_elements:
+      - element: "emitAsync"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/eventBus.ts:73"
+        description: "Sequentially invokes before-event listeners and currently owns shallow merge semantics for listener return values."
+      - element: "isPlainObject"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/eventBus.ts:11"
+        description: "Defines what counts as a merge candidate for before-event overrides."
+    language: "TypeScript"
+    lines: 251
+
+  - file: "plugins/index.ts"
+    path: "packages/kanban-lite/src/sdk/plugins/index.ts"
+    purpose: "Capability resolver and built-in auth listener implementation for the SDK."
+    key_elements:
+      - element: "createBuiltinAuthListenerPlugin"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/plugins/index.ts:1103"
+        description: "Registers a listener across all before-events and currently resolves auth from `payload.auth`."
+      - element: "resolveCapabilityBag"
+        type: "function"
+        location: "packages/kanban-lite/src/sdk/plugins/index.ts:1275"
+        description: "Constructs the resolved capability bag that the SDK stores and then registers at startup."
+    language: "TypeScript"
+    lines: 1277
+
+  - file: "index.ts"
+    path: "packages/kl-auth-plugin/src/index.ts"
+    purpose: "First-party external auth listener package mirroring the built-in listener behavior."
+    key_elements:
+      - element: "ProviderBackedAuthListenerPlugin.register"
+        type: "function"
+        location: "packages/kl-auth-plugin/src/index.ts:408"
+        description: "Subscribes to all before-events and currently resolves context from `payload.auth`."
+      - element: "AuthListenerPluginOptions"
+        type: "interface"
+        location: "packages/kl-auth-plugin/src/index.ts:135"
+        description: "Current extension point only supports input override behavior; it has no request-context provider hook."
+      - element: "createAuthListenerPlugin"
+        type: "function"
+        location: "packages/kl-auth-plugin/src/index.ts:450"
+        description: "Factory surface likely to change if listener context must come from a getter/provider instead of payload auth."
+    language: "TypeScript"
+    lines: 491
+
+  - file: "authUtils.ts"
+    path: "packages/kanban-lite/src/standalone/authUtils.ts"
+    purpose: "Standalone HTTP auth extraction and auth status reporting."
+    key_elements:
+      - element: "extractAuthContext"
+        type: "function"
+        location: "packages/kanban-lite/src/standalone/authUtils.ts:5"
+        description: "Builds `AuthContext` from HTTP Authorization header with `transport: 'http'`."
+      - element: "getAuthStatus"
+        type: "function"
+        location: "packages/kanban-lite/src/standalone/authUtils.ts:13"
+        description: "Reports safe request-scoped token diagnostics without leaking token contents."
+    language: "TypeScript"
+    lines: 29
+
+  - file: "mutationService.ts"
+    path: "packages/kanban-lite/src/standalone/mutationService.ts"
+    purpose: "Standalone mutation wrapper layer around SDK operations."
+    key_elements:
+      - element: "doCreateCard / doMoveCard / doUpdateCard / doSubmitForm"
+        type: "pattern"
+        location: "packages/kanban-lite/src/standalone/mutationService.ts:13-200"
+        description: "Most standalone write helpers accept `auth?: AuthContext` and forward it unchanged into SDK mutators."
+    language: "TypeScript"
+    lines: 312
+
+  - file: "messageHandlers.ts"
+    path: "packages/kanban-lite/src/standalone/messageHandlers.ts"
+    purpose: "Standalone WebSocket message router."
+    key_elements:
+      - element: "handleMessage"
+        type: "function"
+        location: "packages/kanban-lite/src/standalone/messageHandlers.ts:27"
+        description: "Accepts a connection-scoped `authContext` and threads it through WebSocket-triggered SDK mutations."
+    language: "TypeScript"
+    lines: 397
+
+  - file: "websocket.ts"
+    path: "packages/kanban-lite/src/standalone/internal/websocket.ts"
+    purpose: "Binds per-connection auth context for the standalone WebSocket channel."
+    key_elements:
+      - element: "attachWebSocketHandlers"
+        type: "function"
+        location: "packages/kanban-lite/src/standalone/internal/websocket.ts:6"
+        description: "Captures `authContext` once at connection time and reuses it for each message."
+    language: "TypeScript"
+    lines: 26
+
+  - file: "server.ts"
+    path: "packages/kanban-lite/src/standalone/server.ts"
+    purpose: "Standalone server bootstrap and lifecycle."
+    key_elements:
+      - element: "fastify.addHook('onRequest')"
+        type: "pattern"
+        location: "packages/kanban-lite/src/standalone/server.ts:71"
+        description: "Only adds CORS/OPTIONS handling; does not decorate requests with auth or request-local state."
+    language: "TypeScript"
+    lines: 128
+
+  - file: "index.ts"
+    path: "packages/kanban-lite/src/cli/index.ts"
+    purpose: "CLI host adapter over the SDK."
+    key_elements:
+      - element: "resolveCliAuthContext"
+        type: "function"
+        location: "packages/kanban-lite/src/cli/index.ts:13"
+        description: "Constructs transport-scoped auth from `KANBAN_TOKEN`."
+      - element: "CLI mutator call sites"
+        type: "pattern"
+        location: "packages/kanban-lite/src/cli/index.ts:407-1766"
+        description: "Many commands forward `resolveCliAuthContext()` as the trailing mutator argument."
+    language: "TypeScript"
+    lines: 1951
+
+  - file: "index.ts"
+    path: "packages/kanban-lite/src/mcp-server/index.ts"
+    purpose: "MCP host adapter over the SDK."
+    key_elements:
+      - element: "resolveMcpAuthContext"
+        type: "function"
+        location: "packages/kanban-lite/src/mcp-server/index.ts:58"
+        description: "Constructs transport-scoped auth from `KANBAN_TOKEN`."
+      - element: "MCP tool call sites"
+        type: "pattern"
+        location: "packages/kanban-lite/src/mcp-server/index.ts:89-1538"
+        description: "Most mutating tools pass `resolveMcpAuthContext()` as the trailing SDK argument."
+    language: "TypeScript"
+    lines: 1563
+
+  - file: "auth.ts"
+    path: "packages/kanban-lite/src/extension/auth.ts"
+    purpose: "Extension host auth resolution/status helpers."
+    key_elements:
+      - element: "resolveExtensionAuthContext"
+        type: "function"
+        location: "packages/kanban-lite/src/extension/auth.ts:8"
+        description: "Builds extension auth context from VS Code SecretStorage with `transport: 'extension'`."
+    language: "TypeScript"
+    lines: 24
+
+  - file: "action-runner.test.ts"
+    path: "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts"
+    purpose: "Regression coverage for before/after event helper behavior."
+    key_elements:
+      - element: "runBefore helper"
+        type: "pattern"
+        location: "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts:16"
+        description: "Calls `_runBeforeEvent(...)` directly with `auth`, `actor`, and `boardId` arguments."
+      - element: "actor/boardId/transport payload assertion"
+        type: "test"
+        location: "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts:139"
+        description: "Asserts listeners currently receive `auth.transport` via the before-event payload."
+    language: "TypeScript"
+    lines: 718
+
+  - file: "auth-enforcement.test.ts"
+    path: "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+    purpose: "Regression coverage for auth denial behavior and auth hint enrichment."
+    key_elements:
+      - element: "SDK enriches auth context with target hints"
+        type: "test"
+        location: "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts:473"
+        description: "Asserts board/card/comment/transfer hints are added into `AuthContext` before policy evaluation."
+      - element: "extension token denial path"
+        type: "test"
+        location: "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts:536"
+        description: "Ensures denial messages do not leak secret-storage token material."
+    language: "TypeScript"
+    lines: 579
+
+  - file: "plugin-registry.test.ts"
+    path: "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts"
+    purpose: "Regression coverage for auth providers and legacy `_authorizeAction` behavior."
+    key_elements:
+      - element: "_authorizeAction noop and deny-all tests"
+        type: "test"
+        location: "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts:935"
+        description: "Locks current direct-auth seam behavior and several auth plugin contracts."
+    language: "TypeScript"
+    lines: 1615
+
+  - file: "auth-plugin.integration.test.ts"
+    path: "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts"
+    purpose: "Integration coverage for the external auth listener package."
+    key_elements:
+      - element: "makeBeforePayload"
+        type: "function"
+        location: "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts:36"
+        description: "Builds test payloads with `auth: { transport: 'http' }`."
+      - element: "listener-only auth runtime assertions"
+        type: "test"
+        location: "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts:288"
+        description: "Verifies `auth.allowed` / `auth.denied` behavior and payload-driven identity/policy lookup."
+    language: "TypeScript"
+    lines: 364
+
+patterns_found:
+  - category: "architecture"
+    pattern: "Host surfaces build `AuthContext` at the transport boundary and pass it directly into SDK mutators."
+    description: "HTTP, CLI, MCP, extension, and WebSocket code all follow the same pattern: resolve transport metadata + token once, then thread it as the trailing SDK argument."
+    examples:
+      - file: "packages/kanban-lite/src/standalone/authUtils.ts"
+        location: "5-10"
+        snippet: "return { token: authorization.slice(7), tokenSource: 'request-header', transport: 'http' }"
+      - file: "packages/kanban-lite/src/cli/index.ts"
+        location: "13-15"
+        snippet: "return token ? { token, tokenSource: 'env', transport: 'cli' } : { transport: 'cli' }"
+      - file: "packages/kanban-lite/src/mcp-server/index.ts"
+        location: "58-60"
+        snippet: "return token ? { token, tokenSource: 'env', transport: 'mcp' } : { transport: 'mcp' }"
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "The SDK currently enriches request auth with target hints before emitting before-events."
+    description: "`_withAuthContext()` adds board/card/comment/action metadata to the host context, and mutators pass `auth?.actorHint` separately into `_runBeforeEvent()`."
+    examples:
+      - file: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+        location: "545-555"
+        snippet: "_withAuthContext(context?: AuthContext, hints?: Partial<AuthContext>): AuthContext"
+      - file: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+        location: "895-896"
+        snippet: "const authContext = this._withAuthContext(auth, { boardId: id }); await this._runBeforeEvent('board.create', ..., authContext, auth?.actorHint, id)"
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "Both first-party auth listeners are payload-driven and symmetric."
+    description: "The built-in SDK auth listener and the external `kl-auth-plugin` listener perform the same sequence: validate before-event payload, read `payload.auth`, resolve identity, check policy, emit `auth.allowed`/`auth.denied`, and throw `AuthError` on denial."
+    examples:
+      - file: "packages/kanban-lite/src/sdk/plugins/index.ts"
+        location: "1113-1139"
+        snippet: "const context = payload.auth ?? {}; const identity = await authIdentity.resolveIdentity(context); const decision = await authPolicy.checkPolicy(identity, action, context)"
+      - file: "packages/kl-auth-plugin/src/index.ts"
+        location: "412-435"
+        snippet: "const context = payload.auth ?? {}; const identity = await this.authIdentity.resolveIdentity(context); const decision = await this.authPolicy.checkPolicy(identity, action, context)"
+    prevalence: "common"
+
+  - category: "error_handling"
+    pattern: "Denial UX is category-based and token-redaction aware."
+    description: "Authorization failure is normalized into `AuthError` categories, then each host maps them to UX-appropriate responses (HTTP status or user-facing CLI/MCP messaging) without including token material."
+    examples:
+      - file: "packages/kanban-lite/src/standalone/authUtils.ts"
+        location: "23-27"
+        snippet: "auth.identity.* => 401; auth.policy.* => 403"
+      - file: "packages/kanban-lite/src/cli/index.ts"
+        location: "29-36"
+        snippet: "Authentication required. Set KANBAN_TOKEN environment variable. / Access denied (category)"
+      - file: "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+        location: "536-560"
+        snippet: "extension host denial path does not leak token material"
+    prevalence: "common"
+
+  - category: "testing"
+    pattern: "Internal seam tests target helper methods and auth listener behavior directly."
+    description: "Tests frequently access internal SDK helpers via type assertions and replace capability bag members to lock behavior around auth context flow."
+    examples:
+      - file: "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts"
+        location: "16-28"
+        snippet: "runBefore(...) casts SDK internals and calls `_runBeforeEvent(...)` directly"
+      - file: "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+        location: "491-524"
+        snippet: "capture-and-deny policy records enriched `AuthContext` and asserts target hints"
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "No existing request-local carrier or host lifecycle context object is reused for auth."
+    description: "Searches found no `AsyncLocalStorage`, request-scoped maps, Fastify request decoration for auth, or plugin registration context that could already supply auth to listeners after `payload.auth` is removed."
+    examples:
+      - file: "packages/kanban-lite/src/standalone/server.ts"
+        location: "71-79"
+        snippet: "`onRequest` hook only sets CORS headers and handles OPTIONS"
+      - file: "packages/kanban-lite/src/standalone/context.ts"
+        location: "1-15"
+        snippet: "Shared runtime context contains board/editor/watcher state but no auth field"
+    prevalence: "common"
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "KanbanSDK helper pipeline"
+      responsibility: "Owns before/after event dispatch, auth hint enrichment, and mutator orchestration."
+      location: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+      relationship_to_domain: "domain is centered here"
+    - component: "Built-in auth listener"
+      responsibility: "Per-before-event authorization enforcement using resolved identity/policy providers."
+      location: "packages/kanban-lite/src/sdk/plugins/index.ts"
+      relationship_to_domain: "depends on the current before-event auth carrier"
+    - component: "External first-party auth listener package"
+      responsibility: "Mirrors built-in auth listener behavior for packaged consumption outside the SDK."
+      location: "packages/kl-auth-plugin/src/index.ts"
+      relationship_to_domain: "depends on the current before-event auth carrier"
+    - component: "Standalone transport adapters"
+      responsibility: "Extract HTTP/WebSocket auth and invoke SDK mutations on a shared SDK instance."
+      location: "packages/kanban-lite/src/standalone/**"
+      relationship_to_domain: "supplies request/connection-scoped auth into the SDK"
+    - component: "CLI, MCP, extension adapters"
+      responsibility: "Construct transport-specific auth contexts and call SDK mutators."
+      location: "packages/kanban-lite/src/{cli,mcp-server,extension}/**"
+      relationship_to_domain: "supplies process/editor-scoped auth into the SDK"
+  interfaces_used_by_domain:
+    - interface: "AuthContext"
+      location: "packages/kanban-lite/src/sdk/types.ts:404"
+      usage_pattern: "Host transports produce it; SDK enriches it; identity/policy providers consume it."
+    - interface: "BeforeEventPayload<TInput>"
+      location: "packages/kanban-lite/src/sdk/types.ts:202"
+      usage_pattern: "Before-event listeners inspect it; auth listeners currently read `payload.auth`."
+    - interface: "SDKEventListenerPlugin"
+      location: "packages/kanban-lite/src/sdk/types.ts:274"
+      usage_pattern: "Auth listener plugins only receive `register(bus)` and no direct SDK handle."
+  data_flow_involving_domain: "Transport boundary constructs `AuthContext` -> SDK mutator receives it as trailing param -> `_withAuthContext()` adds target hints -> `_runBeforeEvent()` serializes it into `BeforeEventPayload.auth` -> built-in/external auth listener resolves identity and policy -> denial emits `auth.denied` and throws `AuthError`; success emits `auth.allowed` and mutation continues."
+  key_relationships_to_domain:
+    - from: "standalone/authUtils.ts, cli/index.ts, mcp-server/index.ts, extension/auth.ts"
+      to: "sdk/KanbanSDK.ts"
+      relationship: "constructs auth context for SDK calls"
+    - from: "sdk/KanbanSDK.ts"
+      to: "sdk/eventBus.ts"
+      relationship: "calls emitAsync for before-events and emit for after-events"
+    - from: "sdk/KanbanSDK.ts"
+      to: "sdk/plugins/index.ts"
+      relationship: "registers built-in auth listener at SDK startup"
+    - from: "kl-auth-plugin/src/index.ts"
+      to: "sdk types contract"
+      relationship: "mirrors and depends on public BeforeEventPayload/AuthContext shape"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "TypeScript"
+  frameworks_used_in_domain:
+    - name: "Fastify"
+      usage_in_domain: "Standalone HTTP server and request lifecycle hooks."
+    - name: "Model Context Protocol SDK"
+      usage_in_domain: "MCP server host surface calling SDK mutators."
+  libraries_used_in_domain:
+    - name: "eventemitter2"
+      purpose_in_domain: "Wildcard-capable event bus implementation for before/after events."
+    - name: "ws"
+      purpose_in_domain: "Standalone WebSocket transport that reuses per-connection auth context."
+    - name: "zod"
+      purpose_in_domain: "MCP tool input validation; unrelated to auth carrier itself but present at host boundary."
+    - name: "VS Code Extension API"
+      purpose_in_domain: "Extension SecretStorage-backed auth token resolution."
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: "Transport helpers follow `extractAuthContext` / `resolve*AuthContext` / `get*AuthStatus`; SDK internals use `_runBeforeEvent`, `_runAfterEvent`, `_withAuthContext`; listener factories use `create*AuthListenerPlugin`."
+  structure_of_domain: "SDK-first architecture with thin host adapters. Auth extraction lives at transport edges, while authorization logic lives in SDK listeners/capability providers."
+  error_handling_in_domain: "Before-event auth denial throws `AuthError`; hosts map categories to HTTP status or user-facing output. Event bus isolates after-event listener failures but intentionally propagates before-event errors."
+  testing_in_domain: "Vitest suites test internal helper seams directly and patch capability bags/listeners to capture current auth flow."
+  documentation_in_domain: "JSDoc in `sdk/types.ts` and `sdk/plugins/index.ts` describes the current public contract; generated docs derive from these comments."
+
+related_dependencies:
+  internal:
+    - component: "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+      relationship_to_domain: "source of mutator auth flow, helper pipeline, and listener registration"
+      direction: "bidirectional"
+    - component: "packages/kanban-lite/src/sdk/plugins/index.ts"
+      relationship_to_domain: "built-in auth listener and capability bag assembly"
+      direction: "bidirectional"
+    - component: "packages/kl-auth-plugin/src/index.ts"
+      relationship_to_domain: "external first-party listener sharing the same auth carrier assumptions"
+      direction: "bidirectional"
+    - component: "packages/kanban-lite/src/standalone/**"
+      relationship_to_domain: "shared-SDK host surface with concurrent HTTP/WebSocket entry points"
+      direction: "inbound"
+    - component: "packages/kanban-lite/src/{cli,mcp-server,extension}/**"
+      relationship_to_domain: "host call sites that currently rely on trailing auth mutator params"
+      direction: "inbound"
+  external:
+    - name: "eventemitter2"
+      purpose_for_domain: "Event dispatch and wildcard listener routing for before/after events."
+    - name: "@modelcontextprotocol/sdk"
+      purpose_for_domain: "MCP server hosting of SDK mutations."
+    - name: "Fastify"
+      purpose_for_domain: "Standalone HTTP routing where per-request auth is first extracted."
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Auth token handling"
+      location: "packages/kanban-lite/src/sdk/types.ts:404; packages/kanban-lite/src/standalone/authUtils.ts:5; packages/kanban-lite/src/cli/index.ts:13; packages/kanban-lite/src/mcp-server/index.ts:58; packages/kanban-lite/src/extension/auth.ts:8"
+      concern: "Tokens are intentionally kept opaque and should not leak into errors, logs, or persisted config."
+    - area: "Shared SDK instance in standalone runtime"
+      location: "packages/kanban-lite/src/standalone/context.ts:1; packages/kanban-lite/src/standalone/internal/websocket.ts:6"
+      concern: "Any replacement carrier implemented as plain mutable SDK instance state can be observed by overlapping HTTP requests or WebSocket messages."
+  authentication_patterns_in_domain: "Identity is derived from `AuthContext` by auth identity providers; hosts only source the opaque token and transport metadata."
+  authorization_patterns_in_domain: "Auth policy providers decide allow/deny per before-event action; listeners emit `auth.allowed`/`auth.denied` and throw `AuthError` on veto."
+  data_validation_in_domain: "Transport extraction is minimal (Bearer header / env / SecretStorage), with denial classification handled centrally by auth providers and `AuthError`."
+
+testing_patterns:
+  framework: "Vitest"
+  coverage_areas:
+    - "Before-event payload merge semantics and helper arguments"
+    - "Auth denial behavior and denial UX/token redaction"
+    - "Auth target hint enrichment into `AuthContext`"
+    - "Built-in and external auth listener parity"
+    - "CLI/MCP host call-site expectations for trailing auth arguments"
+  test_organization: "SDK helper tests under `packages/kanban-lite/src/sdk/__tests__`, host-specific tests under each surface (for example `mcp-server/index.test.ts` and `cli/index.test.ts`), and cross-package listener tests in `packages/kl-auth-plugin/src/auth-plugin.integration.test.ts`."
+  mock_patterns:
+    - "Type assertions to call internal SDK helpers directly"
+    - "Replacing capability bag members with capture/deny test doubles"
+    - "Listener spies asserting emitted `auth.allowed` / `auth.denied` events"
+
+implementation_options_ranked:
+  - rank: 1
+    option: "SDK-owned mutable current-auth carrier with an explicit scoped wrapper"
+    minimal_churn_assessment: "Lowest source churn. Reuses the current single-SDK orchestration model and existing auth listener registration seam."
+    carrier_shape: "Introduce an internal SDK getter/setter wrapper (for example, a scoped `withRequestAuth(...)`-style execution path) so hosts stop passing trailing auth args, while auth listeners obtain the active context from the SDK instead of `payload.auth`."
+    exact_files_likely_affected:
+      - "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+      - "packages/kanban-lite/src/sdk/types.ts"
+      - "packages/kanban-lite/src/sdk/eventBus.ts"
+      - "packages/kanban-lite/src/sdk/plugins/index.ts"
+      - "packages/kl-auth-plugin/src/index.ts"
+      - "packages/kanban-lite/src/standalone/mutationService.ts"
+      - "packages/kanban-lite/src/standalone/messageHandlers.ts"
+      - "packages/kanban-lite/src/standalone/internal/routes/boards.ts"
+      - "packages/kanban-lite/src/standalone/internal/routes/system.ts"
+      - "packages/kanban-lite/src/cli/index.ts"
+      - "packages/kanban-lite/src/mcp-server/index.ts"
+      - "packages/kanban-lite/src/extension/index.ts"
+      - "packages/kanban-lite/src/extension/KanbanPanel.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts"
+      - "packages/kanban-lite/src/mcp-server/index.test.ts"
+      - "packages/kanban-lite/src/cli/index.test.ts"
+      - "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts"
+    preserved_behaviors: "Can preserve built-in/external auth listener behavior and existing denial UX if the SDK still emits the same auth events and supplies the same enriched hints to identity/policy providers."
+    tradeoffs:
+      - "Smallest conceptual delta from the current code: the auth listener logic itself barely changes beyond replacing `payload.auth` lookup with an injected getter/provider."
+      - "Concurrency risk is material because standalone HTTP and WebSocket paths share one SDK instance; plain mutable instance state can bleed across overlapping async work unless calls are serialized or carefully nested/restored."
+      - "Because `SDKEventListenerPlugin.register()` only receives the bus, the built-in and external auth listener factories would still need a new way to access the SDK-owned getter."
+
+  - rank: 2
+    option: "SDK-owned async-scoped carrier behind the same wrapper API"
+    minimal_churn_assessment: "Slightly more churn than option 1, but still SDK-first and still avoids new dependencies because Node provides `AsyncLocalStorage`."
+    carrier_shape: "Keep the host-side wrapper pattern, but back the active request auth with an async-scoped store so auth listeners resolve the current context from the store instead of from payload fields."
+    exact_files_likely_affected:
+      - "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+      - "packages/kanban-lite/src/sdk/types.ts"
+      - "packages/kanban-lite/src/sdk/eventBus.ts"
+      - "packages/kanban-lite/src/sdk/plugins/index.ts"
+      - "packages/kl-auth-plugin/src/index.ts"
+      - "packages/kanban-lite/src/standalone/mutationService.ts"
+      - "packages/kanban-lite/src/standalone/messageHandlers.ts"
+      - "packages/kanban-lite/src/standalone/internal/routes/boards.ts"
+      - "packages/kanban-lite/src/standalone/internal/routes/system.ts"
+      - "packages/kanban-lite/src/cli/index.ts"
+      - "packages/kanban-lite/src/mcp-server/index.ts"
+      - "packages/kanban-lite/src/extension/index.ts"
+      - "packages/kanban-lite/src/extension/KanbanPanel.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts"
+      - "packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts"
+      - "packages/kanban-lite/src/mcp-server/index.test.ts"
+      - "packages/kanban-lite/src/cli/index.test.ts"
+      - "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts"
+    preserved_behaviors: "Better aligned with preserving request-scoped semantics across shared SDK instances while retaining the same `AuthError`-based denial path and auth status events."
+    tradeoffs:
+      - "Handles overlapping standalone HTTP/WebSocket work more safely than plain mutable instance state."
+      - "Adds async-scope complexity and more test burden around nested/parallel calls."
+      - "Still requires a listener-side provider/getter hook because `BeforeEventPayload.auth` goes away and plugin registration currently exposes only the bus."
+
+open_questions:
+  - question: "Should the replacement carrier remain visible to before-event listeners through a new neutral provider/getter API, or is the intent to hide request auth from third-party listeners entirely and reserve it for first-party auth enforcement only?"
+    context: "Current public contract exposes `AuthContext` directly via `BeforeEventPayload.auth`, and both built-in and packaged first-party listeners depend on that visibility."
+  - question: "Does the refactor need to preserve the exact current target-hint surface (`boardId`, `cardId`, `commentId`, `actionKey`, etc.) on the auth carrier, or may some hints move to non-auth fields on the payload?"
+    context: "Tests in `auth-enforcement.test.ts` currently assert that policy providers receive these hints inside `AuthContext`, not merely elsewhere in the payload."
+  - question: "Is concurrent standalone request/message isolation a hard requirement for this plan, or is the desired change purely minimal-diff with current hidden assumptions?"
+    context: "The shared standalone SDK instance makes this the main tradeoff between plain mutable state and async-scoped state."
+
+gaps:
+  - area: "Extension host call-site coverage"
+    description: "Extension auth resolution and two extension auth call sites were identified via search (`src/extension/index.ts`, `src/extension/KanbanPanel.ts`), but those files were not fully read in this pass."
+    impact: "Likely affected-file list for extension is high-confidence, but exact method-by-method blast radius there is slightly less detailed than for CLI/MCP/standalone."
+  - area: "Concurrency regression coverage"
+    description: "No existing tests were found that model overlapping HTTP requests or overlapping WebSocket-triggered mutations on the same `KanbanSDK` instance."
+    impact: "The safety difference between mutable-instance and async-scoped carriers is clear architecturally, but not yet locked down by existing tests."
+  - area: "Generated/dist artifacts"
+    description: "Built output under `dist/` contains auth-related helper names that diverge from current source, but this research focused on source files only."
+    impact: "Source-of-truth findings are unaffected, but built artifacts may look ahead/behind and should not be used as the design baseline without verification."

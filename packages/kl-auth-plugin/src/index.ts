@@ -76,7 +76,6 @@ export type SDKBeforeEventType =
 export interface BeforeEventPayload<TInput = Record<string, unknown>> {
   readonly event: SDKBeforeEventType
   readonly input: TInput
-  readonly auth?: AuthContext
   readonly actor?: string
   readonly boardId?: string
   readonly timestamp: string
@@ -134,6 +133,7 @@ export interface AuthListenerOverrideContext {
 
 export interface AuthListenerPluginOptions {
   readonly id?: string
+  readonly getAuthContext?: () => AuthContext | undefined
   readonly overrideInput?: (
     context: AuthListenerOverrideContext,
   ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
@@ -359,6 +359,37 @@ function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity
   return identity ? 'auth.policy.denied' : 'auth.identity.missing'
 }
 
+function withAuthHints(
+  context: AuthContext | undefined,
+  payload: BeforeEventPayload<Record<string, unknown>>,
+): AuthContext {
+  const merged: AuthContext = { ...(context ?? {}) }
+  const input = payload.input
+  const setString = (key: keyof AuthContext, value: unknown): void => {
+    if (typeof value === 'string' && value.length > 0) merged[key] = value
+  }
+
+  setString('boardId', payload.boardId)
+  setString('boardId', input.boardId)
+  setString('cardId', input.cardId)
+  setString('fromBoardId', input.fromBoardId)
+  setString('toBoardId', input.toBoardId)
+  setString('columnId', input.columnId)
+  setString('commentId', input.commentId)
+  setString('attachment', input.attachment)
+  setString('actionKey', input.actionKey)
+  setString('formId', input.formId)
+  setString('labelName', input.labelName)
+
+  if (!merged.columnId) setString('columnId', input.targetStatus)
+  if (!merged.actionKey) setString('actionKey', input.action)
+  if (!merged.actionKey) setString('actionKey', input.key)
+  if (!merged.labelName) setString('labelName', input.name)
+  if (!merged.labelName) setString('labelName', input.oldName)
+
+  return merged
+}
+
 function emitAuthStatusEvent(
   bus: EventBus,
   type: 'auth.allowed' | 'auth.denied',
@@ -384,7 +415,8 @@ function emitAuthStatusEvent(
 /**
  * Listener-only auth runtime plugin backed by identity/policy capability providers.
  *
- * Registers across all SDK before-events, resolves identity from `payload.auth`,
+ * Registers across all SDK before-events, resolves identity from the active
+ * scoped auth carrier exposed via `options.getAuthContext`,
  * evaluates authorization for `payload.event`, throws `AuthError` to veto denied
  * mutations, and may return a plain-object input override when `overrideInput`
  * is supplied.
@@ -413,7 +445,7 @@ export class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin 
     ): Promise<BeforeEventListenerResponse> => {
       if (!isBeforeEventPayload(payload)) return
 
-      const context = payload.auth ?? {}
+      const context = withAuthHints(this.options.getAuthContext?.(), payload)
       const action = payload.event
       const identity = await this.authIdentity.resolveIdentity(context)
       const decision = await this.authPolicy.checkPolicy(identity, action, context)

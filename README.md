@@ -806,6 +806,30 @@ kl board-actions remove --board default deploy
 kl board-actions fire --board default deploy
 ```
 
+## n8n Integration
+
+Kanban Lite ships a first-party n8n package at `packages/n8n-nodes-kanban-lite`, published as [`n8n-nodes-kanban-lite`](https://www.npmjs.com/package/n8n-nodes-kanban-lite). It adds two nodes:
+
+- **`Kanban Lite`** — app node for boards, cards, columns, comments, attachments, labels, settings, storage, forms, webhooks, workspace info, and auth status
+- **`Kanban Lite Trigger`** — trigger node for transport-aware Kanban Lite events
+
+Both nodes support two connection modes:
+
+| Mode | Best for | Requirements |
+|------|----------|--------------|
+| **Remote API** | Connecting n8n to a running standalone Kanban Lite server | Configure the `Kanban Lite API` credential with server URL and auth settings |
+| **Local SDK** | Running n8n on the same machine as the workspace for direct local access | Configure the `Kanban Lite SDK (Local)` credential, make the workspace path accessible to n8n, and install `kanban-lite` in the n8n runtime so the node can load `kanban-lite/sdk` |
+
+Trigger parity is intentionally asymmetric:
+
+- **Local SDK mode** can subscribe to both **before-events** and **after-events** from the canonical SDK event catalog
+- **Remote API mode** receives **after-events only** through webhook delivery from the standalone server
+- **Remote API trigger mode requires a reachable n8n webhook URL** so Kanban Lite can POST event deliveries back into the workflow
+
+In practice, that means SDK mode can observe pre-commit events such as `card.create`, `column.reorder`, `storage.migrate`, or `form.submit`, while both modes can observe committed events such as `task.created`, `task.updated`, `board.created`, `comment.updated`, `attachment.added`, `form.submitted`, `storage.migrated`, and `auth.allowed` / `auth.denied`.
+
+See [`packages/n8n-nodes-kanban-lite/README.md`](packages/n8n-nodes-kanban-lite/README.md) for installation steps, credential setup, action coverage, and trigger examples.
+
 ## MCP Server
 
 Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -966,7 +990,7 @@ sdk.updateSettings({ ...settings, compactMode: true })
 
 The SDK exposes a pub/sub event bus for custom subscriptions, and it now owns the full mutation lifecycle.
 
-- Before-events are awaited in registration order and may either return plain-object overrides (shallow-merged into the pending input) or throw to veto the write.
+- Before-events are awaited in registration order and may either return plain-object overrides (immutably deep-merged over a cloned input, with the original input preserved when no listener changes it) or throw to veto the write.
 - After-events fire exactly once after commit and stay non-blocking so side-effect listeners do not affect the caller.
 - The legacy `onEvent` callback still works as a compatibility subscription hook for SDK consumers, but runtime plugins should use the listener-only `register()` / `unregister()` contract.
 
@@ -1242,6 +1266,8 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop` and `rbac` resolve through the external `kl-auth-plugin` package, and the SDK now enforces authorization through listener-only before-events that run before a write is committed.
 
 That means the runtime contract changed for plugin authors even though the user experience did not: auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host. Current releases still retain the compatibility provider path when the package is not installed so existing workspaces behave the same.
+
+Host surfaces now install request-scoped auth with `sdk.runWithAuth(authContext, fn)` before calling SDK mutators. The first-party auth listener resolves identity/policy from that scoped carrier plus the before-event's actor/board hints; auth is no longer threaded through positional mutation args or a `BeforeEventPayload.auth` field.
 
 Install the package in the environment that loads Kanban Lite:
 

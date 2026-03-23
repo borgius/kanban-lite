@@ -1,7 +1,6 @@
-import { extractAuthContext } from '../authUtils'
+import { extractAuthContext, getAuthErrorLike } from '../authUtils'
 import type { StandaloneContext } from '../context'
 import { handleMessage } from '../messageHandlers'
-import { AuthError } from '../../sdk/types'
 
 export function attachWebSocketHandlers(ctx: StandaloneContext): void {
   ctx.wss.on('connection', (ws, req) => {
@@ -15,8 +14,9 @@ export function attachWebSocketHandlers(ctx: StandaloneContext): void {
         return
       }
       handleMessage(ctx, ws, message, authContext).catch((err) => {
-        if (err instanceof AuthError) {
-          ws.send(JSON.stringify({ type: 'authDenied', category: err.category, message: err.message }))
+        const authErr = getAuthErrorLike(err)
+        if (authErr) {
+          ws.send(JSON.stringify({ type: 'authDenied', category: authErr.category, message: authErr.message }))
         } else {
           console.error('Failed to handle message:', err)
         }

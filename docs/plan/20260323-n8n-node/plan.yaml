@@ -1,0 +1,548 @@
+plan_id: 20260323-n8n-node
+objective: |
+  Create a first-party n8n node package for kanban-lite that supports the full
+  action surface and official event triggers, with node settings allowing either
+  local SDK transport or remote API transport.
+created_at: "2026-03-23"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  Recommend a dedicated workspace package at `packages/n8n-nodes-kanban-lite`
+  published as `n8n-nodes-kanban-lite`, which matches n8n's node-package
+  conventions while keeping the monorepo's first-party ownership clear. The
+  lowest-risk architecture is a programmatic n8n app node (`Kanban Lite`) plus a
+  trigger node (`Kanban Lite Trigger`) backed by one shared transport layer that
+  normalizes SDK and API behavior into the same operation and event contracts.
+  Because kanban-lite's trigger surface is intentionally asymmetric today
+  (local SDK can observe before + after events, remote API/webhook delivery can
+  observe committed after-events only), the plan adds an SDK-first event catalog
+  and transport capability metadata before package implementation so trigger
+  parity is explicit, testable, and documented rather than hand-waved into chaos.
+
+open_questions:
+  - "Assume package path `packages/n8n-nodes-kanban-lite` and npm package name `n8n-nodes-kanban-lite`; this is the recommended default because it aligns with n8n node-package installation and discovery conventions better than the internal `kl-*` prefix."
+  - "Assume remote API auth reuses the existing kanban-lite auth story (for example bearer token or header-based auth exposed by the standalone server) rather than inventing a new n8n-only auth protocol."
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: SDK and API transports return different shapes, pagination behavior, or mutation side effects for the same n8n operation, so workflows behave differently depending on the selected connection mode.
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Define one package-local transport contract and one canonical operation
+        manifest before node implementation. Both SDK and API adapters must map
+        into the same normalized input/output helpers, and golden parity tests
+        must run the same scenarios against both transports.
+    - scenario: Trigger coverage drifts because local SDK mode can observe before/after bus events while remote API mode only receives committed after-events through webhook delivery.
+      likelihood: high
+      impact: high
+      mitigation: |
+        Add an SDK-first exported event catalog that marks each event with
+        transport availability (`sdkBefore`, `sdkAfter`, `apiAfter`). Implement
+        the trigger node from this catalog, expose capability-aware UI text, and
+        add regression tests that prove unsupported remote-only selections fail
+        clearly instead of silently dropping events.
+    - scenario: The n8n package compiles in the monorepo but cannot be installed or loaded by n8n because the package layout, exports, or metadata do not follow n8n custom-node expectations.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Follow n8n's node base-file and community-node package conventions,
+        keep the node package self-contained under `packages/`, and verify with
+        a local private-node install smoke test in addition to workspace build
+        and unit tests.
+    - scenario: Trying to model every kanban-lite action as a separate node or ad-hoc parameter tree makes the first release too large, brittle, and impossible to verify.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Use one app node with resource/operation groups plus one trigger node,
+        generated from a shared operation/event manifest. Keep the first release
+        focused on complete surface coverage, normalized outputs, and transport
+        parity rather than fancy per-operation UI flourishes.
+  assumptions:
+    - The existing SDK already exposes enough mutation/query coverage that only small SDK-first metadata/export changes should be needed, not a major business-logic redesign.
+    - Remote trigger delivery should reuse existing webhook/event infrastructure instead of introducing a bespoke streaming transport in this task.
+    - Necessary n8n-specific package dependencies are allowed inside the new package, but core `kanban-lite` should not gain unrelated dependencies.
+    - No `docs/prd.yaml` exists today, so there is no current PRD conflict to reconcile before planning.
+
+implementation_specification:
+  code_structure: |
+    Keep kanban-lite core as the source of truth for action/event semantics.
+    Add only the minimum SDK-first metadata seam needed to export a stable event
+    catalog and, if required, operation descriptors that the n8n package can
+    consume. Implement the n8n integration as a first-party workspace package
+    containing credentials, shared transport adapters, action/node manifests,
+    app-node execution code, trigger lifecycle code, tests, and package-local
+    documentation. The package should own n8n-specific concerns; core should own
+    business logic, event naming, and any public metadata needed for parity.
+  affected_areas:
+    - packages/kanban-lite/src/sdk/types.ts
+    - packages/kanban-lite/src/sdk/index.ts
+    - packages/kanban-lite/src/sdk/KanbanSDK.ts
+    - scripts/generate-sdk-docs.ts
+    - packages/n8n-nodes-kanban-lite/
+    - README.md
+    - CHANGELOG.md
+  component_details:
+    - component: SDK event and action metadata seam
+      responsibility: Provide a stable exported catalog for the n8n package describing supported actions, event names, transport availability, and any normalization hints without duplicating core business logic.
+      interfaces:
+        - "Exported event catalog with transport availability markers such as `sdkBefore`, `sdkAfter`, and `apiAfter`"
+        - "Optional operation descriptor manifest for grouping boards/cards/comments/attachments/columns/labels/settings/storage/forms/actions/webhooks/workspace/auth"
+        - "JSDoc-updated SDK exports if new public metadata is introduced"
+    - component: Shared n8n transport layer
+      responsibility: Normalize both connection modes into one execution surface for the n8n nodes.
+      interfaces:
+        - "`KanbanLiteTransport` interface with methods for execute/list/mutate/subscribe flows used by app and trigger nodes"
+        - "SDK adapter for local workspace access via `KanbanSDK`"
+        - "API adapter for remote standalone-server access via HTTP/webhook registration"
+    - component: n8n credentials and package scaffold
+      responsibility: Define package metadata, credential types, node base files, codex assets, and build/test scripts compatible with private/community n8n node installation.
+      interfaces:
+        - "`KanbanLiteApi` credential for base URL + auth settings"
+        - "`KanbanLiteSdk` credential or equivalent settings block for local workspace root / board directory access"
+        - "Package exports and n8n node metadata for one app node and one trigger node"
+    - component: n8n app node
+      responsibility: Expose the full kanban-lite action surface through resource/operation groups with normalized outputs and transport-agnostic execution.
+      interfaces:
+        - "`Kanban Lite` app node with grouped resources/operations spanning boards, cards, comments, attachments, columns, labels, settings, storage, forms, board/card actions, webhooks, workspace, and auth status"
+        - "Shared input/output mappers reused across SDK and API transports"
+    - component: n8n trigger node
+      responsibility: Expose supported kanban-lite events with clear transport-aware semantics and lifecycle management.
+      interfaces:
+        - "`Kanban Lite Trigger` node built from the exported event catalog"
+        - "Local SDK subscriptions via `sdk.eventBus`"
+        - "Remote API after-event delivery via webhook registration/handling"
+    - component: Verification and release sync
+      responsibility: Prove transport parity and keep repo docs aligned with the new first-party integration.
+      interfaces:
+        - "Transport parity tests and n8n package smoke verification"
+        - "README/CHANGELOG/package README updates"
+        - "Regenerated SDK docs only if public SDK metadata/JSDoc changes"
+  dependencies:
+    - component: SDK event and action metadata seam
+      relationship: Must land first so the n8n package consumes one canonical source of truth for supported actions and trigger availability.
+    - component: Shared n8n transport layer
+      relationship: Depends on the metadata seam and feeds both the app node and trigger node.
+    - component: n8n credentials and package scaffold
+      relationship: Can start early, but final node wiring depends on the transport layer and chosen package contract.
+    - component: n8n app node
+      relationship: Depends on the transport layer and package scaffold.
+    - component: n8n trigger node
+      relationship: Depends on the transport layer, package scaffold, and exported event catalog.
+    - component: Verification and release sync
+      relationship: Depends on the completed app/trigger nodes and any SDK export changes.
+  integration_points:
+    - "`packages/kanban-lite/src/sdk/index.ts` is the safest export seam for any new metadata consumed by first-party integrations."
+    - "`KanbanSDK.eventBus` is the local subscription point for SDK-mode triggers."
+    - "Existing standalone webhook delivery and `/api/webhooks` behavior should power remote after-event trigger mode instead of adding a new server transport."
+    - "Root `README.md` and `CHANGELOG.md` remain the required user-facing documentation sources; regenerate `docs/sdk.md` only if new public SDK JSDoc/exports are added."
+
+contracts:
+  - from_task: T1
+    to_task: T3
+    interface: Canonical event and operation metadata
+    format: "Typed SDK-exported catalog describing operation groups, event names, categories, and transport availability flags consumed by the n8n package"
+  - from_task: T2
+    to_task: T4
+    interface: n8n package scaffold
+    format: "Workspace package with n8n-compatible metadata, credentials folder, nodes folder, package scripts, and test harness ready for implementation"
+  - from_task: T3
+    to_task: T4
+    interface: Shared transport abstraction
+    format: "`KanbanLiteTransport` interface plus SDK/API adapter signatures and normalized result helpers used by action execution"
+  - from_task: T3
+    to_task: T5
+    interface: Trigger subscription contract
+    format: "Transport-aware subscribe/unsubscribe hooks and event-capability metadata for SDK-local and API-remote trigger registration"
+  - from_task: T4
+    to_task: T6
+    interface: Complete app-node action surface
+    format: "Resource/operation matrix with normalized outputs and documented credential requirements across both transports"
+  - from_task: T5
+    to_task: T6
+    interface: Complete trigger-node event surface
+    format: "Trigger registration lifecycle and event payload normalization for every supported event source"
+  - from_task: T6
+    to_task: T7
+    interface: Verified package behavior
+    format: "Passing parity/smoke tests and a final support matrix for docs, changelog, and release notes"
+
+tasks:
+  - id: T1
+    title: Define the SDK-first action and trigger metadata seam
+    description: |
+      Deliverables:
+      - add the minimum core export(s) needed to describe supported kanban-lite
+        actions and events for first-party integrations
+      - explicitly classify which events are available in local SDK mode versus
+        remote API/webhook mode
+      - update SDK JSDoc/source-of-truth comments if new public exports are added
+
+      This task stays intentionally small: do not redesign core business logic,
+      and do not move interface logic into the SDK. The goal is to make the n8n
+      package consume one canonical catalog instead of duplicating event names,
+      resources, or transport assumptions.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      packages/kanban-lite/src/sdk/types.ts: "Canonical SDK event and type definitions."
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "Current before/after event lifecycle and public SDK surface."
+      packages/kanban-lite/src/sdk/index.ts: "Public export seam for first-party integrations."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: SDK-first parity contract
+    verification:
+      - "New metadata exports compile cleanly and remain derived from current SDK event/action names."
+      - "Transport availability rules for trigger events are represented in code, not only in prose."
+      - "If JSDoc changes, regenerated `docs/sdk.md` reflects the new public seam."
+    acceptance_criteria:
+      - "A first-party integration can import one stable catalog for actions and events from kanban-lite core."
+      - "The catalog distinguishes SDK-local before-events, SDK-local after-events, and API/webhook after-events."
+      - "No unrelated SDK refactor or new nonessential dependency is introduced."
+    failure_modes:
+      - scenario: Event names or categories are copied manually and drift from actual SDK behavior.
+        likelihood: medium
+        impact: high
+        mitigation: "Derive catalog values from existing SDK event/type sources wherever possible and cover with focused tests."
+      - scenario: The export leaks unstable internal-only semantics into the public SDK.
+        likelihood: medium
+        impact: medium
+        mitigation: "Expose only integration-oriented metadata and keep internal helper details private."
+    tech_stack:
+      - TypeScript
+      - kanban-lite SDK
+      - existing JSDoc/docs generator pipeline
+    test_coverage: "Focused SDK metadata/export tests; docs generation only if public JSDoc changes."
+
+  - id: T2
+    title: Scaffold the first-party n8n package and credential surface
+    description: |
+      Deliverables:
+      - create `packages/n8n-nodes-kanban-lite`
+      - add package metadata/build scripts compatible with n8n custom-node loading
+      - define the initial credential types/settings for API mode and SDK mode
+      - add a package README with install, local development, and private-node usage notes
+
+      Prefer the standard n8n node package layout (credentials, nodes, codex/assets,
+      package scripts) and keep new dependencies limited to the n8n packages that
+      are actually required to build and load a node package.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      package.json: "Workspace scripts and package conventions."
+      packages/kl-webhooks-plugin/package.json: "Representative first-party package structure in this monorepo."
+      packages/kl-webhooks-plugin/README.md: "Representative first-party package README format."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: Package and credentials scaffold
+    verification:
+      - "The new package is discoverable from the workspace and uses a valid n8n-oriented package name/layout."
+      - "Credential/settings design covers both SDK-local and API-remote transport modes."
+      - "No core kanban-lite dependency is added unless the n8n package truly requires it."
+    acceptance_criteria:
+      - "`packages/n8n-nodes-kanban-lite` exists with valid package metadata and build entry points."
+      - "The package defines settings/credentials for both SDK and API connectivity."
+      - "The package README explains installation, configuration, and local/private-node development."
+    failure_modes:
+      - scenario: Package metadata works in pnpm but not in n8n custom-node installation.
+        likelihood: medium
+        impact: high
+        mitigation: "Mirror n8n package conventions and reserve a smoke test for real private-node loading before completion."
+      - scenario: Credential UX forces users to maintain duplicate settings across transports.
+        likelihood: medium
+        impact: medium
+        mitigation: "Centralize shared fields and make transport-specific fields conditional in the node UI/credential design."
+    tech_stack:
+      - TypeScript
+      - n8n custom-node package conventions
+      - pnpm workspace
+    test_coverage: "Package build validation and smoke-load harness to be completed in later verification tasks."
+    status: completed
+    completed_at: "2026-03-23"
+    files_produced:
+      - packages/n8n-nodes-kanban-lite/package.json
+      - packages/n8n-nodes-kanban-lite/tsconfig.json
+      - packages/n8n-nodes-kanban-lite/README.md
+      - packages/n8n-nodes-kanban-lite/src/index.ts
+      - packages/n8n-nodes-kanban-lite/src/credentials/KanbanLiteApi.credentials.ts
+      - packages/n8n-nodes-kanban-lite/src/credentials/KanbanLiteSdk.credentials.ts
+      - packages/n8n-nodes-kanban-lite/src/nodes/KanbanLite/KanbanLite.node.ts
+      - packages/n8n-nodes-kanban-lite/src/nodes/KanbanLiteTrigger/KanbanLiteTrigger.node.ts
+
+  - id: T3
+    title: Build the shared SDK/API transport abstraction
+    description: |
+      Deliverables:
+      - implement one transport contract used by both the app node and trigger node
+      - add an SDK adapter for local workspace execution via `KanbanSDK`
+      - add an API adapter for remote standalone-server execution and webhook-backed trigger registration
+      - normalize outputs/errors so n8n nodes do not need per-transport branching everywhere
+
+      This is the key anti-chaos layer. The app node and trigger node should be
+      thin consumers of this abstraction, not transport-switching jungles.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+      - T2
+    context_files:
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "Local SDK execution surface and event bus access."
+      packages/kanban-lite/src/standalone/internal/openapi-spec.ts: "Remote API surface and route semantics."
+      packages/kanban-lite/src/standalone/internal/routes/system.ts: "Webhook and auth-related remote endpoints."
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: Transport parity layer
+    verification:
+      - "One contract exists for action execution and trigger subscription behavior across both transports."
+      - "Equivalent operations return normalized result/error shapes regardless of transport."
+      - "Unsupported event subscriptions in API mode fail explicitly with actionable messages."
+    acceptance_criteria:
+      - "The n8n package can execute operations through SDK or API mode without duplicating resource logic."
+      - "The abstraction includes trigger registration lifecycle hooks, not just one-shot actions."
+      - "Transport capability differences are surfaced as typed metadata or clear runtime errors."
+    failure_modes:
+      - scenario: API adapter bakes in route-specific response handling that diverges from SDK behavior over time.
+        likelihood: high
+        impact: high
+        mitigation: "Normalize all transport responses through shared mappers and add parity tests against the same scenarios."
+      - scenario: Remote trigger registration leaks orphan webhooks or duplicate subscriptions.
+        likelihood: medium
+        impact: high
+        mitigation: "Make subscription lifecycle explicit with create/register/unregister cleanup behavior and test teardown paths."
+    tech_stack:
+      - TypeScript
+      - kanban-lite SDK
+      - kanban-lite standalone API/webhooks
+      - n8n node runtime helpers
+    test_coverage: "Unit coverage for shared transport helpers plus parity tests against both adapters."
+    status: completed
+    completed_at: "2026-03-23"
+    files_produced:
+      - packages/n8n-nodes-kanban-lite/src/transport/types.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/normalize.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/sdkAdapter.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/apiAdapter.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/index.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/__tests__/transport.test.ts
+      - packages/n8n-nodes-kanban-lite/vitest.config.ts
+
+  - id: T4
+    title: Implement the `Kanban Lite` app node for the full action surface
+    status: completed
+    description: |
+      Deliverables:
+      - one programmatic app node exposing grouped resources/operations for boards,
+        cards, comments, attachments, columns, labels, settings, storage, forms,
+        board/card actions, webhooks, workspace info, and auth status
+      - parameter routing derived from the canonical operation manifest
+      - normalized JSON outputs and binary-handling strategy where attachments apply
+
+      Prefer one comprehensive node over many tiny nodes so the first-party package
+      is easier to document, version, and test.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    completed_at: "2026-03-23"
+    dependencies:
+      - T2
+      - T3
+    context_files:
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "Canonical action/query surface to cover."
+      packages/kanban-lite/src/cli/index.ts: "Useful grouping reference for the large action surface."
+      packages/kanban-lite/src/mcp-server/index.ts: "Additional parity reference for exposed operations."
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 500
+    focus_area: Full action coverage
+    verification:
+      - "Every required domain area from the objective is represented in the node's resource/operation matrix."
+      - "The node executes through the shared transport abstraction only."
+      - "Attachment and form operations have explicit output handling/documentation."
+    acceptance_criteria:
+      - "The app node covers the major kanban-lite domains: boards, cards, comments, attachments, columns, labels, settings, storage, forms, actions, webhooks, workspace, and auth."
+      - "Action execution does not branch directly on SDK vs API outside the shared transport layer."
+      - "Operation labels and grouping are clear enough for n8n users to discover the correct action without reading source code like archaeologists."
+    failure_modes:
+      - scenario: The action matrix is incomplete and leaves hidden gaps despite claiming full coverage.
+        likelihood: medium
+        impact: high
+        mitigation: "Generate or verify the operation matrix from the shared manifest and check it against CLI/MCP/SDK surfaces during review."
+      - scenario: Parameter sprawl makes the node unusable in the n8n UI.
+        likelihood: medium
+        impact: medium
+        mitigation: "Group by resource/operation, use conditional fields, and keep advanced/transport-specific options tucked behind clear toggles."
+    tech_stack:
+      - TypeScript
+      - n8n programmatic node base files
+      - shared transport abstraction
+    test_coverage: "Operation-level unit tests across representative actions in both SDK and API modes."
+
+  - id: T5
+    title: Implement the `Kanban Lite Trigger` node with transport-aware parity rules
+    description: |
+      Deliverables:
+      - one trigger node built from the exported event catalog
+      - SDK-local subscriptions for before/after event flows where supported
+      - API-remote subscriptions for committed after-events via webhook delivery
+      - transport-aware UI/help text so users understand why some events are local-only
+
+      This task must make parity honest: remote mode should not pretend it can do
+      before-event interception, and local mode should not hide that it can.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+      - T3
+    context_files:
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "Local SDK event bus and before/after event lifecycle."
+      packages/kl-webhooks-plugin/src/index.ts: "Remote after-event listener and webhook delivery reference."
+      scripts/generate-webhooks-docs.ts: "Canonical event coverage language and categories."
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 460
+    focus_area: Trigger parity and lifecycle
+    verification:
+      - "Trigger options come from the shared event catalog rather than hard-coded strings."
+      - "SDK mode supports documented before/after subscriptions; API mode supports only documented after-event subscriptions."
+      - "Remote registration/unregistration leaves no dangling webhook subscriptions in normal success paths."
+    acceptance_criteria:
+      - "The trigger node supports all officially documented event triggers that are actually available through the selected transport."
+      - "Local-only events are clearly marked or rejected in API mode with actionable guidance."
+      - "Trigger payloads are normalized for downstream n8n workflows."
+    failure_modes:
+      - scenario: Remote trigger mode silently accepts unsupported before-events and never fires.
+        likelihood: high
+        impact: high
+        mitigation: "Validate selections against transport availability metadata at configuration and execution time."
+      - scenario: Webhook-backed trigger delivery duplicates events or fails to clean up subscriptions.
+        likelihood: medium
+        impact: high
+        mitigation: "Reuse explicit lifecycle helpers from the transport layer and add duplicate-delivery/cleanup regression coverage."
+    tech_stack:
+      - TypeScript
+      - n8n trigger node APIs
+      - kanban-lite SDK event bus
+      - kanban-lite webhook delivery
+    test_coverage: "Trigger lifecycle tests for local SDK mode, remote API/webhook mode, unsupported-event handling, and duplicate-delivery prevention."
+    completed_at: "2026-03-23"
+    files_produced:
+      - packages/n8n-nodes-kanban-lite/src/nodes/KanbanLiteTrigger/KanbanLiteTrigger.node.ts
+      - packages/n8n-nodes-kanban-lite/src/nodes/KanbanLiteTrigger/__tests__/KanbanLiteTrigger.node.test.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/types.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/apiAdapter.ts
+      - packages/n8n-nodes-kanban-lite/src/transport/__tests__/transport.test.ts
+
+  - id: T6
+    title: Verify parity with focused tests and local n8n smoke runs
+    description: |
+      Deliverables:
+      - parity tests that run representative action and trigger scenarios through
+        both SDK and API transports
+      - package build/typecheck coverage for the new workspace package
+      - a local private-node smoke run proving n8n can load the package and execute
+        one action flow plus one trigger flow
+      - review checklist for unsupported cases and error messages
+
+      This task is where transport drift and false trigger claims go to be caught
+      before they become release notes with regret.
+    wave: 4
+    agent: gem-reviewer
+    priority: high
+    status: completed
+    dependencies:
+      - T4
+      - T5
+    context_files:
+      packages/n8n-nodes-kanban-lite/: "New package under review."
+      packages/kanban-lite/src/sdk/__tests__/: "Existing parity/event testing patterns to extend or mirror."
+      playwright.config.ts: "Potential smoke-test harness reference if browser validation is needed later."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: Parity and install verification
+    verification:
+      - "Representative CRUD/action scenarios pass in both SDK and API modes with equivalent normalized outputs."
+      - "Representative trigger scenarios pass in SDK mode and remote API mode according to documented availability rules."
+      - "The package can be loaded by a local n8n private-node install flow."
+    acceptance_criteria:
+      - "Build, typecheck, and package-local tests pass for the new n8n package."
+      - "A local smoke run proves n8n can discover and load the package."
+      - "Parity gaps or unsupported cases are either fixed or explicitly documented before release."
+    failure_modes:
+      - scenario: Tests only exercise mocked transports and miss real n8n packaging/load failures.
+        likelihood: medium
+        impact: high
+        mitigation: "Include at least one local private-node smoke verification in addition to unit tests."
+      - scenario: Hidden parity gaps remain in low-traffic operations like storage/forms/webhooks/auth status.
+        likelihood: medium
+        impact: medium
+        mitigation: "Use a manifest-driven checklist so every domain area gets at least one focused parity assertion."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true
+
+  - id: T7
+    title: Sync docs, changelog, and release guidance for the new first-party integration
+    description: |
+      Deliverables:
+      - update root `README.md` with install and usage guidance for the n8n node package
+      - add `CHANGELOG.md` entries under `Unreleased`
+      - update the new package README with examples for SDK mode, API mode, and trigger setup
+      - regenerate root SDK docs only if T1 introduced public SDK JSDoc/export changes
+
+      Keep docs changes tied to the actual implemented behavior; no speculative feature prose.
+    wave: 5
+    agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - T6
+    context_files:
+      README.md: "Root user-facing integration docs."
+      CHANGELOG.md: "Release-note source of truth under `Unreleased`."
+      docs/plan/20260323-n8n-node/research_findings_documentation-and-release-requirements.yaml: "Verified repo documentation conventions."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: Docs and release sync
+    verification:
+      - "README and CHANGELOG mention the new n8n package and its dual transport modes."
+      - "Package README includes install/config examples and trigger caveats."
+      - "Generated SDK docs are refreshed only if a public SDK seam changed."
+    acceptance_criteria:
+      - "Root docs and changelog satisfy AGENTS.md requirements for a new user-facing feature/package."
+      - "Documentation explains the transport split and trigger parity rules without ambiguity."
+      - "No generated doc is edited manually; any regenerated output comes from source changes."
+    failure_modes:
+      - scenario: Docs overpromise remote trigger capabilities that only exist in SDK mode.
+        likelihood: medium
+        impact: high
+        mitigation: "Use the same transport-availability matrix from the code/test plan in the docs."
+      - scenario: Release notes omit package install or dependency requirements.
+        likelihood: low
+        impact: medium
+        mitigation: "Tie changelog/README edits to the verified smoke-test outcomes from T6."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "Root install and usage story"
+      - "SDK vs API transport configuration"
+      - "Trigger availability and limitations"
+      - "Package-local development and testing"

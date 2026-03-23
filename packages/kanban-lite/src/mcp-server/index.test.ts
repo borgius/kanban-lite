@@ -192,7 +192,7 @@ describe('MCP webhook CRUD parity: SDK-backed behavior', () => {
   })
 
   it('add_webhook creates a webhook with expected fields', async () => {
-    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
+    const webhook = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }))
     expect(webhook.id).toMatch(/^wh_/)
     expect(webhook.url).toBe('https://example.com/hook')
     expect(webhook.events).toEqual(['*'])
@@ -204,27 +204,27 @@ describe('MCP webhook CRUD parity: SDK-backed behavior', () => {
   })
 
   it('update_webhook modifies an existing webhook', async () => {
-    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
-    const updated = await sdk.updateWebhook(webhook.id, { active: false }, { transport: 'mcp' })
+    const webhook = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }))
+    const updated = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.updateWebhook(webhook.id, { active: false }))
     expect(updated).not.toBeNull()
     expect(updated!.active).toBe(false)
     expect(updated!.id).toBe(webhook.id)
   })
 
   it('update_webhook returns null for a non-existent ID', async () => {
-    const result = await sdk.updateWebhook('wh_nonexistent', { active: false }, { transport: 'mcp' })
+    const result = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.updateWebhook('wh_nonexistent', { active: false }))
     expect(result).toBeNull()
   })
 
   it('remove_webhook deletes an existing webhook and returns true', async () => {
-    const webhook = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' })
-    const removed = await sdk.deleteWebhook(webhook.id, { transport: 'mcp' })
+    const webhook = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }))
+    const removed = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.deleteWebhook(webhook.id))
     expect(removed).toBe(true)
     expect(sdk.listWebhooks()).toHaveLength(0)
   })
 
   it('remove_webhook returns false for a non-existent ID', async () => {
-    const removed = await sdk.deleteWebhook('wh_nonexistent', { transport: 'mcp' })
+    const removed = await sdk.runWithAuth({ transport: 'mcp' }, () => sdk.deleteWebhook('wh_nonexistent'))
     expect(removed).toBe(false)
   })
 })
@@ -254,7 +254,7 @@ describe('MCP webhook auth denial: provider-backed error surfaces correctly', ()
       transport: 'mcp',
     }
     const result = await mcpHandler(() =>
-      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, mcpAuthCtx),
+      sdk.runWithAuth(mcpAuthCtx, () => sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] })),
     )
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.create')
@@ -263,7 +263,7 @@ describe('MCP webhook auth denial: provider-backed error surfaces correctly', ()
 
   it('denied webhook.delete surfaces isError with action-stable message', async () => {
     const result = await mcpHandler(() =>
-      sdk.deleteWebhook('wh_any', { transport: 'mcp' }),
+      sdk.runWithAuth({ transport: 'mcp' }, () => sdk.deleteWebhook('wh_any')),
     )
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.delete')
@@ -271,7 +271,7 @@ describe('MCP webhook auth denial: provider-backed error surfaces correctly', ()
 
   it('denied webhook.update surfaces isError with action-stable message', async () => {
     const result = await mcpHandler(() =>
-      sdk.updateWebhook('wh_any', { active: false }, { transport: 'mcp' }),
+      sdk.runWithAuth({ transport: 'mcp' }, () => sdk.updateWebhook('wh_any', { active: false })),
     )
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.update')

@@ -250,7 +250,6 @@ export async function transferCard(
     }
   }
 
-  ctx.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus, fromBoard: fromBoardId, toBoard: toBoardId })
   await ctx.addLog(card.id, `Status changed: \`${previousStatus}\` → \`${newStatus}\``, { source: 'system' }, toBoardId).catch(() => {})
   return card
 }

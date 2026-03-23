@@ -30,6 +30,7 @@ import { cleanupTempFile } from './watcherSetup'
 
 export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, message: unknown, authContext: AuthContext): Promise<void> {
   const msg = message as Record<string, unknown>
+  const runWithScopedAuth = <T>(fn: () => Promise<T>): Promise<T> => ctx.sdk.runWithAuth(authContext, fn)
   switch (msg.type) {
     case 'ready':
       ctx.migrating = true
@@ -42,38 +43,38 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       break
 
     case 'createCard':
-      await doCreateCard(ctx, msg.data as CreateCardData, authContext)
+      await runWithScopedAuth(() => doCreateCard(ctx, msg.data as CreateCardData))
       break
 
     case 'moveCard':
-      await doMoveCard(ctx, msg.cardId as string, msg.newStatus as string, msg.newOrder as number, authContext)
+      await runWithScopedAuth(() => doMoveCard(ctx, msg.cardId as string, msg.newStatus as string, msg.newOrder as number))
       break
 
     case 'deleteCard':
-      await doDeleteCard(ctx, msg.cardId as string, authContext)
+      await runWithScopedAuth(() => doDeleteCard(ctx, msg.cardId as string))
       break
 
     case 'permanentDeleteCard':
-      await doPermanentDeleteCard(ctx, msg.cardId as string, authContext)
+      await runWithScopedAuth(() => doPermanentDeleteCard(ctx, msg.cardId as string))
       break
 
     case 'restoreCard': {
       const restoreId = msg.cardId as string
       const defaultStatus = ctx.sdk.getSettings().defaultStatus
-      await doUpdateCard(ctx, restoreId, { status: defaultStatus }, authContext)
+      await runWithScopedAuth(() => doUpdateCard(ctx, restoreId, { status: defaultStatus }))
       break
     }
 
     case 'purgeDeletedCards':
-      await doPurgeDeletedCards(ctx, authContext)
+      await runWithScopedAuth(() => doPurgeDeletedCards(ctx))
       break
 
     case 'updateCard':
-      await doUpdateCard(ctx, msg.cardId as string, msg.updates as Partial<Card>, authContext)
+      await runWithScopedAuth(() => doUpdateCard(ctx, msg.cardId as string, msg.updates as Partial<Card>))
       break
 
     case 'bulkUpdateCard':
-      await doUpdateCard(ctx, msg.cardId as string, msg.updates as Partial<Card>, authContext)
+      await runWithScopedAuth(() => doUpdateCard(ctx, msg.cardId as string, msg.updates as Partial<Card>))
       break
 
     case 'openCard': {
@@ -96,7 +97,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const cardId = msg.cardId as string
       const newContent = msg.content as string
       const fm = msg.frontmatter as CardFrontmatter
-      await doUpdateCard(ctx, cardId, {
+      await runWithScopedAuth(() => doUpdateCard(ctx, cardId, {
         content: newContent,
         status: fm.status,
         priority: fm.priority,
@@ -108,19 +109,19 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         actions: fm.actions,
         forms: fm.forms,
         formData: fm.formData,
-      }, authContext)
+      }))
       break
     }
 
     case 'submitForm': {
       const { cardId, formId, callbackKey, boardId } = msg as unknown as SubmitFormMessage
       try {
-        const result = await doSubmitForm(ctx, {
+        const result = await runWithScopedAuth(() => doSubmitForm(ctx, {
           cardId,
           formId,
           data: parseSubmitData((msg as unknown as SubmitFormMessage).data),
           boardId,
-        }, authContext)
+        }))
         const updatedCard = ctx.cards.find(candidate => candidate.id === cardId)
         if (updatedCard && ctx.currentEditingCardId === cardId) {
           await sendCardContent(ctx, ws, updatedCard)
@@ -147,32 +148,32 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'saveSettings':
-      await doSaveSettings(ctx, msg.settings as CardDisplaySettings, authContext)
+      await runWithScopedAuth(() => doSaveSettings(ctx, msg.settings as CardDisplaySettings))
       break
 
     case 'addColumn': {
       const col = msg.column as { name: string; color: string }
-      await doAddColumn(ctx, col.name, col.color, authContext)
+      await runWithScopedAuth(() => doAddColumn(ctx, col.name, col.color))
       break
     }
 
     case 'editColumn':
-      await doEditColumn(ctx, msg.columnId as string, msg.updates as { name: string; color: string }, authContext)
+      await runWithScopedAuth(() => doEditColumn(ctx, msg.columnId as string, msg.updates as { name: string; color: string }))
       break
 
     case 'removeColumn':
-      await doRemoveColumn(ctx, msg.columnId as string, authContext)
+      await runWithScopedAuth(() => doRemoveColumn(ctx, msg.columnId as string))
       break
 
     case 'cleanupColumn':
-      await doCleanupColumn(ctx, msg.columnId as string, authContext)
+      await runWithScopedAuth(() => doCleanupColumn(ctx, msg.columnId as string))
       break
 
     case 'reorderColumns': {
       const columnIds = msg.columnIds as string[]
       const boardId = msg.boardId as string | undefined
       if (Array.isArray(columnIds)) {
-        await ctx.sdk.reorderColumns(columnIds, boardId, authContext)
+        await runWithScopedAuth(() => ctx.sdk.reorderColumns(columnIds, boardId))
         broadcast(ctx, buildInitMessage(ctx))
       }
       break
@@ -181,13 +182,13 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'setMinimizedColumns': {
       const columnIds = msg.columnIds as string[]
       const boardId = msg.boardId as string | undefined
-      await ctx.sdk.setMinimizedColumns(Array.isArray(columnIds) ? columnIds : [], boardId, authContext)
+      await runWithScopedAuth(() => ctx.sdk.setMinimizedColumns(Array.isArray(columnIds) ? columnIds : [], boardId))
       break
     }
 
     case 'removeAttachment': {
       const cardId = msg.cardId as string
-      const card = await doRemoveAttachment(ctx, cardId, msg.attachment as string, authContext)
+      const card = await runWithScopedAuth(() => doRemoveAttachment(ctx, cardId, msg.attachment as string))
       if (card && ctx.currentEditingCardId === cardId) {
         ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
       }
@@ -195,7 +196,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'addComment': {
-      const comment = await doAddComment(ctx, msg.cardId as string, msg.author as string, msg.content as string, authContext)
+      const comment = await runWithScopedAuth(() => doAddComment(ctx, msg.cardId as string, msg.author as string, msg.content as string))
       if (!comment) break
       const card = ctx.cards.find(f => f.id === msg.cardId)
       if (card && ctx.currentEditingCardId === msg.cardId) {
@@ -205,7 +206,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'updateComment': {
-      const comment = await doUpdateComment(ctx, msg.cardId as string, msg.commentId as string, msg.content as string, authContext)
+      const comment = await runWithScopedAuth(() => doUpdateComment(ctx, msg.cardId as string, msg.commentId as string, msg.content as string))
       if (!comment) break
       const card = ctx.cards.find(f => f.id === msg.cardId)
       if (card && ctx.currentEditingCardId === msg.cardId) {
@@ -215,7 +216,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'deleteComment': {
-      await doDeleteComment(ctx, msg.cardId as string, msg.commentId as string, authContext)
+      await runWithScopedAuth(() => doDeleteComment(ctx, msg.cardId as string, msg.commentId as string))
       const card = ctx.cards.find(f => f.id === msg.cardId)
       if (card && ctx.currentEditingCardId === msg.cardId) {
         ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
@@ -224,15 +225,14 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'addLog': {
-      const entry = await doAddLog(
+      const entry = await runWithScopedAuth(() => doAddLog(
         ctx,
         msg.cardId as string,
         msg.text as string,
         msg.source as string | undefined,
         msg.object as Record<string, unknown> | undefined,
         msg.timestamp as string | undefined,
-        authContext,
-      )
+      ))
       if (entry && ctx.currentEditingCardId === msg.cardId) {
         try {
           const logs = await ctx.sdk.listLogs(msg.cardId as string, ctx.currentBoardId)
@@ -243,7 +243,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'clearLogs': {
-      await doClearLogs(ctx, msg.cardId as string, authContext)
+      await runWithScopedAuth(() => doClearLogs(ctx, msg.cardId as string))
       ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
       break
     }
@@ -260,7 +260,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
 
     case 'addBoardLog': {
       try {
-        const entry = await ctx.sdk.addBoardLog(
+        const entry = await runWithScopedAuth(() => ctx.sdk.addBoardLog(
           msg.text as string,
           {
             source: msg.source as string | undefined,
@@ -268,8 +268,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
             timestamp: msg.timestamp as string | undefined,
           },
           ctx.currentBoardId || undefined,
-          authContext,
-        )
+        ))
         const logs = await ctx.sdk.listBoardLogs(ctx.currentBoardId || undefined)
         ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: ctx.currentBoardId, logs }))
         broadcast(ctx, buildInitMessage(ctx))
@@ -279,7 +278,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'clearBoardLogs': {
-      await ctx.sdk.clearBoardLogs(ctx.currentBoardId || undefined, authContext)
+      await runWithScopedAuth(() => ctx.sdk.clearBoardLogs(ctx.currentBoardId || undefined))
       ws.send(JSON.stringify({ type: 'boardLogsUpdated', boardId: ctx.currentBoardId, logs: [] }))
       broadcast(ctx, buildInitMessage(ctx))
       break
@@ -301,7 +300,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const targetStatus = msg.targetStatus as string
       ctx.migrating = true
       try {
-        await ctx.sdk.transferCard(cardId, ctx.currentBoardId || readConfig(ctx.workspaceRoot).defaultBoard, toBoard, targetStatus, authContext)
+        await runWithScopedAuth(() => ctx.sdk.transferCard(cardId, ctx.currentBoardId || readConfig(ctx.workspaceRoot).defaultBoard, toBoard, targetStatus))
         await loadCards(ctx)
         broadcast(ctx, buildInitMessage(ctx))
       } catch (err) {
@@ -326,7 +325,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'createBoard': {
       const boardName = msg.name as string
       try {
-        const createdBoard = await ctx.sdk.createBoard('', boardName, undefined, authContext)
+        const createdBoard = await runWithScopedAuth(() => ctx.sdk.createBoard('', boardName))
         ctx.currentBoardId = createdBoard.id
         ctx.migrating = true
         try {
@@ -342,14 +341,14 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'setLabel': {
-      await ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string }, authContext)
+      await runWithScopedAuth(() => ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string }))
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
       break
     }
 
     case 'renameLabel': {
-      await ctx.sdk.renameLabel(msg.oldName as string, msg.newName as string, authContext)
+      await runWithScopedAuth(() => ctx.sdk.renameLabel(msg.oldName as string, msg.newName as string))
       await loadCards(ctx)
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
@@ -357,7 +356,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'deleteLabel': {
-      await ctx.sdk.deleteLabel(msg.name as string, authContext)
+      await runWithScopedAuth(() => ctx.sdk.deleteLabel(msg.name as string))
       await loadCards(ctx)
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
@@ -367,7 +366,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'triggerAction': {
       const { cardId, action, callbackKey } = msg as { cardId: string; action: string; callbackKey: string }
       try {
-        await ctx.sdk.triggerAction(cardId, action, undefined, authContext)
+        await runWithScopedAuth(() => ctx.sdk.triggerAction(cardId, action, undefined))
         ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
       } catch (err) {
         ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))
@@ -378,7 +377,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'triggerBoardAction': {
       const { boardId, actionKey, callbackKey } = msg as { boardId: string; actionKey: string; callbackKey: string }
       try {
-        await ctx.sdk.triggerBoardAction(boardId, actionKey, authContext)
+        await runWithScopedAuth(() => ctx.sdk.triggerBoardAction(boardId, actionKey))
         ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey }))
       } catch (err) {
         ws.send(JSON.stringify({ type: 'boardActionResult', callbackKey, error: String(err) }))

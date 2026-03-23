@@ -289,13 +289,13 @@ export class KanbanPanel {
             break
           case 'reorderColumns': {
             if (!this._sdk) break
-            await this._sdk.reorderColumns(message.columnIds, message.boardId, await this._getAuthContext())
+            await this._runWithAuth(this._sdk, () => this._sdk!.reorderColumns(message.columnIds, message.boardId))
             this._sendCardsToWebview()
             break
           }
           case 'setMinimizedColumns': {
             if (!this._sdk) break
-            await this._sdk.setMinimizedColumns(message.columnIds, message.boardId, await this._getAuthContext())
+            await this._runWithAuth(this._sdk, () => this._sdk!.setMinimizedColumns(message.columnIds, message.boardId))
             break
           }
           case 'cleanupColumn':
@@ -306,13 +306,12 @@ export class KanbanPanel {
             if (!sdk || !this._currentBoardId) break
             this._migrating = true
             try {
-              await sdk.transferCard(
+              await this._runWithAuth(sdk, () => sdk.transferCard(
                 message.cardId,
                 this._currentBoardId,
                 message.toBoard,
                 message.targetStatus,
-                await this._getAuthContext()
-              )
+              ))
               // Switch to the destination board and re-open the card there
               this._currentBoardId = message.toBoard
               await this._loadCards()
@@ -346,7 +345,7 @@ export class KanbanPanel {
             const sdk = this._getSDK()
             if (!sdk) break
             try {
-              await sdk.setLabel(message.name, message.definition, await this._getAuthContext())
+              await this._runWithAuth(sdk, () => sdk.setLabel(message.name, message.definition))
               await this._loadCards()
               this._sendCardsToWebview()
               this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
@@ -358,7 +357,7 @@ export class KanbanPanel {
           case 'renameLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            await sdk.renameLabel(message.oldName, message.newName, await this._getAuthContext())
+            await this._runWithAuth(sdk, () => sdk.renameLabel(message.oldName, message.newName))
             await this._loadCards()
             this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
@@ -367,7 +366,7 @@ export class KanbanPanel {
           case 'deleteLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
-            await sdk.deleteLabel(message.name, await this._getAuthContext())
+            await this._runWithAuth(sdk, () => sdk.deleteLabel(message.name))
             await this._loadCards()
             this._sendCardsToWebview()
             this._panel.webview.postMessage({ type: 'labelsUpdated', labels: sdk.getLabels() })
@@ -378,7 +377,7 @@ export class KanbanPanel {
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await triggerSdk.triggerAction(cardId, action, undefined, await this._getAuthContext())
+              await this._runWithAuth(triggerSdk, () => triggerSdk.triggerAction(cardId, action, undefined))
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
@@ -601,6 +600,10 @@ export class KanbanPanel {
     return resolveExtensionAuthContext(this._context)
   }
 
+  private async _runWithAuth<T>(sdk: KanbanSDK, fn: () => Promise<T>): Promise<T> {
+    return sdk.runWithAuth(await this._getAuthContext(), fn)
+  }
+
   private async _loadCards(): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) {
@@ -708,7 +711,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.purgeDeletedCards(this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.purgeDeletedCards(this._currentBoardId))
       this._cards = this._cards.filter(f => f.status !== 'deleted')
       this._sendCardsToWebview()
     } catch (err) {
@@ -1244,7 +1247,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId))
       this._sendCardsToWebview()
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to add column: ${err.message}`)
@@ -1255,7 +1258,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.updateColumn(columnId, updates, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.updateColumn(columnId, updates, this._currentBoardId))
       this._sendCardsToWebview()
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to update column: ${err.message}`)
@@ -1265,7 +1268,7 @@ export class KanbanPanel {
   private _removeColumn(columnId: string): void {
     const sdk = this._getSDK()
     if (!sdk) return
-    void this._getAuthContext().then(auth => sdk.removeColumn(columnId, this._currentBoardId, auth)).then(() => {
+    void this._runWithAuth(sdk, () => sdk.removeColumn(columnId, this._currentBoardId)).then(() => {
       this._sendCardsToWebview()
     }).catch((err: Error) => {
       vscode.window.showWarningMessage(err.message)
@@ -1278,7 +1281,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      await sdk.cleanupColumn(columnId, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.cleanupColumn(columnId, this._currentBoardId))
       // Update in-memory cache: mark all column cards as deleted
       this._cards = this._cards.map(f =>
         f.status === columnId ? { ...f, status: 'deleted' } : f

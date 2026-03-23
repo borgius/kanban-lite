@@ -195,9 +195,11 @@ Runtime plugins are now **listener-only**.
 
 - `KanbanSDK` owns before/after event timing for mutations.
 - Before-events are awaited in listener-registration order.
-- A before-event listener may return a plain-object override, which is shallow-merged into the pending input.
+- `KanbanSDK._runBeforeEvent()` clones the original input, preserves it when no listener changes it, and immutably deep-merges plain-object listener overrides in registration order (arrays replace; they do not concatenate).
 - Throwing from a before-event listener aborts the write before any mutation happens.
 - After-events fire exactly once after commit and stay non-blocking so side effects cannot break the caller.
+
+For auth specifically, first-party listeners resolve request-scoped auth from `sdk.runWithAuth(...)` plus the payload's actor/board hints. `BeforeEventPayload` no longer includes an `auth` field, so plugin authors should not expect `payload.auth` to exist.
 
 The runtime listener contract is `SDKEventListenerPlugin`:
 

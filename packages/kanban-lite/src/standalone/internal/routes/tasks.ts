@@ -26,6 +26,7 @@ import { applyCommonCardFilters, getContentType, sendNoContent, type StandaloneR
 export async function handleTaskRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk } = ctx
+  const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
 
   let params = route('GET', '/api/tasks')
   if (params) {
@@ -65,7 +66,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 400, 'content is required')
         return true
       }
-      const card = await doCreateCard(ctx, data, extractAuthContext(req))
+      const card = await runWithRequestAuth(() => doCreateCard(ctx, data))
       jsonOk(res, sanitizeCard(card), 201)
     } catch (err) {
       if (err instanceof AuthError) {
@@ -92,8 +93,9 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('PUT', '/api/tasks/:id')
   if (params) {
     try {
+      const { id } = params
       const body = await readBody(req)
-      const card = await doUpdateCard(ctx, params.id, body as Partial<Card>, extractAuthContext(req))
+      const card = await runWithRequestAuth(() => doUpdateCard(ctx, id, body as Partial<Card>))
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -112,12 +114,13 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/forms/:formId/submit')
   if (params) {
     try {
+      const { id, formId } = params
       const body = await readBody(req)
-      const result = await doSubmitForm(ctx, {
-        cardId: params.id,
-        formId: params.formId,
+      const result = await runWithRequestAuth(() => doSubmitForm(ctx, {
+        cardId: id,
+        formId,
         data: parseSubmitData(body.data),
-      }, extractAuthContext(req))
+      }))
       jsonOk(res, result)
     } catch (err) {
       jsonError(res, getSubmitErrorStatus(err), String(err))
@@ -128,6 +131,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('PATCH', '/api/tasks/:id/move')
   if (params) {
     try {
+      const { id } = params
       const body = await readBody(req)
       const newStatus = body.status as string
       const position = body.position as number ?? 0
@@ -135,7 +139,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 400, 'status is required')
         return true
       }
-      const card = await doMoveCard(ctx, params.id, newStatus, position, extractAuthContext(req))
+      const card = await runWithRequestAuth(() => doMoveCard(ctx, id, newStatus, position))
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -154,7 +158,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/actions/:action')
   if (params) {
     try {
-      await sdk.triggerAction(params.id, params.action, undefined, extractAuthContext(req))
+      const { id, action } = params
+      await runWithRequestAuth(() => sdk.triggerAction(id, action, undefined))
       sendNoContent(res)
     } catch (err) {
       const message = String(err)
@@ -166,7 +171,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('DELETE', '/api/tasks/:id/permanent')
   if (params) {
     try {
-      const deleted = await doPermanentDeleteCard(ctx, params.id, extractAuthContext(req))
+      const { id } = params
+      const deleted = await runWithRequestAuth(() => doPermanentDeleteCard(ctx, id))
       if (!deleted) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -185,7 +191,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('DELETE', '/api/tasks/:id')
   if (params) {
     try {
-      const deleted = await doDeleteCard(ctx, params.id, extractAuthContext(req))
+      const { id } = params
+      const deleted = await runWithRequestAuth(() => doDeleteCard(ctx, id))
       if (!deleted) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -211,11 +218,12 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 400, 'files array is required')
         return true
       }
-      const auth = extractAuthContext(req)
-      for (const file of files) {
-        const buffer = Buffer.from(file.data, 'base64')
-        await doAddAttachment(ctx, taskParams.id, file.name, buffer, auth)
-      }
+      await runWithRequestAuth(async () => {
+        for (const file of files) {
+          const buffer = Buffer.from(file.data, 'base64')
+          await doAddAttachment(ctx, taskParams.id, file.name, buffer)
+        }
+      })
       broadcast(ctx, buildInitMessage(ctx))
       const card = ctx.cards.find(item => item.id === taskParams.id)
       if (!card) {
@@ -266,7 +274,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('DELETE', '/api/tasks/:id/attachments/:filename')
   if (params) {
     try {
-      const card = await doRemoveAttachment(ctx, params.id, params.filename, extractAuthContext(req))
+      const { id, filename } = params
+      const card = await runWithRequestAuth(() => doRemoveAttachment(ctx, id, filename))
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -297,6 +306,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/comments')
   if (params) {
     try {
+      const { id } = params
       const body = await readBody(req)
       const author = body.author as string
       const content = body.content as string
@@ -308,7 +318,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 400, 'content is required')
         return true
       }
-      const comment = await doAddComment(ctx, params.id, author, content, extractAuthContext(req))
+      const comment = await runWithRequestAuth(() => doAddComment(ctx, id, author, content))
       if (!comment) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -327,13 +337,14 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('PUT', '/api/tasks/:id/comments/:commentId')
   if (params) {
     try {
+      const { id, commentId } = params
       const body = await readBody(req)
       const content = body.content as string
       if (!content) {
         jsonError(res, 400, 'content is required')
         return true
       }
-      const comment = await doUpdateComment(ctx, params.id, params.commentId, content, extractAuthContext(req))
+      const comment = await runWithRequestAuth(() => doUpdateComment(ctx, id, commentId, content))
       if (!comment) {
         jsonError(res, 404, 'Comment not found')
       } else {
@@ -352,7 +363,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('DELETE', '/api/tasks/:id/comments/:commentId')
   if (params) {
     try {
-      const deleted = await doDeleteComment(ctx, params.id, params.commentId, extractAuthContext(req))
+      const { id, commentId } = params
+      const deleted = await runWithRequestAuth(() => doDeleteComment(ctx, id, commentId))
       if (!deleted) {
         jsonError(res, 404, 'Comment not found')
       } else {
@@ -381,21 +393,21 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/logs')
   if (params) {
     try {
+      const { id } = params
       const body = await readBody(req)
       const text = body.text as string
       if (!text) {
         jsonError(res, 400, 'text is required')
         return true
       }
-      const entry = await doAddLog(
+      const entry = await runWithRequestAuth(() => doAddLog(
         ctx,
-        params.id,
+        id,
         text,
         body.source as string | undefined,
         body.object as Record<string, unknown> | undefined,
         body.timestamp as string | undefined,
-        extractAuthContext(req),
-      )
+      ))
       if (!entry) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -409,7 +421,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
 
   params = route('DELETE', '/api/tasks/:id/logs')
   if (params) {
-    const cleared = await doClearLogs(ctx, params.id, extractAuthContext(req))
+    const cleared = await runWithRequestAuth(() => doClearLogs(ctx, params.id))
     if (!cleared) {
       jsonError(res, 404, 'Task not found')
     } else {

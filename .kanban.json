@@ -213,5 +213,6 @@
       "source": true,
       "objects": false
     }
-  }
+  },
+  "webhooks": []
 }

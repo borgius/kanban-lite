@@ -74,103 +74,114 @@ HTTP server are all built on top of.
 
 * [KanbanSDK](#KanbanSDK)
     * [new KanbanSDK(kanbanDir, options)](#new_KanbanSDK_new)
-    * [.eventBus](#KanbanSDK+eventBus)
-    * [.storageEngine](#KanbanSDK+storageEngine)
-    * [.capabilities](#KanbanSDK+capabilities)
-    * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
-    * [.on()](#KanbanSDK+on)
-    * [.once()](#KanbanSDK+once)
-    * [.many()](#KanbanSDK+many)
-    * [.onAny()](#KanbanSDK+onAny)
-    * [.off()](#KanbanSDK+off)
-    * [.offAny()](#KanbanSDK+offAny)
-    * [.removeAllListeners()](#KanbanSDK+removeAllListeners)
-    * [.eventNames()](#KanbanSDK+eventNames)
-    * [.listenerCount()](#KanbanSDK+listenerCount)
-    * [.hasListeners()](#KanbanSDK+hasListeners)
-    * [.waitFor()](#KanbanSDK+waitFor)
-    * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
-    * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
-    * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
-    * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
-    * [._withAuthContext()](#KanbanSDK+_withAuthContext)
-    * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
-    * [.getAttachmentStoragePath(card)](#KanbanSDK+getAttachmentStoragePath) ⇒
-    * [.appendAttachment()](#KanbanSDK+appendAttachment)
-    * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
-    * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
-    * [.close()](#KanbanSDK+close)
-    * [.destroy()](#KanbanSDK+destroy)
-    * [.emitEvent()](#KanbanSDK+emitEvent)
-    * [._resolveBoardId()](#KanbanSDK+_resolveBoardId)
-    * [._boardDir()](#KanbanSDK+_boardDir)
-    * [._isCompletedStatus()](#KanbanSDK+_isCompletedStatus)
-    * [._ensureMigrated()](#KanbanSDK+_ensureMigrated)
-    * [.init()](#KanbanSDK+init) ⇒
-    * [.listBoards()](#KanbanSDK+listBoards) ⇒
-    * [.createBoard(id, name, options)](#KanbanSDK+createBoard) ⇒
-    * [.deleteBoard(boardId)](#KanbanSDK+deleteBoard) ⇒
-    * [.getBoard(boardId)](#KanbanSDK+getBoard) ⇒
-    * [.updateBoard(boardId, updates)](#KanbanSDK+updateBoard) ⇒
-    * [.getBoardActions(boardId)](#KanbanSDK+getBoardActions) ⇒
-    * [.addBoardAction(boardId, key, title)](#KanbanSDK+addBoardAction) ⇒
-    * [.removeBoardAction(boardId, key)](#KanbanSDK+removeBoardAction) ⇒
-    * [.triggerBoardAction(boardId, actionKey)](#KanbanSDK+triggerBoardAction)
-    * [.transferCard(cardId, fromBoardId, toBoardId, targetStatus)](#KanbanSDK+transferCard) ⇒
-    * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
-    * [.getActiveCard(boardId)](#KanbanSDK+getActiveCard) ⇒
-    * [.setActiveCard()](#KanbanSDK+setActiveCard)
-    * [.clearActiveCard()](#KanbanSDK+clearActiveCard)
-    * [.createCard(data)](#KanbanSDK+createCard) ⇒
-    * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
-    * [.submitForm(input)](#KanbanSDK+submitForm) ⇒
-    * [.triggerAction(cardId, action, boardId)](#KanbanSDK+triggerAction) ⇒
-    * [.moveCard(cardId, newStatus, position, boardId)](#KanbanSDK+moveCard) ⇒
-    * [.deleteCard(cardId, boardId)](#KanbanSDK+deleteCard) ⇒
-    * [.permanentlyDeleteCard(cardId, boardId)](#KanbanSDK+permanentlyDeleteCard) ⇒
-    * [.getCardsByStatus(status, boardId)](#KanbanSDK+getCardsByStatus) ⇒
-    * [.getUniqueAssignees(boardId)](#KanbanSDK+getUniqueAssignees) ⇒
-    * [.getUniqueLabels(boardId)](#KanbanSDK+getUniqueLabels) ⇒
-    * [.getLabels()](#KanbanSDK+getLabels) ⇒
-    * [.setLabel(name, definition)](#KanbanSDK+setLabel)
-    * [.deleteLabel(name)](#KanbanSDK+deleteLabel)
-    * [.renameLabel(oldName, newName)](#KanbanSDK+renameLabel)
-    * [.getLabelsInGroup(group)](#KanbanSDK+getLabelsInGroup) ⇒
-    * [.filterCardsByLabelGroup(group, boardId)](#KanbanSDK+filterCardsByLabelGroup) ⇒
-    * [.addAttachment(cardId, sourcePath, boardId)](#KanbanSDK+addAttachment) ⇒
-    * [.removeAttachment(cardId, attachment, boardId)](#KanbanSDK+removeAttachment) ⇒
-    * [.listAttachments(cardId, boardId)](#KanbanSDK+listAttachments) ⇒
-    * [.getAttachmentDir(cardId, boardId)](#KanbanSDK+getAttachmentDir) ⇒
-    * [.listComments(cardId, boardId)](#KanbanSDK+listComments) ⇒
-    * [.addComment(cardId, author, content, boardId)](#KanbanSDK+addComment) ⇒
-    * [.updateComment(cardId, commentId, content, boardId)](#KanbanSDK+updateComment) ⇒
-    * [.deleteComment(cardId, commentId, boardId)](#KanbanSDK+deleteComment) ⇒
-    * [.getLogFilePath(cardId, boardId)](#KanbanSDK+getLogFilePath) ⇒
-    * [.listLogs(cardId, boardId)](#KanbanSDK+listLogs) ⇒
-    * [.addLog(cardId, text, options, boardId)](#KanbanSDK+addLog) ⇒
-    * [.clearLogs(cardId, boardId)](#KanbanSDK+clearLogs) ⇒
-    * [.getBoardLogFilePath(boardId)](#KanbanSDK+getBoardLogFilePath) ⇒
-    * [.listBoardLogs(boardId)](#KanbanSDK+listBoardLogs) ⇒
-    * [.addBoardLog(text, options, boardId)](#KanbanSDK+addBoardLog) ⇒
-    * [.clearBoardLogs(boardId)](#KanbanSDK+clearBoardLogs) ⇒
-    * [.listColumns(boardId)](#KanbanSDK+listColumns) ⇒
-    * [.addColumn(column, boardId)](#KanbanSDK+addColumn) ⇒
-    * [.updateColumn(columnId, updates, boardId)](#KanbanSDK+updateColumn) ⇒
-    * [.removeColumn(columnId, boardId)](#KanbanSDK+removeColumn) ⇒
-    * [.cleanupColumn(columnId, boardId)](#KanbanSDK+cleanupColumn) ⇒
-    * [.purgeDeletedCards(boardId)](#KanbanSDK+purgeDeletedCards) ⇒
-    * [.reorderColumns(columnIds, boardId)](#KanbanSDK+reorderColumns) ⇒
-    * [.getMinimizedColumns(boardId)](#KanbanSDK+getMinimizedColumns) ⇒
-    * [.setMinimizedColumns(columnIds, boardId)](#KanbanSDK+setMinimizedColumns) ⇒
-    * [.getSettings()](#KanbanSDK+getSettings) ⇒
-    * [.updateSettings(settings)](#KanbanSDK+updateSettings)
-    * [.migrateToSqlite(dbPath)](#KanbanSDK+migrateToSqlite) ⇒
-    * [.migrateToMarkdown()](#KanbanSDK+migrateToMarkdown) ⇒
-    * [.setDefaultBoard(boardId)](#KanbanSDK+setDefaultBoard)
-    * [.listWebhooks()](#KanbanSDK+listWebhooks) ⇒
-    * [.createWebhook(webhookConfig)](#KanbanSDK+createWebhook) ⇒
-    * [.deleteWebhook(id)](#KanbanSDK+deleteWebhook) ⇒
-    * [.updateWebhook(id, updates)](#KanbanSDK+updateWebhook) ⇒
+    * _instance_
+        * [.eventBus](#KanbanSDK+eventBus)
+        * [.storageEngine](#KanbanSDK+storageEngine)
+        * [.capabilities](#KanbanSDK+capabilities)
+        * [._currentAuthContext](#KanbanSDK+_currentAuthContext)
+        * [.workspaceRoot](#KanbanSDK+workspaceRoot) ⇒
+        * [.on()](#KanbanSDK+on)
+        * [.once()](#KanbanSDK+once)
+        * [.many()](#KanbanSDK+many)
+        * [.onAny()](#KanbanSDK+onAny)
+        * [.off()](#KanbanSDK+off)
+        * [.offAny()](#KanbanSDK+offAny)
+        * [.removeAllListeners()](#KanbanSDK+removeAllListeners)
+        * [.eventNames()](#KanbanSDK+eventNames)
+        * [.listenerCount()](#KanbanSDK+listenerCount)
+        * [.hasListeners()](#KanbanSDK+hasListeners)
+        * [.waitFor()](#KanbanSDK+waitFor)
+        * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
+        * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
+        * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
+        * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
+        * [.runWithAuth(auth, fn)](#KanbanSDK+runWithAuth) ⇒
+        * [._resolveEventActor()](#KanbanSDK+_resolveEventActor)
+        * [._runBeforeEvent(event, input, actor, boardId)](#KanbanSDK+_runBeforeEvent) ⇒
+        * [._runAfterEvent(event, data, actor, boardId, meta)](#KanbanSDK+_runAfterEvent)
+        * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
+        * [.getAttachmentStoragePath(card)](#KanbanSDK+getAttachmentStoragePath) ⇒
+        * [.appendAttachment()](#KanbanSDK+appendAttachment)
+        * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
+        * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
+        * [.close()](#KanbanSDK+close)
+        * [.destroy()](#KanbanSDK+destroy)
+        * [.emitEvent()](#KanbanSDK+emitEvent)
+        * [._resolveBoardId()](#KanbanSDK+_resolveBoardId)
+        * [._boardDir()](#KanbanSDK+_boardDir)
+        * [._isCompletedStatus()](#KanbanSDK+_isCompletedStatus)
+        * [._ensureMigrated()](#KanbanSDK+_ensureMigrated)
+        * [.init()](#KanbanSDK+init) ⇒
+        * [.listBoards()](#KanbanSDK+listBoards) ⇒
+        * [.createBoard(id, name, options)](#KanbanSDK+createBoard) ⇒
+        * [.deleteBoard(boardId)](#KanbanSDK+deleteBoard) ⇒
+        * [.getBoard(boardId)](#KanbanSDK+getBoard) ⇒
+        * [.updateBoard(boardId, updates)](#KanbanSDK+updateBoard) ⇒
+        * [.getBoardActions(boardId)](#KanbanSDK+getBoardActions) ⇒
+        * [.addBoardAction(boardId, key, title)](#KanbanSDK+addBoardAction) ⇒
+        * [.removeBoardAction(boardId, key)](#KanbanSDK+removeBoardAction) ⇒
+        * [.triggerBoardAction(boardId, actionKey)](#KanbanSDK+triggerBoardAction)
+        * [.transferCard(cardId, fromBoardId, toBoardId, targetStatus)](#KanbanSDK+transferCard) ⇒
+        * [.getCard(cardId, boardId)](#KanbanSDK+getCard) ⇒
+        * [.getActiveCard(boardId)](#KanbanSDK+getActiveCard) ⇒
+        * [.setActiveCard()](#KanbanSDK+setActiveCard)
+        * [.clearActiveCard()](#KanbanSDK+clearActiveCard)
+        * [.createCard(data)](#KanbanSDK+createCard) ⇒
+        * [.updateCard(cardId, updates, boardId)](#KanbanSDK+updateCard) ⇒
+        * [.submitForm(input)](#KanbanSDK+submitForm) ⇒
+        * [.triggerAction(cardId, action, boardId)](#KanbanSDK+triggerAction) ⇒
+        * [.moveCard(cardId, newStatus, position, boardId)](#KanbanSDK+moveCard) ⇒
+        * [.deleteCard(cardId, boardId)](#KanbanSDK+deleteCard) ⇒
+        * [.permanentlyDeleteCard(cardId, boardId)](#KanbanSDK+permanentlyDeleteCard) ⇒
+        * [.getCardsByStatus(status, boardId)](#KanbanSDK+getCardsByStatus) ⇒
+        * [.getUniqueAssignees(boardId)](#KanbanSDK+getUniqueAssignees) ⇒
+        * [.getUniqueLabels(boardId)](#KanbanSDK+getUniqueLabels) ⇒
+        * [.getLabels()](#KanbanSDK+getLabels) ⇒
+        * [.setLabel(name, definition)](#KanbanSDK+setLabel)
+        * [.deleteLabel(name)](#KanbanSDK+deleteLabel)
+        * [.renameLabel(oldName, newName)](#KanbanSDK+renameLabel)
+        * [.getLabelsInGroup(group)](#KanbanSDK+getLabelsInGroup) ⇒
+        * [.filterCardsByLabelGroup(group, boardId)](#KanbanSDK+filterCardsByLabelGroup) ⇒
+        * [.addAttachment(cardId, sourcePath, boardId)](#KanbanSDK+addAttachment) ⇒
+        * [.removeAttachment(cardId, attachment, boardId)](#KanbanSDK+removeAttachment) ⇒
+        * [.listAttachments(cardId, boardId)](#KanbanSDK+listAttachments) ⇒
+        * [.getAttachmentDir(cardId, boardId)](#KanbanSDK+getAttachmentDir) ⇒
+        * [.listComments(cardId, boardId)](#KanbanSDK+listComments) ⇒
+        * [.addComment(cardId, author, content, boardId)](#KanbanSDK+addComment) ⇒
+        * [.updateComment(cardId, commentId, content, boardId)](#KanbanSDK+updateComment) ⇒
+        * [.deleteComment(cardId, commentId, boardId)](#KanbanSDK+deleteComment) ⇒
+        * [.getLogFilePath(cardId, boardId)](#KanbanSDK+getLogFilePath) ⇒
+        * [.listLogs(cardId, boardId)](#KanbanSDK+listLogs) ⇒
+        * [.addLog(cardId, text, options, boardId)](#KanbanSDK+addLog) ⇒
+        * [.clearLogs(cardId, boardId)](#KanbanSDK+clearLogs) ⇒
+        * [.getBoardLogFilePath(boardId)](#KanbanSDK+getBoardLogFilePath) ⇒
+        * [.listBoardLogs(boardId)](#KanbanSDK+listBoardLogs) ⇒
+        * [.addBoardLog(text, options, boardId)](#KanbanSDK+addBoardLog) ⇒
+        * [.clearBoardLogs(boardId)](#KanbanSDK+clearBoardLogs) ⇒
+        * [.listColumns(boardId)](#KanbanSDK+listColumns) ⇒
+        * [.addColumn(column, boardId)](#KanbanSDK+addColumn) ⇒
+        * [.updateColumn(columnId, updates, boardId)](#KanbanSDK+updateColumn) ⇒
+        * [.removeColumn(columnId, boardId)](#KanbanSDK+removeColumn) ⇒
+        * [.cleanupColumn(columnId, boardId)](#KanbanSDK+cleanupColumn) ⇒
+        * [.purgeDeletedCards(boardId)](#KanbanSDK+purgeDeletedCards) ⇒
+        * [.reorderColumns(columnIds, boardId)](#KanbanSDK+reorderColumns) ⇒
+        * [.getMinimizedColumns(boardId)](#KanbanSDK+getMinimizedColumns) ⇒
+        * [.setMinimizedColumns(columnIds, boardId)](#KanbanSDK+setMinimizedColumns) ⇒
+        * [.getSettings()](#KanbanSDK+getSettings) ⇒
+        * [.updateSettings(settings)](#KanbanSDK+updateSettings)
+        * [.migrateToSqlite(dbPath)](#KanbanSDK+migrateToSqlite) ⇒
+        * [.migrateToMarkdown()](#KanbanSDK+migrateToMarkdown) ⇒
+        * [.setDefaultBoard(boardId)](#KanbanSDK+setDefaultBoard)
+        * [.listWebhooks()](#KanbanSDK+listWebhooks) ⇒
+        * [.createWebhook(webhookConfig)](#KanbanSDK+createWebhook) ⇒
+        * [.deleteWebhook(id)](#KanbanSDK+deleteWebhook) ⇒
+        * [.updateWebhook(id, updates)](#KanbanSDK+updateWebhook) ⇒
+    * _static_
+        * [._authStorage](#KanbanSDK._authStorage)
+        * [._runWithScopedAuth()](#KanbanSDK._runWithScopedAuth)
+        * [._getScopedAuth()](#KanbanSDK._getScopedAuth)
+        * [._cloneMergeValue()](#KanbanSDK._cloneMergeValue)
+        * [._deepMerge()](#KanbanSDK._deepMerge)
 
 
 * * *
@@ -225,6 +236,15 @@ Returns the resolved `card.storage` provider implementation
 #### kanbanSDK.capabilities
 The resolved storage/attachment capability bag for this SDK instance.
 Returns `null` when a pre-built storage engine was injected directly.
+
+**Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+_currentAuthContext"></a>
+
+#### kanbanSDK.\_currentAuthContext
+Returns the auth context installed by the nearest enclosing [runWithAuth](runWithAuth) call, if any. @internal
 
 **Kind**: instance property of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -436,11 +456,95 @@ for workspaces without an auth configuration.
 
 * * *
 
-<a name="KanbanSDK+_withAuthContext"></a>
+<a name="KanbanSDK+runWithAuth"></a>
 
-#### kanbanSDK.\_withAuthContext()
+#### kanbanSDK.runWithAuth(auth, fn) ⇒
+Runs `fn` within an async scope where `auth` is the active auth context.
+
+Use this on host surfaces (REST routes, CLI commands, MCP handlers) to
+bind a request-scoped [AuthContext](AuthContext) before calling SDK mutators.
+The context is propagated automatically through every `await` in the call
+tree without being threaded through method signatures.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The promise returned by `fn`.  
+
+| Param | Description |
+| --- | --- |
+| auth | Request-scoped auth context to install for the duration of `fn`. |
+| fn | Async callback to execute with the auth context active. |
+
+**Example**  
+```ts
+const card = await sdk.runWithAuth({ token: req.headers.authorization }, () =>
+  sdk.createCard({ boardId: 'default', title: 'New task' })
+)
+```
+
+* * *
+
+<a name="KanbanSDK+_resolveEventActor"></a>
+
+#### kanbanSDK.\_resolveEventActor()
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Internal**:   
+
+* * *
+
+<a name="KanbanSDK+_runBeforeEvent"></a>
+
+#### kanbanSDK.\_runBeforeEvent(event, input, actor, boardId) ⇒
+Dispatches a before-event to all registered listeners and returns a
+deep-merged clone of the input.
+
+Clones `input` immediately with `structuredClone` so the caller's object
+is never mutated. Awaits all registered before-event listeners in
+registration order via [EventBus.emitAsync](EventBus.emitAsync). Each plain-object
+listener response is deep-merged in registration order over the clone so
+that later-registered listeners override earlier ones at every nesting
+depth. Arrays in listener responses **replace** (no concatenation).
+Non-plain-object, `void`, or empty `{}` responses contribute no keys and
+the accumulated input stays effectively unchanged.
+
+**Throwing aborts the mutation:** any error thrown by a listener —
+including [AuthError](AuthError) — propagates immediately to the caller.
+No subsequent listeners execute and no mutation write occurs.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: Promise resolving to the deep-merged input clone after all listeners settle.  
+**Internal**:   
+
+| Param | Description |
+| --- | --- |
+| event | Before-event name (e.g. `'card.create'`). |
+| input | Initial mutation input used as the clone/merge base. |
+| actor | Resolved acting principal, if known. |
+| boardId | Board context for this action, if applicable. |
+
+
+* * *
+
+<a name="KanbanSDK+_runAfterEvent"></a>
+
+#### kanbanSDK.\_runAfterEvent(event, data, actor, boardId, meta)
+Emits an after-event exactly once after a mutation has been committed.
+
+Wraps `data` in an [AfterEventPayload](AfterEventPayload) envelope and emits it on the event
+bus as an [SDKEvent](SDKEvent). After-event listeners are non-blocking: the event bus
+isolates errors per listener so a failing listener never prevents sibling listeners
+from executing and never propagates to the SDK caller.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+| Param | Description |
+| --- | --- |
+| event | After-event name (e.g. `'task.created'`). |
+| data | The committed mutation result. |
+| actor | Resolved acting principal, if known. |
+| boardId | Board context for this event, if applicable. |
+| meta | Optional audit metadata. |
+
 
 * * *
 
@@ -2281,6 +2385,67 @@ otherwise uses the built-in compatibility registry path.
 
 * * *
 
+<a name="KanbanSDK._authStorage"></a>
+
+#### KanbanSDK.\_authStorage
+**Kind**: static property of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**: Async-scoped auth carrier. Installed per request scope via [runWithAuth](runWithAuth).  
+
+* * *
+
+<a name="KanbanSDK._runWithScopedAuth"></a>
+
+#### KanbanSDK.\_runWithScopedAuth()
+**Kind**: static method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK._getScopedAuth"></a>
+
+#### KanbanSDK.\_getScopedAuth()
+**Kind**: static method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK._cloneMergeValue"></a>
+
+#### KanbanSDK.\_cloneMergeValue()
+**Kind**: static method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK._deepMerge"></a>
+
+#### KanbanSDK.\_deepMerge()
+Recursively deep-merges `source` into a shallow copy of `target`.
+
+- Plain objects are merged recursively; later keys override earlier keys at
+  every depth.
+- Arrays, primitives, and class instances in `source` **replace** the
+  corresponding value in `target` (no concatenation of arrays).
+- `target` itself is never mutated; the caller receives the merged clone.
+
+**Kind**: static method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="_isPlainObject"></a>
+
+### \_isPlainObject()
+Returns `true` when `value` is a plain-object merge candidate.
+
+Accepts `{}` literals and `Object.create(null)` objects. Rejects arrays,
+class instances, primitives, and `null`. Used by `KanbanSDK._deepMerge`.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
 
 ## Types
 
@@ -3105,8 +3270,7 @@ Maps short webhook provider ids to their installable npm package names.
 - `webhooks` → `npm install kl-webhooks-plugin`
 
 External packages must export `webhookProviderPlugin` (or a default export)
-with a manifest that provides `'webhook.delivery'`, CRUD methods, and a
-`createListener` factory.
+with a manifest that provides `'webhook.delivery'` and CRUD methods.
 
 **Kind**: global variable  
 
@@ -3233,10 +3397,29 @@ Returns a deterministic, actionable error when the package is not installed.
 
 * * *
 
-<a name="loadWebhookProviderPlugin"></a>
+<a name="isValidSDKEventListenerPlugin"></a>
 
-### loadWebhookProviderPlugin()
+### isValidSDKEventListenerPlugin()
+Type guard for [SDKEventListenerPlugin](SDKEventListenerPlugin) — validates that `plugin` has
+the `register` / `unregister` lifecycle and a valid manifest.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
+<a name="loadWebhookPluginPack"></a>
+
+### loadWebhookPluginPack()
 Lazily loads an external npm webhook provider plugin.
+
+Accepts packages that export:
+- `webhookProviderPlugin` (or a default): CRUD webhook provider.
+- `webhookListenerPlugin` (optional): a [SDKEventListenerPlugin](SDKEventListenerPlugin) for
+  runtime delivery.
+- `WebhookListenerPlugin` (optional): a class export constructed with the
+  workspace root when the runtime listener needs workspace-local config.
+
 Returns a deterministic, actionable error when the package is not installed
 or does not export the expected shape.
 
@@ -3245,20 +3428,47 @@ or does not export the expected shape.
 
 * * *
 
-<a name="resolveWebhookProvider"></a>
+<a name="resolveWebhookPlugins"></a>
 
-### resolveWebhookProvider()
-Attempts to resolve a webhook provider from a normalized [ProviderRef](ProviderRef).
+### resolveWebhookPlugins()
+Attempts to resolve a webhook provider and its runtime delivery listener from
+a normalized [ProviderRef](ProviderRef).
 
-Returns `null` when the package is simply not installed yet, so the built-in
-`WebhookListenerPlugin` path in `KanbanSDK` continues to function as a
-compatibility fallback until the external plugin is present.
+Listener resolution priority:
+1. `webhookListenerPlugin: SDKEventListenerPlugin` named export from package.
+2. `WebhookListenerPlugin` class export constructed with the workspace root.
+3. `null` — caller falls back to the built-in `WebhookListenerPlugin`.
 
-Throws for any other loading or validation error so misconfigurations surface
-immediately.
+Returns `null` when the package is simply not installed yet (not-installed error),
+so the built-in listener path in `KanbanSDK` continues to function as a fallback.
+Throws for any other loading or validation error.
 
 **Kind**: global function  
 **Internal**:   
+
+* * *
+
+<a name="createBuiltinAuthListenerPlugin"></a>
+
+### createBuiltinAuthListenerPlugin(authIdentity, authPolicy, getAuthContext) ⇒
+Creates the built-in auth event listener plugin that enforces authorization
+during the before-event phase.
+
+The listener resolves identity from the active request-scoped auth carrier,
+evaluates
+the configured policy for [BeforeEventPayload.event](BeforeEventPayload.event), emits
+`auth.allowed` / `auth.denied`, and throws [AuthError](AuthError) when a mutation
+must be vetoed.
+
+**Kind**: global function  
+**Returns**: A registered [SDKEventListenerPlugin](SDKEventListenerPlugin) for the auth runtime seam.  
+
+| Param | Description |
+| --- | --- |
+| authIdentity | Resolved identity provider used to establish the caller. |
+| authPolicy | Resolved policy provider used to authorize each action. |
+| getAuthContext | Optional accessor for the active scoped auth context. |
+
 
 * * *
 

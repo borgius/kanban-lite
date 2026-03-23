@@ -14,11 +14,12 @@ function setCapabilities(sdk: KanbanSDK, bag: CapabilityBag): void {
   const internal = sdk as unknown as {
     _capabilities: CapabilityBag | null
     _eventBus: import('../eventBus').EventBus
+    _currentAuthContext?: AuthContext
   }
   internal._capabilities?.authListener.unregister()
   internal._capabilities = {
     ...bag,
-    authListener: createBuiltinAuthListenerPlugin(bag.authIdentity, bag.authPolicy),
+    authListener: createBuiltinAuthListenerPlugin(bag.authIdentity, bag.authPolicy, () => internal._currentAuthContext),
   }
   internal._capabilities.authListener.register(internal._eventBus)
 }
@@ -502,7 +503,7 @@ describe('auth enforcement: SDK enriches auth context with target hints', () => 
   })
 
   it('passes board/card/comment hints for updateComment', async () => {
-    await expect(sdk.updateComment('card-1', 'c1', 'Updated', 'default', { transport: 'cli' })).rejects.toBeInstanceOf(AuthError)
+    await expect(sdk.runWithAuth({ transport: 'cli' }, async () => sdk.updateComment('card-1', 'c1', 'Updated', 'default'))).rejects.toBeInstanceOf(AuthError)
 
     expect(captured).toContainEqual({
       action: 'comment.update',
@@ -516,7 +517,7 @@ describe('auth enforcement: SDK enriches auth context with target hints', () => 
   })
 
   it('passes transfer target hints for transferCard', async () => {
-    await expect(sdk.transferCard('card-2', 'default', 'bugs', 'todo', { transport: 'mcp' })).rejects.toBeInstanceOf(AuthError)
+    await expect(sdk.runWithAuth({ transport: 'mcp' }, async () => sdk.transferCard('card-2', 'default', 'bugs', 'todo'))).rejects.toBeInstanceOf(AuthError)
 
     expect(captured).toContainEqual({
       action: 'card.transfer',
@@ -566,7 +567,7 @@ describe('auth enforcement: extension host denial path does not leak token mater
 
     let caughtErr: AuthError | undefined
     try {
-      await sdk.createBoard('test-board', 'Test', undefined, extensionAuthCtx)
+      await sdk.runWithAuth(extensionAuthCtx, async () => sdk.createBoard('test-board', 'Test'))
     } catch (err) {
       if (err instanceof AuthError) caughtErr = err
     }

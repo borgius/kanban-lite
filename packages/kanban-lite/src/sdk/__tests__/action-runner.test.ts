@@ -19,13 +19,12 @@ function runBefore<T extends Record<string, unknown>>(
   sdk: KanbanSDK,
   event: string,
   input: T,
-  auth?: Record<string, unknown>,
   actor?: string,
   boardId?: string,
 ): Promise<T> {
   return (sdk as unknown as {
-    _runBeforeEvent(event: string, input: T, auth?: Record<string, unknown>, actor?: string, boardId?: string): Promise<T>
-  })._runBeforeEvent(event as never, input, auth, actor, boardId)
+    _runBeforeEvent(event: string, input: T, actor?: string, boardId?: string): Promise<T>
+  })._runBeforeEvent(event as never, input, actor, boardId)
 }
 
 function runAfter<T>(
@@ -88,7 +87,7 @@ describe('KanbanSDK._runBeforeEvent', () => {
     expect(result.extra).toBe('a') // key from first listener, not overridden
   })
 
-  it('each subsequent listener receives the progressively merged input', async () => {
+  it('each listener receives the same original (unmodified) input', async () => {
     const seen: string[] = []
     sdk.on('card.create', vi.fn().mockImplementation(({ input }: { input: Record<string, unknown> }) => {
       seen.push(input.step as string)
@@ -99,9 +98,9 @@ describe('KanbanSDK._runBeforeEvent', () => {
       return { step: 'after-second' }
     }))
     const result = await runBefore(sdk, 'card.create', { step: 'original' })
-    expect(seen[0]).toBe('original')    // first listener sees original
-    expect(seen[1]).toBe('after-first') // second listener sees first override
-    expect(result.step).toBe('after-second')
+    expect(seen[0]).toBe('original')  // first listener sees original
+    expect(seen[1]).toBe('original')  // second listener also sees original — bus does not chain
+    expect(result.step).toBe('after-second') // _runBeforeEvent merges last-listener-wins
   })
 
   it('awaits async (Promise-returning) listeners', async () => {
@@ -143,14 +142,131 @@ describe('KanbanSDK._runBeforeEvent', () => {
   })
 
   it('includes actor and boardId in the payload passed to listeners', async () => {
-    const received: Array<{ actor?: string; boardId?: string; transport?: string }> = []
+    const received: Array<{ actor?: string; boardId?: string }> = []
     sdk.on('card.create', vi.fn().mockImplementation(
-      ({ auth, actor, boardId }: { auth?: Record<string, unknown>; actor?: string; boardId?: string }) => {
-        received.push({ actor, boardId, transport: auth?.transport as string | undefined })
+      ({ actor, boardId }: { actor?: string; boardId?: string }) => {
+        received.push({ actor, boardId })
       },
     ))
-    await runBefore(sdk, 'card.create', { title: 'T' }, { transport: 'http' }, 'alice', 'team-board')
-    expect(received[0]).toEqual({ actor: 'alice', boardId: 'team-board', transport: 'http' })
+    await runBefore(sdk, 'card.create', { title: 'T' }, 'alice', 'team-board')
+    expect(received[0]).toEqual({ actor: 'alice', boardId: 'team-board' })
+  })
+
+  // -------------------------------------------------------------------------
+  // T2: clone-first immutability and deep-merge semantics
+  // -------------------------------------------------------------------------
+
+  it('never mutates the caller-owned input object (top-level)', async () => {
+    sdk.on('card.create', vi.fn().mockReturnValue({ title: 'override' }))
+    const input = { title: 'original' }
+    const result = await runBefore(sdk, 'card.create', input)
+    expect(input.title).toBe('original') // caller object unchanged
+    expect(result.title).toBe('override') // merged output has override
+  })
+
+  it('never mutates caller-owned nested objects', async () => {
+    sdk.on('card.create', vi.fn().mockReturnValue({ meta: { priority: 'high' } }))
+    const nested = { priority: 'low', extra: 'keep' }
+    const input = { meta: nested }
+    const result = await runBefore<Record<string, unknown>>(sdk, 'card.create', input)
+    expect(nested.priority).toBe('low')   // original nested object unchanged
+    expect(nested.extra).toBe('keep')
+    expect((result.meta as Record<string, unknown>).priority).toBe('high') // merged
+    expect((result.meta as Record<string, unknown>).extra).toBe('keep')    // non-overridden key preserved
+  })
+
+  it('clones before dispatch so listener-side nested mutations do not leak back to the caller', async () => {
+    sdk.on('card.create', vi.fn().mockImplementation(({ input }: { input: { meta: { priority: string; extra: string } } }) => {
+      input.meta.priority = 'listener-mutated'
+      return undefined
+    }))
+
+    const nested = { priority: 'low', extra: 'keep' }
+    const input = { meta: nested }
+    const result = await runBefore<Record<string, unknown>>(sdk, 'card.create', input)
+
+    expect(nested.priority).toBe('low')
+    expect((input.meta as { priority: string }).priority).toBe('low')
+    expect((result.meta as { priority: string }).priority).toBe('listener-mutated')
+  })
+
+  it('deep-merges nested plain objects: listener keys added without clobbering sibling keys', async () => {
+    sdk.on('card.create', vi.fn().mockReturnValue({ meta: { newKey: 'v' } }))
+    const result = await runBefore<Record<string, unknown>>(sdk, 'card.create', { meta: { existing: 'stay' } })
+    const meta = result.meta as Record<string, unknown>
+    expect(meta.existing).toBe('stay')
+    expect(meta.newKey).toBe('v')
+  })
+
+  it('arrays in listener response replace — not concatenate — the original array', async () => {
+    sdk.on('card.create', vi.fn().mockReturnValue({ tags: ['b'] }))
+    const result = await runBefore<Record<string, unknown>>(sdk, 'card.create', { tags: ['a'] })
+    expect(result.tags).toEqual(['b']) // replacement, not ['a', 'b']
+  })
+
+  it('empty-object ({}) listener response leaves effective input unchanged', async () => {
+    sdk.on('card.create', vi.fn().mockReturnValue({}))
+    const result = await runBefore(sdk, 'card.create', { title: 'keep' })
+    expect(result.title).toBe('keep')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Suite: runWithAuth — async-scoped auth carrier
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK.runWithAuth', () => {
+  let workspaceDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    const kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('_currentAuthContext is undefined outside a runWithAuth scope', () => {
+    const ctx = (sdk as unknown as { _currentAuthContext: unknown })._currentAuthContext
+    expect(ctx).toBeUndefined()
+  })
+
+  it('_currentAuthContext returns the installed auth inside runWithAuth', async () => {
+    const auth = { token: 'tok', actorHint: 'alice' }
+    let inside: unknown
+    await sdk.runWithAuth(auth, async () => {
+      inside = (sdk as unknown as { _currentAuthContext: unknown })._currentAuthContext
+    })
+    expect(inside).toBe(auth)
+  })
+
+  it('_currentAuthContext is undefined again after runWithAuth resolves', async () => {
+    await sdk.runWithAuth({ token: 'tok' }, async () => { /* noop */ })
+    const ctx = (sdk as unknown as { _currentAuthContext: unknown })._currentAuthContext
+    expect(ctx).toBeUndefined()
+  })
+
+  it('runWithAuth returns the value returned by fn', async () => {
+    const result = await sdk.runWithAuth({ token: 'tok' }, async () => 42)
+    expect(result).toBe(42)
+  })
+
+  it('_runBeforeEvent uses the scoped auth actor when no explicit actor is provided', async () => {
+    const received: Array<{ actor?: string }> = []
+    sdk.on('card.create', vi.fn().mockImplementation(({ actor }: { actor?: string }) => {
+      received.push({ actor })
+    }))
+
+    await sdk.runWithAuth({ token: 'tok', actorHint: 'scoped-alice' }, async () => {
+      await runBefore(sdk, 'card.create', { title: 'T' })
+    })
+
+    expect(received[0]).toEqual({ actor: 'scoped-alice' })
   })
 })
 
@@ -270,6 +386,20 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
     expect(payload.data.id).toBe(card.id)
   })
 
+  it('createBoard consumes merged before-event options when creating the board', async () => {
+    sdk.on('board.create', vi.fn().mockReturnValue({
+      name: 'Operations',
+      description: 'Created by plugin',
+      defaultStatus: 'review',
+    }))
+
+    const board = await sdk.createBoard('ops', 'Ops')
+
+    expect(board.name).toBe('Operations')
+    expect(board.description).toBe('Created by plugin')
+    expect(sdk.getBoard('ops').defaultStatus).toBe('review')
+  })
+
   it('createCard before-event plugin can override input fields', async () => {
     sdk.on('card.create', vi.fn().mockReturnValue({ status: 'in-progress' }))
 
@@ -311,6 +441,21 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
     const payload = received[0].data as AfterEventPayload<{ status: string }>
     expect(payload.event).toBe('task.moved')
     expect(payload.data.status).toBe('in-progress')
+  })
+
+  it('deleteCard consumes merged before-event identifiers before mutating and emitting', async () => {
+    const first = await sdk.createCard({ content: '# First delete target' })
+    const second = await sdk.createCard({ content: '# Second delete target' })
+    const received: SDKEvent<AfterEventPayload<{ id: string }>>[] = []
+    sdk.on('task.deleted', (ev) => received.push(ev as SDKEvent<AfterEventPayload<{ id: string }>>))
+    sdk.on('card.delete', vi.fn().mockReturnValue({ cardId: second.id }))
+
+    await sdk.deleteCard(first.id)
+
+    expect((await sdk.getCard(first.id))?.status).not.toBe('deleted')
+    expect((await sdk.getCard(second.id))?.status).toBe('deleted')
+    expect(received).toHaveLength(1)
+    expect((received[0].data as AfterEventPayload<{ id: string }>).data.id).toBe(second.id)
   })
 
   it('addComment fires comment.created after-event with the new comment payload', async () => {
@@ -398,6 +543,7 @@ describe('KanbanSDK – attachment/log mutation event flow', () => {
   let workspaceDir: string
   let sdk: KanbanSDK
   let tempFile: string
+  let alternateTempFile: string
 
   beforeEach(() => {
     workspaceDir = createTempDir()
@@ -407,6 +553,8 @@ describe('KanbanSDK – attachment/log mutation event flow', () => {
     // create a temp file to use as an attachment source
     tempFile = path.join(workspaceDir, 'attach.txt')
     fs.writeFileSync(tempFile, 'hello attachment')
+    alternateTempFile = path.join(workspaceDir, 'attach-alt.txt')
+    fs.writeFileSync(alternateTempFile, 'hello alternate attachment')
   })
 
   afterEach(() => {
@@ -436,6 +584,20 @@ describe('KanbanSDK – attachment/log mutation event flow', () => {
     expect(payload.event).toBe('attachment.added')
     expect(payload.data.cardId).toBe(card.id)
     expect(payload.data.attachment).toBe('attach.txt')
+  })
+
+  it('addAttachment consumes merged before-event input for the copy and after-event payload', async () => {
+    const card = await sdk.createCard({ content: '# Attach Override Test' })
+    const received: SDKEvent<AfterEventPayload<{ cardId: string; attachment: string }>>[] = []
+    sdk.on('attachment.added', (ev) => received.push(ev as SDKEvent<AfterEventPayload<{ cardId: string; attachment: string }>>))
+    sdk.on('attachment.add', vi.fn().mockReturnValue({ sourcePath: alternateTempFile }))
+
+    const updated = await sdk.addAttachment(card.id, tempFile)
+
+    expect(updated.attachments).toContain('attach-alt.txt')
+    expect(updated.attachments).not.toContain('attach.txt')
+    expect(received).toHaveLength(1)
+    expect((received[0].data as AfterEventPayload<{ cardId: string; attachment: string }>).data.attachment).toBe('attach-alt.txt')
   })
 
   it('addAttachment before-event denial prevents write and emits no after-event', async () => {
@@ -511,6 +673,24 @@ describe('KanbanSDK – attachment/log mutation event flow', () => {
     expect(payload.event).toBe('log.added')
     expect(payload.data.cardId).toBe(card.id)
     expect(payload.data.entry.text).toBe('hello from test')
+  })
+
+  it('addLog consumes merged before-event text and options', async () => {
+    const card = await sdk.createCard({ content: '# Log Override Test' })
+    const received: SDKEvent<AfterEventPayload<{ cardId: string; entry: { text: string; source: string } }>>[] = []
+    sdk.on('log.added', (ev) => received.push(ev as SDKEvent<AfterEventPayload<{ cardId: string; entry: { text: string; source: string } }>>))
+    sdk.on('log.add', vi.fn().mockReturnValue({
+      text: 'plugin text',
+      options: { source: 'plugin' },
+    }))
+
+    const entry = await sdk.addLog(card.id, 'original text')
+
+    expect(entry.text).toBe('plugin text')
+    expect(entry.source).toBe('plugin')
+    expect((await sdk.listLogs(card.id))[0]).toMatchObject({ text: 'plugin text', source: 'plugin' })
+    expect(received).toHaveLength(1)
+    expect((received[0].data as AfterEventPayload<{ cardId: string; entry: { text: string; source: string } }>).data.entry).toMatchObject({ text: 'plugin text', source: 'plugin' })
   })
 
   it('addLog before-event denial prevents write and emits no log.added', async () => {

@@ -1,0 +1,271 @@
+plan_id: "20260323-n8n-node"
+objective: "create an n8n node for kanban-lite that supports all actions and event triggers, with settings allowing connection via SDK or API"
+focus_area: "documentation and release requirements from repository conventions"
+created_at: "2026-03-23"
+created_by: "GitHub Copilot (GPT-5.4)"
+status: "completed"
+
+tldr: |
+  - Root repository conventions require updating `README.md` and `CHANGELOG.md` for any user-facing feature, behavior change, or new package/integration.
+  - Generated reference docs are only regenerated when their source-of-truth inputs change: SDK JSDoc (`docs/sdk.md`), OpenAPI metadata (`docs/api.md`), or structured webhook event metadata (`docs/webhooks.md`).
+  - `docs/plugins.md` must stay in sync when plugin contracts, provider behavior, or integration expectations change; first-party package READMEs follow a consistent install/provider-id/config/example structure.
+  - The docs site consumes root `README.md`, `CHANGELOG.md`, and `docs/*.md` as read-only sources, so updating those sources automatically changes reference content surfaced by the site.
+  - No existing n8n package or docs footprint was found, so exact package naming, placement, and whether the node introduces new core contracts remain open scope questions.
+
+research_metadata:
+  methodology: "Hybrid retrieval using semantic_search for conceptual discovery, grep_search for exact convention/pattern matching, targeted read_file passes for policy and doc structure validation, and package-level README pattern comparison."
+  scope: "Repository conventions affecting documentation, changelog, generated reference docs, package-level README expectations, and docs-site ingestion for a new integration/package."
+  confidence: "high"
+  coverage: 88
+
+files_analyzed:
+  - file: "AGENTS.md"
+    path: "/Users/admin/dev/kanban-light/AGENTS.md"
+    purpose: "Repository-level development and documentation rules."
+    key_elements:
+      - element: "Documentation rules"
+        type: "pattern"
+        location: "AGENTS.md:23"
+        description: "Mandates README, CHANGELOG, generated docs, and related-doc synchronization requirements."
+    language: "markdown"
+    lines: 46
+  - file: "package.json"
+    path: "/Users/admin/dev/kanban-light/package.json"
+    purpose: "Root workspace scripts for docs generation and docs-site builds."
+    key_elements:
+      - element: "docs scripts"
+        type: "variable"
+        location: "package.json:44-51"
+        description: "Defines `docs`, `docs:workspace`, `docs:root`, and per-doc generator scripts, plus docs-site build/dev commands."
+    language: "json"
+    lines: 107
+  - file: "README.md"
+    path: "/Users/admin/dev/kanban-light/README.md"
+    purpose: "Primary user-facing product, interface, integration, and development documentation."
+    key_elements:
+      - element: "Features / CLI / Standalone Server / MCP Server / SDK / Storage Providers / AI Agent Integration / Development"
+        type: "pattern"
+        location: "README.md:44-1452"
+        description: "Existing sections define where new user-facing integration/package material is typically surfaced."
+    language: "markdown"
+    lines: 1468
+  - file: "CHANGELOG.md"
+    path: "/Users/admin/dev/kanban-light/CHANGELOG.md"
+    purpose: "Release notes using Keep a Changelog with an active `Unreleased` section."
+    key_elements:
+      - element: "Unreleased block"
+        type: "pattern"
+        location: "CHANGELOG.md:8"
+        description: "Current release workflow expects concise bullets under `### Added`, `### Changed`, and `### Fixed`."
+    language: "markdown"
+    lines: 380
+  - file: "docs/plugins.md"
+    path: "/Users/admin/dev/kanban-light/docs/plugins.md"
+    purpose: "Deep-dive reference for capability namespaces, provider resolution, runtime listener model, and integration expectations."
+    key_elements:
+      - element: "Capability namespace and integration model"
+        type: "pattern"
+        location: "docs/plugins.md:1-220"
+        description: "Explains when plugin/integration contract changes require doc updates beyond README."
+    language: "markdown"
+    lines: 220
+  - file: "docs/api.md"
+    path: "/Users/admin/dev/kanban-light/docs/api.md"
+    purpose: "Generated REST reference derived from the OpenAPI source."
+    key_elements:
+      - element: "generated-file header"
+        type: "pattern"
+        location: "docs/api.md:1-8"
+        description: "States the file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`."
+    language: "markdown"
+    lines: 40
+  - file: "docs/webhooks.md"
+    path: "/Users/admin/dev/kanban-light/docs/webhooks.md"
+    purpose: "Webhook/event reference describing event coverage and delivery semantics across all interfaces."
+    key_elements:
+      - element: "event coverage overview"
+        type: "pattern"
+        location: "docs/webhooks.md:1-40"
+        description: "Documents how events are exposed and delivered; relevant if the n8n node changes or depends on official event coverage language."
+    language: "markdown"
+    lines: 40
+  - file: "packages/docs-site/src/_data/docsContent.js"
+    path: "/Users/admin/dev/kanban-light/packages/docs-site/src/_data/docsContent.js"
+    purpose: "Read-only ingestion layer that pulls root docs into the Eleventy docs site."
+    key_elements:
+      - element: "docs content loader"
+        type: "function"
+        location: "packages/docs-site/src/_data/docsContent.js:1-57"
+        description: "Confirms root docs are the source of truth for site reference pages."
+    language: "javascript"
+    lines: 57
+  - file: "packages/kl-webhooks-plugin/README.md"
+    path: "/Users/admin/dev/kanban-light/packages/kl-webhooks-plugin/README.md"
+    purpose: "Representative first-party external package README pattern for installable integrations/providers."
+    key_elements:
+      - element: "package README structure"
+        type: "pattern"
+        location: "packages/kl-webhooks-plugin/README.md:1-116"
+        description: "Shows consistent sections for install, provider id, capabilities, config example, payload/behavior, build output, and local development."
+    language: "markdown"
+    lines: 116
+
+patterns_found:
+  - category: "documentation"
+    pattern: "Root docs are the primary source of truth for user-facing behavior."
+    description: "Repository rules explicitly require updating root README and changelog for user-facing changes; docs-site mirrors those sources instead of replacing them."
+    examples:
+      - file: "AGENTS.md"
+        location: "AGENTS.md:23-31"
+        snippet: "README.md: Always update ... CHANGELOG.md: Always add an entry ... Related docs must stay in sync"
+      - file: "packages/docs-site/src/_data/docsContent.js"
+        location: "packages/docs-site/src/_data/docsContent.js:27-57"
+        snippet: "Reads docs/*.md, README.md, CHANGELOG.md as read-only sources"
+    prevalence: "common"
+  - category: "release_management"
+    pattern: "Release notes are maintained under `## [Unreleased]` with categorized bullets."
+    description: "Every feature, behavior change, or bug fix is logged in the changelog using Keep a Changelog subsections."
+    examples:
+      - file: "CHANGELOG.md"
+        location: "CHANGELOG.md:8-18"
+        snippet: "## [Unreleased] / ### Added"
+      - file: "AGENTS.md"
+        location: "AGENTS.md:27-30"
+        snippet: "Place it under an `## [Unreleased]` section ... `### Added`, `### Changed`, `### Fixed`"
+    prevalence: "common"
+  - category: "generated_docs"
+    pattern: "Generated docs are never edited directly; source-of-truth inputs must change, then generators run."
+    description: "SDK docs come from JSDoc, API docs from OpenAPI metadata, and webhook docs from structured metadata."
+    examples:
+      - file: "AGENTS.md"
+        location: "AGENTS.md:24-26"
+        snippet: "`docs/api.md`, `docs/sdk.md`, and `docs/webhooks.md` are autogenerated. Never edit them manually."
+      - file: "docs/api.md"
+        location: "docs/api.md:1-3"
+        snippet: "This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`"
+      - file: "package.json"
+        location: "package.json:44-49"
+        snippet: "docs:root:sdk / docs:root:api / docs:root:webhooks"
+    prevalence: "common"
+  - category: "package_documentation"
+    pattern: "First-party integration packages use a practical README template with install, identity/capabilities, configuration, examples, and local dev workflow."
+    description: "External package READMEs document install commands, provider ids or capabilities, `.kanban.json` examples, payload/behavior notes, and monorepo usage."
+    examples:
+      - file: "packages/kl-webhooks-plugin/README.md"
+        location: "packages/kl-webhooks-plugin/README.md:14-114"
+        snippet: "Install / Provider id / Capabilities / `.kanban.json` example / Build output / Local development"
+      - file: "packages/kl-auth-plugin/README.md"
+        location: "packages/kl-auth-plugin/README.md:14-75"
+        snippet: "Install / Capabilities / Provider ids / `.kanban.json` example / Local development"
+    prevalence: "common"
+  - category: "structure"
+    pattern: "README sections are organized by interface and integration surface."
+    description: "Core surfaces (CLI, REST API, MCP, SDK, Storage Providers, AI Agent Integration, Development) each have dedicated headings, which is where new integration references usually belong."
+    examples:
+      - file: "README.md"
+        location: "README.md:114-1452"
+        snippet: "CLI / Standalone Server / MCP Server / SDK / Storage Providers / AI Agent Integration / Development"
+    prevalence: "common"
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "Root README and changelog"
+      responsibility: "Primary user-facing feature and release communication"
+      location: "README.md, CHANGELOG.md"
+      relationship_to_domain: "domain depends on this"
+    - component: "Docs generators"
+      responsibility: "Regenerate reference docs from source-of-truth code/metadata"
+      location: "scripts/generate-sdk-docs.ts, scripts/generate-api-docs.ts, scripts/generate-webhooks-docs.ts"
+      relationship_to_domain: "domain depends on this"
+    - component: "Docs site ingestion layer"
+      responsibility: "Renders root docs into the Eleventy docs site"
+      location: "packages/docs-site/src/_data/docsContent.js"
+      relationship_to_domain: "this uses domain outputs"
+    - component: "First-party integration package READMEs"
+      responsibility: "Package-specific install/configuration guidance"
+      location: "packages/kl-*/README.md"
+      relationship_to_domain: "domain depends on this"
+  interfaces_used_by_domain:
+    - interface: "Generated-doc pipeline"
+      location: "package.json root scripts + packages/kanban-lite/package.json docs scripts"
+      usage_pattern: "Run root generators after changing JSDoc/OpenAPI/webhook metadata sources"
+  data_flow_involving_domain: "Feature behavior is documented in source comments/metadata and root markdown; generator scripts build root reference docs; the docs site then ingests those root markdown files read-only for publishing."
+  key_relationships_to_domain:
+    - from: "SDK JSDoc"
+      to: "docs/sdk.md"
+      relationship: "generates"
+    - from: "OpenAPI spec"
+      to: "docs/api.md"
+      relationship: "generates"
+    - from: "Structured webhook event metadata"
+      to: "docs/webhooks.md"
+      relationship: "generates"
+    - from: "README.md + CHANGELOG.md + docs/*.md"
+      to: "packages/docs-site"
+      relationship: "feeds"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "Markdown"
+    - "TypeScript"
+    - "JavaScript"
+    - "JSON"
+  frameworks_used_in_domain:
+    - name: "Eleventy"
+      usage_in_domain: "Static docs site renders root markdown via Nunjucks templates and data loaders."
+  libraries_used_in_domain:
+    - name: "tsx"
+      purpose_in_domain: "Runs doc generator scripts"
+    - name: "jsdoc-to-markdown"
+      purpose_in_domain: "Builds `docs/sdk.md` from JSDoc"
+    - name: "Fastify Swagger/OpenAPI"
+      purpose_in_domain: "Supplies the authoritative API reference source"
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: "Top-level product docs live in `README.md`, release notes in `CHANGELOG.md`, generated references in `docs/*.md`, and first-party installable package docs in `packages/<package>/README.md`."
+  structure_of_domain: "Reference docs are centralized at the repo root; package READMEs cover package-local install/config/use details; docs-site consumes root docs instead of maintaining duplicate reference sources."
+  error_handling_in_domain: "Documentation conventions emphasize actionable install hints and explicit compatibility behavior, especially for optional/external packages."
+  testing_in_domain: "Package READMEs commonly document build/test commands for the specific package, but no repo-wide documentation-specific test harness was identified in the analyzed scope."
+  documentation_in_domain: "Update related docs together whenever plugin contracts, provider behavior, authoring workflow, or integration expectations change."
+
+related_dependencies:
+  internal:
+    - component: "scripts/generate-sdk-docs.ts"
+      relationship_to_domain: "regenerates SDK reference"
+      direction: "outbound"
+    - component: "scripts/generate-api-docs.ts"
+      relationship_to_domain: "regenerates API reference"
+      direction: "outbound"
+    - component: "scripts/generate-webhooks-docs.ts"
+      relationship_to_domain: "regenerates webhook reference"
+      direction: "outbound"
+    - component: "packages/docs-site/src/_data/docsContent.js"
+      relationship_to_domain: "publishes root docs into the site"
+      direction: "inbound"
+  external:
+    - name: "jsdoc-to-markdown"
+      purpose_for_domain: "SDK markdown generation"
+    - name: "tsx"
+      purpose_for_domain: "Script execution for documentation generation"
+
+open_questions:
+  - question: "Will the n8n node ship purely as a new package that wraps existing SDK/API behavior, or will it require new core SDK/API/webhook surface area?"
+    context: "This determines whether only package/root docs change or whether generated docs must also be regenerated."
+  - question: "Where should the n8n node live in the monorepo and what package name should it use?"
+    context: "No existing n8n package or naming precedent was found in the analyzed workspace."
+  - question: "Should the root README add the n8n integration under `AI Agent Integration`, as a new dedicated section, or both?"
+    context: "The README currently organizes major integrations by interface surface, but there is no existing workflow-tool integration section to mirror directly."
+  - question: "Will the node document all kanban-lite actions/events as official stable mappings, or only the subset currently surfaced by public SDK/API/webhook contracts?"
+    context: "Scope affects how strongly docs can claim parity and whether plugin deep-dive docs need cross-references."
+
+gaps:
+  - area: "n8n package conventions"
+    description: "No repository-local n8n node package or documentation template exists to confirm naming, publishing, or README structure beyond general first-party package patterns."
+    impact: "Medium — package docs scope is clear, but exact package placement and naming remain assumptions."
+  - area: "Docs-site authored marketing pages"
+    description: "The research confirmed root-doc ingestion but did not inspect every authored docs-site page to see whether a new integration should also be promoted outside reference docs."
+    impact: "Low — repository conventions for mandatory updates are still clear from AGENTS and README structure."
+  - area: "Release classification for the future change"
+    description: "Without implementation details, the changelog category split between `Added` and `Changed` cannot be finalized precisely."
+    impact: "Low — an `Added` entry is likely, but additional `Changed` bullets may be required if existing interfaces are modified."

@@ -39,7 +39,6 @@ function makeBeforePayload(
   return {
     event: 'card.create',
     input: { title: 'Test card' },
-    auth: { transport: 'http' },
     timestamp: new Date().toISOString(),
     ...overrides,
   }
@@ -295,7 +294,7 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
 
   it('noop listener emits auth.allowed and preserves the original input', async () => {
     const bus = new EventBus()
-    const plugin = createNoopAuthListenerPlugin()
+    const plugin = createNoopAuthListenerPlugin({ getAuthContext: () => ({ transport: 'http' }) })
     const onAllowed = vi.fn()
     bus.on('auth.allowed', onAllowed)
 
@@ -342,20 +341,22 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
 
     plugin.register(bus)
 
-    const promise = bus.emitAsync('card.create', makeBeforePayload({ auth: { transport: 'http' } }))
+    const promise = bus.emitAsync('card.create', makeBeforePayload())
     await expect(promise).rejects.toBeInstanceOf(AuthError)
     await expect(promise).rejects.toMatchObject({ category: 'auth.identity.missing' })
   })
 
   it('rbac listener throws AuthError with auth.policy.denied for insufficient roles', async () => {
     const bus = new EventBus()
-    const plugin = createRbacAuthListenerPlugin(new Map([['secret-user', { subject: 'alice', roles: ['user'] }]]))
+    const plugin = createRbacAuthListenerPlugin(
+      new Map([['secret-user', { subject: 'alice', roles: ['user'] }]]),
+      { getAuthContext: () => ({ token: 'secret-user', transport: 'http' }) },
+    )
 
     plugin.register(bus)
 
     const promise = bus.emitAsync('board.create', makeBeforePayload({
       event: 'board.create',
-      auth: { token: 'secret-user', transport: 'http' },
       input: { id: 'board-1', name: 'Test board' },
     }))
     await expect(promise).rejects.toBeInstanceOf(AuthError)

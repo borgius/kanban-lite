@@ -15,6 +15,10 @@ function resolveCliAuthContext(): AuthContext {
   return token ? { token, tokenSource: 'env', transport: 'cli' } : { transport: 'cli' }
 }
 
+function runWithCliAuth<T>(sdk: KanbanSDK, fn: () => Promise<T>): Promise<T> {
+  return sdk.runWithAuth(resolveCliAuthContext(), fn)
+}
+
 function getCliAuthStatus(sdk: KanbanSDK) {
   const auth = sdk.getAuthStatus()
   const ctx = resolveCliAuthContext()
@@ -648,7 +652,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         break
       }
       try {
-        await sdk.setDefaultBoard(boardId, resolveCliAuthContext())
+        await runWithCliAuth(sdk, () => sdk.setDefaultBoard(boardId))
       } catch (err) {
         if (err instanceof AuthError) handleAuthError(err)
         console.error(red(String(err)))
@@ -749,7 +753,7 @@ async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Flags): 
 
   const targetStatus = typeof flags.status === 'string' ? flags.status : undefined
   const resolvedId = await resolveCardId(sdk, cardId, fromBoard)
-  const card = await sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus, resolveCliAuthContext())
+  const card = await runWithCliAuth(sdk, () => sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus))
   console.log(green(`Transferred ${card.id} from ${fromBoard} → ${toBoard} (${colorStatus(card.status)})`))
 }
 
@@ -1130,7 +1134,7 @@ export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Fl
         console.error(red('Usage: kl columns add --id <id> --name <name> [--color <hex>]'))
         process.exit(1)
       }
-      const columns = await sdk.addColumn({ id, name, color }, boardId, resolveCliAuthContext())
+      const columns = await runWithCliAuth(sdk, () => sdk.addColumn({ id, name, color }, boardId))
       console.log(green(`Added column: ${id} (${name})`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1148,7 +1152,7 @@ export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Fl
         console.error(red('No updates specified. Use --name or --color'))
         process.exit(1)
       }
-      const columns = await sdk.updateColumn(columnId, updates, boardId, resolveCliAuthContext())
+      const columns = await runWithCliAuth(sdk, () => sdk.updateColumn(columnId, updates, boardId))
       console.log(green(`Updated column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1160,7 +1164,7 @@ export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Fl
         console.error(red('Usage: kl columns remove <id>'))
         process.exit(1)
       }
-      const columns = await sdk.removeColumn(columnId, boardId, resolveCliAuthContext())
+      const columns = await runWithCliAuth(sdk, () => sdk.removeColumn(columnId, boardId))
       console.log(green(`Removed column: ${columnId}`))
       if (flags.json) console.log(JSON.stringify(columns, null, 2))
       break
@@ -1171,7 +1175,7 @@ export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Fl
         console.error(red('Usage: kl columns cleanup <id>'))
         process.exit(1)
       }
-      const moved = await sdk.cleanupColumn(columnId, boardId, resolveCliAuthContext())
+      const moved = await runWithCliAuth(sdk, () => sdk.cleanupColumn(columnId, boardId))
       console.log(green(`Moved ${moved} card${moved === 1 ? '' : 's'} from "${columnId}" to deleted`))
       break
     }
@@ -1181,13 +1185,13 @@ export async function cmdColumns(sdk: KanbanSDK, positional: string[], flags: Fl
         console.error(red('Usage: kl columns reorder <id1> <id2> ...'))
         process.exit(1)
       }
-      await sdk.reorderColumns(columnIds, boardId, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.reorderColumns(columnIds, boardId))
       console.log(green('Columns reordered.'))
       break
     }
     case 'set-minimized': {
       const columnIds = positional.slice(1)
-      await sdk.setMinimizedColumns(columnIds, boardId, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.setMinimizedColumns(columnIds, boardId))
       if (columnIds.length === 0) {
         console.log(green('Cleared all minimized columns.'))
       } else {
@@ -1245,7 +1249,7 @@ export async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Fla
         process.exit(1)
       }
       const group = typeof flags.group === 'string' ? flags.group : undefined
-      await sdk.setLabel(name, { color, group }, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.setLabel(name, { color, group }))
       if (flags.json) {
         console.log(JSON.stringify({ name, color, group: group || null }, null, 2))
       } else {
@@ -1260,7 +1264,7 @@ export async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Fla
         console.error(red('Usage: kl labels rename <old> <new>'))
         process.exit(1)
       }
-      await sdk.renameLabel(oldName, newName, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.renameLabel(oldName, newName))
       if (flags.json) {
         console.log(JSON.stringify({ old: oldName, new: newName }, null, 2))
       } else {
@@ -1275,7 +1279,7 @@ export async function cmdLabels(sdk: KanbanSDK, positional: string[], flags: Fla
         console.error(red('Usage: kl labels delete <name>'))
         process.exit(1)
       }
-      await sdk.deleteLabel(name, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.deleteLabel(name))
       if (flags.json) {
         console.log(JSON.stringify({ deleted: name }, null, 2))
       } else {
@@ -1305,7 +1309,7 @@ async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
       }
       const boardId = getBoardId(flags)
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.triggerAction(resolvedId, action, boardId, resolveCliAuthContext())
+      await runWithCliAuth(sdk, () => sdk.triggerAction(resolvedId, action, boardId))
       console.log(green(`Action "${action}" triggered on card ${resolvedId}`))
       break
     }
@@ -1347,7 +1351,7 @@ export async function cmdWebhooks(positional: string[], flags: Flags, sdk: Kanba
       }
       const events = typeof flags.events === 'string' ? flags.events.split(',').map(e => e.trim()) : ['*']
       const secret = typeof flags.secret === 'string' ? flags.secret : undefined
-      const webhook = await sdk.createWebhook({ url, events, secret }, resolveCliAuthContext())
+      const webhook = await runWithCliAuth(sdk, () => sdk.createWebhook({ url, events, secret }))
       if (flags.json) {
         console.log(JSON.stringify(webhook, null, 2))
       } else {
@@ -1365,7 +1369,7 @@ export async function cmdWebhooks(positional: string[], flags: Flags, sdk: Kanba
         console.error(red('Usage: kl webhooks remove <id>'))
         process.exit(1)
       }
-      const removed = await sdk.deleteWebhook(webhookId, resolveCliAuthContext())
+      const removed = await runWithCliAuth(sdk, () => sdk.deleteWebhook(webhookId))
       if (removed) {
         console.log(green(`Removed webhook: ${webhookId}`))
       } else {
@@ -1385,7 +1389,7 @@ export async function cmdWebhooks(positional: string[], flags: Flags, sdk: Kanba
       if (typeof flags.events === 'string') updates.events = flags.events.split(',').map(e => e.trim())
       if (typeof flags.secret === 'string') updates.secret = flags.secret
       if (typeof flags.active === 'string') updates.active = flags.active === 'true'
-      const updated = await sdk.updateWebhook(webhookId, updates, resolveCliAuthContext())
+      const updated = await runWithCliAuth(sdk, () => sdk.updateWebhook(webhookId, updates))
       if (!updated) {
         console.error(red(`Webhook not found: ${webhookId}`))
         process.exit(1)

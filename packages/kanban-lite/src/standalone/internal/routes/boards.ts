@@ -4,13 +4,14 @@ import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { buildInitMessage, broadcast, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
 import { doSubmitForm } from '../../mutationService'
-import { authErrorToHttpStatus, extractAuthContext } from '../../authUtils'
+import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike } from '../../authUtils'
 import { jsonError, jsonOk, readBody } from '../../httpUtils'
 import { applyCommonCardFilters, type StandaloneRequestContext, sendNoContent } from '../common'
 
 export async function handleBoardRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk, workspaceRoot } = ctx
+  const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
 
   let params = route('GET', '/api/boards')
   if (params) {
@@ -32,14 +33,15 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         jsonError(res, 400, 'name is required')
         return true
       }
-      const board = await sdk.createBoard(id, name, {
+      const board = await runWithRequestAuth(() => sdk.createBoard(id, name, {
         description: body.description as string | undefined,
         columns: body.columns as KanbanColumn[] | undefined,
-      }, extractAuthContext(req))
+      }))
       jsonOk(res, board, 201)
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -61,10 +63,12 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const body = await readBody(req)
-      jsonOk(res, await sdk.updateBoard(params.boardId, body as Record<string, unknown>, extractAuthContext(req)))
+      const { boardId } = params
+      jsonOk(res, await runWithRequestAuth(() => sdk.updateBoard(boardId, body as Record<string, unknown>)))
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -75,11 +79,13 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('DELETE', '/api/boards/:boardId')
   if (params) {
     try {
-      await sdk.deleteBoard(params.boardId, extractAuthContext(req))
+      const { boardId } = params
+      await runWithRequestAuth(() => sdk.deleteBoard(boardId))
       jsonOk(res, { deleted: true })
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
       } else {
         jsonError(res, 400, String(err))
       }
@@ -101,16 +107,16 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const body = await readBody(req)
+      const { boardId } = params
       const actions = body.actions as Record<string, string>
-      const existing = sdk.getBoardActions(params.boardId)
-      const auth = extractAuthContext(req)
+      const existing = sdk.getBoardActions(boardId)
       for (const key of Object.keys(existing)) {
-        if (!(key in actions)) await sdk.removeBoardAction(params.boardId, key, auth)
+        if (!(key in actions)) await runWithRequestAuth(() => sdk.removeBoardAction(boardId, key))
       }
       for (const [key, title] of Object.entries(actions)) {
-        await sdk.addBoardAction(params.boardId, key, title, auth)
+        await runWithRequestAuth(() => sdk.addBoardAction(boardId, key, title))
       }
-      jsonOk(res, sdk.getBoardActions(params.boardId))
+      jsonOk(res, sdk.getBoardActions(boardId))
     } catch (err) {
       if (err instanceof AuthError) {
         jsonError(res, authErrorToHttpStatus(err), err.message)
@@ -125,7 +131,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const body = await readBody(req)
-      jsonOk(res, await sdk.addBoardAction(params.boardId, params.key, body.title as string, extractAuthContext(req)))
+      const { boardId, key } = params
+      jsonOk(res, await runWithRequestAuth(() => sdk.addBoardAction(boardId, key, body.title as string)))
     } catch (err) {
       if (err instanceof AuthError) {
         jsonError(res, authErrorToHttpStatus(err), err.message)
@@ -139,7 +146,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('DELETE', '/api/boards/:boardId/actions/:key')
   if (params) {
     try {
-      await sdk.removeBoardAction(params.boardId, params.key, extractAuthContext(req))
+      const { boardId, key } = params
+      await runWithRequestAuth(() => sdk.removeBoardAction(boardId, key))
       sendNoContent(res)
     } catch (err) {
       if (err instanceof AuthError) {
@@ -154,7 +162,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('POST', '/api/boards/:boardId/actions/:key/trigger')
   if (params) {
     try {
-      await sdk.triggerBoardAction(params.boardId, params.key, extractAuthContext(req))
+      const { boardId, key } = params
+      await runWithRequestAuth(() => sdk.triggerBoardAction(boardId, key))
       sendNoContent(res)
     } catch (err) {
       jsonError(res, 404, String(err))
@@ -167,14 +176,14 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
     try {
       const body = await readBody(req)
       const config = readConfig(workspaceRoot)
+      const { id, boardId } = params
       const fromBoard = ctx.currentBoardId || config.defaultBoard
-      const card = await sdk.transferCard(
-        params.id,
+      const card = await runWithRequestAuth(() => sdk.transferCard(
+        id,
         fromBoard,
-        params.boardId,
+        boardId,
         body.targetStatus as string | undefined,
-        extractAuthContext(req),
-      )
+      ))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
       jsonError(res, 400, String(err))
@@ -218,7 +227,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         jsonError(res, 400, 'content is required')
         return true
       }
-      const card = await sdk.createCard({
+      const { boardId } = params
+      const card = await runWithRequestAuth(() => sdk.createCard({
         content,
         status: (body.status as string) || 'backlog',
         priority: (body.priority as Priority) || 'medium',
@@ -229,8 +239,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         actions: body.actions as string[] | Record<string, string> | undefined,
         forms: body.forms as CreateCardPayload['forms'],
         formData: body.formData as CreateCardPayload['formData'],
-        boardId: params.boardId,
-      }, extractAuthContext(req))
+        boardId,
+      }))
       jsonOk(res, sanitizeCard(card), 201)
     } catch (err) {
       if (err instanceof AuthError) {
@@ -261,7 +271,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const body = await readBody(req)
-      const card = await sdk.updateCard(params.id, body as Partial<Card>, params.boardId, extractAuthContext(req))
+      const { id, boardId } = params
+      const card = await runWithRequestAuth(() => sdk.updateCard(id, body as Partial<Card>, boardId))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
       if (err instanceof AuthError) {
@@ -276,13 +287,14 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('POST', '/api/boards/:boardId/tasks/:id/forms/:formId/submit')
   if (params) {
     try {
+      const { id, formId, boardId } = params
       const body = await readBody(req)
-      const result = await doSubmitForm(ctx, {
-        cardId: params.id,
-        formId: params.formId,
+      const result = await runWithRequestAuth(() => doSubmitForm(ctx, {
+        cardId: id,
+        formId,
         data: parseSubmitData(body.data),
-        boardId: params.boardId,
-      }, extractAuthContext(req))
+        boardId,
+      }))
       jsonOk(res, result)
     } catch (err) {
       jsonError(res, getSubmitErrorStatus(err), String(err))
@@ -300,7 +312,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         jsonError(res, 400, 'status is required')
         return true
       }
-      const card = await sdk.moveCard(params.id, newStatus, position, params.boardId, extractAuthContext(req))
+      const { id, boardId } = params
+      const card = await runWithRequestAuth(() => sdk.moveCard(id, newStatus, position, boardId))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
       if (err instanceof AuthError) {
@@ -315,7 +328,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('POST', '/api/boards/:boardId/tasks/:id/actions/:action')
   if (params) {
     try {
-      await sdk.triggerAction(params.id, params.action, params.boardId, extractAuthContext(req))
+      const { id, action, boardId } = params
+      await runWithRequestAuth(() => sdk.triggerAction(id, action, boardId))
       sendNoContent(res)
     } catch (err) {
       const message = String(err)
@@ -327,7 +341,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('DELETE', '/api/boards/:boardId/tasks/:id/permanent')
   if (params) {
     try {
-      await sdk.permanentlyDeleteCard(params.id, params.boardId, extractAuthContext(req))
+      const { id, boardId } = params
+      await runWithRequestAuth(() => sdk.permanentlyDeleteCard(id, boardId))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true, permanent: true })
@@ -344,7 +359,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('DELETE', '/api/boards/:boardId/tasks/:id')
   if (params) {
     try {
-      await sdk.deleteCard(params.id, params.boardId, extractAuthContext(req))
+      const { id, boardId } = params
+      await runWithRequestAuth(() => sdk.deleteCard(id, boardId))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true })
@@ -383,11 +399,12 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         jsonError(res, 400, 'text is required')
         return true
       }
-      const entry = await sdk.addBoardLog(text, {
+      const { boardId } = params
+      const entry = await runWithRequestAuth(() => sdk.addBoardLog(text, {
         source: body.source as string | undefined,
         object: body.object as Record<string, unknown> | undefined,
         timestamp: body.timestamp as string | undefined,
-      }, params.boardId, extractAuthContext(req))
+      }, boardId))
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, entry, 201)
     } catch (err) {
@@ -398,7 +415,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
 
   params = route('DELETE', '/api/boards/:boardId/logs')
   if (params) {
-    await sdk.clearBoardLogs(params.boardId, extractAuthContext(req))
+    const { boardId } = params
+    await runWithRequestAuth(() => sdk.clearBoardLogs(boardId))
     broadcast(ctx, buildInitMessage(ctx))
     jsonOk(res, { cleared: true })
     return true

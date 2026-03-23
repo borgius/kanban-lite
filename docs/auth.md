@@ -479,30 +479,34 @@ The resolved capability bag contains both:
 
 If no auth config is present, both are no-op plugins.
 
-### Step 3: method calls enter the authorization seam
+### Step 3: host surfaces install scoped auth
 
-Protected SDK methods call:
+Node-hosted surfaces create an `AuthContext` from their inbound token source and call:
 
-- `_withAuthContext(...)` to merge resource hints into the inbound context
-- `_authorizeAction(action, context)` before side effects happen
+- `sdk.runWithAuth(authContext, fn)`
 
-### Step 4: identity resolution happens first
+This stores request auth in an async scope for the duration of `fn` instead of threading auth through mutation method signatures.
 
-`_authorizeAction()` calls:
+### Step 4: protected methods enter the before-event seam
+
+Protected SDK mutators call:
+
+- `_runBeforeEvent(event, input, actor?, boardId?)`
+
+`_runBeforeEvent()` clones the original input immediately, dispatches the before-event payload, and owns the immutable deep-merge of any listener overrides.
+
+### Step 5: the built-in auth listener resolves identity and policy
+
+The built-in auth listener reads the request-scoped auth carrier installed by `runWithAuth()`, enriches it with event hints such as `actor` and `boardId`, and then calls:
 
 ```ts
-const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
+const identity = await authIdentity.resolveIdentity(context)
+const decision = await authPolicy.checkPolicy(identity, action, context)
 ```
 
-### Step 5: policy evaluation happens second
+First-party auth listeners do **not** read `payload.auth`; `BeforeEventPayload` no longer carries auth state.
 
-Then it calls:
-
-```ts
-const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
-```
-
-### Step 6: denial throws a typed `AuthError`
+### Step 6: denial vetoes the mutation with `AuthError`
 
 If `decision.allowed` is false, the SDK throws `AuthError`.
 
@@ -521,22 +525,27 @@ That is what host surfaces use to map errors to:
 sequenceDiagram
 	participant Host as Host surface
 	participant SDK as KanbanSDK
+	participant Runner as _runBeforeEvent
+	participant Listener as Built-in auth listener
 	participant Identity as auth.identity
 	participant Policy as auth.policy
 	participant Op as Target operation
 
-	Host->>SDK: call(action, authContext + resource hints)
-	SDK->>SDK: _withAuthContext(...)
-	SDK->>Identity: resolveIdentity(context)
+	Host->>SDK: runWithAuth(authContext, fn)
+	Host->>SDK: call mutation(input)
+	SDK->>Runner: _runBeforeEvent(event, input, actor?, boardId?)
+	Runner->>Listener: dispatch BeforeEventPayload
+	Listener->>Identity: resolveIdentity(scoped context + hints)
 	Identity-->>SDK: identity | null
-	SDK->>Policy: checkPolicy(identity, action, context)
+	Listener->>Policy: checkPolicy(identity, action, context)
 	Policy-->>SDK: AuthDecision
 	alt allowed
+		Runner-->>SDK: merged input
 		SDK->>Op: execute mutation
 		Op-->>SDK: result
 		SDK-->>Host: success
 	else denied
-		SDK-->>Host: throw AuthError
+		Listener-->>Host: throw AuthError
 	end
 ```
 
@@ -580,7 +589,7 @@ It carries:
 
 ## Current protected action surface
 
-The current implementation protects the following SDK operations with `_authorizeAction(...)`.
+The current implementation protects the following SDK operations through the SDK-owned before-event auth listener that runs inside `_runBeforeEvent(...)`.
 
 ### Built-in RBAC role matrix
 
@@ -715,20 +724,24 @@ This doc intentionally describes the implementation as it exists now, not as an 
 
 ---
 
-## How `_withAuthContext()` is used
+## How scoped auth and before-event hints work
 
-The SDK does not expect hosts to attach every resource hint manually.
-
-Instead, SDK methods enrich the context before policy evaluation.
+Hosts do not pass auth through every SDK mutator. Instead, they establish request scope once with `runWithAuth(...)`, and the SDK supplies operation hints when it dispatches each before-event.
 
 Examples:
 
-- `deleteCard(cardId, boardId, auth)` adds `cardId` and `boardId`
-- `transferCard(...)` adds `cardId`, `fromBoardId`, `toBoardId`, and `columnId`
-- `updateComment(...)` adds `cardId`, `boardId`, and `commentId`
-- `submitForm(...)` adds `boardId`, `cardId`, and `formId`
+- a REST route extracts a bearer token, builds `{ token, tokenSource: 'request-header', transport: 'http' }`, and wraps the mutator in `sdk.runWithAuth(...)`
+- `deleteCard(cardId, boardId)` dispatches a before-event whose payload includes the relevant card/board context
+- `transferCard(...)` dispatches a before-event with the transfer-specific board and card hints
+- `updateComment(...)` and `submitForm(...)` dispatch before-events that carry their operation-specific identifiers in `input`
 
-This keeps host adapters thin while still giving policy plugins rich context.
+The auth listener combines that scoped request auth with the event payload's actor/board hints before resolving identity and policy.
+
+Important boundary:
+
+- `BeforeEventPayload` contains `event`, `input`, `actor`, `boardId`, and `timestamp`
+- it does **not** contain `auth`
+- first-party auth listeners resolve auth from the scoped carrier, not from the payload
 
 ---
 
@@ -746,6 +759,7 @@ Behavior:
 
 - reads `Authorization: Bearer <token>`
 - strips the `Bearer ` prefix
+- wraps SDK mutators in `sdk.runWithAuth(extractAuthContext(req), fn)`
 - produces:
 
 ```ts
@@ -762,7 +776,7 @@ If no bearer token is present:
 
 The standalone WebSocket path also extracts auth context from the upgrade request and threads that same context into WebSocket-triggered mutations.
 
-That means browser-triggered socket actions and REST mutations use the same token source model on the standalone server.
+That means browser-triggered socket actions and REST mutations use the same token source model and the same `runWithAuth(...)`-scoped execution path on the standalone server.
 
 ### CLI
 
@@ -773,6 +787,7 @@ Source file:
 Behavior:
 
 - reads `process.env.KANBAN_TOKEN`
+- wraps mutators in `sdk.runWithAuth(resolveCliAuthContext(), fn)`
 - if present, produces:
 
 ```ts
@@ -798,6 +813,7 @@ Source file:
 Behavior:
 
 - reads `process.env.KANBAN_TOKEN`
+- wraps mutators in `sdk.runWithAuth(resolveMcpAuthContext(), fn)`
 - if present, produces:
 
 ```ts
@@ -825,6 +841,7 @@ Behavior:
 
 - stores the token in VS Code `SecretStorage`
 - secret key: `kanban-lite.authToken`
+- wraps privileged mutations in `sdk.runWithAuth(await getAuthContext(), fn)`
 - produces:
 
 ```ts

@@ -1,0 +1,822 @@
+plan_id: "20260323-auth-before-event-refactor"
+objective: "Remove auth passthrough from KanbanSDK mutator signatures and before-event payloads, delete _withAuthContext, move deep merge responsibility into _runBeforeEvent while preserving original inputs when listeners return nothing or {}, and normalize _runBeforeEvent/_runAfterEvent usage across action methods."
+created_at: "2026-03-23"
+created_by: "gem-planner"
+status: in_progress
+research_confidence: high
+
+tldr: |
+  This plan keeps the refactor narrow and SDK-first: first change the event/auth contracts and
+  helper pipeline in `packages/kanban-lite/src/sdk`, then normalize the affected mutation methods,
+  then update the first-party auth listener, host adapters, regression coverage, and docs.
+  The highest-risk seams are the missing replacement for `BeforeEventPayload.auth`, the shift from
+  shallow merge in `EventBus.emitAsync()` to deep merge in `KanbanSDK._runBeforeEvent()`, and the
+  lack of existing after-event names for several mutation families that currently stop at before-events.
+  Two explicit review checkpoints are built in: one after the SDK core lands, and one after host/tests/docs
+  are aligned.
+
+open_questions:
+  - "What concrete replacement carries request-scoped authorization input once both public mutator `auth?: AuthContext` parameters and `BeforeEventPayload.auth` are removed? The current auth plugin and host adapters all depend on those surfaces."
+  - "Should action families that currently lack after-events (`card.transfer`, `card.action.trigger`, `label.*`, `column.cleanup`, `column.reorder`, `column.setMinimized`, `card.purgeDeleted`, `board.setDefault`, `webhook.*`) gain new canonical after-event names, or should normalization stop at consistent helper usage without expanding the public event taxonomy?"
+  - "For deep merge in `_runBeforeEvent()`, should arrays always replace, always concatenate, or be field-specific overrides? The current published behavior is shallow replacement."
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: "The implementation removes `payload.auth` and public auth arguments without first landing a replacement auth carrier, breaking authorization decisions in the first-party auth listener and every host path that currently resolves request identity."
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Treat the replacement auth carrier as a gating design decision in the SDK contract task and
+        confirm it at the first review checkpoint before any host or plugin updates proceed.
+    - scenario: "Deep merge semantics accidentally mutate caller-owned input objects or merge nested structures differently across action families, causing hard-to-see behavioral drift in metadata, label definitions, form data, or webhook config updates."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Centralize deep merge inside `_runBeforeEvent()`, keep the original input immutable, and add
+        helper-level tests for undefined returns, `{}`, nested-object overrides, and array behavior before
+        touching the mutation families.
+    - scenario: "Normalizing `_runAfterEvent()` across methods introduces duplicate deliveries or a public event taxonomy mismatch because several methods currently have no after-event names at all."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Decide the canonical after-event mapping in the second SDK mutation pass, add focused event-name
+        regressions, and use the SDK core review checkpoint to reject inconsistent or ad hoc naming.
+    - scenario: "A partial host-surface migration leaves stale trailing auth arguments in CLI, MCP, standalone, or extension callers, causing compile failures or silent misordered arguments at runtime."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Split host updates by surface, keep file scopes small, and pair each surface change with the
+        most relevant regression suite before moving on.
+    - scenario: "Docs and generated SDK references continue describing `_withAuthContext()` or `payload.auth`, creating a misleading contract for plugin authors after the refactor ships."
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Reserve a dedicated documentation wave that updates source docs and regenerates `docs/sdk.md`
+        only after behavior and tests are stable.
+  assumptions:
+    - "No `docs/prd.yaml` exists in the repository at planning time, so there is no existing PRD contract to reconcile before approval."
+    - "This refactor should stay surgical: no new dependencies, no broad architectural rewrite, and no unrelated formatting or API cleanup outside the affected auth/event pipeline."
+    - "`EventBus.emitAsync()` should stop owning merge semantics; `_runBeforeEvent()` becomes the single place that clones, merges, and preserves original inputs when listeners return nothing meaningful."
+    - "The final public behavior must preserve existing AuthError-based denial handling and token-redaction guarantees."
+
+implementation_specification:
+  code_structure: |
+    Keep the refactor centered on the existing SDK pipeline. Update the published event/auth contracts
+    in `packages/kanban-lite/src/sdk/types.ts` and the async dispatcher in `packages/kanban-lite/src/sdk/eventBus.ts`
+    so the event bus only collects ordered before-listener outputs. Move all merge and input-preservation
+    logic into `packages/kanban-lite/src/sdk/KanbanSDK.ts`, where `_runBeforeEvent()` becomes the sole owner
+    of cloning, deep merge, and fallback-to-original behavior. Then normalize the action methods in `KanbanSDK.ts`
+    in two passes: methods that already have after-event vocabulary first, then methods that need after-event
+    normalization decisions. After the SDK is stable, update the first-party auth listener and each host surface
+    that still passes `AuthContext` into mutators. Finish with regression suites and documentation updates,
+    regenerating generated SDK docs from JSDoc instead of hand-editing them.
+  affected_areas:
+    - "packages/kanban-lite/src/sdk/types.ts"
+    - "packages/kanban-lite/src/sdk/eventBus.ts"
+    - "packages/kanban-lite/src/sdk/index.ts"
+    - "packages/kanban-lite/src/sdk/KanbanSDK.ts"
+    - "packages/kanban-lite/src/sdk/plugins/index.ts"
+    - "packages/kl-auth-plugin/src/index.ts"
+    - "packages/kanban-lite/src/{cli,mcp-server,standalone,extension}/**/*.ts"
+    - "packages/kanban-lite/src/sdk/__tests__/*.test.ts"
+    - "packages/kl-auth-plugin/src/auth-plugin.integration.test.ts"
+    - "packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts"
+    - "README.md"
+    - "docs/auth.md"
+    - "docs/plugins.md"
+    - "packages/kl-auth-plugin/README.md"
+    - "CHANGELOG.md"
+    - "docs/sdk.md"
+  component_details:
+    - component: "SDK event/auth contract layer"
+      responsibility: |
+        Remove auth passthrough from the published before-event envelope, define the post-refactor
+        before-listener response contract, and document that `_runBeforeEvent()` now owns deep merge
+        and original-input preservation instead of `EventBus.emitAsync()`.
+      interfaces:
+        - "`BeforeEventPayload<TInput>` without `auth`"
+        - "`BeforeEventListenerResponse` / related JSDoc describing ordered listener outputs"
+        - "SDK barrel exports in `packages/kanban-lite/src/sdk/index.ts`"
+    - component: "Event bus async dispatcher"
+      responsibility: |
+        Await before-event listeners in deterministic order and return enough structured output for the
+        SDK helper to perform deep merge itself, while keeping after-event dispatch non-blocking and error-isolated.
+      interfaces:
+        - "`EventBus.emitAsync(...)` post-refactor return contract"
+        - "`onAny` and wildcard behavior that must remain observational only"
+    - component: "KanbanSDK helper pipeline"
+      responsibility: |
+        Delete `_withAuthContext()`, rewrite `_runBeforeEvent()` around immutable deep merge and fallback semantics,
+        and keep `_runAfterEvent()` usage uniform enough that action methods follow one predictable pattern.
+      interfaces:
+        - "`_runBeforeEvent(event, input, actor?, boardId?)` or equivalent post-auth-removal signature"
+        - "`_runAfterEvent(event, data, actor?, boardId?, meta?)` helper contract"
+    - component: "KanbanSDK action families"
+      responsibility: |
+        Update each mutation family to consume merged input from the helper, stop passing auth through public
+        signatures, and pair before/after helper calls consistently where the event taxonomy allows it.
+      interfaces:
+        - "Public mutator signatures in `KanbanSDK.ts` without trailing `auth?: AuthContext`"
+        - "Canonical before/after event mappings per mutation family"
+    - component: "Auth/plugin and host integration layer"
+      responsibility: |
+        Realign first-party auth listener logic and every CLI/MCP/standalone/extension caller to the new SDK contract
+        without regressing denial UX, transport-specific messaging, or token redaction.
+      interfaces:
+        - "Auth listener access to the replacement auth carrier"
+        - "Host mutator call sites without trailing auth arguments"
+    - component: "Regression and documentation layer"
+      responsibility: |
+        Lock in deep-merge semantics, authorization behavior, normalized event usage, and doc accuracy, including
+        regenerated SDK docs derived from updated JSDoc.
+      interfaces:
+        - "Focused Vitest regression suites"
+        - "Updated README/auth/plugin docs and changelog entries"
+  dependencies:
+    - component: "SDK event/auth contract layer"
+      relationship: "Must land before helper or host work so all downstream code targets one contract."
+    - component: "Event bus async dispatcher"
+      relationship: "Depends on the contract layer and feeds ordered listener output into `KanbanSDK._runBeforeEvent()`."
+    - component: "KanbanSDK helper pipeline"
+      relationship: "Depends on the dispatcher contract and blocks every mutation-family migration."
+    - component: "KanbanSDK action families"
+      relationship: "Depend on the helper pipeline and determine the final public SDK surface consumed by plugins and hosts."
+    - component: "Auth/plugin and host integration layer"
+      relationship: "Depends on the finalized SDK signatures and replacement auth carrier."
+    - component: "Regression and documentation layer"
+      relationship: "Depends on stabilized code paths so tests and docs describe final behavior rather than an intermediate state."
+  integration_points:
+    - "`packages/kanban-lite/src/sdk/KanbanSDK.ts` remains the single orchestration seam for before/after event timing."
+    - "`packages/kanban-lite/src/sdk/eventBus.ts` must stop being the semantic owner of payload merging."
+    - "`packages/kl-auth-plugin/src/index.ts` and `packages/kanban-lite/src/sdk/plugins/index.ts` are the first-party canaries for the removed `payload.auth` contract."
+    - "CLI, MCP, standalone, and extension entry points are direct consumers of the mutator signatures and must be updated after the SDK surface settles."
+    - "`docs/sdk.md` is generated output and should only change via updated JSDoc plus `npm run docs`."
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "Post-refactor before-event payload and async dispatcher contract without `payload.auth` ownership"
+    format: "TypeScript types and EventBus return semantics"
+  - from_task: T2
+    to_task: T3
+    interface: "Helper-level deep-merge and fallback behavior for methods with existing after-event names"
+    format: "`KanbanSDK` helper API and helper-level regression expectations"
+  - from_task: T2
+    to_task: T4
+    interface: "Helper-level deep-merge and fallback behavior for methods that also need after-event normalization decisions"
+    format: "`KanbanSDK` helper API and event-name decision matrix"
+  - from_task: T3
+    to_task: T5
+    interface: "Normalized SDK action flow for established after-event families"
+    format: "Updated `KanbanSDK.ts` method inventory and reviewer checklist"
+  - from_task: T4
+    to_task: T5
+    interface: "Decision-ready mapping for newly normalized after-events and residual risks"
+    format: "Updated event taxonomy and mutation-family inventory"
+  - from_task: T5
+    to_task: T6
+    interface: "Approved replacement auth carrier and reviewed SDK-owned event pipeline"
+    format: "Reviewer-approved contract notes tied to exact files"
+  - from_task: T5
+    to_task: T7
+    interface: "Approved public mutator signatures without trailing auth arguments"
+    format: "Stable SDK call signatures"
+  - from_task: T5
+    to_task: T8
+    interface: "Approved public mutator signatures without trailing auth arguments"
+    format: "Stable SDK call signatures"
+  - from_task: T5
+    to_task: T9
+    interface: "Approved public mutator signatures without trailing auth arguments"
+    format: "Stable SDK call signatures"
+  - from_task: T5
+    to_task: T10
+    interface: "Approved public mutator signatures without trailing auth arguments"
+    format: "Stable SDK call signatures"
+  - from_task: T6
+    to_task: T11
+    interface: "Auth listener implementation aligned to the new before-event payload"
+    format: "Plugin/runtime behavior plus focused auth regression expectations"
+  - from_task: T7
+    to_task: T12
+    interface: "CLI/MCP surfaces aligned to the new SDK signatures"
+    format: "Updated host call patterns and MCP-facing regression expectations"
+  - from_task: T8
+    to_task: T12
+    interface: "Standalone HTTP routes aligned to the new SDK signatures"
+    format: "Updated route call patterns"
+  - from_task: T9
+    to_task: T12
+    interface: "Standalone websocket/message service aligned to the new SDK signatures"
+    format: "Updated websocket/service call patterns"
+  - from_task: T10
+    to_task: T12
+    interface: "Extension command/panel surfaces aligned to the new SDK signatures"
+    format: "Updated extension call patterns"
+  - from_task: T11
+    to_task: T13
+    interface: "Core helper and authorization regressions covering deep merge, empty-return fallback, and auth behavior"
+    format: "Passing focused Vitest suites"
+  - from_task: T12
+    to_task: T13
+    interface: "Host/plugin integration evidence that no stale auth passthrough remains"
+    format: "Passing integration suites and grep-level inventory"
+  - from_task: T13
+    to_task: T14
+    interface: "Behaviorally stable implementation ready for source doc and generated doc updates"
+    format: "Verified behavior summary and doc delta list"
+  - from_task: T14
+    to_task: T15
+    interface: "Core narrative docs updated to the final contract"
+    format: "README/auth/plugins documentation delta"
+  - from_task: T15
+    to_task: T16
+    interface: "Final code/test/doc state with explicit risk checklist"
+    format: "Review packet with file inventory and verification evidence"
+
+tasks:
+  - id: T1
+    title: "Refactor SDK event/auth contracts and remove merge ownership from EventBus"
+    description: |
+      Update the published SDK contract so before-event payloads no longer expose `auth`, and reshape the
+      async EventBus contract so `emitAsync()` stops performing semantic merges itself. This task is the
+      contract gate for the entire refactor: it must document the post-refactor listener-response shape,
+      preserve deterministic listener ordering, and make `_runBeforeEvent()` the future merge owner.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: complete
+      - packages/kanban-lite/src/sdk/eventBus.ts: "Async before-event dispatcher that currently owns shallow merge semantics."
+      - packages/kanban-lite/src/sdk/index.ts: "Public barrel exports that surface the contract change."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: sdk_contracts
+    verification:
+      - "`BeforeEventPayload` no longer publishes `auth`, and the new JSDoc clearly states that deep merge lives in `_runBeforeEvent()`."
+      - "`EventBus.emitAsync()` exposes deterministic ordered listener output without mutating payload input itself."
+      - "SDK barrel exports compile against the updated contract."
+    acceptance_criteria:
+      - "The SDK contract no longer advertises auth passthrough in before-event payloads."
+      - "The bus contract is narrow enough that merge behavior cannot remain split between EventBus and KanbanSDK."
+      - "No unrelated public SDK types are changed."
+    failure_modes:
+      - scenario: "The contract change leaves listener output ambiguous, and later tasks reintroduce merge logic in multiple places."
+        likelihood: medium
+        impact: high
+        mitigation: "Define the dispatcher return shape precisely in types/JSDoc before touching `KanbanSDK.ts`."
+    tech_stack:
+      - TypeScript
+      - EventEmitter2
+    test_coverage: "Type-level validation plus follow-on EventBus/helper tests in T2 and T11"
+
+  - id: T2
+    title: "Rewrite the KanbanSDK helper pipeline around immutable deep merge"
+    description: |
+      Delete `_withAuthContext()` and rework the internal helper layer so `_runBeforeEvent()` clones the original
+      input, deep-merges ordered listener results, preserves the caller-owned input when listeners return nothing or `{}`,
+      and becomes the only semantic merge step. `_runAfterEvent()` should be adjusted here only as needed to support the
+      normalized helper pattern used by the action methods.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: complete
+    dependencies:
+      - T1
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Contains `_withAuthContext`, `_runBeforeEvent`, `_runAfterEvent`, and the shared action pipeline."
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 240
+    focus_area: sdk_helper_pipeline
+    verification:
+      - "`_withAuthContext()` is removed from `KanbanSDK.ts`."
+      - "`_runBeforeEvent()` deep-merges listener output without mutating the original caller input."
+      - "When listeners return `undefined`, `void`, non-objects, or `{}`, the effective input remains semantically identical to the original input."
+    acceptance_criteria:
+      - "Merge ownership exists in exactly one place: `_runBeforeEvent()`."
+      - "Helper signatures no longer require an auth passthrough argument."
+      - "The helper pipeline keeps actor/board metadata handling explicit and testable."
+    failure_modes:
+      - scenario: "The helper mutates nested caller objects while deep-merging, causing hidden state changes outside the SDK."
+        likelihood: medium
+        impact: critical
+        mitigation: "Use clone-first semantics and helper tests that assert input identity/contents remain unchanged after listener execution."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Direct helper regressions in `action-runner.test.ts` plus downstream method coverage"
+
+  - id: T3
+    title: "Normalize KanbanSDK action methods that already have after-event vocabulary"
+    description: |
+      Update the mutator families that already have established after-event names so they all consume merged input from the
+      new helper and follow one consistent before/after flow. This pass should cover board CRUD/action config, card CRUD/update/move,
+      form submission, attachments, comments, logs, board logs, settings, and storage migration methods without expanding the public
+      event taxonomy yet.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: complete
+    dependencies:
+      - T2
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Mutation methods that already pair naturally with existing after-event names."
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 320
+    focus_area: sdk_actions_existing_after_events
+    verification:
+      - "No method in this family still accepts a trailing `auth?: AuthContext` parameter."
+      - "Each method runs through the rewritten `_runBeforeEvent()` and emits at most one matching after-event."
+      - "Merged nested input is actually consumed by the action method instead of being ignored in favor of stale original arguments."
+    acceptance_criteria:
+      - "Existing after-event families use one consistent helper pattern."
+      - "Board/card/comment/form/attachment/log/settings/storage methods preserve original behavior when listeners do not override input."
+      - "No duplicate `_runAfterEvent()` usage is introduced."
+    failure_modes:
+      - scenario: "Some methods still read original method parameters after `_runBeforeEvent()` returns merged input, so plugin overrides appear to succeed but are ignored."
+        likelihood: medium
+        impact: high
+        mitigation: "Audit each normalized method for direct use of stale locals and cover at least one nested override per mutation family in tests."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Core SDK regression coverage in T11 plus family-specific assertions in T13"
+
+  - id: T4
+    title: "Normalize remaining KanbanSDK actions and settle after-event mapping gaps"
+    description: |
+      Finish the SDK pass for the mutation families that currently stop at before-events or emit conditionally with missing vocabulary:
+      transfer/action trigger, labels, columns, purge/cleanup/reorder/minimized, default-board, and webhook CRUD. Where consistency requires
+      a new after-event name, this task should introduce it in the SDK event taxonomy rather than inventing per-method exceptions.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: complete
+    dependencies:
+      - T2
+      - T3
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Remaining mutator families with inconsistent helper usage or no after-events."
+      - packages/kanban-lite/src/sdk/types.ts: "SDK after-event unions that may need to expand for normalized coverage."
+      - packages/kanban-lite/src/sdk/index.ts: "Barrel export surface for any event-type additions."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: sdk_actions_after_event_gaps
+    verification:
+      - "Every remaining action family uses the post-refactor `_runBeforeEvent()` signature."
+      - "Any new after-event names are added centrally in `types.ts`, not improvised inside method bodies."
+      - "Conditional or missing after-event behavior is either normalized or explicitly justified by the contract."
+    acceptance_criteria:
+      - "No mutator in `KanbanSDK.ts` still relies on auth passthrough or the old helper signature."
+      - "The SDK after-event taxonomy is internally consistent for the remaining action families."
+      - "The implementation stays minimal and does not broaden scope beyond the named mutation families."
+    failure_modes:
+      - scenario: "New after-event names are added inconsistently, producing a mixed public contract that is harder to reason about than the current one."
+        likelihood: medium
+        impact: high
+        mitigation: "Define the full mapping once in this task and validate it at the SDK core review checkpoint before host work proceeds."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Event-name and normalized flow coverage in T11 and T13"
+
+  - id: T5
+    title: "Review checkpoint: validate the SDK core refactor before touching hosts"
+    description: |
+      Perform a focused architectural review of the SDK-only changes. The reviewer should confirm that merge ownership moved fully into
+      `_runBeforeEvent()`, that `_withAuthContext()` is gone, that no mutator signatures still expose auth passthrough, and that the
+      proposed after-event normalization is coherent enough for downstream plugin and host adoption.
+    wave: 5
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+      - T4
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Primary review target for helper and mutator normalization."
+      - packages/kanban-lite/src/sdk/types.ts: "Review target for before/after event contract changes."
+      - packages/kanban-lite/src/sdk/eventBus.ts: "Review target for the narrowed dispatcher responsibility."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 0
+    focus_area: sdk_core_review
+    verification:
+      - "Reviewer can enumerate zero remaining `_withAuthContext` references and zero trailing auth mutator parameters in the SDK core."
+      - "Reviewer signs off on the replacement auth carrier and after-event naming direction before host/plugin work starts."
+      - "Reviewer confirms original-input preservation and merge ownership are covered by tests or queued test tasks."
+    acceptance_criteria:
+      - "SDK core changes are approved or a short blocking issue list is produced."
+      - "Any unresolved contract ambiguity is captured before downstream tasks begin."
+    failure_modes:
+      - scenario: "Downstream tasks start before the replacement auth carrier is agreed, forcing rework across plugin and host surfaces."
+        likelihood: medium
+        impact: critical
+        mitigation: "Treat this review as a hard gate for T6–T10."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true
+
+  - id: T6
+    title: "Realign first-party auth listeners to the post-auth-passthrough before-event contract"
+    description: |
+      Update the first-party auth listener implementations to stop reading `payload.auth` and instead use the reviewed replacement auth carrier.
+      This task covers both the external auth package and the mirrored built-in listener helpers so the workspace has one consistent authorization path.
+    wave: 6
+    agent: gem-implementer
+    priority: high
+    status: complete
+    dependencies:
+      - T5
+    context_files:
+      - packages/kl-auth-plugin/src/index.ts: "External first-party auth listener that currently resolves identity from `payload.auth`."
+      - packages/kanban-lite/src/sdk/plugins/index.ts: "Mirrored core listener helper with the same `payload.auth` assumption."
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 220
+    focus_area: auth_listener_contract
+    verification:
+      - "No auth listener implementation reads `payload.auth` after this task."
+      - "Authorization still throws `AuthError` with redacted transport-specific secrets."
+      - "The replacement auth carrier is consumed consistently in both first-party implementations."
+    acceptance_criteria:
+      - "First-party auth listeners compile against the new before-event payload."
+      - "The external and core implementations do not drift in carrier handling or denial semantics."
+    failure_modes:
+      - scenario: "The core and external auth listeners adopt different fallback logic, producing surface-specific authorization behavior."
+        likelihood: medium
+        impact: high
+        mitigation: "Use the same reviewed carrier model and cover both implementations in the regression wave."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Auth listener integration coverage in T12 and denial/path regressions in T13"
+
+  - id: T7
+    title: "Remove auth passthrough from CLI and MCP mutator call sites"
+    description: |
+      Update the CLI and MCP adapters so they stop passing `AuthContext` as the trailing SDK mutator argument. Keep auth-resolution helpers only
+      where they still serve non-mutator behavior, and adjust MCP-facing tests to assert the new public call signatures and preserved denial UX.
+    wave: 6
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T5
+    context_files:
+      - packages/kanban-lite/src/cli/index.ts: "CLI mutator calls currently pass `resolveCliAuthContext()` into the SDK."
+      - packages/kanban-lite/src/mcp-server/index.ts: "MCP mutator calls currently pass `resolveMcpAuthContext()` into the SDK."
+      - packages/kanban-lite/src/mcp-server/index.test.ts: "MCP regression coverage tied to the current public mutator signatures."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: cli_mcp_hosts
+    verification:
+      - "CLI and MCP compile without passing trailing auth arguments into SDK mutators."
+      - "MCP auth-facing regressions still assert stable denial messaging."
+      - "No accidental positional-argument shift remains in CLI/MCP calls."
+    acceptance_criteria:
+      - "CLI and MCP are aligned to the final SDK mutator signatures."
+      - "Transport-specific auth UX remains intact even though mutator calls changed."
+    failure_modes:
+      - scenario: "A few MCP or CLI calls keep the old trailing argument, causing confusing runtime failures only on less-used commands."
+        likelihood: medium
+        impact: high
+        mitigation: "Use a complete host-surface grep inventory and cover at least one representative command per mutation family."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "MCP regression suite plus compile-time coverage for CLI paths"
+
+  - id: T8
+    title: "Remove auth passthrough from standalone HTTP route handlers"
+    description: |
+      Update the standalone REST route handlers so they stop threading extracted auth context into SDK mutators. Keep request auth extraction only
+      where it is still required for non-mutator status/error behavior, and preserve the existing route-level response mapping for auth failures.
+    wave: 6
+    agent: gem-implementer
+    priority: medium
+    status: complete
+    dependencies:
+      - T5
+    context_files:
+      - packages/kanban-lite/src/standalone/internal/routes/boards.ts: "Board route mutators currently forward request auth context into the SDK."
+      - packages/kanban-lite/src/standalone/internal/routes/tasks.ts: "Task route mutators currently forward request auth context into the SDK."
+      - packages/kanban-lite/src/standalone/internal/routes/system.ts: "System/label/webhook/settings route mutators currently forward request auth context into the SDK."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: standalone_http_routes
+    verification:
+      - "No standalone HTTP route mutator still passes `extractAuthContext(req)` into an SDK write method."
+      - "Existing auth error-to-HTTP status mapping remains unchanged."
+      - "Route-level type signatures stay minimal and compile."
+    acceptance_criteria:
+      - "Standalone REST routes match the finalized SDK write signatures."
+      - "Route auth handling keeps existing denial/status behavior."
+    failure_modes:
+      - scenario: "Removing auth arguments also removes request-auth extraction needed by non-mutator helpers or error mapping, breaking unrelated auth endpoints."
+        likelihood: low
+        impact: medium
+        mitigation: "Limit edits to SDK write calls and preserve `authUtils` usage where it still serves status/error workflows."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Standalone integration coverage in T12"
+
+  - id: T9
+    title: "Remove auth passthrough from standalone websocket and mutation-service helpers"
+    description: |
+      Update the websocket entry point, message handlers, and shared mutation-service wrappers so the standalone realtime path no longer requires
+      an `auth?: AuthContext` parameter solely to satisfy SDK mutator signatures. This task should keep the per-connection auth context lifecycle
+      intact where it still matters outside the SDK call shape.
+    wave: 7
+    agent: gem-implementer
+    priority: high
+    status: complete
+    dependencies:
+      - T8
+    context_files:
+      - packages/kanban-lite/src/standalone/internal/websocket.ts: "Per-connection auth context setup for websocket traffic."
+      - packages/kanban-lite/src/standalone/messageHandlers.ts: "Realtime mutation entry points currently forward auth to the SDK."
+      - packages/kanban-lite/src/standalone/mutationService.ts: "Helper wrappers mirror the old auth-bearing SDK signatures."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 240
+    focus_area: standalone_websocket_path
+    verification:
+      - "Realtime mutator helpers no longer accept auth solely to pass it into SDK writes."
+      - "Per-connection auth lifecycle remains explicit, not silently dropped."
+      - "No websocket mutation call site retains the stale trailing argument pattern."
+    acceptance_criteria:
+      - "Standalone websocket and helper layers align to the final SDK write signatures."
+      - "The refactor does not regress the repository memory note that websocket auth threading is explicit."
+    failure_modes:
+      - scenario: "The websocket path accidentally drops the only remaining place where per-connection auth is preserved, causing authorization to stop distinguishing callers."
+        likelihood: medium
+        impact: critical
+        mitigation: "Keep auth lifecycle handling explicit in websocket/session code even if SDK write calls no longer accept auth directly."
+    tech_stack:
+      - TypeScript
+    test_coverage: "Standalone websocket integration coverage in T12"
+
+  - id: T10
+    title: "Remove auth passthrough from extension commands and panel actions"
+    description: |
+      Update the VS Code extension entry points so commands and panel actions stop awaiting auth context merely to pass it into SDK mutators.
+      Preserve any extension-side auth status or credential management that remains independently useful, but remove stale `_getAuthContext()`-style
+      write plumbing once the SDK no longer needs it.
+    wave: 7
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T5
+    context_files:
+      - packages/kanban-lite/src/extension/KanbanPanel.ts: "Largest concentration of extension mutator calls that currently await `_getAuthContext()`."
+      - packages/kanban-lite/src/extension/index.ts: "Extension command entry points that call SDK writes with auth context."
+      - packages/kanban-lite/src/extension/auth.ts: "Auth helper module that may become partially unused once write plumbing is removed."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: extension_surface
+    verification:
+      - "Extension SDK mutator calls no longer await/pass auth context solely for writes."
+      - "Unused auth-plumbing helpers are either removed or retained only where still needed."
+      - "Extension TypeScript builds cleanly after signature updates."
+    acceptance_criteria:
+      - "The extension matches the final SDK write signatures without unrelated auth refactors."
+      - "Credential/status behavior remains intact where still applicable."
+    failure_modes:
+      - scenario: "Removing `_getAuthContext()` from write paths also breaks extension-only status or credential workflows that still need it."
+        likelihood: low
+        impact: medium
+        mitigation: "Keep `extension/auth.ts` focused and only delete helpers proven to be write-only plumbing."
+    tech_stack:
+      - TypeScript
+      - VS Code API
+    test_coverage: "Build/type coverage plus downstream auth/redaction regressions"
+
+  - id: T11
+    title: "Lock in helper, merge, and authorization regressions inside the SDK test suite"
+    description: |
+      Update the core SDK regression suites so they prove the new helper contract: `_runBeforeEvent()` no longer accepts auth, deep merge happens in the helper,
+      empty-object/no-op listener returns preserve the effective original input, and auth enforcement still blocks writes without leaking token material.
+    wave: 7
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T4
+      - T6
+    context_files:
+      - packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts: "Direct helper semantics and before/after event behavior."
+      - packages/kanban-lite/src/sdk/__tests__/eventBus.test.ts: "EventBus semantics that currently assume the bus owns merge behavior."
+      - packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts: "Authorization and token-redaction regressions tied to the old auth seam."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: sdk_regressions
+    verification:
+      - "Helper tests cover deep merge, `{}`/`undefined` fallback, and input immutability."
+      - "EventBus tests no longer assert that merge ownership lives in the bus."
+      - "Auth enforcement tests still prove denial routing and secret redaction."
+    acceptance_criteria:
+      - "Core SDK tests describe the post-refactor contract, not the old auth-bearing helper shape."
+      - "At least one regression covers nested override behavior that was impossible under shallow merge."
+    failure_modes:
+      - scenario: "Tests are updated only superficially and stop checking the most important semantic changes, allowing hidden regressions through."
+        likelihood: medium
+        impact: high
+        mitigation: "Add explicit assertions for merge ownership, immutability, empty-object fallback, and auth-denial redaction rather than only rebaselining snapshots."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Direct unit regression coverage for the refactored helper pipeline"
+
+  - id: T12
+    title: "Update plugin and host integration regressions for the new SDK surface"
+    description: |
+      Refresh the cross-surface regression suites so they assert the new signature and runtime contract instead of the old auth-passthrough shape. This pass should
+      cover the first-party auth plugin integration path, the SDK regression suite for formerly bypassing privileged mutations, MCP-facing auth behavior,
+      and standalone websocket forwarding behavior.
+    wave: 8
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T7
+      - T8
+      - T9
+      - T10
+      - T11
+    context_files:
+      - packages/kl-auth-plugin/src/auth-plugin.integration.test.ts: "Plugin integration tests that currently build before payloads containing `auth`."
+      - packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts: "Regression suite for formerly bypassing privileged mutations."
+      - packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts: "Standalone auth-forwarding integration coverage that currently spies on trailing auth arguments."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: cross_surface_regressions
+    verification:
+      - "Plugin integration tests no longer construct or assert `payload.auth`."
+      - "SDK regression tests still prove formerly bypassing privileged mutations honor the before-event pipeline."
+      - "Standalone integration tests are updated to the new call pattern and still verify auth-derived behavior where relevant."
+    acceptance_criteria:
+      - "The major integration suites describe the post-refactor contract across plugin, SDK, and standalone surfaces."
+      - "No integration test still treats trailing SDK auth arguments as the expected behavior."
+    failure_modes:
+      - scenario: "Integration tests are updated on one surface but not another, leaving contradictory expectations about the public SDK contract."
+        likelihood: medium
+        impact: high
+        mitigation: "Treat plugin, SDK, MCP, and standalone regressions as one coordinated wave and resolve stale expectations together."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Cross-surface regression coverage for plugin/runtime/host adoption"
+
+  - id: T13
+    title: "Run focused verification and assemble the implementation evidence"
+    description: |
+      Execute the focused verification pass once code and tests are aligned. This task should gather build/test evidence for the SDK core, plugin integration,
+      MCP-facing behavior, and standalone integration paths, and produce a short residual-risk list for documentation and final review.
+    wave: 9
+    agent: gem-reviewer
+    priority: medium
+    status: pending
+    dependencies:
+      - T12
+    context_files:
+      - packages/kanban-lite/src/sdk/__tests__/action-runner.test.ts: "Core helper verification target."
+      - packages/kl-auth-plugin/src/auth-plugin.integration.test.ts: "Auth plugin verification target."
+      - packages/kanban-lite/src/standalone/__tests__/server.integration.test.ts: "Standalone integration verification target."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 0
+    focus_area: verification_checkpoint
+    verification:
+      - "Targeted tests/builds pass for SDK core, plugin integration, and standalone/MCP-facing regressions."
+      - "Residual risks are enumerated before docs are updated."
+      - "Reviewer confirms no stale `payload.auth` or `_withAuthContext` references remain in the planned blast radius."
+    acceptance_criteria:
+      - "A reviewable verification packet exists before documentation changes land."
+      - "Any failures are clearly categorized as code, test, or doc blockers."
+    failure_modes:
+      - scenario: "Documentation is updated before the implementation evidence is stable, forcing doc churn or stale release notes."
+        likelihood: medium
+        impact: medium
+        mitigation: "Keep docs in the next wave and block them on this verification checkpoint."
+    requires_review: true
+    review_depth: standard
+    security_sensitive: true
+
+  - id: T14
+    title: "Update core docs to the final auth/event contract"
+    description: |
+      Bring the main source docs back into sync once the code and tests are stable. Update the user-facing README and auth/plugin docs to remove `_withAuthContext()`
+      and `payload.auth` references and to explain the new `_runBeforeEvent()` merge ownership and normalized action flow.
+    wave: 10
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - T13
+    context_files:
+      - README.md: "Public event lifecycle documentation that currently still references the older merge/auth narrative in places."
+      - docs/auth.md: "Detailed auth architecture doc that still centers `_withAuthContext()` and `_authorizeAction()`."
+      - docs/plugins.md: "Plugin authoring doc that must match the new before-event contract."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: docs_sync
+    verification:
+      - "README, `docs/auth.md`, and `docs/plugins.md` all describe the same post-refactor before-event contract."
+      - "No document still names `_withAuthContext()` as an active seam."
+    acceptance_criteria:
+      - "Core user-facing docs match the implemented contract."
+      - "The main architecture narrative no longer depends on retired auth passthrough concepts."
+    failure_modes:
+      - scenario: "Only the main README is updated, leaving plugin or auth docs to describe the retired contract."
+        likelihood: medium
+        impact: high
+        mitigation: "Treat README, auth docs, plugin docs, changelog, and auth-plugin README as one synchronized doc update."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "README event lifecycle notes"
+      - "docs/auth.md architecture narrative"
+      - "docs/plugins.md plugin contract guidance"
+
+  - id: T15
+    title: "Update changelog, auth-package docs, and regenerate SDK references"
+    description: |
+      Finish the documentation wave by recording the behavior change in `CHANGELOG.md`, updating the first-party auth package README so it no longer promises
+      `payload.auth`, and regenerating `docs/sdk.md` from the updated JSDoc instead of editing generated output directly.
+    wave: 11
+    agent: gem-documentation-writer
+    priority: medium
+    status: pending
+    dependencies:
+      - T14
+    context_files:
+      - CHANGELOG.md: "Release notes that should record the auth/event contract change under Unreleased."
+      - packages/kl-auth-plugin/README.md: "Auth package README that currently describes `payload.auth`-based before-event helpers."
+      - docs/sdk.md: "Generated SDK reference that must be refreshed from updated JSDoc, not hand-edited."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 140
+    focus_area: generated_and_package_docs
+    verification:
+      - "`CHANGELOG.md` records the refactor under the correct Unreleased subsection."
+      - "`packages/kl-auth-plugin/README.md` matches the final auth listener contract."
+      - "`docs/sdk.md` is regenerated from source JSDoc and reviewed for the signature changes."
+    acceptance_criteria:
+      - "Release notes and package docs match the implemented contract."
+      - "Generated SDK docs are refreshed via the documented generation flow rather than hand edits."
+    failure_modes:
+      - scenario: "Generated docs are forgotten or hand-edited, leaving the published SDK reference out of sync with source JSDoc."
+        likelihood: medium
+        impact: medium
+        mitigation: "Explicitly gate this task on regeneration and review of `docs/sdk.md` after source docs are updated."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "CHANGELOG.md unreleased entry"
+      - "packages/kl-auth-plugin/README.md auth package contract"
+      - "docs/sdk.md generated API surface"
+
+  - id: T16
+    title: "Final review checkpoint: sign off on contract, risks, and rollout readiness"
+    description: |
+      Perform the final review after code, tests, and docs are aligned. The reviewer should confirm that the refactor stayed within the planned blast radius,
+      that the replacement auth carrier is coherent across SDK/plugins/hosts, that deep merge and empty-object fallback are explicitly verified, and that
+      docs/changelog accurately describe the shipped behavior.
+    wave: 12
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - T15
+    context_files:
+      - /Users/admin/dev/kanban-light/docs/plan/20260323-auth-before-event-refactor/plan.yaml: "Approved plan and acceptance baseline."
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Final SDK orchestration review target."
+      - docs/auth.md: "Final documentation consistency review target."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 0
+    focus_area: final_review
+    verification:
+      - "Reviewer can trace the final auth/event pipeline from host entry points through SDK helpers into plugin listeners without encountering retired contracts."
+      - "Reviewer confirms the two explicit review checkpoints closed their blockers."
+      - "Reviewer signs off on residual risks or records a minimal follow-up list."
+    acceptance_criteria:
+      - "The refactor is approved for implementation rollout with no unresolved contract ambiguity."
+      - "Any remaining follow-ups are explicitly non-blocking and outside this objective."
+    failure_modes:
+      - scenario: "The final state still mixes old and new concepts (`payload.auth`, stale host arguments, or docs mentioning `_withAuthContext()`), making rollout unsafe."
+        likelihood: medium
+        impact: critical
+        mitigation: "Fail the checkpoint and send the issue back to the smallest owning wave instead of accepting a mixed contract."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true

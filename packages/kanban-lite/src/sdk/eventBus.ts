@@ -54,49 +54,52 @@ export class EventBus {
   }
 
   /**
-   * Await all before-event listeners registered for `event` in registration order,
-   * then return the merged input.
+   * Await all before-event listeners registered for `event` in deterministic
+   * registration order, collect their plain-object outputs, and return them as
+   * an ordered array for the caller to merge.
    *
-   * Listeners are called sequentially with the current accumulated input so that
-   * later-registered listeners can see and override keys set by earlier ones.
+   * Each listener receives the same unmodified `payload`. Merge semantics —
+   * cloning the input, deep-merging the ordered outputs, and falling back to the
+   * original input when no outputs are produced — are entirely the responsibility
+   * of `KanbanSDK._runBeforeEvent()`. The bus is a pure ordered dispatcher.
    *
-   * - **Plain-object returns** (`Record<string, unknown>`) are shallow-merged into
-   *   the accumulated input; later listeners override keys set by earlier ones.
+   * - **Plain-object returns** (`Record<string, unknown>`) are appended to the
+   *   returned array in listener-registration order.
    * - **Non-plain-object returns** (arrays, class instances, primitives, `void`) are
-   *   silently ignored — the accumulated input is left unchanged.
-   * - **Thrown errors** propagate immediately to the caller; no subsequent listeners
-   *   are executed. The caller must treat this as a mutation-abort signal.
+   *   silently ignored and do not appear in the output array.
+   * - **Thrown errors** propagate immediately to the caller as a mutation-abort
+   *   signal; no subsequent listeners are executed.
    *
    * After specific-event listeners are settled, `onAny` subscribers receive the
    * event name and original payload in a non-blocking, error-isolated fire so that
-   * monitoring hooks are not accidentally turned into before-event vetoes.
+   * monitoring hooks cannot be accidentally turned into before-event vetoes.
    *
-  * @param event  - Before-event name (e.g. `'card.create'`).
-   * @param payload - Before-event payload whose `input` field is the merge base.
-   * @returns Promise resolving to the merged input object.
+   * @param event   - Before-event name (e.g. `'card.create'`).
+   * @param payload - Before-event payload passed unchanged to every listener.
+   * @returns Promise resolving to an ordered array of plain-object listener outputs.
    */
   async emitAsync<TInput extends Record<string, unknown>>(
     event: string,
     payload: BeforeEventPayload<TInput>,
-  ): Promise<TInput> {
+  ): Promise<ReadonlyArray<Record<string, unknown>>> {
     type AsyncBeforeListener = (
       p: BeforeEventPayload<TInput>,
     ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
 
     const listeners = this._emitter.listeners(event) as AsyncBeforeListener[]
-    let merged: TInput = { ...payload.input }
+    const orderedOutputs: Array<Record<string, unknown>> = []
 
     for (const listener of listeners) {
       // Errors from before-event listeners are intentionally not caught here.
       // They propagate to the SDK action runner as a mutation-abort signal.
-      const result = await listener({ ...payload, input: merged })
+      const result = await listener(payload)
       if (isPlainObject(result)) {
-        merged = { ...merged, ...result } as TInput
+        orderedOutputs.push(result)
       }
     }
 
     // Fire onAny listeners non-blocking. They are monitoring hooks and must not
-    // influence the merge outcome or abort the action on error.
+    // influence the ordered outputs or abort the action on error.
     const anyListeners = this._emitter.listenersAny() as EventBusAnyListenerFn[]
     for (const listener of anyListeners) {
       try {
@@ -106,7 +109,7 @@ export class EventBus {
       }
     }
 
-    return merged
+    return orderedOutputs
   }
 
   /**

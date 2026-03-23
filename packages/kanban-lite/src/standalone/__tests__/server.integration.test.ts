@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -235,10 +235,36 @@ describe('Standalone Server Integration', () => {
   let port: number
   let ws: WebSocket
 
-  beforeEach(async () => {
+  // One shared server for the whole suite — each test resets filesystem state in beforeEach.
+  beforeAll(async () => {
     tempDir = createTempDir()
     webviewDir = createTempWebviewDir()
     port = await getPort()
+    server = startServer(tempDir, port, webviewDir)
+    await sleep(200)
+  })
+
+  afterAll(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true })
+    fs.rmSync(webviewDir, { recursive: true, force: true })
+  })
+
+  beforeEach(async () => {
+    // Reset per-test filesystem state so each test starts with a clean board.
+    const boardsDir = path.join(tempDir, 'boards')
+    if (fs.existsSync(boardsDir)) {
+      fs.rmSync(boardsDir, { recursive: true, force: true })
+    }
+    const activeCardFile = path.join(tempDir, '.active-card.json')
+    if (fs.existsSync(activeCardFile)) fs.rmSync(activeCardFile)
+    const workspaceRoot = path.dirname(tempDir)
+    const configFile = path.join(workspaceRoot, '.kanban.json')
+    if (fs.existsSync(configFile)) fs.rmSync(configFile)
+    const webhooksFile = path.join(workspaceRoot, '.kanban-webhooks.json')
+    if (fs.existsSync(webhooksFile)) fs.rmSync(webhooksFile)
   })
 
   afterEach(async () => {
@@ -247,17 +273,6 @@ describe('Standalone Server Integration', () => {
       ws.close()
       await sleep(50)
     }
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-    }
-    // Clean up temp dirs, config file, and webhooks file
-    fs.rmSync(tempDir, { recursive: true, force: true })
-    fs.rmSync(webviewDir, { recursive: true, force: true })
-    const workspaceRoot = path.dirname(tempDir)
-    const configFile = path.join(workspaceRoot, '.kanban.json')
-    if (fs.existsSync(configFile)) fs.rmSync(configFile)
-    const webhooksFile = path.join(workspaceRoot, '.kanban-webhooks.json')
-    if (fs.existsSync(webhooksFile)) fs.rmSync(webhooksFile)
   })
 
   // ── HTTP Tests ──
@@ -269,10 +284,14 @@ describe('Standalone Server Integration', () => {
       fs.writeFileSync(resolvedConfigPath, JSON.stringify({ port }, null, 2), 'utf-8')
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
-      server = startServer(tempDir, port, webviewDir, resolvedConfigPath)
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
       await sleep(200)
-
-      expect(logSpy).toHaveBeenCalledWith(`Kanban config: ${resolvedConfigPath}`)
+      try {
+        expect(logSpy).toHaveBeenCalledWith(`Kanban config: ${resolvedConfigPath}`)
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
     })
 
     it('starts even when the Swagger UI package logo file is unavailable', async () => {
@@ -297,22 +316,28 @@ describe('Standalone Server Integration', () => {
 
       const { startServer: startServerWithMocks } = await import('../server')
 
-      server = startServerWithMocks(tempDir, port, webviewDir)
+      const localPort = await getPort()
+      const localServer = startServerWithMocks(tempDir, localPort, webviewDir)
       await sleep(200)
+      try {
+        expect(swaggerUiMock).toHaveBeenCalledTimes(1)
+        expect(swaggerUiMock.mock.calls[0]?.[1]).toMatchObject({
+          routePrefix: '/api/docs',
+          logo: null,
+        })
 
-      expect(swaggerUiMock).toHaveBeenCalledTimes(1)
-      expect(swaggerUiMock.mock.calls[0]?.[1]).toMatchObject({
-        routePrefix: '/api/docs',
-        logo: null,
-      })
-
-      const res = await httpGet(`http://localhost:${port}/`)
-      expect(res.status).toBe(200)
+        const res = await httpGet(`http://localhost:${localPort}/`)
+        expect(res.status).toBe(200)
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        // Undo the module mocks so subsequent tests are not affected
+        vi.unmock('fs')
+        vi.unmock('@fastify/swagger-ui')
+        vi.resetModules()
+      }
     })
 
     it('should serve index.html at root', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpGet(`http://localhost:${port}/`)
       expect(res.status).toBe(200)
@@ -322,8 +347,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should serve static CSS files', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpGet(`http://localhost:${port}/style.css`)
       expect(res.status).toBe(200)
@@ -331,8 +354,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should serve static JS files', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpGet(`http://localhost:${port}/index.js`)
       expect(res.status).toBe(200)
@@ -340,8 +361,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should fall back to index.html for unknown paths', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpGet(`http://localhost:${port}/some/unknown/route`)
       expect(res.status).toBe(200)
@@ -361,8 +380,6 @@ describe('Standalone Server Integration', () => {
         title: 'Test Card'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -385,8 +402,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should return empty cards for empty directory', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -401,8 +416,6 @@ describe('Standalone Server Integration', () => {
         title: 'Done Card'
       }), 'done')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -422,8 +435,6 @@ describe('Standalone Server Integration', () => {
         order: 'a0'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -441,8 +452,6 @@ describe('Standalone Server Integration', () => {
         title: 'Test Card'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const firstSocket = await connectWs(port)
       const firstResponse = await sendAndReceive(firstSocket, { type: 'ready' }, 'init')
@@ -472,8 +481,6 @@ describe('Standalone Server Integration', () => {
       const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const deleteSpy = vi.spyOn(KanbanSDK.prototype, 'deleteCard').mockResolvedValue(undefined)
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port, { Authorization: 'Bearer websocket-secret' })
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -501,8 +508,6 @@ describe('Standalone Server Integration', () => {
       const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const triggerSpy = vi.spyOn(KanbanSDK.prototype, 'triggerAction').mockResolvedValue(undefined)
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port, { Authorization: 'Bearer action-token' })
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -535,8 +540,6 @@ describe('Standalone Server Integration', () => {
 
   describe('createCard', () => {
     it('should create a card file on disk', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       // Init first
@@ -575,8 +578,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should create card in its status subfolder', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -610,8 +611,6 @@ describe('Standalone Server Integration', () => {
         order: 'a0'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -636,8 +635,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should preserve assignee and dueDate', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -671,8 +668,6 @@ describe('Standalone Server Integration', () => {
         title: 'Move Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -700,8 +695,6 @@ describe('Standalone Server Integration', () => {
         title: 'Finish Me'
       }), 'review')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -729,8 +722,6 @@ describe('Standalone Server Integration', () => {
         title: 'Reopen Me'
       }), 'done')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -768,8 +759,6 @@ describe('Standalone Server Integration', () => {
         order: 'a0'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -809,8 +798,6 @@ describe('Standalone Server Integration', () => {
         title: 'Delete Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -838,8 +825,6 @@ describe('Standalone Server Integration', () => {
       writeCardFile(tempDir, 'keep-me.md', makeCardContent({ id: 'keep-me' }), 'backlog')
       writeCardFile(tempDir, 'remove-me.md', makeCardContent({ id: 'remove-me' }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -864,8 +849,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should handle deleting non-existent card gracefully', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -889,8 +872,6 @@ describe('Standalone Server Integration', () => {
         title: 'Update Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -923,8 +904,6 @@ describe('Standalone Server Integration', () => {
         status: 'review'
       }), 'review')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -953,8 +932,6 @@ describe('Standalone Server Integration', () => {
         labels: ['backend', 'api']
       }), 'in-progress')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -983,8 +960,6 @@ describe('Standalone Server Integration', () => {
         title: 'Active API Card'
       }), 'todo')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1010,8 +985,6 @@ describe('Standalone Server Integration', () => {
         title: 'Save Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1064,8 +1037,6 @@ describe('Standalone Server Integration', () => {
         title: 'Save Done'
       }), 'review')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1104,8 +1075,6 @@ describe('Standalone Server Integration', () => {
 
   describe('closeCard', () => {
     it('should not crash when closing', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1122,8 +1091,6 @@ describe('Standalone Server Integration', () => {
         title: 'Close Active Card'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1159,8 +1126,6 @@ describe('Standalone Server Integration', () => {
         return null
       })
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1176,8 +1141,6 @@ describe('Standalone Server Integration', () => {
 
   describe('VSCode-specific no-op messages', () => {
     it('should handle openFile without crashing', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1187,8 +1150,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should handle openSettings without crashing', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1198,8 +1159,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should handle focusMenuBar without crashing', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1209,8 +1168,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should handle startWithAI without crashing', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1224,8 +1181,6 @@ describe('Standalone Server Integration', () => {
 
   describe('file watcher', () => {
     it('should broadcast updates when a file is created externally', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1257,8 +1212,6 @@ describe('Standalone Server Integration', () => {
         title: 'Modify Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1288,8 +1241,6 @@ describe('Standalone Server Integration', () => {
         title: 'Vanish Me'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const initResponse = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1308,6 +1259,8 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should honor provider-defined watch globs for non-markdown files', async () => {
+      // This test needs its own server because the file watcher glob is determined
+      // at startup — the spy must be active before startServer is called.
       const originalGetStorageStatus = KanbanSDK.prototype.getStorageStatus
       const statusSpy = vi.spyOn(KanbanSDK.prototype, 'getStorageStatus')
       statusSpy.mockImplementation(function (this: KanbanSDK) {
@@ -1322,20 +1275,30 @@ describe('Standalone Server Integration', () => {
       fs.mkdirSync(path.dirname(providerStatePath), { recursive: true })
       fs.writeFileSync(providerStatePath, JSON.stringify({ version: 1 }), 'utf-8')
 
-      server = startServer(tempDir, port, webviewDir)
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir)
       await sleep(200)
-      ws = await connectWs(port)
+      try {
+        const localWs = await connectWs(localPort)
+        try {
+          await sendAndReceive(localWs, { type: 'ready' }, 'init')
 
-      await sendAndReceive(ws, { type: 'ready' }, 'init')
+          await sleep(2000)
 
-      await sleep(2000)
+          const updatePromise = waitForMessage(localWs, 'init', 15000)
 
-      const updatePromise = waitForMessage(ws, 'init', 15000)
+          fs.writeFileSync(providerStatePath, JSON.stringify({ version: 2 }), 'utf-8')
 
-      fs.writeFileSync(providerStatePath, JSON.stringify({ version: 2 }), 'utf-8')
-
-      const response = await updatePromise
-      expect(response.type).toBe('init')
+          const response = await updatePromise
+          expect(response.type).toBe('init')
+        } finally {
+          localWs.close()
+          await sleep(50)
+        }
+      } finally {
+        statusSpy.mockRestore()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
     })
   })
 
@@ -1348,8 +1311,6 @@ describe('Standalone Server Integration', () => {
         title: 'Broadcast Test'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const ws1 = await connectWs(port)
       const ws2 = await connectWs(port)
@@ -1418,8 +1379,6 @@ describe('Standalone Server Integration', () => {
         order: '1'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1455,8 +1414,6 @@ describe('Standalone Server Integration', () => {
         title: 'Misplaced Done'
       }))
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1474,8 +1431,6 @@ describe('Standalone Server Integration', () => {
         title: 'Misplaced Active'
       }), 'done')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1496,8 +1451,6 @@ describe('Standalone Server Integration', () => {
         title: 'Real Card'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1513,8 +1466,6 @@ describe('Standalone Server Integration', () => {
         title: 'Valid Card'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1531,8 +1482,6 @@ describe('Standalone Server Integration', () => {
 
       writeCardFile(tempDir, 'crlf-card.md', content, 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1546,8 +1495,6 @@ describe('Standalone Server Integration', () => {
 
   describe('settings', () => {
     it('should respond to openSettings with showSettings message', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1561,8 +1508,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should persist settings to .kanban-settings.json', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1610,8 +1555,6 @@ describe('Standalone Server Integration', () => {
         'utf-8'
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1625,8 +1568,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should broadcast settings to all connected clients', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const ws1 = await connectWs(port)
       const ws2 = await connectWs(port)
@@ -1663,8 +1604,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should force showBuildWithAI=false even if client sends true', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1693,8 +1632,6 @@ describe('Standalone Server Integration', () => {
       fs.mkdirSync(tempDir, { recursive: true })
       fs.writeFileSync(path.join(tempDir, '.kanban-settings.json'), 'not valid json{{{', 'utf-8')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1720,8 +1657,6 @@ describe('Standalone Server Integration', () => {
         title: 'API Task 2'
       }), 'todo')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       // Initialize via WS so server loads cards
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -1745,8 +1680,6 @@ describe('Standalone Server Integration', () => {
         status: 'todo'
       }), 'todo')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1767,8 +1700,6 @@ describe('Standalone Server Integration', () => {
         priority: 'low'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1789,8 +1720,6 @@ describe('Standalone Server Integration', () => {
         assignee: 'bob'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1811,8 +1740,6 @@ describe('Standalone Server Integration', () => {
         labels: ['backend']
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1843,8 +1770,6 @@ describe('Standalone Server Integration', () => {
         metadataBlock: 'team: backend'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1871,8 +1796,6 @@ describe('Standalone Server Integration', () => {
         body: 'Plans next quarter work.'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1894,8 +1817,6 @@ describe('Standalone Server Integration', () => {
         body: 'Implements API plumbing.'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1910,8 +1831,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/boards/:boardId/tasks should support fuzzy metadata q search', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1953,8 +1872,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/boards/:boardId/tasks should keep metadata q search exact unless fuzzy=true', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1998,8 +1915,6 @@ describe('Standalone Server Integration', () => {
         metadataBlock: 'team: frontend'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2030,8 +1945,6 @@ describe('Standalone Server Integration', () => {
         title: 'Single Task'
       }), 'todo')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2044,8 +1957,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('GET /api/tasks/:id should return 404 for non-existent task', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2056,8 +1967,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/tasks should create a task', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2090,8 +1999,6 @@ describe('Standalone Server Integration', () => {
         priority: 'low'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2107,8 +2014,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/tasks should create a form-aware task', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# API Form Task\n\nHas a form.',
@@ -2160,8 +2065,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/tasks/:id should update form-aware fields', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# Update Form Task',
@@ -2205,8 +2108,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/tasks/:id/forms/:formId/submit should submit via the SDK and persist form data', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# Submit Form Task',
@@ -2247,8 +2148,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/tasks/:id/forms/:formId/submit should reject invalid submissions without overwriting persisted data', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# Invalid Submit Task',
@@ -2323,8 +2222,6 @@ describe('Standalone Server Integration', () => {
         }
       }, null, 2), 'utf-8')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# Interpolation Regression Card',
@@ -2361,8 +2258,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('board-scoped REST routes keep form-aware create, update, and submit behavior in parity', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2425,8 +2320,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('websocket submitForm should return matching success and error callbacks', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init', 10000)
 
@@ -2493,8 +2386,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/tasks/:id should return 404 for non-existent task', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2510,8 +2401,6 @@ describe('Standalone Server Integration', () => {
         status: 'backlog'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2534,8 +2423,6 @@ describe('Standalone Server Integration', () => {
         id: 'delete-api'
       }), 'backlog')
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2549,8 +2436,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('DELETE /api/tasks/:id should return 404 for non-existent task', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2563,8 +2448,6 @@ describe('Standalone Server Integration', () => {
 
   describe('REST API — Columns', () => {
     it('GET /api/columns should list columns', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2578,8 +2461,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/columns should add a column', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2603,8 +2484,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/columns/:id should update a column', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2625,8 +2504,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/columns/:id should return 404 for non-existent column', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2637,8 +2514,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('DELETE /api/columns/:id should remove an empty column', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2664,8 +2539,6 @@ describe('Standalone Server Integration', () => {
 
   describe('REST API — Settings', () => {
     it('GET /api/settings should return settings', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2677,8 +2550,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('PUT /api/settings should update settings', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2712,8 +2583,6 @@ describe('Standalone Server Integration', () => {
 
   describe('REST API — Webhooks', () => {
     it('GET /api/webhooks should return empty list initially', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2724,8 +2593,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('POST /api/webhooks should register a webhook', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2748,8 +2615,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('DELETE /api/webhooks/:id should remove a webhook', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2771,8 +2636,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('DELETE /api/webhooks/:id should return 404 for non-existent webhook', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2785,8 +2648,6 @@ describe('Standalone Server Integration', () => {
 
   describe('REST API — CORS & Error Handling', () => {
     it('should include CORS headers on API responses', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2795,8 +2656,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should handle OPTIONS preflight for CORS', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2807,8 +2666,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('should return 404 for unknown API paths', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2819,8 +2676,6 @@ describe('Standalone Server Integration', () => {
     })
 
     it('REST API changes should broadcast to WebSocket clients', async () => {
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -2866,53 +2721,61 @@ describe('Standalone Server Integration', () => {
 
     it('redirects unauthenticated browser requests to the plugin login page', async () => {
       writeLocalAuthConfig()
-      server = startServer(tempDir, port, webviewDir)
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir)
       await sleep(200)
+      try {
+        const homeRes = await httpGet(`http://localhost:${localPort}/`)
+        expect(homeRes.status).toBe(302)
+        expect(homeRes.headers.location).toContain('/auth/login')
 
-      const homeRes = await httpGet(`http://localhost:${port}/`)
-      expect(homeRes.status).toBe(302)
-      expect(homeRes.headers.location).toContain('/auth/login')
-
-      const loginRes = await httpGet(`http://localhost:${port}/auth/login`)
-      expect(loginRes.status).toBe(200)
-      expect(loginRes.body).toContain('Sign in')
+        const loginRes = await httpGet(`http://localhost:${localPort}/auth/login`)
+        expect(loginRes.status).toBe(200)
+        expect(loginRes.body).toContain('Sign in')
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
     })
 
     it('requires auth for API requests, creates a workspace token, and accepts cookie sessions', async () => {
       const workspaceRoot = writeLocalAuthConfig()
-      server = startServer(tempDir, port, webviewDir)
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir)
       await sleep(200)
+      try {
+        const unauthorizedRes = await httpGet(`http://localhost:${localPort}/api/health`)
+        expect(unauthorizedRes.status).toBe(401)
+        expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
 
-      const unauthorizedRes = await httpGet(`http://localhost:${port}/api/health`)
-      expect(unauthorizedRes.status).toBe(401)
-      expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
+        const envContent = fs.readFileSync(path.join(workspaceRoot, '.env'), 'utf-8')
+        const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
+        expect(token).toMatch(/^kl-/)
 
-      const envContent = fs.readFileSync(path.join(workspaceRoot, '.env'), 'utf-8')
-      const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
-      expect(token).toMatch(/^kl-/)
+        const bearerRes = await httpGet(`http://localhost:${localPort}/api/health`, {
+          Authorization: `Bearer ${token}`,
+        })
+        expect(bearerRes.status).toBe(200)
 
-      const bearerRes = await httpGet(`http://localhost:${port}/api/health`, {
-        Authorization: `Bearer ${token}`,
-      })
-      expect(bearerRes.status).toBe(200)
+        const loginRes = await httpRequest(
+          'POST',
+          `http://localhost:${localPort}/auth/login`,
+          'username=alice&password=secret123&returnTo=%2F',
+          { 'Content-Type': 'application/x-www-form-urlencoded' },
+        )
+        expect(loginRes.status).toBe(302)
+        const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
+          ? loginRes.headers['set-cookie'][0]
+          : loginRes.headers['set-cookie']
+        expect(typeof setCookieHeader).toBe('string')
+        const cookieHeader = String(setCookieHeader).split(';')[0]
 
-      const loginRes = await httpRequest(
-        'POST',
-        `http://localhost:${port}/auth/login`,
-        'username=alice&password=secret123&returnTo=%2F',
-        { 'Content-Type': 'application/x-www-form-urlencoded' },
-      )
-      expect(loginRes.status).toBe(302)
-      const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
-        ? loginRes.headers['set-cookie'][0]
-        : loginRes.headers['set-cookie']
-      expect(typeof setCookieHeader).toBe('string')
-      const cookieHeader = String(setCookieHeader).split(';')[0]
-
-      const cookieRes = await httpGet(`http://localhost:${port}/api/health`, {
-        Cookie: cookieHeader,
-      })
-      expect(cookieRes.status).toBe(200)
+        const cookieRes = await httpGet(`http://localhost:${localPort}/api/health`, {
+          Cookie: cookieHeader,
+        })
+        expect(cookieRes.status).toBe(200)
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
     })
   })
 
@@ -2925,8 +2788,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "board.create" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpRequest('POST', `http://localhost:${port}/api/boards`, { id: 'x', name: 'X' })
       expect(res.status).toBe(403)
@@ -2939,8 +2800,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpRequest('PUT', `http://localhost:${port}/api/settings`, { defaultStatus: 'backlog' })
       expect(res.status).toBe(403)
@@ -2953,8 +2812,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpRequest('POST', `http://localhost:${port}/api/webhooks`, { url: 'https://example.com', events: ['*'] })
       expect(res.status).toBe(403)
@@ -2967,8 +2824,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "migration.toSqlite" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
 
       const res = await httpRequest('POST', `http://localhost:${port}/api/storage/migrate-to-sqlite`, {})
       expect(res.status).toBe(403)
@@ -2983,8 +2838,6 @@ describe('Standalone Server Integration', () => {
         { id: 'new-col', name: 'New', color: '#000000' }
       ])
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port, { Authorization: 'Bearer admin-token' })
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -3009,8 +2862,6 @@ describe('Standalone Server Integration', () => {
       const runWithAuthSpy = vi.spyOn(KanbanSDK.prototype, 'runWithAuth')
       const settingsSpy = vi.spyOn(KanbanSDK.prototype, 'updateSettings').mockResolvedValue(undefined)
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port, { Authorization: 'Bearer settings-token' })
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -3038,8 +2889,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -3066,8 +2915,6 @@ describe('Standalone Server Integration', () => {
         new AuthError('auth.policy.denied', 'Action "column.create" denied', undefined)
       )
 
-      server = startServer(tempDir, port, webviewDir)
-      await sleep(200)
       ws = await connectWs(port)
 
       await sendAndReceive(ws, { type: 'ready' }, 'init')

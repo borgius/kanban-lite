@@ -6,7 +6,7 @@ describe('UndoToast', () => {
   it('keeps the existing undo action and progress bar by default', () => {
     const markup = renderToStaticMarkup(
       <UndoToast
-        message="Deleted \"Card\""
+        message={'Deleted "Card"'}
         onUndo={vi.fn()}
         onExpire={vi.fn()}
         duration={5000}

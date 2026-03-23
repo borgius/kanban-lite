@@ -398,7 +398,7 @@ describe('SDK listCards - metaFilter', () => {
   it('keeps exact text search opt-in off by default for metadata values', async () => {
     await sdk.createCard({ content: '# L\n\nImplements API plumbing.', metadata: { team: 'backend' } })
 
-    const result = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backend')
+    const result = await Cards.listCards(asCardsContext(sdk), { searchQuery: 'backend' })
 
     expect(result).toHaveLength(0)
   })
@@ -407,15 +407,10 @@ describe('SDK listCards - metaFilter', () => {
     await sdk.createCard({ content: '# M\n\nImplements API plumbing.', metadata: { team: 'backend', region: 'us-east' } })
     await sdk.createCard({ content: '# N\n\nHandles docs.', metadata: { owner: 'backend', region: 'us-east' } })
 
-    const fuzzyTextResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+    const fuzzyTextResult = await Cards.listCards(asCardsContext(sdk), { searchQuery: 'backnd', fuzzy: true })
     const fuzzyMetaTokenResult = await Cards.listCards(
       asCardsContext(sdk),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'meta.team: backnd meta.region: useast',
-      true
+      { searchQuery: 'meta.team: backnd meta.region: useast', fuzzy: true }
     )
 
     expect(fuzzyTextResult.map(card => card.content)).toEqual(expect.arrayContaining(['# M\n\nImplements API plumbing.']))
@@ -426,8 +421,8 @@ describe('SDK listCards - metaFilter', () => {
   it('pairs exact and fuzzy search for the same metadata-backed free-text fixture', async () => {
     await sdk.createCard({ content: '# M2\n\nImplements API plumbing.', metadata: { team: 'backend' } })
 
-    const exactResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd')
-    const fuzzyResult = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+    const exactResult = await Cards.listCards(asCardsContext(sdk), { searchQuery: 'backnd' })
+    const fuzzyResult = await Cards.listCards(asCardsContext(sdk), { searchQuery: 'backnd', fuzzy: true })
 
     expect(exactResult).toHaveLength(0)
     expect(fuzzyResult).toHaveLength(1)

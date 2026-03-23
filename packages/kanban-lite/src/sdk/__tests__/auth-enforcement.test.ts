@@ -294,7 +294,7 @@ describe('auth enforcement: formerly bypassing privileged mutations honor before
         await sdk.createCard({ content: '# Action Card', actions: ['retry'] })
       },
       invoke: () => sdk.triggerAction('kl-1', 'retry'),
-      expectedInput: { cardId: 'kl-1', actionKey: 'retry' },
+      expectedInput: { cardId: 'kl-1', action: 'retry' },
     },
     {
       label: 'board action config add',

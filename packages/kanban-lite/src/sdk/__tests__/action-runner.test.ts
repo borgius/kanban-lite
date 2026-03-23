@@ -389,8 +389,10 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
   it('createBoard consumes merged before-event options when creating the board', async () => {
     sdk.on('board.create', vi.fn().mockReturnValue({
       name: 'Operations',
-      description: 'Created by plugin',
-      defaultStatus: 'review',
+      options: {
+        description: 'Created by plugin',
+        defaultStatus: 'review',
+      },
     }))
 
     const board = await sdk.createBoard('ops', 'Ops')

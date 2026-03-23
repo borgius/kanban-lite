@@ -19,12 +19,13 @@ function runBefore<T extends Record<string, unknown>>(
   sdk: KanbanSDK,
   event: string,
   input: T,
+  auth?: Record<string, unknown>,
   actor?: string,
   boardId?: string,
 ): Promise<T> {
   return (sdk as unknown as {
-    _runBeforeEvent(event: string, input: T, actor?: string, boardId?: string): Promise<T>
-  })._runBeforeEvent(event as never, input, actor, boardId)
+    _runBeforeEvent(event: string, input: T, auth?: Record<string, unknown>, actor?: string, boardId?: string): Promise<T>
+  })._runBeforeEvent(event as never, input, auth, actor, boardId)
 }
 
 function runAfter<T>(
@@ -62,64 +63,64 @@ describe('KanbanSDK._runBeforeEvent', () => {
 
   it('returns a copy of the original input when no listeners are registered', async () => {
     const input = { title: 'My card', priority: 'medium' }
-    const result = await runBefore(sdk, 'task.create', input)
+    const result = await runBefore(sdk, 'card.create', input)
     expect(result).toEqual(input)
     expect(result).not.toBe(input) // must be a new object, not the same reference
   })
 
   it('returns original input when listener returns void', async () => {
-    sdk.on('task.create', vi.fn().mockReturnValue(undefined))
-    const result = await runBefore(sdk, 'task.create', { title: 'card' })
+    sdk.on('card.create', vi.fn().mockReturnValue(undefined))
+    const result = await runBefore(sdk, 'card.create', { title: 'card' })
     expect(result).toEqual({ title: 'card' })
   })
 
   it('merges a plain-object listener response into the input', async () => {
-    sdk.on('task.create', vi.fn().mockReturnValue({ priority: 'high' }))
-    const result = await runBefore(sdk, 'task.create', { title: 'card', priority: 'medium' })
+    sdk.on('card.create', vi.fn().mockReturnValue({ priority: 'high' }))
+    const result = await runBefore(sdk, 'card.create', { title: 'card', priority: 'medium' })
     expect(result).toEqual({ title: 'card', priority: 'high' })
   })
 
   it('later-registered listeners override earlier ones (deterministic shallow merge)', async () => {
-    sdk.on('task.create', vi.fn().mockReturnValue({ status: 'first', extra: 'a' }))
-    sdk.on('task.create', vi.fn().mockReturnValue({ status: 'second' }))
-    const result = await runBefore(sdk, 'task.create', { status: 'original' })
+    sdk.on('card.create', vi.fn().mockReturnValue({ status: 'first', extra: 'a' }))
+    sdk.on('card.create', vi.fn().mockReturnValue({ status: 'second' }))
+    const result = await runBefore<Record<string, unknown>>(sdk, 'card.create', { status: 'original' })
     expect(result.status).toBe('second')
     expect(result.extra).toBe('a') // key from first listener, not overridden
   })
 
   it('each subsequent listener receives the progressively merged input', async () => {
     const seen: string[] = []
-    sdk.on('task.create', vi.fn().mockImplementation(({ input }: { input: Record<string, unknown> }) => {
+    sdk.on('card.create', vi.fn().mockImplementation(({ input }: { input: Record<string, unknown> }) => {
       seen.push(input.step as string)
       return { step: 'after-first' }
     }))
-    sdk.on('task.create', vi.fn().mockImplementation(({ input }: { input: Record<string, unknown> }) => {
+    sdk.on('card.create', vi.fn().mockImplementation(({ input }: { input: Record<string, unknown> }) => {
       seen.push(input.step as string)
       return { step: 'after-second' }
     }))
-    const result = await runBefore(sdk, 'task.create', { step: 'original' })
+    const result = await runBefore(sdk, 'card.create', { step: 'original' })
     expect(seen[0]).toBe('original')    // first listener sees original
     expect(seen[1]).toBe('after-first') // second listener sees first override
     expect(result.step).toBe('after-second')
   })
 
   it('awaits async (Promise-returning) listeners', async () => {
-    sdk.on('task.create', vi.fn().mockResolvedValue({ status: 'async-override' }))
-    const result = await runBefore(sdk, 'task.create', { status: 'original' })
+    sdk.on('card.create', vi.fn().mockResolvedValue({ status: 'async-override' }))
+    const result = await runBefore(sdk, 'card.create', { status: 'original' })
     expect(result.status).toBe('async-override')
   })
 
   it('propagates AuthError thrown by a before-event listener (mutation abort)', async () => {
-    const authErr = new AuthError('auth.policy.denied', 'Action "task.create" denied for "alice"', 'alice')
-    sdk.on('task.create', vi.fn().mockRejectedValue(authErr))
-    await expect(runBefore(sdk, 'task.create', {})).rejects.toBeInstanceOf(AuthError)
+    const authErr = new AuthError('auth.policy.denied', 'Action "card.create" denied for "alice"', 'alice')
+    sdk.on('card.create', vi.fn().mockRejectedValue(authErr))
+    await expect(runBefore(sdk, 'card.create', {})).rejects.toBeInstanceOf(AuthError)
   })
 
   it('AuthError category and actor are preserved on propagation', async () => {
     const authErr = new AuthError('auth.identity.missing', 'No token supplied', undefined)
-    sdk.on('task.create', vi.fn().mockRejectedValue(authErr))
+    sdk.on('card.create', vi.fn().mockRejectedValue(authErr))
     try {
-      await runBefore(sdk, 'task.create', {})
+      await runBefore(sdk, 'card.create', {})
       throw new Error('Expected AuthError')
     } catch (err) {
       expect(err).toBeInstanceOf(AuthError)
@@ -129,27 +130,27 @@ describe('KanbanSDK._runBeforeEvent', () => {
 
   it('propagates generic Error thrown by a before-event listener', async () => {
     const err = new Error('plugin panic')
-    sdk.on('task.create', vi.fn().mockRejectedValue(err))
-    await expect(runBefore(sdk, 'task.create', {})).rejects.toThrow('plugin panic')
+    sdk.on('card.create', vi.fn().mockRejectedValue(err))
+    await expect(runBefore(sdk, 'card.create', {})).rejects.toThrow('plugin panic')
   })
 
   it('aborts on first throwing listener — subsequent listeners are not called', async () => {
     const second = vi.fn().mockReturnValue({ reached: true })
-    sdk.on('task.create', vi.fn().mockRejectedValue(new AuthError('auth.policy.denied', 'denied', 'bob')))
-    sdk.on('task.create', second)
-    await expect(runBefore(sdk, 'task.create', {})).rejects.toBeInstanceOf(AuthError)
+    sdk.on('card.create', vi.fn().mockRejectedValue(new AuthError('auth.policy.denied', 'denied', 'bob')))
+    sdk.on('card.create', second)
+    await expect(runBefore(sdk, 'card.create', {})).rejects.toBeInstanceOf(AuthError)
     expect(second).not.toHaveBeenCalled()
   })
 
   it('includes actor and boardId in the payload passed to listeners', async () => {
-    const received: Array<{ actor?: string; boardId?: string }> = []
-    sdk.on('task.create', vi.fn().mockImplementation(
-      ({ actor, boardId }: { actor?: string; boardId?: string }) => {
-        received.push({ actor, boardId })
+    const received: Array<{ actor?: string; boardId?: string; transport?: string }> = []
+    sdk.on('card.create', vi.fn().mockImplementation(
+      ({ auth, actor, boardId }: { auth?: Record<string, unknown>; actor?: string; boardId?: string }) => {
+        received.push({ actor, boardId, transport: auth?.transport as string | undefined })
       },
     ))
-    await runBefore(sdk, 'task.create', { title: 'T' }, 'alice', 'team-board')
-    expect(received[0]).toEqual({ actor: 'alice', boardId: 'team-board' })
+    await runBefore(sdk, 'card.create', { title: 'T' }, { transport: 'http' }, 'alice', 'team-board')
+    expect(received[0]).toEqual({ actor: 'alice', boardId: 'team-board', transport: 'http' })
   })
 })
 
@@ -270,7 +271,7 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
   })
 
   it('createCard before-event plugin can override input fields', async () => {
-    sdk.on('task.create', vi.fn().mockReturnValue({ status: 'in-progress' }))
+    sdk.on('card.create', vi.fn().mockReturnValue({ status: 'in-progress' }))
 
     const card = await sdk.createCard({ content: '# Override Test', status: 'backlog' })
 
@@ -367,7 +368,7 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
 
   it('before-event denial (AuthError) prevents createCard write and emits no after-event', async () => {
     const authErr = new AuthError('auth.policy.denied', 'denied', 'alice')
-    sdk.on('task.create', vi.fn().mockRejectedValue(authErr))
+    sdk.on('card.create', vi.fn().mockRejectedValue(authErr))
 
     const afterReceived: unknown[] = []
     sdk.on('task.created', () => afterReceived.push(1))
@@ -623,11 +624,29 @@ describe('KanbanSDK – settings and storage-migration event flow', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
+  const settingsInput = {
+    showPriorityBadges: true,
+    showAssignee: true,
+    showDueDate: false,
+    showLabels: true,
+    showBuildWithAI: false,
+    showFileName: false,
+    compactMode: false,
+    markdownEditorMode: false,
+    showDeletedColumn: false,
+    defaultPriority: 'medium' as const,
+    defaultStatus: 'backlog',
+    boardZoom: 100,
+    cardZoom: 100,
+    boardBackgroundMode: 'fancy' as const,
+    boardBackgroundPreset: 'aurora' as const,
+  }
+
   it('updateSettings fires settings.updated after-event exactly once', async () => {
     const received: unknown[] = []
     sdk.on('settings.updated', () => received.push(1))
 
-    await sdk.updateSettings({ showPriorityBadges: true, showAssignee: true, showDueDate: false, showLabels: true, showFileName: false, compactMode: false })
+    await sdk.updateSettings(settingsInput)
 
     expect(received).toHaveLength(1)
   })
@@ -636,7 +655,7 @@ describe('KanbanSDK – settings and storage-migration event flow', () => {
     const received: SDKEvent<AfterEventPayload<Record<string, unknown>>>[] = []
     sdk.on('settings.updated', (ev) => received.push(ev as SDKEvent<AfterEventPayload<Record<string, unknown>>>))
 
-    await sdk.updateSettings({ showPriorityBadges: true, showAssignee: false, showDueDate: false, showLabels: false, showFileName: false, compactMode: false })
+    await sdk.updateSettings({ ...settingsInput, showAssignee: false, showLabels: false })
 
     expect(received).toHaveLength(1)
     const payload = received[0].data as AfterEventPayload<Record<string, unknown>>
@@ -650,7 +669,7 @@ describe('KanbanSDK – settings and storage-migration event flow', () => {
     const afterReceived: unknown[] = []
     sdk.on('settings.updated', () => afterReceived.push(1))
 
-    await expect(sdk.updateSettings({ showPriorityBadges: false, showAssignee: false, showDueDate: false, showLabels: false, showFileName: false, compactMode: false })).rejects.toBeInstanceOf(AuthError)
+    await expect(sdk.updateSettings({ ...settingsInput, showPriorityBadges: false, showAssignee: false, showLabels: false })).rejects.toBeInstanceOf(AuthError)
     expect(afterReceived).toHaveLength(0)
   })
 

@@ -34,32 +34,47 @@ export interface AuthDecision {
 }
 
 export type SDKBeforeEventType =
-  | 'task.create'
-  | 'task.update'
-  | 'task.move'
-  | 'task.delete'
+  | 'card.create'
+  | 'card.update'
+  | 'card.move'
+  | 'card.delete'
+  | 'card.transfer'
+  | 'card.action.trigger'
+  | 'card.purgeDeleted'
   | 'comment.create'
   | 'comment.update'
   | 'comment.delete'
   | 'column.create'
   | 'column.update'
   | 'column.delete'
+  | 'column.reorder'
+  | 'column.setMinimized'
+  | 'column.cleanup'
   | 'attachment.add'
   | 'attachment.remove'
   | 'settings.update'
   | 'board.create'
   | 'board.update'
   | 'board.delete'
+  | 'board.action.config.add'
+  | 'board.action.config.remove'
+  | 'board.action.trigger'
+  | 'board.setDefault'
   | 'log.add'
   | 'log.clear'
   | 'board.log.add'
   | 'board.log.clear'
   | 'storage.migrate'
+  | 'label.set'
+  | 'label.rename'
+  | 'label.delete'
+  | 'webhook.create'
+  | 'webhook.update'
+  | 'webhook.delete'
   | 'form.submit'
 
 export interface BeforeEventPayload<TInput = Record<string, unknown>> {
   readonly event: SDKBeforeEventType
-  readonly action?: string
   readonly input: TInput
   readonly auth?: AuthContext
   readonly actor?: string
@@ -245,27 +260,43 @@ export const authPolicyPlugins: Record<string, AuthPolicyPlugin> = {
 }
 
 const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
-  'task.create',
-  'task.update',
-  'task.move',
-  'task.delete',
+  'card.create',
+  'card.update',
+  'card.move',
+  'card.delete',
+  'card.transfer',
+  'card.action.trigger',
+  'card.purgeDeleted',
   'comment.create',
   'comment.update',
   'comment.delete',
   'column.create',
   'column.update',
   'column.delete',
+  'column.reorder',
+  'column.setMinimized',
+  'column.cleanup',
   'attachment.add',
   'attachment.remove',
   'settings.update',
   'board.create',
   'board.update',
   'board.delete',
+  'board.action.config.add',
+  'board.action.config.remove',
+  'board.action.trigger',
+  'board.setDefault',
   'log.add',
   'log.clear',
   'board.log.add',
   'board.log.clear',
   'storage.migrate',
+  'label.set',
+  'label.rename',
+  'label.delete',
+  'webhook.create',
+  'webhook.update',
+  'webhook.delete',
   'form.submit',
 ]
 
@@ -354,7 +385,7 @@ function emitAuthStatusEvent(
  * Listener-only auth runtime plugin backed by identity/policy capability providers.
  *
  * Registers across all SDK before-events, resolves identity from `payload.auth`,
- * evaluates authorization for `payload.action`, throws `AuthError` to veto denied
+ * evaluates authorization for `payload.event`, throws `AuthError` to veto denied
  * mutations, and may return a plain-object input override when `overrideInput`
  * is supplied.
  */
@@ -380,26 +411,27 @@ export class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin 
     const listener = async (
       payload: BeforeEventPayload<Record<string, unknown>>,
     ): Promise<BeforeEventListenerResponse> => {
-      if (!isBeforeEventPayload(payload) || !payload.action) return
+      if (!isBeforeEventPayload(payload)) return
 
       const context = payload.auth ?? {}
+      const action = payload.event
       const identity = await this.authIdentity.resolveIdentity(context)
-      const decision = await this.authPolicy.checkPolicy(identity, payload.action, context)
+      const decision = await this.authPolicy.checkPolicy(identity, action, context)
       const actor = decision.actor ?? identity?.subject ?? payload.actor
       const boardId = payload.boardId ?? context.boardId
 
       if (!decision.allowed) {
         const reason = toAuthErrorCategory(decision.reason, identity)
-        emitAuthStatusEvent(bus, 'auth.denied', payload.action, actor, boardId, reason)
+        emitAuthStatusEvent(bus, 'auth.denied', action, actor, boardId, reason)
         const AuthError = getAuthErrorCtor()
         throw new AuthError(
           reason,
-          `Action "${payload.action}" denied${actor ? ` for "${actor}"` : ''}`,
+          `Action "${action}" denied${actor ? ` for "${actor}"` : ''}`,
           actor,
         )
       }
 
-      emitAuthStatusEvent(bus, 'auth.allowed', payload.action, actor, boardId)
+      emitAuthStatusEvent(bus, 'auth.allowed', action, actor, boardId)
       return this.options.overrideInput?.({ payload, identity, decision })
     }
 

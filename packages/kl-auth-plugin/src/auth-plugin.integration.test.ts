@@ -37,8 +37,7 @@ function makeBeforePayload(
   overrides: Partial<BeforeEventPayload<Record<string, unknown>>> = {},
 ): BeforeEventPayload<Record<string, unknown>> {
   return {
-    event: 'task.create',
-    action: 'card.create',
+    event: 'card.create',
     input: { title: 'Test card' },
     auth: { transport: 'http' },
     timestamp: new Date().toISOString(),
@@ -301,13 +300,13 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
     bus.on('auth.allowed', onAllowed)
 
     plugin.register(bus)
-    const merged = await bus.emitAsync('task.create', makeBeforePayload())
+    const merged = await bus.emitAsync('card.create', makeBeforePayload())
 
     expect(merged).toEqual({ title: 'Test card' })
     expect(onAllowed).toHaveBeenCalledTimes(1)
 
     plugin.unregister()
-    expect(bus.listenerCount('task.create')).toBe(0)
+    expect(bus.listenerCount('card.create')).toBe(0)
   })
 
   it('listener factory can return plain-object overrides for approved mutations', async () => {
@@ -332,7 +331,7 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
     )
 
     plugin.register(bus)
-    const merged = await bus.emitAsync('task.create', makeBeforePayload())
+    const merged = await bus.emitAsync('card.create', makeBeforePayload())
 
     expect(merged).toEqual({ title: 'Test card', approvedBy: 'alice' })
   })
@@ -343,7 +342,7 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
 
     plugin.register(bus)
 
-    const promise = bus.emitAsync('task.create', makeBeforePayload({ auth: { transport: 'http' } }))
+    const promise = bus.emitAsync('card.create', makeBeforePayload({ auth: { transport: 'http' } }))
     await expect(promise).rejects.toBeInstanceOf(AuthError)
     await expect(promise).rejects.toMatchObject({ category: 'auth.identity.missing' })
   })
@@ -356,7 +355,6 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
 
     const promise = bus.emitAsync('board.create', makeBeforePayload({
       event: 'board.create',
-      action: 'board.create',
       auth: { token: 'secret-user', transport: 'http' },
       input: { id: 'board-1', name: 'Test board' },
     }))

@@ -297,7 +297,7 @@ describe('auth enforcement: formerly bypassing privileged mutations honor before
     },
     {
       label: 'board action config add',
-      event: 'board.update',
+      event: 'board.action.config.add',
       action: 'board.action.config.add',
       invoke: () => sdk.addBoardAction('default', 'deploy', 'Deploy'),
       expectedInput: { boardId: 'default', key: 'deploy', title: 'Deploy' },
@@ -416,7 +416,6 @@ describe('auth enforcement: formerly bypassing privileged mutations honor before
       expect(captured).toHaveLength(1)
       expect(captured[0]).toEqual(expect.objectContaining({
         event: testCase.event,
-        action: testCase.action,
         input: expect.objectContaining(testCase.expectedInput ?? {}),
       }))
     })

@@ -48,10 +48,10 @@ export interface CreateCardInput {
  * @see BeforeEventListenerResponse for the allowed return type.
  */
 export type SDKBeforeEventType =
-  | 'task.create'
-  | 'task.update'
-  | 'task.move'
-  | 'task.delete'
+  | 'card.create'
+  | 'card.update'
+  | 'card.move'
+  | 'card.delete'
   | 'card.transfer'
   | 'card.action.trigger'
   | 'card.purgeDeleted'
@@ -70,6 +70,8 @@ export type SDKBeforeEventType =
   | 'board.create'
   | 'board.update'
   | 'board.delete'
+  | 'board.action.config.add'
+  | 'board.action.config.remove'
   | 'board.action.trigger'
   | 'board.setDefault'
   | 'log.add'
@@ -198,10 +200,8 @@ export interface EventListenerPlugin {
  * @see SDKBeforeEventType for the full set of before-event names.
  */
 export interface BeforeEventPayload<TInput = Record<string, unknown>> {
-  /** The before-event name (e.g. `'task.create'`, `'comment.delete'`). */
+  /** The before-event name (e.g. `'card.create'`, `'comment.delete'`). */
   readonly event: SDKBeforeEventType
-  /** Canonical action name being executed (e.g. `'card.create'`). */
-  readonly action?: string
   /**
    * The input data for the pending mutation.
    * Plugin overrides returned from listeners are shallow-merged into this object.

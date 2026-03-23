@@ -237,83 +237,83 @@ describe('EventBus.emitAsync', () => {
 
   it('returns a new object equal to original input when no listeners are registered', async () => {
     const input = { title: 'card' }
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', input))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', input))
     expect(result).toEqual(input)
     expect(result).not.toBe(input)
   })
 
   it('returns original input when listener returns void', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue(undefined))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'card' }))
+    bus.on('card.create', vi.fn().mockReturnValue(undefined))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'card' }))
     expect(result).toEqual({ title: 'card' })
   })
 
   it('merges a plain-object listener response into the input', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue({ status: 'in-progress' }))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'card', status: 'backlog' }))
+    bus.on('card.create', vi.fn().mockReturnValue({ status: 'in-progress' }))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'card', status: 'backlog' }))
     expect(result).toEqual({ title: 'card', status: 'in-progress' })
   })
 
   it('later-registered listeners override earlier ones (shallow merge order)', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue({ status: 'first', extra: 'a' }))
-    bus.on('task.create', vi.fn().mockReturnValue({ status: 'second' }))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { status: 'original' }))
+    bus.on('card.create', vi.fn().mockReturnValue({ status: 'first', extra: 'a' }))
+    bus.on('card.create', vi.fn().mockReturnValue({ status: 'second' }))
+    const result = await bus.emitAsync<Record<string, unknown>>('card.create', makeBeforePayload('card.create', { status: 'original' }))
     expect(result.status).toBe('second')
     expect(result.extra).toBe('a') // key set by first, not touched by second
   })
 
   it('ignores array return values', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue(['not', 'plain']))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'x' }))
+    bus.on('card.create', vi.fn().mockReturnValue(['not', 'plain']))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'x' }))
     expect(result).toEqual({ title: 'x' })
   })
 
   it('ignores primitive return values', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue(42 as unknown as void))
-    bus.on('task.create', vi.fn().mockReturnValue('string' as unknown as void))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'x' }))
+    bus.on('card.create', vi.fn().mockReturnValue(42 as unknown as void))
+    bus.on('card.create', vi.fn().mockReturnValue('string' as unknown as void))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'x' }))
     expect(result).toEqual({ title: 'x' })
   })
 
   it('ignores class instance return values', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue(new Date() as unknown as void))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'x' }))
+    bus.on('card.create', vi.fn().mockReturnValue(new Date() as unknown as void))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'x' }))
     expect(result).toEqual({ title: 'x' })
   })
 
   it('awaits async (Promise-returning) listeners', async () => {
-    bus.on('task.create', vi.fn().mockResolvedValue({ status: 'async-override' }))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { status: 'original' }))
+    bus.on('card.create', vi.fn().mockResolvedValue({ status: 'async-override' }))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { status: 'original' }))
     expect(result.status).toBe('async-override')
   })
 
   it('awaits multiple async listeners in registration order', async () => {
     const order: number[] = []
-    bus.on('task.create', vi.fn().mockImplementation(async () => {
+    bus.on('card.create', vi.fn().mockImplementation(async () => {
       await new Promise(r => setTimeout(r, 5))
       order.push(1)
       return { from: 1 }
     }))
-    bus.on('task.create', vi.fn().mockImplementation(async () => {
+    bus.on('card.create', vi.fn().mockImplementation(async () => {
       order.push(2)
       return { from: 2 }
     }))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', {}))
+    const result = await bus.emitAsync<Record<string, unknown>>('card.create', makeBeforePayload('card.create', {}))
     expect(order).toEqual([1, 2])
     expect(result.from).toBe(2) // later listener wins
   })
 
   it('each subsequent listener receives the progressively-merged input', async () => {
     const seenInputs: Array<Record<string, unknown>> = []
-    bus.on('task.create', vi.fn().mockImplementation(({ input }) => {
+    bus.on('card.create', vi.fn().mockImplementation(({ input }) => {
       seenInputs.push({ ...input })
       return { step: 'first' }
     }))
-    bus.on('task.create', vi.fn().mockImplementation(({ input }) => {
+    bus.on('card.create', vi.fn().mockImplementation(({ input }) => {
       seenInputs.push({ ...input })
       return { step: 'second' }
     }))
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { step: 'original' }))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { step: 'original' }))
     expect(seenInputs[0].step).toBe('original')  // first sees original
     expect(seenInputs[1].step).toBe('first')     // second sees first's override
     expect(result.step).toBe('second')
@@ -321,26 +321,26 @@ describe('EventBus.emitAsync', () => {
 
   it('propagates listener errors immediately (mutation abort)', async () => {
     const err = new Error('auth denied')
-    bus.on('task.create', vi.fn().mockRejectedValue(err))
+    bus.on('card.create', vi.fn().mockRejectedValue(err))
     await expect(
-      bus.emitAsync('task.create', makeBeforePayload('task.create', {})),
+      bus.emitAsync('card.create', makeBeforePayload('card.create', {})),
     ).rejects.toThrow('auth denied')
   })
 
   it('aborts on the first erroring listener — subsequent listeners are not called', async () => {
     const second = vi.fn().mockReturnValue({ reached: true })
-    bus.on('task.create', vi.fn().mockRejectedValue(new Error('abort')))
-    bus.on('task.create', second)
+    bus.on('card.create', vi.fn().mockRejectedValue(new Error('abort')))
+    bus.on('card.create', second)
     await expect(
-      bus.emitAsync('task.create', makeBeforePayload('task.create', {})),
+      bus.emitAsync('card.create', makeBeforePayload('card.create', {})),
     ).rejects.toThrow('abort')
     expect(second).not.toHaveBeenCalled()
   })
 
   it('wildcard-registered listeners participate in emitAsync merge', async () => {
     const listener = vi.fn().mockReturnValue({ wildcardKey: 'yes' })
-    bus.on('task.*', listener)
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', {}))
+    bus.on('card.*', listener)
+    const result = await bus.emitAsync<Record<string, unknown>>('card.create', makeBeforePayload('card.create', {}))
     expect(listener).toHaveBeenCalled()
     expect(result.wildcardKey).toBe('yes')
   })
@@ -348,25 +348,25 @@ describe('EventBus.emitAsync', () => {
   it('onAny listeners are fired non-blocking after specific-event listeners settle', async () => {
     const anyListener = vi.fn()
     bus.onAny(anyListener)
-    await bus.emitAsync('task.create', makeBeforePayload('task.create', { title: 'x' }))
-    expect(anyListener).toHaveBeenCalledWith('task.create', expect.any(Object))
+    await bus.emitAsync('card.create', makeBeforePayload('card.create', { title: 'x' }))
+    expect(anyListener).toHaveBeenCalledWith('card.create', expect.any(Object))
   })
 
   it('onAny errors are isolated and do not propagate', async () => {
     bus.onAny(vi.fn(() => { throw new Error('onAny boom') }))
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(
-      bus.emitAsync('task.create', makeBeforePayload('task.create', {})),
+      bus.emitAsync('card.create', makeBeforePayload('card.create', {})),
     ).resolves.toBeDefined()
     expect(consoleSpy).toHaveBeenCalled()
     consoleSpy.mockRestore()
   })
 
   it('onAny errors do not prevent the merged payload from being returned', async () => {
-    bus.on('task.create', vi.fn().mockReturnValue({ status: 'from-specific' }))
+    bus.on('card.create', vi.fn().mockReturnValue({ status: 'from-specific' }))
     bus.onAny(vi.fn(() => { throw new Error('onAny boom') }))
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const result = await bus.emitAsync('task.create', makeBeforePayload('task.create', { status: 'original' }))
+    const result = await bus.emitAsync('card.create', makeBeforePayload('card.create', { status: 'original' }))
     expect(result.status).toBe('from-specific')
     consoleSpy.mockRestore()
   })

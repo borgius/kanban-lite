@@ -1029,10 +1029,10 @@ function resolveWebhookPlugins(
 }
 
 const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
-  'task.create',
-  'task.update',
-  'task.move',
-  'task.delete',
+  'card.create',
+  'card.update',
+  'card.move',
+  'card.delete',
   'card.transfer',
   'card.action.trigger',
   'card.purgeDeleted',
@@ -1051,6 +1051,8 @@ const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
   'board.create',
   'board.update',
   'board.delete',
+  'board.action.config.add',
+  'board.action.config.remove',
   'board.action.trigger',
   'board.setDefault',
   'log.add',
@@ -1090,7 +1092,7 @@ function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity
  * during the before-event phase.
  *
  * The listener resolves identity from {@link BeforeEventPayload.auth}, evaluates
- * the configured policy for {@link BeforeEventPayload.action}, emits
+ * the configured policy for {@link BeforeEventPayload.event}, emits
  * `auth.allowed` / `auth.denied`, and throws {@link AuthError} when a mutation
  * must be vetoed.
  *
@@ -1109,11 +1111,12 @@ export function createBuiltinAuthListenerPlugin(
       if (subscriptions.length > 0) return
 
       const listener = async (payload: BeforeEventPayload<Record<string, unknown>>): Promise<void> => {
-        if (!isBeforeEventPayload(payload) || !payload.action) return
+        if (!isBeforeEventPayload(payload)) return
 
         const context = payload.auth ?? {}
+        const action = payload.event
         const identity = await authIdentity.resolveIdentity(context)
-        const decision = await authPolicy.checkPolicy(identity, payload.action, context)
+        const decision = await authPolicy.checkPolicy(identity, action, context)
         const actor = decision.actor ?? identity?.subject ?? payload.actor
         const boardId = payload.boardId ?? context.boardId
 
@@ -1121,7 +1124,7 @@ export function createBuiltinAuthListenerPlugin(
           bus.emit('auth.denied', {
             type: 'auth.denied',
             data: {
-              action: payload.action,
+              action,
               reason: toAuthErrorCategory(decision.reason, identity),
               actor,
             },
@@ -1132,14 +1135,14 @@ export function createBuiltinAuthListenerPlugin(
 
           throw new AuthError(
             toAuthErrorCategory(decision.reason, identity),
-            `Action "${payload.action}" denied${actor ? ` for "${actor}"` : ''}`,
+            `Action "${action}" denied${actor ? ` for "${actor}"` : ''}`,
             actor,
           )
         }
 
         bus.emit('auth.allowed', {
           type: 'auth.allowed',
-          data: { action: payload.action, actor },
+          data: { action, actor },
           timestamp: new Date().toISOString(),
           actor,
           boardId,

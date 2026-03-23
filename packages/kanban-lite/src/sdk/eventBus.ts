@@ -71,7 +71,7 @@ export class EventBus {
    * event name and original payload in a non-blocking, error-isolated fire so that
    * monitoring hooks are not accidentally turned into before-event vetoes.
    *
-   * @param event  - Before-event name (e.g. `'task.create'`).
+  * @param event  - Before-event name (e.g. `'card.create'`).
    * @param payload - Before-event payload whose `input` field is the merge base.
    * @returns Promise resolving to the merged input object.
    */

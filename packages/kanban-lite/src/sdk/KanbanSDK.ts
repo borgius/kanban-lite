@@ -83,6 +83,22 @@ export interface AuthStatus {
   policyEnabled: boolean
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type ServiceMethodArgs<TMethod> =
+  TMethod extends (ctx: any, ...args: infer TArgs) => any ? TArgs : never
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+type MethodInput<
+  TMethod,
+  TKeys extends readonly string[] = readonly [],
+> = [TKeys] extends [readonly []]
+  ? Record<string, unknown>
+  : ServiceMethodArgs<TMethod> extends infer TArgs extends readonly unknown[]
+    ? {
+        [TIndex in Extract<keyof TKeys & `${number}`, keyof TArgs> as TKeys[TIndex] & string]: TArgs[TIndex]
+      }
+    : never
+
 /**
  * Active webhook provider metadata for diagnostics and host surfaces.
  *
@@ -1583,11 +1599,9 @@ export class KanbanSDK {
    * ```
    */
   async deleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    await Cards.deleteCard(this, resolvedCardId, resolvedBoardId)
-    const deleted = await this.getCard(resolvedCardId, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard, ['cardId', 'boardId']>>('card.delete', { cardId, boardId }, undefined, boardId)
+    await Cards.deleteCard(this, mergedInput.cardId, mergedInput.boardId)
+    const deleted = await this.getCard(mergedInput.cardId, mergedInput.boardId)
     if (deleted) this._runAfterEvent('task.deleted', sanitizeCard(deleted), undefined, deleted.boardId)
   }
 
@@ -1606,11 +1620,9 @@ export class KanbanSDK {
    * ```
    */
   async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent('card.delete', { cardId, boardId } as unknown as Record<string, unknown>, undefined, boardId)
-    const resolvedCardId = (mergedInput.cardId as string) ?? cardId
-    const resolvedBoardId = (mergedInput.boardId as string | undefined) ?? boardId
-    const snapshot = await this.getCard(resolvedCardId, resolvedBoardId)
-    await Cards.permanentlyDeleteCard(this, resolvedCardId, resolvedBoardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
+    const snapshot = await this.getCard(mergedInput.cardId as string, mergedInput.boardId as string | undefined)
+    await Cards.permanentlyDeleteCard(this, mergedInput.cardId as string, mergedInput.boardId as string | undefined)
     if (snapshot) this._runAfterEvent('task.deleted', sanitizeCard(snapshot), undefined, snapshot.boardId)
   }
 

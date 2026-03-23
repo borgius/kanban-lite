@@ -1,0 +1,65 @@
+{
+  "name": "n8n-nodes-kanban-lite",
+  "version": "0.1.0",
+  "description": "First-party n8n node package for Kanban Lite – supports full action surface and event triggers over local SDK or remote API transport",
+  "license": "MIT",
+  "author": "borgius",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borgius/kanban-lite"
+  },
+  "bugs": {
+    "url": "https://github.com/borgius/kanban-lite/issues"
+  },
+  "homepage": "https://github.com/borgius/kanban-lite/tree/main/packages/n8n-nodes-kanban-lite#readme",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "kanban",
+    "kanban-lite",
+    "workflow",
+    "task-management"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/KanbanLiteApi.credentials.js",
+      "dist/credentials/KanbanLiteSdk.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/KanbanLite/KanbanLite.node.js",
+      "dist/nodes/KanbanLiteTrigger/KanbanLiteTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "n8n-workflow": ">=1.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "n8n-workflow": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "n8n-workflow": {
+      "optional": false
+    }
+  }
+}

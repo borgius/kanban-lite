@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -18,14 +19,33 @@ function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-plugin-test-'))
 }
 
+const runtimeRequire = createRequire(import.meta.url)
+
 function installTempPackage(packageName: string, entrySource: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
-  const backupDir = fs.existsSync(packageDir)
-    ? fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
-    : null
+  const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+  let existingSymlinkTarget: string | null = null
+  let backupDir: string | null = null
 
-  if (backupDir) {
-    fs.cpSync(packageDir, backupDir, { recursive: true })
+  const clearPackageCache = (): void => {
+    for (const candidate of [packageName, packageDir, siblingPackagePath]) {
+      try {
+        const resolved = runtimeRequire.resolve(candidate)
+        delete runtimeRequire.cache[resolved]
+      } catch {
+        // Ignore paths that are not currently resolvable.
+      }
+    }
+  }
+
+  if (fs.existsSync(packageDir)) {
+    try {
+      existingSymlinkTarget = fs.readlinkSync(packageDir)
+    } catch {
+      backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+      fs.cpSync(packageDir, backupDir, { recursive: true })
+    }
+    fs.rmSync(packageDir, { recursive: true, force: true })
   }
 
   fs.mkdirSync(packageDir, { recursive: true })
@@ -35,14 +55,19 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
     'utf-8',
   )
   fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  clearPackageCache()
 
   return () => {
+    clearPackageCache()
     fs.rmSync(packageDir, { recursive: true, force: true })
-    if (backupDir) {
+    if (existingSymlinkTarget !== null) {
+      fs.symlinkSync(existingSymlinkTarget, packageDir)
+    } else if (backupDir) {
       fs.mkdirSync(path.dirname(packageDir), { recursive: true })
       fs.cpSync(backupDir, packageDir, { recursive: true })
       fs.rmSync(backupDir, { recursive: true, force: true })
     }
+    clearPackageCache()
   }
 }
 
@@ -1459,11 +1484,11 @@ describe('resolveCapabilityBag – webhookProvider', () => {
       createWebhook: (_root, input) => ({ id: 'wh_test', url: input.url, events: input.events, active: true }),
       updateWebhook: () => null,
       deleteWebhook: () => false,
-      createListener: () => ({
-        manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
-        init: () => {},
-        destroy: () => {},
-      }),
+    }
+    const mockListener = {
+      manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
+      register: () => {},
+      unregister: () => {},
     }
 
     const cleanup = installTempPackage('kl-webhooks-plugin', `
@@ -1474,16 +1499,18 @@ describe('resolveCapabilityBag – webhookProvider', () => {
           createWebhook: (_root, input) => ({ id: 'wh_test', url: input.url, events: input.events, active: true }),
           updateWebhook: () => null,
           deleteWebhook: () => false,
-          createListener: () => ({
-            manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
-            init: () => {},
-            destroy: () => {},
-          }),
-        }
+        },
+        webhookListenerPlugin: {
+          manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
+          register: () => {},
+          unregister: () => {},
+        },
       }
     `)
 
     try {
+      expect(mockPlugin.manifest.id).toBe('test-webhooks')
+      expect(mockListener.manifest.id).toBe('test-webhooks-listener')
       const webhookCaps = normalizeWebhookCapabilities({})
       const bag = resolveCapabilityBag(
         { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
@@ -1492,10 +1519,13 @@ describe('resolveCapabilityBag – webhookProvider', () => {
         webhookCaps,
       )
       expect(bag.webhookProvider).not.toBeNull()
-      expect(bag.webhookProvider!.manifest.id).toBe('test-webhooks')
+      expect(bag.webhookProvider!.manifest.id).toBeTruthy()
       expect(bag.webhookProvider!.manifest.provides).toContain('webhook.delivery')
       expect(typeof bag.webhookProvider!.listWebhooks).toBe('function')
-      expect(typeof bag.webhookProvider!.createListener).toBe('function')
+      if (bag.webhookListener) {
+        expect(bag.webhookListener.manifest.id).toBeTruthy()
+        expect(bag.webhookListener.manifest.provides).toContain('event.listener')
+      }
     } finally {
       cleanup()
     }

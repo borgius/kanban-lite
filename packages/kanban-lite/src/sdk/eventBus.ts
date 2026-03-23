@@ -1,8 +1,20 @@
 import { EventEmitter2 } from 'eventemitter2'
-import type { SDKEvent, SDKEventListener } from './types'
+import type { BeforeEventPayload, BeforeEventListenerResponse, SDKEvent, SDKEventListener } from './types'
 
 /** Listener callback for subscriptions that receive all SDK events. */
 export type EventBusAnyListener = (event: string, payload: SDKEvent) => void
+
+/**
+ * Returns true when `value` is a plain-object merge candidate.
+ *
+ * Accepts `{}` literals and `Object.create(null)` objects. Rejects arrays,
+ * class instances, primitives, and `null`.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
 
 /** Options for awaiting the next matching event on the bus. */
 export interface EventBusWaitOptions {
@@ -39,6 +51,62 @@ export class EventBus {
       ignoreErrors: false,
       verboseMemoryLeak: true,
     })
+  }
+
+  /**
+   * Await all before-event listeners registered for `event` in registration order,
+   * then return the merged input.
+   *
+   * Listeners are called sequentially with the current accumulated input so that
+   * later-registered listeners can see and override keys set by earlier ones.
+   *
+   * - **Plain-object returns** (`Record<string, unknown>`) are shallow-merged into
+   *   the accumulated input; later listeners override keys set by earlier ones.
+   * - **Non-plain-object returns** (arrays, class instances, primitives, `void`) are
+   *   silently ignored — the accumulated input is left unchanged.
+   * - **Thrown errors** propagate immediately to the caller; no subsequent listeners
+   *   are executed. The caller must treat this as a mutation-abort signal.
+   *
+   * After specific-event listeners are settled, `onAny` subscribers receive the
+   * event name and original payload in a non-blocking, error-isolated fire so that
+   * monitoring hooks are not accidentally turned into before-event vetoes.
+   *
+   * @param event  - Before-event name (e.g. `'task.create'`).
+   * @param payload - Before-event payload whose `input` field is the merge base.
+   * @returns Promise resolving to the merged input object.
+   */
+  async emitAsync<TInput extends Record<string, unknown>>(
+    event: string,
+    payload: BeforeEventPayload<TInput>,
+  ): Promise<TInput> {
+    type AsyncBeforeListener = (
+      p: BeforeEventPayload<TInput>,
+    ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
+
+    const listeners = this._emitter.listeners(event) as AsyncBeforeListener[]
+    let merged: TInput = { ...payload.input }
+
+    for (const listener of listeners) {
+      // Errors from before-event listeners are intentionally not caught here.
+      // They propagate to the SDK action runner as a mutation-abort signal.
+      const result = await listener({ ...payload, input: merged })
+      if (isPlainObject(result)) {
+        merged = { ...merged, ...result } as TInput
+      }
+    }
+
+    // Fire onAny listeners non-blocking. They are monitoring hooks and must not
+    // influence the merge outcome or abort the action on error.
+    const anyListeners = this._emitter.listenersAny() as EventBusAnyListenerFn[]
+    for (const listener of anyListeners) {
+      try {
+        listener(event, payload as unknown as SDKEvent)
+      } catch (err) {
+        console.error(`[EventBus] onAny listener error for "${event}":`, err)
+      }
+    }
+
+    return merged
   }
 
   /**

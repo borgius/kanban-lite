@@ -1,45 +1,97 @@
-import type { SDKEvent, EventListenerPlugin } from '../types'
-import type { SDKEventType } from '../types'
-import type { EventBus } from '../eventBus'
+import type { SDKEvent, SDKEventListenerPlugin, SDKAfterEventType } from '../types'
+import type { EventBus, EventBusAnyListener } from '../eventBus'
 import { fireWebhooks } from '../webhooks'
 
 /**
- * Built-in event listener plugin that delivers SDK events to configured webhooks.
+ * Set of all after-event names emitted by the SDK after a successful mutation.
  *
- * Subscribes to all SDK events via the event bus and delegates delivery
- * to the existing {@link fireWebhooks} function, which reads webhook
- * configurations from `.kanban.json` and performs fire-and-forget HTTP POSTs.
+ * Used by {@link WebhookListenerPlugin} to filter `onAny` callbacks so that
+ * webhook delivery fires exclusively on committed after-events and never on
+ * in-flight before-events.
+ *
+ * @internal
+ */
+const SDK_AFTER_EVENT_NAMES: ReadonlySet<string> = new Set<SDKAfterEventType>([
+  'task.created',
+  'task.updated',
+  'task.moved',
+  'task.deleted',
+  'comment.created',
+  'comment.updated',
+  'comment.deleted',
+  'column.created',
+  'column.updated',
+  'column.deleted',
+  'attachment.added',
+  'attachment.removed',
+  'settings.updated',
+  'board.created',
+  'board.updated',
+  'board.deleted',
+  'board.action',
+  'board.log.added',
+  'board.log.cleared',
+  'log.added',
+  'log.cleared',
+  'storage.migrated',
+  'form.submitted',
+])
+
+/**
+ * Built-in event listener plugin that delivers SDK after-events to configured webhooks.
+ *
+ * Implements {@link SDKEventListenerPlugin} — registers and unregisters via
+ * {@link register} / {@link unregister}, replacing the legacy `init` / `destroy`
+ * lifecycle from the deprecated {@link import('../types').EventListenerPlugin}.
+ *
+ * Subscribes to all SDK events via the event bus but **delivers only after-events**
+ * to webhooks. Before-events (pre-mutation dispatches) are intentionally ignored to
+ * prevent premature or duplicate webhook delivery.
  *
  * @example
  * ```ts
- * const plugin = createWebhookListenerPlugin()
- * plugin.init(sdk.eventBus, '/path/to/workspace')
- * // webhook delivery is now automatic for all SDK events
+ * const plugin = new WebhookListenerPlugin('/path/to/workspace')
+ * plugin.register(sdk.eventBus)
+ * // webhook delivery is now active for all committed after-events
+ * plugin.unregister()
  * ```
  */
-export class WebhookListenerPlugin implements EventListenerPlugin {
+export class WebhookListenerPlugin implements SDKEventListenerPlugin {
   readonly manifest = {
     id: 'builtin:webhook-listener',
     provides: ['event.listener'] as const,
   }
 
   private _unsubscribe: (() => void) | null = null
-  private _workspaceRoot = ''
 
   /**
-   * Subscribe to all SDK events and deliver matching ones via webhooks.
-   * @param bus - The SDK event bus instance.
-   * @param workspaceRoot - Absolute path to the workspace root (for loading webhook config).
+   * @param workspaceRoot - Absolute path to the workspace root used to load
+   *   webhook configuration from `.kanban.json` on each delivery.
    */
-  init(bus: EventBus, workspaceRoot: string): void {
-    this._workspaceRoot = workspaceRoot
-    this._unsubscribe = bus.onAny((event: string, payload: SDKEvent) => {
-      fireWebhooks(this._workspaceRoot, event as SDKEventType, payload.data)
-    })
+  constructor(private readonly _workspaceRoot: string) {}
+
+  /**
+   * Register the after-event delivery listener on the event bus.
+   *
+   * Uses `bus.onAny` to receive all events but skips any event that is not in
+   * the {@link SDK_AFTER_EVENT_NAMES} set, ensuring webhook delivery fires only
+   * after a mutation has been committed.
+   *
+   * @param bus - The SDK event bus instance.
+   */
+  register(bus: EventBus): void {
+    const workspaceRoot = this._workspaceRoot
+    const handler: EventBusAnyListener = (event: string, payload: SDKEvent) => {
+      if (!SDK_AFTER_EVENT_NAMES.has(event)) return
+      fireWebhooks(workspaceRoot, event as SDKAfterEventType, payload.data)
+    }
+    this._unsubscribe = bus.onAny(handler)
   }
 
-  /** Remove the event subscription and clean up. */
-  destroy(): void {
+  /**
+   * Unregister the event bus subscription and release all plugin-owned resources.
+   */
+  unregister(): void {
     if (this._unsubscribe) {
       this._unsubscribe()
       this._unsubscribe = null
@@ -48,9 +100,11 @@ export class WebhookListenerPlugin implements EventListenerPlugin {
 }
 
 /**
- * Factory function to create a new WebhookListenerPlugin instance.
- * @returns A fresh, uninitialized WebhookListenerPlugin.
+ * Factory function to create a new {@link WebhookListenerPlugin} instance.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root for webhook config loading.
+ * @returns A fresh, unregistered {@link WebhookListenerPlugin}.
  */
-export function createWebhookListenerPlugin(): WebhookListenerPlugin {
-  return new WebhookListenerPlugin()
+export function createWebhookListenerPlugin(workspaceRoot: string): WebhookListenerPlugin {
+  return new WebhookListenerPlugin(workspaceRoot)
 }

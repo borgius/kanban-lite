@@ -21,7 +21,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:kanban-lite --external:kanban-lite/sdk && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

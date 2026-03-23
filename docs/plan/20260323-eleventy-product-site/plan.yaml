@@ -1,0 +1,492 @@
+plan_id: "20260323-eleventy-product-site"
+objective: |
+  Add a modern `@11ty/eleventy` product/documentation website under `packages/docs-site`
+  with journey-first marketing, detailed feature docs, a long FAQ, dedicated SDK/API/MCP/CLI/examples/plugins sections,
+  and minimal disruption to the existing monorepo and content ownership model.
+created_at: "2026-03-23"
+created_by: "gem-planner"
+status: completed
+research_confidence: high
+
+tldr: |
+  Six-wave plan focused on adding a private Eleventy site package without moving the existing docs corpus:
+  (1) scaffold `packages/docs-site` and opt-in workspace scripts,
+  (2) build a read-only content ingestion and navigation layer over root markdown/package READMEs,
+  (3) publish the modern marketing/journey pages and the major reference sections in parallel,
+  (4) sync README/CHANGELOG and review the locked topology contract,
+  (5) run lightweight build/diagnostic validation, and
+  (6) smoke-test navigation, quick start, FAQ, and reference discoverability.
+  The site is treated as a rendering layer on top of current sources of truth, not a content migration.
+  Follow-up feedback adds one targeted navigation polish pass for the docs shell: a true left-side panel with
+  section/subsection hierarchy and improved padding/spacing for readability.
+
+open_questions:
+  - "Deployment target/URL is not specified; this plan scopes local package integration and static build output only."
+  - "Search is planned as low-JS, in-repo functionality (navigation + prebuilt index) with no external search service."
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "The site copies or relocates root docs instead of reading them, causing drift between GitHub docs and the website."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep `README.md`, `CHANGELOG.md`, `docs/*.md`, `docs/press/*.md`, `docs/images/*`, and package `README.md`
+        files as the only content sources. Build adapters around those files rather than moving or rewriting them.
+    - scenario: "Adding `packages/docs-site` breaks the locked monorepo topology contract or unintentionally changes default root workflows."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Keep the new package under `packages/*`, avoid changing the default root `build` contract,
+        and include an explicit README/CHANGELOG + TOPOLOGY sync task before final validation.
+    - scenario: "The first version overuses client-side JavaScript and undermines the accessibility-first documentation goals."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Use Eleventy layouts, global data, collections, and static navigation first.
+        Reserve JavaScript for strictly optional enhancements such as a tiny local search index.
+  assumptions:
+    - "The user-requested Eleventy site justifies adding `@11ty/eleventy` as a package-local dependency even though the repository generally prefers minimizing new dependencies."
+    - "Root docs and generated docs remain the source of truth; generated files are never edited manually."
+    - "`packages/docs-site` should be a private workspace package that fits the existing `packages/*` workspace pattern."
+    - "The default root `build` script should remain focused on the main product to minimize disruption; site workflows can be opt-in or workspace-scoped."
+
+implementation_specification:
+  code_structure: |
+    Create a private workspace package at `packages/docs-site` using Eleventy’s stable `@11ty/eleventy`
+    package line and an `eleventy.config.mjs` configuration. Organize the site around a compact input tree
+    (content pages, `_includes`/layouts, `_data`, assets) plus a read-only content adapter that consumes
+    existing root markdown/package README sources at build time. Use collections and global data to drive
+    homepage sections, feature pages, FAQ entries, examples, and dedicated reference navigation. Keep client-side
+    JavaScript optional and small; prefer static HTML, accessible navigation, and CSS-first interactions.
+  affected_areas:
+    - "packages/docs-site/**/*"
+    - "package.json"
+    - "README.md"
+    - "CHANGELOG.md"
+    - "docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md"
+    - "docs/*.md, docs/press/*.md, docs/images/* (read-only content inputs)"
+    - "packages/*/README.md (read-only content inputs)"
+  component_details:
+    - component: site package foundation
+      responsibility: "Provide the Eleventy package, config, scripts, build output, layouts, and asset pipeline without disturbing existing product packages."
+      interfaces:
+        - "`packages/docs-site/package.json` scripts for build/dev/clean"
+        - "`packages/docs-site/eleventy.config.mjs` with input/includes/layouts/data/output configuration"
+        - "Opt-in root scripts for site build/dev tasks"
+    - component: content ingestion layer
+      responsibility: "Read existing root markdown, generated reference markdown, press docs, images, and package READMEs into normalized site data and collections."
+      interfaces:
+        - "Global data describing major sections, CTA targets, sidebar/reference navigation, and FAQ metadata"
+        - "Collections or computed page metadata for feature guides, reference docs, examples, and news/release content"
+        - "Read-only passthrough of `docs/images/*` and other static assets"
+    - component: marketing and documentation IA
+      responsibility: "Render a 2026-style homepage, quick start, long FAQ, product journeys, and dedicated reference landers for major product surfaces."
+      interfaces:
+        - "Journey pages: overview, quick start, product tour, cards/workflows, search/filtering, boards/columns"
+        - "Reference pages: SDK, API, MCP, CLI, forms, webhooks, plugins, storage providers, auth, examples"
+        - "Accessible global nav/sidebar and optional lightweight search index"
+    - component: repository sync layer
+      responsibility: "Keep root-facing documentation, release notes, and topology contract aligned with the new package and site entry points."
+      interfaces:
+        - "README updates for site availability and local run/build instructions"
+        - "CHANGELOG Unreleased entry for the new docs site"
+        - "TOPOLOGY contract review/update for `packages/docs-site` while preserving root docs ownership"
+  dependencies:
+    - component: site package foundation
+      relationship: "Must land first so content ingestion and page authoring have a stable Eleventy build target."
+    - component: content ingestion layer
+      relationship: "Depends on the package foundation and feeds normalized navigation/content data into both marketing and reference pages."
+    - component: marketing and documentation IA
+      relationship: "Depends on the ingestion layer for source content, collections, and route metadata."
+    - component: repository sync layer
+      relationship: "Depends on the implemented route inventory and package integration details so README/CHANGELOG/TOPOLOGY reflect the final shape."
+  integration_points:
+    - "Root `package.json` remains the orchestration layer and may expose site-specific opt-in scripts."
+    - "`pnpm-workspace.yaml` already includes `packages/*`, so `packages/docs-site` fits current workspace membership without widening the workspace."
+    - "Root-generated docs (`docs/api.md`, `docs/sdk.md`, `docs/webhooks.md`) stay generated inputs; the site does not become their source of truth."
+    - "`docs/press/*.md`, `docs/images/*`, and package READMEs feed the site without moving ownership away from their current locations."
+    - "The locked topology contract must be reviewed because a new package changes the target package layout."
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "Private docs-site package, Eleventy config, and site-specific root script entry points"
+    format: "Workspace package + `eleventy.config.mjs` + package/root script contract"
+  - from_task: T2
+    to_task: T3
+    interface: "Normalized content metadata, collections, layouts, and navigation primitives for journey pages"
+    format: "Eleventy global data + collections + shared layout components"
+  - from_task: T2
+    to_task: T4
+    interface: "Normalized content metadata, collections, and reference section routing"
+    format: "Eleventy global data + collections + shared layout components"
+  - from_task: T3
+    to_task: T5
+    interface: "Final homepage, quick start, FAQ, and feature route inventory"
+    format: "Implemented site routes and CTA/navigation targets"
+  - from_task: T4
+    to_task: T5
+    interface: "Final SDK/API/MCP/CLI/plugins/examples route inventory"
+    format: "Implemented site routes and section metadata"
+  - from_task: T5
+    to_task: T6
+    interface: "Final repository-facing documentation and topology state"
+    format: "Updated root docs/contracts plus expected build/run instructions"
+  - from_task: T6
+    to_task: T7
+    interface: "Verified build output and diagnostics baseline"
+    format: "Passing build/diagnostic evidence and site URL/output expectations"
+  - from_task: T7
+    to_task: T8
+    interface: "Observed docs-site navigation feedback and current sidebar constraints"
+    format: "Rendered sidebar behavior + target template/data/CSS files for follow-up refinement"
+
+tasks:
+  - id: T1
+    title: Scaffold `packages/docs-site` and wire minimal workspace entry points
+    description: |
+      Create the private `packages/docs-site` workspace package, add the Eleventy dependency and configuration,
+      define package-local build/dev/clean scripts, and wire only the minimum root-level entry points needed
+      to build or serve the site without disturbing the existing default root build behavior. The package should
+      establish the project directories for layouts, global data, content pages, and static assets.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    context_files:
+      - package.json: "Root orchestrator manifest and current script contract."
+      - docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md: "Locked workspace topology that must be respected."
+      - packages/kanban-lite/package.json: "Reference pattern for package-local scripts and manifest shape."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 240
+    focus_area: site_foundation
+    verification:
+      - "A private package exists at `packages/docs-site` with isolated build/dev scripts."
+      - "Eleventy config defines explicit input/includes/layouts/data/output directories."
+      - "Default root `build` semantics for the main product remain unchanged."
+    acceptance_criteria:
+      - "`packages/docs-site` exists as a workspace package and can be targeted independently."
+      - "The site package has a stable Eleventy configuration and local scripts for build/dev."
+      - "The workspace gains site-specific entry points without broad script churn."
+    failure_modes:
+      - scenario: "The first scaffold leaks site-specific behavior into the default product build path."
+        likelihood: medium
+        impact: high
+        mitigation: "Keep site scripts opt-in or workspace-scoped and leave the root default build pointed at the main product."
+    tech_stack:
+      - "@11ty/eleventy (stable 3.1.x line)"
+      - "ESM `eleventy.config.mjs`"
+      - "pnpm workspace scripts"
+    test_coverage: "Package build/dev smoke coverage and root script contract verification"
+
+  - id: T2
+    title: Implement the read-only content pipeline, shared layout system, and navigation data
+    description: |
+      Build the Eleventy global data, collections, layouts, and passthrough configuration that let the site consume
+      the existing content corpus from `README.md`, `CHANGELOG.md`, `docs/*.md`, `docs/press/*.md`, `docs/images/*`,
+      and package README files without relocating those sources. This task should also define the shared page chrome,
+      sidebar/reference navigation model, CTA targets, and any optional low-JS search/index data needed by the site.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T1
+    context_files:
+      - packages/docs-site/eleventy.config.mjs: "Primary configuration seam for input/output, data, collections, and passthrough copy."
+      - README.md: "Top-level product positioning, quick start, examples, and feature narratives."
+      - docs/plugins.md: "Representative long-form product documentation and a likely input for the plugins/docs IA."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: content_pipeline
+    verification:
+      - "Root markdown and package READMEs are read as inputs rather than moved or rewritten."
+      - "`docs/images/*` and other site assets are available through passthrough copy."
+      - "Navigation data exposes dedicated top-level entries for SDK, API, MCP, CLI, examples, and plugins."
+      - "The shared shell remains usable without client-side JavaScript."
+    acceptance_criteria:
+      - "The site has one normalized content/navigation layer built on existing repository sources."
+      - "Collections/global data distinguish marketing, journey docs, reference docs, FAQ, and examples."
+      - "A reusable layout system exists for home, section landing pages, and doc pages."
+    failure_modes:
+      - scenario: "The ingestion layer silently forks content or treats generated docs as editable source."
+        likelihood: medium
+        impact: critical
+        mitigation: "Treat generated docs and root markdown as read-only inputs, and keep transformation logic inside the site package only."
+    tech_stack:
+      - "@11ty/eleventy collections"
+      - "Eleventy global data"
+      - "Markdown + Nunjucks layouts"
+      - "CSS-first responsive layout"
+    test_coverage: "Site build smoke plus content-source mapping validation"
+
+  - id: T3
+    title: Publish the modern homepage, quick start, product tour, examples, and long FAQ
+    description: |
+      Implement the journey-first marketing/documentation experience: a sharp hero, dual CTA, quick start above the fold,
+      proof/trust strip, product tour, practical examples, and a long FAQ. The page set should cover overview,
+      cards/workflows, search/filtering, boards/columns, and a clear path into deeper documentation while staying restrained,
+      fast, and accessibility-first.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+    context_files:
+      - README.md: "Primary product narrative, quick start material, and usage examples."
+      - docs/forms.md: "Representative feature guide style and implementation detail level."
+      - docs/auth.md: "Representative deep-dive documentation for a major feature area."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 460
+    focus_area: marketing_and_journeys
+    verification:
+      - "Homepage includes hero, dual CTA, quick start, proof strip, and a docs journey into major sections."
+      - "Quick start content is visible immediately in the primary landing experience."
+      - "FAQ and examples pages are reachable from the global navigation and section navigation."
+    acceptance_criteria:
+      - "The site ships a modern home/landing experience aligned with the 2026 design direction in the research findings."
+      - "Journey pages exist for overview, quick start, product tour, cards/workflows, search/filtering, and boards/columns."
+      - "Examples/recipes and a long FAQ are implemented and linked from the main information architecture."
+    failure_modes:
+      - scenario: "The first pass becomes animation-heavy or JS-dependent and undermines the accessibility/performance goals."
+        likelihood: medium
+        impact: high
+        mitigation: "Prefer semantic HTML, CSS-first interaction patterns, and progressive enhancement only where it clearly improves discoverability."
+    tech_stack:
+      - "Eleventy page templates"
+      - "Markdown-authored content"
+      - "Responsive CSS"
+    test_coverage: "Build smoke plus route-level content presence validation"
+
+  - id: T4
+    title: Publish dedicated SDK, API, MCP, CLI, plugin, and feature reference sections
+    description: |
+      Build the detailed documentation side of the site with dedicated landers and doc pages for SDK, API, MCP, CLI,
+      forms, webhooks, plugins, storage providers, auth, and other major feature areas. This task should surface usage examples,
+      organize feature docs into a reference-friendly IA, and ensure generated docs remain sourced from their existing root outputs
+      rather than being hand-maintained inside the site package.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T2
+    context_files:
+      - docs/api.md: "Generated API reference input that must remain read-only."
+      - docs/sdk.md: "Generated SDK reference input that must remain read-only."
+      - docs/plugins.md: "Long-form plugin architecture and usage reference."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 480
+    focus_area: reference_sections
+    verification:
+      - "Dedicated site navigation exists for SDK, API, MCP, CLI, examples, and plugins."
+      - "Detailed feature pages cover forms, webhooks, storage providers, auth, and other inventoried product areas."
+      - "Usage examples are surfaced inside the relevant reference sections instead of living only in root docs."
+    acceptance_criteria:
+      - "Each major feature area has a dedicated section or landing page in the site IA."
+      - "SDK/API/MCP/CLI/plugins/examples each have clear, first-class navigation targets."
+      - "Generated references are consumed as site inputs without manual edits to generated docs."
+    failure_modes:
+      - scenario: "Reference content turns into an unstructured dump that is technically complete but hard to navigate."
+        likelihood: medium
+        impact: high
+        mitigation: "Use section landing pages, side navigation, and per-surface metadata so large reference inputs remain browsable."
+    tech_stack:
+      - "Eleventy collections"
+      - "Markdown rendering"
+      - "Shared doc layouts and side navigation"
+    test_coverage: "Build smoke plus section-level content coverage checks"
+
+  - id: T5
+    title: Sync README, CHANGELOG, and the locked topology contract with the new site package
+    description: |
+      Update the root repository-facing documentation once the route inventory and package integration are stable.
+      This task must add the required README and CHANGELOG changes for the new user-facing site, and review/update
+      `docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md` so the package layout contract acknowledges
+      `packages/docs-site` while still documenting that root docs remain the canonical source material.
+    wave: 4
+    agent: gem-documentation-writer
+    priority: high
+    status: completed
+    dependencies:
+      - T3
+      - T4
+    context_files:
+      - README.md: "Primary public entry point that must describe the new site and how to run/build it."
+      - CHANGELOG.md: "Required Unreleased entry for a new user-facing website package."
+      - docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md: "Locked topology contract that must be reviewed or updated for the extra package."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: repo_sync
+    verification:
+      - "README reflects the site package and local developer entry points."
+      - "CHANGELOG has an Unreleased entry describing the new product/docs site."
+      - "TOPOLOGY is updated or explicitly annotated so the new package does not violate the locked contract."
+    acceptance_criteria:
+      - "README and CHANGELOG satisfy AGENTS.md requirements for user-facing changes."
+      - "Generated docs are not edited manually as part of site documentation sync."
+      - "The topology contract no longer conflicts with `packages/docs-site`."
+    failure_modes:
+      - scenario: "Implementation lands but the repository contract/docs still describe the old topology and entry points."
+        likelihood: medium
+        impact: high
+        mitigation: "Treat README/CHANGELOG/TOPOLOGY sync as a required gate before final validation, not a follow-up nice-to-have."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "README: site purpose, local commands, and documentation entry points"
+      - "CHANGELOG: Unreleased summary of the new website package"
+      - "TOPOLOGY: package layout and root-doc ownership contract"
+
+  - id: T6
+    title: Run lightweight build, docs-source, and diagnostics verification
+    description: |
+      Validate that the new site integrates cleanly with the monorepo by running targeted package/workspace verification.
+      This includes the docs-site build, any required root docs generation needed to refresh read-only reference inputs,
+      root build compatibility checks, and editor/problem diagnostics review so the final package lands without breaking the
+      existing product workflow.
+    wave: 5
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    dependencies:
+      - T5
+    context_files:
+      - package.json: "Root build/docs orchestration surface used for compatibility validation."
+      - packages/docs-site/package.json: "Package-local site scripts and dependency manifest."
+      - packages/docs-site/eleventy.config.mjs: "Final site build/output configuration under test."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: verification
+    verification:
+      - "`packages/docs-site` builds successfully in isolation."
+      - "Any root-generated reference docs needed by the site can still be produced through existing scripts."
+      - "Root build compatibility remains intact and editor diagnostics show no unresolved issues in touched files."
+    acceptance_criteria:
+      - "The site package passes a build smoke test."
+      - "The repository still supports its existing build/docs flow after the site is added."
+      - "Problems/diagnostics have been checked and any integration regressions addressed."
+    failure_modes:
+      - scenario: "The site appears to work locally but depends on stale generated docs or introduces new workspace diagnostics."
+        likelihood: medium
+        impact: medium
+        mitigation: "Regenerate read-only docs through the existing scripts before the final site build and include a diagnostics pass in the validation checklist."
+    tech_stack:
+      - "pnpm"
+      - "@11ty/eleventy build"
+      - "workspace diagnostics"
+    test_coverage: "Package build smoke, root compatibility smoke, and diagnostic validation"
+
+  - id: T7
+    title: Smoke-test navigation, quick start discoverability, and reference coverage in the rendered site
+    description: |
+      Exercise the rendered site as a user would. Confirm that the home page surfaces the quick start and dual CTA,
+      the documentation IA makes SDK/API/MCP/CLI/examples/plugins easy to find, FAQ/examples are reachable,
+      and the site remains coherent with JS reduced or absent. This is a lightweight browser-level confidence pass,
+      not a full end-to-end suite.
+    wave: 6
+    agent: gem-browser-tester
+    priority: medium
+    status: completed
+    dependencies:
+      - T6
+    context_files:
+      - packages/docs-site/: "Rendered site source and route structure under smoke test."
+      - README.md: "Expected quick start language and user entry points to validate against the site."
+      - docs/api.md: "Representative reference source used to confirm rendered discoverability."
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: smoke_validation
+    verification:
+      - "Home page shows hero, dual CTA, and quick start in the primary landing experience."
+      - "Global/sidebar navigation exposes the major reference sections and indicates current-page context accessibly."
+      - "FAQ, examples, and reference pages are reachable without broken routes or missing assets."
+    acceptance_criteria:
+      - "The rendered site supports the intended journey from homepage to deep reference docs."
+      - "Quick start, FAQ, and examples are easy to discover from the main navigation flow."
+      - "Major assets and read-only docs-derived pages render without obvious regressions."
+    failure_modes:
+      - scenario: "All pages exist, but the information architecture buries the key product/docs journeys."
+        likelihood: medium
+        impact: medium
+        mitigation: "Use the smoke pass to force navigation checks from landing page to quick start and from homepage to each major reference section."
+    validation_matrix:
+      - scenario: "Landing page journey"
+        steps:
+          - "Open the home page"
+          - "Confirm hero, dual CTA, quick start, and proof/trust content are visible in the primary landing flow"
+          - "Follow the primary docs CTA into deeper product documentation"
+        expected_result: "The home page communicates the product clearly and leads into the docs without dead ends."
+      - scenario: "Reference discoverability"
+        steps:
+          - "Use the site navigation/sidebar"
+          - "Find SDK, API, MCP, CLI, examples, and plugins sections"
+          - "Open at least one generated-doc-derived page and one hand-authored feature guide"
+        expected_result: "Major reference surfaces are first-class and easy to reach."
+      - scenario: "FAQ/examples and asset integrity"
+        steps:
+          - "Navigate to the FAQ and examples/recipes areas"
+          - "Verify representative images/assets render"
+          - "Check that links among examples, quick start, and reference pages work"
+        expected_result: "FAQ/examples feel integrated into the product journey and assets/links are intact."
+
+  - id: T8
+    title: Refine the docs left sidebar into a padded section/subsection panel
+    description: |
+      Apply the user feedback to the docs shell by upgrading the current one-level sidebar into a proper left-side panel
+      with visible section headings, nested subsection links, and spacing that feels intentional on desktop and tablet widths.
+      Keep the change surgical: reuse the existing docs shell, extend the navigation data shape only as needed, and adjust
+      the sidebar template/layout/CSS so hierarchy, active-state affordance, and padding are all clearer without introducing
+      a JS dependency.
+    wave: 7
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T7
+    context_files:
+      - packages/docs-site/src/_data/nav.js: "Current sidebar model is section -> flat items and is the primary IA seam to extend."
+      - packages/docs-site/src/_includes/sitenav.njk: "Current sidebar renderer only outputs one level and must support subsection markup."
+      - packages/docs-site/src/assets/css/main.css: "Docs shell and sidebar spacing/indent/padding are defined here."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 140
+    focus_area: docs_sidebar_refinement
+    verification:
+      - "Sidebar renders section headings plus nested subsection groups/links where provided by nav data."
+      - "Sidebar padding, row spacing, and indentation make the left panel readable without crowding the docs content column."
+      - "Current-page state remains visually clear for both top-level doc entries and subsection entries."
+      - "Docs-site build still succeeds after the nav/data/template/CSS refinement."
+    acceptance_criteria:
+      - "The left docs panel shows sections and subsections rather than only a flat one-level list."
+      - "Sidebar spacing and paddings are intentionally tuned across the panel container, section blocks, and link rows."
+      - "The refinement is limited to docs-site navigation/layout assets and does not require content-source migration or client-side JS."
+    failure_modes:
+      - scenario: "The nested structure is added in data but rendered with cramped spacing or weak indentation, so the hierarchy still reads as flat."
+        likelihood: medium
+        impact: high
+        mitigation: "Treat CSS spacing and indentation as first-class acceptance criteria alongside the data/template update, not as optional polish."
+    tech_stack:
+      - "Eleventy global data"
+      - "Nunjucks include/layout templates"
+      - "Responsive CSS"
+    test_coverage: "Docs-site build smoke plus manual rendered-sidebar verification on representative docs pages"
+
+summary: |
+  Completed the Eleventy product site rollout with the new `packages/docs-site` package, read-only content ingestion,
+  modern marketing and documentation pages, enriched reference coverage, synced repository-facing documentation,
+  and a refined docs sidebar with clearer section/subsection hierarchy and spacing.
+
+verification_summary: |
+  Validation passed after fixing the docs-shell regression in `base.njk`: the site builds cleanly and the generated
+  `/docs/faq/` output now includes both the `docs-shell` wrapper and `sidebar-nav`, confirming the left sidebar,
+  hierarchy, and major reference sections render correctly on docs routes.

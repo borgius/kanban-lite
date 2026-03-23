@@ -41,17 +41,17 @@ interface EventBus {
 }
 
 /**
- * Minimal EventListenerPlugin shape consumed by `KanbanSDK`.
+ * Minimal SDKEventListenerPlugin shape consumed by `KanbanSDK`.
  *
- * Mirrors the `EventListenerPlugin` type from `kanban-lite/sdk/types` so
- * the returned listener is structurally compatible at runtime.
+ * Mirrors the `SDKEventListenerPlugin` type from `kanban-lite/sdk/types` so
+ * the exported listener is structurally compatible at runtime.
  */
-interface EventListenerPlugin {
+export interface SDKEventListenerPlugin {
   readonly manifest: { readonly id: string; readonly provides: readonly string[] }
   /** Attach to the SDK event bus and begin delivering matching webhook events. */
-  init(bus: EventBus, workspaceRoot: string): void
+  register(bus: EventBus): void
   /** Detach from the SDK event bus and stop delivery. */
-  destroy(): void
+  unregister(): void
 }
 
 /**
@@ -73,12 +73,33 @@ export interface WebhookProviderPlugin {
   ): Webhook | null
   /** Deletes a webhook by id. Returns `true` if deleted, `false` if not found. */
   deleteWebhook(workspaceRoot: string, id: string): boolean
-  /**
-   * Returns an `EventListenerPlugin` that subscribes to the SDK event bus and
-   * delivers matching events to registered webhooks for the given workspace.
-   */
-  createListener(workspaceRoot: string): EventListenerPlugin
 }
+
+const SDK_AFTER_EVENT_NAMES = new Set<string>([
+  'task.created',
+  'task.updated',
+  'task.moved',
+  'task.deleted',
+  'comment.created',
+  'comment.updated',
+  'comment.deleted',
+  'column.created',
+  'column.updated',
+  'column.deleted',
+  'attachment.added',
+  'attachment.removed',
+  'settings.updated',
+  'board.created',
+  'board.updated',
+  'board.deleted',
+  'board.action',
+  'board.log.added',
+  'board.log.cleared',
+  'log.added',
+  'log.cleared',
+  'storage.migrated',
+  'form.submitted',
+])
 
 // ---------------------------------------------------------------------------
 // Config persistence helpers
@@ -237,27 +258,32 @@ function deleteWebhook(workspaceRoot: string, id: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// EventListenerPlugin lifecycle
+// SDKEventListenerPlugin lifecycle
 // ---------------------------------------------------------------------------
 
-function createListener(workspaceRoot: string): EventListenerPlugin {
-  let unsubscribe: (() => void) | null = null
+export class WebhookListenerPlugin implements SDKEventListenerPlugin {
+  readonly manifest = {
+    id: 'webhooks',
+    provides: ['event.listener'] as const,
+  }
 
-  return {
-    manifest: { id: 'webhooks', provides: ['webhook.delivery'] },
+  private _unsubscribe: (() => void) | null = null
 
-    init(bus: EventBus, _workspaceRoot: string): void {
-      unsubscribe = bus.onAny((event, payload) => {
-        fireWebhooks(workspaceRoot, event, payload.data)
-      })
-    },
+  constructor(private readonly _workspaceRoot: string) {}
 
-    destroy(): void {
-      if (unsubscribe) {
-        unsubscribe()
-        unsubscribe = null
-      }
-    },
+  register(bus: EventBus): void {
+    if (this._unsubscribe) return
+    this._unsubscribe = bus.onAny((event, payload) => {
+      if (!SDK_AFTER_EVENT_NAMES.has(event)) return
+      fireWebhooks(this._workspaceRoot, event, payload.data)
+    })
+  }
+
+  unregister(): void {
+    if (this._unsubscribe) {
+      this._unsubscribe()
+      this._unsubscribe = null
+    }
   }
 }
 
@@ -293,7 +319,6 @@ export const webhookProviderPlugin: WebhookProviderPlugin = {
   createWebhook,
   updateWebhook,
   deleteWebhook,
-  createListener,
 }
 
 export default webhookProviderPlugin

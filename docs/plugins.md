@@ -1,6 +1,6 @@
 # Plugin System Deep Dive
 
-This document explains the storage plugin system in depth: what problem it solves, how capability resolution works, how to select and change providers in `.kanban.json`, what the core and compatibility providers do, how attachment handling works, and how to author third-party plugins that work with the current runtime.
+This document explains the plugin system in depth: what problem it solves, how capability resolution works, how SDK-owned before/after events drive listener-only runtime plugins, how to select and change providers in `.kanban.json`, what the core and compatibility providers do, how attachment handling works, and how to author third-party plugins that work with the current runtime.
 
 It is intentionally more detailed than the README. Think of this as the “how the machine is built” guide.
 
@@ -36,16 +36,17 @@ That means:
 
 - one provider can store cards/comments,
 - another provider can store attachments,
-- a webhook provider can own webhook CRUD plus outbound delivery,
-- or one provider can implement both capabilities explicitly in the plugin layer.
+- a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,
+- auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,
+- or one provider can implement multiple capabilities explicitly in the plugin layer.
 
-This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, and fully external npm packages to coexist behind the same capability contract.
+This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, fully external npm packages, and listener-only runtime plugins to coexist behind one SDK-owned action pipeline.
 
 ---
 
 ## Mental model
 
-The plugin system has four layers:
+The plugin system has five layers:
 
 1. **Config normalization**
    - Reads legacy and modern config.
@@ -59,17 +60,24 @@ The plugin system has four layers:
    - Produces one runtime object containing:
      - the active card storage engine,
      - the active attachment storage plugin,
+     - the active runtime listener plugins,
      - provider metadata,
      - host hints like `isFileBacked` and `watchGlob`.
 
-4. **SDK host usage**
+4. **SDK-owned action lifecycle**
+   - `KanbanSDK` emits before-events before writes and after-events after commit.
+   - Before-event listeners are awaited in registration order.
+   - After-event listeners are non-blocking and error-isolated.
+
+5. **SDK host usage**
    - `KanbanSDK`, the standalone server, the CLI, MCP, and the VS Code extension consume the resolved bag instead of hard-coding engine-specific behavior.
 
 In short:
 
 - config says **what** you want,
 - the resolver decides **which providers to load**,
-- the SDK uses the result to decide **how to behave**.
+- the SDK owns **when before/after events happen**,
+- and host layers use the result to decide **how to behave**.
 
 ---
 
@@ -106,7 +114,7 @@ The `attachment.storage` capability does **not** currently replace all card-stor
 
 ### `webhook.delivery`
 
-This capability owns webhook registry CRUD and outbound HTTP delivery.
+This capability owns webhook registry CRUD.
 
 Compatibility/default provider id:
 
@@ -119,7 +127,7 @@ External package:
 Behavior:
 
 - persists webhook definitions in the existing `.kanban.json` top-level `webhooks` array,
-- subscribes to the SDK event bus and delivers matching events via HTTP POST,
+- pairs with a listener-only runtime subscriber that delivers matching committed SDK after-events via HTTP POST,
 - preserves the existing payload envelope and HMAC signing behavior,
 - keeps the registry format stable so existing workspaces do not need migration.
 
@@ -157,7 +165,7 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-> **Note:** Auth capability enforcement is live today at the SDK pre-action seam for the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` ids resolve through `kl-auth-plugin` when present, with a built-in compatibility fallback retained so existing workspaces and test environments do not break when the package has not been installed yet.
+> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` ids resolve through `kl-auth-plugin` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet.
 
 ---
 
@@ -177,7 +185,31 @@ Webhook delivery uses its own top-level config section:
 }
 ```
 
-If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. Current releases also keep a built-in compatibility fallback when `kl-webhooks-plugin` is not installed yet.
+If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. Current releases also keep a compatibility fallback when `kl-webhooks-plugin` is not installed yet.
+
+Only provider selection lives in `.kanban.json`. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing `event.listener` config namespace.
+
+## Runtime listener model
+
+Runtime plugins are now **listener-only**.
+
+- `KanbanSDK` owns before/after event timing for mutations.
+- Before-events are awaited in listener-registration order.
+- A before-event listener may return a plain-object override, which is shallow-merged into the pending input.
+- Throwing from a before-event listener aborts the write before any mutation happens.
+- After-events fire exactly once after commit and stay non-blocking so side effects cannot break the caller.
+
+The runtime listener contract is `SDKEventListenerPlugin`:
+
+```ts
+interface SDKEventListenerPlugin {
+  manifest: { id: string; provides: readonly string[] }
+  register(bus: EventBus): void
+  unregister(): void
+}
+```
+
+This replaces the old `init(...)` / `destroy()` runtime seam for plugin authors. Storage and attachment providers remain direct capability adapters; they do not participate in this listener contract.
 
 ### Modern capability-based config
 
@@ -605,6 +637,11 @@ For an attachment storage plugin, the loader accepts either:
 
 - named export `attachmentStoragePlugin`
 - default export containing the plugin object
+
+For a webhook package, the loader accepts:
+
+- named export `webhookProviderPlugin` (or a compatible default export) for CRUD capability ownership
+- named export `webhookListenerPlugin` for listener-only runtime delivery
 
 ### Error behavior
 

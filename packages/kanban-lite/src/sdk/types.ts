@@ -36,26 +36,67 @@ export interface CreateCardInput {
 }
 
 /**
- * All event types emitted by the SDK when data is mutated.
+ * Before-event names emitted by the SDK immediately before a mutation is committed.
  *
- * These events are fired after every successful write operation
- * and can be used to trigger webhooks, logging, or other side effects.
+ * Plugins may listen to these events and return plain-object overrides to influence
+ * the pending mutation payload (shallow-merged in listener-registration order).
+ * Throwing from a before-event listener aborts the action before any write occurs.
  *
- * **Task events:** `task.created`, `task.updated`, `task.moved`, `task.deleted`
+ * Naming convention: `resource.verb` (present tense).
  *
- * **Comment events:** `comment.created`, `comment.updated`, `comment.deleted`
- *
- * **Column events:** `column.created`, `column.updated`, `column.deleted`
- *
- * **Attachment events:** `attachment.added`, `attachment.removed`
- *
- * **Settings events:** `settings.updated`
- *
- * **Board events:** `board.created`, `board.updated`, `board.deleted`
+ * @see BeforeEventPayload for the payload envelope passed to before-event listeners.
+ * @see BeforeEventListenerResponse for the allowed return type.
  */
-export type SDKEventType =
-  | 'task.created'
+export type SDKBeforeEventType =
+  | 'task.create'
+  | 'task.update'
+  | 'task.move'
+  | 'task.delete'
+  | 'card.transfer'
+  | 'card.action.trigger'
+  | 'card.purgeDeleted'
+  | 'comment.create'
+  | 'comment.update'
+  | 'comment.delete'
+  | 'column.create'
+  | 'column.update'
+  | 'column.delete'
+  | 'column.reorder'
+  | 'column.setMinimized'
+  | 'column.cleanup'
+  | 'attachment.add'
+  | 'attachment.remove'
+  | 'settings.update'
+  | 'board.create'
+  | 'board.update'
+  | 'board.delete'
+  | 'board.action.trigger'
+  | 'board.setDefault'
+  | 'log.add'
+  | 'log.clear'
+  | 'board.log.add'
+  | 'board.log.clear'
+  | 'storage.migrate'
+  | 'label.set'
+  | 'label.rename'
+  | 'label.delete'
+  | 'webhook.create'
+  | 'webhook.update'
+  | 'webhook.delete'
   | 'form.submit'
+
+/**
+ * After-event names emitted by the SDK after a mutation has been committed.
+ *
+ * After-event listeners are non-blocking — errors are isolated per listener
+ * and do not prevent sibling listeners or the overall SDK action from completing.
+ *
+ * Naming convention: `resource.pastTense`.
+ *
+ * @see AfterEventPayload for the payload envelope passed to after-event listeners.
+ */
+export type SDKAfterEventType =
+  | 'task.created'
   | 'task.updated'
   | 'task.moved'
   | 'task.deleted'
@@ -77,8 +118,23 @@ export type SDKEventType =
   | 'log.added'
   | 'log.cleared'
   | 'storage.migrated'
+  | 'form.submitted'
   | 'auth.allowed'
   | 'auth.denied'
+
+/**
+ * Union of all SDK event types (before-events and after-events).
+ *
+ * Use {@link SDKBeforeEventType} when you need only pre-mutation event names,
+ * or {@link SDKAfterEventType} when you need only post-mutation event names.
+ *
+ * **Before-events** (`resource.verb`): dispatched before a write; plugins may
+ * return overrides or throw to veto the mutation.
+ *
+ * **After-events** (`resource.pastTense`): dispatched after a successful write;
+ * listeners are non-blocking and error-isolated.
+ */
+export type SDKEventType = SDKBeforeEventType | SDKAfterEventType
 
 /**
  * Callback invoked by the SDK after every mutating operation.
@@ -107,7 +163,13 @@ export interface SDKEvent<T = unknown> {
 /** Listener callback for SDK event bus subscriptions. */
 export type SDKEventListener<T = unknown> = (payload: SDKEvent<T>) => void
 
-/** Plugin contract for event bus subscribers (e.g. webhooks, audit logging). */
+/**
+ * Plugin contract for event bus subscribers (e.g. webhooks, audit logging).
+ *
+ * @deprecated Use {@link SDKEventListenerPlugin} instead. This interface assumes an
+ * `init(bus, workspaceRoot)` factory pattern that is superseded by the listener-only
+ * `register(bus)` / `unregister()` contract. Will be removed in a future release.
+ */
 export interface EventListenerPlugin {
   /** Plugin manifest with id and capability declarations. */
   readonly manifest: { readonly id: string; readonly provides: readonly string[] }
@@ -115,6 +177,112 @@ export interface EventListenerPlugin {
   init(bus: import('./eventBus').EventBus, workspaceRoot: string): void
   /** Tear down the plugin and remove all event subscriptions. */
   destroy(): void
+}
+
+// ---------------------------------------------------------------------------
+// Before/after event payload envelopes and plugin listener contract
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload envelope for before-events dispatched immediately before a mutation is
+ * committed. This is the object passed to every registered before-event listener.
+ *
+ * Plugins may return a plain `Record<string, unknown>` override from their listener;
+ * all plugin responses are **shallow-merged in listener-registration order** so that
+ * later-registered listeners can override keys set by earlier ones. Returning `void`
+ * leaves the payload unchanged. Throwing any `Error` aborts the mutation.
+ *
+ * @typeParam TInput - The shape of the pending mutation's input data.
+ *
+ * @see BeforeEventListenerResponse for the allowed listener return type.
+ * @see SDKBeforeEventType for the full set of before-event names.
+ */
+export interface BeforeEventPayload<TInput = Record<string, unknown>> {
+  /** The before-event name (e.g. `'task.create'`, `'comment.delete'`). */
+  readonly event: SDKBeforeEventType
+  /** Canonical action name being executed (e.g. `'card.create'`). */
+  readonly action?: string
+  /**
+   * The input data for the pending mutation.
+   * Plugin overrides returned from listeners are shallow-merged into this object.
+   */
+  readonly input: TInput
+  /** Host/runtime auth context for the pending mutation, if any. */
+  readonly auth?: AuthContext
+  /** Resolved acting principal (e.g. a username or subject claim), if available. */
+  readonly actor?: string
+  /** Board context for this action, if applicable. */
+  readonly boardId?: string
+  /** ISO-8601 timestamp when this action was initiated by the SDK action runner. */
+  readonly timestamp: string
+}
+
+/**
+ * Payload envelope for after-events dispatched after a mutation has been committed.
+ * After-event listeners are non-blocking — errors are caught per listener and do
+ * not propagate to the SDK caller or prevent sibling listeners from executing.
+ *
+ * @typeParam TResult - The shape of the committed mutation result.
+ *
+ * @see SDKAfterEventType for the full set of after-event names.
+ */
+export interface AfterEventPayload<TResult = unknown> {
+  /** The after-event name (e.g. `'task.created'`, `'comment.deleted'`). */
+  readonly event: SDKAfterEventType
+  /** The committed result of the mutation (e.g. the persisted card or comment). */
+  readonly data: TResult
+  /** Resolved acting principal, if available. */
+  readonly actor?: string
+  /** Board context for this event, if applicable. */
+  readonly boardId?: string
+  /** ISO-8601 timestamp when the mutation was committed. */
+  readonly timestamp: string
+  /** Optional audit metadata supplied by the SDK action runner. */
+  readonly meta?: Record<string, unknown>
+}
+
+/**
+ * Allowed return type from a plugin listener registered for a before-event.
+ *
+ * - **`Record<string, unknown>`** — plain-object override whose keys are
+ *   shallow-merged into `BeforeEventPayload.input` in listener-registration order
+ *   (later-registered listeners override keys set by earlier ones).
+ * - **`void` / `undefined`** — the payload is left unchanged.
+ * - **Thrown `Error`** — aborts the pending mutation before any write occurs.
+ *
+ * Non-plain-object return values (arrays, class instances, primitives) are
+ * silently ignored and treated as `void`.
+ */
+export type BeforeEventListenerResponse = Record<string, unknown> | void
+
+/**
+ * Listener-only runtime plugin contract.
+ *
+ * Plugins subscribe to SDK before/after events via `register()`. For before-events
+ * a listener may return a {@link BeforeEventListenerResponse} plain-object to override
+ * fields in the pending mutation or throw to veto it. After-event listeners must not
+ * throw (errors are isolated and logged by the event bus).
+ *
+ * **Constraints:**
+ * - Plugins MUST NOT call SDK mutation methods from within any listener.
+ * - Storage and attachment capability providers use direct adapter interfaces and
+ *   do not implement this contract.
+ *
+ * This interface supersedes the deprecated {@link EventListenerPlugin}.
+ */
+export interface SDKEventListenerPlugin {
+  /** Plugin manifest with id and capability declarations. */
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+  /**
+   * Register all event listeners on the bus.
+   * Called once during SDK initialization after capability providers are resolved.
+   */
+  register(bus: import('./eventBus').EventBus): void
+  /**
+   * Remove all event listeners and release any plugin-owned resources.
+   * Called once during SDK shutdown or when the plugin is removed.
+   */
+  unregister(): void
 }
 
 /**

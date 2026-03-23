@@ -1,12 +1,82 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { execFile } from 'node:child_process'
+import type { ExecFileException } from 'node:child_process'
+import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
 import type { Webhook } from '../shared/config'
 import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdWebhooks, parseArgs, showHelp } from './index'
+
+const execFileAsync = promisify(execFile)
+const WORKSPACE_ROOT = path.resolve(__dirname, '../../../..')
+const PACKAGE_ROOT = path.resolve(__dirname, '../..')
+const TSX_CLI_PATH = path.join(WORKSPACE_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const CLI_ENTRYPOINT = path.join(__dirname, 'index.ts')
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, '')
+}
+
+function createCliAuthWorkspace(): { workspaceDir: string; configPath: string; cleanup: () => void } {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-auth-'))
+  fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
+  const configPath = path.join(workspaceDir, '.kanban.json')
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 2,
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      boards: {
+        default: {
+          name: 'Default',
+          columns: [],
+          nextCardId: 1,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium',
+        },
+      },
+      auth: {
+        'auth.identity': { provider: 'rbac' },
+        'auth.policy': { provider: 'rbac' },
+      },
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+  return {
+    workspaceDir,
+    configPath,
+    cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
+  }
+}
+
+async function runCliCommand(args: string[], envOverrides: Record<string, string | undefined> = {}): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const env = { ...process.env }
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (value === undefined) delete env[key]
+    else env[key] = value
+  }
+
+  try {
+    const result = await execFileAsync(
+      process.execPath,
+      [TSX_CLI_PATH, CLI_ENTRYPOINT, ...args],
+      { cwd: PACKAGE_ROOT, env, timeout: 15_000 },
+    )
+    return { exitCode: 0, stdout: result.stdout, stderr: result.stderr }
+  } catch (error) {
+    const err = error as ExecFileException & { stdout?: string; stderr?: string }
+    return {
+      exitCode: typeof err.code === 'number' ? err.code : 1,
+      stdout: err.stdout ?? '',
+      stderr: err.stderr ?? '',
+    }
+  }
+}
 
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
@@ -378,6 +448,54 @@ describe('CLI admin commands propagate AuthError (denial mapping)', () => {
     await expect(
       cmdColumns(sdk as KanbanSDK, ['add'], { id: 'col1', name: 'New', color: '#fff' }),
     ).rejects.toBeInstanceOf(AuthError)
+  })
+})
+
+describe('CLI denial UX regression', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('prints token guidance for auth.identity.missing and exits 1', async () => {
+    const { configPath, cleanup } = createCliAuthWorkspace()
+
+    try {
+      const result = await runCliCommand([
+        'boards',
+        'add',
+        '--id',
+        'ops',
+        '--name',
+        'Ops',
+        '--config',
+        configPath,
+      ], {
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(stripAnsi(result.stdout)).toBe('')
+      expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_TOKEN environment variable.')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('does not print success output before propagating a denied webhook create error', async () => {
+    const sdk = {
+      createWebhook: vi.fn().mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined),
+      ),
+    } as unknown as Pick<KanbanSDK, 'createWebhook'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await expect(
+      cmdWebhooks(['add'], { url: 'https://example.com/hook' }, sdk as KanbanSDK),
+    ).rejects.toMatchObject({
+      category: 'auth.policy.denied',
+      message: 'Action "webhook.create" denied',
+    })
+    expect(logSpy).not.toHaveBeenCalled()
   })
 })
 

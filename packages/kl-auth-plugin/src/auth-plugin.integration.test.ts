@@ -1,13 +1,13 @@
 /**
  * Integration tests for kl-auth-plugin demonstrating consumption from kanban-lite.
  *
- * These tests verify that the plugin's exported shape and behaviour satisfy the
- * contracts that kanban-lite's plugin loader (`tryLoadBundledAuthCompatExports`,
- * `loadExternalAuthIdentityPlugin`, `loadExternalAuthPolicyPlugin`) depends on
- * at runtime.  They do NOT mock the auth logic — every assertion exercises the
- * actual plugin functions.
+ * These tests verify both the stable auth capability exports used by the current
+ * kanban-lite loader and the new listener-only runtime helpers used by the SDK
+ * before-event pipeline. They do NOT mock the auth logic — every assertion
+ * exercises the actual plugin functions.
  */
-import { describe, expect, it } from 'vitest'
+import type { BeforeEventPayload } from '../../kanban-lite/src/sdk'
+import { describe, expect, it, vi } from 'vitest'
 import {
   NOOP_IDENTITY_PLUGIN,
   NOOP_POLICY_PLUGIN,
@@ -19,10 +19,32 @@ import {
   RBAC_ROLE_MATRIX,
   authIdentityPlugins,
   authPolicyPlugins,
+  createAuthListenerPlugin,
+  createNoopAuthListenerPlugin,
+  createRbacAuthListenerPlugin,
   createRbacIdentityPlugin,
   type AuthContext,
+  type AuthDecision,
   type AuthIdentity,
 } from './index'
+
+type WorkspaceSdkExports = typeof import('../../kanban-lite/src/sdk')
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { AuthError, EventBus } = require('../../kanban-lite/dist/sdk/index.cjs') as Pick<WorkspaceSdkExports, 'AuthError' | 'EventBus'>
+
+function makeBeforePayload(
+  overrides: Partial<BeforeEventPayload<Record<string, unknown>>> = {},
+): BeforeEventPayload<Record<string, unknown>> {
+  return {
+    event: 'task.create',
+    action: 'card.create',
+    input: { title: 'Test card' },
+    auth: { transport: 'http' },
+    timestamp: new Date().toISOString(),
+    ...overrides,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Manifest shape – the shape kanban-lite validates in tryLoadBundledAuthCompatExports
@@ -256,5 +278,89 @@ describe('kl-auth-plugin: RBAC policy provider (mirrors KanbanSDK._authorizeActi
     const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity, 'card.create', { transport: 'http' })
     expect(decision.allowed).toBe(false)
     expect(decision.reason).toBe('auth.identity.missing')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Listener-only runtime helpers – mirrors the SDK before-event contract
+// ---------------------------------------------------------------------------
+
+describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
+  it('createNoopAuthListenerPlugin returns an event.listener plugin', () => {
+    const plugin = createNoopAuthListenerPlugin()
+    expect(plugin.manifest.id).toBe('noop-auth-listener')
+    expect(plugin.manifest.provides).toContain('event.listener')
+    expect(typeof plugin.register).toBe('function')
+    expect(typeof plugin.unregister).toBe('function')
+  })
+
+  it('noop listener emits auth.allowed and preserves the original input', async () => {
+    const bus = new EventBus()
+    const plugin = createNoopAuthListenerPlugin()
+    const onAllowed = vi.fn()
+    bus.on('auth.allowed', onAllowed)
+
+    plugin.register(bus)
+    const merged = await bus.emitAsync('task.create', makeBeforePayload())
+
+    expect(merged).toEqual({ title: 'Test card' })
+    expect(onAllowed).toHaveBeenCalledTimes(1)
+
+    plugin.unregister()
+    expect(bus.listenerCount('task.create')).toBe(0)
+  })
+
+  it('listener factory can return plain-object overrides for approved mutations', async () => {
+    const bus = new EventBus()
+    const plugin = createAuthListenerPlugin(
+      {
+        manifest: { id: 'custom-identity', provides: ['auth.identity'] },
+        async resolveIdentity(): Promise<AuthIdentity> {
+          return { subject: 'alice', roles: ['admin'] }
+        },
+      },
+      {
+        manifest: { id: 'custom-policy', provides: ['auth.policy'] },
+        async checkPolicy(identity, action): Promise<AuthDecision> {
+          return { allowed: true, actor: identity?.subject, metadata: { action } }
+        },
+      },
+      {
+        id: 'custom-auth-listener',
+        overrideInput: ({ identity }) => ({ approvedBy: identity?.subject ?? 'anonymous' }),
+      },
+    )
+
+    plugin.register(bus)
+    const merged = await bus.emitAsync('task.create', makeBeforePayload())
+
+    expect(merged).toEqual({ title: 'Test card', approvedBy: 'alice' })
+  })
+
+  it('rbac listener throws AuthError with auth.identity.missing for anonymous protected actions', async () => {
+    const bus = new EventBus()
+    const plugin = createRbacAuthListenerPlugin(new Map([['secret-user', { subject: 'alice', roles: ['user'] }]]))
+
+    plugin.register(bus)
+
+    const promise = bus.emitAsync('task.create', makeBeforePayload({ auth: { transport: 'http' } }))
+    await expect(promise).rejects.toBeInstanceOf(AuthError)
+    await expect(promise).rejects.toMatchObject({ category: 'auth.identity.missing' })
+  })
+
+  it('rbac listener throws AuthError with auth.policy.denied for insufficient roles', async () => {
+    const bus = new EventBus()
+    const plugin = createRbacAuthListenerPlugin(new Map([['secret-user', { subject: 'alice', roles: ['user'] }]]))
+
+    plugin.register(bus)
+
+    const promise = bus.emitAsync('board.create', makeBeforePayload({
+      event: 'board.create',
+      action: 'board.create',
+      auth: { token: 'secret-user', transport: 'http' },
+      input: { id: 'board-1', name: 'Test board' },
+    }))
+    await expect(promise).rejects.toBeInstanceOf(AuthError)
+    await expect(promise).rejects.toMatchObject({ category: 'auth.policy.denied', actor: 'alice' })
   })
 })

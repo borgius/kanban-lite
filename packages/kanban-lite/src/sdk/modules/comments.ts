@@ -44,7 +44,6 @@ export async function addComment(
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
 
-  ctx.emitEvent('comment.created', { ...comment, cardId })
   return card
 }
 
@@ -68,7 +67,6 @@ export async function updateComment(
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
 
-  ctx.emitEvent('comment.updated', { ...comment, cardId })
   return card
 }
 
@@ -89,8 +87,5 @@ export async function deleteComment(
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
 
-  if (comment) {
-    ctx.emitEvent('comment.deleted', { ...comment, cardId })
-  }
   return card
 }

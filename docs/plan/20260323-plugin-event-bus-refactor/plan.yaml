@@ -7,7 +7,7 @@ objective: |
   and the resulting behavior must preserve clean auth denials and avoid duplicate side effects.
 created_at: "2026-03-23"
 created_by: "gem-planner"
-status: pending_approval
+status: completed
 research_confidence: high
 
 tldr: |
@@ -21,6 +21,9 @@ tldr: |
   (7) sync docs/changelog and finish with architectural review.
   Storage and attachment provider capabilities remain direct capability adapters in this plan;
   the runtime refactor is scoped to event-driven plugin behavior and SDK mutation orchestration.
+  T13 review found one remaining architectural gap: several privileged `KanbanSDK` mutations still
+  call legacy `_authorizeAction(...)` directly instead of entering through the SDK-owned listener-only
+  before-event pipeline, so this follow-up adds one surgical implementation/test/re-review wave.
 
 open_questions:
   - "Confirm whether webhook registry CRUD remains capability-based while webhook delivery becomes listener-only. This plan assumes yes to avoid conflating runtime event handling with persistence/provider CRUD responsibilities."
@@ -29,6 +32,13 @@ open_questions:
 pre_mortem:
   overall_risk_level: high
   critical_failure_modes:
+    - scenario: "A handful of privileged mutation entry points still call legacy `_authorizeAction(...)`, so auth listeners never see their canonical before-events and the refactor ships with split authorization paths."
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Treat the T13 finding as a scoped completion wave: migrate only the remaining `KanbanSDK`
+        call sites, add targeted denial-path regressions for each affected family, and rerun the
+        final architectural review before declaring the refactor complete.
     - scenario: "Before-event response merging is non-deterministic or overly permissive, causing silent payload corruption or conflicting overrides between plugins."
       likelihood: medium
       impact: critical
@@ -72,6 +82,10 @@ implementation_specification:
     `src/sdk/plugins/index.ts`, but auth/webhook runtime behavior shifts to listener-only contracts.
     First-party external runtime plugins (`kl-auth-plugin`, `kl-webhooks-plugin`) then align to the
     new listener contract and are verified through workspace tests.
+    This follow-up must stay narrow: only the remaining privileged mutation entry points in
+    `KanbanSDK.ts` and the focused regression suites that prove they no longer bypass the shared
+    before-event pipeline should be reopened unless implementation evidence shows a strictly
+    necessary helper adjustment.
   affected_areas:
     - "packages/kanban-lite/src/sdk/types.ts"
     - "packages/kanban-lite/src/sdk/modules/context.ts"
@@ -209,6 +223,18 @@ contracts:
     to_task: T13
     interface: "Implementation verification evidence for final review"
     format: "Build/test results and risk checklist"
+  - from_task: T13
+    to_task: T14
+    interface: "Reviewer inventory of remaining privileged mutation paths still using legacy `_authorizeAction(...)`"
+    format: "Architectural gap list tied to specific `KanbanSDK` entry points"
+  - from_task: T14
+    to_task: T15
+    interface: "Migrated privileged mutation entry points using the shared SDK-owned authorized before-event helper"
+    format: "Updated `KanbanSDK` mutation flow plus preserved action/auth context"
+  - from_task: T15
+    to_task: T16
+    interface: "Targeted regression and grep-level evidence that the flagged privileged mutations no longer bypass the before-event pipeline"
+    format: "Focused test results and residual-risk checklist"
 
 tasks:
   - id: T1
@@ -222,7 +248,7 @@ tasks:
     wave: 1
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies: []
     context_files:
       - packages/kanban-lite/src/sdk/types.ts: "Canonical place for event vocabulary, payload types, and plugin response contracts."
@@ -259,7 +285,7 @@ tasks:
     wave: 1
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T1
     context_files:
@@ -299,7 +325,7 @@ tasks:
     wave: 2
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T1
       - T2
@@ -338,7 +364,7 @@ tasks:
     wave: 3
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T3
     context_files:
@@ -375,7 +401,7 @@ tasks:
     wave: 3
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T3
     context_files:
@@ -412,13 +438,9 @@ tasks:
     wave: 3
     agent: gem-implementer
     priority: medium
-    status: pending
+    status: completed
     dependencies:
       - T3
-    context_files:
-      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Attachment/log entry points that must use the shared runner."
-      - packages/kanban-lite/src/sdk/modules/attachments.ts: "Attachment mutations currently emitting after writes."
-      - packages/kanban-lite/src/sdk/modules/logs.ts: "Card/board log mutations currently emitting after writes."
     estimated_effort: medium
     estimated_files: 3
     estimated_lines: 220
@@ -449,7 +471,7 @@ tasks:
     wave: 3
     agent: gem-implementer
     priority: medium
-    status: pending
+    status: completed
     dependencies:
       - T3
     context_files:
@@ -487,7 +509,7 @@ tasks:
     wave: 4
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T3
       - T4
@@ -530,7 +552,7 @@ tasks:
     wave: 5
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T8
     context_files:
@@ -568,7 +590,7 @@ tasks:
     wave: 5
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T8
     context_files:
@@ -605,7 +627,7 @@ tasks:
     wave: 6
     agent: gem-implementer
     priority: high
-    status: pending
+    status: completed
     dependencies:
       - T9
       - T10
@@ -645,7 +667,7 @@ tasks:
     wave: 7
     agent: gem-documentation-writer
     priority: medium
-    status: pending
+    status: completed
     dependencies:
       - T11
     context_files:
@@ -686,7 +708,7 @@ tasks:
     wave: 8
     agent: gem-reviewer
     priority: high
-    status: pending
+    status: failed
     dependencies:
       - T12
     context_files:
@@ -712,4 +734,124 @@ tasks:
         mitigation: "Use the review gate to compare shipped behavior against the plan and the updated public docs, not only against passing tests."
     requires_review: true
     review_depth: full
+    security_sensitive: true
+
+  - id: T14
+    title: Finish migrating the remaining privileged mutation entry points off legacy `_authorizeAction(...)`
+    description: |
+      Close the gap found during T13 by migrating only the remaining privileged `KanbanSDK`
+      methods that still call `_authorizeAction(...)` directly—specifically the action-trigger,
+      label, cleanup/reorder/minimized, deleted-card purge, default-board, and webhook mutation
+      families—onto the SDK-owned authorized before-event pipeline. Preserve the existing action
+      names, auth context, actor hints, and mutation-specific payload shaping so the change stays
+      architectural, not behavioral.
+    wave: 9
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T12
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Remaining privileged mutation entry points still using the legacy auth seam live here."
+      - packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts: "Auth denial coverage should remain the source of truth for action-name routing and stable AuthError behavior."
+      - packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts: "SDK-level event pipeline coverage can prove these entry points now flow through the shared before-event path."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: residual_authorization_paths
+    verification:
+      - "The T13-flagged privileged mutation entry points no longer call `_authorizeAction(...)` directly."
+      - "Each migrated method enters through the shared authorized before-event helper with the correct action string and auth context."
+      - "No unrelated plugin, storage, or documentation surfaces are reopened."
+    acceptance_criteria:
+      - "All privileged mutation families identified by the T13 review use the SDK-owned listener-only before-event pipeline."
+      - "Auth denial semantics remain `AuthError`-driven and preserve existing action identifiers."
+      - "The follow-up remains limited to `KanbanSDK.ts` plus strictly necessary helper adjustments."
+    failure_modes:
+      - scenario: "A migrated method loses its original action name, board/card context, or actor hint, causing auth policy drift even though the legacy seam is removed."
+        likelihood: medium
+        impact: high
+        mitigation: "Use the reviewer-discovered call-site inventory as a checklist and preserve the original auth/action payloads one-for-one during migration."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Focused denial-path and before-event coverage added in T15"
+
+  - id: T15
+    title: Add focused regressions for the formerly bypassing privileged mutations
+    description: |
+      Extend the smallest possible SDK regression suites so the privileged mutation families flagged
+      by T13 fail if they bypass the listener-only before-event pipeline again. Cover at least one
+      representative from each affected family and keep the assertions centered on stable denial
+      behavior, canonical action routing, and before-event observability rather than broad end-to-end
+      rewrites.
+    wave: 10
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - T14
+    context_files:
+      - packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts: "Best place to prove denials still work across the migrated action families."
+      - packages/kanban-lite/src/sdk/__tests__/KanbanSDK.test.ts: "Best place to prove the shared before-event/event-bus path is now exercised by the migrated methods."
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Reference for the final list of formerly bypassing methods under test."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 150
+    focus_area: residual_auth_regressions
+    verification:
+      - "Targeted tests fail if a flagged privileged mutation bypasses the shared authorized before-event helper."
+      - "Denial behavior remains stable for webhook CRUD and non-card mutation families touched by the follow-up."
+      - "Regression scope stays focused on the T13 finding rather than reopening broad host-surface coverage."
+    acceptance_criteria:
+      - "At least one representative test exists for each previously flagged privileged mutation family."
+      - "Tests assert both stable denial semantics and before-event participation where practical."
+      - "The regression set is small, deterministic, and suitable as the gate for rerunning architectural review."
+    failure_modes:
+      - scenario: "Tests cover only one or two easy methods and leave another legacy bypass undetected."
+        likelihood: medium
+        impact: high
+        mitigation: "Mirror the T13 reviewer inventory in the test checklist and require at least one representative assertion per affected family."
+    tech_stack:
+      - TypeScript
+      - Vitest
+    test_coverage: "Targeted SDK regression coverage for the residual privileged mutation families"
+
+  - id: T16
+    title: Re-run the final architectural review on the narrowed authorization follow-up
+    description: |
+      Repeat the T13 review after T14-T15 land, but constrain the review to the high-severity gap:
+      confirm the flagged privileged mutation paths no longer bypass the SDK-owned before-event
+      pipeline, verify the regression evidence is sufficient, and ensure no unrelated surfaces had to
+      be reopened. If this review passes, it closes the refactor plan; if not, any additional work
+      must be split into a new micro-follow-up rather than expanding this one again.
+    wave: 11
+    agent: gem-reviewer
+    priority: high
+    status: completed
+    dependencies:
+      - T15
+    context_files:
+      - packages/kanban-lite/src/sdk/KanbanSDK.ts: "Primary seam to confirm the legacy authorization path is no longer used by privileged mutations."
+      - packages/kanban-lite/src/sdk/__tests__/auth-enforcement.test.ts: "Evidence that denial semantics remain stable after the follow-up."
+      - docs/plan/20260323-plugin-event-bus-refactor/plan.yaml: "Updated source plan showing the narrowed follow-up scope and review gate."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 90
+    focus_area: followup_review
+    verification:
+      - "No T13-flagged privileged mutation entry point still calls `_authorizeAction(...)` directly."
+      - "Focused regression evidence covers the remaining high-risk families and passes cleanly."
+      - "The plan can be closed without reopening docs/plugin work unless a new, distinct gap is found."
+    acceptance_criteria:
+      - "The reviewer signs off that the SDK now has one authorization path for privileged mutations."
+      - "Residual risk is reduced to normal post-refactor monitoring rather than a release-blocking architectural gap."
+      - "Any further work, if needed, is explicitly split into a new plan instead of broadening this follow-up."
+    failure_modes:
+      - scenario: "The follow-up fixes the obvious call sites but leaves one obscure privileged mutation on the legacy seam, causing false confidence."
+        likelihood: low
+        impact: high
+        mitigation: "Use grep-backed call-site verification and compare against the T13 finding before closing the plan."
+    requires_review: true
+    review_depth: standard
     security_sensitive: true

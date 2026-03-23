@@ -46,7 +46,9 @@
     "docs:root": "pnpm run docs:root:sdk && pnpm run docs:root:api && pnpm run docs:root:webhooks",
     "docs:root:sdk": "npx tsx scripts/generate-sdk-docs.ts",
     "docs:root:api": "npx tsx scripts/generate-api-docs.ts",
-    "docs:root:webhooks": "npx tsx scripts/generate-webhooks-docs.ts"
+    "docs:root:webhooks": "npx tsx scripts/generate-webhooks-docs.ts",
+    "site:build": "pnpm --filter @kanban-lite/docs-site build",
+    "site:dev": "pnpm --filter @kanban-lite/docs-site dev"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

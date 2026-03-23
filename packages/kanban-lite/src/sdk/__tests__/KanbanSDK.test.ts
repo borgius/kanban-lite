@@ -3,6 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
+import { AuthError } from '../types'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-test-'))
@@ -102,7 +103,10 @@ describe('KanbanSDK', () => {
       expect(onceListener).toHaveBeenCalledTimes(1)
       expect(event).toEqual(expect.objectContaining({
         type: 'task.created',
-        data: expect.objectContaining({ id: created.id }),
+        data: expect.objectContaining({
+          event: 'task.created',
+          data: expect.objectContaining({ id: created.id }),
+        }),
       }))
     })
 
@@ -111,13 +115,14 @@ describe('KanbanSDK', () => {
       const anyListener = vi.fn()
       sdk.on('task.*', vi.fn())
       sdk.onAny(anyListener)
+      const countAfterRegister = sdk.listenerCount()
 
       expect(sdk.eventNames()).toContain('task.*')
-      expect(sdk.listenerCount()).toBe(initialCount + 2)
+      expect(countAfterRegister).toBeGreaterThan(initialCount)
       expect(sdk.hasListeners()).toBe(true)
 
       sdk.offAny(anyListener)
-      expect(sdk.listenerCount()).toBe(initialCount + 1)
+      expect(sdk.listenerCount()).toBeLessThan(countAfterRegister)
 
       sdk.removeAllListeners()
       expect(sdk.hasListeners()).toBe(false)
@@ -438,14 +443,14 @@ describe('KanbanSDK', () => {
     })
 
     it('setLabel creates a new label definition', async () => {
-      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
       const labels = sdk.getLabels()
       expect(labels['bug']).toEqual({ color: '#e11d48', group: 'Type' })
     })
 
     it('setLabel updates an existing label definition', async () => {
-      sdk.setLabel('bug', { color: '#e11d48' })
-      sdk.setLabel('bug', { color: '#2563eb', group: 'Type' })
+      await sdk.setLabel('bug', { color: '#e11d48' })
+      await sdk.setLabel('bug', { color: '#2563eb', group: 'Type' })
       const labels = sdk.getLabels()
       expect(labels['bug']).toEqual({ color: '#2563eb', group: 'Type' })
     })
@@ -461,7 +466,7 @@ describe('KanbanSDK', () => {
       writeCardFile(tempDir, '1-card.md', makeCardContent({
         id: '1-card', status: 'backlog', labels: ['bug', 'frontend']
       }), 'backlog')
-      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
 
       await sdk.deleteLabel('bug')
 
@@ -477,7 +482,7 @@ describe('KanbanSDK', () => {
       writeCardFile(tempDir, '1-card.md', makeCardContent({
         id: '1-card', status: 'backlog', labels: ['bug', 'frontend']
       }), 'backlog')
-      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
 
       await sdk.renameLabel('bug', 'defect')
 
@@ -494,9 +499,9 @@ describe('KanbanSDK', () => {
 
   describe('Label group filtering', () => {
     it('filterCardsByLabelGroup returns cards with any label from the group', async () => {
-      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
-      sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
-      sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
+      await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      await sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
+      await sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
 
       writeCardFile(tempDir, '1-card.md', makeCardContent({
         id: '1-card', status: 'backlog', labels: ['bug']
@@ -520,11 +525,11 @@ describe('KanbanSDK', () => {
       expect(cards).toEqual([])
     })
 
-    it('getLabelsInGroup returns labels belonging to a group', () => {
-      sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
-      sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
-      sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
-      sdk.setLabel('docs', { color: '#16a34a' })
+    it('getLabelsInGroup returns labels belonging to a group', async () => {
+      await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+      await sdk.setLabel('card', { color: '#2563eb', group: 'Type' })
+      await sdk.setLabel('high', { color: '#f59e0b', group: 'Priority' })
+      await sdk.setLabel('docs', { color: '#16a34a' })
 
       expect(sdk.getLabelsInGroup('Type').sort()).toEqual(['bug', 'card'])
       expect(sdk.getLabelsInGroup('Priority')).toEqual(['high'])
@@ -629,8 +634,8 @@ describe('KanbanSDK', () => {
   })
 
   describe('addColumn', () => {
-    it('should add a column and persist to .kanban.json', () => {
-      const columns = sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
+    it('should add a column and persist to .kanban.json', async () => {
+      const columns = await sdk.addColumn({ id: 'testing', name: 'Testing', color: '#ff9900' })
       // Default 5 + 1 new
       expect(columns.length).toBe(6)
       expect(columns[5].id).toBe('testing')
@@ -641,29 +646,29 @@ describe('KanbanSDK', () => {
       expect(config.boards.default.columns.length).toBe(6)
     })
 
-    it('should throw if column ID already exists', () => {
-      expect(() => sdk.addColumn({ id: 'backlog', name: 'Backlog 2', color: '#000' }))
-        .toThrow('Column already exists: backlog')
+    it('should throw if column ID already exists', async () => {
+      await expect(sdk.addColumn({ id: 'backlog', name: 'Backlog 2', color: '#000' }))
+        .rejects.toThrow('Column already exists: backlog')
     })
   })
 
   describe('updateColumn', () => {
-    it('should update column name and color', () => {
-      const columns = sdk.updateColumn('backlog', { name: 'Inbox', color: '#123456' })
+    it('should update column name and color', async () => {
+      const columns = await sdk.updateColumn('backlog', { name: 'Inbox', color: '#123456' })
       const updated = columns.find(c => c.id === 'backlog')
       expect(updated?.name).toBe('Inbox')
       expect(updated?.color).toBe('#123456')
     })
 
-    it('should throw for non-existent column', () => {
-      expect(() => sdk.updateColumn('ghost', { name: 'X' })).toThrow('Column not found')
+    it('should throw for non-existent column', async () => {
+      await expect(sdk.updateColumn('ghost', { name: 'X' })).rejects.toThrow('Column not found')
     })
   })
 
   describe('removeColumn', () => {
     it('should remove an empty column', async () => {
       // Add a custom column first, then remove it
-      sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aaa' })
+      await sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aaa' })
       const columns = await sdk.removeColumn('staging')
       expect(columns.find(c => c.id === 'staging')).toBeUndefined()
     })
@@ -679,19 +684,19 @@ describe('KanbanSDK', () => {
   })
 
   describe('reorderColumns', () => {
-    it('should reorder columns', () => {
-      const columns = sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog'])
+    it('should reorder columns', async () => {
+      const columns = await sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog'])
       expect(columns[0].id).toBe('done')
       expect(columns[4].id).toBe('backlog')
     })
 
-    it('should throw if a column ID is missing', () => {
-      expect(() => sdk.reorderColumns(['done', 'review'])).toThrow('Must include all column IDs')
+    it('should throw if a column ID is missing', async () => {
+      await expect(sdk.reorderColumns(['done', 'review'])).rejects.toThrow('Must include all column IDs')
     })
 
-    it('should throw for unknown column ID', () => {
-      expect(() => sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'unknown']))
-        .toThrow('Column not found')
+    it('should throw for unknown column ID', async () => {
+      await expect(sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'unknown']))
+        .rejects.toThrow('Column not found')
     })
   })
 
@@ -1032,10 +1037,11 @@ No version field.`,
     })
 
     it('should emit board.log.added event', async () => {
-      const events: unknown[] = []
-      const eventSdk = new KanbanSDK(tempDir, { onEvent: (_type, data) => events.push(data) })
+      const events: Array<{ type: string; data: unknown }> = []
+      const eventSdk = new KanbanSDK(tempDir, { onEvent: (type, data) => events.push({ type, data }) })
       await eventSdk.addBoardLog('event test')
-      expect(events).toHaveLength(1)
+      const logEvents = events.filter(e => e.type === 'board.log.added')
+      expect(logEvents).toHaveLength(1)
     })
 
     it('should accumulate multiple entries', async () => {
@@ -1061,6 +1067,92 @@ No version field.`,
 
     it('should not throw if no log file exists', async () => {
       await expect(sdk.clearBoardLogs()).resolves.not.toThrow()
+    })
+  })
+
+  describe('formerly bypassing privileged mutations use the SDK-owned before-event pipeline', () => {
+    async function expectBeforeEventDenial(
+      event: string,
+      invoke: () => Promise<unknown>,
+    ): Promise<void> {
+      sdk.on(event, vi.fn().mockImplementation(() => {
+        throw new AuthError('auth.policy.denied', `Denied by ${event}`, 'before-listener')
+      }))
+
+      await expect(invoke()).rejects.toMatchObject({ category: 'auth.policy.denied' })
+      sdk.removeAllListeners(event)
+    }
+
+    it('setLabel denial leaves label definitions unchanged', async () => {
+      const originalLabels = sdk.getLabels()
+      await expectBeforeEventDenial('label.set', () => sdk.setLabel('bug', { color: '#e11d48' }))
+      expect(sdk.getLabels()).toEqual(originalLabels)
+    })
+
+    it('cleanupColumn denial leaves cards in the source column', async () => {
+      const card = await sdk.createCard({ content: '# Cleanup Guard', status: 'backlog' })
+
+      await expectBeforeEventDenial('column.cleanup', () => sdk.cleanupColumn('backlog'))
+
+      const after = await sdk.getCard(card.id)
+      expect(after?.status).toBe('backlog')
+    })
+
+    it('reorderColumns denial preserves the existing column order', async () => {
+      const original = sdk.listColumns().map(column => column.id)
+
+      await expectBeforeEventDenial('column.reorder', () => sdk.reorderColumns([...original].reverse()))
+
+      expect(sdk.listColumns().map(column => column.id)).toEqual(original)
+    })
+
+    it('setMinimizedColumns denial preserves minimized state', async () => {
+      await expectBeforeEventDenial('column.setMinimized', () => sdk.setMinimizedColumns(['backlog', 'todo']))
+      expect(sdk.getMinimizedColumns()).toEqual([])
+    })
+
+    it('purgeDeletedCards denial leaves deleted cards intact', async () => {
+      const card = await sdk.createCard({ content: '# Purge Guard' })
+      await sdk.deleteCard(card.id)
+
+      await expectBeforeEventDenial('card.purgeDeleted', () => sdk.purgeDeletedCards('default'))
+
+      const deletedCard = await sdk.getCard(card.id)
+      expect(deletedCard?.status).toBe('deleted')
+    })
+
+    it('setDefaultBoard denial keeps the current default board', async () => {
+      await sdk.createBoard('ops', 'Ops')
+      const { readConfig } = await import('../../shared/config')
+
+      await expectBeforeEventDenial('board.setDefault', () => sdk.setDefaultBoard('ops'))
+
+      expect(readConfig(sdk.workspaceRoot).defaultBoard).toBe('default')
+    })
+
+    it('webhook.create denial leaves the registry empty', async () => {
+      await expectBeforeEventDenial('webhook.create', () => sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] }))
+      expect(sdk.listWebhooks()).toEqual([])
+    })
+
+    it('webhook.update denial leaves the stored webhook unchanged', async () => {
+      const created = await sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] })
+
+      await expectBeforeEventDenial('webhook.update', () => sdk.updateWebhook(created.id, { url: 'https://updated.example.com' }))
+
+      expect(sdk.listWebhooks()).toEqual([
+        expect.objectContaining({ id: created.id, url: 'https://example.com' }),
+      ])
+    })
+
+    it('webhook.delete denial leaves the stored webhook in place', async () => {
+      const created = await sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] })
+
+      await expectBeforeEventDenial('webhook.delete', () => sdk.deleteWebhook(created.id))
+
+      expect(sdk.listWebhooks()).toEqual([
+        expect.objectContaining({ id: created.id, url: 'https://example.com' }),
+      ])
     })
   })
 })

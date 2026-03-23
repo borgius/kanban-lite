@@ -72,7 +72,6 @@ export function createBoard(
   writeConfig(ctx.workspaceRoot, config)
 
   const boardInfo = { id, name, description: options?.description }
-  ctx.emitEvent('board.created', boardInfo)
   return boardInfo
 }
 
@@ -98,7 +97,6 @@ export async function deleteBoard(ctx: SDKContext, boardId: string): Promise<voi
 
   delete config.boards[boardId]
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('board.deleted', { id: boardId })
 }
 
 /**
@@ -130,7 +128,6 @@ export function updateBoard(
   if (updates.metadata !== undefined) board.metadata = updates.metadata
 
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('board.updated', { id: boardId, ...board })
   return board
 }
 
@@ -155,7 +152,6 @@ export function addBoardAction(ctx: SDKContext, boardId: string, key: string, ti
   board.actions ??= {}
   board.actions[key] = title
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('board.updated', { id: boardId, ...board })
   return board.actions
 }
 
@@ -172,14 +168,14 @@ export function removeBoardAction(ctx: SDKContext, boardId: string, key: string)
   delete board.actions[key]
   if (Object.keys(board.actions).length === 0) delete board.actions
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('board.updated', { id: boardId, ...board })
   return board.actions ?? {}
 }
 
 /**
  * Fires the `board.action` webhook event for a named board action.
+ * Returns the resolved boardId and action title so the SDK can emit the after-event.
  */
-export async function triggerBoardAction(ctx: SDKContext, boardId: string, actionKey: string): Promise<void> {
+export async function triggerBoardAction(ctx: SDKContext, boardId: string, actionKey: string): Promise<{ boardId: string; action: string; title: string }> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const board = config.boards[resolvedId]
@@ -188,8 +184,7 @@ export async function triggerBoardAction(ctx: SDKContext, boardId: string, actio
   if (!(actionKey in actions)) {
     throw new Error(`Action "${actionKey}" not defined on board "${resolvedId}"`)
   }
-  const actionTitle = actions[actionKey]
-  ctx.emitEvent('board.action', { boardId: resolvedId, action: actionKey, title: actionTitle })
+  return { boardId: resolvedId, action: actionKey, title: actions[actionKey] }
 }
 
 /**

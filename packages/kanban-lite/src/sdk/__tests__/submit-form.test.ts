@@ -102,27 +102,30 @@ describe('KanbanSDK.submitForm', () => {
       },
     })
 
-    const submitEvent = events.find(event => event.type === 'form.submit')
+    const submitEvent = events.find(event => event.type === 'form.submitted')
     expect(submitEvent).toBeTruthy()
     expect(submitEvent?.data).toMatchObject({
-      boardId: 'default',
-      data: result.data,
-      form: {
-        id: 'bug-report',
-        name: 'Bug Report',
-        description: '',
-        label: 'Bug Report',
-        fromConfig: true
-      },
-      card: {
-        id: card.id,
+      event: 'form.submitted',
+      data: {
         boardId: 'default',
-        attachments: [`${card.id}.log`],
+        data: result.data,
+        form: {
+          id: 'bug-report',
+          name: 'Bug Report',
+          description: '',
+          label: 'Bug Report',
+          fromConfig: true
+        },
+        card: {
+          id: card.id,
+          boardId: 'default',
+          attachments: [`${card.id}.log`],
+        }
       }
     })
   })
 
-  it('applies merge precedence collisions in the documented order and emits log.added plus form.submit', async () => {
+  it('applies merge precedence collisions in the documented order and emits log.added plus form.submitted', async () => {
     const config = readConfig(workspaceDir)
     writeConfig(workspaceDir, {
       ...config,
@@ -208,7 +211,9 @@ describe('KanbanSDK.submitForm', () => {
       submitWins: 'submitted'
     })
     expect((await sdk.getCard(card.id))?.formData?.['bug-report']).toEqual(result.data)
-    expect(events.map(event => event.type)).toEqual(['log.added', 'form.submit'])
+    // Filter out auth lifecycle events and before-events; only check mutation after-events and log events
+    const mutationEvents = events.filter(e => !e.type.startsWith('auth.') && e.type !== 'form.submit' && e.type !== 'log.add').map(e => e.type)
+    expect(mutationEvents).toEqual(['log.added', 'form.submitted'])
   })
 
   it('supports inline attached forms and merges attachment defaults before validation', async () => {
@@ -287,7 +292,7 @@ describe('KanbanSDK.submitForm', () => {
 
     const reloaded = await sdk.getCard(card.id)
     expect(reloaded?.formData?.checklist).toEqual({ approved: true })
-    expect(events.some(event => event.type === 'form.submit')).toBe(false)
+    expect(events.some(event => event.type === 'form.submitted')).toBe(false)
   })
 
   it('persists submitted form state with matching semantics in sqlite storage mode', async () => {

@@ -87,57 +87,57 @@ describe('Board Actions', () => {
   })
 
   describe('addBoardAction', () => {
-    it('adds a new action', () => {
-      const result = sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
+    it('adds a new action', async () => {
+      const result = await sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
       expect(result).toEqual({ deploy: 'Deploy to Production' })
     })
 
-    it('persists the action to config', () => {
-      sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
+    it('persists the action to config', async () => {
+      await sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
       sdk = new KanbanSDK(kanbanDir)
       expect(sdk.getBoardActions('default')).toEqual({ deploy: 'Deploy to Production' })
     })
 
-    it('adds multiple actions', () => {
-      sdk.addBoardAction('default', 'deploy', 'Deploy')
-      sdk.addBoardAction('default', 'build', 'Build')
+    it('adds multiple actions', async () => {
+      await sdk.addBoardAction('default', 'deploy', 'Deploy')
+      await sdk.addBoardAction('default', 'build', 'Build')
       const actions = sdk.getBoardActions('default')
       expect(actions).toEqual({ deploy: 'Deploy', build: 'Build' })
     })
 
-    it('overwrites an existing action with the same key', () => {
-      sdk.addBoardAction('default', 'deploy', 'Deploy to Staging')
-      const result = sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
+    it('overwrites an existing action with the same key', async () => {
+      await sdk.addBoardAction('default', 'deploy', 'Deploy to Staging')
+      const result = await sdk.addBoardAction('default', 'deploy', 'Deploy to Production')
       expect(result).toEqual({ deploy: 'Deploy to Production' })
     })
 
-    it('throws when board not found', () => {
-      expect(() => sdk.addBoardAction('nonexistent', 'k', 't')).toThrow(/not found/)
+    it('throws when board not found', async () => {
+      await expect(sdk.addBoardAction('nonexistent', 'k', 't')).rejects.toThrow(/not found/)
     })
   })
 
   describe('removeBoardAction', () => {
-    it('removes an existing action', () => {
-      sdk.addBoardAction('default', 'deploy', 'Deploy')
-      sdk.addBoardAction('default', 'build', 'Build')
-      const result = sdk.removeBoardAction('default', 'deploy')
+    it('removes an existing action', async () => {
+      await sdk.addBoardAction('default', 'deploy', 'Deploy')
+      await sdk.addBoardAction('default', 'build', 'Build')
+      const result = await sdk.removeBoardAction('default', 'deploy')
       expect(result).toEqual({ build: 'Build' })
     })
 
-    it('removes actions key from config when last action deleted', () => {
-      sdk.addBoardAction('default', 'deploy', 'Deploy')
-      sdk.removeBoardAction('default', 'deploy')
+    it('removes actions key from config when last action deleted', async () => {
+      await sdk.addBoardAction('default', 'deploy', 'Deploy')
+      await sdk.removeBoardAction('default', 'deploy')
       sdk = new KanbanSDK(kanbanDir)
       const actions = sdk.getBoardActions('default')
       expect(actions).toEqual({})
     })
 
-    it('throws when action key not found', () => {
-      expect(() => sdk.removeBoardAction('default', 'nonexistent')).toThrow(/not found/)
+    it('throws when action key not found', async () => {
+      await expect(sdk.removeBoardAction('default', 'nonexistent')).rejects.toThrow(/not found/)
     })
 
-    it('throws when board not found', () => {
-      expect(() => sdk.removeBoardAction('nonexistent', 'k')).toThrow(/not found/)
+    it('throws when board not found', async () => {
+      await expect(sdk.removeBoardAction('nonexistent', 'k')).rejects.toThrow(/not found/)
     })
   })
 
@@ -147,11 +147,12 @@ describe('Board Actions', () => {
       const sdkWithEvents = new KanbanSDK(kanbanDir, {
         onEvent: (type, data) => events.push({ type, data })
       })
-      sdkWithEvents.addBoardAction('default', 'deploy', 'Deploy to Production')
+      await sdkWithEvents.addBoardAction('default', 'deploy', 'Deploy to Production')
       await sdkWithEvents.triggerBoardAction('default', 'deploy')
       expect(events.some(e => e.type === 'board.action')).toBe(true)
       const actionEvent = events.find(e => e.type === 'board.action')!
-      expect(actionEvent.data).toMatchObject({
+      const payload = actionEvent.data as { event: string; data: { boardId: string; action: string; title: string } }
+      expect(payload.data).toMatchObject({
         boardId: 'default',
         action: 'deploy',
         title: 'Deploy to Production'

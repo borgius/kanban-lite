@@ -86,8 +86,8 @@ describe('Multi-board SDK operations', () => {
   })
 
   describe('createBoard', () => {
-    it('should create a board dir and add to config', () => {
-      const board = sdk.createBoard('sprint', 'Sprint Board')
+    it('should create a board dir and add to config', async () => {
+      const board = await sdk.createBoard('sprint', 'Sprint Board')
 
       expect(board.id).toBe('sprint')
       expect(board.name).toBe('Sprint Board')
@@ -100,13 +100,13 @@ describe('Multi-board SDK operations', () => {
       expect(raw.boards.sprint.nextCardId).toBe(1)
     })
 
-    it('should create a board with custom options', () => {
+    it('should create a board with custom options', async () => {
       const customColumns = [
         { id: 'new', name: 'New', color: '#ff0000' },
         { id: 'wip', name: 'WIP', color: '#00ff00' },
         { id: 'finished', name: 'Finished', color: '#0000ff' }
       ]
-      const board = sdk.createBoard('custom', 'Custom Board', {
+      const board = await sdk.createBoard('custom', 'Custom Board', {
         description: 'A custom board',
         columns: customColumns,
         defaultStatus: 'new',
@@ -123,14 +123,14 @@ describe('Multi-board SDK operations', () => {
       expect(raw.boards.custom.defaultPriority).toBe('high')
     })
 
-    it('should throw if board already exists', () => {
-      expect(() => sdk.createBoard('default', 'Another Default')).toThrow('Board already exists: default')
+    it('should throw if board already exists', async () => {
+      await expect(sdk.createBoard('default', 'Another Default')).rejects.toThrow('Board already exists: default')
     })
   })
 
   describe('deleteBoard', () => {
     it('should remove an empty board', async () => {
-      sdk.createBoard('temp', 'Temporary')
+      await sdk.createBoard('temp', 'Temporary')
 
       // Create the board directory so deletion can clean it up
       fs.mkdirSync(path.join(kanbanDir, 'boards', 'temp'), { recursive: true })
@@ -153,7 +153,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should throw when deleting a board with cards', async () => {
-      sdk.createBoard('has-cards', 'Has Cards')
+      await sdk.createBoard('has-cards', 'Has Cards')
       await sdk.createCard({ content: '# Card', boardId: 'has-cards' })
 
       await expect(sdk.deleteBoard('has-cards')).rejects.toThrow('card(s) still exist')
@@ -178,7 +178,7 @@ describe('Multi-board SDK operations', () => {
 
   describe('createCard with boardId', () => {
     it('should create a card file in the correct board dir', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Sprint Task',
@@ -203,7 +203,7 @@ describe('Multi-board SDK operations', () => {
 
   describe('listCards with boardId', () => {
     it('should only return cards from the specified board', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       await sdk.createCard({ content: '# Default Card', boardId: 'default' })
       await sdk.createCard({ content: '# Sprint Card', boardId: 'sprint' })
@@ -218,7 +218,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should return empty array for board with no cards', async () => {
-      sdk.createBoard('empty', 'Empty Board')
+      await sdk.createBoard('empty', 'Empty Board')
 
       const cards = await sdk.listCards(undefined, 'empty')
       expect(cards).toEqual([])
@@ -243,7 +243,7 @@ describe('Multi-board SDK operations', () => {
 
   describe('transferCard', () => {
     it('should move a card file between boards', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Transfer Me',
@@ -262,7 +262,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should use target board default status when no targetStatus provided', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Transfer Default Status',
@@ -277,7 +277,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should use specified targetStatus', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Transfer With Status',
@@ -292,7 +292,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should move attachment files to the destination board', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Card With Attachment',
@@ -330,7 +330,7 @@ describe('Multi-board SDK operations', () => {
 
   describe('cross-board card ID uniqueness', () => {
     it('should assign globally unique IDs across boards', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const defaultCard = await sdk.createCard({
         content: '# Default Card',
@@ -351,8 +351,8 @@ describe('Multi-board SDK operations', () => {
   })
 
   describe('listColumns with boardId', () => {
-    it('should return board-specific columns', () => {
-      sdk.createBoard('sprint', 'Sprint', {
+    it('should return board-specific columns', async () => {
+      await sdk.createBoard('sprint', 'Sprint', {
         columns: [
           { id: 'new', name: 'New', color: '#ff0000' },
           { id: 'wip', name: 'WIP', color: '#00ff00' }
@@ -375,10 +375,10 @@ describe('Multi-board SDK operations', () => {
   })
 
   describe('addColumn with boardId', () => {
-    it('should add a column to a specific board', () => {
-      sdk.createBoard('sprint', 'Sprint')
+    it('should add a column to a specific board', async () => {
+      await sdk.createBoard('sprint', 'Sprint')
 
-      const columns = sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aabbcc' }, 'sprint')
+      const columns = await sdk.addColumn({ id: 'staging', name: 'Staging', color: '#aabbcc' }, 'sprint')
 
       // Sprint board inherits default columns + the new one
       expect(columns.find(c => c.id === 'staging')).toBeDefined()
@@ -388,9 +388,9 @@ describe('Multi-board SDK operations', () => {
       expect(defaultColumns.find(c => c.id === 'staging')).toBeUndefined()
     })
 
-    it('should throw if column already exists in that board', () => {
-      expect(() => sdk.addColumn({ id: 'backlog', name: 'Backlog Again', color: '#000' }, 'default'))
-        .toThrow('Column already exists: backlog')
+    it('should throw if column already exists in that board', async () => {
+      await expect(sdk.addColumn({ id: 'backlog', name: 'Backlog Again', color: '#000' }, 'default'))
+        .rejects.toThrow('Column already exists: backlog')
     })
   })
 
@@ -422,7 +422,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should use the last column of a custom board for completed status', async () => {
-      sdk.createBoard('custom', 'Custom', {
+      await sdk.createBoard('custom', 'Custom', {
         columns: [
           { id: 'open', name: 'Open', color: '#ff0000' },
           { id: 'closed', name: 'Closed', color: '#00ff00' }
@@ -444,7 +444,7 @@ describe('Multi-board SDK operations', () => {
 
   describe('board isolation', () => {
     it('should not find cards across boards with getCard', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
         content: '# Only In Default',
@@ -462,7 +462,7 @@ describe('Multi-board SDK operations', () => {
     })
 
     it('should keep cards in separate board directories on disk', async () => {
-      sdk.createBoard('sprint', 'Sprint')
+      await sdk.createBoard('sprint', 'Sprint')
 
       await sdk.createCard({ content: '# Default Task', boardId: 'default' })
       await sdk.createCard({ content: '# Sprint Task', boardId: 'sprint' })

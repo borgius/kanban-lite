@@ -112,7 +112,6 @@ export async function migrateToSqlite(ctx: SDKContext, dbPath?: string): Promise
     sqlitePath: resolvedDbPath,
   })
   targetEngine.close()
-  ctx.emitEvent('storage.migrated', { from, to: 'sqlite', count })
   return count
 }
 
@@ -132,6 +131,5 @@ export async function migrateToMarkdown(ctx: SDKContext): Promise<number> {
   const cleanedConfig = removeIncompatibleBuiltInAttachmentPlugin(removeCardStoragePlugin(config), 'markdown')
   const { storageEngine: _se, sqlitePath: _sp, ...restConfig } = cleanedConfig as typeof config & { storageEngine?: string; sqlitePath?: string }
   writeConfig(ctx.workspaceRoot, restConfig as typeof config)
-  ctx.emitEvent('storage.migrated', { from, to: 'markdown', count })
   return count
 }

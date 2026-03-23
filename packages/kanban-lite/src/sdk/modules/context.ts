@@ -24,7 +24,13 @@ export interface SDKContext {
   _isCompletedStatus(status: string, boardId?: string): boolean
   /** @internal */
   _ensureMigrated(): Promise<void>
-  /** @internal */
+  /**
+   * @internal
+   * @deprecated Leaf modules must not own event timing. This method will be removed
+   * once all mutation families are migrated to the SDK-owned action runner (T4–T7).
+   * After migration, before/after event emission is handled exclusively by the
+   * action runner in `KanbanSDK.ts`.
+   */
   emitEvent(event: SDKEventType, data: unknown): void
   getLocalCardPath(card: Card): string | null
   getAttachmentStoragePath(card: Card): string | null

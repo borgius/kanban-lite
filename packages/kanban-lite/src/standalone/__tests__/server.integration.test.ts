@@ -262,6 +262,41 @@ describe('Standalone Server Integration', () => {
       expect(logSpy).toHaveBeenCalledWith(`Kanban config: ${resolvedConfigPath}`)
     })
 
+    it('starts even when the Swagger UI package logo file is unavailable', async () => {
+      vi.resetModules()
+
+      const actualFs = await vi.importActual<typeof import('fs')>('fs')
+      const swaggerUiMock = vi.fn(async () => {})
+
+      vi.doMock('fs', () => ({
+        ...actualFs,
+        existsSync: (filePath: fs.PathLike) => {
+          const normalizedPath = String(filePath)
+          if (normalizedPath.endsWith('/swagger-ui.css')) return true
+          if (normalizedPath.endsWith('/logo.svg')) return false
+          return actualFs.existsSync(filePath)
+        },
+      }))
+      vi.doMock('@fastify/swagger-ui', () => ({
+        __esModule: true,
+        default: swaggerUiMock,
+      }))
+
+      const { startServer: startServerWithMocks } = await import('../server')
+
+      server = startServerWithMocks(tempDir, port, webviewDir)
+      await sleep(200)
+
+      expect(swaggerUiMock).toHaveBeenCalledTimes(1)
+      expect(swaggerUiMock.mock.calls[0]?.[1]).toMatchObject({
+        routePrefix: '/api/docs',
+        logo: null,
+      })
+
+      const res = await httpGet(`http://localhost:${port}/`)
+      expect(res.status).toBe(200)
+    })
+
     it('should serve index.html at root', async () => {
       server = startServer(tempDir, port, webviewDir)
       await sleep(200)

@@ -1,7 +1,7 @@
 # Monorepo Topology Contract
 
-**Plan:** `20260322-classic-monorepo-migration`  
-**Established by:** T1  
+**Plan:** `20260322-classic-monorepo-migration`
+**Established by:** T1
 **Status:** LOCKED — subsequent tasks must not deviate without updating this document.
 
 ---
@@ -29,6 +29,7 @@
     kl-s3-attachment-storage/            ← package name: "kl-s3-attachment-storage"
     kl-sqlite-storage/                   ← package name: "kl-sqlite-storage"
     kl-webhooks-plugin/                  ← package name: "kl-webhooks-plugin"
+    docs-site/                           ← private: true, Eleventy product/docs website
 ```
 
 ---
@@ -105,6 +106,7 @@ Shims are **temporarily** permitted in exactly three categories. Each shim must 
 | Shared Vitest config           | Root `vitest.config.ts`        | Packages register workspaces; root runs all         |
 | Docs and changelog             | Root `docs/`, `README.md`, `CHANGELOG.md` | Always in root, never inside packages    |
 | Generated docs                 | Root `docs/api.md`, `docs/sdk.md` | Run from root `scripts/`; source data lives in packages |
+| Product/docs website           | `packages/docs-site`              | Private Eleventy package; reads root docs at build time, never relocates them |
 
 ---
 

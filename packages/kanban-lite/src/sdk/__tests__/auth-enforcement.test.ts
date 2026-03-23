@@ -1,9 +1,9 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
-import { resolveCapabilityBag } from '../plugins'
+import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../plugins'
 import { AuthError } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
@@ -11,7 +11,16 @@ import type { AuthIdentity } from '../plugins'
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 
 function setCapabilities(sdk: KanbanSDK, bag: CapabilityBag): void {
-  ;(sdk as unknown as { _capabilities: CapabilityBag | null })._capabilities = bag
+  const internal = sdk as unknown as {
+    _capabilities: CapabilityBag | null
+    _eventBus: import('../eventBus').EventBus
+  }
+  internal._capabilities?.authListener.unregister()
+  internal._capabilities = {
+    ...bag,
+    authListener: createBuiltinAuthListenerPlugin(bag.authIdentity, bag.authPolicy),
+  }
+  internal._capabilities.authListener.register(internal._eventBus)
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +245,180 @@ describe('auth enforcement: action names dispatched to policy plugin', () => {
     it(`'${expectedAction}' is dispatched (${invoke.toString().match(/s\.\w+/)?.[0] ?? ''})`, async () => {
       await expect(invoke(sdk)).rejects.toBeInstanceOf(AuthError)
       expect(captured).toContain(expectedAction)
+    })
+  }
+})
+
+describe('auth enforcement: formerly bypassing privileged mutations honor before-event denials', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  async function configureActionWebhook(url: string): Promise<void> {
+    const { readConfig, writeConfig } = await import('../../shared/config')
+    const config = readConfig(sdk.workspaceRoot)
+    writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: url })
+  }
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  type FocusedCase = {
+    label: string
+    event: string
+    action: string
+    setup?: () => Promise<void>
+    invoke: () => Promise<unknown>
+    expectedInput?: Record<string, unknown>
+  }
+
+  const cases: FocusedCase[] = [
+    {
+      label: 'card action trigger',
+      event: 'card.action.trigger',
+      action: 'card.action.trigger',
+      setup: async () => {
+        await configureActionWebhook('https://example.com/actions')
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' }))
+        await sdk.createCard({ content: '# Action Card', actions: ['retry'] })
+      },
+      invoke: () => sdk.triggerAction('kl-1', 'retry'),
+      expectedInput: { cardId: 'kl-1', actionKey: 'retry' },
+    },
+    {
+      label: 'board action config add',
+      event: 'board.update',
+      action: 'board.action.config.add',
+      invoke: () => sdk.addBoardAction('default', 'deploy', 'Deploy'),
+      expectedInput: { boardId: 'default', key: 'deploy', title: 'Deploy' },
+    },
+    {
+      label: 'board action trigger',
+      event: 'board.action.trigger',
+      action: 'board.action.trigger',
+      setup: async () => {
+        await configureActionWebhook('https://example.com/board-actions')
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' }))
+        await sdk.addBoardAction('default', 'deploy', 'Deploy')
+      },
+      invoke: () => sdk.triggerBoardAction('default', 'deploy'),
+      expectedInput: { boardId: 'default', actionKey: 'deploy' },
+    },
+    {
+      label: 'label set',
+      event: 'label.set',
+      action: 'label.set',
+      invoke: () => sdk.setLabel('bug', { color: '#e11d48' }),
+      expectedInput: { name: 'bug' },
+    },
+    {
+      label: 'column cleanup',
+      event: 'column.cleanup',
+      action: 'column.cleanup',
+      setup: async () => {
+        await sdk.createCard({ content: '# Cleanup Me', status: 'backlog' })
+      },
+      invoke: () => sdk.cleanupColumn('backlog'),
+      expectedInput: { columnId: 'backlog' },
+    },
+    {
+      label: 'column reorder',
+      event: 'column.reorder',
+      action: 'column.reorder',
+      invoke: () => sdk.reorderColumns(['done', 'review', 'in-progress', 'todo', 'backlog']),
+      expectedInput: {},
+    },
+    {
+      label: 'column set minimized',
+      event: 'column.setMinimized',
+      action: 'column.setMinimized',
+      invoke: () => sdk.setMinimizedColumns(['backlog']),
+      expectedInput: { columnIds: ['backlog'] },
+    },
+    {
+      label: 'purge deleted cards',
+      event: 'card.purgeDeleted',
+      action: 'card.purgeDeleted',
+      setup: async () => {
+        const card = await sdk.createCard({ content: '# Purge Candidate' })
+        await sdk.deleteCard(card.id)
+      },
+      invoke: () => sdk.purgeDeletedCards('default'),
+      expectedInput: { boardId: 'default' },
+    },
+    {
+      label: 'set default board',
+      event: 'board.setDefault',
+      action: 'board.setDefault',
+      setup: async () => {
+        await sdk.createBoard('ops', 'Ops')
+      },
+      invoke: () => sdk.setDefaultBoard('ops'),
+      expectedInput: { boardId: 'ops' },
+    },
+    {
+      label: 'webhook create',
+      event: 'webhook.create',
+      action: 'webhook.create',
+      invoke: () => sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] }),
+      expectedInput: { url: 'https://example.com', events: ['task.created'] },
+    },
+    {
+      label: 'webhook update',
+      event: 'webhook.update',
+      action: 'webhook.update',
+      setup: async () => {
+        await sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] })
+      },
+      invoke: () => sdk.updateWebhook('wh_1', { url: 'https://updated.example.com' }),
+      expectedInput: { id: 'wh_1', url: 'https://updated.example.com' },
+    },
+    {
+      label: 'webhook delete',
+      event: 'webhook.delete',
+      action: 'webhook.delete',
+      setup: async () => {
+        await sdk.createWebhook({ url: 'https://example.com', events: ['task.created'] })
+      },
+      invoke: () => sdk.deleteWebhook('wh_1'),
+      expectedInput: { id: 'wh_1' },
+    },
+  ]
+
+  for (const testCase of cases) {
+    it(`${testCase.label} throws AuthError from the canonical before-event`, async () => {
+      await testCase.setup?.()
+
+      const captured: Array<Record<string, unknown>> = []
+      sdk.on(testCase.event, vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        captured.push(payload)
+        throw new AuthError('auth.policy.denied', `Action "${testCase.action}" denied`, 'before-listener')
+      }))
+
+      try {
+        await testCase.invoke()
+        throw new Error('Expected AuthError')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AuthError)
+        expect((err as AuthError).category).toBe('auth.policy.denied')
+      }
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0]).toEqual(expect.objectContaining({
+        event: testCase.event,
+        action: testCase.action,
+        input: expect.objectContaining(testCase.expectedInput ?? {}),
+      }))
     })
   }
 })

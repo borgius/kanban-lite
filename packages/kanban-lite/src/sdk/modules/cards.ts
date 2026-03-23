@@ -365,7 +365,6 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
 
   await ctx._storage.writeCard(card)
 
-  ctx.emitEvent('task.created', sanitizeCard(card))
   return card
 }
 
@@ -412,7 +411,6 @@ export async function updateCard(
     if (newPath) card.filePath = newPath
   }
 
-  ctx.emitEvent('task.updated', sanitizeCard(card))
   if (oldStatus !== card.status) {
     await ctx.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${card.status}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
   }
@@ -510,7 +508,6 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
     form,
     data: submittedData,
   }
-  ctx.emitEvent('form.submit', event)
 
   return event
 }
@@ -557,7 +554,6 @@ export async function moveCard(
     if (newPath) card.filePath = newPath
   }
 
-  ctx.emitEvent('task.moved', { ...sanitizeCard(card), previousStatus: oldStatus })
   if (oldStatus !== newStatus) {
     await ctx.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${newStatus}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
   }
@@ -580,9 +576,7 @@ export async function deleteCard(ctx: SDKContext, cardId: string, boardId?: stri
 export async function permanentlyDeleteCard(ctx: SDKContext, cardId: string, boardId?: string): Promise<void> {
   const card = await getCard(ctx, cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
-  const snapshot = sanitizeCard(card)
   await ctx._storage.deleteCard(card)
-  ctx.emitEvent('task.deleted', snapshot)
 }
 
 /**

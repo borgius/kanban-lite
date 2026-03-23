@@ -139,7 +139,6 @@ export async function addLog(
     await ctx._storage.writeCard(card)
   }
 
-  ctx.emitEvent('log.added', { cardId, entry })
   return entry
 }
 
@@ -166,8 +165,6 @@ export async function clearLogs(ctx: SDKContext, cardId: string, boardId?: strin
     card.modified = new Date().toISOString()
     await ctx._storage.writeCard(card)
   }
-
-  ctx.emitEvent('log.cleared', { cardId })
 }
 
 // --- Board-level log management ---
@@ -219,7 +216,6 @@ export async function addBoardLog(
   await fs.mkdir(path.dirname(logPath), { recursive: true })
   const line = serializeLogEntry(entry) + '\n'
   await fs.appendFile(logPath, line, 'utf-8')
-  ctx.emitEvent('board.log.added', { boardId, entry })
   return entry
 }
 
@@ -233,5 +229,4 @@ export async function clearBoardLogs(ctx: SDKContext, boardId?: string): Promise
   } catch {
     // File may not exist — that's fine
   }
-  ctx.emitEvent('board.log.cleared', { boardId })
 }

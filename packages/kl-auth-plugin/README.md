@@ -4,6 +4,7 @@ A [kanban-lite](https://github.com/borgius/kanban-lite) auth plugin package that
 
 - `auth.identity`
 - `auth.policy`
+- listener-only auth runtime helpers for SDK-owned async before-events
 
 The package currently ships two provider ids:
 
@@ -20,6 +21,18 @@ npm install kl-auth-plugin
 
 - `auth.identity`
 - `auth.policy`
+
+## Listener runtime helpers
+
+The package also exports listener-only auth helpers for the SDK before-event pipeline:
+
+- `createAuthListenerPlugin(identity, policy, options)`
+- `createNoopAuthListenerPlugin(options?)`
+- `createRbacAuthListenerPlugin(principals?, options?)`
+
+These listeners register on SDK before-events, run in listener-registration order, emit `auth.allowed` / `auth.denied`, veto denied mutations by throwing `AuthError`, and can optionally return plain-object input overrides via `options.overrideInput`.
+
+The runtime contract is listener-only: capability providers still resolve identity and policy, but mutation enforcement now happens through SDK-owned before-events rather than a direct runtime seam. User-visible denial behavior remains unchanged.
 
 ## Provider ids
 

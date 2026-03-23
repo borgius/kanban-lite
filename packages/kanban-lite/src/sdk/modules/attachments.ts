@@ -22,7 +22,6 @@ export async function addAttachment(ctx: SDKContext, cardId: string, sourcePath:
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
 
-  ctx.emitEvent('attachment.added', { cardId, attachment: fileName })
   return card
 }
 
@@ -37,7 +36,6 @@ export async function removeAttachment(ctx: SDKContext, cardId: string, attachme
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
 
-  ctx.emitEvent('attachment.removed', { cardId, attachment })
   return card
 }
 

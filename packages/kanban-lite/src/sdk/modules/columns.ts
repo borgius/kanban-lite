@@ -36,7 +36,6 @@ export function addColumn(ctx: SDKContext, column: KanbanColumn, boardId?: strin
   }
   board.columns.push(column)
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('column.created', column)
   return board.columns
 }
 
@@ -58,7 +57,6 @@ export function updateColumn(
   if (updates.name !== undefined) col.name = updates.name
   if (updates.color !== undefined) col.color = updates.color
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('column.updated', col)
   return board.columns
 }
 
@@ -83,7 +81,6 @@ export async function removeColumn(ctx: SDKContext, columnId: string, boardId?: 
   const removed = board.columns[idx]
   board.columns.splice(idx, 1)
   writeConfig(ctx.workspaceRoot, config)
-  ctx.emitEvent('column.deleted', removed)
   return board.columns
 }
 

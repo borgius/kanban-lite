@@ -11,17 +11,26 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { KanbanSDK } from '../sdk/KanbanSDK'
-import { resolveCapabilityBag } from '../sdk/plugins'
+import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../sdk/plugins'
 import { AuthError } from '../sdk/types'
 import type { AuthContext, AuthDecision } from '../sdk/types'
 import type { AuthIdentity } from '../sdk/plugins'
-import type { EventListenerPlugin } from '../sdk/types'
+import type { SDKEventListenerPlugin } from '../sdk/types'
 import type { Webhook } from '../shared/config'
 
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 
 function setCapabilities(sdk: KanbanSDK, bag: CapabilityBag): void {
-  ;(sdk as unknown as { _capabilities: CapabilityBag | null })._capabilities = bag
+  const internal = sdk as unknown as {
+    _capabilities: CapabilityBag | null
+    _eventBus: import('../sdk/eventBus').EventBus
+  }
+  internal._capabilities?.authListener.unregister()
+  internal._capabilities = {
+    ...bag,
+    authListener: createBuiltinAuthListenerPlugin(bag.authIdentity, bag.authPolicy),
+  }
+  internal._capabilities.authListener.register(internal._eventBus)
 }
 
 function injectDenyAll(sdk: KanbanSDK, kanbanDir: string): void {
@@ -52,10 +61,10 @@ function injectDenyAll(sdk: KanbanSDK, kanbanDir: string): void {
 function injectMockWebhookProvider(sdk: KanbanSDK, kanbanDir: string): void {
   const store: Webhook[] = []
   let idSeq = 0
-  const noopListener: EventListenerPlugin = {
+  const noopListener: SDKEventListenerPlugin = {
     manifest: { id: 'mock-webhook-listener', provides: ['event.listener'] as const },
-    init: () => {},
-    destroy: () => {},
+    register: () => {},
+    unregister: () => {},
   }
   const bag = resolveCapabilityBag(
     { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
@@ -85,10 +94,8 @@ function injectMockWebhookProvider(sdk: KanbanSDK, kanbanDir: string): void {
         store.splice(idx, 1)
         return true
       },
-      createListener(_root: string): EventListenerPlugin {
-        return noopListener
-      },
     },
+    webhookListener: noopListener,
   })
 }
 
@@ -241,11 +248,17 @@ describe('MCP webhook auth denial: provider-backed error surfaces correctly', ()
   })
 
   it('denied webhook.create surfaces isError with action-stable message', async () => {
+    const mcpAuthCtx: AuthContext = {
+      token: 'secret-webhook-token-must-not-appear-in-response',
+      tokenSource: 'env',
+      transport: 'mcp',
+    }
     const result = await mcpHandler(() =>
-      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, { transport: 'mcp' }),
+      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }, mcpAuthCtx),
     )
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.create')
+    expect(result.content[0].text).not.toContain('secret-webhook-token-must-not-appear-in-response')
   })
 
   it('denied webhook.delete surfaces isError with action-stable message', async () => {

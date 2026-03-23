@@ -15,6 +15,20 @@ import * as path from 'node:path'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
 import { MarkdownStorageEngine } from '../../sdk/plugins/markdown'
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function waitFor(check: () => boolean, timeoutMs = 1500, intervalMs = 25): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started >= timeoutMs) {
+      throw new Error(`Condition was not met within ${timeoutMs}ms`)
+    }
+    await sleep(intervalMs)
+  }
+}
+
 function createTempWorkspace(): { workspaceDir: string; kanbanDir: string; cleanup: () => void } {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-standalone-webhooks-test-'))
   const kanbanDir = path.join(workspaceDir, '.kanban')
@@ -197,7 +211,7 @@ describe('Webhook CRUD via KanbanSDK (built-in fallback path)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Webhook delivery via built-in listener (built-in fallback path)', () => {
-  it('POSTs to a matching webhook when an SDK mutation fires a matching event', async () => {
+  it('POSTs exactly once to a matching webhook when an SDK mutation fires a matching event', async () => {
     const received: Array<{ event: string; data: unknown }> = []
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
@@ -222,7 +236,8 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Delivery regression\n\nTest body.' })
-      await new Promise(resolve => setTimeout(resolve, 400))
+      await waitFor(() => received.length === 1)
+      await sleep(250)
       expect(received).toHaveLength(1)
       expect(received[0].event).toBe('task.created')
       expect(received[0].data).toBeDefined()
@@ -250,7 +265,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Inactive webhook test.' })
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await sleep(300)
       expect(called).toBe(false)
       sdk.destroy()
     } finally {
@@ -277,7 +292,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Event filter test.' })
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await sleep(300)
       expect(called).toBe(false)
       sdk.destroy()
     } finally {
@@ -311,7 +326,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Wildcard test.' })
-      await new Promise(resolve => setTimeout(resolve, 400))
+      await sleep(400)
       expect(receivedEvent).toBe('task.created')
       sdk.destroy()
     } finally {
@@ -347,7 +362,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# HMAC signature test.' })
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await sleep(500)
 
       const signature = receivedHeaders['x-webhook-signature'] as string
       expect(signature).toBeDefined()

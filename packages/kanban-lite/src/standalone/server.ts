@@ -38,6 +38,9 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   const fastify = Fastify({ logger: false, forceCloseConnections: true })
   const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
   const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
+  const swaggerUiLogo = swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
+    ? { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) }
+    : null
 
   // OpenAPI spec and interactive docs (served before the catch-all so Fastify prefers these routes)
   fastify.register(swagger, { openapi: KANBAN_OPENAPI_SPEC as any })
@@ -45,9 +48,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     routePrefix: '/api/docs',
     uiConfig: { docExpansion: 'list', deepLinking: false },
     ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
-    ...(swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
-      ? { logo: { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) } }
-      : {}),
+    logo: swaggerUiLogo,
   })
 
   // Buffer all request bodies so existing handlers can read them via req._rawBody

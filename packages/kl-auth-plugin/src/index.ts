@@ -1,24 +1,19 @@
-export interface AuthIdentity {
-  subject: string
-  roles?: string[]
-}
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 
-export interface AuthPluginManifest {
-  readonly id: string
-  readonly provides: readonly ('auth.identity' | 'auth.policy')[]
-}
-
-export interface AuthDecision {
-  allowed: boolean
-  reason?: string
-  actor?: string
-  metadata?: Record<string, unknown>
-}
+export type AuthErrorCategory =
+  | 'auth.identity.missing'
+  | 'auth.identity.invalid'
+  | 'auth.identity.expired'
+  | 'auth.policy.denied'
+  | 'auth.policy.unknown'
+  | 'auth.provider.error'
 
 export interface AuthContext {
   token?: string
   tokenSource?: string
   transport?: string
+  actorHint?: string
   boardId?: string
   cardId?: string
   fromBoardId?: string
@@ -31,6 +26,81 @@ export interface AuthContext {
   formId?: string
 }
 
+export interface AuthDecision {
+  allowed: boolean
+  reason?: AuthErrorCategory
+  actor?: string
+  metadata?: Record<string, unknown>
+}
+
+export type SDKBeforeEventType =
+  | 'task.create'
+  | 'task.update'
+  | 'task.move'
+  | 'task.delete'
+  | 'comment.create'
+  | 'comment.update'
+  | 'comment.delete'
+  | 'column.create'
+  | 'column.update'
+  | 'column.delete'
+  | 'attachment.add'
+  | 'attachment.remove'
+  | 'settings.update'
+  | 'board.create'
+  | 'board.update'
+  | 'board.delete'
+  | 'log.add'
+  | 'log.clear'
+  | 'board.log.add'
+  | 'board.log.clear'
+  | 'storage.migrate'
+  | 'form.submit'
+
+export interface BeforeEventPayload<TInput = Record<string, unknown>> {
+  readonly event: SDKBeforeEventType
+  readonly action?: string
+  readonly input: TInput
+  readonly auth?: AuthContext
+  readonly actor?: string
+  readonly boardId?: string
+  readonly timestamp: string
+}
+
+export type BeforeEventListenerResponse = Record<string, unknown> | void
+
+export interface SDKEvent {
+  readonly type: string
+  readonly data: unknown
+  readonly timestamp: string
+  readonly actor?: string
+  readonly boardId?: string
+  readonly meta?: Record<string, unknown>
+}
+
+export type SDKEventListener = (payload: SDKEvent | BeforeEventPayload<Record<string, unknown>>) => unknown
+
+export interface EventBus {
+  on(event: string, listener: SDKEventListener): () => void
+  emit(event: string, payload: SDKEvent): void
+}
+
+export interface SDKEventListenerPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+  register(bus: EventBus): void
+  unregister(): void
+}
+
+export interface AuthIdentity {
+  subject: string
+  roles?: string[]
+}
+
+export interface AuthPluginManifest {
+  readonly id: string
+  readonly provides: readonly ('auth.identity' | 'auth.policy')[]
+}
+
 export interface AuthIdentityPlugin {
   readonly manifest: AuthPluginManifest
   resolveIdentity(context: AuthContext): Promise<AuthIdentity | null>
@@ -39,6 +109,19 @@ export interface AuthIdentityPlugin {
 export interface AuthPolicyPlugin {
   readonly manifest: AuthPluginManifest
   checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision>
+}
+
+export interface AuthListenerOverrideContext {
+  readonly payload: BeforeEventPayload<Record<string, unknown>>
+  readonly identity: AuthIdentity | null
+  readonly decision: AuthDecision
+}
+
+export interface AuthListenerPluginOptions {
+  readonly id?: string
+  readonly overrideInput?: (
+    context: AuthListenerOverrideContext,
+  ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
 }
 
 export interface RbacPrincipalEntry {
@@ -161,9 +244,216 @@ export const authPolicyPlugins: Record<string, AuthPolicyPlugin> = {
   rbac: RBAC_POLICY_PLUGIN,
 }
 
+const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
+  'task.create',
+  'task.update',
+  'task.move',
+  'task.delete',
+  'comment.create',
+  'comment.update',
+  'comment.delete',
+  'column.create',
+  'column.update',
+  'column.delete',
+  'attachment.add',
+  'attachment.remove',
+  'settings.update',
+  'board.create',
+  'board.update',
+  'board.delete',
+  'log.add',
+  'log.clear',
+  'board.log.add',
+  'board.log.clear',
+  'storage.migrate',
+  'form.submit',
+]
+
+interface AuthErrorInstance extends Error {
+  category: AuthErrorCategory
+  actor?: string
+}
+
+type AuthErrorConstructor = new (
+  category: AuthErrorCategory,
+  message: string,
+  actor?: string,
+) => AuthErrorInstance
+
+class AuthErrorCompat extends Error implements AuthErrorInstance {
+  category: AuthErrorCategory
+  actor?: string
+
+  constructor(category: AuthErrorCategory, message: string, actor?: string) {
+    super(message)
+    this.name = 'AuthError'
+    this.category = category
+    this.actor = actor
+  }
+}
+
+function getAuthErrorCtor(): AuthErrorConstructor {
+  const candidates = [
+    'kanban-lite/sdk',
+    path.join(__dirname, '..', '..', 'kanban-lite', 'dist', 'sdk', 'index.cjs'),
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      if (candidate.includes(path.sep) && !fs.existsSync(candidate)) continue
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sdk = require(candidate) as { AuthError?: AuthErrorConstructor }
+      if (typeof sdk.AuthError === 'function') {
+        return sdk.AuthError
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return AuthErrorCompat
+}
+
+function isBeforeEventPayload(value: unknown): value is BeforeEventPayload<Record<string, unknown>> {
+  if (!value || typeof value !== 'object') return false
+  const payload = value as BeforeEventPayload<Record<string, unknown>>
+  return typeof payload.event === 'string'
+    && SDK_BEFORE_EVENT_NAMES.includes(payload.event as SDKBeforeEventType)
+    && typeof payload.input === 'object'
+    && payload.input !== null
+}
+
+function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity | null): AuthErrorCategory {
+  if (reason) return reason
+  return identity ? 'auth.policy.denied' : 'auth.identity.missing'
+}
+
+function emitAuthStatusEvent(
+  bus: EventBus,
+  type: 'auth.allowed' | 'auth.denied',
+  action: string,
+  actor?: string,
+  boardId?: string,
+  reason?: AuthErrorCategory,
+): void {
+  const payload: SDKEvent = {
+    type,
+    data: {
+      action,
+      actor,
+      ...(reason ? { reason } : {}),
+    },
+    timestamp: new Date().toISOString(),
+    actor,
+    boardId,
+  }
+  bus.emit(type, payload)
+}
+
+/**
+ * Listener-only auth runtime plugin backed by identity/policy capability providers.
+ *
+ * Registers across all SDK before-events, resolves identity from `payload.auth`,
+ * evaluates authorization for `payload.action`, throws `AuthError` to veto denied
+ * mutations, and may return a plain-object input override when `overrideInput`
+ * is supplied.
+ */
+export class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+
+  private readonly subscriptions: Array<() => void> = []
+
+  constructor(
+    private readonly authIdentity: AuthIdentityPlugin,
+    private readonly authPolicy: AuthPolicyPlugin,
+    private readonly options: AuthListenerPluginOptions = {},
+  ) {
+    this.manifest = {
+      id: options.id ?? `auth-listener:${authIdentity.manifest.id}:${authPolicy.manifest.id}`,
+      provides: ['event.listener'],
+    }
+  }
+
+  register(bus: EventBus): void {
+    if (this.subscriptions.length > 0) return
+
+    const listener = async (
+      payload: BeforeEventPayload<Record<string, unknown>>,
+    ): Promise<BeforeEventListenerResponse> => {
+      if (!isBeforeEventPayload(payload) || !payload.action) return
+
+      const context = payload.auth ?? {}
+      const identity = await this.authIdentity.resolveIdentity(context)
+      const decision = await this.authPolicy.checkPolicy(identity, payload.action, context)
+      const actor = decision.actor ?? identity?.subject ?? payload.actor
+      const boardId = payload.boardId ?? context.boardId
+
+      if (!decision.allowed) {
+        const reason = toAuthErrorCategory(decision.reason, identity)
+        emitAuthStatusEvent(bus, 'auth.denied', payload.action, actor, boardId, reason)
+        const AuthError = getAuthErrorCtor()
+        throw new AuthError(
+          reason,
+          `Action "${payload.action}" denied${actor ? ` for "${actor}"` : ''}`,
+          actor,
+        )
+      }
+
+      emitAuthStatusEvent(bus, 'auth.allowed', payload.action, actor, boardId)
+      return this.options.overrideInput?.({ payload, identity, decision })
+    }
+
+    for (const event of SDK_BEFORE_EVENT_NAMES) {
+      this.subscriptions.push(bus.on(event, listener as unknown as SDKEventListener))
+    }
+  }
+
+  unregister(): void {
+    while (this.subscriptions.length > 0) {
+      this.subscriptions.pop()?.()
+    }
+  }
+}
+
+export function createAuthListenerPlugin(
+  authIdentity: AuthIdentityPlugin,
+  authPolicy: AuthPolicyPlugin,
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin {
+  return new ProviderBackedAuthListenerPlugin(authIdentity, authPolicy, options)
+}
+
+export function createNoopAuthListenerPlugin(
+  options?: Omit<AuthListenerPluginOptions, 'id'> & { id?: string },
+): ProviderBackedAuthListenerPlugin {
+  return createAuthListenerPlugin(NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, {
+    ...options,
+    id: options?.id ?? 'noop-auth-listener',
+  })
+}
+
+export function createRbacAuthListenerPlugin(
+  principals: ReadonlyMap<string, RbacPrincipalEntry> = new Map(),
+  options?: Omit<AuthListenerPluginOptions, 'id'> & { id?: string },
+): ProviderBackedAuthListenerPlugin {
+  return createAuthListenerPlugin(createRbacIdentityPlugin(principals), RBAC_POLICY_PLUGIN, {
+    ...options,
+    id: options?.id ?? 'rbac-auth-listener',
+  })
+}
+
+export const authListenerPluginFactories = {
+  noop: createNoopAuthListenerPlugin,
+  rbac: createRbacAuthListenerPlugin,
+}
+
 const authPluginPackage = {
   authIdentityPlugins,
   authPolicyPlugins,
+  createAuthListenerPlugin,
+  createNoopAuthListenerPlugin,
+  createRbacAuthListenerPlugin,
+  authListenerPluginFactories,
 }
 
 export default authPluginPackage

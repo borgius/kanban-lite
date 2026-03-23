@@ -4,7 +4,7 @@ import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { webhookProviderPlugin, type Webhook } from './index'
+import { WebhookListenerPlugin, webhookProviderPlugin, type Webhook } from './index'
 
 const CONFIG_FILE = '.kanban.json'
 
@@ -176,7 +176,7 @@ describe('webhookProviderPlugin CRUD', () => {
 // Listener lifecycle
 // ---------------------------------------------------------------------------
 
-describe('webhookProviderPlugin createListener', () => {
+describe('WebhookListenerPlugin', () => {
   let workspaceDir: string
 
   beforeEach(() => {
@@ -188,39 +188,47 @@ describe('webhookProviderPlugin createListener', () => {
   })
 
   it('returns listener with correct manifest', () => {
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
+    const listener = new WebhookListenerPlugin(workspaceDir)
     expect(listener.manifest.id).toBe('webhooks')
-    expect(listener.manifest.provides).toContain('webhook.delivery')
+    expect(listener.manifest.provides).toContain('event.listener')
   })
 
-  it('init calls bus.onAny to subscribe', () => {
+  it('register calls bus.onAny to subscribe', () => {
     const mockBus = { onAny: vi.fn().mockReturnValue(() => {}) }
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
     expect(mockBus.onAny).toHaveBeenCalledOnce()
   })
 
-  it('destroy calls the unsubscribe function returned by onAny', () => {
+  it('register is idempotent', () => {
+    const mockBus = { onAny: vi.fn().mockReturnValue(() => {}) }
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    listener.register(mockBus as never)
+    expect(mockBus.onAny).toHaveBeenCalledOnce()
+  })
+
+  it('unregister calls the unsubscribe function returned by onAny', () => {
     const unsubscribeSpy = vi.fn()
     const mockBus = { onAny: vi.fn().mockReturnValue(unsubscribeSpy) }
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    listener.destroy()
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    listener.unregister()
     expect(unsubscribeSpy).toHaveBeenCalledOnce()
   })
 
-  it('destroy is safe to call before init', () => {
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    expect(() => listener.destroy()).not.toThrow()
+  it('unregister is safe to call before register', () => {
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    expect(() => listener.unregister()).not.toThrow()
   })
 
-  it('destroy is idempotent', () => {
+  it('unregister is idempotent', () => {
     const unsubscribeSpy = vi.fn()
     const mockBus = { onAny: vi.fn().mockReturnValue(unsubscribeSpy) }
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    listener.destroy()
-    listener.destroy()
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    listener.unregister()
+    listener.unregister()
     expect(unsubscribeSpy).toHaveBeenCalledOnce()
   })
 })
@@ -240,7 +248,7 @@ describe('delivery event filtering', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('does not attempt delivery when no webhooks match the event', async () => {
+  it('does not attempt delivery for before-events even when a matching after-event webhook exists', async () => {
     // Register a webhook subscribed only to 'task.created'
     webhookProviderPlugin.createWebhook(workspaceDir, {
       url: 'http://127.0.0.1:1/unreachable',
@@ -258,17 +266,65 @@ describe('delivery event filtering', () => {
     const origError = console.error
     console.error = (...args: unknown[]) => errors.push(String(args[0]))
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
 
-    // Fire a non-matching event
-    capturedHandler!('task.deleted', { data: {} })
+    // Fire the matching before-event name; listener-only contract must ignore it.
+    capturedHandler!('task.create', { data: {} })
     await new Promise((r) => setTimeout(r, 100))
 
     console.error = origError
-    listener.destroy()
+    listener.unregister()
 
     expect(errors.filter((e) => e.includes('[kl-webhooks-plugin]'))).toHaveLength(0)
+  })
+
+  it('delivers a matching after-event exactly once', async () => {
+    const received: Array<{ event: string; timestamp: string; data: unknown }> = []
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        received.push(JSON.parse(body) as { event: string; timestamp: string; data: unknown })
+        res.writeHead(200)
+        res.end()
+      })
+    })
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+
+    webhookProviderPlugin.createWebhook(workspaceDir, {
+      url: `http://127.0.0.1:${port}/hook`,
+      events: ['task.created'],
+    })
+
+    let capturedHandler: ((event: string, payload: { data: unknown }) => void) | undefined
+    const mockBus = {
+      onAny: vi.fn().mockImplementation((h: (event: string, payload: { data: unknown }) => void) => {
+        capturedHandler = h
+        return () => {}
+      }),
+    }
+
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+
+    capturedHandler!('task.create', { data: { ignored: true } })
+    capturedHandler!('task.created', {
+      data: {
+        event: 'task.created',
+        timestamp: '2026-03-23T00:00:00.000Z',
+        data: { id: 'card-1' },
+      },
+    })
+
+    await new Promise((r) => setTimeout(r, 300))
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    listener.unregister()
+
+    expect(received).toHaveLength(1)
+    expect(received[0].event).toBe('task.created')
   })
 
   it('skips inactive webhooks', async () => {
@@ -289,13 +345,19 @@ describe('delivery event filtering', () => {
     const origError = console.error
     console.error = (...args: unknown[]) => errors.push(String(args[0]))
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    capturedHandler!('task.created', { data: {} })
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    capturedHandler!('task.created', {
+      data: {
+        event: 'task.created',
+        timestamp: '2026-03-23T00:00:00.000Z',
+        data: {},
+      },
+    })
     await new Promise((r) => setTimeout(r, 100))
 
     console.error = origError
-    listener.destroy()
+    listener.unregister()
 
     expect(errors.filter((e) => e.includes('[kl-webhooks-plugin]'))).toHaveLength(0)
   })
@@ -318,15 +380,21 @@ describe('delivery event filtering', () => {
     const origError = console.error
     console.error = (...args: unknown[]) => errors.push(String(args[0]))
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
 
     // Should not throw even though delivery will fail
-    expect(() => capturedHandler!('task.created', { data: {} })).not.toThrow()
+    expect(() => capturedHandler!('task.created', {
+      data: {
+        event: 'task.created',
+        timestamp: '2026-03-23T00:00:00.000Z',
+        data: {},
+      },
+    })).not.toThrow()
     await new Promise((r) => setTimeout(r, 500))
 
     console.error = origError
-    listener.destroy()
+    listener.unregister()
 
     // Error must be logged, not thrown
     const deliveryErrors = errors.filter((e) => e.includes('[kl-webhooks-plugin]'))
@@ -382,14 +450,20 @@ describe('HMAC signing', () => {
       }),
     }
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    capturedHandler!('task.created', { data: { id: 'card-1' } })
+    const afterPayload = {
+      event: 'task.created',
+      timestamp: '2026-03-23T00:00:00.000Z',
+      data: { id: 'card-1' },
+    }
+
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    capturedHandler!('task.created', { data: afterPayload })
 
     // Wait for delivery
     await new Promise((r) => setTimeout(r, 500))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    listener.destroy()
+    listener.unregister()
 
     const expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(receivedBody).digest('hex')
     expect(receivedHeaders['x-webhook-signature']).toBe(expectedSig)
@@ -421,13 +495,19 @@ describe('HMAC signing', () => {
       }),
     }
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    capturedHandler!('task.updated', { data: {} })
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    capturedHandler!('task.updated', {
+      data: {
+        event: 'task.updated',
+        timestamp: '2026-03-23T00:00:00.000Z',
+        data: {},
+      },
+    })
 
     await new Promise((r) => setTimeout(r, 500))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    listener.destroy()
+    listener.unregister()
 
     expect(receivedHeaders['x-webhook-signature']).toBeUndefined()
     expect(receivedHeaders['x-webhook-event']).toBe('task.updated')
@@ -462,17 +542,23 @@ describe('HMAC signing', () => {
       }),
     }
 
-    const listener = webhookProviderPlugin.createListener(workspaceDir)
-    listener.init(mockBus as never, workspaceDir)
-    capturedHandler!('task.created', { data: { id: 'card-1', status: 'backlog' } })
+    const afterPayload = {
+      event: 'task.created',
+      timestamp: '2026-03-23T00:00:00.000Z',
+      data: { id: 'card-1', status: 'backlog' },
+    }
+
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    capturedHandler!('task.created', { data: afterPayload })
 
     await new Promise((r) => setTimeout(r, 500))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    listener.destroy()
+    listener.unregister()
 
     const parsed = JSON.parse(receivedBody) as { event: string; timestamp: string; data: unknown }
     expect(parsed.event).toBe('task.created')
     expect(typeof parsed.timestamp).toBe('string')
-    expect(parsed.data).toEqual({ id: 'card-1', status: 'backlog' })
+    expect(parsed.data).toEqual(afterPayload)
   })
 })

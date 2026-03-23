@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import type { Card } from '../../shared/types'
 import type { Webhook } from '../../shared/config'
 import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities } from '../../shared/config'
-import type { AuthContext, AuthDecision } from '../types'
+import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin } from '../types'
+import { AuthError } from '../types'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { MARKDOWN_PLUGIN } from './markdown'
@@ -155,10 +156,9 @@ const FALLBACK_NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
 /**
  * Contract for `webhook.delivery` capability providers.
  *
- * Owns webhook registry CRUD and creates the runtime {@link EventListenerPlugin}
- * that subscribes to the SDK event bus and delivers outbound HTTP webhook events.
- * Reuses {@link EventListenerPlugin} as the listener lifecycle shape so no new
- * lifecycle protocol is introduced in this task.
+ * Owns webhook registry CRUD. Runtime delivery is listener-driven and must be
+ * exported separately as `webhookListenerPlugin: SDKEventListenerPlugin` when an
+ * external provider wants to own webhook event delivery.
  *
  * External packages (e.g. `kl-webhooks-plugin`) must export a compatible
  * implementation as `webhookProviderPlugin` (or as the default export) with a
@@ -179,11 +179,6 @@ export interface WebhookProviderPlugin {
   ): Webhook | null
   /** Deletes a webhook by id. Returns `true` if deleted, `false` if not found. */
   deleteWebhook(workspaceRoot: string, id: string): boolean
-  /**
-   * Creates an {@link import('../types').EventListenerPlugin} that subscribes to the SDK event
-   * bus and delivers matching events to registered webhooks for the given workspace.
-   */
-  createListener(workspaceRoot: string): import('../types').EventListenerPlugin
 }
 
 /**
@@ -522,12 +517,34 @@ export interface ResolvedCapabilityBag {
    */
   readonly authPolicy: AuthPolicyPlugin
   /** Resolved event listener plugins. Currently always empty; reserved for future use. */
-  readonly eventListeners: readonly import('../types').EventListenerPlugin[]  /**
-   * Resolved webhook delivery provider, or `null` when the `kl-webhooks-plugin` package is
-   * not yet installed. When `null`, the built-in `WebhookListenerPlugin` path in `KanbanSDK`
-   * remains active as a compatibility fallback until the external package is present.
+  /** Resolved event listener plugins. Reserved for future use; currently empty. */
+  readonly eventListeners: readonly SDKEventListenerPlugin[]
+  /**
+   * Resolved webhook delivery provider for CRUD operations, or `null` when the
+   * `kl-webhooks-plugin` package is not yet installed.
+   *
+   * This field holds only the registry/persistence capability. Runtime delivery
+   * is wired via {@link webhookListener}.
    */
-  readonly webhookProvider: WebhookProviderPlugin | null}
+  readonly webhookProvider: WebhookProviderPlugin | null
+  /**
+   * Resolved webhook runtime delivery listener, or `null` when no webhook package
+   * is installed. When `null`, the SDK falls back to the built-in
+   * {@link import('./webhookListener').WebhookListenerPlugin}.
+   *
+   * Implements {@link SDKEventListenerPlugin} — registered via `register(bus)` at
+   * SDK startup to subscribe to after-events and deliver outbound HTTP webhooks.
+   */
+  readonly webhookListener: SDKEventListenerPlugin | null
+  /**
+   * Built-in auth event listener plugin.
+   *
+   * Establishes the {@link SDKEventListenerPlugin} registration seam for
+   * authorization. Active per-before-event auth checking will be wired in T9
+   * once `BeforeEventPayload` carries the `AuthContext` and SDK action runners
+   * transition away from the `_authorizeAction` path.
+   */
+  readonly authListener: SDKEventListenerPlugin}
 
 function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace): manifest is PluginManifest {
   if (!manifest || typeof manifest !== 'object') return false
@@ -573,8 +590,7 @@ export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
  * - `webhooks` → `npm install kl-webhooks-plugin`
  *
  * External packages must export `webhookProviderPlugin` (or a default export)
- * with a manifest that provides `'webhook.delivery'`, CRUD methods, and a
- * `createListener` factory.
+ * with a manifest that provides `'webhook.delivery'` and CRUD methods.
  */
 export const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['webhooks', 'kl-webhooks-plugin'],
@@ -662,14 +678,7 @@ function tryLoadWorkspacePackage(request: string): unknown {
 }
 
 function loadExternalModule(request: string): unknown {
-  // 1. Standard npm resolution (installed package or pnpm workspace symlink).
-  try {
-    return runtimeRequire(request)
-  } catch (err: unknown) {
-    if (!isMissingRequestedModule(request, err)) throw err
-  }
-
-  // 2. Workspace-local packages/{request} (monorepo layout — primary path
+  // 1. Workspace-local packages/{request} (monorepo layout — primary path
   //    during the staged migration before the package is published to npm).
   if (WORKSPACE_ROOT) {
     const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
@@ -678,6 +687,13 @@ function loadExternalModule(request: string): unknown {
     } catch (workspaceErr: unknown) {
       if (!isMissingRequestedModule(workspacePackagePath, workspaceErr)) throw workspaceErr
     }
+  }
+
+  // 2. Standard npm resolution (installed package or pnpm workspace symlink).
+  try {
+    return runtimeRequire(request)
+  } catch (err: unknown) {
+    if (!isMissingRequestedModule(request, err)) throw err
   }
 
   // 3. Legacy sibling path ../request (backward-compat for non-monorepo
@@ -892,51 +908,114 @@ function isValidWebhookProviderManifest(manifest: unknown): manifest is { readon
 }
 
 /**
+ * Type guard for {@link SDKEventListenerPlugin} — validates that `plugin` has
+ * the `register` / `unregister` lifecycle and a valid manifest.
+ *
+ * @internal
+ */
+function isValidSDKEventListenerPlugin(plugin: unknown): plugin is SDKEventListenerPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const p = plugin as SDKEventListenerPlugin
+  return typeof p.register === 'function'
+    && typeof p.unregister === 'function'
+    && typeof p.manifest?.id === 'string'
+    && Array.isArray(p.manifest?.provides)
+}
+
+/** @internal Shape of a loaded webhook provider package module. */
+interface WebhookProviderModule {
+  webhookProviderPlugin?: unknown
+  webhookListenerPlugin?: unknown
+  WebhookListenerPlugin?: unknown
+  default?: unknown
+}
+
+/** @internal Combined result of loading a webhook package. */
+interface WebhookPluginPack {
+  provider: WebhookProviderPlugin
+  /** Direct `SDKEventListenerPlugin` export when the package provides one. */
+  listener?: SDKEventListenerPlugin
+}
+
+interface WebhookListenerPluginConstructor {
+  new (workspaceRoot: string): SDKEventListenerPlugin
+}
+
+function isWebhookListenerPluginConstructor(value: unknown): value is WebhookListenerPluginConstructor {
+  return typeof value === 'function'
+}
+
+/**
  * Lazily loads an external npm webhook provider plugin.
+ *
+ * Accepts packages that export:
+ * - `webhookProviderPlugin` (or a default): CRUD webhook provider.
+ * - `webhookListenerPlugin` (optional): a {@link SDKEventListenerPlugin} for
+ *   runtime delivery.
+ * - `WebhookListenerPlugin` (optional): a class export constructed with the
+ *   workspace root when the runtime listener needs workspace-local config.
+ *
  * Returns a deterministic, actionable error when the package is not installed
  * or does not export the expected shape.
  *
  * @internal
  */
-function loadWebhookProviderPlugin(providerName: string): WebhookProviderPlugin {
-  const mod = loadExternalModule(providerName) as { webhookProviderPlugin?: unknown; default?: unknown }
+function loadWebhookPluginPack(providerName: string, workspaceRoot: string): WebhookPluginPack {
+  const mod = loadExternalModule(providerName) as WebhookProviderModule
 
-  const plugin = (mod.webhookProviderPlugin ?? mod.default) as WebhookProviderPlugin | undefined
+  const rawProvider = (mod.webhookProviderPlugin ?? mod.default) as WebhookProviderPlugin | undefined
   if (
-    !plugin ||
-    typeof plugin.listWebhooks !== 'function' ||
-    typeof plugin.createWebhook !== 'function' ||
-    typeof plugin.updateWebhook !== 'function' ||
-    typeof plugin.deleteWebhook !== 'function' ||
-    typeof plugin.createListener !== 'function' ||
-    !isValidWebhookProviderManifest(plugin.manifest)
+    !rawProvider ||
+    typeof rawProvider.listWebhooks !== 'function' ||
+    typeof rawProvider.createWebhook !== 'function' ||
+    typeof rawProvider.updateWebhook !== 'function' ||
+    typeof rawProvider.deleteWebhook !== 'function' ||
+    !isValidWebhookProviderManifest(rawProvider.manifest)
   ) {
     throw new Error(
       `Plugin "${providerName}" does not export a valid webhookProviderPlugin. ` +
       `Expected a named export 'webhookProviderPlugin' or default export with ` +
-      `CRUD methods (listWebhooks, createWebhook, updateWebhook, deleteWebhook), ` +
-      `createListener, and a manifest that provides 'webhook.delivery'.`
+      `CRUD methods (listWebhooks, createWebhook, updateWebhook, deleteWebhook) ` +
+      `and a manifest that provides 'webhook.delivery'.`
     )
   }
-  return plugin
+
+  const directListener = isValidSDKEventListenerPlugin(mod.webhookListenerPlugin)
+    ? mod.webhookListenerPlugin
+    : isWebhookListenerPluginConstructor(mod.WebhookListenerPlugin)
+      ? mod.WebhookListenerPlugin
+      : undefined
+
+  if (isWebhookListenerPluginConstructor(directListener)) {
+    return { provider: rawProvider, listener: new directListener(workspaceRoot) }
+  }
+
+  return { provider: rawProvider, listener: directListener }
 }
 
 /**
- * Attempts to resolve a webhook provider from a normalized {@link ProviderRef}.
+ * Attempts to resolve a webhook provider and its runtime delivery listener from
+ * a normalized {@link ProviderRef}.
  *
- * Returns `null` when the package is simply not installed yet, so the built-in
- * `WebhookListenerPlugin` path in `KanbanSDK` continues to function as a
- * compatibility fallback until the external plugin is present.
+ * Listener resolution priority:
+ * 1. `webhookListenerPlugin: SDKEventListenerPlugin` named export from package.
+ * 2. `WebhookListenerPlugin` class export constructed with the workspace root.
+ * 3. `null` — caller falls back to the built-in `WebhookListenerPlugin`.
  *
- * Throws for any other loading or validation error so misconfigurations surface
- * immediately.
+ * Returns `null` when the package is simply not installed yet (not-installed error),
+ * so the built-in listener path in `KanbanSDK` continues to function as a fallback.
+ * Throws for any other loading or validation error.
  *
  * @internal
  */
-function resolveWebhookProvider(ref: ProviderRef): WebhookProviderPlugin | null {
+function resolveWebhookPlugins(
+  ref: ProviderRef,
+  workspaceRoot: string,
+): { provider: WebhookProviderPlugin; listener: SDKEventListenerPlugin | null } | null {
   const packageName = WEBHOOK_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
   try {
-    return loadWebhookProviderPlugin(packageName)
+    const { provider, listener } = loadWebhookPluginPack(packageName, workspaceRoot)
+    return { provider, listener: listener ?? null }
   } catch (err) {
     if (
       err instanceof Error &&
@@ -949,9 +1028,135 @@ function resolveWebhookProvider(ref: ProviderRef): WebhookProviderPlugin | null 
   }
 }
 
+const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
+  'task.create',
+  'task.update',
+  'task.move',
+  'task.delete',
+  'card.transfer',
+  'card.action.trigger',
+  'card.purgeDeleted',
+  'comment.create',
+  'comment.update',
+  'comment.delete',
+  'column.create',
+  'column.update',
+  'column.delete',
+  'column.reorder',
+  'column.setMinimized',
+  'column.cleanup',
+  'attachment.add',
+  'attachment.remove',
+  'settings.update',
+  'board.create',
+  'board.update',
+  'board.delete',
+  'board.action.trigger',
+  'board.setDefault',
+  'log.add',
+  'log.clear',
+  'board.log.add',
+  'board.log.clear',
+  'storage.migrate',
+  'label.set',
+  'label.rename',
+  'label.delete',
+  'webhook.create',
+  'webhook.update',
+  'webhook.delete',
+  'form.submit',
+]
+
+function isBeforeEventPayload(value: unknown): value is BeforeEventPayload<Record<string, unknown>> {
+  if (!value || typeof value !== 'object') return false
+  const payload = value as BeforeEventPayload<Record<string, unknown>>
+  return typeof payload.event === 'string'
+    && SDK_BEFORE_EVENT_NAMES.includes(payload.event as SDKBeforeEventType)
+    && typeof payload.input === 'object'
+    && payload.input !== null
+}
+
+function toAuthErrorCategory(reason?: AuthErrorCategory, identity?: AuthIdentity | null): AuthErrorCategory {
+  if (reason) return reason
+  return identity ? 'auth.policy.denied' : 'auth.identity.missing'
+}
+
 // ---------------------------------------------------------------------------
 // Capability bag resolver (main entry point)
 // ---------------------------------------------------------------------------
+
+/**
+ * Creates the built-in auth event listener plugin that enforces authorization
+ * during the before-event phase.
+ *
+ * The listener resolves identity from {@link BeforeEventPayload.auth}, evaluates
+ * the configured policy for {@link BeforeEventPayload.action}, emits
+ * `auth.allowed` / `auth.denied`, and throws {@link AuthError} when a mutation
+ * must be vetoed.
+ *
+ * @param authIdentity - Resolved identity provider used to establish the caller.
+ * @param authPolicy   - Resolved policy provider used to authorize each action.
+ * @returns A registered {@link SDKEventListenerPlugin} for the auth runtime seam.
+ */
+export function createBuiltinAuthListenerPlugin(
+  authIdentity: AuthIdentityPlugin,
+  authPolicy: AuthPolicyPlugin,
+): SDKEventListenerPlugin {
+  const subscriptions: Array<() => void> = []
+  return {
+    manifest: { id: 'builtin:auth-listener', provides: ['event.listener'] },
+    register(bus: import('../eventBus').EventBus): void {
+      if (subscriptions.length > 0) return
+
+      const listener = async (payload: BeforeEventPayload<Record<string, unknown>>): Promise<void> => {
+        if (!isBeforeEventPayload(payload) || !payload.action) return
+
+        const context = payload.auth ?? {}
+        const identity = await authIdentity.resolveIdentity(context)
+        const decision = await authPolicy.checkPolicy(identity, payload.action, context)
+        const actor = decision.actor ?? identity?.subject ?? payload.actor
+        const boardId = payload.boardId ?? context.boardId
+
+        if (!decision.allowed) {
+          bus.emit('auth.denied', {
+            type: 'auth.denied',
+            data: {
+              action: payload.action,
+              reason: toAuthErrorCategory(decision.reason, identity),
+              actor,
+            },
+            timestamp: new Date().toISOString(),
+            actor,
+            boardId,
+          })
+
+          throw new AuthError(
+            toAuthErrorCategory(decision.reason, identity),
+            `Action "${payload.action}" denied${actor ? ` for "${actor}"` : ''}`,
+            actor,
+          )
+        }
+
+        bus.emit('auth.allowed', {
+          type: 'auth.allowed',
+          data: { action: payload.action, actor },
+          timestamp: new Date().toISOString(),
+          actor,
+          boardId,
+        })
+      }
+
+      for (const event of SDK_BEFORE_EVENT_NAMES) {
+        subscriptions.push(bus.on(event, listener as unknown as import('../types').SDKEventListener))
+      }
+    },
+    unregister(): void {
+      while (subscriptions.length > 0) {
+        subscriptions.pop()?.()
+      }
+    },
+  }
+}
 
 function resolveCardPlugin(ref: ProviderRef): CardStoragePlugin {
   const builtin = BUILTIN_CARD_PLUGINS.get(ref.provider)
@@ -1030,6 +1235,12 @@ export function resolveCapabilityBag(
     'auth.policy': { provider: 'noop' },
   }
 
+  const resolvedAuthIdentity = resolveAuthIdentityPlugin(resolvedAuth['auth.identity'])
+  const resolvedAuthPolicy = resolveAuthPolicyPlugin(resolvedAuth['auth.policy'])
+  const webhookPlugins = webhookCapabilities
+    ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], path.dirname(kanbanDir))
+    : null
+
   return {
     cardStorage: cardEngine,
     attachmentStorage: attachPlugin,
@@ -1053,11 +1264,11 @@ export function resolveCapabilityBag(
       if (nodeCapabilities) return nodeCapabilities.getWatchGlob()
       return cardEngine.type === 'markdown' ? 'boards/**/*.md' : null
     },
-    authIdentity: resolveAuthIdentityPlugin(resolvedAuth['auth.identity']),
-    authPolicy: resolveAuthPolicyPlugin(resolvedAuth['auth.policy']),
+    authIdentity: resolvedAuthIdentity,
+    authPolicy: resolvedAuthPolicy,
     eventListeners: [],
-    webhookProvider: webhookCapabilities
-      ? resolveWebhookProvider(webhookCapabilities['webhook.delivery'])
-      : null,
+    webhookProvider: webhookPlugins?.provider ?? null,
+    webhookListener: webhookPlugins?.listener ?? null,
+    authListener: createBuiltinAuthListenerPlugin(resolvedAuthIdentity, resolvedAuthPolicy),
   }
 }

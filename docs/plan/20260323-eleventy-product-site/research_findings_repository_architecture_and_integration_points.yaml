@@ -1,0 +1,462 @@
+plan_id: "20260323-eleventy-product-site"
+objective: "Investigate how to add an @11ty/eleventy-based marketing + documentation website to the kanban-light repository with minimal disruption."
+focus_area: "repository_architecture_and_integration_points"
+created_at: "2026-03-23T00:00:00Z"
+created_by: "gem-researcher"
+status: "completed"
+
+tldr: |
+  - The workspace root is a private pnpm orchestrator while product/plugin code lives under `packages/*`; root-level docs, README, CHANGELOG, and generated docs explicitly remain at the repository root.
+  - The current documentation corpus that could feed a site already exists in root-owned markdown: `README.md`, `CHANGELOG.md`, `docs/*.md`, generated docs (`docs/api.md`, `docs/sdk.md`, `docs/webhooks.md`), package `README.md` files, `docs/press/*.md`, and `docs/images/*`.
+  - Root scripts orchestrate builds/tests/docs via `pnpm --filter ...`, and package-level conventions use local `package.json` scripts for `build`, `test`, `typecheck`, and optional `dev`/`watch`.
+  - Adding a website as a new workspace package fits current package-manager conventions best, but the locked topology document does not currently list a docs/site package, so that contract would need acknowledgement if the package layout expands.
+  - The lowest-disruption integration path is to keep documentation sources where they are (root and package READMEs) and add a site layer that reads them rather than relocating docs ownership.
+
+research_metadata:
+  methodology: "Hybrid retrieval using semantic_search and grep_search, followed by targeted read_file inspection of root/package manifests, topology docs, generated-doc scripts, content sources, and test configs. Relationship discovery focused on root orchestrator -> package scripts -> root docs ownership -> generated docs pipelines."
+  scope: "Repository architecture and integration points relevant to introducing an Eleventy marketing/docs site with minimal disruption; excluded unrelated product implementation internals."
+  confidence: "high"
+  coverage: 82
+
+files_analyzed:
+  - file: "AGENTS.md"
+    path: "/Users/admin/dev/kanban-light/AGENTS.md"
+    purpose: "Repository execution rules covering parity, implementation order, doc synchronization, and minimal-edit constraints."
+    key_elements:
+      - element: "Feature Parity"
+        type: "pattern"
+        location: "AGENTS.md:6"
+        description: "Cross-interface parity is required for product features across API, CLI, and MCP."
+      - element: "Implementation Order"
+        type: "pattern"
+        location: "AGENTS.md:10"
+        description: "SDK-first, then API, CLI, MCP; relevant if site work touches user-facing contracts or docs sources."
+      - element: "Documentation rules"
+        type: "pattern"
+        location: "AGENTS.md:23"
+        description: "Generated docs must not be edited manually; README and CHANGELOG must stay in sync with user-facing changes."
+    language: "markdown"
+    lines: 41
+
+  - file: "package.json"
+    path: "/Users/admin/dev/kanban-light/package.json"
+    purpose: "Workspace-root orchestrator manifest defining package manager and top-level build/test/docs scripts."
+    key_elements:
+      - element: "private workspace package"
+        type: "variable"
+        location: "package.json:1"
+        description: "Root package is private and described as a workspace controller."
+      - element: "pnpm filter orchestration"
+        type: "pattern"
+        location: "package.json:15"
+        description: "Build/test/dev/docs scripts target packages via `pnpm --filter`."
+      - element: "docs:root scripts"
+        type: "pattern"
+        location: "package.json:44"
+        description: "Root documentation generation is split into sdk/api/webhooks tasks."
+    language: "json"
+    lines: 97
+
+  - file: "pnpm-workspace.yaml"
+    path: "/Users/admin/dev/kanban-light/pnpm-workspace.yaml"
+    purpose: "Workspace membership definition."
+    key_elements:
+      - element: "packages"
+        type: "pattern"
+        location: "pnpm-workspace.yaml:1"
+        description: "Workspace currently includes only `packages/*`."
+    language: "yaml"
+    lines: 4
+
+  - file: "docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md"
+    path: "/Users/admin/dev/kanban-light/docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md"
+    purpose: "Locked monorepo topology and ownership contract."
+    key_elements:
+      - element: "Target Package Layout"
+        type: "pattern"
+        location: "TOPOLOGY.md:8"
+        description: "Declares root as private orchestrator, `packages/kanban-lite` as main product, and docs/scripts at root."
+      - element: "Ownership Boundaries"
+        type: "pattern"
+        location: "TOPOLOGY.md:99"
+        description: "States docs and changelog always remain at root; build/test orchestration is root-owned."
+      - element: "LOCKED status"
+        type: "pattern"
+        location: "TOPOLOGY.md:4"
+        description: "Subsequent tasks must not deviate without updating this document."
+    language: "markdown"
+    lines: 136
+
+  - file: "README.md"
+    path: "/Users/admin/dev/kanban-light/README.md"
+    purpose: "Primary public narrative doc and top-level content source for product positioning, usage, architecture, and links to generated docs."
+    key_elements:
+      - element: "Hero/feature narrative"
+        type: "pattern"
+        location: "README.md:1"
+        description: "Contains the highest-value marketing/product overview content."
+      - element: "Generated docs links"
+        type: "pattern"
+        location: "README.md:287"
+        description: "Links to generated REST API docs and other deeper references."
+      - element: "Development section"
+        type: "pattern"
+        location: "README.md:1390"
+        description: "Documents root dev/build/test/typecheck/lint conventions and tech stack."
+    language: "markdown"
+    lines: 1442
+
+  - file: "CHANGELOG.md"
+    path: "/Users/admin/dev/kanban-light/CHANGELOG.md"
+    purpose: "Release-history source for what changed and a likely site feed for release notes/news."
+    key_elements:
+      - element: "Unreleased"
+        type: "pattern"
+        location: "CHANGELOG.md:7"
+        description: "Primary entry point for active release notes."
+      - element: "Keep a Changelog structure"
+        type: "pattern"
+        location: "CHANGELOG.md:1"
+        description: "Structured Added/Changed/Fixed/Removed sections suitable for release-note rendering."
+    language: "markdown"
+    lines: 140
+
+  - file: "docs/api.md"
+    path: "/Users/admin/dev/kanban-light/docs/api.md"
+    purpose: "Generated REST API reference that a docs site could ingest or re-render."
+    key_elements:
+      - element: "Generated file banner"
+        type: "pattern"
+        location: "docs/api.md:1"
+        description: "Explicitly says the file is generated from the OpenAPI spec via `scripts/generate-api-docs.ts`."
+    language: "markdown"
+    lines: 80
+
+  - file: "docs/sdk.md"
+    path: "/Users/admin/dev/kanban-light/docs/sdk.md"
+    purpose: "Generated SDK reference source for deep API docs."
+    key_elements:
+      - element: "SDK overview and API reference"
+        type: "pattern"
+        location: "docs/sdk.md:1"
+        description: "Autogenerated SDK documentation suitable for a reference section."
+    language: "markdown"
+    lines: 80
+
+  - file: "docs/forms.md"
+    path: "/Users/admin/dev/kanban-light/docs/forms.md"
+    purpose: "Hand-authored feature guide; representative of docs pages that could become site content."
+    key_elements:
+      - element: "Feature guide structure"
+        type: "pattern"
+        location: "docs/forms.md:1"
+        description: "Long-form topical documentation with sections, examples, and diagrams."
+    language: "markdown"
+    lines: 140
+
+  - file: "docs/plugins.md"
+    path: "/Users/admin/dev/kanban-light/docs/plugins.md"
+    purpose: "Deep-dive architecture doc and source-of-truth map for plugin-related behavior."
+    key_elements:
+      - element: "Source of truth in the codebase"
+        type: "pattern"
+        location: "docs/plugins.md:907"
+        description: "Explicitly maps docs narrative to code-level ownership."
+    language: "markdown"
+    lines: 980
+
+  - file: "docs/press/linkedin.md"
+    path: "/Users/admin/dev/kanban-light/docs/press/linkedin.md"
+    purpose: "Marketing/press content source already stored as markdown."
+    key_elements:
+      - element: "LinkedIn post draft"
+        type: "pattern"
+        location: "docs/press/linkedin.md:1"
+        description: "Example of narrative promotional content that could be surfaced in a marketing/news area."
+    language: "markdown"
+    lines: 40
+
+  - file: "packages/kanban-lite/package.json"
+    path: "/Users/admin/dev/kanban-light/packages/kanban-lite/package.json"
+    purpose: "Main product package manifest showing package-level script conventions and current frontend tooling."
+    key_elements:
+      - element: "build scripts"
+        type: "pattern"
+        location: "packages/kanban-lite/package.json:96"
+        description: "Package-level scripts bundle extension, standalone webview/server, CLI, MCP, and SDK."
+      - element: "docs indirection"
+        type: "pattern"
+        location: "packages/kanban-lite/package.json:123"
+        description: "Package-level docs scripts delegate back to root docs generators."
+      - element: "frontend toolchain"
+        type: "pattern"
+        location: "packages/kanban-lite/package.json:96"
+        description: "Uses Vite, Tailwind, PostCSS, and React for the existing web UI."
+    language: "json"
+    lines: 131
+
+  - file: "packages/kanban-lite/vitest.config.ts"
+    path: "/Users/admin/dev/kanban-light/packages/kanban-lite/vitest.config.ts"
+    purpose: "Current unit-test convention for the main package."
+    key_elements:
+      - element: "include pattern"
+        type: "pattern"
+        location: "packages/kanban-lite/vitest.config.ts:4"
+        description: "Tests live under `src/**/*.{test,spec}.{ts,tsx}` with package-root config."
+    language: "typescript"
+    lines: 13
+
+  - file: "playwright.config.ts"
+    path: "/Users/admin/dev/kanban-light/playwright.config.ts"
+    purpose: "Current repository-level E2E convention."
+    key_elements:
+      - element: "testDir"
+        type: "pattern"
+        location: "playwright.config.ts:6"
+        description: "E2E tests currently target `packages/kanban-lite/e2e`."
+      - element: "webServer"
+        type: "pattern"
+        location: "playwright.config.ts:19"
+        description: "E2E bootstraps through root scripts and a package-owned standalone server."
+    language: "typescript"
+    lines: 29
+
+  - file: "packages/kl-auth-plugin/package.json"
+    path: "/Users/admin/dev/kanban-light/packages/kl-auth-plugin/package.json"
+    purpose: "Representative package manifest for secondary workspace packages."
+    key_elements:
+      - element: "standard package scripts"
+        type: "pattern"
+        location: "packages/kl-auth-plugin/package.json:23"
+        description: "Uses `build`, `clean`, `typecheck`, `test`, `test:watch`, and optional integration tests."
+    language: "json"
+    lines: 55
+
+  - file: "packages/kl-webhooks-plugin/package.json"
+    path: "/Users/admin/dev/kanban-light/packages/kl-webhooks-plugin/package.json"
+    purpose: "Second representative workspace package showing the same build/test/release pattern."
+    key_elements:
+      - element: "test:integration"
+        type: "pattern"
+        location: "packages/kl-webhooks-plugin/package.json:28"
+        description: "Integration tests are package-local and runnable through root pnpm filters."
+    language: "json"
+    lines: 55
+
+  - file: "scripts/generate-api-docs.ts"
+    path: "/Users/admin/dev/kanban-light/scripts/generate-api-docs.ts"
+    purpose: "Generated-doc pipeline for `docs/api.md`."
+    key_elements:
+      - element: "OpenAPI source of truth"
+        type: "pattern"
+        location: "scripts/generate-api-docs.ts:1"
+        description: "API docs are generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`."
+    language: "typescript"
+    lines: 221
+
+  - file: "scripts/generate-webhooks-docs.ts"
+    path: "/Users/admin/dev/kanban-light/scripts/generate-webhooks-docs.ts"
+    purpose: "Generated-doc pipeline for `docs/webhooks.md`."
+    key_elements:
+      - element: "event metadata source"
+        type: "pattern"
+        location: "scripts/generate-webhooks-docs.ts:1"
+        description: "Webhook docs are generated from structured metadata in this script."
+    language: "typescript"
+    lines: 545
+
+patterns_found:
+  - category: "architecture"
+    pattern: "Private root orchestrator + workspace packages"
+    description: "The repository root owns orchestration and docs, while executable/package code lives in `packages/*`."
+    examples:
+      - file: "package.json"
+        location: "package.json:1"
+        snippet: "\"private\": true"
+      - file: "docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md"
+        location: "TOPOLOGY.md:8"
+        snippet: "private workspace root (orchestrator only)"
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Root-owned documentation corpus"
+    description: "Narrative docs, generated docs, changelog, images, and press content are centralized under root files/directories rather than package-local docs sites."
+    examples:
+      - file: "TOPOLOGY.md"
+        location: "TOPOLOGY.md:110"
+        snippet: "Docs and changelog | Root `docs/`, `README.md`, `CHANGELOG.md` | Always in root"
+      - file: "docs/press/linkedin.md"
+        location: "docs/press/linkedin.md:1"
+        snippet: "# LinkedIn post draft"
+    prevalence: "common"
+
+  - category: "build_tooling"
+    pattern: "pnpm filter-based root scripts"
+    description: "Root scripts dispatch into packages with `pnpm --filter` and package-local scripts encapsulate build/test behavior."
+    examples:
+      - file: "package.json"
+        location: "package.json:18"
+        snippet: "\"build\": \"pnpm --filter kanban-lite build\""
+      - file: "package.json"
+        location: "package.json:19"
+        snippet: "\"build:workspace\": \"pnpm --filter './packages/*' --if-present run build\""
+    prevalence: "common"
+
+  - category: "documentation"
+    pattern: "Generated reference docs remain checked into root"
+    description: "Some docs are authored indirectly through JSDoc/OpenAPI/event metadata and regenerated into root `docs/*.md`."
+    examples:
+      - file: "docs/api.md"
+        location: "docs/api.md:1"
+        snippet: "> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`"
+      - file: "scripts/generate-webhooks-docs.ts"
+        location: "scripts/generate-webhooks-docs.ts:28"
+        snippet: "single source of truth for docs/webhooks.md"
+    prevalence: "common"
+
+  - category: "testing"
+    pattern: "Package-local Vitest + root-level Playwright"
+    description: "Unit/integration tests are configured per package, while browser E2E runs from root against the main package."
+    examples:
+      - file: "packages/kanban-lite/vitest.config.ts"
+        location: "packages/kanban-lite/vitest.config.ts:1"
+        snippet: "defineConfig({ test: { root: resolve(__dirname)"
+      - file: "playwright.config.ts"
+        location: "playwright.config.ts:6"
+        snippet: "testDir: './packages/kanban-lite/e2e'"
+    prevalence: "common"
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "Workspace root"
+      responsibility: "Owns orchestration scripts, shared configs, generated docs, and changelog."
+      location: "package.json, pnpm-workspace.yaml, docs/, scripts/"
+      relationship_to_domain: "A website integration would likely need root script hooks and root content ingestion."
+    - component: "packages/kanban-lite"
+      responsibility: "Main published product package with current frontend tooling and docs-generation delegation."
+      location: "packages/kanban-lite/"
+      relationship_to_domain: "Provides the closest existing pattern for package-owned frontend build tooling."
+    - component: "packages/kl-*"
+      responsibility: "Secondary workspace packages following standard build/test/package conventions."
+      location: "packages/kl-*/"
+      relationship_to_domain: "Provide the prevailing package manifest pattern for adding another workspace member."
+    - component: "Root docs/scripts"
+      responsibility: "Own authored and generated markdown sources."
+      location: "docs/, scripts/"
+      relationship_to_domain: "Likely content inputs for a docs/marketing site."
+  interfaces_used_by_domain:
+    - interface: "pnpm workspace membership"
+      location: "pnpm-workspace.yaml"
+      usage_pattern: "Any new package participating in root orchestration must live under `packages/*` or the workspace definition must expand."
+    - interface: "root docs generators"
+      location: "package.json + scripts/generate-*.ts"
+      usage_pattern: "Generated docs are produced from code-owned sources into root markdown files rather than being emitted directly by a site build."
+  data_flow_involving_domain: "Code-owned sources (JSDoc/OpenAPI/event metadata) generate root markdown reference docs; hand-authored root markdown and package READMEs provide narrative content; root scripts orchestrate package builds/tests/docs through pnpm filters. A site layer would most naturally consume these existing markdown/artifact outputs rather than replacing their ownership model."
+  key_relationships_to_domain:
+    - from: "root package.json"
+      to: "packages/*/package.json"
+      relationship: "orchestrates via pnpm filters"
+    - from: "packages/kanban-lite/package.json"
+      to: "root docs:root scripts"
+      relationship: "delegates docs generation"
+    - from: "scripts/generate-api-docs.ts"
+      to: "docs/api.md"
+      relationship: "generates"
+    - from: "scripts/generate-webhooks-docs.ts"
+      to: "docs/webhooks.md"
+      relationship: "generates"
+    - from: "README.md"
+      to: "docs/api.md/docs/sdk.md/docs/webhooks.md"
+      relationship: "links to deeper docs"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "Markdown"
+    - "TypeScript"
+    - "JSON"
+    - "YAML"
+    - "JavaScript"
+  frameworks_used_in_domain:
+    - name: "pnpm workspaces"
+      usage_in_domain: "Monorepo package orchestration and filtering."
+    - name: "Vite"
+      usage_in_domain: "Current frontend bundling pattern in `packages/kanban-lite`."
+    - name: "Playwright"
+      usage_in_domain: "Repository-level browser E2E testing."
+    - name: "Vitest"
+      usage_in_domain: "Package-local unit and integration testing."
+  libraries_used_in_domain:
+    - name: "concurrently"
+      purpose_in_domain: "Composite dev/watch workflows in the main package."
+    - name: "tailwindcss"
+      purpose_in_domain: "Existing styling pipeline in `packages/kanban-lite`."
+    - name: "postcss"
+      purpose_in_domain: "Existing CSS processing pipeline in `packages/kanban-lite`."
+    - name: "@tailwindcss/typography"
+      purpose_in_domain: "Existing prose styling support in the current frontend package."
+  external_apis_used_in_domain: []
+
+related_conventions:
+  naming_patterns_in_domain: "Workspace packages live under `packages/<package-name>` and package names match directory names. Root docs use plain descriptive filenames like `docs/forms.md`, `docs/plugins.md`, `docs/press/linkedin.md`."
+  structure_of_domain: "Root owns docs, changelog, scripts, shared configs, and orchestration; package directories own build/test/package manifests and implementation-specific configs."
+  error_handling_in_domain: "Not a dominant concern in the examined domain files; conventions are mostly structural and script-based."
+  testing_in_domain: "Unit tests are package-local with Vitest config in each package. E2E is root-owned with Playwright targeting `packages/kanban-lite/e2e`."
+  documentation_in_domain: "README and CHANGELOG are mandatory update surfaces for user-facing changes; `docs/api.md`, `docs/sdk.md`, and `docs/webhooks.md` are generated and should not be edited manually."
+
+related_dependencies:
+  internal:
+    - component: "scripts/generate-api-docs.ts"
+      relationship_to_domain: "Produces one of the likely website content inputs."
+      direction: "outbound"
+    - component: "scripts/generate-sdk-docs.ts"
+      relationship_to_domain: "Produces SDK reference markdown input."
+      direction: "outbound"
+    - component: "scripts/generate-webhooks-docs.ts"
+      relationship_to_domain: "Produces webhook reference markdown input."
+      direction: "outbound"
+    - component: "packages/kanban-lite/postcss.config.js"
+      relationship_to_domain: "Existing styling/tooling reference for a package-hosted frontend."
+      direction: "outbound"
+    - component: "packages/kanban-lite/tailwind.config.js"
+      relationship_to_domain: "Existing prose/theme styling reference for markdown-heavy UI."
+      direction: "outbound"
+  external:
+    - name: "pnpm"
+      purpose_for_domain: "Workspace and script orchestration."
+    - name: "vite"
+      purpose_for_domain: "Existing frontend build pattern that could serve as a reference if a site package needs CSS tooling."
+    - name: "vitest"
+      purpose_for_domain: "Package-local testing convention."
+    - name: "@playwright/test"
+      purpose_for_domain: "Repository-level browser E2E convention."
+
+testing_patterns:
+  framework: "Vitest per package; Playwright at root for browser E2E"
+  coverage_areas:
+    - "Package-local source tests under `src/**/*.{test,spec}.{ts,tsx}`"
+    - "Main-package browser E2E under `packages/kanban-lite/e2e`"
+    - "Optional package-local integration tests exposed through package scripts and root pnpm filters"
+  test_organization: "Tests are owned by the package they validate; root orchestrates or hosts only cross-package/browser flows."
+  mock_patterns:
+    - "Not specifically examined in this research pass"
+
+open_questions:
+  - question: "Should a docs/marketing site be treated as another workspace package, or as a root-owned non-package project because docs ownership is explicitly rooted at repository top level?"
+    context: "Current conventions point in both directions: workspace tooling favors `packages/*`, while topology ownership says docs stay at root and the layout contract is locked."
+  - question: "If a new site package is introduced, must the locked topology contract be updated to list it explicitly?"
+    context: "`docs/plan/20260322-classic-monorepo-migration/TOPOLOGY.md` says subsequent tasks must not deviate without updating the document."
+  - question: "Will the site render checked-in generated markdown (`docs/api.md`, `docs/sdk.md`, `docs/webhooks.md`) or consume code-owned sources directly?"
+    context: "Current pipeline treats those root markdown files as generated outputs, which may already be the lowest-friction content source."
+  - question: "Should package README files be displayed verbatim as package reference pages or summarized/embedded into higher-level docs?"
+    context: "Package READMEs currently act as install/config docs for each plugin package and overlap with `docs/plugins.md`."
+
+gaps:
+  - area: "Eleventy-specific configuration precedent"
+    description: "No existing `@11ty/eleventy` usage or site package was found in the examined repository files."
+    impact: "Integration recommendations can only be based on general monorepo/package conventions, not an existing Eleventy pattern."
+  - area: "Workspace-level Vitest contract"
+    description: "The locked topology document references a root `vitest.config.ts`, but the actual current repository exposes package-local Vitest configs only."
+    impact: "Any site-test placement should follow observed current practice rather than assuming a root Vitest workspace file exists."
+  - area: "Deployment/hosting pipeline"
+    description: "No CI or deployment workflow files were examined in this pass."
+    impact: "This research maps local repository integration points, but not publish/deploy integration for a future site."

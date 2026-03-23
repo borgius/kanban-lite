@@ -6,7 +6,10 @@ A [kanban-lite](https://github.com/borgius/kanban-lite) webhook delivery provide
 
 The package exports `webhookProviderPlugin` using the provider id `webhooks`.
 
-It ports the full webhook CRUD registry and outbound HTTP delivery behavior out of kanban-lite core into a standalone, versioned package, with no behavior drift from the built-in implementation.
+For runtime delivery it also exports `WebhookListenerPlugin`, a listener-only
+after-event subscriber that the SDK registers via `register()` / `unregister()` under the current plugin loader.
+
+It ports webhook registry CRUD plus listener-only runtime delivery out of kanban-lite core into a standalone, versioned package, with no behavior drift from the existing user experience.
 
 ## Install
 
@@ -21,20 +24,24 @@ npm install kl-webhooks-plugin
 ## Capabilities
 
 - `webhook.delivery`
+- listener-only `event.listener` runtime delivery via `WebhookListenerPlugin`
 
 ## What it does
 
 - Persists the webhook registry in the workspace `.kanban.json` `webhooks` array — the same shape used by kanban-lite core, so no migration is needed
 - Filters each SDK event against active webhooks subscribed to that event (or to `*`)
+- Subscribes only to committed SDK after-events, so pending before-events never trigger outbound delivery
 - Delivers events via HTTP POST with a JSON payload envelope: `{ event, timestamp, data }`
 - Signs payloads with HMAC-SHA256 when a `secret` is configured (`X-Webhook-Signature: sha256=…`)
 - Sets a 10-second request timeout; delivery failures are logged and swallowed (fire-and-forget)
+
+Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delivery is now owned by the separate listener export.
 
 ## `.kanban.json` example
 
 ```json
 {
-  "plugins": {
+  "webhookPlugin": {
     "webhook.delivery": {
       "provider": "webhooks"
     }

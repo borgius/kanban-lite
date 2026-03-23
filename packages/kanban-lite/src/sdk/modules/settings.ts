@@ -17,7 +17,6 @@ export function getSettings(ctx: SDKContext): CardDisplaySettings {
 export function updateSettings(ctx: SDKContext, settings: CardDisplaySettings): void {
   const config = readConfig(ctx.workspaceRoot)
   writeConfig(ctx.workspaceRoot, settingsToConfig(config, settings))
-  ctx.emitEvent('settings.updated', settings)
 }
 
 /**

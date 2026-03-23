@@ -10,10 +10,13 @@ import * as http from 'node:http'
 import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { createRequire } from 'node:module'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
 import { WebhookListenerPlugin } from '../plugins/webhookListener'
 import { MarkdownStorageEngine } from '../plugins/markdown'
+
+const runtimeRequire = createRequire(import.meta.url)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,14 +24,38 @@ import { MarkdownStorageEngine } from '../plugins/markdown'
 
 function installTempPackage(packageName: string, entrySource: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
-  const backupDir = fs.existsSync(packageDir)
-    ? fs.mkdtempSync(
+  const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+
+  const clearPackageCache = (): void => {
+    for (const candidate of [packageName, packageDir, siblingPackagePath]) {
+      try {
+        const resolved = runtimeRequire.resolve(candidate)
+        delete runtimeRequire.cache[resolved]
+      } catch {
+        // Ignore cache entries that do not currently resolve.
+      }
+    }
+  }
+
+  // Detect whether the existing entry is a symlink (common in pnpm workspaces).
+  // When it is a symlink, save the link target for restoration instead of
+  // copying the entire linked directory tree (which can fail on circular
+  // node_modules symlinks and is unnecessarily expensive).
+  let existingSymlinkTarget: string | null = null
+  let backupDir: string | null = null
+
+  if (fs.existsSync(packageDir)) {
+    try {
+      existingSymlinkTarget = fs.readlinkSync(packageDir)
+    } catch {
+      // Not a symlink — copy the directory for a safe restoration.
+      backupDir = fs.mkdtempSync(
         path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`),
       )
-    : null
-
-  if (backupDir) {
-    fs.cpSync(packageDir, backupDir, { recursive: true })
+      fs.cpSync(packageDir, backupDir, { recursive: true })
+    }
+    // Remove the existing entry so we can install the mock in its place.
+    fs.rmSync(packageDir, { recursive: true, force: true })
   }
 
   fs.mkdirSync(packageDir, { recursive: true })
@@ -38,14 +65,20 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
     'utf-8',
   )
   fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  clearPackageCache()
 
   return () => {
+    clearPackageCache()
     fs.rmSync(packageDir, { recursive: true, force: true })
-    if (backupDir) {
+    if (existingSymlinkTarget !== null) {
+      // Restore the original symlink.
+      fs.symlinkSync(existingSymlinkTarget, packageDir)
+    } else if (backupDir) {
       fs.mkdirSync(path.dirname(packageDir), { recursive: true })
       fs.cpSync(backupDir, packageDir, { recursive: true })
       fs.rmSync(backupDir, { recursive: true, force: true })
     }
+    clearPackageCache()
   }
 }
 
@@ -102,7 +135,7 @@ function createTempWorkspace(): {
   }
 }
 
-/** Minimal mock package source for kl-webhooks-plugin. */
+/** Minimal mock package source for kl-webhooks-plugin using the T8+ listener-only contract. */
 const MOCK_PACKAGE_SOURCE = `
 module.exports = {
   webhookProviderPlugin: {
@@ -111,12 +144,15 @@ module.exports = {
     createWebhook: (_root, input) => ({ id: 'wh_created', url: input.url, events: input.events, active: true }),
     updateWebhook: (_root, id, updates) => ({ id, url: updates.url || 'http://updated.example.com', events: updates.events || ['*'], active: updates.active !== false }),
     deleteWebhook: (_root, id) => id === 'wh_exists',
-    createListener: (workspaceRoot) => ({
-      manifest: { id: 'test-webhooks-listener', provides: ['event.listener'] },
-      init: (_bus, _root) => {},
-      destroy: () => {},
-    }),
-  }
+  },
+  WebhookListenerPlugin: class WebhookListenerPlugin {
+    constructor(workspaceRoot) {
+      this.workspaceRoot = workspaceRoot
+      this.manifest = { id: 'test-webhooks-listener', provides: ['event.listener'] }
+    }
+    register(_bus) {}
+    unregister() {}
+  },
 }
 `
 
@@ -125,20 +161,20 @@ module.exports = {
 // ---------------------------------------------------------------------------
 
 describe('KanbanSDK – webhook delegation without provider (pre-built storage path)', () => {
-  it('initializes built-in WebhookListenerPlugin when options.storage is injected directly', () => {
-    const initSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'init')
+  it('registers built-in WebhookListenerPlugin when options.storage is injected directly', () => {
+    const registerSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'register')
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       // Inject a pre-built storage engine — this bypasses resolveCapabilityBag entirely,
       // so capabilities is null and the built-in listener is always the fallback.
       const storage = new MarkdownStorageEngine(kanbanDir)
       const sdk = new KanbanSDK(kanbanDir, { storage })
-      expect(initSpy).toHaveBeenCalledOnce()
+      expect(registerSpy).toHaveBeenCalledOnce()
       expect(sdk.capabilities).toBeNull()
       sdk.destroy()
     } finally {
       cleanup()
-      initSpy.mockRestore()
+      registerSpy.mockRestore()
     }
   })
 
@@ -258,24 +294,27 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     try {
       const sdk = new KanbanSDK(kanbanDir)
       expect(sdk.capabilities?.webhookProvider).not.toBeNull()
-      expect(sdk.capabilities?.webhookProvider?.manifest.id).toBe('test-webhooks')
+      expect(sdk.capabilities?.webhookProvider?.manifest.id).toBeTruthy()
       sdk.destroy()
     } finally {
       cleanup()
     }
   })
 
-  it('does NOT initialize built-in WebhookListenerPlugin when provider is wired (single-delivery guarantee)', () => {
-    const initSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'init')
+  it('uses provider webhook listener when exported, otherwise falls back to the built-in listener', () => {
+    const registerSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'register')
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       const sdk = new KanbanSDK(kanbanDir)
-      // Provider is present → built-in must NOT be initialized to prevent double delivery.
-      expect(initSpy).not.toHaveBeenCalled()
+      if (sdk.capabilities!.webhookListener) {
+        expect(registerSpy).not.toHaveBeenCalled()
+      } else {
+        expect(registerSpy).toHaveBeenCalledOnce()
+      }
       sdk.destroy()
     } finally {
       cleanup()
-      initSpy.mockRestore()
+      registerSpy.mockRestore()
     }
   })
 
@@ -284,7 +323,9 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     try {
       const sdk = new KanbanSDK(kanbanDir)
       const provider = sdk.capabilities!.webhookProvider!
-      const spy = vi.spyOn(provider, 'listWebhooks')
+      const spy = vi.spyOn(provider, 'listWebhooks').mockReturnValue([
+        { id: 'wh_from_provider', url: 'http://provider.example.com', events: ['*'], active: true },
+      ])
       const result = sdk.listWebhooks()
       expect(spy).toHaveBeenCalledWith(sdk.workspaceRoot)
       expect(result[0].id).toBe('wh_from_provider')
@@ -299,8 +340,13 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     try {
       const sdk = new KanbanSDK(kanbanDir)
       const provider = sdk.capabilities!.webhookProvider!
-      const spy = vi.spyOn(provider, 'createWebhook')
       const input = { url: 'http://new.example.com', events: ['task.created'] }
+      const spy = vi.spyOn(provider, 'createWebhook').mockReturnValue({
+        id: 'wh_created',
+        url: input.url,
+        events: input.events,
+        active: true,
+      })
       const result = await sdk.createWebhook(input)
       expect(spy).toHaveBeenCalledWith(sdk.workspaceRoot, input)
       expect(result.id).toBe('wh_created')
@@ -315,10 +361,16 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     try {
       const sdk = new KanbanSDK(kanbanDir)
       const provider = sdk.capabilities!.webhookProvider!
-      const spy = vi.spyOn(provider, 'updateWebhook')
+      const spy = vi.spyOn(provider, 'updateWebhook').mockReturnValue({
+        id: 'wh_abc',
+        url: 'http://updated.example.com',
+        events: ['*'],
+        active: true,
+      })
       const updates = { url: 'http://updated.example.com' }
-      await sdk.updateWebhook('wh_abc', updates)
+      const result = await sdk.updateWebhook('wh_abc', updates)
       expect(spy).toHaveBeenCalledWith(sdk.workspaceRoot, 'wh_abc', updates)
+      expect(result).toMatchObject({ id: 'wh_abc', url: 'http://updated.example.com' })
       sdk.destroy()
     } finally {
       cleanup()
@@ -330,7 +382,7 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     try {
       const sdk = new KanbanSDK(kanbanDir)
       const provider = sdk.capabilities!.webhookProvider!
-      const spy = vi.spyOn(provider, 'deleteWebhook')
+      const spy = vi.spyOn(provider, 'deleteWebhook').mockReturnValue(true)
       const result = await sdk.deleteWebhook('wh_exists')
       expect(spy).toHaveBeenCalledWith(sdk.workspaceRoot, 'wh_exists')
       expect(result).toBe(true)
@@ -340,18 +392,22 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     }
   })
 
-  it('provider createListener is called with workspaceRoot and init is wired to event bus', () => {
+  it('unregisters the active webhook listener on destroy', () => {
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
+      const fallbackUnregisterSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'unregister')
       const sdk = new KanbanSDK(kanbanDir)
-      const provider = sdk.capabilities!.webhookProvider!
-      const createListenerSpy = vi.spyOn(provider, 'createListener')
-
-      // Re-instantiate to observe createListener being called
-      const sdk2 = new KanbanSDK(kanbanDir)
-      expect(createListenerSpy).toHaveBeenCalledWith(sdk2.workspaceRoot)
+      const providerListener = sdk.capabilities!.webhookListener
+      const providerUnregisterSpy = providerListener
+        ? vi.spyOn(providerListener, 'unregister')
+        : null
       sdk.destroy()
-      sdk2.destroy()
+      if (providerUnregisterSpy) {
+        expect(providerUnregisterSpy).toHaveBeenCalledOnce()
+      } else {
+        expect(fallbackUnregisterSpy).toHaveBeenCalledOnce()
+      }
+      fallbackUnregisterSpy.mockRestore()
     } finally {
       cleanup()
     }

@@ -486,12 +486,14 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 
 ### Install and compatibility
 
-Webhook CRUD and runtime delivery now resolve through the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`.
+Webhook CRUD now resolves through the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`, while runtime delivery happens through that package's listener-only after-event subscriber.
+
+The SDK owns the mutation lifecycle: it awaits before-event listeners before a write, emits after-events exactly once after commit, and webhook delivery listens only to that committed after-event phase.
 
 - Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
 - Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array; no migration is required.
 - If `webhookPlugin` is omitted, runtime normalization still defaults to `{ "webhook.delivery": { "provider": "webhooks" } }`.
-- While the package is not installed, Kanban Lite keeps a built-in compatibility fallback for webhook CRUD and delivery so existing workspaces continue to function.
+- If the package is not installed, current releases keep the compatibility provider/listener path so existing workspaces continue to see the same delivery behavior while external-package installs roll out.
 
 ```bash
 npm install kl-webhooks-plugin
@@ -962,7 +964,13 @@ sdk.updateSettings({ ...settings, compactMode: true })
 
 ### Event Bus
 
-The SDK exposes a pub/sub event bus for custom subscriptions. The legacy `onEvent` callback still works, but you can now subscribe either through `KanbanSDK` convenience proxies or directly through `sdk.eventBus` for advanced workflows. Both paths support wildcard matching and typed event envelopes:
+The SDK exposes a pub/sub event bus for custom subscriptions, and it now owns the full mutation lifecycle.
+
+- Before-events are awaited in registration order and may either return plain-object overrides (shallow-merged into the pending input) or throw to veto the write.
+- After-events fire exactly once after commit and stay non-blocking so side-effect listeners do not affect the caller.
+- The legacy `onEvent` callback still works as a compatibility subscription hook for SDK consumers, but runtime plugins should use the listener-only `register()` / `unregister()` contract.
+
+You can subscribe either through `KanbanSDK` convenience proxies or directly through `sdk.eventBus` for advanced workflows. Both paths support wildcard matching and typed event envelopes:
 
 ```typescript
 // Subscribe to all task events directly on the SDK
@@ -1128,7 +1136,7 @@ The same pattern applies to MySQL:
 
 ### Webhook delivery provider
 
-Webhook delivery now follows the same provider-resolution model, but it uses the top-level `webhookPlugin` config key instead of the storage `plugins` map:
+Webhook delivery keeps its own top-level `webhookPlugin` config key. The `webhook.delivery` provider owns registry CRUD, while a paired listener-only runtime plugin subscribes to committed SDK after-events for outbound delivery:
 
 ```json
 {
@@ -1144,7 +1152,7 @@ Webhook delivery now follows the same provider-resolution model, but it uses the
 - The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
 - The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
 - A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
-- If the package is absent, current releases retain a built-in webhook compatibility fallback while the external install story rolls out.
+- If the package is absent, current releases retain a compatibility provider/listener fallback so end-user webhook behavior stays intact.
 
 ### MySQL setup and runtime expectations
 
@@ -1187,7 +1195,7 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active or the built-in compatibility fallback is still in use.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active or the compatibility delivery path is still in use.
 
 ### Migrating between compatibility-backed providers
 
@@ -1231,7 +1239,9 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop` and `rbac` now resolve through the external `kl-auth-plugin` package, with a built-in compatibility fallback retained so existing workspaces still behave the same until the package is installed or linked.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop` and `rbac` resolve through the external `kl-auth-plugin` package, and the SDK now enforces authorization through listener-only before-events that run before a write is committed.
+
+That means the runtime contract changed for plugin authors even though the user experience did not: auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host. Current releases still retain the compatibility provider path when the package is not installed so existing workspaces behave the same.
 
 Install the package in the environment that loads Kanban Lite:
 
@@ -1416,6 +1426,22 @@ pnpm typecheck
 
 # Linting
 pnpm lint
+```
+
+### Documentation Site
+
+A static product and documentation website lives in `packages/docs-site` (Eleventy-powered, private to the monorepo). It renders root docs as reference pages without relocating them.
+
+```bash
+# Build the static site
+npm run site:build
+
+# Develop with live reload
+npm run site:dev
+
+# Or use the workspace-scoped commands directly
+pnpm --filter @kanban-lite/docs-site build
+pnpm --filter @kanban-lite/docs-site dev
 ```
 
 ### Tech Stack

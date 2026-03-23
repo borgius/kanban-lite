@@ -22,7 +22,7 @@
     "standalone": "pnpm --filter kanban-lite standalone",
     "watch": "pnpm --filter kanban-lite watch",
     "watch:workspace": "pnpm --filter './packages/*' --if-present run watch",
-    "dev": "pnpm --filter kanban-lite dev",
+    "dev": "pnpm --filter kanban-lite dev -- --dir /Users/admin/dev/kanban-light/.kanban",
     "dev:workspace": "pnpm --filter './packages/*' --if-present run dev",
     "test": "pnpm --filter kanban-lite test",
     "test:workspace": "pnpm --filter './packages/*' --if-present run test",

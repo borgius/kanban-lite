@@ -192,6 +192,21 @@ describe('KanbanBoard hidden column reorder behavior', () => {
     expect(onReorderColumnsSpy).toHaveBeenCalledWith(['done', 'hidden', 'todo'])
   })
 
+  it('writes both custom and text/plain drag payloads when a column drag starts', () => {
+    const setData = vi.fn()
+    const { columns } = renderBoard()
+
+    columns[1].onColumnDragStart?.({
+      dataTransfer: {
+        effectAllowed: 'none',
+        setData,
+      },
+    }, 'done')
+
+    expect(setData).toHaveBeenCalledWith('application/x-column-id', 'done')
+    expect(setData).toHaveBeenCalledWith('text/plain', 'kanban-column:done')
+  })
+
   it('does not apply inline padding-right to the board scroll container (width is now constrained by App.tsx)', () => {
     storeState.cardSettings.drawerWidth = 50
     storeState.effectiveDrawerWidth = 72
@@ -199,6 +214,39 @@ describe('KanbanBoard hidden column reorder behavior', () => {
     const { markup } = renderBoard({ selectedCardId: 'card-1' })
 
     expect(markup).not.toContain('padding-right')
+  })
+
+  it('uses Y position instead of X when computing column insertion in vertical layout', () => {
+    storeState.layout = 'vertical'
+
+    const { columns: initialColumns } = renderBoard()
+    initialColumns[1].onColumnDragStart?.({
+      dataTransfer: {
+        effectAllowed: 'none',
+        setData: vi.fn(),
+      },
+    }, 'done')
+
+    const { columns: draggedColumns } = renderBoard()
+    draggedColumns[0].onColumnDragOver?.({
+      preventDefault: vi.fn(),
+      clientX: 999,
+      clientY: 0,
+      currentTarget: {
+        getBoundingClientRect: () => ({ top: 100, height: 80, left: 100, width: 80 }),
+      },
+      dataTransfer: {
+        dropEffect: 'none',
+        types: ['application/x-column-id'],
+      },
+    }, 0)
+
+    const { columns: dropReadyColumns } = renderBoard()
+    dropReadyColumns[0].onColumnDrop?.({
+      preventDefault: vi.fn(),
+    })
+
+    expect(onReorderColumnsSpy).toHaveBeenCalledWith(['done', 'hidden', 'todo'])
   })
 
   it('uses the effective drawer width when scrolling a selected card into view', () => {

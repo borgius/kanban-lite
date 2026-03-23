@@ -17,6 +17,11 @@
           "color": "#6b7280"
         },
         {
+          "id": "review",
+          "name": "Review",
+          "color": "#8b5cf6"
+        },
+        {
           "id": "todo",
           "name": "To Do",
           "color": "#3b82f6"
@@ -25,11 +30,6 @@
           "id": "in-progress",
           "name": "In Progress",
           "color": "#f59e0b"
-        },
-        {
-          "id": "review",
-          "name": "Review",
-          "color": "#8b5cf6"
         },
         {
           "id": "done",
@@ -62,7 +62,7 @@
   "port": 2954,
   "labels": {},
   "panelMode": "drawer",
-  "drawerWidth": 42.74761435734752,
+  "drawerWidth": 34.68487771182972,
   "forms": {
     "test": {
       "name": "Test Form",

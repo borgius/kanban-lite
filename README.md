@@ -51,7 +51,6 @@ kl add --title "My first task" --priority high
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Layout toggle**: Switch between horizontal and vertical board layouts
-- **Premium board/card refresh**: Board lanes, sticky column shells, cards, and quick-add inputs use a more polished dashboard presentation with stronger visual hierarchy while keeping the existing card details drawer design and behavior unchanged
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
@@ -254,7 +253,7 @@ kl help sdk                                             # Show SDK documentation
 kl help api                                             # Show REST API documentation
 ```
 
-Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory, `--config <path>` to point at a specific workspace `.kanban.json`, and `--board <id>` to target a specific board.
+Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
 
 `--forms` accepts a JSON array of attached form descriptors, and `--form-data` accepts a JSON object keyed by resolved form id. Both flags also support `@path/to/file.json`.
 
@@ -271,7 +270,6 @@ kanban-md
 
 # With options
 kanban-md --port 8080 --dir .kanban --no-browser
-kanban-md --config /path/to/.kanban.json --no-browser
 ```
 
 The server provides:
@@ -498,7 +496,7 @@ Webhook CRUD and runtime delivery now resolve through the external `kl-webhooks-
 npm install kl-webhooks-plugin
 ```
 
-When working inside this monorepo, the loader resolves the workspace package at `packages/kl-webhooks-plugin` first. The legacy sibling checkout fallback at `../kl-webhooks-plugin` intentionally remains as a temporary compatibility shim for out-of-workspace local testing, so `npm link ../kl-webhooks-plugin` is optional rather than required.
+For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is resolved automatically. `npm link ../kl-webhooks-plugin` is optional, but still useful when you want an explicit local package link.
 
 ```json
 {
@@ -1134,8 +1132,7 @@ Webhook delivery now follows the same provider-resolution model, but it uses the
 - The default runtime provider id is `webhooks`.
 - The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
 - The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
-- In this repo, the workspace package at `packages/kl-webhooks-plugin` is the primary local-development path.
-- The legacy sibling checkout at `../kl-webhooks-plugin` is still resolved as a temporary compatibility fallback.
+- A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
 - If the package is absent, current releases retain a built-in webhook compatibility fallback while the external install story rolls out.
 
 ### MySQL setup and runtime expectations
@@ -1231,7 +1228,7 @@ Install the package in the environment that loads Kanban Lite:
 npm install kl-auth-plugin
 ```
 
-When working inside this monorepo, the loader resolves the workspace package at `packages/kl-auth-plugin` first. The legacy sibling checkout fallback at `../kl-auth-plugin` intentionally remains as a temporary compatibility shim for out-of-workspace local testing, so `npm link ../kl-auth-plugin` is optional rather than required.
+For local sibling-repo development, a checkout at `../kl-auth-plugin` is resolved automatically. `npm link ../kl-auth-plugin` is optional, but useful when you want an explicit local package link.
 
 The shipped provider ids behave as before:
 
@@ -1379,29 +1376,6 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 
 ## Development
 
-This repository now uses a **classic pnpm monorepo** layout.
-
-### Workspace layout
-
-The root package is a **private workspace controller**. The publishable product and plugin packages live under `packages/`:
-
-```text
-packages/
-  kanban-lite/                # Published app package: extension + CLI + MCP + standalone + SDK
-  kl-auth-plugin/             # auth.identity + auth.policy providers
-  kl-mysql-storage/           # MySQL card.storage + attachment.storage provider
-  kl-s3-attachment-storage/   # S3-compatible attachment.storage provider
-  kl-sqlite-storage/          # SQLite card.storage + attachment.storage provider
-  kl-webhooks-plugin/         # webhook.delivery provider
-bin/                          # Temporary root compatibility wrappers forwarding into packages/kanban-lite/dist/
-docs/                         # Root docs, plans, and generated outputs
-scripts/                      # Root-owned doc generators
-```
-
-`packages/kanban-lite/package.json` remains the single source of truth for the published `kanban-lite` package name, `exports`, VS Code extension metadata, and CLI bins. The root `package.json` only orchestrates workspace commands.
-
-The root `bin/kanban-lite`, `bin/kanban-md`, and `bin/kanban-mcp` files intentionally remain as **bounded compatibility shims** so a fresh checkout can still invoke the built artifacts after `pnpm build`. They forward directly to `packages/kanban-lite/dist/*` and are not a second source of truth.
-
 ### Prerequisites
 - Node.js 18+
 - pnpm
@@ -1412,29 +1386,19 @@ The root `bin/kanban-lite`, `bin/kanban-md`, and `bin/kanban-mcp` files intentio
 # Install dependencies
 pnpm install
 
-# Start the main product in watch/dev mode
+# Start development (watch mode)
 pnpm dev
 
-# Build the published product package
+# Build for production
 pnpm build
 
-# Build every workspace package
-pnpm build:workspace
+# Build individually
+pnpm build:cli
+pnpm build:mcp
+pnpm build:standalone-server
 
-# Run kanban-lite tests
+# Run tests
 pnpm test
-
-# Run plugin-with-core workspace integration tests (all plugins)
-pnpm test:plugins:integration
-
-# Run the MySQL live service-backed suite
-pnpm test:plugins:mysql:service
-
-# Run Playwright against the standalone app fixture
-pnpm test:e2e
-
-# Regenerate source-driven docs
-pnpm docs:root
 
 # Type checking
 pnpm typecheck
@@ -1442,37 +1406,6 @@ pnpm typecheck
 # Linting
 pnpm lint
 ```
-
-### Package-focused workflows
-
-Use workspace filters when you want to work on a specific package:
-
-```bash
-# Auth plugin
-pnpm --filter kl-auth-plugin build
-pnpm --filter kl-auth-plugin test:integration
-
-# Webhook plugin
-pnpm --filter kl-webhooks-plugin build
-pnpm --filter kl-webhooks-plugin test:integration
-
-# SQLite storage plugin
-pnpm --filter kl-sqlite-storage test:integration
-
-# S3 attachment plugin
-pnpm --filter kl-s3-attachment-storage test:integration
-
-# Main package docs/builds
-pnpm --filter kanban-lite build
-pnpm --filter kanban-lite docs
-```
-
-### Verification strategy
-
-- `pnpm test:plugins:integration` runs one **plugin-with-core** workspace test per plugin package.
-- `pnpm test:plugins:mysql:service` preserves the **live MySQL** backend suite in addition to the lighter workspace integration test.
-- `pnpm test:e2e` runs the root Playwright harness against `packages/kanban-lite/e2e`, using the seeded fixture workspace under `tmp/e2e/workspace/` and the standalone startup contract wired through `pnpm run standalone:e2e`.
-- `pnpm docs:root` regenerates `docs/api.md`, `docs/sdk.md`, and `docs/webhooks.md` from their source scripts/metadata instead of editing generated outputs by hand.
 
 ### Tech Stack
 
@@ -1482,7 +1415,7 @@ pnpm --filter kanban-lite docs
 ### Architecture
 
 ```
-packages/kanban-lite/src/
+src/
   sdk/           # Core SDK (no external dependencies)
   cli/           # CLI tool (built on SDK)
   mcp-server/    # MCP server (built on SDK)
@@ -1490,8 +1423,6 @@ packages/kanban-lite/src/
   webview/       # React frontend
   shared/        # Shared types
 ```
-
-The plugin loader is monorepo-aware: it resolves installed packages first, then workspace-local packages under `packages/`, and finally the legacy sibling checkout fallback `../kl-*` that remains temporarily during the migration.
 
 ## Acknowledgments
 

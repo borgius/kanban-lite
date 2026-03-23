@@ -11,6 +11,9 @@ export interface DropTarget {
   index: number
 }
 
+const COLUMN_DRAG_MIME_TYPE = 'application/x-column-id'
+const COLUMN_DRAG_TEXT_PREFIX = 'kanban-column:'
+
 interface KanbanBoardProps {
   onCardClick: (card: Card, e: React.MouseEvent) => void
   onAddCard: (status: string) => void
@@ -190,20 +193,25 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     setDraggedColumnId(columnId)
     setDropTarget(null)
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('application/x-column-id', columnId)
+    e.dataTransfer.setData(COLUMN_DRAG_MIME_TYPE, columnId)
+    e.dataTransfer.setData('text/plain', `${COLUMN_DRAG_TEXT_PREFIX}${columnId}`)
   }, [])
 
   const handleColumnDragOver = useCallback((e: React.DragEvent, colIdx: number) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const insertIndex = e.clientX < rect.left + rect.width / 2 ? colIdx : colIdx + 1
+    const insertIndex = layout === 'vertical'
+      ? (e.clientY < rect.top + rect.height / 2 ? colIdx : colIdx + 1)
+      : (e.clientX < rect.left + rect.width / 2 ? colIdx : colIdx + 1)
     setDropColumnIndex(prev => prev === insertIndex ? prev : insertIndex)
-  }, [])
+  }, [layout])
 
   const handleColumnDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    if (!draggedColumnId || dropColumnIndex === null) {
+    const activeDraggedColumnId = draggedColumnIdRef.current ?? draggedColumnId
+    if (!activeDraggedColumnId || dropColumnIndex === null) {
+      draggedColumnIdRef.current = null
       setDraggedColumnId(null)
       setDropColumnIndex(null)
       return
@@ -211,8 +219,9 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     const hiddenColumnIdSet = new Set(hiddenColumnIds)
     const colIds = columns.map(c => c.id)
     const visibleColIds = colIds.filter((columnId) => !hiddenColumnIdSet.has(columnId))
-    const fromIdx = visibleColIds.indexOf(draggedColumnId)
+    const fromIdx = visibleColIds.indexOf(activeDraggedColumnId)
     if (fromIdx === -1) {
+      draggedColumnIdRef.current = null
       setDraggedColumnId(null)
       setDropColumnIndex(null)
       return
@@ -220,7 +229,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
     const newVisibleIds = [...visibleColIds]
     newVisibleIds.splice(fromIdx, 1)
     const adjustedIdx = dropColumnIndex > fromIdx ? dropColumnIndex - 1 : dropColumnIndex
-    newVisibleIds.splice(adjustedIdx, 0, draggedColumnId)
+    newVisibleIds.splice(adjustedIdx, 0, activeDraggedColumnId)
     if (newVisibleIds.join() !== visibleColIds.join()) {
       let visibleIndex = 0
       const nextColumnIds = colIds.map((columnId) => (

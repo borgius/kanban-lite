@@ -632,7 +632,7 @@ ownership moves to standalone, versioned npm packages.
 | `sqlite`    | `kl-sqlite-storage` |
 | `mysql`     | `kl-mysql-storage`  |
 
-The alias map lives in `PROVIDER_ALIASES` in `packages/kanban-lite/src/sdk/plugins/index.ts` and is exported so
+The alias map lives in `PROVIDER_ALIASES` in `src/sdk/plugins/index.ts` and is exported so
 downstream tasks and tests can reference it directly.
 
 Resolution rules:
@@ -650,18 +650,6 @@ Both packages must export:
 - `attachmentStoragePlugin` — implements the `AttachmentStoragePlugin` interface
 
 CJS entry: `dist/index.cjs`
-
-### Monorepo workspace resolution
-
-In the landed classic monorepo, local development no longer depends on separate sibling repos as the primary path.
-
-After a provider id has been translated to a package name, the runtime loads modules in this order:
-
-1. installed package resolution (`node_modules` / normal Node resolution)
-2. workspace-local package under `packages/<name>` when running inside this repo
-3. legacy sibling checkout fallback at `../<name>`
-
-Step 3 intentionally remains as a temporary compatibility shim for environments that still keep plugin repos beside `kanban-light`, but it is no longer the main contributor workflow.
 
 ---
 
@@ -683,12 +671,6 @@ Core (`kanban-light`) retains host-contract coverage. Provider packages own prov
 - Live-database integration tests
 - Schema migration correctness
 - Provider-specific attachment behavior
-
-In this monorepo, the root verification commands layer on top of that ownership split:
-
-- `pnpm test:plugins:integration` runs the package-local plugin-with-core workspace tests for all five plugin packages.
-- `pnpm test:plugins:mysql` runs the lightweight MySQL workspace integration path only.
-- `pnpm test:plugins:mysql:service` preserves the live MySQL backend suite separately so service-backed coverage does not disappear behind a faster smoke test.
 
 This boundary prevents core from owning provider internals while keeping host observable
 behavior verifiable without a running database.

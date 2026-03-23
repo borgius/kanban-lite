@@ -15,9 +15,29 @@ const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
 ]
 
 const COLUMN_DRAG_MIME_TYPE = 'application/x-column-id'
+const COLUMN_DRAG_TEXT_PREFIX = 'kanban-column:'
 
-function isColumnDragEvent(event: Pick<React.DragEvent, 'dataTransfer'>): boolean {
-  return Array.from(event.dataTransfer?.types ?? []).includes(COLUMN_DRAG_MIME_TYPE)
+function isColumnDragEvent(
+  event: Pick<React.DragEvent, 'dataTransfer'>,
+  activeDraggedColumnId?: string | null
+): boolean {
+  const types = Array.from(event.dataTransfer?.types ?? [])
+  if (types.includes(COLUMN_DRAG_MIME_TYPE)) {
+    return true
+  }
+
+  if (types.includes('text/plain')) {
+    try {
+      const text = event.dataTransfer?.getData?.('text/plain') ?? ''
+      if (text.startsWith(COLUMN_DRAG_TEXT_PREFIX)) {
+        return true
+      }
+    } catch {
+      // Some runtimes restrict reading drag data until drop; fall back below.
+    }
+  }
+
+  return Boolean(activeDraggedColumnId)
 }
 
 interface KanbanColumnProps {
@@ -92,10 +112,25 @@ export function KanbanColumn({
   onTriggerAction
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
+  const isActiveColumnDrag = (event: Pick<React.DragEvent, 'dataTransfer'>) => isColumnDragEvent(event, draggedColumnId)
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
-  const isColumnDropBefore = !isVertical && !isDeletedColumn && dropColumnIndex === columnIndex && draggedColumnId !== column.id
-  const isColumnDropAfter = !isVertical && !isDeletedColumn && dropColumnIndex === columnIndex + 1 && draggedColumnId !== column.id
+  const isColumnDropBefore = !isDeletedColumn && dropColumnIndex === columnIndex && draggedColumnId !== column.id
+  const isColumnDropAfter = !isDeletedColumn && dropColumnIndex === columnIndex + 1 && draggedColumnId !== column.id
   const isBeingDragged = draggedColumnId === column.id
+  const baseColumnShadow = '0 1px 2px 0 rgb(0 0 0 / 0.05)'
+  const beforeDropBorderClass = isVertical ? 'border-t-2 border-blue-500' : 'border-l-2 border-blue-500'
+  const afterDropBorderClass = isVertical ? 'border-b-2 border-blue-500' : 'border-r-2 border-blue-500'
+  const columnDropBorderStyle = {
+    ...(isColumnDropBefore ? (isVertical ? { borderTopColor: '#3b82f6' } : { borderLeftColor: '#3b82f6' }) : {}),
+    ...(isColumnDropAfter ? (isVertical ? { borderBottomColor: '#3b82f6' } : { borderRightColor: '#3b82f6' }) : {}),
+    ...((isColumnDropBefore || isColumnDropAfter)
+      ? {
+          boxShadow: `${baseColumnShadow}, ${isVertical
+            ? (isColumnDropBefore ? '0 -8px 18px -14px rgba(59,130,246,0.65)' : '0 8px 18px -14px rgba(59,130,246,0.65)')
+            : (isColumnDropBefore ? '-8px 0 18px -14px rgba(59,130,246,0.65)' : '8px 0 18px -14px rgba(59,130,246,0.65)')}`,
+        }
+      : {}),
+  }
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -138,22 +173,23 @@ export function KanbanColumn({
   if (isMinimized && !isDeletedColumn) {
     return (
       <div
+        style={columnDropBorderStyle}
         className={
           [
             isVertical
               ? 'flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm px-2 py-1.5'
               : 'flex-shrink-0 w-10 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm',
             isBeingDragged ? 'opacity-40' : '',
-            isColumnDropBefore ? 'border-l-2 border-blue-500' : '',
-            isColumnDropAfter ? 'border-r-2 border-blue-500' : '',
+            isColumnDropBefore ? beforeDropBorderClass : '',
+            isColumnDropAfter ? afterDropBorderClass : '',
             isDropTarget && draggedCard ? 'ring-2 ring-blue-400 dark:ring-blue-500' : '',
           ].filter(Boolean).join(' ')
         }
         onDragOver={(e) => {
-          if (isColumnDragEvent(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
+          if (isActiveColumnDrag(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
         }}
         onDrop={(e) => {
-          if (isColumnDragEvent(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
+          if (isActiveColumnDrag(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
         }}
       >
         <div
@@ -165,12 +201,12 @@ export function KanbanColumn({
           draggable
           onDragStart={(e) => onColumnDragStart(e, column.id)}
           onDragOver={(e) => {
-            if (!isColumnDragEvent(e)) return
+            if (!isActiveColumnDrag(e)) return
             e.stopPropagation()
             onColumnDragOver(e, columnIndex)
           }}
           onDrop={(e) => {
-            if (!isColumnDragEvent(e)) return
+            if (!isActiveColumnDrag(e)) return
             e.stopPropagation()
             onColumnDrop(e)
           }}
@@ -222,22 +258,23 @@ export function KanbanColumn({
 
   return (
     <div
+      style={columnDropBorderStyle}
       className={
         [
           isVertical
             ? "flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm"
             : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm",
           isBeingDragged ? "opacity-40" : "",
-          isColumnDropBefore ? "border-l-2 border-blue-500" : "",
-          isColumnDropAfter ? "border-r-2 border-blue-500" : "",
+          isColumnDropBefore ? beforeDropBorderClass : "",
+          isColumnDropAfter ? afterDropBorderClass : "",
           isDropTarget && draggedCard ? "ring-2 ring-blue-400 dark:ring-blue-500" : "",
         ].filter(Boolean).join(' ')
       }
       onDragOver={(e) => {
-        if (isColumnDragEvent(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
+        if (isActiveColumnDrag(e)) { e.preventDefault(); onColumnDragOver(e, columnIndex) } else { onDragOver(e, column.id) }
       }}
       onDrop={(e) => {
-        if (isColumnDragEvent(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
+        if (isActiveColumnDrag(e)) { e.stopPropagation(); onColumnDrop(e) } else { onDrop(e, column.id) }
       }}
     >
       {/* Column Header — sticky so it stays visible when the lane scrolls (vertical mode) */}
@@ -246,12 +283,12 @@ export function KanbanColumn({
         draggable={!isDeletedColumn}
         onDragStart={(e) => { if (!isDeletedColumn) onColumnDragStart(e, column.id) }}
         onDragOver={(e) => {
-          if (isDeletedColumn || !isColumnDragEvent(e)) return
+          if (isDeletedColumn || !isActiveColumnDrag(e)) return
           e.stopPropagation()
           onColumnDragOver(e, columnIndex)
         }}
         onDrop={(e) => {
-          if (!isColumnDragEvent(e)) return
+          if (!isActiveColumnDrag(e)) return
           e.stopPropagation()
           onColumnDrop(e)
         }}

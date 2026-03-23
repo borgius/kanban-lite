@@ -82,6 +82,14 @@ describe('CardItem — premium card surface', () => {
     expect(markup).toContain('kb-card--selected')
   })
 
+  it('keeps the priority class when selected so selection can use the priority tint', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ priority: 'critical' })} onClick={vi.fn()} isSelected />,
+    )
+    expect(markup).toContain('kb-card--selected')
+    expect(markup).toContain('kb-card-priority--critical')
+  })
+
   it('does NOT render kb-card--selected when isSelected=false', () => {
     const markup = renderToStaticMarkup(
       <CardItem card={makeCard()} onClick={vi.fn()} isSelected={false} />,

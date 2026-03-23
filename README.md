@@ -961,23 +961,33 @@ sdk.updateSettings({ ...settings, compactMode: true })
 
 ### Event Bus
 
-The SDK exposes a pub/sub event bus for custom subscriptions. The legacy `onEvent` callback still works, but direct bus subscriptions offer wildcard matching and typed event envelopes:
+The SDK exposes a pub/sub event bus for custom subscriptions. The legacy `onEvent` callback still works, but you can now subscribe either through `KanbanSDK` convenience proxies or directly through `sdk.eventBus` for advanced workflows. Both paths support wildcard matching and typed event envelopes:
 
 ```typescript
-// Subscribe to all task events
-const unsub = sdk.eventBus.on('task.*', (event) => {
+// Subscribe to all task events directly on the SDK
+const unsub = sdk.on('task.*', (event) => {
   console.log(event.type, event.data, event.timestamp)
 })
 
+// Wait for the next matching event once
+const nextCreate = sdk.waitFor('task.created', { timeout: 1000 })
+
 // Subscribe to auth events
-sdk.eventBus.on('auth.denied', (event) => {
+sdk.once('auth.denied', (event) => {
   console.warn('Access denied:', event.actor, event.meta)
+})
+
+// Advanced access is still available on the shared EventBus instance
+sdk.eventBus.onAny((name, event) => {
+  console.log('saw event', name, event.timestamp)
 })
 
 // Clean up when done
 unsub()
 sdk.destroy()
 ```
+
+Convenience methods available on `KanbanSDK`: `on`, `once`, `many`, `onAny`, `off`, `offAny`, `waitFor`, `eventNames`, `listenerCount`, `hasListeners`, and `removeAllListeners`.
 
 See the [full SDK documentation](docs/sdk.md) for detailed API reference, types, error handling, and file layout.
 

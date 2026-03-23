@@ -78,6 +78,52 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('event proxies', () => {
+    it('subscribes directly through sdk.on()', async () => {
+      const listener = vi.fn()
+      const unsub = sdk.on('task.created', listener)
+
+      await sdk.createCard({ content: '# Event Card' })
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: 'task.created' }))
+
+      unsub()
+    })
+
+    it('supports sdk.once() and sdk.waitFor()', async () => {
+      const onceListener = vi.fn()
+      sdk.once('task.created', onceListener)
+
+      const pending = sdk.waitFor('task.created')
+      const created = await sdk.createCard({ content: '# Wait For Event' })
+      const event = await pending
+
+      expect(onceListener).toHaveBeenCalledTimes(1)
+      expect(event).toEqual(expect.objectContaining({
+        type: 'task.created',
+        data: expect.objectContaining({ id: created.id }),
+      }))
+    })
+
+    it('tracks catch-all listeners and event names through sdk proxies', () => {
+      const initialCount = sdk.listenerCount()
+      const anyListener = vi.fn()
+      sdk.on('task.*', vi.fn())
+      sdk.onAny(anyListener)
+
+      expect(sdk.eventNames()).toContain('task.*')
+      expect(sdk.listenerCount()).toBe(initialCount + 2)
+      expect(sdk.hasListeners()).toBe(true)
+
+      sdk.offAny(anyListener)
+      expect(sdk.listenerCount()).toBe(initialCount + 1)
+
+      sdk.removeAllListeners()
+      expect(sdk.hasListeners()).toBe(false)
+    })
+  })
+
   describe('listCards', () => {
     it('should return empty array for empty directory', async () => {
       const cards = await sdk.listCards()

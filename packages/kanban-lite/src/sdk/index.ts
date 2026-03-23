@@ -13,5 +13,5 @@ export type { AuthIdentity, AuthPluginManifest, AuthIdentityPlugin, AuthPolicyPl
 export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN } from './plugins/index'
 export type { StorageStatus, AuthStatus, WebhookStatus } from './KanbanSDK'
 export { EventBus } from './eventBus'
-export type { EventBusOptions } from './eventBus'
+export type { EventBusOptions, EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 export { WebhookListenerPlugin, createWebhookListenerPlugin } from './plugins/webhookListener'

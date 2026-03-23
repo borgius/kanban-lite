@@ -6,6 +6,7 @@ import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, no
 import type { BoardConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, EventListenerPlugin } from './types'
+import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
 import { AuthError } from './types'
 import type { StorageEngine } from './plugins/types'
@@ -323,8 +324,70 @@ export class KanbanSDK {
     }
   }
 
-  /** The SDK event bus for subscribing to events (pub/sub). */
+  /**
+   * The underlying SDK event bus for advanced event workflows.
+   *
+   * Most consumers can use the convenience proxy methods on `KanbanSDK`
+   * itself (`on`, `once`, `many`, `onAny`, `waitFor`, etc.). Access the
+   * raw bus directly when you specifically need the shared `EventBus`
+   * instance.
+   */
   get eventBus(): EventBus { return this._eventBus }
+
+  /** Subscribe to an SDK event or wildcard pattern. */
+  on(event: string, listener: (payload: SDKEvent) => void): () => void {
+    return this._eventBus.on(event, listener)
+  }
+
+  /** Subscribe to the next matching SDK event only once. */
+  once(event: string, listener: (payload: SDKEvent) => void): () => void {
+    return this._eventBus.once(event, listener)
+  }
+
+  /** Subscribe to an SDK event a fixed number of times. */
+  many(event: string, timesToListen: number, listener: (payload: SDKEvent) => void): () => void {
+    return this._eventBus.many(event, timesToListen, listener)
+  }
+
+  /** Subscribe to every SDK event regardless of name. */
+  onAny(listener: EventBusAnyListener): () => void {
+    return this._eventBus.onAny(listener)
+  }
+
+  /** Remove a specific event listener. */
+  off(event: string, listener: (payload: SDKEvent) => void): void {
+    this._eventBus.off(event, listener)
+  }
+
+  /** Remove a specific catch-all listener. */
+  offAny(listener: EventBusAnyListener): void {
+    this._eventBus.offAny(listener)
+  }
+
+  /** Remove all event listeners for one event, or all listeners when omitted. */
+  removeAllListeners(event?: string): void {
+    this._eventBus.removeAllListeners(event)
+  }
+
+  /** Return the registered event names currently tracked by the bus. */
+  eventNames(): string[] {
+    return this._eventBus.eventNames()
+  }
+
+  /** Get the number of listeners for a specific event, or all listeners when omitted. */
+  listenerCount(event?: string): number {
+    return this._eventBus.listenerCount(event)
+  }
+
+  /** Check whether any listeners are registered for an event or for the bus overall. */
+  hasListeners(event?: string): boolean {
+    return this._eventBus.hasListeners(event)
+  }
+
+  /** Wait for the next matching SDK event and resolve with its payload. */
+  waitFor(event: string, options?: EventBusWaitOptions): Promise<SDKEvent> {
+    return this._eventBus.waitFor(event, options)
+  }
 
   /**
    * The active storage engine powering this SDK instance.

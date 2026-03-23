@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Richer SDK event subscription helpers**: `EventBus` now exposes `once`, `many`, `offAny`, `eventNames`, and typed `waitFor(...)`, and `KanbanSDK` now proxies the core event subscription methods directly (`on`, `once`, `many`, `onAny`, `off`, `offAny`, `waitFor`, `eventNames`, `listenerCount`, `hasListeners`, `removeAllListeners`) so consumers do not need to reach into `sdk.eventBus` for common event workflows.
 - **External auth provider install story**: The auth provider ids `noop` and `rbac` now resolve through the standalone `kl-auth-plugin` package, and the local-dev loader also supports the sibling-repo pattern at `../kl-auth-plugin` so linked-package verification matches the webhook-plugin workflow.
 - **External webhook provider install story**: Webhook delivery now supports the `webhook.delivery` provider id `webhooks`, which resolves to the standalone `kl-webhooks-plugin` package. The local-dev loader also supports the sibling-repo pattern at `../kl-webhooks-plugin`, so linked-package verification matches the existing storage-plugin workflow.
 - **EventEmitter2-based pub/sub event bus**: `KanbanSDK` now uses an internal `EventBus` (wrapping EventEmitter2 with wildcard routing) for all event dispatch, replacing the single-callback `onEvent` pattern with a scalable pub/sub architecture.

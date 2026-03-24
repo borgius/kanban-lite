@@ -145,6 +145,102 @@ describe('CardItem — premium card surface', () => {
     expect(markup).toContain('Some details here')
   })
 
+  it('renders an unread badge when passive card-state metadata says the card is unread', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem
+        card={makeCard({
+          cardState: {
+            unread: {
+              actorId: 'default-user',
+              boardId: 'default',
+              cardId: 'test-1',
+              latestActivity: { cursor: 'card:default:test-1:2', updatedAt: '2026-03-24T12:00:00.000Z' },
+              readThrough: null,
+              unread: true,
+            },
+            open: null,
+            status: {
+              backend: 'builtin',
+              availability: 'available',
+              configured: false,
+            },
+          },
+        })}
+        onClick={vi.fn()}
+      />,
+    )
+
+    expect(markup).toContain('kb-card-state-badge--unread')
+    expect(markup).toContain('Unread')
+  })
+
+  it('renders an opened badge when the unread state is clear but an open record exists', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem
+        card={makeCard({
+          cardState: {
+            unread: {
+              actorId: 'default-user',
+              boardId: 'default',
+              cardId: 'test-1',
+              latestActivity: { cursor: 'card:default:test-1:2', updatedAt: '2026-03-24T12:00:00.000Z' },
+              readThrough: { cursor: 'card:default:test-1:2', updatedAt: '2026-03-24T12:00:00.000Z' },
+              unread: false,
+            },
+            open: {
+              actorId: 'default-user',
+              boardId: 'default',
+              cardId: 'test-1',
+              domain: 'open',
+              value: {
+                openedAt: '2026-03-24T12:00:00.000Z',
+                readThrough: { cursor: 'card:default:test-1:2', updatedAt: '2026-03-24T12:00:00.000Z' },
+              },
+              updatedAt: '2026-03-24T12:00:00.000Z',
+            },
+            status: {
+              backend: 'builtin',
+              availability: 'available',
+              configured: false,
+            },
+          },
+        })}
+        onClick={vi.fn()}
+      />,
+    )
+
+    expect(markup).toContain('kb-card-state-badge--opened')
+    expect(markup).toContain('Opened')
+  })
+
+  it('renders a sign-in badge when card-state identity resolution is unavailable', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem
+        card={makeCard({
+          cardState: {
+            unread: null,
+            open: null,
+            status: {
+              backend: 'builtin',
+              availability: 'identity-unavailable',
+              configured: true,
+              errorCode: 'ERR_CARD_STATE_IDENTITY_UNAVAILABLE',
+            },
+            error: {
+              code: 'ERR_CARD_STATE_IDENTITY_UNAVAILABLE',
+              availability: 'identity-unavailable',
+              message: 'Sign in required for card state',
+            },
+          },
+        })}
+        onClick={vi.fn()}
+      />,
+    )
+
+    expect(markup).toContain('kb-card-state-badge--identity')
+    expect(markup).toContain('Sign in')
+  })
+
   it('preserves selected-state when isSelected prop changes', () => {
     const selected = renderToStaticMarkup(
       <CardItem card={makeCard()} onClick={vi.fn()} isSelected={true} />,

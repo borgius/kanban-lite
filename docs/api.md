@@ -271,7 +271,7 @@ Task operations on the default board
 
 **List tasks**
 
-Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.
+Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -327,7 +327,7 @@ Required: Yes
 
 **Get active task**
 
-Returns the currently active/open task on the default board, or `null` when no task is active.
+Returns the currently active/open task on the default board, or `null` when no task is active. This is separate from actor-scoped `card.state` open/unread metadata.
 
 #### Responses
 
@@ -339,7 +339,7 @@ Returns the currently active/open task on the default board, or `null` when no t
 
 **Get task**
 
-Returns a single task from the default board. The `:id` segment supports partial ID matching.
+Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -397,6 +397,54 @@ Soft-deletes a task by moving it into the hidden deleted column.
 | Status | Description |
 |--------|-------------|
 | `200` | Deleted. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/open`
+
+**Mark task opened**
+
+Persists an explicit actor-scoped open mutation through the shared SDK `card.state` APIs. This does not modify active-card UI state.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Card-state mutation result. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/read`
+
+**Mark task read**
+
+Persists an explicit actor-scoped unread acknowledgement through the shared SDK `card.state` APIs. Read-only GET routes never invoke this mutation implicitly.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `readThrough` | object | No | Optional explicit unread cursor to acknowledge instead of the latest activity. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Card-state mutation result. |
+| `400` | Error. |
 | `404` | Not found. |
 
 ### POST `/api/tasks/{id}/forms/{formId}/submit`
@@ -503,7 +551,7 @@ Board-scoped task operations
 
 **List tasks (board-scoped)**
 
-Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`.
+Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -567,7 +615,7 @@ Required: Yes
 
 **Get active task (board-scoped)**
 
-Returns the currently active/open task for the board, or `null` when none is active.
+Returns the currently active/open task for the board, or `null` when none is active. This is separate from actor-scoped `card.state` open/unread metadata.
 
 #### Parameters
 
@@ -585,7 +633,7 @@ Returns the currently active/open task for the board, or `null` when none is act
 
 **Get task (board-scoped)**
 
-Returns a single task from the specified board. The `:id` segment supports partial ID matching.
+Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -646,6 +694,56 @@ Soft-deletes the task by moving it to the hidden deleted column.
 | Status | Description |
 |--------|-------------|
 | `200` | Deleted. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/open`
+
+**Mark task opened (board-scoped)**
+
+Persists an explicit actor-scoped open mutation through the shared SDK `card.state` APIs. This does not modify active-card UI state.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Card-state mutation result. |
+| `400` | Error. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/read`
+
+**Mark task read (board-scoped)**
+
+Persists an explicit actor-scoped unread acknowledgement through the shared SDK `card.state` APIs. Read-only GET routes never invoke this mutation implicitly.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `readThrough` | object | No | Optional explicit unread cursor to acknowledge instead of the latest activity. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Card-state mutation result. |
+| `400` | Error. |
 | `404` | Not found. |
 
 ### PATCH `/api/boards/{boardId}/tasks/{id}/move`
@@ -1370,11 +1468,23 @@ Deletes a label definition and removes it from all cards that reference it.
 
 Workspace metadata, storage, and auth status
 
+### GET `/api/card-state/status`
+
+**Get card-state status**
+
+Returns the active `card.state` provider status for the standalone runtime, including backend family, availability, the stable auth-absent default actor contract, and whether a configured `auth.identity` provider is currently causing `identity-unavailable` failures.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Card-state provider status. |
+
 ### GET `/api/workspace`
 
 **Get workspace info**
 
-Returns workspace-level connection metadata plus resolved storage, auth, and webhook provider information, including filesystem watcher support.
+Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support.
 
 #### Responses
 
@@ -1398,7 +1508,7 @@ Returns auth provider metadata plus safe request-scoped token diagnostics for th
 
 **Get storage status**
 
-Returns the active card, attachment, and webhook provider IDs plus host-facing file/watch metadata.
+Returns the active card, attachment, webhook, and `card.state` provider IDs plus host-facing file/watch metadata.
 
 #### Responses
 
@@ -1410,7 +1520,7 @@ Returns the active card, attachment, and webhook provider IDs plus host-facing f
 
 **Migrate to SQLite**
 
-Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.
+Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-sqlite-storage`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.
 
 #### Request Body
 

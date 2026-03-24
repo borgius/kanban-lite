@@ -3,8 +3,16 @@ import { type Card, type CardFrontmatter, type CardDisplaySettings, type SubmitF
 import { type AuthContext } from '../sdk/types'
 import { readConfig } from '../shared/config'
 import type { StandaloneContext } from './context'
-import { broadcast, buildInitMessage, sendCardContent, loadCards } from './broadcastService'
-import { buildCardFrontmatter, parseSubmitData } from './cardHelpers'
+import {
+  broadcast,
+  broadcastCardContentToEditingClients,
+  broadcastLogsUpdatedToEditingClients,
+  buildInitMessage,
+  sendCardContent,
+  loadCards,
+  setClientEditingCard,
+} from './broadcastService'
+import { parseSubmitData } from './cardHelpers'
 import {
   doCreateCard,
   doMoveCard,
@@ -88,6 +96,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       }
 
       ctx.currentEditingCardId = cardId
+      setClientEditingCard(ctx, ws, cardId)
       await ctx.sdk.setActiveCard(cardId, ctx.currentBoardId)
       await sendCardContent(ctx, ws, card)
       break
@@ -123,8 +132,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
           boardId,
         }))
         const updatedCard = ctx.cards.find(candidate => candidate.id === cardId)
-        if (updatedCard && ctx.currentEditingCardId === cardId) {
-          await sendCardContent(ctx, ws, updatedCard)
+        if (updatedCard) {
+          await broadcastCardContentToEditingClients(ctx, updatedCard)
         }
         ws.send(JSON.stringify({ type: 'submitFormResult', callbackKey, result }))
       } catch (err) {
@@ -135,6 +144,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
 
     case 'closeCard':
       ctx.currentEditingCardId = null
+      setClientEditingCard(ctx, ws, null)
       await ctx.sdk.clearActiveCard(ctx.currentBoardId)
       cleanupTempFile(ctx)
       break
@@ -189,8 +199,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'removeAttachment': {
       const cardId = msg.cardId as string
       const card = await runWithScopedAuth(() => doRemoveAttachment(ctx, cardId, msg.attachment as string))
-      if (card && ctx.currentEditingCardId === cardId) {
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
+      if (card) {
+        await broadcastCardContentToEditingClients(ctx, card)
       }
       break
     }
@@ -199,8 +209,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const comment = await runWithScopedAuth(() => doAddComment(ctx, msg.cardId as string, msg.author as string, msg.content as string))
       if (!comment) break
       const card = ctx.cards.find(f => f.id === msg.cardId)
-      if (card && ctx.currentEditingCardId === msg.cardId) {
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
+      if (card) {
+        await broadcastCardContentToEditingClients(ctx, card)
       }
       break
     }
@@ -209,8 +219,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const comment = await runWithScopedAuth(() => doUpdateComment(ctx, msg.cardId as string, msg.commentId as string, msg.content as string))
       if (!comment) break
       const card = ctx.cards.find(f => f.id === msg.cardId)
-      if (card && ctx.currentEditingCardId === msg.cardId) {
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
+      if (card) {
+        await broadcastCardContentToEditingClients(ctx, card)
       }
       break
     }
@@ -218,8 +228,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'deleteComment': {
       await runWithScopedAuth(() => doDeleteComment(ctx, msg.cardId as string, msg.commentId as string))
       const card = ctx.cards.find(f => f.id === msg.cardId)
-      if (card && ctx.currentEditingCardId === msg.cardId) {
-        ws.send(JSON.stringify({ type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] }))
+      if (card) {
+        await broadcastCardContentToEditingClients(ctx, card)
       }
       break
     }
@@ -233,18 +243,15 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         msg.object as Record<string, unknown> | undefined,
         msg.timestamp as string | undefined,
       ))
-      if (entry && ctx.currentEditingCardId === msg.cardId) {
-        try {
-          const logs = await ctx.sdk.listLogs(msg.cardId as string, ctx.currentBoardId)
-          ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs }))
-        } catch { /* ignore */ }
+      if (entry) {
+        await broadcastLogsUpdatedToEditingClients(ctx, msg.cardId as string)
       }
       break
     }
 
     case 'clearLogs': {
       await runWithScopedAuth(() => doClearLogs(ctx, msg.cardId as string))
-      ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
+      await broadcastLogsUpdatedToEditingClients(ctx, msg.cardId as string, [])
       break
     }
 
@@ -367,6 +374,13 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const { cardId, action, callbackKey } = msg as { cardId: string; action: string; callbackKey: string }
       try {
         await runWithScopedAuth(() => ctx.sdk.triggerAction(cardId, action, undefined))
+        await loadCards(ctx)
+        broadcast(ctx, buildInitMessage(ctx))
+        const updatedCard = ctx.cards.find(card => card.id === cardId)
+        if (updatedCard) {
+          await broadcastCardContentToEditingClients(ctx, updatedCard)
+          await broadcastLogsUpdatedToEditingClients(ctx, cardId)
+        }
         ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
       } catch (err) {
         ws.send(JSON.stringify({ type: 'actionResult', callbackKey, error: String(err) }))

@@ -422,6 +422,39 @@ describe('webview store dynamic form tabs', () => {
     store.setActiveCardId(null)
     expect(useStore.getState().activeCardTab).toBe(DEFAULT_CARD_TAB)
   })
+
+  it('keeps card-state metadata untouched when only active-card navigation changes', () => {
+    const store = useStore.getState()
+
+    store.setCards([
+      makeCard({
+        id: 'card-with-state',
+        cardState: {
+          unread: {
+            actorId: 'default-user',
+            boardId: 'default',
+            cardId: 'card-with-state',
+            latestActivity: { cursor: 'card:default:card-with-state:3', updatedAt: '2026-03-24T12:00:00.000Z' },
+            readThrough: null,
+            unread: true,
+          },
+          open: null,
+          status: {
+            backend: 'builtin',
+            availability: 'available',
+            configured: false,
+          },
+        },
+      }),
+    ])
+
+    const before = useStore.getState().cards[0].cardState
+
+    store.setActiveCardId('card-with-state')
+
+    expect(useStore.getState().cards[0].cardState).toEqual(before)
+    expect(useStore.getState().cards[0].cardState?.unread?.unread).toBe(true)
+  })
 })
 
 describe('webview store drawer resize state', () => {

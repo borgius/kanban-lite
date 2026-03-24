@@ -102,11 +102,12 @@ const storeState = {
   boards: [] as unknown[],
 }
 
-const { postMessageSpy, getStateSpy, setStateSpy, resizePropsRef } = vi.hoisted(() => ({
+const { postMessageSpy, getStateSpy, setStateSpy, resizePropsRef, cardEditorPropsRef } = vi.hoisted(() => ({
   postMessageSpy: vi.fn(),
   getStateSpy: vi.fn<() => unknown>(() => null),
   setStateSpy: vi.fn<(state: unknown) => void>(),
   resizePropsRef: { current: null as null | { panelMode: string; onPreview: (width: number) => void; onCommit: (width: number) => void; onCancel: () => void } },
+  cardEditorPropsRef: { current: null as null | Record<string, unknown> },
 }))
 let messageHandler: ((event: MessageEvent<ExtensionMessage>) => void) | null = null
 
@@ -192,7 +193,12 @@ vi.mock('./vsCodeApi', () => ({
 
 vi.mock('./components/KanbanBoard', () => ({ KanbanBoard: () => null }))
 vi.mock('./components/CreateCardDialog', () => ({ CreateCardDialog: () => null }))
-vi.mock('./components/CardEditor', () => ({ CardEditor: () => null }))
+vi.mock('./components/CardEditor', () => ({
+  CardEditor: (props: Record<string, unknown>) => {
+    cardEditorPropsRef.current = props
+    return null
+  },
+}))
 vi.mock('./components/Toolbar', () => ({ Toolbar: () => null }))
 vi.mock('./components/SettingsPanel', () => ({ SettingsPanel: () => null }))
 vi.mock('./components/ColumnDialog', () => ({ ColumnDialog: () => null }))
@@ -230,6 +236,7 @@ beforeEach(() => {
   postMessageSpy.mockClear()
   messageHandler = null
   resizePropsRef.current = null
+  cardEditorPropsRef.current = null
 
   Object.assign(storeState, {
     cards: [],
@@ -458,7 +465,7 @@ describe('App connection notices', () => {
       ...DEFAULT_CARD_SETTINGS,
       panelMode: 'popup',
     }
-    hookRuntime.values[5] = {
+    hookRuntime.values[6] = {
       id: 'card-1',
       content: '# Card',
       frontmatter: { status: 'backlog' },
@@ -540,6 +547,133 @@ describe('App resize preview and commit timing', () => {
     expect(postMessageSpy).toHaveBeenCalledWith({
       type: 'saveSettings',
       settings: expect.objectContaining({ drawerWidth: 65 }),
+    })
+  })
+})
+
+describe('App live card refresh', () => {
+  it('hydrates an already-open card from init payload updates', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'cardContent',
+      cardId: 'card-1',
+      content: '# Old title',
+      frontmatter: {
+        version: 1,
+        id: 'card-1',
+        status: 'backlog',
+        priority: 'low',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-01T00:00:00.000Z',
+        completedAt: null,
+        labels: [],
+        attachments: [],
+        order: 'a0',
+      },
+      comments: [],
+      logs: [],
+    })
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'init',
+      cards: [{
+        version: 1,
+        id: 'card-1',
+        status: 'review',
+        priority: 'high',
+        assignee: 'alice',
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-02T00:00:00.000Z',
+        completedAt: null,
+        labels: ['ops'],
+        attachments: [],
+        comments: [{ id: 'c1', author: 'bot', created: '2024-01-02T00:00:00.000Z', content: 'Synced from server' }],
+        order: 'a0',
+        content: '# New title',
+        filePath: '/tmp/card-1.md',
+      }],
+      columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+      settings: { ...DEFAULT_CARD_SETTINGS },
+    })
+
+    renderApp()
+
+    expect(hookRuntime.values[6]).toMatchObject({
+      content: '# New title',
+      comments: [{ id: 'c1', author: 'bot', created: '2024-01-02T00:00:00.000Z', content: 'Synced from server' }],
+      frontmatter: expect.objectContaining({
+        status: 'review',
+        priority: 'high',
+        assignee: 'alice',
+        labels: ['ops'],
+      }),
+    })
+  })
+
+  it('hydrates an already-open card from cardsUpdated payloads', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    hookRuntime.values[6] = {
+      id: 'card-2',
+      content: '# Existing',
+      frontmatter: {
+        version: 1,
+        id: 'card-2',
+        status: 'backlog',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-01T00:00:00.000Z',
+        completedAt: null,
+        labels: [],
+        attachments: [],
+        order: 'a0',
+      },
+      comments: [],
+      logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
+      contentVersion: 2,
+    }
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'cardsUpdated',
+      cards: [{
+        version: 1,
+        id: 'card-2',
+        status: 'in-progress',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-03T00:00:00.000Z',
+        completedAt: null,
+        labels: [],
+        attachments: [],
+        comments: [{ id: 'c2', author: 'api', created: '2024-01-03T00:00:00.000Z', content: 'Added externally' }],
+        order: 'a0',
+        content: '# Existing',
+        filePath: '/tmp/card-2.md',
+      }],
+    })
+
+    renderApp()
+
+    expect(hookRuntime.values[6]).toMatchObject({
+      comments: [{ id: 'c2', author: 'api', created: '2024-01-03T00:00:00.000Z', content: 'Added externally' }],
+      logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
+      frontmatter: expect.objectContaining({
+        status: 'in-progress',
+        modified: '2024-01-03T00:00:00.000Z',
+      }),
     })
   })
 })

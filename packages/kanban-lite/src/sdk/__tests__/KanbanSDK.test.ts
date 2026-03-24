@@ -1,18 +1,94 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
-import { AuthError } from '../types'
+import {
+  AuthError,
+  CardStateError,
+  CARD_STATE_DEFAULT_ACTOR_MODE,
+  DEFAULT_CARD_STATE_ACTOR,
+  ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
+  ERR_CARD_STATE_UNAVAILABLE,
+} from '../types'
+import type { StorageEngine } from '../plugins/types'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-test-'))
+}
+
+const runtimeRequire = createRequire(import.meta.url)
+
+function installTempPackage(packageName: string, entrySource: string): () => void {
+  const packageDir = path.join(process.cwd(), 'node_modules', packageName)
+  let backupDir: string | null = null
+
+  const clearPackageCache = (): void => {
+    for (const candidate of [packageName, packageDir]) {
+      try {
+        const resolved = runtimeRequire.resolve(candidate)
+        delete runtimeRequire.cache[resolved]
+      } catch {
+        // Ignore paths that are not currently resolvable.
+      }
+    }
+  }
+
+  if (fs.existsSync(packageDir)) {
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+    fs.cpSync(packageDir, backupDir, { recursive: true })
+    fs.rmSync(packageDir, { recursive: true, force: true })
+  }
+
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name: packageName, main: 'index.js' }, null, 2),
+    'utf-8',
+  )
+  fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  clearPackageCache()
+
+  return () => {
+    clearPackageCache()
+    fs.rmSync(packageDir, { recursive: true, force: true })
+    if (backupDir) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.cpSync(backupDir, packageDir, { recursive: true })
+      fs.rmSync(backupDir, { recursive: true, force: true })
+    }
+    clearPackageCache()
+  }
 }
 
 function writeCardFile(dir: string, filename: string, content: string, subfolder?: string): void {
   const targetDir = subfolder ? path.join(dir, 'boards', 'default', subfolder) : dir
   fs.mkdirSync(targetDir, { recursive: true })
   fs.writeFileSync(path.join(targetDir, filename), content, 'utf-8')
+}
+
+function writeWorkspaceConfig(workspaceDir: string, config: Record<string, unknown>): void {
+  fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify({ version: 2, ...config }), 'utf-8')
+}
+
+function createInjectedStorageStub(kanbanDir: string): StorageEngine {
+  return {
+    type: 'markdown',
+    kanbanDir,
+    async init() {},
+    close() {},
+    async migrate() {},
+    async ensureBoardDirs() {},
+    async deleteBoardData() {},
+    async scanCards() { return [] },
+    async writeCard() {},
+    async moveCard() { return '' },
+    async renameCard() { return '' },
+    async deleteCard() {},
+    getCardDir() { return path.join(kanbanDir, 'attachments') },
+    async copyAttachment() {},
+  }
 }
 
 function makeCardContent(opts: {
@@ -76,6 +152,208 @@ describe('KanbanSDK', () => {
     it('should create the cards directory', async () => {
       await sdk.init()
       expect(fs.existsSync(tempDir)).toBe(true)
+    })
+  })
+
+  describe('getCardStateStatus', () => {
+    it('reports builtin backend status and allows the default actor when auth.identity is noop', () => {
+      const status = sdk.getCardStateStatus()
+
+      expect(status).toEqual({
+        provider: 'builtin',
+        active: true,
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorMode: 'auth-absent-only',
+        defaultActor: {
+          id: 'default-user',
+          source: 'default',
+          mode: 'auth-absent-only',
+        },
+        defaultActorAvailable: true,
+      })
+      expect(status.defaultActorMode).toBe(CARD_STATE_DEFAULT_ACTOR_MODE)
+      expect(status.defaultActor).toBe(DEFAULT_CARD_STATE_ACTOR)
+    })
+
+    it('reuses one shared default-actor contract across auth-absent status snapshots', () => {
+      const first = sdk.getCardStateStatus()
+      const second = sdk.getCardStateStatus()
+
+      expect(first.defaultActorMode).toBe(CARD_STATE_DEFAULT_ACTOR_MODE)
+      expect(second.defaultActorMode).toBe(CARD_STATE_DEFAULT_ACTOR_MODE)
+      expect(first.defaultActor).toBe(DEFAULT_CARD_STATE_ACTOR)
+      expect(second.defaultActor).toBe(DEFAULT_CARD_STATE_ACTOR)
+      expect(second.defaultActor).toBe(first.defaultActor)
+    })
+
+    it('classifies configured card.state providers as external backends', () => {
+      const cleanup = installTempPackage(
+        'acme-card-state',
+        `module.exports = {
+  cardStateProvider: {
+    manifest: { id: 'acme-card-state', provides: ['card.state'] },
+    async getCardState() { return null },
+    async setCardState(input) {
+      return { ...input, updatedAt: input.updatedAt || '2026-03-24T00:00:00.000Z' }
+    },
+    async getUnreadCursor() { return null },
+    async markUnreadReadThrough(input) {
+      return {
+        actorId: input.actorId,
+        boardId: input.boardId,
+        cardId: input.cardId,
+        domain: 'unread',
+        value: input.cursor,
+        updatedAt: input.cursor.updatedAt || '2026-03-24T00:00:00.000Z',
+      }
+    },
+  },
+}
+`,
+      )
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'card.state': { provider: 'acme-card-state' },
+          },
+        })
+
+        const localSdk = new KanbanSDK(tempDir)
+
+        expect(localSdk.getCardStateStatus()).toMatchObject({
+          provider: 'acme-card-state',
+          active: true,
+          backend: 'external',
+          availability: 'available',
+        })
+
+        localSdk.close()
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('marks the default actor unavailable when a real auth.identity provider is configured', () => {
+      writeWorkspaceConfig(workspaceDir, {
+        auth: {
+          'auth.identity': { provider: 'rbac' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localSdk = new KanbanSDK(tempDir)
+
+      expect(localSdk.getCardStateStatus()).toMatchObject({
+        provider: 'builtin',
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: false,
+      })
+
+      localSdk.close()
+    })
+
+    it('does not fall back to the default actor when the configured identity provider resolves no caller', async () => {
+      writeWorkspaceConfig(workspaceDir, {
+        auth: {
+          'auth.identity': { provider: 'rbac' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localSdk = new KanbanSDK(tempDir)
+
+      const identity = await localSdk.capabilities?.authIdentity.resolveIdentity({
+        token: 'unknown-token',
+        tokenSource: 'header',
+        transport: 'http',
+      })
+      const authStatus = localSdk.getAuthStatus()
+      const cardStateStatus = localSdk.getCardStateStatus()
+
+      expect(identity).toBeNull()
+      expect(authStatus).toMatchObject({
+        identityProvider: 'rbac',
+        identityEnabled: true,
+      })
+      expect(cardStateStatus).toMatchObject({
+        provider: 'builtin',
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorMode: CARD_STATE_DEFAULT_ACTOR_MODE,
+        defaultActorAvailable: false,
+      })
+      expect(cardStateStatus.defaultActor).toBe(DEFAULT_CARD_STATE_ACTOR)
+
+      localSdk.close()
+    })
+
+    it('keeps configured identity gating distinct from backend unavailability in status snapshots', () => {
+      writeWorkspaceConfig(workspaceDir, {
+        auth: {
+          'auth.identity': { provider: 'rbac' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const authConfiguredSdk = new KanbanSDK(tempDir)
+      const authConfiguredStatus = authConfiguredSdk.getCardStateStatus()
+
+      expect(authConfiguredStatus).toMatchObject({
+        provider: 'builtin',
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: false,
+      })
+      expect(authConfiguredStatus.errorCode).toBeUndefined()
+
+      authConfiguredSdk.close()
+
+      const unavailableSdk = new KanbanSDK(tempDir, { storage: createInjectedStorageStub(tempDir) })
+
+      expect(unavailableSdk.getCardStateStatus()).toMatchObject({
+        provider: 'none',
+        backend: 'none',
+        availability: 'unavailable',
+        defaultActorAvailable: true,
+        errorCode: ERR_CARD_STATE_UNAVAILABLE,
+      })
+
+      unavailableSdk.close()
+    })
+
+    it('reports unavailable status when capabilities are absent because storage was injected directly', () => {
+      const localSdk = new KanbanSDK(tempDir, { storage: createInjectedStorageStub(tempDir) })
+
+      expect(localSdk.getCardStateStatus()).toEqual({
+        provider: 'none',
+        active: false,
+        backend: 'none',
+        availability: 'unavailable',
+        defaultActorMode: 'auth-absent-only',
+        defaultActor: {
+          id: 'default-user',
+          source: 'default',
+          mode: 'auth-absent-only',
+        },
+        defaultActorAvailable: true,
+        errorCode: 'ERR_CARD_STATE_UNAVAILABLE',
+      })
+
+      localSdk.close()
+    })
+  })
+
+  describe('CardStateError', () => {
+    it('maps public card-state error codes to the expected availability classifications', () => {
+      expect(
+        new CardStateError(ERR_CARD_STATE_IDENTITY_UNAVAILABLE, 'identity is unavailable').availability,
+      ).toBe('identity-unavailable')
+      expect(
+        new CardStateError(ERR_CARD_STATE_UNAVAILABLE, 'card state is unavailable').availability,
+      ).toBe('unavailable')
     })
   })
 
@@ -918,7 +1196,12 @@ No version field.`,
       expect(entry.source).toBe('default')
       expect(entry.text).toBe('Test log message')
       expect(entry.timestamp).toBeTruthy()
-      expect(entry.object).toBeUndefined()
+      expect(entry.object).toMatchObject({
+        activity: {
+          type: 'log.explicit',
+          qualifiesForUnread: true,
+        },
+      })
     })
 
     it('should add log with custom source and object', async () => {
@@ -929,7 +1212,14 @@ No version field.`,
       })
       expect(entry.source).toBe('ci')
       expect(entry.text).toBe('Deploy complete')
-      expect(entry.object).toEqual({ version: '2.0', duration: 120 })
+      expect(entry.object).toMatchObject({
+        version: '2.0',
+        duration: 120,
+        activity: {
+          type: 'log.explicit',
+          qualifiesForUnread: true,
+        },
+      })
     })
 
     it('should auto-add log file as attachment', async () => {

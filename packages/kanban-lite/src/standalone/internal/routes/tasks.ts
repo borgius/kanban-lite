@@ -1,8 +1,9 @@
 import * as fs from 'fs'
 import type { Card, CreateCardPayload, Priority } from '../../../shared/types'
+import type { CardStateCursor } from '../../../sdk/plugins'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
-import { authErrorToHttpStatus, extractAuthContext } from '../../authUtils'
-import { broadcast, buildInitMessage } from '../../broadcastService'
+import { authErrorToHttpStatus, extractAuthContext, getCardStateErrorLike } from '../../authUtils'
+import { broadcast, broadcastCardContentToEditingClients, broadcastLogsUpdatedToEditingClients, buildInitMessage, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
 import {
   doAddAttachment,
@@ -21,17 +22,40 @@ import {
   type CreateCardData,
 } from '../../mutationService'
 import { MIME_TYPES, jsonError, jsonOk, readBody } from '../../httpUtils'
-import { applyCommonCardFilters, getContentType, sendNoContent, type StandaloneRequestContext } from '../common'
+import {
+  buildCardReadModel,
+  buildCardReadModels,
+  buildCardStateMutationModel,
+  getContentType,
+  sendNoContent,
+  type StandaloneRequestContext,
+} from '../common'
 
 export async function handleTaskRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
+  const handleKnownError = (err: unknown): void => {
+    if (err instanceof AuthError) {
+      jsonError(res, authErrorToHttpStatus(err), err.message)
+      return
+    }
+    const cardStateErr = getCardStateErrorLike(err)
+    if (cardStateErr) {
+      jsonError(res, 400, cardStateErr.message)
+      return
+    }
+    jsonError(res, 400, String(err))
+  }
 
   let params = route('GET', '/api/tasks')
   if (params) {
-    const taskCards = await sdk.listCards(undefined, undefined, getListCardsOptions(url.searchParams))
-    jsonOk(res, applyCommonCardFilters(taskCards, url.searchParams, ctx))
+    try {
+      const taskCards = await sdk.listCards(undefined, undefined, getListCardsOptions(url.searchParams))
+      jsonOk(res, await buildCardReadModels(taskCards, url.searchParams, ctx))
+    } catch (err) {
+      handleKnownError(err)
+    }
     return true
   }
 
@@ -39,9 +63,9 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   if (params) {
     try {
       const card = await sdk.getActiveCard()
-      jsonOk(res, card ? sanitizeCard(card) : null)
+      jsonOk(res, card ? await buildCardReadModel(card, ctx) : null)
     } catch (err) {
-      jsonError(res, 400, String(err))
+      handleKnownError(err)
     }
     return true
   }
@@ -69,23 +93,57 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       const card = await runWithRequestAuth(() => doCreateCard(ctx, data))
       jsonOk(res, sanitizeCard(card), 201)
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }
 
   params = route('GET', '/api/tasks/:id')
   if (params) {
-    const taskParams = params
-    const card = ctx.cards.find(item => item.id === taskParams.id)
-    if (!card) {
-      jsonError(res, 404, 'Task not found')
-    } else {
-      jsonOk(res, sanitizeCard(card))
+    try {
+      const taskParams = params
+      const card = ctx.cards.find(item => item.id === taskParams.id)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, await buildCardReadModel(card, ctx))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/tasks/:id/open')
+  if (params) {
+    try {
+      const card = await sdk.getCard(params.id, ctx.currentBoardId)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, card.boardId))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/tasks/:id/read')
+  if (params) {
+    try {
+      const card = await sdk.getCard(params.id, ctx.currentBoardId)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      const body = await readBody(req)
+      const readThrough = body.readThrough as CardStateCursor | undefined
+      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, card.boardId, readThrough))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+    } catch (err) {
+      handleKnownError(err)
     }
     return true
   }
@@ -160,6 +218,12 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
     try {
       const { id, action } = params
       await runWithRequestAuth(() => sdk.triggerAction(id, action, undefined))
+      await loadCards(ctx)
+      broadcast(ctx, buildInitMessage(ctx))
+      const updatedCard = ctx.cards.find(card => card.id === id)
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
       sendNoContent(res)
     } catch (err) {
       const message = String(err)
@@ -411,6 +475,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       if (!entry) {
         jsonError(res, 404, 'Task not found')
       } else {
+        await broadcastLogsUpdatedToEditingClients(ctx, id)
         jsonOk(res, entry, 201)
       }
     } catch (err) {
@@ -425,6 +490,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
     if (!cleared) {
       jsonError(res, 404, 'Task not found')
     } else {
+      await broadcastLogsUpdatedToEditingClients(ctx, params.id, [])
       jsonOk(res, { cleared: true })
     }
     return true

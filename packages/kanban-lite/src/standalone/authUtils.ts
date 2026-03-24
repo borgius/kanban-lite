@@ -1,9 +1,15 @@
 import * as http from 'http'
-import { AuthError, type AuthContext } from '../sdk/types'
+import { AuthError, CardStateError, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE, type AuthContext } from '../sdk/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
 
 export interface AuthErrorLike {
   category: string
+  message: string
+}
+
+export interface CardStateErrorLike {
+  code: typeof ERR_CARD_STATE_IDENTITY_UNAVAILABLE | typeof ERR_CARD_STATE_UNAVAILABLE
+  availability: 'identity-unavailable' | 'unavailable'
   message: string
 }
 
@@ -87,6 +93,30 @@ export function getAuthErrorLike(err: unknown): AuthErrorLike | null {
   return {
     category,
     message: typeof message === 'string' ? message : String(err),
+  }
+}
+
+export function cardStateErrorToPublicMessage(err: Pick<CardStateErrorLike, 'code'>): string {
+  return err.code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE
+    ? 'Card state is unavailable until your configured user identity can be resolved.'
+    : 'Unable to update card state right now. Refresh and try again.'
+}
+
+export function getCardStateErrorLike(err: unknown): CardStateErrorLike | null {
+  if (err instanceof CardStateError) {
+    return {
+      code: err.code,
+      availability: err.availability,
+      message: cardStateErrorToPublicMessage(err),
+    }
+  }
+  if (!err || typeof err !== 'object') return null
+  const code = (err as { code?: unknown }).code
+  if (code !== ERR_CARD_STATE_IDENTITY_UNAVAILABLE && code !== ERR_CARD_STATE_UNAVAILABLE) return null
+  return {
+    code,
+    availability: code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE ? 'identity-unavailable' : 'unavailable',
+    message: cardStateErrorToPublicMessage({ code }),
   }
 }
 

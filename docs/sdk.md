@@ -94,7 +94,17 @@ HTTP server are all built on top of.
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
         * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
+        * [.getCardStateStatus()](#KanbanSDK+getCardStateStatus)
         * [.getExtension(id)](#KanbanSDK+getExtension) ⇒
+        * [._requireCardStateCapabilities()](#KanbanSDK+_requireCardStateCapabilities)
+        * [._resolveCardStateTarget()](#KanbanSDK+_resolveCardStateTarget)
+        * [._resolveCardStateActorId()](#KanbanSDK+_resolveCardStateActorId)
+        * [._getLatestUnreadActivityCursor()](#KanbanSDK+_getLatestUnreadActivityCursor)
+        * [._createUnreadSummary()](#KanbanSDK+_createUnreadSummary)
+        * [.getCardState()](#KanbanSDK+getCardState)
+        * [.getUnreadSummary()](#KanbanSDK+getUnreadSummary)
+        * [.markCardOpened()](#KanbanSDK+markCardOpened)
+        * [.markCardRead()](#KanbanSDK+markCardRead)
         * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
         * [.runWithAuth(auth, fn)](#KanbanSDK+runWithAuth) ⇒
         * [._resolveEventActor()](#KanbanSDK+_resolveEventActor)
@@ -428,6 +438,19 @@ console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not i
 
 * * *
 
+<a name="KanbanSDK+getCardStateStatus"></a>
+
+#### kanbanSDK.getCardStateStatus()
+Returns card-state provider metadata for host surfaces and diagnostics.
+
+The status includes the stable auth-absent default actor contract and lets
+callers distinguish configured-identity failures from true backend
+unavailability via `availability` / `errorCode`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
 <a name="KanbanSDK+getExtension"></a>
 
 #### kanbanSDK.getExtension(id) ⇒
@@ -451,6 +474,97 @@ contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
 const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-webhooks-plugin')
 const webhooks = webhookExt?.listWebhooks() ?? []
 ```
+
+* * *
+
+<a name="KanbanSDK+_requireCardStateCapabilities"></a>
+
+#### kanbanSDK.\_requireCardStateCapabilities()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+_resolveCardStateTarget"></a>
+
+#### kanbanSDK.\_resolveCardStateTarget()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+_resolveCardStateActorId"></a>
+
+#### kanbanSDK.\_resolveCardStateActorId()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+_getLatestUnreadActivityCursor"></a>
+
+#### kanbanSDK.\_getLatestUnreadActivityCursor()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+_createUnreadSummary"></a>
+
+#### kanbanSDK.\_createUnreadSummary()
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
+<a name="KanbanSDK+getCardState"></a>
+
+#### kanbanSDK.getCardState()
+Reads persisted card-state for the current actor without producing any side effects.
+
+When `domain` is omitted, the unread cursor domain is returned.
+This method reads actor-scoped `card.state` only and does not reflect or
+modify active-card UI state.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+getUnreadSummary"></a>
+
+#### kanbanSDK.getUnreadSummary()
+Derives unread state for the current actor from persisted activity logs without mutating card state.
+
+Unread derivation is SDK-owned for both the built-in file-backed backend and
+first-party compatibility backends such as `sqlite`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+markCardOpened"></a>
+
+#### kanbanSDK.markCardOpened()
+Persists an explicit open-card mutation for the current actor.
+
+Opening a card records the `open` domain and acknowledges the latest unread
+activity cursor for that actor without depending on `setActiveCard`.
+This does not change workspace active-card UI state.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+markCardRead"></a>
+
+#### kanbanSDK.markCardRead()
+Persists an explicit read-through cursor for the current actor.
+
+Reads are side-effect free; call this method when you want to acknowledge
+unread activity explicitly. Configured-identity failures surface as
+`ERR_CARD_STATE_IDENTITY_UNAVAILABLE` rather than backend unavailability.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -2508,6 +2622,19 @@ Host surfaces should catch this to return appropriate error responses
 
 * * *
 
+<a name="CardStateError"></a>
+
+### CardStateError
+Typed public error for card-state availability and identity failures.
+
+`ERR_CARD_STATE_IDENTITY_UNAVAILABLE` means a configured `auth.identity`
+provider did not yield an actor. `ERR_CARD_STATE_UNAVAILABLE` means no active
+`card.state` backend is available.
+
+**Kind**: global class  
+
+* * *
+
 <a name="CARD_FORMAT_VERSION"></a>
 
 ### CARD\_FORMAT\_VERSION
@@ -2529,6 +2656,65 @@ are configured: Backlog, To Do, In Progress, Review, and Done.
 // Use as the initial column configuration
 const config = { columns: [...DEFAULT_COLUMNS] }
 ```
+
+* * *
+
+<a name="ERR_CARD_STATE_IDENTITY_UNAVAILABLE"></a>
+
+### ERR\_CARD\_STATE\_IDENTITY\_UNAVAILABLE
+Stable machine-readable error for configured-auth card-state calls without a resolved identity.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="ERR_CARD_STATE_UNAVAILABLE"></a>
+
+### ERR\_CARD\_STATE\_UNAVAILABLE
+Stable machine-readable error for card-state calls when no provider is active.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="CARD_STATE_DEFAULT_ACTOR_MODE"></a>
+
+### CARD\_STATE\_DEFAULT\_ACTOR\_MODE
+Stable mode name for the auth-absent card-state default actor contract.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="DEFAULT_CARD_STATE_ACTOR"></a>
+
+### DEFAULT\_CARD\_STATE\_ACTOR
+Shared default actor contract for auth-absent card-state mode.
+
+This actor is only valid when no real `auth.identity` provider is configured.
+All host surfaces should treat this as a stable public contract for both the
+built-in file-backed `builtin` backend and first-party compatibility backends
+such as `sqlite`.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="CARD_STATE_UNREAD_DOMAIN"></a>
+
+### CARD\_STATE\_UNREAD\_DOMAIN
+Stable built-in domain name for unread/read cursor persistence.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="CARD_STATE_OPEN_DOMAIN"></a>
+
+### CARD\_STATE\_OPEN\_DOMAIN
+Stable built-in domain name for explicit actor-scoped open-card state persistence.
+
+**Kind**: global variable  
 
 * * *
 
@@ -2929,6 +3115,20 @@ The input object is never mutated.
 
 * * *
 
+<a name="normalizeCardStateCapabilities"></a>
+
+### normalizeCardStateCapabilities()
+Normalizes card-state capability selections into a complete runtime capability map.
+
+`card.state` is first-class and defaults to the built-in provider contract when
+omitted from `.kanban.json`.
+
+The input object is never mutated.
+
+**Kind**: global function  
+
+* * *
+
 <a name="normalizeStorageCapabilities"></a>
 
 ### normalizeStorageCapabilities()
@@ -3308,6 +3508,21 @@ with CJS entry `dist/index.cjs`.
 
 * * *
 
+<a name="CARD_STATE_PROVIDER_ALIASES"></a>
+
+### CARD\_STATE\_PROVIDER\_ALIASES
+Maps short `card.state` provider ids to their installable npm package names.
+
+- `sqlite` → `npm install kl-sqlite-card-state`
+
+External packages must export `createCardStateProvider(context)` or a
+`cardStateProvider`/`default` object with a manifest that provides
+`'card.state'`.
+
+**Kind**: global variable  
+
+* * *
+
 <a name="WEBHOOK_PROVIDER_ALIASES"></a>
 
 ### WEBHOOK\_PROVIDER\_ALIASES
@@ -3404,6 +3619,19 @@ remain in host/runtime configuration only and must never appear in
 | --- | --- |
 | principals | Map of opaque token → [RbacPrincipalEntry](RbacPrincipalEntry), owned   and populated by the host at startup. |
 
+
+* * *
+
+<a name="canUseDefaultCardStateActor"></a>
+
+### canUseDefaultCardStateActor()
+Returns `true` only when the auth configuration permits the stable default
+single-user card-state actor.
+
+Any non-noop `auth.identity` provider disables the fallback, even if the
+provider later resolves no caller for a specific request.
+
+**Kind**: global function  
 
 * * *
 

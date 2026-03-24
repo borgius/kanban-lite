@@ -15,6 +15,8 @@ const pendingMessages: string[] = []
 let connected = false
 let hasConnectedOnce = false
 let readyRequested = false
+let latestSwitchBoardMessage: string | null = null
+let latestOpenCardMessage: string | null = null
 let reconnectAttemptCount = 0
 let reconnectTimer: number | null = null
 let allowReconnect = true
@@ -42,6 +44,14 @@ function clearReconnectTimer() {
 function sendPendingBootstrapState(socket: WebSocket) {
   if (readyRequested) {
     socket.send(JSON.stringify({ type: 'ready' } satisfies Extract<WebviewMessage, { type: 'ready' }>))
+  }
+
+  if (latestSwitchBoardMessage) {
+    socket.send(latestSwitchBoardMessage)
+  }
+
+  if (latestOpenCardMessage) {
+    socket.send(latestOpenCardMessage)
   }
 }
 
@@ -278,6 +288,25 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     const json = JSON.stringify(message)
     if (msg.type === 'ready') {
       readyRequested = true
+      if (connected && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(json)
+      }
+      return
+    }
+
+    if (msg.type === 'switchBoard') {
+      latestSwitchBoardMessage = json
+    }
+
+    if (msg.type === 'openCard') {
+      latestOpenCardMessage = json
+    }
+
+    if (msg.type === 'closeCard') {
+      latestOpenCardMessage = null
+    }
+
+    if (msg.type === 'switchBoard' || msg.type === 'openCard' || msg.type === 'closeCard') {
       if (connected && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(json)
       }

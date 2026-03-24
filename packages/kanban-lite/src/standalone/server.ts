@@ -258,8 +258,8 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   fastify.register(swaggerUi, {
     routePrefix: '/api/docs',
     uiConfig: { docExpansion: 'list', deepLinking: false },
+    logo: swaggerUiLogo,
     ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
-    ...(swaggerUiLogo ? { logo: swaggerUiLogo } : {}),
   })
 
   // Buffer all request bodies so existing handlers can read them via req._rawBody

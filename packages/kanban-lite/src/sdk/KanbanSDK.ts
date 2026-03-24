@@ -3,17 +3,17 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../shared/config'
-import type { BoardConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, Webhook } from '../shared/config'
+import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../shared/config'
+import type { BoardConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
-import { AuthError, sanitizeCard } from './types'
+import { AuthError, CardStateError, sanitizeCard, CARD_STATE_DEFAULT_ACTOR_MODE, CARD_STATE_OPEN_DOMAIN, CARD_STATE_UNREAD_DOMAIN, DEFAULT_CARD_STATE_ACTOR, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from './types'
 import type { StorageEngine } from './plugins/types'
 import { resolveKanbanDir } from './fileUtils'
-import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from './plugins'
-import type { ResolvedCapabilityBag } from './plugins'
+import { canUseDefaultCardStateActor, createBuiltinAuthListenerPlugin, resolveCapabilityBag } from './plugins'
+import type { CardStateCursor, CardStateRecord, ResolvedCapabilityBag } from './plugins'
 import { loadWorkspaceEnv } from '../shared/env'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
@@ -37,6 +37,28 @@ function _isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
+}
+
+function isUnreadActivityMetadata(value: unknown): value is {
+  type: string
+  qualifiesForUnread: true
+} {
+  if (!_isPlainObject(value)) return false
+  return typeof value.type === 'string'
+    && value.qualifiesForUnread === true
+}
+
+function getUnreadActivityCursor(entry: LogEntry, index: number): CardStateCursor | null {
+  const activity = entry.object?.activity
+  if (!isUnreadActivityMetadata(activity)) return null
+  return {
+    cursor: `${entry.timestamp}:${index}`,
+    updatedAt: entry.timestamp,
+  }
+}
+
+function cursorsMatch(left: CardStateCursor | null, right: CardStateCursor | null): boolean {
+  return left?.cursor === right?.cursor
 }
 
 /**
@@ -110,6 +132,9 @@ export interface WebhookStatus {
    */
   webhookProviderActive: boolean
 }
+
+/** Active card-state provider metadata for diagnostics and host surfaces. */
+export type CardStateRuntimeStatus = CardStateStatus
 
 /**
  * Optional search and sort inputs for {@link KanbanSDK.listCards}.
@@ -238,6 +263,11 @@ function resolveConfiguredWebhookCapabilities(kanbanDir: string): ResolvedWebhoo
   return normalizeWebhookCapabilities(config)
 }
 
+function resolveConfiguredCardStateCapabilities(kanbanDir: string): ResolvedCardStateCapabilities {
+  const config = readConfig(path.dirname(kanbanDir))
+  return normalizeCardStateCapabilities(config)
+}
+
 /**
  * Core SDK for managing kanban boards with provider-backed card storage.
  *
@@ -342,6 +372,7 @@ export class KanbanSDK {
       this.kanbanDir,
       resolveConfiguredAuthCapabilities(this.kanbanDir),
       resolveConfiguredWebhookCapabilities(this.kanbanDir),
+      resolveConfiguredCardStateCapabilities(this.kanbanDir),
     )
     this._capabilities = {
       ...capabilityBag,
@@ -526,6 +557,40 @@ export class KanbanSDK {
   }
 
   /**
+    * Returns card-state provider metadata for host surfaces and diagnostics.
+    *
+    * The status includes the stable auth-absent default actor contract and lets
+    * callers distinguish configured-identity failures from true backend
+    * unavailability via `availability` / `errorCode`.
+   */
+  getCardStateStatus(): CardStateRuntimeStatus {
+    if (!this._capabilities) {
+      return {
+        provider: 'none',
+        active: false,
+        backend: 'none',
+        availability: 'unavailable',
+        defaultActorMode: CARD_STATE_DEFAULT_ACTOR_MODE,
+        defaultActor: DEFAULT_CARD_STATE_ACTOR,
+        defaultActorAvailable: true,
+        errorCode: ERR_CARD_STATE_UNAVAILABLE,
+      }
+    }
+
+    const provider = this._capabilities.cardState.manifest.id
+
+    return {
+      provider,
+      active: true,
+      backend: this._capabilities.cardStateContext.backend,
+      availability: 'available',
+      defaultActorMode: CARD_STATE_DEFAULT_ACTOR_MODE,
+      defaultActor: DEFAULT_CARD_STATE_ACTOR,
+      defaultActorAvailable: canUseDefaultCardStateActor(this._capabilities.authProviders),
+    }
+  }
+
+  /**
    * Returns the SDK extension bag contributed by the plugin with the given `id`,
    * or `undefined` when no active plugin has exported a matching `sdkExtensionPlugin`.
    *
@@ -547,6 +612,180 @@ export class KanbanSDK {
   getExtension<T extends Record<string, any> = Record<string, unknown>>(id: string): T | undefined {
     const entry = this._capabilities?.sdkExtensions.find(e => e.id === id)
     return entry?.extensions as T | undefined
+  }
+
+  /** @internal */
+  private _requireCardStateCapabilities(): ResolvedCapabilityBag {
+    if (!this._capabilities) {
+      throw new CardStateError(ERR_CARD_STATE_UNAVAILABLE, 'card.state is unavailable for injected storage engines')
+    }
+    return this._capabilities
+  }
+
+  /** @internal */
+  private async _resolveCardStateTarget(cardId: string, boardId?: string): Promise<{ cardId: string; boardId: string }> {
+    const card = await this.getCard(cardId, boardId)
+    if (!card) throw new Error(`Card not found: ${cardId}`)
+    return {
+      cardId: card.id,
+      boardId: card.boardId || this._resolveBoardId(boardId),
+    }
+  }
+
+  /** @internal */
+  private async _resolveCardStateActorId(): Promise<string> {
+    const capabilities = this._requireCardStateCapabilities()
+
+    if (canUseDefaultCardStateActor(capabilities.authProviders)) {
+      return DEFAULT_CARD_STATE_ACTOR.id
+    }
+
+    try {
+      const identity = await capabilities.authIdentity.resolveIdentity(this._currentAuthContext ?? {})
+      if (identity?.subject) return identity.subject
+    } catch {
+      // handled below as a stable public card-state error
+    }
+
+    throw new CardStateError(
+      ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
+      'card.state requires a resolved actor from the configured auth.identity provider',
+    )
+  }
+
+  /** @internal */
+  private async _getLatestUnreadActivityCursor(cardId: string, boardId: string): Promise<CardStateCursor | null> {
+    const logs = await this.listLogs(cardId, boardId)
+    for (let index = logs.length - 1; index >= 0; index -= 1) {
+      const cursor = getUnreadActivityCursor(logs[index], index)
+      if (cursor) return cursor
+    }
+    return null
+  }
+
+  /** @internal */
+  private _createUnreadSummary(
+    actorId: string,
+    target: { cardId: string; boardId: string },
+    latestActivity: CardStateCursor | null,
+    readThrough: CardStateCursor | null,
+  ): CardUnreadSummary {
+    return {
+      actorId,
+      boardId: target.boardId,
+      cardId: target.cardId,
+      latestActivity,
+      readThrough,
+      unread: latestActivity != null && !cursorsMatch(latestActivity, readThrough),
+    }
+  }
+
+  /**
+   * Reads persisted card-state for the current actor without producing any side effects.
+   *
+    * When `domain` is omitted, the unread cursor domain is returned.
+    * This method reads actor-scoped `card.state` only and does not reflect or
+    * modify active-card UI state.
+   */
+  async getCardState(cardId: string, boardId?: string, domain: string = CARD_STATE_UNREAD_DOMAIN): Promise<CardStateRecord | null> {
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+    const target = await this._resolveCardStateTarget(cardId, boardId)
+    return capabilities.cardState.getCardState({
+      actorId,
+      boardId: target.boardId,
+      cardId: target.cardId,
+      domain,
+    })
+  }
+
+  /**
+    * Derives unread state for the current actor from persisted activity logs without mutating card state.
+    *
+    * Unread derivation is SDK-owned for both the built-in file-backed backend and
+    * first-party compatibility backends such as `sqlite`.
+   */
+  async getUnreadSummary(cardId: string, boardId?: string): Promise<CardUnreadSummary> {
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+    const target = await this._resolveCardStateTarget(cardId, boardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const readThrough = await capabilities.cardState.getUnreadCursor({
+      actorId,
+      boardId: target.boardId,
+      cardId: target.cardId,
+    })
+    return this._createUnreadSummary(actorId, target, latestActivity, readThrough)
+  }
+
+  /**
+   * Persists an explicit open-card mutation for the current actor.
+   *
+   * Opening a card records the `open` domain and acknowledges the latest unread
+    * activity cursor for that actor without depending on `setActiveCard`.
+    * This does not change workspace active-card UI state.
+   */
+  async markCardOpened(cardId: string, boardId?: string): Promise<CardUnreadSummary> {
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+    const target = await this._resolveCardStateTarget(cardId, boardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const openedAt = new Date().toISOString()
+
+    let readThrough: CardStateCursor | null = null
+    if (latestActivity) {
+      const unreadRecord = await capabilities.cardState.markUnreadReadThrough({
+        actorId,
+        boardId: target.boardId,
+        cardId: target.cardId,
+        cursor: latestActivity,
+      })
+      readThrough = unreadRecord.value
+    }
+
+    const openValue: CardOpenStateValue = {
+      openedAt,
+      readThrough,
+    }
+
+    await capabilities.cardState.setCardState({
+      actorId,
+      boardId: target.boardId,
+      cardId: target.cardId,
+      domain: CARD_STATE_OPEN_DOMAIN,
+      value: openValue,
+      updatedAt: openedAt,
+    })
+
+    return this._createUnreadSummary(actorId, target, latestActivity, readThrough)
+  }
+
+  /**
+   * Persists an explicit read-through cursor for the current actor.
+   *
+   * Reads are side-effect free; call this method when you want to acknowledge
+    * unread activity explicitly. Configured-identity failures surface as
+    * `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` rather than backend unavailability.
+   */
+  async markCardRead(cardId: string, boardId?: string, readThrough?: CardStateCursor): Promise<CardUnreadSummary> {
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+    const target = await this._resolveCardStateTarget(cardId, boardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const cursor = readThrough ?? latestActivity
+
+    if (!cursor) {
+      return this._createUnreadSummary(actorId, target, latestActivity, null)
+    }
+
+    const unreadRecord = await capabilities.cardState.markUnreadReadThrough({
+      actorId,
+      boardId: target.boardId,
+      cardId: target.cardId,
+      cursor,
+    })
+
+    return this._createUnreadSummary(actorId, target, latestActivity, unreadRecord.value)
   }
 
   /**

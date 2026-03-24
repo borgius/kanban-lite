@@ -6,7 +6,7 @@ import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
-import { AuthError, type AuthContext, type KanbanCliPlugin } from '../sdk/types'
+import { AuthError, CardStateError, CARD_STATE_OPEN_DOMAIN, type AuthContext, type KanbanCliPlugin } from '../sdk/types'
 import { loadExternalModule, collectActiveExternalPackageNames } from '../sdk/plugins/index'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
@@ -37,6 +37,20 @@ function handleAuthError(err: AuthError): never {
     console.error(red('Error: Authentication required. Set KANBAN_LITE_TOKEN environment variable.'))
   } else {
     console.error(red(`Error: Access denied (${err.category})`))
+  }
+  process.exit(1)
+}
+
+function handleCardStateError(err: CardStateError, flags: Flags): never {
+  const payload = {
+    code: err.code,
+    availability: err.availability,
+    message: err.message,
+  }
+  if (flags.json) {
+    console.error(JSON.stringify(payload, null, 2))
+  } else {
+    console.error(red(`Error: ${err.code} (${err.availability}) ${err.message}`))
   }
   process.exit(1)
 }
@@ -183,6 +197,51 @@ function colorPriority(priority: string): string {
     case 'low': return dim(priority)
     default: return priority
   }
+}
+
+function formatCardStateCursor(cursor: unknown): string {
+  return cursor ? JSON.stringify(cursor) : '-'
+}
+
+function printCardStateStatus(status: ReturnType<KanbanSDK['getCardStateStatus']>): void {
+  console.log(`Card-state provider: ${bold(status.provider)}`)
+  console.log(`Backend:             ${status.backend}`)
+  console.log(`Availability:        ${status.availability === 'available' ? green(status.availability) : yellow(status.availability)}`)
+  console.log(`Active:              ${status.active ? green('yes') : yellow('no')}`)
+  console.log(`Default actor:       ${status.defaultActor.id} (${status.defaultActor.source}, ${status.defaultActor.mode})`)
+  console.log(`Default actor ready: ${status.defaultActorAvailable ? green('yes') : yellow('no')}`)
+  if (status.errorCode) console.log(`Error code:          ${status.errorCode}`)
+}
+
+function printCardStateReadModel(label: string, payload: {
+  cardId: string
+  boardId: string
+  cardState: {
+    unread: Awaited<ReturnType<KanbanSDK['getUnreadSummary']>>
+    open: Awaited<ReturnType<KanbanSDK['getCardState']>>
+  }
+}): void {
+  console.log(`${bold(label)} ${bold(payload.cardId)}`)
+  console.log(`  Board:            ${payload.boardId}`)
+  console.log(`  Actor:            ${payload.cardState.unread.actorId}`)
+  console.log(`  Unread:           ${payload.cardState.unread.unread ? yellow('yes') : green('no')}`)
+  console.log(`  Latest activity:  ${formatCardStateCursor(payload.cardState.unread.latestActivity)}`)
+  console.log(`  Read through:     ${formatCardStateCursor(payload.cardState.unread.readThrough)}`)
+  console.log(`  Open state:       ${payload.cardState.open ? formatCardStateCursor(payload.cardState.open.value) : '-'}`)
+}
+
+function printCardStateMutationModel(label: string, payload: {
+  unread: Awaited<ReturnType<KanbanSDK['getUnreadSummary']>>
+  cardState: {
+    unread: Awaited<ReturnType<KanbanSDK['getUnreadSummary']>>
+    open: Awaited<ReturnType<KanbanSDK['getCardState']>>
+  }
+}): void {
+  printCardStateReadModel(label, {
+    cardId: payload.unread.cardId,
+    boardId: payload.unread.boardId,
+    cardState: payload.cardState,
+  })
 }
 
 // --- Formatters ---
@@ -1610,6 +1669,11 @@ ${bold('Storage Commands:')}
   storage migrate-to-sqlite   Migrate cards to SQLite (--sqlite-path <path>)
   storage migrate-to-markdown Migrate cards back to markdown files
 
+${bold('Card State Commands:')}
+  card-state status [id]      Show backend/default-actor status or a card unread summary
+  card-state open <id>        Explicitly acknowledge unread activity and record open-card state
+  card-state read <id>        Explicitly acknowledge unread activity without changing open-card state
+
 ${bold('Auth Commands:')}
   auth status                 Show active auth providers and token diagnostics
 `)
@@ -1678,6 +1742,82 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
   console.error(red(`Unknown storage sub-command: ${sub}`))
   console.error('Usage: kl storage <status|migrate-to-sqlite|migrate-to-markdown>')
   process.exit(1)
+}
+
+async function cmdCardState(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const sub = positional[0] || 'status'
+  const boardId = getBoardId(flags)
+
+  if (sub === 'status' && !positional[1]) {
+    const status = sdk.getCardStateStatus()
+    if (flags.json) {
+      console.log(JSON.stringify(status, null, 2))
+    } else {
+      printCardStateStatus(status)
+    }
+    return
+  }
+
+  const cardId = positional[1]
+  if (!cardId) {
+    console.error(red('Usage: kl card-state <status [id]|open <id>|read <id>>'))
+    process.exit(1)
+  }
+
+  try {
+    if (sub === 'status') {
+      const payload = await runWithCliAuth(sdk, async () => {
+        const unread = await sdk.getUnreadSummary(cardId, boardId)
+        const open = await sdk.getCardState(cardId, boardId, CARD_STATE_OPEN_DOMAIN)
+        return {
+          cardId: unread.cardId,
+          boardId: unread.boardId,
+          cardState: { unread, open },
+        }
+      })
+      if (flags.json) {
+        console.log(JSON.stringify(payload, null, 2))
+      } else {
+        printCardStateReadModel('Card-state status for', payload)
+      }
+      return
+    }
+
+    if (sub === 'open') {
+      const payload = await runWithCliAuth(sdk, async () => {
+        const unread = await sdk.markCardOpened(cardId, boardId)
+        const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN)
+        return { unread, cardState: { unread, open } }
+      })
+      if (flags.json) {
+        console.log(JSON.stringify(payload, null, 2))
+      } else {
+        printCardStateMutationModel('Opened', payload)
+      }
+      return
+    }
+
+    if (sub === 'read') {
+      const payload = await runWithCliAuth(sdk, async () => {
+        const unread = await sdk.markCardRead(cardId, boardId)
+        const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN)
+        return { unread, cardState: { unread, open } }
+      })
+      if (flags.json) {
+        console.log(JSON.stringify(payload, null, 2))
+      } else {
+        printCardStateMutationModel('Marked read', payload)
+      }
+      return
+    }
+
+    console.error(red(`Unknown card-state sub-command: ${sub}`))
+    console.error('Usage: kl card-state <status [id]|open <id>|read <id>>')
+    process.exit(1)
+  } catch (err) {
+    if (err instanceof CardStateError) handleCardStateError(err, flags)
+    throw err
+  }
 }
 
 /**
@@ -1891,6 +2031,11 @@ async function main(): Promise<void> {
       break
     case 'storage':
       await cmdStorage(sdk, positional, flags, workspaceRoot)
+      break
+    case 'card-state':
+    case 'cardstate':
+    case 'cs':
+      await cmdCardState(sdk, positional, flags)
       break
     case 'auth':
       await cmdAuth(sdk, positional, flags, cliPlugins, workspaceRoot)

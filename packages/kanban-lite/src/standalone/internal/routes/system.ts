@@ -1,8 +1,7 @@
 import { readConfig } from '../../../shared/config'
 import type { CardDisplaySettings } from '../../../shared/types'
 import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike, getAuthStatus } from '../../authUtils'
-import { broadcast, buildInitMessage, loadCards } from '../../broadcastService'
-import { buildCardFrontmatter } from '../../cardHelpers'
+import { broadcast, broadcastCardContentToEditingClients, buildInitMessage, getClientsEditingCard, loadCards } from '../../broadcastService'
 import {
   doAddAttachment,
   doAddColumn,
@@ -40,6 +39,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       currentBoard: ctx.currentBoardId ?? config.defaultBoard,
       workspaceRoot,
     })
+    return true
+  }
+
+  params = route('GET', '/api/card-state/status')
+  if (params) {
+    jsonOk(res, sdk.getCardStateStatus())
     return true
   }
 
@@ -251,12 +256,14 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     const wsConfig = readConfig(workspaceRoot)
     const storageStatus = sdk.getStorageStatus()
     const webhookStatus = sdk.getWebhookStatus()
+    const cardStateStatus = sdk.getCardStateStatus()
     jsonOk(res, {
       path: workspaceRoot,
       port: wsConfig.port,
       storageEngine: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
       providers: buildProviderSummary(storageStatus, webhookStatus),
+      cardState: cardStateStatus,
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
       auth: getAuthStatus(sdk, req),
@@ -276,10 +283,12 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     const wsConfig = readConfig(workspaceRoot)
     const storageStatus = sdk.getStorageStatus()
     const webhookStatus = sdk.getWebhookStatus()
+    const cardStateStatus = sdk.getCardStateStatus()
     jsonOk(res, {
       type: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
       providers: buildProviderSummary(storageStatus, webhookStatus),
+      cardState: cardStateStatus,
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
     })
@@ -334,8 +343,8 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       }
       broadcast(ctx, buildInitMessage(ctx))
       const card = ctx.cards.find(item => item.id === cardId)
-      if (card && ctx.currentEditingCardId === cardId) {
-        broadcast(ctx, { type: 'cardContent', cardId: card.id, content: card.content, frontmatter: buildCardFrontmatter(card), comments: card.comments || [] })
+      if (card && getClientsEditingCard(ctx, cardId).length > 0) {
+        await broadcastCardContentToEditingClients(ctx, card)
       }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true }))

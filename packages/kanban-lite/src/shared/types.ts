@@ -26,7 +26,61 @@ export type CardSortOption = 'created:asc' | 'created:desc' | 'modified:asc' | '
 /**
  * String alias representing a column or status identifier.
  * Corresponds to the `id` field of a {@link KanbanColumn} (e.g. `'backlog'`, `'in-progress'`).
- */
+
+/** Transport-safe unread cursor used by UI read models. */
+export interface CardStateCursorTransport {
+  cursor: string
+  updatedAt?: string
+}
+
+/** Transport-safe open-state payload for UI read models. */
+export interface CardOpenStateValueTransport {
+  openedAt: string
+  readThrough: CardStateCursorTransport | null
+}
+
+/** Transport-safe generic card-state record. */
+export interface CardStateRecordTransport<TValue = Record<string, unknown>> {
+  actorId: string
+  boardId: string
+  cardId: string
+  domain: string
+  value: TValue
+  updatedAt: string
+}
+
+/** Side-effect-free unread summary emitted to UI hosts. */
+export interface CardUnreadSummaryTransport {
+  actorId: string
+  boardId: string
+  cardId: string
+  latestActivity: CardStateCursorTransport | null
+  readThrough: CardStateCursorTransport | null
+  unread: boolean
+}
+
+/** Minimal card-state runtime status surfaced to UI hosts. */
+export interface CardStateStatusTransport {
+  backend: 'builtin' | 'external' | 'none'
+  availability: 'available' | 'identity-unavailable' | 'unavailable'
+  configured: boolean
+  errorCode?: string
+}
+
+/** Machine-readable UI error for card-state read/open failures. */
+export interface CardStateErrorTransport {
+  code: string
+  availability: 'identity-unavailable' | 'unavailable'
+  message: string
+}
+
+/** Read-only card-state metadata attached to UI card read models. */
+export interface CardStateReadModelTransport {
+  unread: CardUnreadSummaryTransport | null
+  open: CardStateRecordTransport<CardOpenStateValueTransport> | null
+  status: CardStateStatusTransport
+  error?: CardStateErrorTransport
+}
 export type CardStatus = string
 
 /**
@@ -83,6 +137,7 @@ export interface Card {
   dueDate: string | null
   /** ISO 8601 timestamp of when the card was created. */
   created: string
+  cardState?: CardStateReadModelTransport
   /** ISO 8601 timestamp of the last modification. */
   modified: string
   /** ISO 8601 timestamp of when the card was moved to done, or `null`. */

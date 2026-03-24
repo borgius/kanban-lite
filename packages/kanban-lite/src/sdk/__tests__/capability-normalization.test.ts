@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
+import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 import { collectActiveExternalPackageNames } from '../plugins'
@@ -225,6 +225,44 @@ describe('normalizeWebhookCapabilities', () => {
   })
 })
 
+describe('normalizeCardStateCapabilities', () => {
+  it('defaults card.state to the built-in provider when config is absent', () => {
+    const result = normalizeCardStateCapabilities(makeConfig())
+    expect(result['card.state']).toEqual({ provider: 'builtin' })
+  })
+
+  it('passes through an explicit card.state provider with options', () => {
+    const result = normalizeCardStateCapabilities(
+      makeConfig({
+        plugins: { 'card.state': { provider: 'my-card-state-plugin', options: { region: 'test' } } },
+      })
+    )
+    expect(result['card.state']).toEqual({
+      provider: 'my-card-state-plugin',
+      options: { region: 'test' },
+    })
+  })
+
+  it('card.state namespace is always present in output', () => {
+    const result = normalizeCardStateCapabilities(makeConfig())
+    expect(result).toHaveProperty('card.state')
+  })
+
+  it('does not mutate the input config', () => {
+    const config = makeConfig({
+      plugins: { 'card.state': { provider: 'my-card-state-plugin', options: { x: 1 } } },
+    })
+    const before = JSON.stringify(config)
+    normalizeCardStateCapabilities(config)
+    expect(JSON.stringify(config)).toBe(before)
+  })
+
+  it('accepts a plain object with only plugins field', () => {
+    const result = normalizeCardStateCapabilities({})
+    expect(result['card.state']).toEqual({ provider: 'builtin' })
+  })
+})
+
 describe('collectActiveExternalPackageNames', () => {
   describe('webhook provider discovery', () => {
     it('includes kl-webhooks-plugin by default when no webhook config is present', () => {
@@ -312,6 +350,20 @@ describe('collectActiveExternalPackageNames', () => {
         plugins: { 'card.storage': { provider: 'sqlite' } },
       })
       expect(result).toContain('kl-sqlite-storage')
+    })
+
+    it('custom external card.state provider from plugins is included', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.state': { provider: 'my-card-state-plugin' } },
+      })
+      expect(result).toContain('my-card-state-plugin')
+    })
+
+    it('built-in "builtin" card.state provider is excluded', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.state': { provider: 'builtin' } },
+      })
+      expect(result).not.toContain('builtin')
     })
   })
 

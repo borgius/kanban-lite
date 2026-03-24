@@ -20,6 +20,15 @@ export type CapabilitySelections = Partial<Record<CapabilityNamespace, ProviderR
 /** Fully normalized capability selections used at runtime. */
 export type ResolvedCapabilities = Record<CapabilityNamespace, ProviderRef>
 
+/** Capability namespace supported by the card-state provider system. */
+export type CardStateCapabilityNamespace = 'card.state'
+
+/** Partial card-state capability selections from config. */
+export type CardStateCapabilitySelections = Partial<Record<CardStateCapabilityNamespace, ProviderRef>>
+
+/** Fully normalized card-state capability selections used at runtime. */
+export type ResolvedCardStateCapabilities = Record<CardStateCapabilityNamespace, ProviderRef>
+
 /** Capability namespaces supported by the auth plugin system. */
 export type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'
 
@@ -235,7 +244,7 @@ export interface KanbanConfig {
      * `"provider": "kl-auth-plugin"`). When present they take precedence over
      * any value in the legacy {@link auth} key.
    */
-  plugins?: CapabilitySelections & AuthCapabilitySelections & WebhookCapabilitySelections
+  plugins?: CapabilitySelections & CardStateCapabilitySelections & AuthCapabilitySelections & WebhookCapabilitySelections
   /**
    * Legacy auth provider selections.
    * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
@@ -662,6 +671,24 @@ export function normalizeAuthCapabilities(
       : config.auth?.['auth.policy']
         ? cloneProviderRef(config.auth['auth.policy'])
         : { provider: 'noop' },
+  }
+}
+
+/**
+ * Normalizes card-state capability selections into a complete runtime capability map.
+ *
+ * `card.state` is first-class and defaults to the built-in provider contract when
+ * omitted from `.kanban.json`.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeCardStateCapabilities(
+  config: Pick<KanbanConfig, 'plugins'>,
+): ResolvedCardStateCapabilities {
+  return {
+    'card.state': config.plugins?.['card.state']
+      ? cloneProviderRef(config.plugins['card.state'])
+      : { provider: 'builtin' },
   }
 }
 

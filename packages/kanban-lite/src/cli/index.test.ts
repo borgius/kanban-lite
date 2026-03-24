@@ -6,7 +6,7 @@ import type { ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
-import type { KanbanSDK } from '../sdk/KanbanSDK'
+import { KanbanSDK } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
 import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, parseArgs, showHelp } from './index'
 
@@ -49,6 +49,47 @@ function createCliAuthWorkspace(): { workspaceDir: string; configPath: string; c
   return {
     workspaceDir,
     configPath,
+    cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
+  }
+}
+
+async function createCliCardStateWorkspace(): Promise<{ workspaceDir: string; configPath: string; cardId: string; cleanup: () => void }> {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-card-state-'))
+  fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
+  const configPath = path.join(workspaceDir, '.kanban.json')
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 2,
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      boards: {
+        default: {
+          name: 'Default',
+          columns: [
+            { id: 'backlog', name: 'Backlog' },
+            { id: 'todo', name: 'Todo' },
+            { id: 'done', name: 'Done' },
+          ],
+          nextCardId: 1,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium',
+        },
+      },
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+
+  const sdk = new KanbanSDK(path.join(workspaceDir, '.kanban'))
+  await sdk.init()
+  const card = await sdk.createCard({ content: '# Card state fixture', status: 'todo' })
+  await sdk.addLog(card.id, 'Unread activity from CLI fixture')
+  sdk.close()
+
+  return {
+    workspaceDir,
+    configPath,
+    cardId: card.id,
     cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
   }
 }
@@ -492,6 +533,147 @@ describe('CLI denial UX regression', () => {
     }
   })
 
+})
+
+describe('CLI card-state commands', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('exposes backend/default-actor status and side-effect-free unread summaries via card-state status', async () => {
+    const { configPath, cardId, cleanup } = await createCliCardStateWorkspace()
+
+    try {
+      const providerStatus = await runCliCommand(['card-state', 'status', '--json', '--config', configPath])
+      expect(providerStatus.exitCode).toBe(0)
+      expect(JSON.parse(providerStatus.stdout)).toMatchObject({
+        provider: 'builtin',
+        active: true,
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: true,
+        defaultActor: {
+          id: 'default-user',
+          source: 'default',
+          mode: 'auth-absent-only',
+        },
+      })
+
+      const activeBefore = await runCliCommand(['active', '--json', '--config', configPath])
+      expect(activeBefore.exitCode).toBe(0)
+      expect(JSON.parse(activeBefore.stdout)).toBeNull()
+
+      const cardStatus = await runCliCommand(['card-state', 'status', cardId, '--json', '--config', configPath])
+      expect(cardStatus.exitCode).toBe(0)
+      expect(JSON.parse(cardStatus.stdout)).toMatchObject({
+        cardId,
+        boardId: 'default',
+        cardState: {
+          unread: {
+            actorId: 'default-user',
+            boardId: 'default',
+            cardId,
+            unread: true,
+            readThrough: null,
+          },
+          open: null,
+        },
+      })
+
+      const activeAfter = await runCliCommand(['active', '--json', '--config', configPath])
+      expect(activeAfter.exitCode).toBe(0)
+      expect(JSON.parse(activeAfter.stdout)).toBeNull()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('keeps active-card state untouched while explicit read/open commands mutate unread through card-state APIs', async () => {
+    const { configPath, cardId, cleanup } = await createCliCardStateWorkspace()
+
+    try {
+      const readResult = await runCliCommand(['card-state', 'read', cardId, '--json', '--config', configPath])
+      expect(readResult.exitCode).toBe(0)
+      expect(JSON.parse(readResult.stdout)).toMatchObject({
+        unread: {
+          actorId: 'default-user',
+          boardId: 'default',
+          cardId,
+          unread: false,
+        },
+        cardState: {
+          open: null,
+        },
+      })
+
+      const activeAfterRead = await runCliCommand(['active', '--json', '--config', configPath])
+      expect(activeAfterRead.exitCode).toBe(0)
+      expect(JSON.parse(activeAfterRead.stdout)).toBeNull()
+
+      const sdk = new KanbanSDK(path.join(path.dirname(configPath), '.kanban'))
+      await sdk.addLog(cardId, 'Second unread activity from CLI fixture')
+      sdk.close()
+
+      const openResult = await runCliCommand(['card-state', 'open', cardId, '--json', '--config', configPath])
+      expect(openResult.exitCode).toBe(0)
+      const openJson = JSON.parse(openResult.stdout)
+      expect(openJson).toMatchObject({
+        unread: {
+          actorId: 'default-user',
+          boardId: 'default',
+          cardId,
+          unread: false,
+        },
+        cardState: {
+          open: {
+            actorId: 'default-user',
+            boardId: 'default',
+            cardId,
+            domain: 'open',
+            value: {
+              openedAt: expect.any(String),
+              readThrough: openJson.unread.latestActivity,
+            },
+          },
+        },
+      })
+
+      const activeAfterOpen = await runCliCommand(['active', '--json', '--config', configPath])
+      expect(activeAfterOpen.exitCode).toBe(0)
+      expect(JSON.parse(activeAfterOpen.stdout)).toBeNull()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('preserves identity-unavailable parity across card-state status/open/read failures', async () => {
+    const { configPath, cleanup } = createCliAuthWorkspace()
+
+    try {
+      const commands = [
+        ['card-state', 'status', 'missing-card'],
+        ['card-state', 'open', 'missing-card'],
+        ['card-state', 'read', 'missing-card'],
+      ]
+
+      for (const args of commands) {
+        const result = await runCliCommand([...args, '--json', '--config', configPath], {
+          KANBAN_LITE_TOKEN: undefined,
+          KANBAN_TOKEN: undefined,
+        })
+
+        expect(result.exitCode).toBe(1)
+        expect(stripAnsi(result.stdout)).toBe('')
+        expect(JSON.parse(result.stderr)).toEqual({
+          code: 'ERR_CARD_STATE_IDENTITY_UNAVAILABLE',
+          availability: 'identity-unavailable',
+          message: 'card.state requires a resolved actor from the configured auth.identity provider',
+        })
+      }
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 describe('Webhook CLI routing — plugin-owned dispatch', () => {

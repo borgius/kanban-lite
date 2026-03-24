@@ -1,6 +1,6 @@
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
-import type { WebSocketServer } from 'ws'
+import type { WebSocket, WebSocketServer } from 'ws'
 import type chokidar from 'chokidar'
 
 /** Shared mutable runtime state for the standalone server. */
@@ -13,6 +13,7 @@ export interface StandaloneContext {
   migrating: boolean
   suppressWatcherEventsUntil: number
   currentEditingCardId: string | null
+  clientEditingCardIds: Map<WebSocket, string | null>
   lastWrittenContent: string
   currentBoardId: string | undefined
   tempFilePath: string | undefined

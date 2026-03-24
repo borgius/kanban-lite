@@ -5,14 +5,14 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT } from '../plugins'
+import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK } from '../KanbanSDK'
 import { normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
-import { AuthError } from '../types'
+import { AuthError, DEFAULT_CARD_STATE_ACTOR, CARD_STATE_DEFAULT_ACTOR_MODE, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
 
@@ -142,6 +142,129 @@ describe('resolveCapabilityBag', () => {
     } as const
     const bag = resolveCapabilityBag(caps, kanbanDir)
     expect(bag.providers).toBe(caps)
+  })
+
+  it('resolves a builtin card.state provider with shared module context by default', () => {
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+
+    expect(bag.cardState.manifest).toEqual({
+      id: 'builtin',
+      provides: ['card.state'],
+    })
+    expect(bag.cardStateContext).toEqual({
+      workspaceRoot: workspaceDir,
+      kanbanDir,
+      provider: 'builtin',
+      backend: 'builtin',
+    })
+  })
+
+  it('persists and restores builtin card.state data with no plugin installed', async () => {
+    const firstBag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+
+    await firstBag.cardState.setCardState({
+      actorId: 'default-user',
+      boardId: 'default',
+      cardId: 'card-1',
+      domain: 'draft',
+      value: { expanded: false },
+      updatedAt: '2026-03-24T10:00:00.000Z',
+    })
+
+    await firstBag.cardState.markUnreadReadThrough({
+      actorId: 'default-user',
+      boardId: 'default',
+      cardId: 'card-1',
+      cursor: { cursor: 'activity:9', updatedAt: '2026-03-24T10:01:00.000Z' },
+    })
+
+    const secondBag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+
+    await expect(secondBag.cardState.getCardState({
+      actorId: 'default-user',
+      boardId: 'default',
+      cardId: 'card-1',
+      domain: 'draft',
+    })).resolves.toEqual({
+      actorId: 'default-user',
+      boardId: 'default',
+      cardId: 'card-1',
+      domain: 'draft',
+      value: { expanded: false },
+      updatedAt: '2026-03-24T10:00:00.000Z',
+    })
+
+    await expect(secondBag.cardState.getUnreadCursor({
+      actorId: 'default-user',
+      boardId: 'default',
+      cardId: 'card-1',
+    })).resolves.toEqual({
+      cursor: 'activity:9',
+      updatedAt: '2026-03-24T10:01:00.000Z',
+    })
+  })
+
+  it('resolves external card.state providers with shared module context', () => {
+    const cleanup = installTempPackage(
+      'acme-card-state-provider',
+      `module.exports = {
+  createCardStateProvider(context) {
+    return {
+      manifest: { id: 'acme-card-state-provider', provides: ['card.state'] },
+      context,
+      async getCardState() { return null },
+      async setCardState(input) {
+        return { ...input, updatedAt: input.updatedAt || '2026-03-24T00:00:00.000Z' }
+      },
+      async getUnreadCursor() { return null },
+      async markUnreadReadThrough(input) {
+        return {
+          actorId: input.actorId,
+          boardId: input.boardId,
+          cardId: input.cardId,
+          domain: 'unread',
+          value: input.cursor,
+          updatedAt: input.cursor.updatedAt || '2026-03-24T00:00:00.000Z',
+        }
+      },
+    }
+  },
+}
+`,
+    )
+
+    try {
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        undefined,
+        { 'card.state': { provider: 'acme-card-state-provider', options: { region: 'test' } } },
+      )
+
+      expect(bag.cardState.manifest).toEqual({
+        id: 'acme-card-state-provider',
+        provides: ['card.state'],
+      })
+      expect(bag.cardStateContext).toEqual({
+        workspaceRoot: workspaceDir,
+        kanbanDir,
+        provider: 'acme-card-state-provider',
+        backend: 'external',
+        options: { region: 'test' },
+      })
+    } finally {
+      cleanup()
+    }
   })
 
   it('localfs attachment plugin has correct manifest', () => {
@@ -364,6 +487,25 @@ describe('PROVIDER_ALIASES', () => {
 
   it('contains exactly the two expected short alias ids', () => {
     expect([...PROVIDER_ALIASES.keys()].sort()).toEqual(['mysql', 'sqlite'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CARD_STATE_PROVIDER_ALIASES
+// ---------------------------------------------------------------------------
+
+describe('CARD_STATE_PROVIDER_ALIASES', () => {
+  it('maps sqlite to kl-sqlite-card-state', () => {
+    expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-sqlite-card-state')
+  })
+
+  it('has no alias for unknown card.state provider ids', () => {
+    expect(CARD_STATE_PROVIDER_ALIASES.get('some-external-provider')).toBeUndefined()
+    expect(CARD_STATE_PROVIDER_ALIASES.get('builtin')).toBeUndefined()
+  })
+
+  it('contains exactly the expected short alias id', () => {
+    expect([...CARD_STATE_PROVIDER_ALIASES.keys()]).toEqual(['sqlite'])
   })
 })
 
@@ -792,6 +934,32 @@ describe('auth capability resolution', () => {
         'auth.policy': { provider: 'unknown-provider' },
       })
     ).toThrow(/npm install unknown-provider/i)
+  })
+})
+
+describe('card.state public contract', () => {
+  it('exposes a shared stable default actor for auth-absent mode', () => {
+    expect(DEFAULT_CARD_STATE_ACTOR).toEqual({
+      id: 'default-user',
+      source: 'default',
+      mode: CARD_STATE_DEFAULT_ACTOR_MODE,
+    })
+    expect(Object.isFrozen(DEFAULT_CARD_STATE_ACTOR)).toBe(true)
+  })
+
+  it('allows the default card-state actor only when auth.identity is noop', () => {
+    expect(canUseDefaultCardStateActor(normalizeAuthCapabilities({}))).toBe(true)
+    expect(
+      canUseDefaultCardStateActor({
+        'auth.identity': { provider: 'custom-identity' },
+        'auth.policy': { provider: 'noop' },
+      })
+    ).toBe(false)
+  })
+
+  it('exports stable reusable public card-state error codes', () => {
+    expect(ERR_CARD_STATE_IDENTITY_UNAVAILABLE).toBe('ERR_CARD_STATE_IDENTITY_UNAVAILABLE')
+    expect(ERR_CARD_STATE_UNAVAILABLE).toBe('ERR_CARD_STATE_UNAVAILABLE')
   })
 })
 
@@ -1458,6 +1626,13 @@ describe('collectActiveExternalPackageNames', () => {
   it('includes kl-webhooks-plugin for an empty config (default webhook activation)', () => {
     const result = collectActiveExternalPackageNames({})
     expect(result).toContain('kl-webhooks-plugin')
+  })
+
+  it('maps sqlite card.state provider ids to the workspace package name', () => {
+    const result = collectActiveExternalPackageNames({
+      plugins: { 'card.state': { provider: 'sqlite' } },
+    })
+    expect(result).toContain('kl-sqlite-card-state')
   })
 
   it('includes kl-webhooks-plugin when webhookPlugin key is explicitly configured', () => {

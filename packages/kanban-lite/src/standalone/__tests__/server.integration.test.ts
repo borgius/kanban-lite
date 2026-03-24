@@ -3,14 +3,19 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import * as http from 'http'
+import { createRequire } from 'module'
 import { WebSocket } from 'ws'
 import { vi } from 'vitest'
 import { startServer } from '../server'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
+import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
 
 // Helper: create a temp directory for cards
 function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-'))
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-workspace-'))
+  const kanbanDir = path.join(workspaceRoot, '.kanban')
+  fs.mkdirSync(kanbanDir, { recursive: true })
+  return kanbanDir
 }
 
 // Helper: write a card markdown file
@@ -219,6 +224,57 @@ function getPort(): Promise<number> {
 // Helper: wait a bit
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const LOCAL_AUTH_TEST_PASSWORD_HASH = '$2b$04$jg1y2jvcM0s3Zr0q/vhBc.HvbMAXNDTS52.VJdC/GfbB2AIYnpWmK'
+const CARD_STATE_IDENTITY_PUBLIC_ERROR = 'Card state is unavailable until your configured user identity can be resolved.'
+const CARD_STATE_UNAVAILABLE_PUBLIC_ERROR = 'Unable to update card state right now. Refresh and try again.'
+const runtimeRequire = createRequire(import.meta.url)
+
+function installTempPackage(packageName: string, entrySource: string): () => void {
+  const packageDir = path.join(process.cwd(), 'node_modules', packageName)
+  let backupDir: string | null = null
+
+  const clearPackageCache = (): void => {
+    for (const candidate of [packageName, packageDir]) {
+      try {
+        const resolved = runtimeRequire.resolve(candidate)
+        delete runtimeRequire.cache[resolved]
+      } catch {
+        // ignore unresolved paths
+      }
+    }
+  }
+
+  if (fs.existsSync(packageDir)) {
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+    fs.cpSync(packageDir, backupDir, { recursive: true })
+    fs.rmSync(packageDir, { recursive: true, force: true })
+  }
+
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name: packageName, main: 'index.js' }, null, 2),
+    'utf-8',
+  )
+  fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  clearPackageCache()
+
+  return () => {
+    clearPackageCache()
+    fs.rmSync(packageDir, { recursive: true, force: true })
+    if (backupDir) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.cpSync(backupDir, packageDir, { recursive: true })
+      fs.rmSync(backupDir, { recursive: true, force: true })
+    }
+    clearPackageCache()
+  }
+}
+
+function writeWorkspaceConfig(workspaceDir: string, config: Record<string, unknown>): string {
+  const resolvedConfigPath = path.join(workspaceDir, '.kanban.json')
+  fs.writeFileSync(resolvedConfigPath, JSON.stringify({ version: 2, ...config }, null, 2), 'utf-8')
+  return resolvedConfigPath
+}
 
 // Helper: create a temp webview directory with dummy static files
 function createTempWebviewDir(): string {
@@ -971,6 +1027,79 @@ describe('Standalone Server Integration', () => {
       expect(json.ok).toBe(true)
       expect(json.data.id).toBe('active-api')
       expect(json.data.filePath).toBeUndefined()
+    })
+
+    it('refreshes the open card immediately after a triggered action mutates it', async () => {
+      writeCardFile(tempDir, 'action-refresh.md', makeCardContent({
+        id: 'action-refresh',
+        status: 'todo',
+        title: 'Action Refresh Card'
+      }), 'todo')
+
+      vi.spyOn(KanbanSDK.prototype, 'triggerAction').mockImplementation(async function (this: KanbanSDK, cardId: string, action: string, boardId?: string) {
+        await this.addComment(cardId, 'action-bot', `Triggered ${action}`, boardId)
+      })
+
+      ws = await connectWs(port)
+
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      await sendAndReceive(ws, { type: 'openCard', cardId: 'action-refresh' }, 'cardContent')
+
+      const response = await sendAndReceiveMatching(ws, {
+        type: 'triggerAction',
+        cardId: 'action-refresh',
+        action: 'approve',
+        callbackKey: 'cb-action-refresh'
+      }, 'cardContent', (parsed) => {
+        const comments = parsed.comments as Array<Record<string, unknown>> | undefined
+        return Array.isArray(comments) && comments.some(comment => comment.author === 'action-bot' && comment.content === 'Triggered approve')
+      })
+
+      const comments = response.comments as Array<Record<string, unknown>>
+      expect(comments).toEqual(expect.arrayContaining([
+        expect.objectContaining({ author: 'action-bot', content: 'Triggered approve' })
+      ]))
+    })
+
+    it('refreshes logs in every open window when another window triggers an action', async () => {
+      writeCardFile(tempDir, 'shared-action-logs.md', makeCardContent({
+        id: 'shared-action-logs',
+        status: 'todo',
+        title: 'Shared Action Logs Card'
+      }), 'todo')
+
+      vi.spyOn(KanbanSDK.prototype, 'triggerAction').mockImplementation(async function (this: KanbanSDK, cardId: string, action: string, boardId?: string) {
+        await this.addLog(cardId, `Triggered ${action}`, { source: 'action-bot' }, boardId)
+      })
+
+      const wsA = await connectWs(port)
+      const wsB = await connectWs(port)
+
+      try {
+        await sendAndReceive(wsA, { type: 'ready' }, 'init')
+        await sendAndReceive(wsB, { type: 'ready' }, 'init')
+        await sendAndReceive(wsA, { type: 'openCard', cardId: 'shared-action-logs' }, 'cardContent')
+        await sendAndReceive(wsB, { type: 'openCard', cardId: 'shared-action-logs' }, 'cardContent')
+
+        const wsBLogsUpdate = waitForMessage(wsB, 'logsUpdated', 5000)
+
+        await sendAndReceive(wsA, {
+          type: 'triggerAction',
+          cardId: 'shared-action-logs',
+          action: 'approve',
+          callbackKey: 'cb-shared-logs'
+        }, 'actionResult')
+
+        const response = await wsBLogsUpdate
+        expect(response.cardId).toBe('shared-action-logs')
+        expect(response.logs).toEqual(expect.arrayContaining([
+          expect.objectContaining({ source: 'action-bot', text: 'Triggered approve' })
+        ]))
+      } finally {
+        wsA.close()
+        wsB.close()
+        await sleep(50)
+      }
     })
   })
 
@@ -1956,6 +2085,240 @@ describe('Standalone Server Integration', () => {
       expect(json.data.filePath).toBeUndefined()
     })
 
+    it('task read routes expose card-state metadata without clearing unread and explicit read/open mutations keep active-card separate', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# API Card State Task',
+        status: 'todo',
+      })
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id as string
+
+      const logRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/logs`, {
+        text: 'Unread activity from REST test',
+      })
+      expect(logRes.status).toBe(201)
+
+      const statusRes = await httpGet(`http://localhost:${port}/api/card-state/status`)
+      expect(statusRes.status).toBe(200)
+      const statusJson = JSON.parse(statusRes.body)
+      expect(statusJson.data.defaultActorAvailable).toBe(true)
+      const defaultActorId = statusJson.data.defaultActor.id as string
+
+      const listBeforeRes = await httpGet(`http://localhost:${port}/api/tasks`)
+      const listBeforeJson = JSON.parse(listBeforeRes.body)
+      const listedCard = listBeforeJson.data.find((card: Record<string, unknown>) => card.id === cardId)
+      expect(listedCard.cardState.unread).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        unread: true,
+        readThrough: null,
+      })
+      expect(listedCard.cardState.open).toBeNull()
+
+      const getBeforeRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      const getBeforeJson = JSON.parse(getBeforeRes.body)
+      expect(getBeforeJson.ok).toBe(true)
+      expect(getBeforeJson.data.cardState.unread.unread).toBe(true)
+      expect(getBeforeJson.data.cardState.open).toBeNull()
+
+      const activeBeforeRes = await httpGet(`http://localhost:${port}/api/tasks/active`)
+      expect(JSON.parse(activeBeforeRes.body).data).toBeNull()
+
+      const readRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/read`, {})
+      expect(readRes.status).toBe(200)
+      const readJson = JSON.parse(readRes.body)
+      expect(readJson.data.unread).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        unread: false,
+      })
+      expect(readJson.data.cardState.open).toBeNull()
+
+      const getAfterReadRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      expect(JSON.parse(getAfterReadRes.body).data.cardState.unread.unread).toBe(false)
+
+      const secondLogRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/logs`, {
+        text: 'Second unread activity',
+      })
+      expect(secondLogRes.status).toBe(201)
+
+      const getUnreadAgainRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      expect(JSON.parse(getUnreadAgainRes.body).data.cardState.unread.unread).toBe(true)
+
+      const openRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/open`)
+      expect(openRes.status).toBe(200)
+      const openJson = JSON.parse(openRes.body)
+      expect(openJson.data.unread).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        unread: false,
+      })
+      expect(openJson.data.cardState.open).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        domain: 'open',
+        value: {
+          openedAt: expect.any(String),
+          readThrough: openJson.data.unread.latestActivity,
+        },
+      })
+
+      const activeAfterOpenRes = await httpGet(`http://localhost:${port}/api/tasks/active`)
+      expect(JSON.parse(activeAfterOpenRes.body).data).toBeNull()
+    })
+
+    it('GET /api/card-state/status should expose the active card-state provider status', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const res = await httpGet(`http://localhost:${port}/api/card-state/status`)
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data).toMatchObject({
+        provider: 'builtin',
+        active: true,
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: true,
+      })
+    })
+
+    it('task read and explicit read routes return the documented public card-state identity error when a configured identity cannot be resolved', async () => {
+      const cleanup = installTempPackage(
+        'card-state-api-auth-failure-test',
+        `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: 'card-state-api-auth-failure-test', provides: ['auth.identity'] },
+    async resolveIdentity() {
+      return null
+    },
+  },
+}
+`,
+      )
+
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = writeWorkspaceConfig(workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: 'card-state-api-auth-failure-test' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const createRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Identity Error',
+          status: 'todo',
+        })
+        expect(createRes.status).toBe(201)
+        const cardId = JSON.parse(createRes.body).data.id as string
+
+        const taskGetRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`)
+        expect(taskGetRes.status).toBe(400)
+        expect(JSON.parse(taskGetRes.body)).toEqual({
+          ok: false,
+          error: CARD_STATE_IDENTITY_PUBLIC_ERROR,
+        })
+
+        const taskReadRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${cardId}/read`, {})
+        expect(taskReadRes.status).toBe(400)
+        expect(JSON.parse(taskReadRes.body)).toEqual({
+          ok: false,
+          error: CARD_STATE_IDENTITY_PUBLIC_ERROR,
+        })
+
+        const boardGetRes = await httpGet(`http://localhost:${localPort}/api/boards/default/tasks/${cardId}`)
+        expect(boardGetRes.status).toBe(400)
+        expect(JSON.parse(boardGetRes.body)).toEqual({
+          ok: false,
+          error: CARD_STATE_IDENTITY_PUBLIC_ERROR,
+        })
+      } finally {
+        cleanup()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
+    })
+
+    it('task read routes distinguish configured identity failures from backend-unavailable card-state failures', async () => {
+      const authCleanup = installTempPackage(
+        'card-state-api-auth-distinction-test',
+        `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: 'card-state-api-auth-distinction-test', provides: ['auth.identity'] },
+    async resolveIdentity() {
+      return null
+    },
+  },
+}
+`,
+      )
+
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = writeWorkspaceConfig(workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: 'card-state-api-auth-distinction-test' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const localCreateRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Error Distinction',
+          status: 'todo',
+        })
+        expect(localCreateRes.status).toBe(201)
+        const localCardId = JSON.parse(localCreateRes.body).data.id as string
+
+        const identityRes = await httpGet(`http://localhost:${localPort}/api/tasks/${localCardId}`)
+        expect(identityRes.status).toBe(400)
+        expect(JSON.parse(identityRes.body)).toEqual({
+          ok: false,
+          error: CARD_STATE_IDENTITY_PUBLIC_ERROR,
+        })
+
+        const sharedCreateRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+          content: '# Backend Unavailable Distinction',
+          status: 'todo',
+        })
+        expect(sharedCreateRes.status).toBe(201)
+        const sharedCardId = JSON.parse(sharedCreateRes.body).data.id as string
+
+        const unavailableSpy = vi.spyOn(KanbanSDK.prototype, 'getUnreadSummary').mockRejectedValue(
+          new CardStateError(ERR_CARD_STATE_UNAVAILABLE, 'card.state backend offline')
+        )
+
+        const unavailableRes = await httpGet(`http://localhost:${port}/api/tasks/${sharedCardId}`)
+        expect(unavailableRes.status).toBe(400)
+        expect(JSON.parse(unavailableRes.body)).toEqual({
+          ok: false,
+          error: CARD_STATE_UNAVAILABLE_PUBLIC_ERROR,
+        })
+        unavailableSpy.mockRestore()
+      } finally {
+        authCleanup()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
+    })
+
     it('GET /api/tasks/:id should return 404 for non-existent task', async () => {
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -2317,6 +2680,57 @@ describe('Standalone Server Integration', () => {
       expect(submitted.data.form.id).toBe('qa-check')
       expect(submitted.data.data).toEqual({ status: 'ready' })
       expect(submitted.data.card.formData).toEqual({ 'qa-check': { status: 'ready' } })
+    })
+
+    it('board-scoped task routes expose unread metadata without side effects and explicit read mutations clear unread only via card-state APIs', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const boardRes = await httpRequest('POST', `http://localhost:${port}/api/boards`, {
+        id: 'qa-state',
+        name: 'QA State Board',
+      })
+      expect(boardRes.status).toBe(201)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-state/tasks`, {
+        content: '# QA State Task',
+        status: 'todo',
+      })
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id as string
+
+      const localSdk = new KanbanSDK(tempDir)
+      await localSdk.init()
+      await localSdk.addLog(cardId, 'Board-scoped unread activity', undefined, 'qa-state')
+      localSdk.close()
+
+      const getBeforeRes = await httpGet(`http://localhost:${port}/api/boards/qa-state/tasks/${cardId}`)
+      const getBeforeJson = JSON.parse(getBeforeRes.body)
+      expect(getBeforeJson.ok).toBe(true)
+      expect(getBeforeJson.data.cardState.unread).toMatchObject({
+        actorId: 'default-user',
+        boardId: 'qa-state',
+        cardId,
+        unread: true,
+      })
+
+      const listBeforeRes = await httpGet(`http://localhost:${port}/api/boards/qa-state/tasks`)
+      const listBeforeJson = JSON.parse(listBeforeRes.body)
+      expect(listBeforeJson.data[0].cardState.unread.unread).toBe(true)
+
+      const readRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-state/tasks/${cardId}/read`, {})
+      expect(readRes.status).toBe(200)
+      const readJson = JSON.parse(readRes.body)
+      expect(readJson.data.unread).toMatchObject({
+        actorId: 'default-user',
+        boardId: 'qa-state',
+        cardId,
+        unread: false,
+      })
+
+      const getAfterReadRes = await httpGet(`http://localhost:${port}/api/boards/qa-state/tasks/${cardId}`)
+      expect(JSON.parse(getAfterReadRes.body).data.cardState.unread.unread).toBe(false)
     })
 
     it('websocket submitForm should return matching success and error callbacks', async () => {

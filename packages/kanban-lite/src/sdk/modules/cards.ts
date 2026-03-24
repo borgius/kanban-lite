@@ -11,6 +11,7 @@ import { matchesCardSearch } from '../metaUtils'
 import { sanitizeCard } from '../types'
 import type { CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
 import type { SDKContext } from './context'
+import { appendActivityLog } from './logs'
 
 interface ActiveCardState {
   cardId: string
@@ -30,6 +31,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cloneRecord(value: Record<string, unknown> | undefined): Record<string, unknown> {
   return value ? { ...value } : {}
+}
+
+const CARD_EDIT_ACTIVITY_FIELDS = new Set<keyof Card>([
+  'content',
+  'priority',
+  'assignee',
+  'dueDate',
+  'labels',
+  'metadata',
+])
+
+function getQualifyingCardEditFields(updates: Partial<Card>): string[] {
+  return Object.keys(updates).filter((key) => CARD_EDIT_ACTIVITY_FIELDS.has(key as keyof Card))
 }
 
 function getSchemaProperties(schema: Record<string, unknown>): Set<string> {
@@ -389,6 +403,7 @@ export async function updateCard(
   delete safeUpdates.filePath
   delete safeUpdates.id
   delete safeUpdates.boardId
+  const qualifyingFields = getQualifyingCardEditFields(safeUpdates)
   Object.assign(card, safeUpdates)
   card.modified = new Date().toISOString()
 
@@ -412,7 +427,26 @@ export async function updateCard(
   }
 
   if (oldStatus !== card.status) {
-    await ctx.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${card.status}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+    await appendActivityLog(ctx, {
+      cardId: card.id,
+      boardId: resolvedBoardId,
+      eventType: 'card.status.changed',
+      text: `Status changed: \`${oldStatus}\` → \`${card.status}\``,
+      metadata: {
+        previousStatus: oldStatus,
+        status: card.status,
+      },
+    }).catch(() => {})
+  } else if (qualifyingFields.length > 0) {
+    await appendActivityLog(ctx, {
+      cardId: card.id,
+      boardId: resolvedBoardId,
+      eventType: 'card.updated',
+      text: `Card updated: ${qualifyingFields.join(', ')}`,
+      metadata: {
+        fields: qualifyingFields,
+      },
+    }).catch(() => {})
   }
   return card
 }
@@ -451,7 +485,15 @@ export async function triggerAction(
   if (!response.ok) {
     throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
   }
-  await ctx.addLog(cardId, `Action triggered: \`${action}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+  await appendActivityLog(ctx, {
+    cardId,
+    boardId: resolvedBoardId,
+    eventType: 'card.action.triggered',
+    text: `Action triggered: \`${action}\``,
+    metadata: {
+      action,
+    },
+  }).catch(() => {})
 }
 
 /**
@@ -484,19 +526,17 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
   }
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
-  await ctx.addLog(
-    card.id,
-    `Form submitted: \`${form.name}\``,
-    {
-      source: 'system',
-      object: {
-        formId: form.id,
-        formName: form.name,
-        payload: submittedData,
-      },
+  await appendActivityLog(ctx, {
+    cardId: card.id,
+    boardId: resolvedBoardId,
+    eventType: 'form.submitted',
+    text: `Form submitted: \`${form.name}\``,
+    metadata: {
+      formId: form.id,
+      formName: form.name,
+      payload: submittedData,
     },
-    resolvedBoardId,
-  ).catch(() => {})
+  }).catch(() => {})
 
   const persistedCard = await ctx.getCard(card.id, resolvedBoardId) ?? card
 
@@ -550,7 +590,16 @@ export async function moveCard(
   }
 
   if (oldStatus !== newStatus) {
-    await ctx.addLog(card.id, `Status changed: \`${oldStatus}\` → \`${newStatus}\``, { source: 'system' }, resolvedBoardId).catch(() => {})
+    await appendActivityLog(ctx, {
+      cardId: card.id,
+      boardId: resolvedBoardId,
+      eventType: 'card.status.changed',
+      text: `Status changed: \`${oldStatus}\` → \`${newStatus}\``,
+      metadata: {
+        previousStatus: oldStatus,
+        status: newStatus,
+      },
+    }).catch(() => {})
   }
   return card
 }

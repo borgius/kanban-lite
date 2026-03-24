@@ -5,6 +5,36 @@ import type { Card } from '../../shared/types'
 import type { LogEntry } from '../../shared/types'
 import type { SDKContext } from './context'
 
+interface PersistedActivityMetadata extends Record<string, unknown> {
+  type: string
+  qualifiesForUnread: true
+}
+
+export interface PersistedActivityBoundary {
+  cardId: string
+  boardId: string
+  logEntry: LogEntry
+  qualifiesForUnread: true
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mergeActivityMetadata(
+  object: Record<string, any> | undefined,
+  activity: PersistedActivityMetadata,
+): Record<string, any> {
+  if (isRecord(object?.activity) && typeof object.activity.type === 'string') {
+    return object
+  }
+
+  return {
+    ...(object ?? {}),
+    activity,
+  }
+}
+
 // --- Log helpers ---
 
 function parseLogLine(line: string): LogEntry | null {
@@ -76,6 +106,54 @@ async function appendLogText(ctx: SDKContext, card: Card, content: string): Prom
   return ctx.appendAttachment(card, getLogFileName(card), content)
 }
 
+async function appendPersistedLogEntry(
+  ctx: SDKContext,
+  {
+    cardId,
+    text,
+    options,
+    boardId,
+  }: {
+    cardId: string
+    text: string
+    options?: { source?: string; timestamp?: string; object?: Record<string, any> }
+    boardId?: string
+  },
+): Promise<{ card: Card; boardId: string; entry: LogEntry }> {
+  if (!text?.trim()) throw new Error('Log text cannot be empty')
+  const card = await ctx.getCard(cardId, boardId)
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const entry: LogEntry = {
+    timestamp: options?.timestamp || new Date().toISOString(),
+    source: options?.source || 'default',
+    text: text.trim(),
+    ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
+  }
+
+  const logFileName = getLogFileName(card)
+  const line = serializeLogEntry(entry) + '\n'
+  const appendedInPlace = await appendLogText(ctx, card, line)
+  if (!appendedInPlace) {
+    const existingContent = await readLogText(ctx, card)
+    const nextContent = existingContent + line
+    await writeLogText(ctx, card, nextContent)
+  }
+
+  if (!card.attachments.includes(logFileName)) {
+    card.attachments.push(logFileName)
+    card.modified = new Date().toISOString()
+    await ctx._storage.writeCard(card)
+  }
+
+  return {
+    card,
+    boardId: resolvedBoardId,
+    entry,
+  }
+}
+
 // --- Card-level log management ---
 
 /**
@@ -115,33 +193,75 @@ export async function addLog(
     boardId?: string
   }
 ): Promise<LogEntry> {
-  if (!text?.trim()) throw new Error('Log text cannot be empty')
+  const result = await appendPersistedLogEntry(ctx, {
+    cardId,
+    text,
+    boardId,
+    options: {
+      ...options,
+      object: mergeActivityMetadata(
+        options?.object,
+        {
+          type: 'log.explicit',
+          qualifiesForUnread: true,
+        },
+      ),
+    },
+  })
+  return result.entry
+}
+
+/**
+ * Appends a readable persisted activity entry that participates in the shared
+ * unread-driving log surface.
+ */
+export async function appendActivityLog(
+  ctx: SDKContext,
+  {
+    cardId,
+    text,
+    eventType,
+    metadata,
+    boardId,
+    source,
+    timestamp,
+  }: {
+    cardId: string
+    text: string
+    eventType: string
+    metadata?: Record<string, unknown>
+    boardId?: string
+    source?: string
+    timestamp?: string
+  },
+): Promise<PersistedActivityBoundary> {
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const entry: LogEntry = {
-    timestamp: options?.timestamp || new Date().toISOString(),
-    source: options?.source || 'default',
-    text: text.trim(),
-    ...(options?.object && Object.keys(options.object).length > 0 ? { object: options.object } : {}),
-  }
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const logEntry = await ctx.addLog(
+    cardId,
+    text,
+    {
+      source: source ?? 'system',
+      timestamp,
+      object: mergeActivityMetadata(
+        isRecord(metadata) ? metadata : undefined,
+        {
+          type: eventType,
+          qualifiesForUnread: true,
+        },
+      ),
+    },
+    resolvedBoardId,
+  )
 
-  const logFileName = getLogFileName(card)
-  const line = serializeLogEntry(entry) + '\n'
-  const appendedInPlace = await appendLogText(ctx, card, line)
-  if (!appendedInPlace) {
-    const existingContent = await readLogText(ctx, card)
-    const nextContent = existingContent + line
-    await writeLogText(ctx, card, nextContent)
+  return {
+    cardId,
+    boardId: resolvedBoardId,
+    logEntry,
+    qualifiesForUnread: true,
   }
-
-  if (!card.attachments.includes(logFileName)) {
-    card.attachments.push(logFileName)
-    card.modified = new Date().toISOString()
-    await ctx._storage.writeCard(card)
-  }
-
-  return entry
 }
 
 /**

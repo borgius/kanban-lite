@@ -4,8 +4,7 @@ import * as path from 'path'
 import chokidar from 'chokidar'
 import { serializeCard } from '../sdk/parser'
 import type { StandaloneContext } from './context'
-import { broadcast, buildInitMessage, loadCards } from './broadcastService'
-import { buildCardFrontmatter } from './cardHelpers'
+import { broadcast, broadcastCardContentToEditingClients, buildInitMessage, getClientsEditingCard, loadCards } from './broadcastService'
 
 export function cleanupTempFile(ctx: StandaloneContext): void {
   if (ctx.tempFileWatcher) {
@@ -68,12 +67,12 @@ function handleFileChange(ctx: StandaloneContext, debounceRef: { timer: ReturnTy
       ctx.migrating = false
     }
 
-    if (ctx.currentEditingCardId && changedPath) {
-      const editingCard = ctx.cards.find(f => f.id === ctx.currentEditingCardId)
-      if (editingCard && ctx.sdk.getLocalCardPath(editingCard) === changedPath) {
+    if (changedPath) {
+      const editingCard = ctx.cards.find((card) => getClientsEditingCard(ctx, card.id).length > 0 && ctx.sdk.getLocalCardPath(card) === changedPath)
+      if (editingCard) {
         const currentContent = serializeCard(editingCard)
         if (currentContent !== ctx.lastWrittenContent) {
-          broadcast(ctx, { type: 'cardContent', cardId: editingCard.id, content: editingCard.content, frontmatter: buildCardFrontmatter(editingCard), comments: editingCard.comments || [] })
+          void broadcastCardContentToEditingClients(ctx, editingCard)
         }
       }
     }

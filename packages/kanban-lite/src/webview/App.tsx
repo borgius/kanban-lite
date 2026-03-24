@@ -53,6 +53,28 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
+function buildCardFrontmatter(card: Card): CardFrontmatter {
+  return {
+    version: card.version,
+    id: card.id,
+    ...(card.boardId !== undefined ? { boardId: card.boardId } : {}),
+    status: card.status,
+    priority: card.priority,
+    assignee: card.assignee,
+    dueDate: card.dueDate,
+    created: card.created,
+    modified: card.modified,
+    completedAt: card.completedAt,
+    labels: card.labels,
+    attachments: card.attachments,
+    order: card.order,
+    metadata: card.metadata,
+    actions: card.actions,
+    forms: card.forms,
+    formData: card.formData,
+  }
+}
+
 function App(): React.JSX.Element {
 
   const {
@@ -121,6 +143,37 @@ function App(): React.JSX.Element {
   }, [pendingDeletes])
 
   const nextIdRef = useRef(0)
+
+  const syncEditingCardFromCards = useCallback((nextCards: Card[]): void => {
+    setEditingCard(prev => {
+      if (!prev) return prev
+
+      const nextCard = nextCards.find(card => card.id === prev.id)
+      if (!nextCard) return prev
+
+      const nextFrontmatter = buildCardFrontmatter(nextCard)
+      const nextComments = nextCard.comments || []
+      const contentChanged = prev.content !== nextCard.content
+      const frontmatterChanged = JSON.stringify(prev.frontmatter) !== JSON.stringify(nextFrontmatter)
+      const commentsChanged = JSON.stringify(prev.comments) !== JSON.stringify(nextComments)
+
+      if (!contentChanged && !frontmatterChanged && !commentsChanged) {
+        return prev
+      }
+
+      if (contentChanged) {
+        contentVersionRef.current += 1
+      }
+
+      return {
+        ...prev,
+        content: nextCard.content,
+        frontmatter: nextFrontmatter,
+        comments: nextComments,
+        contentVersion: contentChanged ? contentVersionRef.current : prev.contentVersion,
+      }
+    })
+  }, [])
 
   const handleDeleteCard = useCallback((cardId: string) => {
     const { cards } = useStore.getState()
@@ -318,6 +371,8 @@ function App(): React.JSX.Element {
       switch (message.type) {
         case 'init':
           {
+            const nextCards = message.cards ?? []
+          {
             const nextColumns = message.columns ?? []
             const nextBoardId = message.currentBoard ?? useStore.getState().currentBoard
             const nextColumnIds = nextColumns.map((column) => column.id)
@@ -345,7 +400,8 @@ function App(): React.JSX.Element {
             })
           }
           setConnectionNotice(null)
-          setCards(message.cards ?? [])
+          setCards(nextCards)
+          syncEditingCardFromCards(nextCards)
           setColumns(message.columns ?? [])
           if (message.boards) setBoards(message.boards)
           if (message.workspace) setWorkspace(message.workspace)
@@ -358,11 +414,13 @@ function App(): React.JSX.Element {
           if (message.labels) setLabelDefs(message.labels)
           setIsColumnVisibilityPersistenceReady(true)
           break
+          }
         case 'connectionStatus':
           setConnectionNotice(buildConnectionNotice(message))
           break
         case 'cardsUpdated':
           setCards(message.cards)
+          syncEditingCardFromCards(message.cards)
           break
         case 'triggerCreateDialog':
           setCreateCardStatus('backlog')
@@ -416,7 +474,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs])
+  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, syncEditingCardFromCards])
 
   useEffect(() => {
     if (!isColumnVisibilityPersistenceReady) {

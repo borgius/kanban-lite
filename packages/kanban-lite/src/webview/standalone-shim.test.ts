@@ -168,6 +168,55 @@ describe('standalone shim reconnect behavior', () => {
     )
   })
 
+  it('replays the active board and open card after reconnecting', async () => {
+    vi.useFakeTimers()
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+    api.postMessage({ type: 'switchBoard', boardId: 'ops' })
+
+    const firstSocket = MockWebSocket.instances[0]
+    firstSocket.open()
+
+    api.postMessage({ type: 'openCard', cardId: 'incident-42' })
+    expect(firstSocket.sent).toEqual([
+      JSON.stringify({ type: 'ready' }),
+      JSON.stringify({ type: 'switchBoard', boardId: 'ops' }),
+      JSON.stringify({ type: 'openCard', cardId: 'incident-42' }),
+    ])
+
+    firstSocket.emitClose()
+    vi.advanceTimersByTime(250)
+
+    const secondSocket = MockWebSocket.instances[1]
+    secondSocket.open()
+
+    expect(secondSocket.sent).toEqual([
+      JSON.stringify({ type: 'ready' }),
+      JSON.stringify({ type: 'switchBoard', boardId: 'ops' }),
+      JSON.stringify({ type: 'openCard', cardId: 'incident-42' }),
+    ])
+
+    api.postMessage({ type: 'closeCard' })
+    secondSocket.emitClose()
+    vi.advanceTimersByTime(250)
+
+    const thirdSocket = MockWebSocket.instances[2]
+    thirdSocket.open()
+
+    expect(thirdSocket.sent).toEqual([
+      JSON.stringify({ type: 'ready' }),
+      JSON.stringify({ type: 'switchBoard', boardId: 'ops' }),
+    ])
+  })
+
   it('fails form submits immediately while disconnected instead of leaving them in-flight', async () => {
     const postMessageSpy = vi.fn()
     installStandaloneGlobals(postMessageSpy)

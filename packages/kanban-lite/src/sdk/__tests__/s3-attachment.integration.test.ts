@@ -238,20 +238,33 @@ describe('S3 attachment storage integration', () => {
     const storedContent = await streamToString(objectResponse.Body)
     expect(storedContent).toContain('[ci] Build passed')
     expect(storedContent).toContain('[ci] Deploy complete')
-    expect(storedContent).toContain('{"version":"1.0.0"}')
-    expect(storedContent).toContain('{"version":"1.0.1"}')
+    expect(storedContent).toContain('"version":"1.0.0"')
+    expect(storedContent).toContain('"version":"1.0.1"')
+    expect(storedContent).toContain('"activity":{"type":"log.explicit","qualifiesForUnread":true}')
 
     const logs = await sdk.listLogs(card.id)
     expect(logs).toEqual([
       expect.objectContaining({
         source: 'ci',
         text: 'Build passed',
-        object: { version: '1.0.0' },
+        object: {
+          version: '1.0.0',
+          activity: {
+            type: 'log.explicit',
+            qualifiesForUnread: true,
+          },
+        },
       }),
       expect.objectContaining({
         source: 'ci',
         text: 'Deploy complete',
-        object: { version: '1.0.1' },
+        object: {
+          version: '1.0.1',
+          activity: {
+            type: 'log.explicit',
+            qualifiesForUnread: true,
+          },
+        },
       }),
     ])
   })

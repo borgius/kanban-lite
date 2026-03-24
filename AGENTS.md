@@ -7,6 +7,13 @@ A VSCode extension + standalone server + CLI + MCP server for managing kanban bo
 
 All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, columns CRUD, settings get/update, webhooks CRUD, workspace info. When adding new functionality, add it to all three.
 
+## Capability/provider namespaces
+
+- `card.state` is a first-class capability/provider namespace.
+- Actor-scoped card state (for example unread/open state) must live outside shared card content/frontmatter.
+- The built-in default backend is file-backed sidecar storage; SQLite support ships as a first-party provider package.
+- Active-card UI state remains separate from `card.state`.
+
 ## Implementation Order
 
 Always follow this order when adding or modifying any feature:

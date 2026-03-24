@@ -5,7 +5,7 @@ import * as path from 'path'
 import chokidar from 'chokidar'
 import { parseCardFile, serializeCard } from '../../sdk/parser'
 import { sanitizeCard } from '../../sdk/types'
-import { broadcast } from '../broadcastService'
+import { broadcast, broadcastCardContentToEditingClients, getClientsEditingCard } from '../broadcastService'
 import type { StandaloneContext } from '../context'
 import { cleanupTempFile, setupWatcher } from '../watcherSetup'
 import { jsonOk, jsonError } from '../httpUtils'
@@ -95,8 +95,8 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
           const cardIndex = ctx.cards.findIndex(card => card.id === currentCardId)
           if (cardIndex !== -1) ctx.cards[cardIndex] = updated
           broadcast(ctx, { type: 'cardsUpdated', cards: ctx.cards.map(sanitizeCard) })
-          if (ctx.currentEditingCardId === currentCardId) {
-            broadcast(ctx, { type: 'cardContent', cardId: updated.id, content: updated.content, frontmatter: updated })
+          if (getClientsEditingCard(ctx, currentCardId).length > 0) {
+            await broadcastCardContentToEditingClients(ctx, updated)
           }
         } finally {
           ctx.migrating = false

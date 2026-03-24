@@ -9,6 +9,7 @@ import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '.
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { AuthContext } from '../sdk/types'
 import { getExtensionAuthStatus, resolveExtensionAuthContext } from './auth'
+import { decorateCardsForWebview, formatCardStateWarning, performExplicitCardOpen } from './cardStateUi'
 
 
 type CreateCardData = CreateCardPayload
@@ -35,6 +36,7 @@ export class KanbanPanel {
   private _tempFilePath: string | undefined
   private _tempFileCardId: string | undefined
   private _tempFileWriting = false
+  private _cardsToWebviewVersion = 0
 
   public static createOrShow(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
     const column = vscode.window.activeTextEditor
@@ -152,9 +154,9 @@ export class KanbanPanel {
             const openRoot = this._getWorkspaceRoot()
             const openCfg = openRoot ? readConfig(openRoot) : DEFAULT_CONFIG
             if (openCfg.markdownEditorMode) {
-              this._openCardInNativeEditor(message.cardId)
+              await this._openCardInNativeEditor(message.cardId)
             } else {
-              await this._sendCardContent(message.cardId)
+              await this._openCardInWebview(message.cardId)
             }
             break
           }
@@ -378,6 +380,11 @@ export class KanbanPanel {
             if (!triggerSdk) break
             try {
               await this._runWithAuth(triggerSdk, () => triggerSdk.triggerAction(cardId, action, undefined))
+              await this._loadCards()
+              this._sendCardsToWebview()
+              if (this._currentEditingCardId === cardId) {
+                await this._sendCardContent(cardId)
+              }
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'actionResult', callbackKey, error: String(err) })
@@ -630,10 +637,33 @@ export class KanbanPanel {
     const root = this._getWorkspaceRoot()
     const cfg = root ? readConfig(root) : DEFAULT_CONFIG
     if (cfg.markdownEditorMode) {
-      this._openCardInNativeEditor(cardId)
+      void this._openCardInNativeEditor(cardId)
     } else {
-      this._sendCardContent(cardId)
+      void this._openCardInWebview(cardId)
     }
+  }
+
+  private async _handleExplicitCardOpen(cardId: string): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    const warning = await performExplicitCardOpen(
+      sdk,
+      (fn) => this._runWithAuth(sdk, fn),
+      cardId,
+      this._currentBoardId,
+    )
+
+    if (warning) {
+      vscode.window.showWarningMessage(formatCardStateWarning(warning))
+    }
+
+    this._sendCardsToWebview()
+  }
+
+  private async _openCardInWebview(cardId: string): Promise<void> {
+    await this._handleExplicitCardOpen(cardId)
+    await this._sendCardContent(cardId)
   }
 
   private async _createCard(data: CreateCardData): Promise<void> {
@@ -828,6 +858,8 @@ export class KanbanPanel {
     const card = this._cards.find(f => f.id === cardId)
     if (!card) return
 
+    await this._handleExplicitCardOpen(cardId)
+
     const sdk = this._getSDK()
     const localCardPath = sdk?.getLocalCardPath(card)
     if (!localCardPath) {
@@ -842,10 +874,6 @@ export class KanbanPanel {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(localCardPath))
     await vscode.window.showTextDocument(doc, { viewColumn: targetColumn, preview: true })
     this._currentEditingCardId = cardId
-    {
-      const sdk = this._getSDK()
-      if (sdk) void sdk.setActiveCard(cardId, this._currentBoardId).catch(() => {})
-    }
   }
 
   private async _sendCardContent(cardId: string): Promise<void> {
@@ -853,10 +881,6 @@ export class KanbanPanel {
     if (!card) return
 
     this._currentEditingCardId = cardId
-    {
-      const sdk = this._getSDK()
-      if (sdk) void sdk.setActiveCard(cardId, this._currentBoardId).catch(() => {})
-    }
 
     this._panel.webview.postMessage({
       type: 'cardContent',
@@ -1228,10 +1252,19 @@ export class KanbanPanel {
       return
     }
 
-    void getExtensionAuthStatus(this._context, sdk).then((authStatus) => {
+    const nextVersion = ++this._cardsToWebviewVersion
+
+    void Promise.all([
+      decorateCardsForWebview(sdk, (fn) => this._runWithAuth(sdk, fn), this._cards, this._currentBoardId),
+      getExtensionAuthStatus(this._context, sdk),
+    ]).then(([cards, authStatus]) => {
+      if (nextVersion !== this._cardsToWebviewVersion) {
+        return
+      }
+
       this._panel.webview.postMessage({
         type: 'init',
-        cards: this._cards,
+        cards,
         columns,
         settings,
         boards,
@@ -1239,6 +1272,29 @@ export class KanbanPanel {
         labels: sdk.getLabels(),
         minimizedColumnIds: sdk.getMinimizedColumns(this._currentBoardId),
         authStatus,
+      })
+    }).catch((error) => {
+      if (nextVersion !== this._cardsToWebviewVersion) {
+        return
+      }
+
+      vscode.window.showWarningMessage(`Failed to load card-state badges: ${error instanceof Error ? error.message : String(error)}`)
+      void getExtensionAuthStatus(this._context, sdk).then((authStatus) => {
+        if (nextVersion !== this._cardsToWebviewVersion) {
+          return
+        }
+
+        this._panel.webview.postMessage({
+          type: 'init',
+          cards: this._cards,
+          columns,
+          settings,
+          boards,
+          currentBoard,
+          labels: sdk.getLabels(),
+          minimizedColumnIds: sdk.getMinimizedColumns(this._currentBoardId),
+          authStatus,
+        })
       })
     })
   }

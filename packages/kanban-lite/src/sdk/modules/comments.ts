@@ -1,5 +1,6 @@
 import type { Card, Comment } from '../../shared/types'
 import type { SDKContext } from './context'
+import { appendActivityLog } from './logs'
 
 // --- Comment management ---
 
@@ -40,6 +41,17 @@ export async function addComment(
   card.comments.push(comment)
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
+  await appendActivityLog(ctx, {
+    cardId: card.id,
+    boardId: card.boardId || ctx._resolveBoardId(boardId),
+    eventType: 'comment.created',
+    text: `Comment added by \`${author}\``,
+    metadata: {
+      commentId: comment.id,
+      author,
+      created: comment.created,
+    },
+  }).catch(() => {})
 
   return card
 }
@@ -57,9 +69,22 @@ export async function updateComment(
   const comment = (card.comments || []).find(c => c.id === commentId)
   if (!comment) throw new Error(`Comment not found: ${commentId}`)
 
+  const previousContent = comment.content
   comment.content = content
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
+  await appendActivityLog(ctx, {
+    cardId: card.id,
+    boardId: card.boardId || ctx._resolveBoardId(boardId),
+    eventType: 'comment.updated',
+    text: `Comment updated: \`${comment.id}\``,
+    metadata: {
+      commentId: comment.id,
+      author: comment.author,
+      previousContent,
+      content,
+    },
+  }).catch(() => {})
 
   return card
 }
@@ -78,6 +103,18 @@ export async function deleteComment(
   card.comments = (card.comments || []).filter(c => c.id !== commentId)
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
+  if (comment) {
+    await appendActivityLog(ctx, {
+      cardId: card.id,
+      boardId: card.boardId || ctx._resolveBoardId(boardId),
+      eventType: 'comment.deleted',
+      text: `Comment deleted: \`${comment.id}\``,
+      metadata: {
+        commentId: comment.id,
+        author: comment.author,
+      },
+    }).catch(() => {})
+  }
 
   return card
 }

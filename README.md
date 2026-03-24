@@ -66,6 +66,8 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
+- **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
+- **SQLite `card.state` plugin parity**: Install the first-party `kl-sqlite-card-state` package and set `plugins['card.state'] = { provider: 'sqlite' }` to persist unread/open state in SQLite while keeping the same stable default-actor, actor-scoping, configured-identity failure semantics, and explicit read/open behavior as the built-in file-backed `builtin` backend
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
@@ -249,6 +251,12 @@ kl pwd                                                  # Print workspace root p
 kl storage status                                       # Show current provider + capability status
 kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db  # Migrate to SQLite
 kl storage migrate-to-markdown                          # Migrate back to markdown
+
+# Card state / unread
+kl card-state status                                    # Show active card.state backend + default actor contract / availability
+kl card-state status <card-id>                          # Show side-effect-free actor-scoped unread/open summary (not active-card UI state)
+kl card-state read <card-id>                            # Explicitly acknowledge unread activity for the current actor
+kl card-state open <card-id>                            # Acknowledge unread and persist explicit actor-scoped open-card state
 
 # Start web server
 kl serve                                                # Start on port 3000
@@ -893,6 +901,10 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `transfer_card` | Move a card from one board to another |
 | `list_cards` | List/filter cards by status, priority, assignee, label, `searchQuery`, `fuzzy`, and `metaFilter` |
 | `get_card` | Get full details of a card (supports partial ID matching) |
+| `get_card_state_status` | Get the active `card.state` provider status for the workspace |
+| `get_card_state` | Get the side-effect-free unread/open summary for one card |
+| `open_card` | Explicitly acknowledge unread activity and persist actor-scoped open-card state |
+| `read_card` | Explicitly acknowledge unread activity without changing open-card state |
 | `get_active_card` | Get the currently active/open card, or `null` if none is active |
 | `create_card` | Create a new card with title, body, status, priority, metadata, forms, and formData |
 | `update_card` | Update fields of an existing card, including forms and formData |
@@ -1241,6 +1253,8 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - MCP: `get_storage_status`, `get_workspace_info`
 
 Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
+
+For `card.state`, core ships the built-in file-backed `builtin` backend, while the `sqlite` compatibility id resolves to the first-party `kl-sqlite-card-state` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 
 ### Migrating between compatibility-backed providers
 

@@ -1,17 +1,37 @@
 import type { KanbanColumn, CreateCardPayload, Priority, Card } from '../../../shared/types'
 import { readConfig } from '../../../shared/config'
+import type { CardStateCursor } from '../../../sdk/plugins'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { buildInitMessage, broadcast, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
 import { doSubmitForm } from '../../mutationService'
-import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike } from '../../authUtils'
+import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike, getCardStateErrorLike } from '../../authUtils'
 import { jsonError, jsonOk, readBody } from '../../httpUtils'
-import { applyCommonCardFilters, type StandaloneRequestContext, sendNoContent } from '../common'
+import {
+  buildCardReadModel,
+  buildCardReadModels,
+  buildCardStateMutationModel,
+  type StandaloneRequestContext,
+  sendNoContent,
+} from '../common'
 
 export async function handleBoardRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk, workspaceRoot } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
+  const handleKnownError = (err: unknown): void => {
+    const authErr = getAuthErrorLike(err)
+    if (authErr) {
+      jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
+      return
+    }
+    const cardStateErr = getCardStateErrorLike(err)
+    if (cardStateErr) {
+      jsonError(res, 400, cardStateErr.message)
+      return
+    }
+    jsonError(res, 400, String(err))
+  }
 
   let params = route('GET', '/api/boards')
   if (params) {
@@ -200,9 +220,9 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         params.boardId,
         getListCardsOptions(url.searchParams),
       )
-      jsonOk(res, applyCommonCardFilters(tasks, url.searchParams, ctx))
+      jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx))
     } catch (err) {
-      jsonError(res, 400, String(err))
+      handleKnownError(err)
     }
     return true
   }
@@ -211,9 +231,9 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const card = await sdk.getActiveCard(params.boardId)
-      jsonOk(res, card ? sanitizeCard(card) : null)
+      jsonOk(res, card ? await buildCardReadModel(card, ctx) : null)
     } catch (err) {
-      jsonError(res, 400, String(err))
+      handleKnownError(err)
     }
     return true
   }
@@ -243,11 +263,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       }))
       jsonOk(res, sanitizeCard(card), 201)
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }
@@ -259,10 +275,44 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
-        jsonOk(res, sanitizeCard(card))
+        jsonOk(res, await buildCardReadModel(card, ctx))
       }
     } catch (err) {
-      jsonError(res, 400, String(err))
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/open')
+  if (params) {
+    try {
+      const card = await sdk.getCard(params.id, params.boardId)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, params.boardId))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/read')
+  if (params) {
+    try {
+      const card = await sdk.getCard(params.id, params.boardId)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      const body = await readBody(req)
+      const readThrough = body.readThrough as CardStateCursor | undefined
+      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, params.boardId, readThrough))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+    } catch (err) {
+      handleKnownError(err)
     }
     return true
   }

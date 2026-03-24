@@ -1,10 +1,12 @@
 import { extractAuthContext, getAuthErrorLike } from '../authUtils'
 import type { StandaloneContext } from '../context'
+import { clearClientEditingCard, setClientEditingCard } from '../broadcastService'
 import { handleMessage } from '../messageHandlers'
 
 export function attachWebSocketHandlers(ctx: StandaloneContext): void {
   ctx.wss.on('connection', (ws, req) => {
     const authContext = extractAuthContext(req)
+    setClientEditingCard(ctx, ws, null)
     ws.on('message', (data) => {
       let message: unknown
       try {
@@ -21,6 +23,9 @@ export function attachWebSocketHandlers(ctx: StandaloneContext): void {
           console.error('Failed to handle message:', err)
         }
       })
+    })
+    ws.on('close', () => {
+      clearClientEditingCard(ctx, ws)
     })
   })
 }

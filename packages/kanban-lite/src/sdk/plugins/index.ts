@@ -3,13 +3,14 @@ import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { ZodRawShape, ZodTypeAny } from 'zod'
 import type { Card } from '../../shared/types'
-import type { Webhook } from '../../shared/config'
-import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities } from '../../shared/config'
-import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
+import type { Webhook, CardStateCapabilityNamespace } from '../../shared/config'
+import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config'
+import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types'
 import { AuthError } from '../types'
 import type { KanbanSDK } from '../KanbanSDK'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
+import { createFileBackedCardStateProvider } from './card-state-file'
 import { MARKDOWN_PLUGIN } from './markdown'
 
 const runtimeRequire = createRequire(
@@ -62,6 +63,8 @@ export const WORKSPACE_ROOT: string | null = findWorkspaceRoot(
       : path.join(process.cwd(), '__kanban-runtime__.cjs'),
   ),
 )
+
+const BUILTIN_CARD_STATE_PROVIDER_IDS = new Set(['builtin'])
 
 // ---------------------------------------------------------------------------
 // Auth plugin contracts and built-in noop implementations
@@ -202,6 +205,88 @@ export interface WebhookProviderPlugin {
   ): Webhook | null
   /** Deletes a webhook by id. Returns `true` if deleted, `false` if not found. */
   deleteWebhook(workspaceRoot: string, id: string): boolean
+}
+
+// ---------------------------------------------------------------------------
+// Card-state provider contract
+// ---------------------------------------------------------------------------
+
+/** Shared plugin manifest shape for `card.state` capability providers. */
+export interface CardStateProviderManifest {
+  readonly id: string
+  readonly provides: readonly CardStateCapabilityNamespace[]
+}
+
+/** Opaque JSON-like payload stored for a card-state domain. */
+export type CardStateValue = Record<string, unknown>
+
+/** Stable actor/card/domain lookup key used by card-state providers. */
+export interface CardStateKey {
+  actorId: string
+  boardId: string
+  cardId: string
+  domain: string
+}
+
+/** Stored card-state record returned by provider operations. */
+export interface CardStateRecord<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt: string
+}
+
+/** Write input for card-state domain mutations. */
+export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt?: string
+}
+
+/** Unread cursor payload persisted by card-state providers. */
+export interface CardStateCursor {
+  cursor: string
+  updatedAt?: string
+}
+
+/** Lookup key for unread cursor state. */
+export interface CardStateUnreadKey {
+  actorId: string
+  boardId: string
+  cardId: string
+}
+
+/** Mutation input for marking unread state through a cursor. */
+export interface CardStateReadThroughInput extends CardStateUnreadKey {
+  cursor: CardStateCursor
+}
+
+/** Shared runtime context passed to and exposed for `card.state` providers. */
+export interface CardStateModuleContext {
+  workspaceRoot: string
+  kanbanDir: string
+  provider: string
+  backend: Exclude<CardStateBackend, 'none'>
+  options?: Record<string, unknown>
+}
+
+/**
+ * Contract for first-class `card.state` capability providers.
+ *
+ * The core SDK resolves exactly one provider and shares both the provider and a
+ * normalized module context with leaf modules so host layers never need
+ * backend-specific branching.
+ */
+export interface CardStateProvider {
+  readonly manifest: CardStateProviderManifest
+  getCardState(input: CardStateKey): Promise<CardStateRecord | null>
+  setCardState(input: CardStateWriteInput): Promise<CardStateRecord>
+  getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>
+  markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>
+}
+
+interface CardStateProviderModule {
+  readonly cardStateProviders?: Record<string, unknown>
+  readonly cardStateProvider?: unknown
+  readonly createCardStateProvider?: ((context: CardStateModuleContext) => unknown) | unknown
+  readonly default?: unknown
 }
 
 /**
@@ -696,6 +781,12 @@ export interface ResolvedCapabilityBag {
    * (always returns `true` / allow-all) when no auth plugin is configured.
     */
   readonly authPolicy: AuthPolicyPlugin
+  /** Resolved `card.state` provider shared across SDK modules and host surfaces. */
+  readonly cardState: CardStateProvider
+  /** Raw resolved `card.state` provider selection used to resolve card-state capability routing. */
+  readonly cardStateProviders: ResolvedCardStateCapabilities
+  /** Shared runtime context for the resolved `card.state` provider. */
+  readonly cardStateContext: CardStateModuleContext
   /** Resolved event listener plugins. Currently always empty; reserved for future use. */
   /** Resolved event listener plugins. Reserved for future use; currently empty. */
   readonly eventListeners: readonly SDKEventListenerPlugin[]
@@ -736,7 +827,21 @@ export interface ResolvedCapabilityBag {
    * once `BeforeEventPayload` carries the `AuthContext` and SDK action runners
    * transition away from the `_authorizeAction` path.
    */
-  readonly authListener: SDKEventListenerPlugin}
+  readonly authListener: SDKEventListenerPlugin
+}
+
+/**
+ * Returns `true` only when the auth configuration permits the stable default
+ * single-user card-state actor.
+ *
+ * Any non-noop `auth.identity` provider disables the fallback, even if the
+ * provider later resolves no caller for a specific request.
+ */
+export function canUseDefaultCardStateActor(
+  authCapabilities?: ResolvedAuthCapabilities | null,
+): boolean {
+  return (authCapabilities?.['auth.identity']?.provider ?? 'noop') === 'noop'
+}
 
 function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace): manifest is PluginManifest {
   if (!manifest || typeof manifest !== 'object') return false
@@ -774,6 +879,19 @@ const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
 export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['sqlite', 'kl-sqlite-storage'],
   ['mysql', 'kl-mysql-storage'],
+])
+
+/**
+ * Maps short `card.state` provider ids to their installable npm package names.
+ *
+ * - `sqlite` → `npm install kl-sqlite-card-state`
+ *
+ * External packages must export `createCardStateProvider(context)` or a
+ * `cardStateProvider`/`default` object with a manifest that provides
+ * `'card.state'`.
+ */
+export const CARD_STATE_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['sqlite', 'kl-sqlite-card-state'],
 ])
 
 /**
@@ -1321,6 +1439,99 @@ function isValidSDKEventListenerPlugin(plugin: unknown): plugin is SDKEventListe
     && Array.isArray(p.manifest?.provides)
 }
 
+function isValidCardStateProviderManifest(
+  manifest: unknown,
+  providerId: string,
+): manifest is CardStateProviderManifest {
+  if (!manifest || typeof manifest !== 'object') return false
+  const candidate = manifest as CardStateProviderManifest
+  return typeof candidate.id === 'string'
+    && candidate.id === providerId
+    && Array.isArray(candidate.provides)
+    && candidate.provides.includes('card.state')
+}
+
+function isValidCardStateProvider(
+  provider: unknown,
+  providerId: string,
+): provider is CardStateProvider {
+  if (!provider || typeof provider !== 'object') return false
+  const candidate = provider as CardStateProvider
+  return typeof candidate.getCardState === 'function'
+    && typeof candidate.setCardState === 'function'
+    && typeof candidate.getUnreadCursor === 'function'
+    && typeof candidate.markUnreadReadThrough === 'function'
+    && isValidCardStateProviderManifest(candidate.manifest, providerId)
+}
+
+function selectCardStateProvider(mod: CardStateProviderModule, providerId: string): CardStateProvider | null {
+  const mapped = mod.cardStateProviders?.[providerId]
+  if (isValidCardStateProvider(mapped, providerId)) return mapped
+
+  const direct = mod.cardStateProvider ?? mod.default
+  if (isValidCardStateProvider(direct, providerId)) return direct
+
+  return null
+}
+
+function createCardStateModuleContext(ref: ProviderRef, kanbanDir: string): CardStateModuleContext {
+  const context: CardStateModuleContext = {
+    workspaceRoot: path.dirname(kanbanDir),
+    kanbanDir,
+    provider: ref.provider,
+    backend: BUILTIN_CARD_STATE_PROVIDER_IDS.has(ref.provider) ? 'builtin' : 'external',
+  }
+
+  if (ref.options) {
+    context.options = ref.options
+  }
+
+  return context
+}
+
+function loadExternalCardStateProvider(
+  packageName: string,
+  providerId: string,
+  context: CardStateModuleContext,
+): CardStateProvider {
+  const mod = loadExternalModule(packageName) as CardStateProviderModule
+
+  if (typeof mod.createCardStateProvider === 'function') {
+    const created = mod.createCardStateProvider(context)
+    if (isValidCardStateProvider(created, providerId)) return created
+  }
+
+  const provider = selectCardStateProvider(mod, providerId)
+  if (!provider) {
+    throw new Error(
+      `Plugin "${packageName}" does not export a valid cardStateProvider for "${providerId}". ` +
+      `Expected cardStateProviders["${providerId}"] or cardStateProvider/default export with ` +
+      `getCardState, setCardState, getUnreadCursor, markUnreadReadThrough, and a manifest that provides 'card.state'.`
+    )
+  }
+  return provider
+}
+
+function resolveCardStateProvider(
+  ref: ProviderRef,
+  kanbanDir: string,
+): { provider: CardStateProvider; context: CardStateModuleContext } {
+  const baseContext = createCardStateModuleContext(ref, kanbanDir)
+  if (BUILTIN_CARD_STATE_PROVIDER_IDS.has(ref.provider)) {
+    return { provider: createFileBackedCardStateProvider(baseContext), context: baseContext }
+  }
+
+  const packageName = CARD_STATE_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  const provider = loadExternalCardStateProvider(packageName, ref.provider, baseContext)
+  return {
+    provider,
+    context: {
+      ...baseContext,
+      provider: provider.manifest.id,
+    },
+  }
+}
+
 /** @internal Shape of a loaded webhook provider package module. */
 interface WebhookProviderModule {
   webhookProviderPlugin?: unknown
@@ -1639,6 +1850,11 @@ export function collectActiveExternalPackageNames(config: {
     add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
   }
 
+  const cardStateProvider = config.plugins?.['card.state']?.provider
+  if (cardStateProvider && !BUILTIN_CARD_STATE_PROVIDER_IDS.has(cardStateProvider)) {
+    add(CARD_STATE_PROVIDER_ALIASES.get(cardStateProvider) ?? cardStateProvider)
+  }
+
   // Auth providers — plugins key takes precedence over legacy auth key;
   // both resolve through AUTH_PROVIDER_ALIASES.
   const identityProvider = config.plugins?.['auth.identity']?.provider
@@ -1734,6 +1950,7 @@ export function resolveCapabilityBag(
   kanbanDir: string,
   authCapabilities?: ResolvedAuthCapabilities,
   webhookCapabilities?: ResolvedWebhookCapabilities,
+  cardStateCapabilities?: ResolvedCardStateCapabilities,
 ): ResolvedCapabilityBag {
   const cardRef = capabilities['card.storage']
   const cardPlugin = resolveCardPlugin(cardRef)
@@ -1766,9 +1983,13 @@ export function resolveCapabilityBag(
     'auth.identity': { provider: 'noop' },
     'auth.policy': { provider: 'noop' },
   }
+  const resolvedCardState: ResolvedCardStateCapabilities = cardStateCapabilities ?? {
+    'card.state': { provider: 'builtin' },
+  }
 
   const resolvedAuthIdentity = resolveAuthIdentityPlugin(resolvedAuth['auth.identity'])
   const resolvedAuthPolicy = resolveAuthPolicyPlugin(resolvedAuth['auth.policy'])
+  const resolvedCardStateProvider = resolveCardStateProvider(resolvedCardState['card.state'], kanbanDir)
   const workspaceRoot = path.dirname(kanbanDir)
   const webhookPlugins = webhookCapabilities
     ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], workspaceRoot)
@@ -1809,6 +2030,9 @@ export function resolveCapabilityBag(
     authIdentity: resolvedAuthIdentity,
     authProviders: resolvedAuth,
     authPolicy: resolvedAuthPolicy,
+    cardState: resolvedCardStateProvider.provider,
+    cardStateProviders: resolvedCardState,
+    cardStateContext: resolvedCardStateProvider.context,
     eventListeners: [],
     webhookProvider: webhookPlugins?.provider ?? null,
     webhookProviders: webhookCapabilities ?? null,

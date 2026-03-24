@@ -1,5 +1,5 @@
 import type { Card, CardSortOption, LogEntry } from '../../shared/types'
-import type { ResolvedCapabilities } from '../../shared/config'
+import type { ResolvedCapabilityBag } from '../plugins'
 import type { StorageEngine } from '../plugins/types'
 import type { SDKEventType } from '../types'
 
@@ -14,7 +14,7 @@ export interface SDKContext {
   readonly workspaceRoot: string
   readonly kanbanDir: string
   _storage: StorageEngine
-  readonly capabilities: { providers: ResolvedCapabilities } | null
+  readonly capabilities: ResolvedCapabilityBag | null
 
   /** @internal */
   _resolveBoardId(boardId?: string): string

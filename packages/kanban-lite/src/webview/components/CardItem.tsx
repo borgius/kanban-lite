@@ -99,6 +99,41 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   }
 
   const completedText = card.status === 'done' ? formatCompletedAt(card.completedAt) : null
+  const cardStateBadge = (() => {
+    if (card.cardState?.error?.availability === 'identity-unavailable') {
+      return {
+        label: 'Sign in',
+        className: 'kb-card-state-badge kb-card-state-badge--identity bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+        title: card.cardState.error.message,
+      }
+    }
+
+    if (card.cardState?.error?.availability === 'unavailable') {
+      return {
+        label: 'State off',
+        className: 'kb-card-state-badge kb-card-state-badge--unavailable bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200',
+        title: card.cardState.error.message,
+      }
+    }
+
+    if (card.cardState?.unread?.unread) {
+      return {
+        label: 'Unread',
+        className: 'kb-card-state-badge kb-card-state-badge--unread bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
+        title: 'Unread activity is waiting on this card',
+      }
+    }
+
+    if (card.cardState?.open) {
+      return {
+        label: 'Opened',
+        className: 'kb-card-state-badge kb-card-state-badge--opened bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+        title: `Last opened ${new Date(card.cardState.open.value.openedAt).toLocaleString()}`,
+      }
+    }
+
+    return null
+  })()
 
   return (
     <div
@@ -133,6 +168,14 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-2 flex-1">
             {title}
           </h3>
+          {cardStateBadge && (
+            <span
+              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${cardStateBadge.className}`}
+              title={cardStateBadge.title}
+            >
+              {cardStateBadge.label}
+            </span>
+          )}
           {cardSettings.showPriorityBadges && !(cardSettings.showFileName && fileName) && (
             <span
               className={`text-xs font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[card.priority]}`}

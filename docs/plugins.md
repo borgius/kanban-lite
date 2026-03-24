@@ -371,6 +371,31 @@ npm install kl-mysql-storage
 
 The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `mysql2` load semantics.
 
+## `builtin` / `sqlite` for `card.state`
+
+Namespace: `card.state`
+
+Behavior:
+
+- `builtin` is the core file-backed backend and persists actor-scoped unread/open state in workspace sidecar files,
+- that persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
+- `sqlite` is a first-party compatibility id backed by the `kl-sqlite-card-state` package,
+- both backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.
+
+Identity behavior:
+
+- when no real `auth.identity` provider is configured, callers use the shared default actor contract,
+- when a real `auth.identity` provider is configured but no actor can be resolved, host surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE`,
+- this is intentionally different from backend unavailability (`unavailable` / `ERR_CARD_STATE_UNAVAILABLE`).
+
+External package:
+
+The `sqlite` provider id is a compatibility alias for the first-party `kl-sqlite-card-state` npm package:
+
+```sh
+npm install kl-sqlite-card-state
+```
+
 Example:
 
 ```json
@@ -1542,6 +1567,8 @@ If you are building a plugin today, follow these rules:
 | `card.storage` | `markdown` | yes | `boards/**/*.md` | Default card provider |
 | `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-sqlite-storage` |
 | `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-mysql-storage` |
+| `card.state` | `builtin` | yes | `null` | Built-in file-backed actor-scoped card-state provider |
+| `card.state` | `sqlite` | no | `null` | First-party compatibility id backed by `kl-sqlite-card-state` |
 | `attachment.storage` | `localfs` | n/a | n/a | Default attachment provider |
 
 ## Resolver precedence

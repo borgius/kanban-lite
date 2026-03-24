@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws'
-import type { Card } from '../shared/types'
+import type { Card, LogEntry } from '../shared/types'
 import { readConfig } from '../shared/config'
 import type { StandaloneContext } from './context'
 import { buildCardFrontmatter } from './cardHelpers'
@@ -17,6 +17,39 @@ export function broadcast(ctx: StandaloneContext, message: unknown): void {
     if (client.readyState === WebSocket.OPEN) {
       client.send(json)
     }
+  }
+}
+
+export function setClientEditingCard(ctx: StandaloneContext, ws: WebSocket, cardId: string | null): void {
+  ctx.clientEditingCardIds.set(ws, cardId)
+}
+
+export function clearClientEditingCard(ctx: StandaloneContext, ws: WebSocket): void {
+  ctx.clientEditingCardIds.delete(ws)
+}
+
+export function isClientEditingCard(ctx: StandaloneContext, ws: WebSocket, cardId: string): boolean {
+  return ctx.clientEditingCardIds.get(ws) === cardId
+}
+
+export function getClientsEditingCard(ctx: StandaloneContext, cardId: string): WebSocket[] {
+  const matches: WebSocket[] = []
+  for (const [client, editingCardId] of ctx.clientEditingCardIds.entries()) {
+    if (client.readyState === WebSocket.OPEN && editingCardId === cardId) {
+      matches.push(client)
+    }
+  }
+  return matches
+}
+
+function buildCardContentMessage(card: Card, logs: LogEntry[]): unknown {
+  return {
+    type: 'cardContent',
+    cardId: card.id,
+    content: card.content,
+    frontmatter: buildCardFrontmatter(card),
+    comments: card.comments || [],
+    logs,
   }
 }
 
@@ -44,14 +77,38 @@ export function buildInitMessage(ctx: StandaloneContext): unknown {
 }
 
 export async function sendCardContent(ctx: StandaloneContext, ws: WebSocket, card: Card): Promise<void> {
-  let logs: import('../shared/types').LogEntry[] = []
+  let logs: LogEntry[] = []
   try { logs = await ctx.sdk.listLogs(card.id, ctx.currentBoardId) } catch { /* ignore */ }
-  ws.send(JSON.stringify({
-    type: 'cardContent',
-    cardId: card.id,
-    content: card.content,
-    frontmatter: buildCardFrontmatter(card),
-    comments: card.comments || [],
-    logs,
-  }))
+  ws.send(JSON.stringify(buildCardContentMessage(card, logs)))
+}
+
+export async function broadcastCardContentToEditingClients(ctx: StandaloneContext, card: Card): Promise<void> {
+  const clients = getClientsEditingCard(ctx, card.id)
+  if (clients.length === 0) return
+
+  let logs: LogEntry[] = []
+  try { logs = await ctx.sdk.listLogs(card.id, ctx.currentBoardId) } catch { /* ignore */ }
+  const json = JSON.stringify(buildCardContentMessage(card, logs))
+  for (const client of clients) {
+    client.send(json)
+  }
+}
+
+export async function broadcastLogsUpdatedToEditingClients(ctx: StandaloneContext, cardId: string, logs?: LogEntry[]): Promise<void> {
+  const clients = getClientsEditingCard(ctx, cardId)
+  if (clients.length === 0) return
+
+  let resolvedLogs = logs
+  if (!resolvedLogs) {
+    try {
+      resolvedLogs = await ctx.sdk.listLogs(cardId, ctx.currentBoardId)
+    } catch {
+      resolvedLogs = []
+    }
+  }
+
+  const json = JSON.stringify({ type: 'logsUpdated', cardId, logs: resolvedLogs })
+  for (const client of clients) {
+    client.send(json)
+  }
 }

@@ -105,6 +105,20 @@ const logEntryBodySchema = {
   },
 }
 
+const cardStateReadBodySchema = {
+  type: 'object' as const,
+  properties: {
+    readThrough: {
+      type: 'object' as const,
+      description: 'Optional explicit unread cursor to acknowledge instead of the latest activity.',
+      properties: {
+        cursor: { type: 'string' as const },
+        updatedAt: { type: 'string' as const },
+      },
+    },
+  },
+}
+
 export const KANBAN_OPENAPI_SPEC = {
   openapi: '3.0.3',
   info: {
@@ -163,6 +177,55 @@ export const KANBAN_OPENAPI_SPEC = {
           forms: { type: 'array', description: 'Attached form references.' },
           formData: { type: 'object', description: 'Saved form data keyed by form ID.' },
           actions: { type: 'array', description: 'Action names available on the card.' },
+          cardState: { $ref: '#/components/schemas/CardStateReadModel' },
+        },
+      },
+      CardStateCursor: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string' },
+          updatedAt: { type: 'string' },
+        },
+      },
+      CardUnreadSummary: {
+        type: 'object',
+        properties: {
+          actorId: { type: 'string' },
+          boardId: { type: 'string' },
+          cardId: { type: 'string' },
+          latestActivity: { anyOf: [{ $ref: '#/components/schemas/CardStateCursor' }, { type: 'null' }] },
+          readThrough: { anyOf: [{ $ref: '#/components/schemas/CardStateCursor' }, { type: 'null' }] },
+          unread: { type: 'boolean' },
+        },
+      },
+      CardStateReadModel: {
+        type: 'object',
+        description: 'Actor-scoped unread/open card-state metadata exposed on read models without side effects. This is distinct from board active-card UI state.',
+        properties: {
+          unread: { $ref: '#/components/schemas/CardUnreadSummary' },
+          open: {
+            anyOf: [
+              {
+                type: 'object',
+                description: 'Persisted open-card state record for the current actor when the explicit open mutation has been invoked.',
+              },
+              { type: 'null' },
+            ],
+          },
+        },
+      },
+      CardStateStatus: {
+        type: 'object',
+        description: 'Resolved standalone runtime status for the active `card.state` provider, including backend family, availability classification, and the stable default-actor contract used when auth is absent.',
+        properties: {
+          provider: { type: 'string' },
+          active: { type: 'boolean' },
+          backend: { type: 'string', enum: ['builtin', 'external', 'none'] },
+          availability: { type: 'string', enum: ['available', 'identity-unavailable', 'unavailable'] },
+          defaultActorMode: { type: 'string' },
+          defaultActor: { type: 'object' },
+          defaultActorAvailable: { type: 'boolean' },
+          errorCode: { type: 'string' },
         },
       },
       Board: {
@@ -358,7 +421,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'List tasks (board-scoped)',
-        description: 'Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`.',
+        description: 'Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [boardIdParam, ...listTasksQueryParams],
         responses: { 200: { description: 'Task list.' }, 400: { description: 'Error.' } },
       },
@@ -378,7 +441,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'Get active task (board-scoped)',
-        description: 'Returns the currently active/open task for the board, or `null` when none is active.',
+        description: 'Returns the currently active/open task for the board, or `null` when none is active. This is separate from actor-scoped `card.state` open/unread metadata.',
         parameters: [boardIdParam],
         responses: { 200: { description: 'Active task or null.' } },
       },
@@ -387,7 +450,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'Get task (board-scoped)',
-        description: 'Returns a single task from the specified board. The `:id` segment supports partial ID matching.',
+        description: 'Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [boardIdParam, taskIdParam],
         responses: { 200: { description: 'Task.' }, 404: { description: 'Not found.' } },
       },
@@ -408,6 +471,32 @@ export const KANBAN_OPENAPI_SPEC = {
         description: 'Soft-deletes the task by moving it to the hidden deleted column.',
         parameters: [boardIdParam, taskIdParam],
         responses: { 200: { description: 'Deleted.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/open': {
+      post: {
+        tags: ['Board Tasks'],
+        summary: 'Mark task opened (board-scoped)',
+        description: 'Persists an explicit actor-scoped open mutation through the shared SDK `card.state` APIs. This does not modify active-card UI state.',
+        parameters: [boardIdParam, taskIdParam],
+        responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/read': {
+      post: {
+        tags: ['Board Tasks'],
+        summary: 'Mark task read (board-scoped)',
+        description: 'Persists an explicit actor-scoped unread acknowledgement through the shared SDK `card.state` APIs. Read-only GET routes never invoke this mutation implicitly.',
+        parameters: [boardIdParam, taskIdParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: cardStateReadBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
       },
     },
     '/api/boards/{boardId}/tasks/{id}/move': {
@@ -531,7 +620,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'List tasks',
-        description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`.',
+        description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: listTasksQueryParams,
         responses: { 200: { description: 'Task list.' } },
       },
@@ -550,7 +639,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'Get active task',
-        description: 'Returns the currently active/open task on the default board, or `null` when no task is active.',
+        description: 'Returns the currently active/open task on the default board, or `null` when no task is active. This is separate from actor-scoped `card.state` open/unread metadata.',
         responses: { 200: { description: 'Active task or null.' } },
       },
     },
@@ -558,7 +647,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'Get task',
-        description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching.',
+        description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [taskIdParam],
         responses: { 200: { description: 'Task.' }, 404: { description: 'Not found.' } },
       },
@@ -586,6 +675,32 @@ export const KANBAN_OPENAPI_SPEC = {
         description: 'Soft-deletes a task by moving it into the hidden deleted column.',
         parameters: [taskIdParam],
         responses: { 200: { description: 'Deleted.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/tasks/{id}/open': {
+      post: {
+        tags: ['Tasks'],
+        summary: 'Mark task opened',
+        description: 'Persists an explicit actor-scoped open mutation through the shared SDK `card.state` APIs. This does not modify active-card UI state.',
+        parameters: [taskIdParam],
+        responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
+      },
+    },
+    '/api/tasks/{id}/read': {
+      post: {
+        tags: ['Tasks'],
+        summary: 'Mark task read',
+        description: 'Persists an explicit actor-scoped unread acknowledgement through the shared SDK `card.state` APIs. Read-only GET routes never invoke this mutation implicitly.',
+        parameters: [taskIdParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: cardStateReadBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
       },
     },
     '/api/tasks/{id}/forms/{formId}/submit': {
@@ -1029,11 +1144,19 @@ export const KANBAN_OPENAPI_SPEC = {
     // ------------------------------------------------------------------
     // Workspace
     // ------------------------------------------------------------------
+    '/api/card-state/status': {
+      get: {
+        tags: ['Workspace'],
+        summary: 'Get card-state status',
+        description: 'Returns the active `card.state` provider status for the standalone runtime, including backend family, availability, the stable auth-absent default actor contract, and whether a configured `auth.identity` provider is currently causing `identity-unavailable` failures.',
+        responses: { 200: { description: 'Card-state provider status.' } },
+      },
+    },
     '/api/workspace': {
       get: {
         tags: ['Workspace'],
         summary: 'Get workspace info',
-        description: 'Returns workspace-level connection metadata plus resolved storage, auth, and webhook provider information, including filesystem watcher support.',
+        description: 'Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support.',
         responses: { 200: { description: 'Workspace info.' } },
       },
     },
@@ -1049,7 +1172,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Workspace'],
         summary: 'Get storage status',
-        description: 'Returns the active card, attachment, and webhook provider IDs plus host-facing file/watch metadata.',
+        description: 'Returns the active card, attachment, webhook, and `card.state` provider IDs plus host-facing file/watch metadata.',
         responses: { 200: { description: 'Storage status.' } },
       },
     },
@@ -1057,7 +1180,7 @@ export const KANBAN_OPENAPI_SPEC = {
       post: {
         tags: ['Workspace'],
         summary: 'Migrate to SQLite',
-        description: 'Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.',
+        description: 'Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-sqlite-storage`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.',
         requestBody: {
           required: false,
           content: {

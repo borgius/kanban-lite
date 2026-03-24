@@ -4,7 +4,7 @@ import * as path from 'path'
 import { WebSocketServer } from 'ws'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
 import type { StandaloneContext } from '../context'
-import { broadcast } from '../broadcastService'
+import { broadcastLogsUpdatedToEditingClients, getClientsEditingCard } from '../broadcastService'
 
 export const indexHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -59,10 +59,8 @@ export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, 
     onEvent: (event, data) => {
       if (event === 'log.added') {
         const { cardId } = data as { cardId: string }
-        if (cardId === ctx.currentEditingCardId) {
-          sdk.listLogs(cardId, ctx.currentBoardId).then(logs => {
-            broadcast(ctx, { type: 'logsUpdated', cardId, logs })
-          }).catch(() => {})
+        if (getClientsEditingCard(ctx, cardId).length > 0) {
+          void broadcastLogsUpdatedToEditingClients(ctx, cardId)
         }
       }
     }
@@ -77,6 +75,7 @@ export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, 
     migrating: false,
     suppressWatcherEventsUntil: 0,
     currentEditingCardId: null,
+    clientEditingCardIds: new Map(),
     lastWrittenContent: '',
     currentBoardId: undefined,
     tempFilePath: undefined,

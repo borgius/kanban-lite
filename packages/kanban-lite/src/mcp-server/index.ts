@@ -4,10 +4,19 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
-import { resolveMcpPlugins, type McpToolContext, type McpToolResult } from '../sdk/plugins'
+import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
 import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig } from '../shared/config'
-import { AuthError, type AuthContext } from '../sdk/types'
+import {
+  AuthError,
+  CardStateError,
+  CARD_STATE_OPEN_DOMAIN,
+  ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
+  ERR_CARD_STATE_UNAVAILABLE,
+  type AuthContext,
+  type CardOpenStateValue,
+  type CardUnreadSummary,
+} from '../sdk/types'
 
 const cardFormAttachmentSchema = z.object({
   name: z.string().optional().describe('Name of a reusable workspace-config form declared under forms.<name>.'),
@@ -19,6 +28,10 @@ const cardFormAttachmentSchema = z.object({
 })
 
 const cardFormDataMapSchema = z.record(z.string(), z.record(z.string(), z.unknown()))
+const cardStateCursorSchema = z.object({
+  cursor: z.string().describe('Opaque unread activity cursor to acknowledge explicitly.'),
+  updatedAt: z.string().optional().describe('Optional timestamp associated with the cursor.'),
+})
 
 async function resolveKanbanDir(): Promise<string> {
   // 1. CLI arg --dir
@@ -49,7 +62,178 @@ interface McpToolRegistrar {
   ): void
 }
 
+interface McpCardStateReadModel {
+  cardId: string
+  boardId: string
+  cardState: {
+    unread: CardUnreadSummary
+    open: CardStateRecord<CardOpenStateValue> | null
+  }
+}
+
+interface McpCardStateMutationModel {
+  unread: CardUnreadSummary
+  cardState: McpCardStateReadModel['cardState']
+}
+
+function createMcpJsonResult(body: unknown): McpToolResult {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
+}
+
+function cardStateErrorToPublicMessage(code: typeof ERR_CARD_STATE_IDENTITY_UNAVAILABLE | typeof ERR_CARD_STATE_UNAVAILABLE): string {
+  return code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE
+    ? 'Card state is unavailable until your configured user identity can be resolved.'
+    : 'Unable to update card state right now. Refresh and try again.'
+}
+
+export function createMcpCardStateErrorResult(err: unknown): McpToolResult | null {
+  if (err instanceof CardStateError) {
+    return createMcpJsonResult({
+      code: err.code,
+      availability: err.availability,
+      message: cardStateErrorToPublicMessage(err.code),
+    })
+  }
+
+  if (!err || typeof err !== 'object') return null
+  const code = (err as { code?: unknown }).code
+  if (code !== ERR_CARD_STATE_IDENTITY_UNAVAILABLE && code !== ERR_CARD_STATE_UNAVAILABLE) return null
+
+  return createMcpJsonResult({
+    code,
+    availability: code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE ? 'identity-unavailable' : 'unavailable',
+    message: cardStateErrorToPublicMessage(code),
+  })
+}
+
+async function resolveMcpCardId(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<string> {
+  const card = await sdk.getCard(cardId, boardId)
+  if (card) return card.id
+
+  const all = await sdk.listCards(undefined, boardId)
+  const matches = all.filter(item => item.id.includes(cardId))
+  if (matches.length === 1) return matches[0].id
+  if (matches.length > 1) throw new Error(`Multiple cards match "${cardId}": ${matches.map(match => match.id).join(', ')}`)
+  throw new Error(`Card not found: ${cardId}`)
+}
+
+async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<McpCardStateReadModel> {
+  const unread = await sdk.getUnreadSummary(cardId, boardId)
+  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
+  return {
+    cardId: unread.cardId,
+    boardId: unread.boardId,
+    cardState: { unread, open },
+  }
+}
+
+async function buildMcpCardStateMutationModel(sdk: KanbanSDK, unread: CardUnreadSummary): Promise<McpCardStateMutationModel> {
+  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
+  return {
+    unread,
+    cardState: {
+      unread,
+      open,
+    },
+  }
+}
+
+export function registerCardStateMcpTools(
+  server: McpToolRegistrar,
+  options: {
+    sdk: KanbanSDK
+    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+  },
+): string[] {
+  const registeredNames = [
+    'get_card_state_status',
+    'get_card_state',
+    'open_card',
+    'read_card',
+  ]
+
+  server.tool(
+    'get_card_state_status',
+    'Get the active card-state provider status for this workspace.',
+    {},
+    async () => createMcpJsonResult(options.sdk.getCardStateStatus()),
+  )
+
+  server.tool(
+    'get_card_state',
+    'Get the side-effect-free unread/open summary for one card. Supports partial ID matching and never mutates unread state implicitly.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      try {
+        const payload = await options.runWithAuth(async () => {
+          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
+          return buildMcpCardStateReadModel(options.sdk, resolvedId, typeof boardId === 'string' ? boardId : undefined)
+        })
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'open_card',
+    'Persist an explicit actor-scoped open mutation through the shared SDK card-state APIs. This acknowledges unread activity and records open-card state without changing active-card UI state.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      try {
+        const payload = await options.runWithAuth(async () => {
+          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
+          const unread = await options.sdk.markCardOpened(resolvedId, typeof boardId === 'string' ? boardId : undefined)
+          return buildMcpCardStateMutationModel(options.sdk, unread)
+        })
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'read_card',
+    'Persist an explicit actor-scoped unread acknowledgement through the shared SDK card-state APIs without changing open-card state.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      readThrough: cardStateCursorSchema.optional().describe('Optional explicit unread cursor to acknowledge instead of the latest activity.'),
+    },
+    async ({ boardId, cardId, readThrough }) => {
+      try {
+        const payload = await options.runWithAuth(async () => {
+          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
+          const unread = await options.sdk.markCardRead(
+            resolvedId,
+            typeof boardId === 'string' ? boardId : undefined,
+            readThrough as CardStateCursor | undefined,
+          )
+          return buildMcpCardStateMutationModel(options.sdk, unread)
+        })
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  return registeredNames
+}
+
 export function createMcpErrorResult(err: unknown): McpToolResult {
+  const cardStateResult = createMcpCardStateErrorResult(err)
+  if (cardStateResult) {
+    return { ...cardStateResult, isError: true }
+  }
   if (err instanceof AuthError) {
     return { content: [{ type: 'text' as const, text: err.message }], isError: true }
   }
@@ -1412,6 +1596,11 @@ async function main(): Promise<void> {
     readConfig(workspaceRoot),
     mcpPluginContext,
   )
+
+  registerCardStateMcpTools(server as unknown as McpToolRegistrar, {
+    sdk,
+    runWithAuth: runWithMcpAuth,
+  })
 
   // --- Workspace Info Tool ---
 

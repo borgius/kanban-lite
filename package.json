@@ -49,7 +49,12 @@
     "docs:root:webhooks": "npx tsx scripts/generate-webhooks-docs.ts",
     "site:build": "pnpm --filter @kanban-lite/docs-site build",
     "site:dev": "pnpm --filter @kanban-lite/docs-site dev",
-    "site:deploy": "pnpm --filter @kanban-lite/docs-site deploy"
+    "site:deploy": "pnpm --filter @kanban-lite/docs-site deploy",
+    "package": "vsce package --no-dependencies -o releases/",
+    "release": "npm version patch && npm run build && npm publish && npm run package && npm run release:github",
+    "release:minor": "npm version minor && npm run build && npm publish && npm run package && npm run release:github",
+    "release:major": "npm version major && npm run build && npm publish && npm run package && npm run release:github",
+    "release:github": "git push origin v$(node -p \"require('./package.json').version\") && gh release create v$(node -p \"require('./package.json').version\") releases/kanban-lite-$(node -p \"require('./package.json').version\").vsix --generate-notes"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

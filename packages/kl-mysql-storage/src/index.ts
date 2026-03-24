@@ -1,45 +1,24 @@
 import * as fs from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
+import type { Card as BaseCard, Priority as BasePriority } from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
 // Local structural interfaces — avoids deep imports from kanban-lite internals.
 // Validated by runtime shape checks in the kanban-lite plugin loader.
 // ---------------------------------------------------------------------------
 
-/** Minimal Priority type matching kanban-lite's Priority. */
-export type Priority = 'critical' | 'high' | 'medium' | 'low'
-
-/** Minimal Comment shape required by the storage contract. */
-export interface Comment {
-  id: string
-  author: string
-  created: string
-  content: string
+export type Priority = BasePriority
+export interface Card extends BaseCard {
+  forms?: Array<{
+    name?: string
+    schema?: Record<string, unknown>
+    ui?: Record<string, unknown>
+    data?: Record<string, unknown>
+  }>
+  formData?: Record<string, Record<string, unknown>>
 }
-
-/** Minimal Card shape required by the storage contract. */
-export interface Card {
-  id: string
-  boardId?: string
-  version?: number
-  status: string
-  priority: Priority
-  assignee?: string | null
-  dueDate?: string | null
-  created: string
-  modified: string
-  completedAt?: string | null
-  labels?: string[]
-  attachments?: string[]
-  order?: string
-  content?: string
-  comments?: Comment[]
-  metadata?: Record<string, unknown>
-  actions?: string[] | Record<string, string>
-  filePath?: string
-  [key: string]: unknown
-}
+export type Comment = Card['comments'][number]
 
 /** Card format version constant (matches kanban-lite's CARD_FORMAT_VERSION). */
 const CARD_FORMAT_VERSION = 2
@@ -177,6 +156,8 @@ const SCHEMA_STATEMENTS: readonly string[] = [
     content      MEDIUMTEXT    NOT NULL,
     metadata     TEXT          DEFAULT NULL,
     actions      TEXT          DEFAULT NULL,
+    forms        TEXT          DEFAULT NULL,
+    form_data    TEXT          DEFAULT NULL,
     PRIMARY KEY (id, board_id),
     INDEX idx_kb_board_status (board_id, status)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -213,6 +194,8 @@ interface CardRow {
   content: string
   metadata: string | null
   actions: string | null
+  forms: string | null
+  form_data: string | null
 }
 
 interface CommentRow {
@@ -306,6 +289,22 @@ export class MysqlStorageEngine implements StorageEngine {
     for (const sql of SCHEMA_STATEMENTS) {
       await this.pool.execute(sql)
     }
+    await this.ensureOptionalCardColumns()
+  }
+
+  private async ensureOptionalCardColumns(): Promise<void> {
+    await this.ensureCardColumn('forms', 'TEXT DEFAULT NULL')
+    await this.ensureCardColumn('form_data', 'TEXT DEFAULT NULL')
+  }
+
+  private async ensureCardColumn(columnName: 'forms' | 'form_data', definitionSql: string): Promise<void> {
+    const [rows] = await this.pool.execute(
+      'SHOW COLUMNS FROM kanban_cards LIKE ?',
+      [columnName],
+    ) as [Array<Record<string, unknown>>, unknown]
+    if (rows.length === 0) {
+      await this.pool.execute(`ALTER TABLE kanban_cards ADD COLUMN ${columnName} ${definitionSql}`)
+    }
   }
 
   // --- Board management ---
@@ -356,13 +355,15 @@ export class MysqlStorageEngine implements StorageEngine {
         ? (card.actions as unknown[]).length > 0
         : Object.keys(card.actions as Record<string, string>).length > 0),
     )
+    const hasForms = Boolean(card.forms && card.forms.length > 0)
+    const hasFormData = Boolean(card.formData && Object.keys(card.formData).length > 0)
 
     const UPSERT_SQL = `
       INSERT INTO kanban_cards
         (id, board_id, version, status, priority, assignee, due_date,
          created, modified, completed_at, labels, attachments, order_key,
-         content, metadata, actions)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         content, metadata, actions, forms, form_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         version      = VALUES(version),
         status       = VALUES(status),
@@ -376,7 +377,9 @@ export class MysqlStorageEngine implements StorageEngine {
         order_key    = VALUES(order_key),
         content      = VALUES(content),
         metadata     = VALUES(metadata),
-        actions      = VALUES(actions)
+        actions      = VALUES(actions),
+        forms        = VALUES(forms),
+        form_data    = VALUES(form_data)
     `
 
     await this.pool.execute(UPSERT_SQL, [
@@ -396,6 +399,8 @@ export class MysqlStorageEngine implements StorageEngine {
       card.content ?? '',
       hasMetadata ? JSON.stringify(card.metadata) : null,
       hasActions ? JSON.stringify(card.actions) : null,
+      hasForms ? JSON.stringify(card.forms) : null,
+      hasFormData ? JSON.stringify(card.formData) : null,
     ])
 
     await this.pool.execute(
@@ -479,6 +484,8 @@ export class MysqlStorageEngine implements StorageEngine {
       comments,
       ...(row.metadata ? { metadata: this._parseJson<Record<string, unknown>>(row.metadata, {}) } : {}),
       ...(row.actions ? { actions: this._parseJson<string[] | Record<string, string>>(row.actions, []) } : {}),
+      ...(row.forms ? { forms: this._parseJson<Card['forms']>(row.forms, []) } : {}),
+      ...(row.form_data ? { formData: this._parseJson<Card['formData']>(row.form_data, {}) } : {}),
       filePath: '',
     }
   }

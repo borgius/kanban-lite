@@ -1,10 +1,10 @@
 # Kanban Lite REST API
 
-> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.
+> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` plus active standalone plugin API metadata via `scripts/generate-api-docs.ts`.
 
 Version: 1.0.0
 
-- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`
+- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` plus standalone plugin API metadata discovered during docs generation
 - Interactive docs: `http://localhost:3000/api/docs`
 - OpenAPI JSON: `http://localhost:3000/api/docs/json`
 - Base API URL: `http://localhost:3000/api`
@@ -1458,3 +1458,99 @@ Resolves a workspace-relative, absolute, or `~`-prefixed path to its canonical a
 |--------|-------------|
 | `200` | Resolved absolute path. |
 | `400` | Path parameter missing. |
+
+## Webhooks
+
+Webhook registration endpoints. These routes are registered by the active standalone webhook plugin while preserving the public `/api/webhooks` contract.
+
+### GET `/api/webhooks`
+
+**List webhooks**
+
+Returns all registered webhooks. Runtime ownership stays on the active standalone webhook plugin, which preserves this public path.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Webhook list. |
+| `401` | Authentication required. |
+| `403` | Forbidden. |
+
+### POST `/api/webhooks`
+
+**Create webhook**
+
+Registers a new webhook endpoint through the active standalone webhook plugin.
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `url` | string | Yes | Target HTTP(S) URL. |
+| `events` | string[] | Yes | Subscribed event names, or `["*"]` for all events. |
+| `secret` | string | No | Optional HMAC signing secret. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Webhook created. |
+| `400` | Validation error. |
+| `401` | Authentication required. |
+| `403` | Forbidden. |
+
+### PUT `/api/webhooks/{id}`
+
+**Update webhook**
+
+Updates an existing webhook by id through the active standalone webhook plugin.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Webhook identifier. |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `url` | string | No | Updated HTTP(S) URL. |
+| `events` | string[] | No | Updated event filter list. |
+| `secret` | string | No | Updated HMAC signing secret. |
+| `active` | boolean | No | Whether the webhook is active. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Webhook updated. |
+| `401` | Authentication required. |
+| `403` | Forbidden. |
+| `404` | Webhook not found. |
+
+### DELETE `/api/webhooks/{id}`
+
+**Delete webhook**
+
+Deletes a webhook by id through the active standalone webhook plugin.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Webhook identifier. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Webhook deleted. |
+| `401` | Authentication required. |
+| `403` | Forbidden. |
+| `404` | Webhook not found. |

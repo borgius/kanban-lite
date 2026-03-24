@@ -14,6 +14,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
 import { MarkdownStorageEngine } from '../../sdk/plugins/markdown'
+import { startServer } from '../server'
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -81,6 +82,82 @@ function createTempWorkspace(): { workspaceDir: string; kanbanDir: string; clean
 /** Creates an SDK instance in built-in-fallback mode (no external provider resolution). */
 function createSDK(kanbanDir: string): KanbanSDK {
   return new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
+}
+
+async function getAvailablePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('Failed to determine an available port')))
+        return
+      }
+      const { port } = address
+      server.close((err) => {
+        if (err) reject(err)
+        else resolve(port)
+      })
+    })
+    server.on('error', reject)
+  })
+}
+
+type HttpResponse = {
+  status: number
+  headers: http.IncomingHttpHeaders
+  body: string
+}
+
+async function httpRequest(
+  method: string,
+  urlString: string,
+  body?: Record<string, unknown>,
+): Promise<HttpResponse> {
+  const url = new URL(urlString)
+  const payload = body === undefined ? undefined : JSON.stringify(body)
+
+  return await new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method,
+        headers: payload
+          ? {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload).toString(),
+          }
+          : undefined,
+      },
+      (res) => {
+        let responseBody = ''
+        res.setEncoding('utf-8')
+        res.on('data', (chunk) => { responseBody += chunk })
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: responseBody,
+          })
+        })
+      },
+    )
+
+    req.on('error', reject)
+    if (payload) req.write(payload)
+    req.end()
+  })
+}
+
+function enableStandaloneWebhookPlugin(workspaceDir: string): void {
+  const configPath = path.join(workspaceDir, '.kanban.json')
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
+  config.webhookPlugin = {
+    'webhook.delivery': { provider: 'webhooks' },
+  }
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
 // ---------------------------------------------------------------------------
@@ -303,5 +380,84 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     } finally {
       cleanup()
     }
+  })
+})
+
+describe('Standalone webhook routes via plugin-owned path', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let cleanup: () => void
+  let server: http.Server
+  let port: number
+
+  beforeEach(async () => {
+    ;({ workspaceDir, kanbanDir, cleanup } = createTempWorkspace())
+    enableStandaloneWebhookPlugin(workspaceDir)
+    port = await getAvailablePort()
+    server = startServer(kanbanDir, port)
+    await waitFor(() => {
+      const address = server.address()
+      return !!address && typeof address !== 'string'
+    })
+  })
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    cleanup()
+  })
+
+  it('preserves /api/webhooks CRUD behavior when only the webhook plugin config is present', async () => {
+    const createRes = await httpRequest('POST', `http://127.0.0.1:${port}/api/webhooks`, {
+      url: 'https://example.com/hook',
+      events: ['task.created'],
+      secret: 'signing-secret',
+    })
+    expect(createRes.status).toBe(201)
+    const created = JSON.parse(createRes.body) as { ok: boolean; data: { id: string; url: string; events: string[]; secret?: string } }
+    expect(created.ok).toBe(true)
+    expect(created.data.url).toBe('https://example.com/hook')
+    expect(created.data.events).toEqual(['task.created'])
+    expect(created.data.id).toMatch(/^wh_/)
+
+    const listRes = await httpRequest('GET', `http://127.0.0.1:${port}/api/webhooks`)
+    expect(listRes.status).toBe(200)
+    const listed = JSON.parse(listRes.body) as { ok: boolean; data: Array<{ id: string }> }
+    expect(listed.ok).toBe(true)
+    expect(listed.data).toHaveLength(1)
+    expect(listed.data[0]?.id).toBe(created.data.id)
+
+    const updateRes = await httpRequest('PUT', `http://127.0.0.1:${port}/api/webhooks/${created.data.id}`, {
+      active: false,
+      events: ['task.updated'],
+    })
+    expect(updateRes.status).toBe(200)
+    const updated = JSON.parse(updateRes.body) as { ok: boolean; data: { active: boolean; events: string[] } }
+    expect(updated.ok).toBe(true)
+    expect(updated.data.active).toBe(false)
+    expect(updated.data.events).toEqual(['task.updated'])
+
+    const deleteRes = await httpRequest('DELETE', `http://127.0.0.1:${port}/api/webhooks/${created.data.id}`)
+    expect(deleteRes.status).toBe(200)
+
+    const finalListRes = await httpRequest('GET', `http://127.0.0.1:${port}/api/webhooks`)
+    const finalList = JSON.parse(finalListRes.body) as { ok: boolean; data: unknown[] }
+    expect(finalList.ok).toBe(true)
+    expect(finalList.data).toEqual([])
+  })
+
+  it('publishes /api/webhooks in the standalone OpenAPI spec when the webhook plugin is active', async () => {
+    const docsRes = await httpRequest('GET', `http://127.0.0.1:${port}/api/docs/json`)
+    expect(docsRes.status).toBe(200)
+
+    const spec = JSON.parse(docsRes.body) as {
+      tags?: Array<{ name: string }>
+      paths: Record<string, Record<string, unknown>>
+    }
+
+    expect(spec.tags?.some((tag) => tag.name === 'Webhooks')).toBe(true)
+    expect(spec.paths['/api/webhooks']).toBeTruthy()
+    expect(spec.paths['/api/webhooks/{id}']).toBeTruthy()
+    expect(Object.keys(spec.paths['/api/webhooks'] ?? {}).sort()).toEqual(['get', 'post'])
+    expect(Object.keys(spec.paths['/api/webhooks/{id}'] ?? {}).sort()).toEqual(['delete', 'put'])
   })
 })

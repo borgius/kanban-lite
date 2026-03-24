@@ -2,18 +2,23 @@
 /**
  * @deprecated Compatibility wrapper that preserves the historical
  * `scripts/generate-api-docs.ts` entrypoint while switching the docs pipeline
- * to the standalone Swagger/OpenAPI source of truth.
+ * to the standalone Swagger/OpenAPI source of truth plus active standalone
+ * plugin API metadata.
  *
  * Source of truth: `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`
+ * plus plugin-owned fragments discovered through the standalone plugin path
  * Output: `docs/api.md`
  */
 import * as fs from 'fs'
 import * as path from 'path'
 
+import { normalizeWebhookCapabilities } from '../packages/kanban-lite/src/shared/config'
+import { resolveCapabilityBag, type StandaloneHttpPlugin } from '../packages/kanban-lite/src/sdk/plugins'
 import { KANBAN_OPENAPI_SPEC } from '../packages/kanban-lite/src/standalone/internal/openapi-spec'
 
 const ROOT = path.resolve(__dirname, '..')
 const OUT = path.join(ROOT, 'docs', 'api.md')
+const DOCS_KANBAN_DIR = path.join(ROOT, '.kanban')
 
 type OpenAPISchema = {
   type?: string
@@ -62,7 +67,157 @@ type OpenAPISpec = {
   paths: Record<string, Record<string, OpenAPIOperation>>
 }
 
-const spec = KANBAN_OPENAPI_SPEC as OpenAPISpec
+const WEBHOOK_STANDALONE_PLUGIN_ID = 'webhooks'
+
+const WEBHOOK_STANDALONE_API_DOCS = {
+  tags: [
+    {
+      name: 'Webhooks',
+      description: 'Webhook registration endpoints. These routes are registered by the active standalone webhook plugin while preserving the public `/api/webhooks` contract.',
+    },
+  ],
+  paths: {
+    '/api/webhooks': {
+      get: {
+        tags: ['Webhooks'],
+        summary: 'List webhooks',
+        description: 'Returns all registered webhooks. Runtime ownership stays on the active standalone webhook plugin, which preserves this public path.',
+        responses: { 200: { description: 'Webhook list.' }, 401: { description: 'Authentication required.' }, 403: { description: 'Forbidden.' } },
+      },
+      post: {
+        tags: ['Webhooks'],
+        summary: 'Create webhook',
+        description: 'Registers a new webhook endpoint through the active standalone webhook plugin.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['url', 'events'],
+                properties: {
+                  url: { type: 'string', description: 'Target HTTP(S) URL.' },
+                  events: { type: 'array', items: { type: 'string' }, description: 'Subscribed event names, or `["*"]` for all events.' },
+                  secret: { type: 'string', description: 'Optional HMAC signing secret.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Webhook created.' },
+          400: { description: 'Validation error.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+        },
+      },
+    },
+    '/api/webhooks/{id}': {
+      put: {
+        tags: ['Webhooks'],
+        summary: 'Update webhook',
+        description: 'Updates an existing webhook by id through the active standalone webhook plugin.',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Webhook identifier.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  url: { type: 'string', description: 'Updated HTTP(S) URL.' },
+                  events: { type: 'array', items: { type: 'string' }, description: 'Updated event filter list.' },
+                  secret: { type: 'string', description: 'Updated HMAC signing secret.' },
+                  active: { type: 'boolean', description: 'Whether the webhook is active.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Webhook updated.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Webhook not found.' },
+        },
+      },
+      delete: {
+        tags: ['Webhooks'],
+        summary: 'Delete webhook',
+        description: 'Deletes a webhook by id through the active standalone webhook plugin.',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Webhook identifier.',
+          },
+        ],
+        responses: {
+          200: { description: 'Webhook deleted.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Webhook not found.' },
+        },
+      },
+    },
+  },
+} as const
+
+function hasStandaloneWebhookPlugin(plugins: readonly StandaloneHttpPlugin[]): boolean {
+  return plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)
+}
+
+function buildSpec(): OpenAPISpec {
+  const baseSpec = KANBAN_OPENAPI_SPEC as OpenAPISpec
+
+  try {
+    const capabilityBag = resolveCapabilityBag(
+      {
+        'card.storage': { provider: 'markdown' },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      DOCS_KANBAN_DIR,
+      undefined,
+      normalizeWebhookCapabilities({}),
+    )
+
+    if (!hasStandaloneWebhookPlugin(capabilityBag.standaloneHttpPlugins)) {
+      return baseSpec
+    }
+  } catch {
+    return baseSpec
+  }
+
+  const mergedTags = [...(baseSpec.tags ?? [])]
+  const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
+  for (const tag of WEBHOOK_STANDALONE_API_DOCS.tags) {
+    if (!seenTagNames.has(tag.name)) {
+      mergedTags.push(tag)
+      seenTagNames.add(tag.name)
+    }
+  }
+
+  return {
+    ...baseSpec,
+    tags: mergedTags,
+    paths: {
+      ...baseSpec.paths,
+      ...WEBHOOK_STANDALONE_API_DOCS.paths,
+    },
+  }
+}
+
+const spec = buildSpec()
 
 function escapeTableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\n/g, '<br/>')
@@ -173,11 +328,11 @@ function buildMarkdown(): string {
   const lines: string[] = [
     `# ${spec.info.title}`,
     '',
-    '> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` via `scripts/generate-api-docs.ts`.',
+    '> This file is generated from `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` plus active standalone plugin API metadata via `scripts/generate-api-docs.ts`.',
     '',
     `Version: ${spec.info.version ?? 'unversioned'}`,
     '',
-    '- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts`',
+    '- Authoritative source: Swagger/OpenAPI in `packages/kanban-lite/src/standalone/internal/openapi-spec.ts` plus standalone plugin API metadata discovered during docs generation',
     '- Interactive docs: `http://localhost:3000/api/docs`',
     '- OpenAPI JSON: `http://localhost:3000/api/docs/json`',
     '- Base API URL: `http://localhost:3000/api`',

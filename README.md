@@ -45,11 +45,11 @@ kl add --title "My first task" --priority high
 
 Start with the stable docs hub at <code>/docs/examples/</code> for the shipped walkthroughs, then jump into the matching runnable apps:
 
-- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md)
+- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows)
 - LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
 - Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
 
-See [`examples/README.md`](examples/README.md) for the canonical top-level example app slugs, local install/run expectations, and the placeholder-only env-file convention. The Chat SDK / Vercel AI example now also ships an example-local integration suite that drives the real chat route and verifies live card mutations when `OPENAI_API_KEY` is available. The examples stay self-contained outside the root `pnpm` workspace by default so the main repo build/watch flow remains unchanged.
+See [`examples/README.md`](examples/README.md) for the canonical top-level example app slugs, local install/run expectations, and the placeholder-only env-file convention. The Chat SDK / Vercel AI example now also ships a self-hosted local stack (`npm run dev` / `npm run start` print both the Kanban and chat URLs), seeds demo cards with comments/forms/actions, and keeps the chat route honest with live integration coverage when `OPENAI_API_KEY` is available. The examples stay self-contained outside the root `pnpm` workspace by default so the main repo build/watch flow remains unchanged.
 
 ## Features
 
@@ -496,14 +496,16 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 
 ### Install and compatibility
 
-Webhook runtime behavior is now owned by the external `kl-webhooks-plugin` package wherever the host already exposes a plugin seam. That package owns the `webhook.delivery` provider, the listener-only runtime subscriber, the standalone `/api/webhooks` routes, and the `kl webhooks` CLI command surface.
+Webhook runtime behavior is now owned by the external `kl-webhooks-plugin` package wherever the host already exposes a plugin seam. That package owns the `webhook.delivery` provider, the listener-only runtime subscriber, the standalone `/api/webhooks` routes, the `kl webhooks` CLI command surface, and the webhook MCP tools registered through the narrow `mcpPlugin` seam.
 
 The SDK owns the mutation lifecycle: it awaits before-event listeners before a write, emits after-events exactly once after commit, and webhook delivery listens only to that committed after-event phase.
 
+For advanced SDK consumers, the same package also exports an additive SDK extension bag discoverable through `sdk.getExtension('kl-webhooks-plugin')`. Core `KanbanSDK` webhook methods remain stable compatibility shims over that same provider-backed implementation.
+
 - Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
 - Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array; no migration is required.
-- A workspace that only sets `webhookPlugin` still activates webhook plugin discovery for the provider, standalone routes, and CLI command loading.
-- MCP remains a thin core facade: the MCP server keeps the `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` tools in core, but those tools delegate straight to the SDK/provider path instead of owning runtime delivery.
+- A workspace that only sets `webhookPlugin` still activates webhook plugin discovery for the provider, standalone routes, CLI command loading, and MCP tool registration.
+- MCP now uses the same active-package discovery model as CLI and standalone. `kl-webhooks-plugin` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` through the plugin seam while preserving their public names, schemas, auth wrapping, and secret redaction behavior.
 - Generated docs such as `docs/webhooks.md` are source-driven; update generator metadata and regenerate them instead of editing the generated markdown by hand.
 
 ```bash
@@ -532,10 +534,10 @@ For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is res
 
 Webhook management still converges on the same SDK methods, but ownership is now split by host surface:
 
-- SDK: `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, `sdk.getWebhookStatus()`
+- SDK: additive extension path via `sdk.getExtension('kl-webhooks-plugin')`, plus stable compatibility shims on `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, and `sdk.getWebhookStatus()`
 - REST API: plugin-owned `/api/webhooks` routes via the standalone HTTP plugin seam
 - CLI: plugin-owned `kl webhooks`, `kl webhooks add`, `kl webhooks update`, `kl webhooks remove`
-- MCP: thin core facade tools — `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
+- MCP: plugin-owned `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook` via the `mcpPlugin` registration seam
 
 ### Events
 
@@ -997,6 +999,8 @@ const settings = sdk.getSettings()
 sdk.updateSettings({ ...settings, compactMode: true })
 ```
 
+Plugins can also contribute additive SDK methods without patching core. Call `sdk.getExtension(id)` to access a plugin's extension bag when that package is active. Webhooks are the first concrete example: `kl-webhooks-plugin` contributes webhook CRUD through `sdk.getExtension('kl-webhooks-plugin')`, while the direct `sdk.listWebhooks()` / `createWebhook()` / `updateWebhook()` / `deleteWebhook()` methods remain compatibility shims for existing callers.
+
 ### Event Bus
 
 The SDK exposes a pub/sub event bus for custom subscriptions, and it now owns the full mutation lifecycle.
@@ -1171,7 +1175,7 @@ The same pattern applies to MySQL:
 
 ### Webhook delivery provider
 
-Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting that key is enough to activate webhook package discovery for every supported plugin-owned surface: `webhook.delivery`, standalone `/api/webhooks`, and the CLI `webhooks` command. MCP intentionally stays in core as a thin SDK facade.
+Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting that key is enough to activate webhook package discovery for every supported plugin-owned surface: `webhook.delivery`, standalone `/api/webhooks`, the CLI `webhooks` command, and the MCP webhook tools registered by the package.
 
 ```json
 {
@@ -1186,8 +1190,8 @@ Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting t
 - The default runtime provider id is `webhooks`.
 - The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
 - The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
-- The package owns runtime delivery, standalone webhook routes, and CLI webhook commands where those plugin seams are available.
-- MCP webhook tools remain in core and delegate through the SDK/provider path rather than registering from the plugin package.
+- The package owns runtime delivery, standalone webhook routes, CLI webhook commands, and MCP webhook tool registration where those plugin seams are available.
+- Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`; direct webhook SDK methods remain stable compatibility shims.
 - A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
 - Generated webhook reference docs are emitted from `scripts/generate-webhooks-docs.ts`; regenerate them from source metadata instead of editing `docs/webhooks.md` directly.
 

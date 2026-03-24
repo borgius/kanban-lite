@@ -79,6 +79,11 @@ In short:
 - the SDK owns **when before/after events happen**,
 - and host layers use the result to decide **how to behave**.
 
+The new extension model adds two more narrow seams on top of that same active-package discovery path:
+
+- plugins may export `sdkExtensionPlugin` to contribute additive SDK methods discoverable via `sdk.getExtension(id)`,
+- and plugins may export `mcpPlugin` to register MCP tools without creating a second plugin framework.
+
 ---
 
 ## Capability namespaces
@@ -653,6 +658,46 @@ For a webhook package, the loader accepts:
 
 - named export `webhookProviderPlugin` (or a compatible default export) for CRUD capability ownership
 - named export `webhookListenerPlugin` for listener-only runtime delivery
+- named export `sdkExtensionPlugin` for additive SDK methods surfaced through `sdk.getExtension(id)`
+- named export `mcpPlugin` for MCP tool registration through the narrow `registerTools(ctx)` seam
+
+---
+
+## SDK extension packs and compatibility shims
+
+Plugins can now contribute additive SDK methods without modifying `KanbanSDK` directly.
+
+The contract is intentionally small:
+
+- the package exports `sdkExtensionPlugin`,
+- the loader includes it in the resolved capability bag when that package is active,
+- `KanbanSDK.getExtension(id)` returns the contributed extension bag.
+
+Webhook migration is the first concrete use of this model.
+
+- `kl-webhooks-plugin` contributes the canonical webhook CRUD implementation through its SDK extension bag,
+- advanced SDK consumers can call `sdk.getExtension('kl-webhooks-plugin')`,
+- and the long-lived `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, and `sdk.deleteWebhook()` methods remain compatibility shims so existing callers do not need to migrate immediately.
+
+This keeps core as the public compatibility seam while letting plugin packages own new capabilities incrementally.
+
+---
+
+## MCP tool registration seam
+
+MCP now follows the same active-package discovery model used by standalone HTTP and CLI plugin loading.
+
+The flow is deliberately narrow:
+
+1. `collectActiveExternalPackageNames(...)` determines the canonical active package set.
+2. `resolveMcpPlugins(...)` probes those packages for an optional `mcpPlugin` export.
+3. The MCP server calls `registerTools(ctx)` once per plugin and registers the returned tool definitions.
+
+Webhook tools are the first migrated toolset on this seam.
+
+- `kl-webhooks-plugin` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook`,
+- the public tool names and schemas stay unchanged,
+- and core still supplies the shared auth/error context so behavior such as secret redaction and auth mapping remains stable.
 
 ### Error behavior
 

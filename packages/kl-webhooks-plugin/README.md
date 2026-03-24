@@ -8,13 +8,15 @@ and also exports plugin-owned host integrations for:
 
 - `standalone.http` (`/api/webhooks` route ownership)
 - `cliPlugin` (`kl webhooks ...` command ownership)
+- `sdkExtensionPlugin` (additive SDK webhook methods via `sdk.getExtension('kl-webhooks-plugin')`)
+- `mcpPlugin` (`list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`)
 
 The package exports `webhookProviderPlugin` using the provider id `webhooks`.
 
 For runtime delivery it also exports `WebhookListenerPlugin`, a listener-only
 after-event subscriber that the SDK registers via `register()` / `unregister()` under the current plugin loader.
 
-It is the canonical owner of webhook registry CRUD, listener-only runtime delivery, standalone webhook routes, and CLI webhook commands. MCP intentionally remains a thin core facade that delegates to the same SDK/provider path.
+It is the canonical owner of webhook registry CRUD, listener-only runtime delivery, standalone webhook routes, CLI webhook commands, and webhook MCP tool registration. Core still provides the shared auth/error context and keeps the direct `KanbanSDK` webhook methods as compatibility shims.
 
 ## Install
 
@@ -32,6 +34,8 @@ npm install kl-webhooks-plugin
 - listener-only `event.listener` runtime delivery via `WebhookListenerPlugin`
 - `standalone.http` route contribution for `/api/webhooks`
 - `cliPlugin` command contribution for `kl webhooks`
+- `sdk.extension` additive SDK webhook methods
+- `mcp.tools` webhook MCP tool registration
 
 ## What it does
 
@@ -40,11 +44,13 @@ npm install kl-webhooks-plugin
 - Subscribes only to committed SDK after-events, so pending before-events never trigger outbound delivery
 - Owns `/api/webhooks` registration through the standalone plugin seam when loaded by the standalone server
 - Owns `kl webhooks` command registration through the CLI plugin seam when loaded by the CLI host
+- Contributes additive SDK webhook CRUD methods discoverable via `sdk.getExtension('kl-webhooks-plugin')`
+- Registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` through the MCP plugin seam when loaded by the MCP host
 - Delivers events via HTTP POST with a JSON payload envelope: `{ event, timestamp, data }`
 - Signs payloads with HMAC-SHA256 when a `secret` is configured (`X-Webhook-Signature: sha256=…`)
 - Sets a 10-second request timeout; delivery failures are logged and swallowed (fire-and-forget)
 
-Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delivery is owned by the separate listener export; MCP webhook tools stay core-owned by design and call the same SDK/provider implementation.
+Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delivery is owned by the separate listener export; the SDK extension bag and MCP tool registration seam both converge on that same backing implementation while core preserves stable compatibility entry points.
 
 ## `.kanban.json` example
 
@@ -60,7 +66,7 @@ Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delive
 
 Because `webhooks` is the default provider id, the block above is equivalent to omitting `webhookPlugin` from `.kanban.json` entirely once this package is installed.
 
-A workspace that only sets `webhookPlugin` still activates plugin discovery for this package's provider, standalone route contribution, and CLI command contribution.
+A workspace that only sets `webhookPlugin` still activates plugin discovery for this package's provider, standalone route contribution, CLI command contribution, and MCP tool contribution.
 
 Webhooks are registered at runtime via the kanban-lite SDK/API/CLI/MCP and stored in the same config:
 

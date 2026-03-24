@@ -526,6 +526,30 @@ export class KanbanSDK {
   }
 
   /**
+   * Returns the SDK extension bag contributed by the plugin with the given `id`,
+   * or `undefined` when no active plugin has exported a matching `sdkExtensionPlugin`.
+   *
+   * Use this to access plugin-owned SDK capabilities (e.g. webhook CRUD methods
+   * contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
+   *
+   * @typeParam T - Shape of the expected extension bag.
+   * @param id - The plugin manifest id to look up (e.g. `'kl-webhooks-plugin'`).
+   * @returns The resolved extension bag cast to `T`, or `undefined` when the plugin
+   *   is not active or has not exported `sdkExtensionPlugin`.
+   *
+   * @example
+   * ```ts
+   * const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-webhooks-plugin')
+   * const webhooks = webhookExt?.listWebhooks() ?? []
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getExtension<T extends Record<string, any> = Record<string, unknown>>(id: string): T | undefined {
+    const entry = this._capabilities?.sdkExtensions.find(e => e.id === id)
+    return entry?.extensions as T | undefined
+  }
+
+  /**
    * Resolves caller identity and evaluates whether the named action is permitted.
    *
    * This is the internal SDK pre-action authorization seam. SDK methods that

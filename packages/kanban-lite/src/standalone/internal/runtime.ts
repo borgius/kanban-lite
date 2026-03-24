@@ -1,4 +1,5 @@
 import * as http from 'http'
+import * as fs from 'fs'
 import * as path from 'path'
 import { WebSocketServer } from 'ws'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
@@ -30,10 +31,25 @@ export interface StandaloneRuntime {
   ctx: StandaloneContext
 }
 
+function resolveStandaloneWebviewDir(webviewDir?: string): string {
+  if (webviewDir) return webviewDir
+
+  const candidates = [
+    path.join(__dirname, 'standalone-webview'),
+    path.join(__dirname, '..', '..', '..', 'dist', 'standalone-webview'),
+  ]
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'index.js'))) return candidate
+  }
+
+  return candidates[0]
+}
+
 export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, httpServer?: http.Server): StandaloneRuntime {
   const absoluteKanbanDir = path.resolve(kanbanDir)
   const workspaceRoot = path.dirname(absoluteKanbanDir)
-  const resolvedWebviewDir = webviewDir || path.join(__dirname, 'standalone-webview')
+  const resolvedWebviewDir = resolveStandaloneWebviewDir(webviewDir)
 
   const server = httpServer ?? http.createServer()
   const wss = new WebSocketServer({ server, path: '/ws' })

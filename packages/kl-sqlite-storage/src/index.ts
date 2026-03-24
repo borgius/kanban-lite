@@ -2,6 +2,11 @@ import * as fs from 'fs/promises'
 import * as fsSync from 'fs'
 import * as path from 'path'
 import Database from 'better-sqlite3'
+import type {
+  Card as BaseCard,
+  KanbanColumn as BaseKanbanColumn,
+  Priority as BasePriority,
+} from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
 // Local structural interfaces
@@ -12,52 +17,23 @@ import Database from 'better-sqlite3'
 /** Current card frontmatter schema version. */
 const CARD_FORMAT_VERSION = 1
 
-/** Priority level for a kanban card. */
-export type Priority = 'critical' | 'high' | 'medium' | 'low'
+export type Priority = BasePriority
+export type KanbanColumn = BaseKanbanColumn
+export interface Card extends BaseCard {
+  forms?: Array<{
+    name?: string
+    schema?: Record<string, unknown>
+    ui?: Record<string, unknown>
+    data?: Record<string, unknown>
+  }>
+  formData?: Record<string, Record<string, unknown>>
+}
 
 /** A single comment on a card. */
-export interface Comment {
-  id: string
-  author: string
-  created: string
-  content: string
-}
+export type Comment = Card['comments'][number]
 
 /** A form attachment on a card (named reference or inline definition). */
-export type CardFormAttachment =
-  | { name: string; schema?: Record<string, unknown>; ui?: Record<string, unknown>; data?: Record<string, unknown> }
-  | { schema: Record<string, unknown>; ui?: Record<string, unknown>; data?: Record<string, unknown> }
-
-/** A kanban card with all associated metadata. */
-export interface Card {
-  version: number
-  id: string
-  boardId?: string
-  status: string
-  priority: Priority
-  assignee: string | null
-  dueDate: string | null
-  created: string
-  modified: string
-  completedAt: string | null
-  labels: string[]
-  attachments: string[]
-  comments: Comment[]
-  order: string
-  content: string
-  metadata?: Record<string, unknown>
-  actions?: string[] | Record<string, string>
-  forms?: CardFormAttachment[]
-  formData?: Record<string, Record<string, unknown>>
-  filePath: string
-}
-
-/** A kanban board column definition. */
-export interface KanbanColumn {
-  id: string
-  name: string
-  color: string
-}
+export type CardFormAttachment = NonNullable<Card['forms']>[number]
 
 /** A label definition with color and optional group. */
 export interface LabelDefinition {
@@ -127,6 +103,35 @@ export interface AttachmentStoragePlugin {
   copyAttachment(sourcePath: string, card: Card): Promise<void>
   appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
   materializeAttachment?(card: Card, attachment: string): Promise<string | null>
+}
+
+/** StorageEngine interface that external sqlite-compatible plugins must satisfy. */
+export interface StorageEngine {
+  readonly type: string
+  readonly kanbanDir: string
+  init(): Promise<void>
+  close(): void
+  migrate(): Promise<void>
+  ensureBoardDirs(boardDir: string, extraStatuses?: string[]): Promise<void>
+  deleteBoardData(boardDir: string, boardId: string): Promise<void>
+  scanCards(boardDir: string, boardId: string): Promise<Card[]>
+  writeCard(card: Card): Promise<void>
+  moveCard(card: Card, boardDir: string, newStatus: string): Promise<string>
+  renameCard(card: Card, newFilename: string): Promise<string>
+  deleteCard(card: Card): Promise<void>
+  getCardDir(card: Card): string
+  copyAttachment(sourcePath: string, card: Card): Promise<void>
+}
+
+/** CardStoragePlugin interface matching the broadened kanban-lite storage plugin contract. */
+export interface CardStoragePlugin {
+  readonly manifest: PluginManifest
+  createEngine(kanbanDir: string, options?: Record<string, unknown>): StorageEngine
+  readonly nodeCapabilities?: {
+    readonly isFileBacked: boolean
+    getLocalCardPath(card: Card): string | null
+    getWatchGlob(): string | null
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +369,7 @@ function _lookupEngineForCard(_card: Card): SqliteStorageEngine | null {
  * await engine.init()
  * ```
  */
-export class SqliteStorageEngine {
+export class SqliteStorageEngine implements StorageEngine {
   readonly type = 'sqlite'
   readonly kanbanDir: string
 
@@ -811,7 +816,7 @@ function resolveDbPath(kanbanDir: string, options?: Record<string, unknown>): st
  * }
  * ```
  */
-export const cardStoragePlugin = {
+export const cardStoragePlugin: CardStoragePlugin = {
   manifest: { id: 'sqlite', provides: ['card.storage'] as const },
   createEngine(kanbanDir: string, options?: Record<string, unknown>): SqliteStorageEngine {
     const dbPath = resolveDbPath(kanbanDir, options)
@@ -828,7 +833,7 @@ export const cardStoragePlugin = {
       return null
     },
   },
-} as const
+}
 
 // ---------------------------------------------------------------------------
 // attachmentStoragePlugin export

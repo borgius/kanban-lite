@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
+import { resolveMcpPlugins, type McpToolContext, type McpToolResult } from '../sdk/plugins'
 import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { AuthError, type AuthContext } from '../sdk/types'
@@ -37,6 +38,59 @@ async function resolveKanbanDir(): Promise<string> {
     : undefined
   // 4. Auto-detect from cwd / config
   return resolveDefaultKanbanDir(process.cwd(), configFilePath)
+}
+
+interface McpToolRegistrar {
+  tool(
+    name: string,
+    description: string,
+    inputSchema: Record<string, unknown>,
+    handler: (args: Record<string, unknown>) => Promise<McpToolResult>,
+  ): void
+}
+
+export function createMcpErrorResult(err: unknown): McpToolResult {
+  if (err instanceof AuthError) {
+    return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+  }
+  return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+}
+
+export function createMcpPluginContext(options: {
+  sdk: KanbanSDK
+  workspaceRoot: string
+  kanbanDir: string
+  runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+}): McpToolContext {
+  return {
+    sdk: options.sdk,
+    workspaceRoot: options.workspaceRoot,
+    kanbanDir: options.kanbanDir,
+    runWithAuth: options.runWithAuth,
+    toErrorResult: createMcpErrorResult,
+  }
+}
+
+export function registerPluginMcpTools(
+  server: McpToolRegistrar,
+  config: Parameters<typeof resolveMcpPlugins>[0],
+  ctx: McpToolContext,
+): string[] {
+  const registeredNames: string[] = []
+  const seenNames = new Set<string>()
+
+  for (const plugin of resolveMcpPlugins(config)) {
+    for (const tool of plugin.registerTools(ctx)) {
+      if (seenNames.has(tool.name)) {
+        throw new Error(`Duplicate MCP tool registration attempted for "${tool.name}".`)
+      }
+      seenNames.add(tool.name)
+      registeredNames.push(tool.name)
+      server.tool(tool.name, tool.description, tool.inputSchema(z), async (args) => tool.handler(args, ctx))
+    }
+  }
+
+  return registeredNames
 }
 
 // --- Main ---
@@ -75,6 +129,13 @@ async function main(): Promise<void> {
       transport: ctx.transport ?? 'mcp',
     }
   }
+
+  const mcpPluginContext = createMcpPluginContext({
+    sdk,
+    workspaceRoot,
+    kanbanDir,
+    runWithAuth: runWithMcpAuth,
+  })
 
   // --- Board Management Tools ---
 
@@ -1346,100 +1407,10 @@ async function main(): Promise<void> {
     }
   )
 
-  // --- Webhook Tools ---
-
-  /** Strip the HMAC secret from a webhook object before returning it to an MCP caller. */
-  function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
-    const { secret: _s, ...safe } = w
-    return safe as Omit<T, 'secret'>
-  }
-
-  server.tool(
-    'list_webhooks',
-    'List all registered webhooks.',
-    {},
-    async () => {
-      try {
-        const webhooks = await runWithMcpAuth(() => Promise.resolve(sdk.listWebhooks()))
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify(webhooks.map(redactWebhook), null, 2),
-          }],
-        }
-      } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
-      }
-    }
-  )
-
-  server.tool(
-    'add_webhook',
-    'Register a new webhook to receive event notifications.',
-    {
-      url: z.string().describe('Webhook target URL (HTTP/HTTPS)'),
-      events: z.array(z.string()).optional().describe('Events to subscribe to (e.g. ["task.created", "task.updated"]). Default: ["*"] for all.'),
-      secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
-    },
-    async ({ url, events, secret }) => {
-      try {
-        const webhook = await runWithMcpAuth(() => sdk.createWebhook({ url, events: events || ['*'], secret }))
-        return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(webhook), null, 2) }] }
-      } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
-      }
-    }
-  )
-
-  server.tool(
-    'remove_webhook',
-    'Remove a registered webhook by ID.',
-    {
-      webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
-    },
-    async ({ webhookId }) => {
-      try {
-        const removed = await runWithMcpAuth(() => sdk.deleteWebhook(webhookId))
-        if (!removed) {
-          return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
-        }
-        return { content: [{ type: 'text' as const, text: `Deleted webhook: ${webhookId}` }] }
-      } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
-      }
-    }
-  )
-
-  server.tool(
-    'update_webhook',
-    'Update an existing webhook configuration (URL, events, secret, or active status).',
-    {
-      webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
-      url: z.string().optional().describe('New webhook target URL'),
-      events: z.array(z.string()).optional().describe('New events to subscribe to'),
-      secret: z.string().optional().describe('New HMAC-SHA256 signing secret'),
-      active: z.boolean().optional().describe('Set webhook active (true) or inactive (false)'),
-    },
-    async ({ webhookId, url, events, secret, active }) => {
-      const updates: Partial<{ url: string; events: string[]; secret: string; active: boolean }> = {}
-      if (url !== undefined) updates.url = url
-      if (events !== undefined) updates.events = events
-      if (secret !== undefined) updates.secret = secret
-      if (active !== undefined) updates.active = active
-      try {
-        const updated = await runWithMcpAuth(() => sdk.updateWebhook(webhookId, updates))
-        if (!updated) {
-          return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
-        }
-        return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(updated), null, 2) }] }
-      } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
-      }
-    }
+  registerPluginMcpTools(
+    server as unknown as McpToolRegistrar,
+    readConfig(workspaceRoot),
+    mcpPluginContext,
   )
 
   // --- Workspace Info Tool ---
@@ -1572,7 +1543,9 @@ async function main(): Promise<void> {
   await server.connect(transport)
 }
 
-main().catch(err => {
-  console.error(`MCP Server error: ${err.message}`)
-  process.exit(1)
-})
+if (require.main === module) {
+  main().catch(err => {
+    console.error(`MCP Server error: ${err.message}`)
+    process.exit(1)
+  })
+}

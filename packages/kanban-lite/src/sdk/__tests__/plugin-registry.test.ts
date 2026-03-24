@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
+import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK } from '../KanbanSDK'
 import { normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
@@ -1659,5 +1660,178 @@ describe('monorepo workspace-local plugin resolution', () => {
   it('resolves kl-auth-plugin RBAC_IDENTITY_PLUGIN from workspace packages/', () => {
     expect(RBAC_IDENTITY_PLUGIN.manifest.id).toBe('rbac')
     expect(RBAC_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SDK extension loading (SPE-01)
+// ---------------------------------------------------------------------------
+
+describe('SDK extension loading', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-ext-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  const storageCaps = {
+    'card.storage': { provider: 'markdown' },
+    'attachment.storage': { provider: 'localfs' },
+  } as const
+
+  it('sdkExtensions is an empty array when no active plugin exports sdkExtensionPlugin', () => {
+    // Markdown + localfs are built-in; no external packages are loaded, so no
+    // sdkExtensionPlugin exports are discovered and the array must be empty.
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir)
+    expect(Array.isArray(bag.sdkExtensions)).toBe(true)
+    expect(bag.sdkExtensions).toHaveLength(0)
+  })
+
+  it('sdkExtensions is still an array when webhookCapabilities is omitted (no active webhook package)', () => {
+    const bag = resolveCapabilityBag(storageCaps, kanbanDir)
+    expect(bag.sdkExtensions).toBeDefined()
+    expect(bag.sdkExtensions.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('sdkExtensions entry has id and extensions when a plugin exports sdkExtensionPlugin', () => {
+    const cleanup = installTempPackage(
+      'kanban-sdk-ext-test-plugin',
+      `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-sdk-ext-test-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) {
+      return {
+        type: 'markdown', kanbanDir,
+        async init() {}, close() {}, async migrate() {}, async ensureBoardDirs() {},
+        async deleteBoardData() {}, async scanCards() { return [] }, async writeCard() {},
+        async moveCard() { return '' }, async renameCard() { return '' }, async deleteCard() {},
+        getCardDir() { return kanbanDir }, async copyAttachment() {},
+      }
+    },
+  },
+  sdkExtensionPlugin: {
+    manifest: { id: 'kanban-sdk-ext-test-plugin', provides: ['sdk.extensions'] },
+    extensions: {
+      greet: () => 'hello from extension',
+    },
+  },
+}`
+    )
+
+    try {
+      const bag = resolveCapabilityBag(
+        {
+          'card.storage': { provider: 'kanban-sdk-ext-test-plugin' },
+          'attachment.storage': { provider: 'localfs' },
+        },
+        kanbanDir,
+      )
+
+      expect(bag.sdkExtensions).toHaveLength(1)
+      const ext = bag.sdkExtensions[0] as SDKExtensionLoaderResult<{ greet: () => string }>
+      expect(ext.id).toBe('kanban-sdk-ext-test-plugin')
+      expect(typeof ext.extensions.greet).toBe('function')
+      expect(ext.extensions.greet()).toBe('hello from extension')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('plugin without sdkExtensionPlugin does not appear in sdkExtensions', () => {
+    const cleanup = installTempPackage(
+      'kanban-no-sdk-ext-plugin',
+      `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-no-sdk-ext-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) {
+      return {
+        type: 'markdown', kanbanDir,
+        async init() {}, close() {}, async migrate() {}, async ensureBoardDirs() {},
+        async deleteBoardData() {}, async scanCards() { return [] }, async writeCard() {},
+        async moveCard() { return '' }, async renameCard() { return '' }, async deleteCard() {},
+        getCardDir() { return kanbanDir }, async copyAttachment() {},
+      }
+    },
+  },
+}`
+    )
+
+    try {
+      const bag = resolveCapabilityBag(
+        {
+          'card.storage': { provider: 'kanban-no-sdk-ext-plugin' },
+          'attachment.storage': { provider: 'localfs' },
+        },
+        kanbanDir,
+      )
+      expect(bag.sdkExtensions).toHaveLength(0)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('sdkExtensionPlugin with invalid manifest shape is silently ignored', () => {
+    const cleanup = installTempPackage(
+      'kanban-bad-ext-plugin',
+      `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-bad-ext-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) {
+      return {
+        type: 'markdown', kanbanDir,
+        async init() {}, close() {}, async migrate() {}, async ensureBoardDirs() {},
+        async deleteBoardData() {}, async scanCards() { return [] }, async writeCard() {},
+        async moveCard() { return '' }, async renameCard() { return '' }, async deleteCard() {},
+        getCardDir() { return kanbanDir }, async copyAttachment() {},
+      }
+    },
+  },
+  sdkExtensionPlugin: {
+    // Missing 'extensions' field — not a valid SDKExtensionPlugin
+    manifest: { id: 'kanban-bad-ext-plugin', provides: ['sdk.extensions'] },
+  },
+}`
+    )
+
+    try {
+      // Must not throw; invalid sdkExtensionPlugin is silently skipped
+      const bag = resolveCapabilityBag(
+        {
+          'card.storage': { provider: 'kanban-bad-ext-plugin' },
+          'attachment.storage': { provider: 'localfs' },
+        },
+        kanbanDir,
+      )
+      expect(bag.sdkExtensions).toHaveLength(0)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('SDKExtensionPlugin type is satisfied by a valid plugin shape (compile-time contract)', () => {
+    // This test verifies the TypeScript contract is usable by plugin authors.
+    const plugin: SDKExtensionPlugin<{ ping: () => string }> = {
+      manifest: { id: 'test-plugin', provides: ['sdk.extensions'] },
+      extensions: { ping: () => 'pong' },
+    }
+    expect(plugin.manifest.id).toBe('test-plugin')
+    expect(plugin.extensions.ping()).toBe('pong')
+  })
+
+  it('SDKExtensionLoaderResult type carry the resolved id and extensions', () => {
+    // Verify the result type structure is correct.
+    const result: SDKExtensionLoaderResult<{ value: number }> = {
+      id: 'my-plugin',
+      extensions: { value: 42 },
+    }
+    expect(result.id).toBe('my-plugin')
+    expect(result.extensions.value).toBe(42)
   })
 })

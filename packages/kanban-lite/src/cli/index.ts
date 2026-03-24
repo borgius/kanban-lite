@@ -1706,10 +1706,28 @@ function loadCliPlugins(workspaceRoot: string): KanbanCliPlugin[] {
   return plugins
 }
 
+function findCliPlugin(cliPlugins: readonly KanbanCliPlugin[], command: string): KanbanCliPlugin | undefined {
+  return cliPlugins.find((plugin) => plugin.command === command || plugin.aliases?.includes(command))
+}
+
+async function runCliPlugin(
+  plugin: KanbanCliPlugin,
+  positional: string[],
+  flags: Flags,
+  workspaceRoot: string,
+  sdk: KanbanSDK,
+): Promise<void> {
+  await plugin.run(positional, flags, {
+    workspaceRoot,
+    sdk,
+    runWithCliAuth: (fn) => runWithCliAuth(sdk, fn),
+  })
+}
+
 async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags, cliPlugins: KanbanCliPlugin[], workspaceRoot: string): Promise<void> {
   const sub = positional[0] || 'status'
   if (sub !== 'status') {
-    const authPlugin = cliPlugins.find(p => p.command === 'auth')
+    const authPlugin = findCliPlugin(cliPlugins, 'auth')
     if (authPlugin) {
       await authPlugin.run(positional, flags, { workspaceRoot })
       return
@@ -1846,12 +1864,12 @@ async function main(): Promise<void> {
     case 'forms':
       await cmdForm(sdk, positional, flags)
       break
+    case 'webhooks':
     case 'webhook':
     case 'wh': {
-      // Alias shim: route to the plugin-owned `webhooks` command.
-      const webhookPlugin = cliPlugins.find(p => p.command === 'webhooks')
+      const webhookPlugin = findCliPlugin(cliPlugins, command) ?? findCliPlugin(cliPlugins, 'webhooks')
       if (webhookPlugin) {
-        await webhookPlugin.run(positional, flags, { workspaceRoot, sdk, runWithCliAuth: (fn) => runWithCliAuth(sdk, fn) })
+        await runCliPlugin(webhookPlugin, positional, flags, workspaceRoot, sdk)
       } else {
         console.error(red('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin'))
         process.exit(1)
@@ -1878,9 +1896,9 @@ async function main(): Promise<void> {
       await cmdAuth(sdk, positional, flags, cliPlugins, workspaceRoot)
       break
     default: {
-      const fallback = cliPlugins.find(p => p.command === command)
+      const fallback = findCliPlugin(cliPlugins, command)
       if (fallback) {
-        await fallback.run(positional, flags, { workspaceRoot, sdk, runWithCliAuth: (fn) => runWithCliAuth(sdk, fn) })
+        await runCliPlugin(fallback, positional, flags, workspaceRoot, sdk)
         break
       }
       console.error(red(`Unknown command: ${command}`))

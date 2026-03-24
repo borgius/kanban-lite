@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Webhook extension model parity**: `kl-webhooks-plugin` is now documented as the owner of webhook CRUD/runtime delivery plus standalone, CLI, and MCP surfaces exposed through plugin seams. Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`, while `KanbanSDK` keeps direct webhook methods as compatibility shims and the public MCP tool names remain unchanged.
+- **Self-hosted Chat SDK example stack**: `examples/chat-sdk-vercel-ai` now launches its own local Kanban Lite instance with a dedicated `demo-workspace/.kanban.json`, prints both Kanban/chat URLs from `npm run dev` / `npm run start`, seeds demo cards with attached comments/forms/actions, and exposes a local action-webhook endpoint so card actions work during local development.
+
+### Changed
+- **IncidentMind demo framing for CorePilot**: `examples/chat-sdk-vercel-ai` now presents IncidentMind as a fictional incident-operations layer built around free kanban-lite, keeps kanban-lite visibly central as the system of record, and updates chat/UI/README prompt examples to target the existing seeded cards plus stable `incident-report`, `release-checklist`, `notify-slack`, and `deploy` flows without overstating automation.
+
+### Changed
+- **Chat SDK example agent workflows**: The Chat SDK / Vercel AI example now actively supports freeform card-specific comment, form-submission, and action-trigger requests in addition to create/list/move card operations, and the live integration suite now verifies those richer workflows.
+
 ### Changed
 - **Coordinated release orchestration**: Root release commands now verify npm/GitHub auth up front, build each public package only once, bump every public package version without per-package git tags, publish all npm packages (including `kanban-lite`), create one release commit/tag, and upload or replace the matching GitHub VSIX asset. The `kanban-lite` VSIX packaging hook and the n8n package `prepack` hook now verify existing build output instead of triggering another rebuild.
 
@@ -27,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Example-local placeholder env defaults for the Chat SDK app**: Added a placeholder-only local `.env` workflow plus `OPENAI_MODEL` support so the example can use shell-exported `OPENAI_API_KEY` values without forcing secrets into the repo.
 
 ### Fixed
+- **Standalone source-mode browser UI loading**: Running the standalone server directly from source (for example via `tsx` in the Chat SDK example launcher) now resolves the built `dist/standalone-webview` assets correctly, so `/index.js` and `/style.css` are served as static files instead of falling back to the HTML shell and leaving the Kanban page blank in the browser.
 - **Chat SDK example card workflow wording and reliability**: The chat route and UI now use card-centric tool naming, stronger tool-use instructions, a deterministic temperature setting, and more robust kanban API error handling so the example behaves more consistently under live integration tests.
 
 ### Added

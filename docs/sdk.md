@@ -94,6 +94,7 @@ HTTP server are all built on top of.
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
         * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
+        * [.getExtension(id)](#KanbanSDK+getExtension) ⇒
         * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
         * [.runWithAuth(auth, fn)](#KanbanSDK+runWithAuth) ⇒
         * [._resolveEventActor()](#KanbanSDK+_resolveEventActor)
@@ -423,6 +424,32 @@ Use this to inspect which webhook delivery provider is active and whether
 const status = sdk.getWebhookStatus()
 console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
 console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
+```
+
+* * *
+
+<a name="KanbanSDK+getExtension"></a>
+
+#### kanbanSDK.getExtension(id) ⇒
+Returns the SDK extension bag contributed by the plugin with the given `id`,
+or `undefined` when no active plugin has exported a matching `sdkExtensionPlugin`.
+
+Use this to access plugin-owned SDK capabilities (e.g. webhook CRUD methods
+contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The resolved extension bag cast to `T`, or `undefined` when the plugin
+  is not active or has not exported `sdkExtensionPlugin`.  
+**Typeparam**: T - Shape of the expected extension bag.  
+
+| Param | Description |
+| --- | --- |
+| id | The plugin manifest id to look up (e.g. `'kl-webhooks-plugin'`). |
+
+**Example**  
+```ts
+const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-webhooks-plugin')
+const webhooks = webhookExt?.listWebhooks() ?? []
 ```
 
 * * *
@@ -3406,6 +3433,38 @@ on Windows it is `{prefix}/node_modules`.
 
 * * *
 
+<a name="tryLoadSDKExtensionPlugin"></a>
+
+### tryLoadSDKExtensionPlugin()
+Attempts to load an optional `sdkExtensionPlugin` export from an active
+package.  Returns `null` silently when the export is absent or does not
+satisfy the [SDKExtensionPlugin](SDKExtensionPlugin) contract so that missing extensions
+never prevent capability bag resolution.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
+<a name="resolveSDKExtensions"></a>
+
+### resolveSDKExtensions(capabilities, authCapabilities, webhookCapabilities) ⇒
+Collects SDK extension contributions from all active external packages by
+probing each for the optional `sdkExtensionPlugin` named export.
+
+**Kind**: global function  
+**Returns**: De-duplicated list of resolved SDK extension entries.  
+**Internal**:   
+
+| Param | Description |
+| --- | --- |
+| capabilities | Resolved storage capability selections. |
+| authCapabilities | Resolved auth capability selections. |
+| webhookCapabilities | Resolved webhook capability selections, or `null`. |
+
+
+* * *
+
 <a name="loadExternalCardPlugin"></a>
 
 ### loadExternalCardPlugin()
@@ -3527,6 +3586,18 @@ both surfaces activate the same set of packages.
 | --- | --- |
 | config | Raw workspace config. Only the consumed fields need to be present. |
 
+
+* * *
+
+<a name="resolveMcpPlugins"></a>
+
+### resolveMcpPlugins()
+Resolves optional MCP tool plugins from the canonical active-package set.
+
+Reuses [collectActiveExternalPackageNames](#collectActiveExternalPackageNames) so MCP follows the same
+activation model as CLI and standalone HTTP discovery.
+
+**Kind**: global function  
 
 * * *
 

@@ -9,14 +9,17 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMcpPluginContext, registerPluginMcpTools } from './index'
 import { KanbanSDK } from '../sdk/KanbanSDK'
+import * as pluginRegistry from '../sdk/plugins'
 import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../sdk/plugins'
 import { AuthError } from '../sdk/types'
 import type { AuthContext, AuthDecision } from '../sdk/types'
 import type { AuthIdentity } from '../sdk/plugins'
 import type { SDKEventListenerPlugin } from '../sdk/types'
 import type { Webhook } from '../shared/config'
+import { mcpPlugin } from '../../../kl-webhooks-plugin/src/index'
 
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 
@@ -430,5 +433,160 @@ describe('MCP list_webhooks auth-wrapping: consistent error propagation', () => 
 
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.list')
+  })
+})
+
+describe('plugin-owned MCP webhook registration', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-plugin-tools-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    injectMockWebhookProvider(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  function captureRegisteredTools(targetSdk: KanbanSDK) {
+    const tools: Array<{
+      name: string
+      description: string
+      schema: Record<string, unknown>
+      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+    }> = []
+
+    const server = {
+      tool(
+        name: string,
+        description: string,
+        schema: Record<string, unknown>,
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+      ) {
+        tools.push({ name, description, schema, handler })
+      },
+    }
+
+    const resolveSpy = vi.spyOn(pluginRegistry, 'resolveMcpPlugins').mockReturnValue([mcpPlugin as never])
+    let registered: string[] = []
+    try {
+      registered = registerPluginMcpTools(
+        server,
+        {},
+        createMcpPluginContext({
+          sdk: targetSdk,
+          workspaceRoot: workspaceDir,
+          kanbanDir,
+          runWithAuth: (fn) => targetSdk.runWithAuth({ transport: 'mcp' }, fn),
+        }),
+      )
+    } finally {
+      resolveSpy.mockRestore()
+    }
+
+    return { registered, tools }
+  }
+
+  it('discovers webhook MCP tools through the active package path with unchanged names and schema fields', () => {
+    const { registered, tools } = captureRegisteredTools(sdk)
+
+    expect([...registered].sort()).toEqual(['add_webhook', 'list_webhooks', 'remove_webhook', 'update_webhook'])
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['add_webhook', 'list_webhooks', 'remove_webhook', 'update_webhook'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'list_webhooks')?.schema ?? {})).toEqual([])
+    expect(Object.keys(tools.find((tool) => tool.name === 'add_webhook')?.schema ?? {})).toEqual(['url', 'events', 'secret'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'remove_webhook')?.schema ?? {})).toEqual(['webhookId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'update_webhook')?.schema ?? {})).toEqual(['webhookId', 'url', 'events', 'secret', 'active'])
+  })
+
+  it('plugin-owned webhook MCP handlers preserve secret redaction', async () => {
+    const { tools } = captureRegisteredTools(sdk)
+    const addTool = tools.find((tool) => tool.name === 'add_webhook')
+    const listTool = tools.find((tool) => tool.name === 'list_webhooks')
+    const updateTool = tools.find((tool) => tool.name === 'update_webhook')
+
+    expect(addTool).toBeDefined()
+    expect(listTool).toBeDefined()
+    expect(updateTool).toBeDefined()
+
+    const added = await addTool!.handler({
+      url: 'https://example.com/hook',
+      events: ['*'],
+      secret: 'plugin-secret-create',
+    })
+    expect(added.isError).toBeUndefined()
+    expect(added.content[0].text).not.toContain('plugin-secret-create')
+    expect(added.content[0].text).not.toContain('"secret"')
+
+    const listed = await listTool!.handler({})
+    expect(listed.content[0].text).not.toContain('plugin-secret-create')
+    expect(listed.content[0].text).not.toContain('"secret"')
+
+    const webhookId = (JSON.parse(added.content[0].text) as { id: string }).id
+    const updated = await updateTool!.handler({ webhookId, secret: 'plugin-secret-update' })
+    expect(updated.isError).toBeUndefined()
+    expect(updated.content[0].text).not.toContain('plugin-secret-update')
+    expect(updated.content[0].text).not.toContain('"secret"')
+  })
+
+  it('plugin-owned webhook MCP handlers preserve auth error mapping', async () => {
+    const deniedSdk = new KanbanSDK(kanbanDir)
+    injectDenyAll(deniedSdk, kanbanDir)
+    try {
+      const { tools } = captureRegisteredTools(deniedSdk)
+      const addTool = tools.find((tool) => tool.name === 'add_webhook')
+      expect(addTool).toBeDefined()
+
+      const result = await addTool!.handler({
+        url: 'https://example.com/hook',
+        events: ['*'],
+      })
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('webhook.create')
+    } finally {
+      deniedSdk.close()
+    }
+  })
+
+  it('rejects duplicate plugin-owned MCP tool registration for webhook tools', () => {
+    const duplicatePlugin = {
+      manifest: { id: 'duplicate-webhooks-test', provides: ['mcp.tools'] as const },
+      registerTools: () => [{
+        name: 'list_webhooks',
+        description: 'Duplicate webhook listing tool for regression coverage.',
+        inputSchema: () => ({}),
+        handler: async () => ({ content: [{ type: 'text' as const, text: 'duplicate' }] }),
+      }],
+    }
+
+    const server = {
+      tool: vi.fn(),
+    }
+
+    const resolveSpy = vi.spyOn(pluginRegistry, 'resolveMcpPlugins').mockReturnValue([
+      mcpPlugin as never,
+      duplicatePlugin as never,
+    ])
+
+    try {
+      expect(() => registerPluginMcpTools(
+        server,
+        {},
+        createMcpPluginContext({
+          sdk,
+          workspaceRoot: workspaceDir,
+          kanbanDir,
+          runWithAuth: (fn) => sdk.runWithAuth({ transport: 'mcp' }, fn),
+        }),
+      )).toThrow('Duplicate MCP tool registration attempted for "list_webhooks".')
+    } finally {
+      resolveSpy.mockRestore()
+    }
   })
 })

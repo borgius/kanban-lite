@@ -1,10 +1,11 @@
 import * as http from 'node:http'
 import * as path from 'path'
 import { createRequire } from 'node:module'
+import type { ZodRawShape, ZodTypeAny } from 'zod'
 import type { Card } from '../../shared/types'
 import type { Webhook } from '../../shared/config'
 import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities } from '../../shared/config'
-import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin } from '../types'
+import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { AuthError } from '../types'
 import type { KanbanSDK } from '../KanbanSDK'
 import type { StorageEngine } from './types'
@@ -142,6 +143,17 @@ interface StandaloneHttpPluginModule {
   readonly standaloneHttpPlugin?: unknown
   readonly createStandaloneHttpPlugin?: ((options: StandaloneHttpPluginRegistrationOptions) => unknown) | unknown
   readonly default?: unknown
+}
+
+/** Module shape supported for optional SDK extension packs contributed by plugins. */
+interface SDKExtensionPluginModule {
+  readonly sdkExtensionPlugin?: unknown
+  readonly default?: unknown
+}
+
+/** Module shape supported for optional MCP tool integrations. */
+interface McpPluginModule {
+  readonly mcpPlugin?: unknown
 }
 
 /** Built-in compatibility no-op identity provider. Always resolves to `null` (anonymous). */
@@ -550,6 +562,85 @@ export interface StandaloneHttpPlugin {
   registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
 }
 
+// ---------------------------------------------------------------------------
+// MCP plugin registration contract
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime context available to MCP tool handlers contributed by plugins.
+ *
+ * Passed to every registered tool handler by the MCP server during tool
+ * invocation.  Intentionally minimal for the first-cut tool-only seam;
+ * auth decorators, resource contributions, and lifecycle hooks are deferred.
+ */
+export interface McpToolContext {
+  /** Absolute workspace root containing `.kanban.json`. */
+  readonly workspaceRoot: string
+  /** Absolute workspace `.kanban` directory. */
+  readonly kanbanDir: string
+  /** Active SDK instance backing the MCP server runtime. */
+  readonly sdk: KanbanSDK
+  /** Runs the tool operation with the core MCP auth context installed. */
+  runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+  /** Maps thrown errors to the canonical MCP `{ content, isError }` response shape. */
+  toErrorResult(err: unknown): McpToolResult
+}
+
+/** Canonical MCP tool result shape used by plugin-contributed tool handlers. */
+export interface McpToolResult {
+  readonly content: Array<{ type: 'text'; text: string }>
+  readonly isError?: boolean
+}
+
+/** Minimal zod factory surface required by plugin-contributed MCP tool schemas. */
+export interface McpSchemaFactory {
+  string(): ZodTypeAny
+  array(item: ZodTypeAny): ZodTypeAny
+  boolean(): ZodTypeAny
+}
+
+/**
+ * A single MCP tool definition contributed by a plugin.
+ *
+ * Tool names must match publicly exposed MCP tool names exactly so that
+ * existing MCP client integrations are not broken when a tool is migrated
+ * from core to a plugin.
+ */
+export interface McpToolDefinition {
+  /** MCP tool name visible to clients (e.g. `'list_webhooks'`). */
+  readonly name: string
+  /** Human-readable tool description shown in MCP tool listings. */
+  readonly description: string
+  /** Lazily builds the tool input schema using the host MCP server's zod instance. */
+  readonly inputSchema: (z: McpSchemaFactory) => ZodRawShape
+  /**
+   * Tool handler invoked by the MCP server when the tool is called.
+   * Must return the MCP-standard content array response.
+   */
+  readonly handler: (args: Record<string, unknown>, ctx: McpToolContext) => Promise<McpToolResult>
+}
+
+/**
+ * Narrow MCP registration contract for plugin packages.
+ *
+ * First-partiy cut: tool contributions only. Pre/post registration hooks,
+ * auth decorators, and resource contributions are deferred to follow-up work.
+ *
+ * Packages that want to own a set of MCP tools (e.g. `kl-webhooks-plugin`)
+ * can export `mcpPlugin` implementing this interface. The MCP server
+ * discovers the export via the same active-package set used by the standalone
+ * HTTP discovery path (SPE-06).
+ */
+export interface McpPluginRegistration {
+  /** Plugin manifest identifying this MCP contribution. */
+  readonly manifest: { readonly id: string; readonly provides: readonly ['mcp.tools'] }
+  /**
+   * Called once by the MCP server during tool registration.
+   * Returns the complete set of tool definitions this plugin owns.
+   */
+  registerTools(ctx: McpToolContext): readonly McpToolDefinition[]
+}
+
 /**
  * Fully resolved capability bag produced by {@link resolveCapabilityBag}.
  *
@@ -628,6 +719,15 @@ export interface ResolvedCapabilityBag {
   readonly webhookListener: SDKEventListenerPlugin | null
   /** Standalone-only middleware/routes exported by active capability packages. */
   readonly standaloneHttpPlugins: readonly StandaloneHttpPlugin[]
+  /**
+   * SDK extensions contributed by active plugin packages.
+   *
+   * Each entry corresponds to one plugin that exported `sdkExtensionPlugin`.
+   * Consumed by `KanbanSDK.getExtension(id)` (SPE-02) and the future
+   * `sdk.extensions` named-access bag.  Empty when no active plugin exports
+   * the optional `sdkExtensionPlugin` field.
+   */
+  readonly sdkExtensions: readonly SDKExtensionLoaderResult[]
   /**
     * Built-in auth event listener plugin.
    *
@@ -911,6 +1011,67 @@ function isValidStandaloneHttpPlugin(plugin: unknown): plugin is StandaloneHttpP
     && (candidate.registerRoutes === undefined || typeof candidate.registerRoutes === 'function')
 }
 
+function isValidSDKExtensionPlugin(plugin: unknown): plugin is SDKExtensionPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as SDKExtensionPlugin
+  return typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && typeof candidate.extensions === 'object'
+    && candidate.extensions !== null
+}
+
+/**
+ * Attempts to load an optional `sdkExtensionPlugin` export from an active
+ * package.  Returns `null` silently when the export is absent or does not
+ * satisfy the {@link SDKExtensionPlugin} contract so that missing extensions
+ * never prevent capability bag resolution.
+ *
+ * @internal
+ */
+function tryLoadSDKExtensionPlugin(packageName: string): SDKExtensionLoaderResult | null {
+  let mod: SDKExtensionPluginModule
+  try {
+    mod = loadExternalModule(packageName) as SDKExtensionPluginModule
+  } catch {
+    return null
+  }
+  const candidate = mod.sdkExtensionPlugin
+  if (!isValidSDKExtensionPlugin(candidate)) return null
+  return { id: candidate.manifest.id, extensions: candidate.extensions }
+}
+
+function isValidMcpPlugin(plugin: unknown): plugin is McpPluginRegistration {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as McpPluginRegistration
+  return typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && candidate.manifest.provides.includes('mcp.tools')
+    && typeof candidate.registerTools === 'function'
+}
+
+function tryLoadMcpPlugin(packageName: string): McpPluginRegistration | null {
+  let mod: McpPluginModule
+  try {
+    mod = loadExternalModule(packageName) as McpPluginModule
+  } catch (err) {
+    if (err instanceof Error && err.message.includes(`Plugin package "${packageName}" is not installed.`)) {
+      return null
+    }
+    throw err
+  }
+
+  if (mod.mcpPlugin === undefined) return null
+  if (!isValidMcpPlugin(mod.mcpPlugin)) {
+    throw new Error(
+      `Plugin "${packageName}" does not export a valid mcpPlugin. ` +
+      `Expected a named export 'mcpPlugin' with a manifest that provides 'mcp.tools' ` +
+      `and a registerTools() method.`
+    )
+  }
+
+  return mod.mcpPlugin
+}
+
 function loadStandaloneHttpPlugin(
   packageName: string,
   options: StandaloneHttpPluginRegistrationOptions,
@@ -981,6 +1142,34 @@ function resolveStandaloneHttpPlugins(
   )) {
     const plugin = loadStandaloneHttpPlugin(packageName, options)
     if (plugin) resolved.push(plugin)
+  }
+  return resolved
+}
+
+/**
+ * Collects SDK extension contributions from all active external packages by
+ * probing each for the optional `sdkExtensionPlugin` named export.
+ *
+ * @param capabilities        - Resolved storage capability selections.
+ * @param authCapabilities    - Resolved auth capability selections.
+ * @param webhookCapabilities - Resolved webhook capability selections, or `null`.
+ * @returns De-duplicated list of resolved SDK extension entries.
+ *
+ * @internal
+ */
+function resolveSDKExtensions(
+  capabilities: ResolvedCapabilities,
+  authCapabilities: ResolvedAuthCapabilities,
+  webhookCapabilities: ResolvedWebhookCapabilities | null,
+): SDKExtensionLoaderResult[] {
+  const resolved: SDKExtensionLoaderResult[] = []
+  const seen = new Set<string>()
+  for (const packageName of collectStandaloneHttpPackageNames(capabilities, authCapabilities, webhookCapabilities)) {
+    const ext = tryLoadSDKExtensionPlugin(packageName)
+    if (ext && !seen.has(ext.id)) {
+      seen.add(ext.id)
+      resolved.push(ext)
+    }
   }
   return resolved
 }
@@ -1476,6 +1665,31 @@ export function collectActiveExternalPackageNames(config: {
   return [...packageNames]
 }
 
+/**
+ * Resolves optional MCP tool plugins from the canonical active-package set.
+ *
+ * Reuses {@link collectActiveExternalPackageNames} so MCP follows the same
+ * activation model as CLI and standalone HTTP discovery.
+ */
+export function resolveMcpPlugins(config: {
+  readonly plugins?: Partial<Record<string, ProviderRef>>
+  readonly webhookPlugin?: Partial<Record<string, ProviderRef>>
+  readonly auth?: Partial<Record<string, ProviderRef>>
+}): McpPluginRegistration[] {
+  const resolved: McpPluginRegistration[] = []
+  const seen = new Set<string>()
+
+  for (const packageName of collectActiveExternalPackageNames(config)) {
+    const plugin = tryLoadMcpPlugin(packageName)
+    if (plugin && !seen.has(plugin.manifest.id)) {
+      seen.add(plugin.manifest.id)
+      resolved.push(plugin)
+    }
+  }
+
+  return resolved
+}
+
 function resolveCardPlugin(ref: ProviderRef): CardStoragePlugin {
   const builtin = BUILTIN_CARD_PLUGINS.get(ref.provider)
   if (builtin) return builtin
@@ -1567,6 +1781,8 @@ export function resolveCapabilityBag(
     webhookCapabilities: webhookCapabilities ?? null,
   })
 
+  const sdkExtensions = resolveSDKExtensions(capabilities, resolvedAuth, webhookCapabilities ?? null)
+
   return {
     cardStorage: cardEngine,
     attachmentStorage: attachPlugin,
@@ -1598,6 +1814,7 @@ export function resolveCapabilityBag(
     webhookProviders: webhookCapabilities ?? null,
     webhookListener: webhookPlugins?.listener ?? null,
     standaloneHttpPlugins,
+    sdkExtensions,
     authListener: createBuiltinAuthListenerPlugin(resolvedAuthIdentity, resolvedAuthPolicy),
   }
 }

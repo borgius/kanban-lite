@@ -324,6 +324,218 @@ export const webhookProviderPlugin: WebhookProviderPlugin = {
 export default webhookProviderPlugin
 
 // ---------------------------------------------------------------------------
+// SDK extension pack (SPE-03)
+// Contributes webhook CRUD methods to the SDK extensions bag so callers can
+// access them through `sdk.getExtension('kl-webhooks-plugin')`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape of the SDK extension bag contributed by this package.
+ *
+ * Accessible via `sdk.getExtension<WebhookSdkExtensions>('kl-webhooks-plugin')`
+ * after the package is loaded as the active `webhook.delivery` provider.
+ */
+export interface WebhookSdkExtensions {
+  listWebhooks(workspaceRoot: string): Webhook[]
+  createWebhook(workspaceRoot: string, input: { url: string; events: string[]; secret?: string }): Webhook
+  updateWebhook(
+    workspaceRoot: string,
+    id: string,
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+  ): Webhook | null
+  deleteWebhook(workspaceRoot: string, id: string): boolean
+}
+
+interface WebhookCliSdkExtensionHost {
+  getExtension?<T = unknown>(id: string): T | undefined
+  listWebhooks(): Webhook[]
+  createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
+  updateWebhook(
+    id: string,
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+  ): Promise<Webhook | null>
+  deleteWebhook(id: string): Promise<boolean>
+}
+
+function getWebhookSdkExtensions(sdk?: WebhookCliSdkExtensionHost): WebhookSdkExtensions | undefined {
+  return sdk?.getExtension?.<WebhookSdkExtensions>('kl-webhooks-plugin')
+}
+
+/**
+ * SDK extension pack for `kl-webhooks-plugin`.
+ *
+ * Contributes the four canonical webhook CRUD methods to the SDK extensions bag.
+ * Discovered by the kanban-lite plugin loader whenever this package is active
+ * as the `webhook.delivery` provider (the default for all workspaces).
+ *
+ * Access the extensions through:
+ * ```ts
+ * const ext = sdk.getExtension<WebhookSdkExtensions>('kl-webhooks-plugin')
+ * const webhooks = ext?.listWebhooks(sdk.workspaceRoot) ?? []
+ * ```
+ */
+export const sdkExtensionPlugin = {
+  manifest: {
+    id: 'kl-webhooks-plugin',
+    provides: ['sdk.extension'] as const,
+  },
+  extensions: {
+    listWebhooks,
+    createWebhook,
+    updateWebhook,
+    deleteWebhook,
+  },
+} satisfies { manifest: { id: string; provides: readonly string[] }; extensions: WebhookSdkExtensions }
+
+// ---------------------------------------------------------------------------
+// MCP plugin – webhook tool ownership
+// ---------------------------------------------------------------------------
+
+interface McpToolResult {
+  readonly content: Array<{ type: 'text'; text: string }>
+  readonly isError?: boolean
+}
+
+interface McpWebhookSdkHost {
+  listWebhooks(): Webhook[]
+  createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
+  updateWebhook(
+    id: string,
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+  ): Promise<Webhook | null>
+  deleteWebhook(id: string): Promise<boolean>
+}
+
+interface McpToolContext {
+  readonly sdk: McpWebhookSdkHost
+  runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+  toErrorResult(err: unknown): McpToolResult
+}
+
+interface McpZodType {
+  optional(): McpZodType
+  describe(description: string): McpZodType
+}
+
+interface McpZodFactory {
+  string(): McpZodType
+  array(item: McpZodType): McpZodType
+  boolean(): McpZodType
+}
+
+interface McpToolDefinition {
+  readonly name: string
+  readonly description: string
+  readonly inputSchema: (z: McpZodFactory) => Record<string, McpZodType>
+  readonly handler: (args: Record<string, unknown>, ctx: McpToolContext) => Promise<McpToolResult>
+}
+
+interface McpPluginRegistration {
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+  registerTools(ctx: McpToolContext): readonly McpToolDefinition[]
+}
+
+function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
+  const { secret: _secret, ...safe } = w
+  return safe as Omit<T, 'secret'>
+}
+
+export const mcpPlugin: McpPluginRegistration = {
+  manifest: {
+    id: 'webhooks',
+    provides: ['mcp.tools'],
+  },
+  registerTools(): readonly McpToolDefinition[] {
+    return [
+      {
+        name: 'list_webhooks',
+        description: 'List all registered webhooks.',
+        inputSchema: () => ({}),
+        handler: async (_args, ctx) => {
+          try {
+            const webhooks = await ctx.runWithAuth(() => Promise.resolve(ctx.sdk.listWebhooks()))
+            return { content: [{ type: 'text' as const, text: JSON.stringify(webhooks.map(redactWebhook), null, 2) }] }
+          } catch (err) {
+            return ctx.toErrorResult(err)
+          }
+        },
+      },
+      {
+        name: 'add_webhook',
+        description: 'Register a new webhook to receive event notifications.',
+        inputSchema: (z) => ({
+          url: z.string().describe('Webhook target URL (HTTP/HTTPS)'),
+          events: z.array(z.string()).optional().describe('Events to subscribe to (e.g. ["task.created", "task.updated"]). Default: ["*"] for all.'),
+          secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
+        }),
+        handler: async (args, ctx) => {
+          const { url, events, secret } = args as { url: string; events?: string[]; secret?: string }
+          try {
+            const webhook = await ctx.runWithAuth(() => ctx.sdk.createWebhook({ url, events: events || ['*'], secret }))
+            return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(webhook), null, 2) }] }
+          } catch (err) {
+            return ctx.toErrorResult(err)
+          }
+        },
+      },
+      {
+        name: 'remove_webhook',
+        description: 'Remove a registered webhook by ID.',
+        inputSchema: (z) => ({
+          webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
+        }),
+        handler: async (args, ctx) => {
+          const { webhookId } = args as { webhookId: string }
+          try {
+            const removed = await ctx.runWithAuth(() => ctx.sdk.deleteWebhook(webhookId))
+            if (!removed) {
+              return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
+            }
+            return { content: [{ type: 'text' as const, text: `Deleted webhook: ${webhookId}` }] }
+          } catch (err) {
+            return ctx.toErrorResult(err)
+          }
+        },
+      },
+      {
+        name: 'update_webhook',
+        description: 'Update an existing webhook configuration (URL, events, secret, or active status).',
+        inputSchema: (z) => ({
+          webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
+          url: z.string().optional().describe('New webhook target URL'),
+          events: z.array(z.string()).optional().describe('New events to subscribe to'),
+          secret: z.string().optional().describe('New HMAC-SHA256 signing secret'),
+          active: z.boolean().optional().describe('Set webhook active (true) or inactive (false)'),
+        }),
+        handler: async (args, ctx) => {
+          const { webhookId, url, events, secret, active } = args as {
+            webhookId: string
+            url?: string
+            events?: string[]
+            secret?: string
+            active?: boolean
+          }
+          const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>> = {}
+          if (url !== undefined) updates.url = url
+          if (events !== undefined) updates.events = events
+          if (secret !== undefined) updates.secret = secret
+          if (active !== undefined) updates.active = active
+          try {
+            const updated = await ctx.runWithAuth(() => ctx.sdk.updateWebhook(webhookId, updates))
+            if (!updated) {
+              return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
+            }
+            return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(updated), null, 2) }] }
+          } catch (err) {
+            return ctx.toErrorResult(err)
+          }
+        },
+      },
+    ]
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Standalone HTTP plugin – /api/webhooks route ownership
 // ---------------------------------------------------------------------------
 
@@ -561,32 +773,41 @@ function _dim(s: string): string { return `\x1b[2m${s}\x1b[0m` }
 export const cliPlugin = {
   manifest: { id: 'webhooks' },
   command: 'webhooks',
+  aliases: ['webhook', 'wh'],
   async run(
     subArgs: string[],
     flags: Record<string, string | boolean | string[]>,
-    context: { workspaceRoot: string; sdk?: { listWebhooks(): Webhook[]; createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>; updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null>; deleteWebhook(id: string): Promise<boolean> }; runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T> },
+    context: { workspaceRoot: string; sdk?: WebhookCliSdkExtensionHost; runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T> },
   ): Promise<void> {
     const { workspaceRoot } = context
     const subcommand = subArgs[0] || 'list'
+    const sdkExtensions = getWebhookSdkExtensions(context.sdk)
 
     // Helpers that delegate through SDK auth when the core CLI context is present,
     // falling back to direct local calls for backward compatibility (e.g. unit tests).
     const _list = (): Webhook[] =>
-      context.sdk ? context.sdk.listWebhooks() : listWebhooks(workspaceRoot)
+      sdkExtensions ? sdkExtensions.listWebhooks(workspaceRoot)
+        : context.sdk ? context.sdk.listWebhooks() : listWebhooks(workspaceRoot)
     const _create = (input: { url: string; events: string[]; secret?: string }): Promise<Webhook> =>
       context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => context.sdk!.createWebhook(input))
+        ? context.runWithCliAuth(() => Promise.resolve(
+          sdkExtensions ? sdkExtensions.createWebhook(workspaceRoot, input) : context.sdk!.createWebhook(input),
+        ))
         : Promise.resolve(createWebhook(workspaceRoot, input))
     const _delete = (id: string): Promise<boolean> =>
       context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => context.sdk!.deleteWebhook(id))
+        ? context.runWithCliAuth(() => Promise.resolve(
+          sdkExtensions ? sdkExtensions.deleteWebhook(workspaceRoot, id) : context.sdk!.deleteWebhook(id),
+        ))
         : Promise.resolve(deleteWebhook(workspaceRoot, id))
     const _update = (
       id: string,
       updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
     ): Promise<Webhook | null> =>
       context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => context.sdk!.updateWebhook(id, updates))
+        ? context.runWithCliAuth(() => Promise.resolve(
+          sdkExtensions ? sdkExtensions.updateWebhook(workspaceRoot, id, updates) : context.sdk!.updateWebhook(id, updates),
+        ))
         : Promise.resolve(updateWebhook(workspaceRoot, id, updates))
 
     switch (subcommand) {

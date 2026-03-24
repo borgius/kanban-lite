@@ -19,9 +19,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 interface WorkspaceKanbanSDK {
   getWebhookStatus(): { webhookProvider: string; webhookProviderActive: boolean }
+  getExtension<T extends Record<string, unknown>>(id: string): T | undefined
   readonly capabilities?: {
     webhookListener?: { manifest: { id: string } }
     standaloneHttpPlugins?: ReadonlyArray<{ manifest: { id: string } }>
+    sdkExtensions?: ReadonlyArray<{ id: string; extensions: Record<string, unknown> }>
   } | null
   createCard(input: { content: string }): Promise<unknown>
   close(): void
@@ -46,6 +48,34 @@ function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: new (dir: string, opts?: Rec
 }
 
 const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
+
+function writeWebhookOnlyConfig(workspaceDir: string): void {
+  fs.writeFileSync(
+    path.join(workspaceDir, '.kanban.json'),
+    JSON.stringify(
+      {
+        version: 2,
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        boards: {
+          default: {
+            name: 'Default',
+            columns: [{ id: 'backlog', name: 'Backlog' }],
+            nextCardId: 1,
+            defaultStatus: 'backlog',
+            defaultPriority: 'medium',
+          },
+        },
+        plugins: {
+          'webhook.delivery': { provider: 'webhooks' },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf-8',
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -136,9 +166,63 @@ describe('kl-webhooks-plugin: consumption via kanban-lite workspace SDK', () => 
   })
 
   it('plugin standaloneHttpPlugin is registered under webhook-only config', () => {
+    writeWebhookOnlyConfig(workspaceDir)
     const sdk = new KanbanSDK(kanbanDir)
+    const status = sdk.getWebhookStatus()
     const standalonePlugins = sdk.capabilities?.standaloneHttpPlugins ?? []
+    expect(status.webhookProvider).toBe('webhooks')
+    expect(status.webhookProviderActive).toBe(true)
+    expect(sdk.capabilities?.webhookListener?.manifest.id).toBe('webhooks')
     expect(standalonePlugins.some((p) => p.manifest.id === 'webhooks')).toBe(true)
+    sdk.close()
+  })
+
+  it('getExtension("kl-webhooks-plugin") returns the webhook extension pack', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const ext = sdk.getExtension<{ listWebhooks(root: string): unknown[] }>('kl-webhooks-plugin')
+    expect(ext).toBeDefined()
+    expect(typeof ext?.listWebhooks).toBe('function')
+    sdk.close()
+  })
+
+  it('sdk.capabilities.sdkExtensions contains an entry for kl-webhooks-plugin', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const exts = sdk.capabilities?.sdkExtensions ?? []
+    const entry = exts.find((e) => e.id === 'kl-webhooks-plugin')
+    expect(entry).toBeDefined()
+    sdk.close()
+  })
+
+  it('extension listWebhooks returns same webhooks as direct CRUD operations', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify(
+        {
+          version: 2,
+          boards: {
+            default: {
+              name: 'Default',
+              columns: [{ id: 'backlog', name: 'Backlog' }],
+              nextCardId: 1,
+              defaultStatus: 'backlog',
+              defaultPriority: 'medium',
+            },
+          },
+          defaultBoard: 'default',
+          kanbanDirectory: '.kanban',
+          webhooks: [
+            { id: 'wh_ext_test', url: 'http://127.0.0.1:9999/hook', events: ['*'], active: true },
+          ],
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf-8',
+    )
+    const sdk = new KanbanSDK(kanbanDir)
+    const ext = sdk.getExtension<{ listWebhooks(root: string): Array<{ id: string }> }>('kl-webhooks-plugin')
+    const list = ext?.listWebhooks(workspaceDir) ?? []
+    expect(list.some((w) => w.id === 'wh_ext_test')).toBe(true)
     sdk.close()
   })
 })

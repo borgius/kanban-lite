@@ -526,6 +526,12 @@ describe('Webhook CLI routing — plugin-owned dispatch', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
+  it('routes "webhooks list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+    const result = await runCliCommand(['webhooks', 'list', '--config', configPath])
+    expect(result.exitCode).toBe(0)
+    expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
+  })
+
   it('routes "wh list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
     const result = await runCliCommand(['wh', 'list', '--config', configPath])
     expect(result.exitCode).toBe(0)
@@ -536,6 +542,12 @@ describe('Webhook CLI routing — plugin-owned dispatch', () => {
     const result = await runCliCommand(['webhook', 'list', '--config', configPath])
     expect(result.exitCode).toBe(0)
     expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
+  })
+
+  it('preserves JSON output for the alias path', async () => {
+    const result = await runCliCommand(['wh', 'list', '--json', '--config', configPath])
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual([])
   })
 })
 

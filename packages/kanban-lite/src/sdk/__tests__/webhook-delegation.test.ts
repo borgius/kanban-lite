@@ -406,3 +406,198 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// SDK extension resolution tests (SPE-02)
+// Verify that getExtension(id) surfaces plugin-contributed extension bags,
+// and that the webhook compatibility shims remain functional alongside the
+// extension access path.
+//
+// Uses a fake package name that doesn't exist in the workspace packages/
+// directory so loadExternalModule skips the workspace-local path and resolves
+// from the temp node_modules entry installed by installTempPackage.
+// ---------------------------------------------------------------------------
+
+/** Fake package name that is not present in workspace packages/ (won't be overridden). */
+const EXT_TEST_PACKAGE = 'kanban-test-sdk-ext-pkg'
+
+/** Mock package that exports BOTH webhookProviderPlugin AND sdkExtensionPlugin. */
+const EXT_TEST_PACKAGE_SOURCE = `
+const sdkExtensionPlugin = {
+  manifest: { id: '${EXT_TEST_PACKAGE}', provides: ['sdk.extension'] },
+  extensions: {
+    listWebhooks: (workspaceRoot) => [{ id: 'wh_from_ext', url: 'http://ext.example.com', events: ['*'], active: true }],
+    createWebhook: (workspaceRoot, input) => ({ id: 'wh_ext_created', url: input.url, events: input.events, active: true }),
+    customMethod: () => 'ext-custom-result',
+  },
+};
+module.exports = {
+  webhookProviderPlugin: {
+    manifest: { id: '${EXT_TEST_PACKAGE}', provides: ['webhook.delivery'] },
+    listWebhooks: (root) => sdkExtensionPlugin.extensions.listWebhooks(root),
+    createWebhook: (root, input) => sdkExtensionPlugin.extensions.createWebhook(root, input),
+    updateWebhook: (root, id, updates) => ({ id, url: updates.url || 'http://ext-updated.example.com', events: updates.events || ['*'], active: updates.active !== false }),
+    deleteWebhook: (root, id) => id === 'wh_ext_exists',
+  },
+  sdkExtensionPlugin,
+  WebhookListenerPlugin: class WebhookListenerPlugin {
+    constructor(workspaceRoot) {
+      this.workspaceRoot = workspaceRoot;
+      this.manifest = { id: '${EXT_TEST_PACKAGE}-listener', provides: ['event.listener'] };
+    }
+    register(_bus) {}
+    unregister() {}
+  },
+};
+`
+
+function createExtTestWorkspace(): {
+  workspaceDir: string
+  kanbanDir: string
+  cleanup: () => void
+} {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-ext-test-'))
+  const kanbanDir = path.join(workspaceDir, '.kanban')
+  fs.mkdirSync(kanbanDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(workspaceDir, '.kanban.json'),
+    JSON.stringify(
+      {
+        version: 2,
+        boards: {
+          default: {
+            name: 'Default',
+            columns: [],
+            nextCardId: 1,
+            defaultStatus: 'backlog',
+            defaultPriority: 'medium',
+          },
+        },
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        aiAgent: 'claude',
+        defaultPriority: 'medium',
+        defaultStatus: 'backlog',
+        nextCardId: 1,
+        showPriorityBadges: true,
+        showAssignee: true,
+        showDueDate: true,
+        showLabels: true,
+        showBuildWithAI: true,
+        showFileName: false,
+        compactMode: false,
+        markdownEditorMode: false,
+        showDeletedColumn: false,
+        boardZoom: 100,
+        cardZoom: 100,
+        port: 2954,
+        // Point to the fake package so loadExternalModule skips workspace packages/
+        plugins: {
+          'webhook.delivery': { provider: EXT_TEST_PACKAGE },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf-8',
+  )
+  return {
+    workspaceDir,
+    kanbanDir,
+    cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
+  }
+}
+
+describe('KanbanSDK – SDK extension resolution (SPE-02)', () => {
+  let cleanupExtPackage: () => void
+
+  beforeAll(() => {
+    cleanupExtPackage = installTempPackage(EXT_TEST_PACKAGE, EXT_TEST_PACKAGE_SOURCE)
+  })
+
+  afterAll(() => {
+    cleanupExtPackage?.()
+  })
+
+  it('getExtension returns undefined when no plugin has registered the given id', () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const result = sdk.getExtension('nonexistent-plugin')
+      expect(result).toBeUndefined()
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('getExtension returns the extension bag contributed by the matching plugin', () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const ext = sdk.getExtension(EXT_TEST_PACKAGE)
+      expect(ext).toBeDefined()
+      expect(typeof ext?.listWebhooks).toBe('function')
+      expect(typeof ext?.createWebhook).toBe('function')
+      expect(typeof ext?.customMethod).toBe('function')
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('sdkExtensions array in capability bag contains the contributed extension entry', () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const exts = sdk.capabilities!.sdkExtensions
+      expect(exts).toBeDefined()
+      expect(exts.length).toBeGreaterThanOrEqual(1)
+      const entry = exts.find(e => e.id === EXT_TEST_PACKAGE)
+      expect(entry).toBeDefined()
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('extension-path method returns results from the plugin extension bag', () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const ext = sdk.getExtension<{ listWebhooks(root: string): Array<{ id: string }> }>(EXT_TEST_PACKAGE)
+      const results = ext!.listWebhooks(sdk.workspaceRoot)
+      expect(results[0].id).toBe('wh_from_ext')
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('compatibility shim listWebhooks still delegates to webhookProvider when extension is also present', () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      // Shim must work regardless of whether an sdkExtensionPlugin is also present.
+      const results = sdk.listWebhooks()
+      expect(Array.isArray(results)).toBe(true)
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('compatibility shim createWebhook still works when extension is also present', async () => {
+    const { kanbanDir, cleanup } = createExtTestWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const created = await sdk.createWebhook({ url: 'http://shim-test.example.com', events: ['task.created'] })
+      expect(created.id).toBeTruthy()
+      sdk.destroy()
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+

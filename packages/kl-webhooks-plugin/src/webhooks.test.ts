@@ -4,7 +4,7 @@ import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WebhookListenerPlugin, cliPlugin, standaloneHttpPlugin, webhookProviderPlugin, type Webhook } from './index'
+import { WebhookListenerPlugin, cliPlugin, sdkExtensionPlugin, standaloneHttpPlugin, webhookProviderPlugin, type Webhook } from './index'
 
 const CONFIG_FILE = '.kanban.json'
 
@@ -1268,5 +1268,84 @@ describe('cliPlugin — SDK auth delegation', () => {
 
     expect(runWithCliAuth).toHaveBeenCalledOnce()
     expect(mockSdk.updateWebhook).toHaveBeenCalledWith('wh_xyz', { url: 'http://new.example.com', active: false })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// sdkExtensionPlugin – SDK extension pack contract (SPE-03)
+// ---------------------------------------------------------------------------
+
+describe('sdkExtensionPlugin manifest', () => {
+  it('has id "kl-webhooks-plugin" and provides sdk.extension', () => {
+    expect(sdkExtensionPlugin.manifest.id).toBe('kl-webhooks-plugin')
+    expect(sdkExtensionPlugin.manifest.provides).toContain('sdk.extension')
+  })
+
+  it('exposes listWebhooks, createWebhook, updateWebhook, deleteWebhook in extensions', () => {
+    expect(typeof sdkExtensionPlugin.extensions.listWebhooks).toBe('function')
+    expect(typeof sdkExtensionPlugin.extensions.createWebhook).toBe('function')
+    expect(typeof sdkExtensionPlugin.extensions.updateWebhook).toBe('function')
+    expect(typeof sdkExtensionPlugin.extensions.deleteWebhook).toBe('function')
+  })
+})
+
+describe('sdkExtensionPlugin CRUD via extensions bag', () => {
+  let workspaceDir: string
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('listWebhooks returns empty array when no webhooks exist', () => {
+    expect(sdkExtensionPlugin.extensions.listWebhooks(workspaceDir)).toEqual([])
+  })
+
+  it('createWebhook adds a webhook and returns it with generated id', () => {
+    const wh = sdkExtensionPlugin.extensions.createWebhook(workspaceDir, {
+      url: 'http://ext.example.com/hook',
+      events: ['task.created'],
+    })
+    expect(wh.id).toMatch(/^wh_[0-9a-f]{16}$/)
+    expect(wh.url).toBe('http://ext.example.com/hook')
+    expect(wh.active).toBe(true)
+  })
+
+  it('listWebhooks via extensions returns same data as webhookProviderPlugin.listWebhooks', () => {
+    webhookProviderPlugin.createWebhook(workspaceDir, { url: 'http://a.com', events: ['*'] })
+    const fromExt = sdkExtensionPlugin.extensions.listWebhooks(workspaceDir)
+    const fromProvider = webhookProviderPlugin.listWebhooks(workspaceDir)
+    expect(fromExt).toEqual(fromProvider)
+  })
+
+  it('updateWebhook via extensions updates and returns the webhook', () => {
+    const wh = sdkExtensionPlugin.extensions.createWebhook(workspaceDir, {
+      url: 'http://ext.example.com',
+      events: ['*'],
+    })
+    const updated = sdkExtensionPlugin.extensions.updateWebhook(workspaceDir, wh.id, { active: false })
+    expect(updated).not.toBeNull()
+    expect(updated!.active).toBe(false)
+  })
+
+  it('deleteWebhook via extensions removes the webhook', () => {
+    const wh = sdkExtensionPlugin.extensions.createWebhook(workspaceDir, {
+      url: 'http://ext.example.com',
+      events: ['*'],
+    })
+    expect(sdkExtensionPlugin.extensions.deleteWebhook(workspaceDir, wh.id)).toBe(true)
+    expect(sdkExtensionPlugin.extensions.listWebhooks(workspaceDir)).toHaveLength(0)
+  })
+
+  it('extension methods share state with webhookProviderPlugin (same backing store)', () => {
+    const wh = webhookProviderPlugin.createWebhook(workspaceDir, { url: 'http://b.com', events: ['*'] })
+    // Delete via extension bag
+    expect(sdkExtensionPlugin.extensions.deleteWebhook(workspaceDir, wh.id)).toBe(true)
+    // Both paths should now see empty list
+    expect(webhookProviderPlugin.listWebhooks(workspaceDir)).toHaveLength(0)
+    expect(sdkExtensionPlugin.extensions.listWebhooks(workspaceDir)).toHaveLength(0)
   })
 })

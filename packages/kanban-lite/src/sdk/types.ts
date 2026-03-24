@@ -492,6 +492,14 @@ export class AuthError extends Error {
  * importing `KanbanSDK` directly so they remain decoupled from core internals.
  */
 export interface CliPluginSdk {
+  /**
+   * Returns the SDK extension bag contributed by the plugin with the given id,
+   * when the host is backed by a full `KanbanSDK` instance.
+   *
+   * CLI plugins should prefer this extension path when available and fall back
+   * to compatibility methods only when running against older or mocked SDK facades.
+   */
+  getExtension?<T extends Record<string, unknown> = Record<string, unknown>>(id: string): T | undefined
   listWebhooks(): Webhook[]
   createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
   updateWebhook(
@@ -558,6 +566,13 @@ export interface KanbanCliPlugin {
    */
   readonly command: string
   /**
+   * Optional compatibility aliases that should route to {@link command}.
+   *
+   * Useful for preserving historical shorthand command names after ownership
+   * moves fully into a plugin package.
+   */
+  readonly aliases?: readonly string[]
+  /**
    * Execute the plugin CLI command.
    *
    * @param subArgs  Positional arguments after the top-level command token.
@@ -569,4 +584,51 @@ export interface KanbanCliPlugin {
     flags: Record<string, string | boolean | string[]>,
     context: CliPluginContext,
   ): Promise<void>
+}
+
+// ---------------------------------------------------------------------------
+// SDK extension plugin contract
+// ---------------------------------------------------------------------------
+
+/**
+ * Optional SDK extension pack contributed by a plugin package.
+ *
+ * Plugins may export `sdkExtensionPlugin` to contribute named SDK methods or
+ * capabilities to the active SDK instance. Extensions are loaded alongside the
+ * plugin's capability providers and become accessible through
+ * `sdk.getExtension(id)` or the `sdk.extensions` bag (SPE-02).
+ *
+ * **Authoring rules:**
+ * - `manifest.id` should match the plugin's npm package name by convention.
+ * - `extensions` must contain plain values or async functions — no class
+ *   instances with hidden side-effecting constructors.
+ * - This export is fully optional; plugins that omit it do not appear in the
+ *   resolved `sdkExtensions` array and no existing capability exports change.
+ *
+ * @typeParam T - Shape of the named SDK extensions contributed by this plugin.
+ */
+export interface SDKExtensionPlugin<T extends Record<string, unknown> = Record<string, unknown>> {
+  /** Plugin manifest identifying this extension contribution. */
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+  /**
+   * Named SDK methods or capabilities contributed by this plugin.
+   * Accessible through `sdk.getExtension(manifest.id)` after capability resolution.
+   */
+  readonly extensions: T
+}
+
+/**
+ * Resolved entry in the SDK extensions bag populated during capability bag resolution.
+ *
+ * Each entry corresponds to one active plugin package that exported
+ * `sdkExtensionPlugin`. Consumed by `KanbanSDK.getExtension(id)` (SPE-02) and
+ * the future `sdk.extensions` named-access bag.
+ *
+ * @typeParam T - Shape of the SDK extensions contributed by the owning plugin.
+ */
+export interface SDKExtensionLoaderResult<T extends Record<string, unknown> = Record<string, unknown>> {
+  /** Plugin id matching the contributing plugin's `manifest.id`. */
+  readonly id: string
+  /** Resolved SDK methods/capabilities from the plugin. */
+  readonly extensions: T
 }

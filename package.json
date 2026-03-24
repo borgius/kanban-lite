@@ -2,7 +2,7 @@
   "name": "@kanban-lite/workspace",
   "private": true,
   "description": "Private workspace controller for the kanban-lite monorepo.",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "license": "MIT",
   "repository": {
     "type": "git",

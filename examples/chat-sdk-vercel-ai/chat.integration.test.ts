@@ -1,9 +1,12 @@
+import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../../packages/kanban-lite/src/standalone/server';
+import { POST as postActionWebhook } from './app/api/action-webhook/route';
+import { buildActionWebhookUrl } from './lib/action-webhook-auth.js';
 
 type ChatRouteModule = typeof import('./app/api/chat/route');
 
@@ -12,6 +15,17 @@ type CardSummary = {
   status: string;
   priority: string;
   content?: string;
+  comments?: Array<{ author: string; content: string }>;
+  formData?: Record<string, Record<string, unknown>>;
+  actions?: string[] | Record<string, string>;
+  forms?: Array<{ name?: string }>;
+};
+
+type ActionWebhookPayload = {
+  action: string;
+  board: string;
+  list: string;
+  card: { id: string };
 };
 
 function extractTitle(card: CardSummary): string {
@@ -54,7 +68,7 @@ async function getFreePort(): Promise<number> {
   });
 }
 
-function createTempWorkspace() {
+function createTempWorkspace(actionWebhookUrl: string) {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-chat-sdk-test-'));
   const kanbanDir = path.join(workspaceRoot, '.kanban');
   const configFile = path.join(workspaceRoot, '.kanban.json');
@@ -81,6 +95,24 @@ function createTempWorkspace() {
             ],
           },
         },
+        forms: {
+          'incident-report': {
+            schema: {
+              type: 'object',
+              title: 'Incident Report',
+              properties: {
+                severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+                owner: { type: 'string' },
+                service: { type: 'string' },
+              },
+              required: ['severity', 'owner'],
+            },
+            data: {
+              severity: 'medium',
+            },
+          },
+        },
+        actionWebhookUrl,
       },
       null,
       2,
@@ -120,6 +152,38 @@ async function fetchCards(baseUrl: string, status?: string): Promise<CardSummary
   return payload.data;
 }
 
+async function fetchCard(baseUrl: string, cardId: string): Promise<CardSummary> {
+  const response = await fetch(`${baseUrl}/api/boards/default/tasks/${encodeURIComponent(cardId)}`);
+  expect(response.ok).toBe(true);
+
+  const payload = (await response.json()) as { ok: boolean; data: CardSummary; error?: string };
+  if (!payload.ok) {
+    throw new Error(payload.error ?? 'Failed to fetch card');
+  }
+
+  return payload.data;
+}
+
+async function createCardViaApi(
+  baseUrl: string,
+  body: Record<string, unknown>,
+): Promise<CardSummary> {
+  const response = await fetch(`${baseUrl}/api/boards/default/tasks`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  expect(response.ok).toBe(true);
+
+  const payload = (await response.json()) as { ok: boolean; data: CardSummary; error?: string };
+  if (!payload.ok) {
+    throw new Error(payload.error ?? 'Failed to create seeded card');
+  }
+
+  return payload.data;
+}
+
 function findCardByTitle(cards: CardSummary[], title: string): CardSummary | null {
   return cards.find((card) => extractTitle(card) === title) ?? null;
 }
@@ -130,10 +194,55 @@ describeWithOpenAI('chat-sdk-vercel-ai integration', () => {
   let baseUrl = '';
   let postChat: ChatRouteModule['POST'];
   let server: ReturnType<typeof startServer> | null = null;
+  let actionServer: http.Server | null = null;
+  const actionEvents: ActionWebhookPayload[] = [];
   let cleanupWorkspace: (() => void) | null = null;
 
   beforeAll(async () => {
-    const workspace = createTempWorkspace();
+    const actionPort = await getFreePort();
+    const actionWebhookSecret = 'integration-action-secret-0123456789';
+    const actionWebhookUrl = buildActionWebhookUrl(`http://127.0.0.1:${actionPort}/actions`, actionWebhookSecret);
+    process.env.ACTION_WEBHOOK_SECRET = actionWebhookSecret;
+
+    actionServer = http.createServer(async (req, res) => {
+      const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+
+      if (req.method !== 'POST' || requestUrl.pathname !== '/actions') {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+
+      const actionPayload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as ActionWebhookPayload;
+      actionEvents.push(actionPayload);
+
+      const routeResponse = await postActionWebhook(
+        new Request(`http://localhost/api/action-webhook${requestUrl.search}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(actionPayload),
+        }),
+      );
+
+      const responseBody = await routeResponse.text();
+
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(responseBody);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      actionServer!.listen(actionPort, '127.0.0.1', (err?: Error) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    const workspace = createTempWorkspace(actionWebhookUrl);
     cleanupWorkspace = workspace.cleanup;
 
     const port = await getFreePort();
@@ -158,7 +267,16 @@ describeWithOpenAI('chat-sdk-vercel-ai integration', () => {
         });
       });
     }
+    if (actionServer) {
+      await new Promise<void>((resolve, reject) => {
+        actionServer!.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
     cleanupWorkspace?.();
+    delete process.env.ACTION_WEBHOOK_SECRET;
   });
 
   async function sendPrompt(prompt: string): Promise<string> {
@@ -225,6 +343,150 @@ describeWithOpenAI('chat-sdk-vercel-ai integration', () => {
     }, 45000, 300);
 
     expect(moved.status).toBe('done');
+    expect(transcript.toLowerCase()).not.toContain('ok: false');
+  });
+
+  it('adds comments and submits attached forms through the chat route', async () => {
+    const seeded = await createCardViaApi(baseUrl, {
+      content: '# Billing Incident\n\nCapture the incident owner and severity.',
+      priority: 'high',
+      forms: [{ name: 'incident-report' }],
+      formData: {
+        'incident-report': {
+          service: 'billing-api',
+        },
+      },
+    });
+
+    const commentTranscript = await sendPrompt(
+      `Add a comment to the kanban card with id "${seeded.id}" from "incident-commander" that says "Owner is Alice and severity is critical." Use the comment tool before replying.`,
+    );
+
+    const cardWithComment = await waitFor(async () => {
+      const card = await fetchCard(baseUrl, seeded.id);
+      return card.comments?.some(
+        (comment) =>
+          comment.author === 'incident-commander'
+          && comment.content.includes('Owner is Alice and severity is critical.'),
+      )
+        ? card
+        : null;
+    }, 45000, 300).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}\n\nComment transcript:\n${commentTranscript}`);
+    });
+
+    expect(cardWithComment.comments?.length ?? 0).toBeGreaterThan(0);
+
+    const formTranscript = await sendPrompt(
+      `Submit the incident-report form on the kanban card with id "${seeded.id}" using severity "critical", owner "Alice", and service "billing-api". Use the form tool before replying.`,
+    );
+
+    const submitted = await waitFor(async () => {
+      const card = await fetchCard(baseUrl, seeded.id);
+      const formData = card.formData?.['incident-report'];
+      return formData?.severity === 'critical' && formData?.owner === 'Alice' ? card : null;
+    }, 45000, 300).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}\n\nForm transcript:\n${formTranscript}`);
+    });
+
+    expect(submitted.formData?.['incident-report']).toMatchObject({
+      severity: 'critical',
+      owner: 'Alice',
+      service: 'billing-api',
+    });
+    expect(commentTranscript.toLowerCase()).not.toContain('ok: false');
+    expect(formTranscript.toLowerCase()).not.toContain('ok: false');
+  });
+
+  it('triggers card actions through the chat route', async () => {
+    const seeded = await createCardViaApi(baseUrl, {
+      content: '# Release Deployment\n\nTrigger the deploy action when the release-checklist is approved.',
+      priority: 'medium',
+      status: 'review',
+      actions: {
+        deploy: 'Deploy Release',
+      },
+      forms: [{ name: 'release-checklist' }],
+      formData: {
+        'release-checklist': {
+          environment: 'production',
+          approved: true,
+          owner: 'jamie',
+        },
+      },
+    });
+
+    const existingEvents = actionEvents.length;
+    const transcript = await sendPrompt(
+      `Trigger the deploy action on the kanban card with id "${seeded.id}". Use the action tool before replying.`,
+    );
+
+    const actionEvent = await waitFor(async () => actionEvents[existingEvents] ?? null, 45000, 300).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}\n\nAction transcript:\n${transcript}`);
+    });
+
+    expect(actionEvent.action).toBe('deploy');
+    expect(actionEvent.card.id).toBe(seeded.id);
+    const updated = await waitFor(async () => {
+      const card = await fetchCard(baseUrl, seeded.id);
+      return card.comments?.some(
+        (comment) => comment.author === 'IncidentMind automation' && comment.content.includes('`deploy`'),
+      )
+        ? card
+        : null;
+    }, 45000, 300);
+
+    expect(updated.status).toBe('done');
+    expect(transcript.toLowerCase()).not.toContain('ok: false');
+  });
+
+  it('creates deterministic incident follow-up state when an incident escalation action is triggered through chat', async () => {
+    const seeded = await createCardViaApi(baseUrl, {
+      content: '# Investigate billing alert spike\n\nCapture the incident details and escalate if customer impact grows.',
+      priority: 'high',
+      status: 'in-progress',
+      assignee: 'alex',
+      labels: ['incident', 'billing'],
+      actions: {
+        escalate: 'Escalate Incident',
+      },
+      forms: [{ name: 'incident-report' }],
+      formData: {
+        'incident-report': {
+          severity: 'critical',
+          owner: 'alex',
+          service: 'billing-api',
+        },
+      },
+    });
+
+    const transcript = await sendPrompt(
+      `Trigger the escalate action on the kanban card with id "${seeded.id}". Use the action tool before replying and summarize any board-side follow-up that appears.`,
+    );
+
+    const updated = await waitFor(async () => {
+      const card = await fetchCard(baseUrl, seeded.id);
+      return card.comments?.some(
+        (comment) => comment.author === 'IncidentMind automation' && comment.content.includes('`escalate`'),
+      )
+        ? card
+        : null;
+    }, 45000, 300).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}\n\nEscalation transcript:\n${transcript}`);
+    });
+
+    const followUp = await waitFor(async () => {
+      const cards = await fetchCards(baseUrl);
+      return findCardByTitle(cards, 'Escalation follow-up: Investigate billing alert spike');
+    }, 45000, 300);
+
+    expect(updated.status).toBe('review');
+    expect(followUp).not.toBeNull();
+    expect(followUp?.status).toBe('backlog');
     expect(transcript.toLowerCase()).not.toContain('ok: false');
   });
 });

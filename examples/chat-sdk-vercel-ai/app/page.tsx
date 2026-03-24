@@ -9,13 +9,17 @@
 
 import { useChat } from 'ai/react';
 import type { ToolInvocation } from 'ai';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const DEFAULT_KANBAN_URL = process.env.NEXT_PUBLIC_KANBAN_WEB_URL ?? 'http://127.0.0.1:3000';
+const DEFAULT_CHAT_URL = process.env.NEXT_PUBLIC_CHAT_URL ?? '';
 
 const SUGGESTIONS = [
-  'Create a card: Fix the signup email flow, high priority',
-  'List all backlog cards',
-  'What cards are in progress?',
-  'Move card mock-1 to done',
+  'List the CorePilot incident board and tell me which cards already expose actions or attached forms in kanban-lite',
+  'Add a comment to "Investigate billing alert spike" saying "Owner is Alice and this looks critical."',
+  'Submit the incident-report form on "Investigate billing alert spike" with severity critical, owner Alice, and service billing-api',
+  'Trigger the notify-slack action on "Investigate billing alert spike"',
+  'Trigger the deploy action on "Deploy API v2.4.1" after confirming it is an explicit operator-triggered automation',
 ];
 
 export default function ChatPage() {
@@ -24,6 +28,9 @@ export default function ChatPage() {
   });
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [chatUrl] = useState(
+    () => DEFAULT_CHAT_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:3001'),
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -33,10 +40,30 @@ export default function ChatPage() {
     <div style={s.page}>
       {/* ── Header ── */}
       <header style={s.header}>
-        <h1 style={s.h1}>Kanban Chat Triage</h1>
+        <h1 style={s.h1}>IncidentMind for CorePilot</h1>
         <p style={s.sub}>
-          Natural-language card management &bull; kanban-lite + Vercel AI
+          Fictional incident-operations layer built around free kanban-lite &bull; operator-guided card management with comments, forms, statuses, and action webhooks
         </p>
+        <div style={s.stackCard}>
+          <div style={s.stackTitle}>IncidentMind live demo stack</div>
+          <p style={s.stackText}>
+            <strong>kanban-lite board:</strong>{' '}
+            <a href={DEFAULT_KANBAN_URL} target="_blank" rel="noreferrer" style={s.link}>
+              {DEFAULT_KANBAN_URL}
+            </a>
+            <br />
+            <strong>IncidentMind chat:</strong>{' '}
+            <a href={chatUrl} target="_blank" rel="noreferrer" style={s.link}>
+              {chatUrl || 'http://127.0.0.1:3001'}
+            </a>
+          </p>
+          <p style={s.stackHint}>
+            kanban-lite stays central as the system of record for CorePilot board state. The seeded demo starts with the stable cards &ldquo;Investigate billing alert spike&rdquo; and &ldquo;Deploy API v2.4.1&rdquo;, plus the existing form ids `incident-report` and `release-checklist` and action keys like `notify-slack`, `escalate`, `deploy`, and `rollback`.
+          </p>
+          <p style={s.stackHint}>
+            Action requests in this demo are always explicit operator-triggered automations through kanban-lite action webhooks, not autonomous incident resolution. Fancy enough for a demo, honest enough for daylight.
+          </p>
+        </div>
       </header>
 
       {/* ── Messages ── */}
@@ -92,7 +119,7 @@ export default function ChatPage() {
         <input
           value={input}
           onChange={handleInputChange}
-          placeholder="Create a card, list cards, move a card…"
+          placeholder="Ask IncidentMind to inspect a card, add a comment, submit a form, move a status, or trigger an action…"
           disabled={isLoading}
           style={s.input}
           autoComplete="off"
@@ -142,6 +169,24 @@ const s = {
   },
   h1: { fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 },
   sub: { fontSize: '0.78rem', color: '#64748b', margin: '0.2rem 0 0' },
+  stackCard: {
+    marginTop: '0.9rem',
+    padding: '0.85rem 1rem',
+    borderRadius: '10px',
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+  },
+  stackTitle: {
+    fontSize: '0.76rem',
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: '#1d4ed8',
+    marginBottom: '0.35rem',
+  },
+  stackText: { margin: 0, fontSize: '0.82rem', lineHeight: 1.6, color: '#1e3a8a' },
+  stackHint: { margin: '0.55rem 0 0', fontSize: '0.76rem', lineHeight: 1.5, color: '#334155' },
+  link: { color: '#1d4ed8', fontWeight: 600 },
 
   messages: {
     flex: 1,
@@ -166,6 +211,7 @@ const s = {
     fontSize: '0.82rem',
     textAlign: 'left' as const,
     color: '#374151',
+    lineHeight: 1.45,
   },
 
   bubble: {

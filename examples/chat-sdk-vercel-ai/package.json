@@ -4,9 +4,13 @@
   "private": true,
   "description": "Kanban-lite chat triage demo — Vercel AI SDK + Next.js",
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "node ./scripts/run-local-stack.mjs dev",
+    "dev:chat": "next dev --port 3001",
+    "dev:kanban": "tsx ../../packages/kanban-lite/src/standalone/index.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
     "build": "next build",
-    "start": "next start --port 3001",
+    "start": "node ./scripts/run-local-stack.mjs start",
+    "start:chat": "next start --port 3001",
+    "start:kanban": "tsx ../../packages/kanban-lite/src/standalone/index.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
     "test": "npm run test:integration",
     "test:integration": "vitest run --config vitest.config.ts"
   },
@@ -22,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.0.18"
   }

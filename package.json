@@ -58,8 +58,8 @@
     "release:check-auth": "node scripts/release.mjs check-auth"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/typography": "^0.5.19",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.0",

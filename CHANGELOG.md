@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Workspace Slidev demo presentation agent**: Added `.github/agents/slidev-demo-presentation.agent.md`, a custom VS Code chat agent for creating polished, truthful Slidev demo decks from repo sources such as the IncidentMind / CorePilot live demo guide, with strong presenter notes, story-arc guidance, and Slidev-safe layout/validation rules.
+- **IncidentMind Slidev demo deck**: Added `examples/chat-sdk-vercel-ai/INCIDENTMIND-COREPILOT-LIVE-DEMO.slides.md`, a presenter-ready Slidev deck that turns the CorePilot live demo guide into a polished, proof-focused presentation with explicit truth boundaries and full spoken speaker notes.
 - **Webhook extension model parity**: `kl-webhooks-plugin` is now documented as the owner of webhook CRUD/runtime delivery plus standalone, CLI, and MCP surfaces exposed through plugin seams. Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`, while `KanbanSDK` keeps direct webhook methods as compatibility shims and the public MCP tool names remain unchanged.
 - **Self-hosted Chat SDK example stack**: `examples/chat-sdk-vercel-ai` now launches its own local Kanban Lite instance with a dedicated `demo-workspace/.kanban.json`, prints both Kanban/chat URLs from `npm run dev` / `npm run start`, seeds demo cards with attached comments/forms/actions, and exposes a local action-webhook endpoint so card actions work during local development.
 
 ### Changed
 - **IncidentMind demo framing for CorePilot**: `examples/chat-sdk-vercel-ai` now presents IncidentMind as a fictional incident-operations layer built around free kanban-lite, keeps kanban-lite visibly central as the system of record, and updates chat/UI/README prompt examples to target the existing seeded cards plus stable `incident-report`, `release-checklist`, `notify-slack`, and `deploy` flows without overstating automation.
+
+### Fixed
+- **IncidentMind action follow-up behavior**: `examples/chat-sdk-vercel-ai` now makes `/api/action-webhook` persist deterministic board-side effects for supported actions — including `IncidentMind automation` comments, an escalation follow-up card for incident escalations, and truthful status moves for release/rollback flows — while the chat action tool returns the updated card state in the same turn.
+- **Chat SDK example deploy approval truthfulness**: The `examples/chat-sdk-vercel-ai` action webhook now requires recorded release approval before a `deploy` action moves a card to `done`, the example tests cover both blocked and approved flows, and the README prompt guidance matches the shipped behavior.
+- **Chat SDK example action webhook secret hardening**: `examples/chat-sdk-vercel-ai` no longer ships a predictable default action-webhook token. The launcher now generates a fresh per-run secret when `ACTION_WEBHOOK_SECRET` is unset, the Next.js route refuses missing or too-short secrets instead of falling back insecurely, the demo workspace config only carries a placeholder token in git, and the example tests/docs cover the safer local-only flow.
+- **Sanitized example OpenAI env placeholder**: Replaced the committed `examples/chat-sdk-vercel-ai/.env` OpenAI credential with the safe `YOUR_OPENAI_API_KEY_HERE` placeholder while keeping the example's local env workflow intact.
 
 ### Changed
 - **Chat SDK example agent workflows**: The Chat SDK / Vercel AI example now actively supports freeform card-specific comment, form-submission, and action-trigger requests in addition to create/list/move card operations, and the live integration suite now verifies those richer workflows.

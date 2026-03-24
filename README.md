@@ -25,6 +25,10 @@ npx skills add https://github.com/borgius/kanban-lite --skill kanban-storage-plu
 
 See [`.agents/skills/kanban-storage-plugin-author/SKILL.md`](.agents/skills/kanban-storage-plugin-author/SKILL.md) for the workflow, bundled references, and package templates.
 
+This workspace also includes a custom VS Code chat agent for building polished Slidev demo decks from repo materials such as the Chat SDK / IncidentMind demo guide:
+
+- [`.github/agents/slidev-demo-presentation.agent.md`](.github/agents/slidev-demo-presentation.agent.md) — creates or updates beautiful, truthful Slidev demo presentations with strong speaker notes, proof-focused story flow, and Slidev-safe layout guidance.
+
 ## Quick Start
 
 ```bash

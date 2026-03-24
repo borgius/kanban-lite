@@ -18,5 +18,6 @@ releases/
 .agents/skills/writing-linkedin-posts
 docs/press
 docs/plan
+examples/chat-sdk-vercel-ai-aspida
 tmp
 

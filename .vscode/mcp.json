@@ -1,0 +1,20 @@
+{
+  "servers": {
+    "playwriter": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "playwriter@latest"],
+      "env": {
+        "PLAYWRITER_AUTO_ENABLE": "1"
+      }
+    },
+    "kanban": {
+      "type": "stdio",
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "env": {
+        "KANBAN_DIR": ".kanban"
+      }
+    }
+  }
+}

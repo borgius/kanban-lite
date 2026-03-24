@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examples &amp; Recipes — Kanban Lite</title>
+    <meta name="description" content="Runnable patterns and recipes for common Kanban Lite workflows — personal task board, team sprint, AI agents, CI/CD, and more.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent" aria-current="page">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="examples-and-recipes">Examples &amp; Recipes</h1>
+<p class="docs-intro">
+  Concrete workflows to copy, adapt, and ship. Each example is self-contained and builds on standard CLI, API, or SDK operations.
+</p>
+
+<h2 id="workflow-recipes">Workflow recipes</h2>
+<div class="examples-grid">
+  <div class="example-card" id="personal">
+    <h3 id="personal-dev-workflow">Personal dev workflow</h3>
+    <p>A board that lives inside your project repo. Add cards from the terminal; review the board in VS Code without leaving your editor.</p>
+    <pre><code>kl init
+kl add --title "Refactor auth module" --priority high
+kl add --title "Write tests" --label testing
+kl serve   # open at localhost:3000</code></pre>
+  </div>
+
+  <div class="example-card" id="team-sprint">
+    <h3 id="team-sprint-board">Team sprint board</h3>
+    <p>Shared board committed to the monorepo. Every card change is a commit. Sprint reviews happen in pull requests.</p>
+    <pre><code>kl boards add --id sprint-q2 --name "Q2 Sprint"
+kl add --title "User profile page" \
+  --board sprint-q2 \
+  --assignee alice --priority high \
+  --meta sprint=Q2 --meta points=5</code></pre>
+  </div>
+
+  <div class="example-card" id="bug-tracker">
+    <h3 id="bug-tracker-with-slack-webhook">Bug tracker with Slack webhook</h3>
+    <p>Dedicated board for bug reports with triage labels and a Slack webhook on card creation.</p>
+    <pre><code>kl boards add --id bugs --name "Bug Tracker"
+kl webhooks add \
+  --url https://hooks.slack.com/services/... \
+  --events task.created,task.moved
+kl add --title "Login fails on Safari" \
+  --board bugs --priority critical \
+  --label "bug,auth"</code></pre>
+  </div>
+
+  <div class="example-card" id="mcp-ai-queue">
+    <h3 id="ai-agent-backlog-mcp">AI agent backlog (MCP)</h3>
+    <p>Let Claude or Codex read your backlog, pick the next task, and move cards through the workflow.</p>
+    <pre><code>kl mcp
+
+# Add to Claude MCP config:
+# { "command": "kl", "args": ["mcp"] }
+
+# Claude can now list, create,
+# move, and log cards directly.</code></pre>
+  </div>
+
+  <div class="example-card" id="ci-tracking">
+    <h3 id="ci-cd-pipeline-tracking">CI/CD pipeline tracking</h3>
+    <p>Attach named actions to deployment cards. CI fires the action via the REST API and logs the build result.</p>
+    <pre><code>kl add --title "Release v2.1.0" \
+  --actions "deploy,rollback,notify"
+
+curl -X POST http://localhost:3000/api/\
+boards/default/cards/release-v2-1-0/\
+actions/deploy</code></pre>
+  </div>
+
+  <div class="example-card" id="sqlite">
+    <h3 id="sqlite-for-concurrent-writes">SQLite for concurrent writes</h3>
+    <p>Swap markdown file storage for SQLite when multiple CI jobs or team members write at the same time.</p>
+    <pre><code>kl storage migrate-to-sqlite
+kl storage status   # confirm provider
+
+# Migrate back any time:
+kl storage migrate-to-markdown</code></pre>
+  </div>
+</div>
+
+<h2 style="margin-top: 3rem;" id="technical-reference-examples">Technical reference examples</h2>
+<p>The patterns below show the same operations across CLI, REST API, and SDK interfaces.</p>
+
+
+<section class="example-section">
+  <h2 id="create-and-triage-cards">Create and triage cards</h2>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>CLI</strong>
+      <pre><code># Create a high-priority bug
+kl add --title "Login timeout on mobile" --priority high --label "bug,mobile"
+
+# Assign and move to In Progress
+kl edit login-timeout-on-mobile --assignee alice
+kl move login-timeout-on-mobile in-progress
+
+# List all high-priority open cards
+kl list --priority high --status todo</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>REST API</strong>
+      <pre><code>curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# Login timeout on mobile", "priority": "high", "labels": ["bug","mobile"]}'</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>SDK</strong>
+      <pre><code>const card = await sdk.createCard({
+  title: 'Login timeout on mobile',
+  priority: 'high',
+  labels: ['bug', 'mobile'],
+});
+await sdk.moveCard(card.id, 'in-progress');</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="example-section">
+  <h2 id="search-with-filters">Search with filters</h2>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>CLI — fuzzy + metadata tokens</strong>
+      <pre><code># Exact search for "release" in the backend team
+kl list --search "release meta.team: backend"
+
+# Fuzzy search tolerates typos
+kl list --search "meta.team: backnd api plumbng" --fuzzy
+
+# Combine free text with structured metadata filters
+kl list --search "release" --fuzzy --meta sprint=Q1 --meta links.jira=PROJ-123</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>REST API</strong>
+      <pre><code>curl "http://localhost:3000/api/tasks?q=release&fuzzy=true&meta.team=backend"</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="example-section">
+  <h2 id="register-a-webhook">Register a webhook</h2>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>CLI</strong>
+      <pre><code>kl webhooks add \
+  --url https://example.com/hook \
+  --events task.created,task.moved \
+  --secret mysecret</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>REST API</strong>
+      <pre><code>curl -X POST http://localhost:3000/api/webhooks \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/hook", "events": ["task.created","task.moved"], "secret": "mysecret"}'</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>SDK</strong>
+      <pre><code>await sdk.createWebhook({
+  url: 'https://example.com/hook',
+  events: ['task.created', 'task.moved'],
+  secret: 'mysecret',
+});</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="example-section">
+  <h2 id="attach-and-submit-a-form">Attach and submit a form</h2>
+  <p>Define a reusable incident-report form in <code>.kanban.json</code>, attach it to a card, then submit data through any interface.</p>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>Define in .kanban.json</strong>
+      <pre><code>{
+  "forms": {
+    "incident-report": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["low","medium","high","critical"] },
+          "owner": { "type": "string" }
+        },
+        "required": ["severity","owner"]
+      }
+    }
+  }
+}</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>Attach and submit via CLI</strong>
+      <pre><code>kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
+kl form submit investigate-outage incident-report \
+  --data '{"severity":"high","owner":"alice"}'</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>Submit via REST API</strong>
+      <pre><code>curl -X POST http://localhost:3000/api/tasks/investigate-outage/forms/incident-report/submit \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"severity": "high", "owner": "alice"}}'</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="example-section">
+  <h2 id="multi-board-workflow">Multi-board workflow</h2>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>CLI</strong>
+      <pre><code># Create separate boards
+kl boards add --id bugs --name "Bug Tracker"
+kl boards add --id roadmap --name "Road Map"
+
+# Work with a specific board
+kl add --title "Fix login timeout" --board bugs
+kl list --board roadmap --status todo
+
+# Transfer a card between boards
+kl transfer fix-login-timeout --from bugs --to roadmap</code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="example-section">
+  <h2 id="ai-agent-integration-mcp">AI agent integration (MCP)</h2>
+  <div class="example-tabs">
+    <div class="example-tab">
+      <strong>Claude Code setup</strong>
+      <pre><code>{
+  "mcpServers": {
+    "kanban": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["kanban-lite", "mcp"],
+      "env": { "KANBAN_DIR": "/path/to/.kanban" }
+    }
+  }
+}</code></pre>
+    </div>
+    <div class="example-tab">
+      <strong>Example agent instructions</strong>
+      <pre><code># Claude can now run things like:
+list_cards status=todo priority=high
+create_card title="Research auth options" status=backlog
+move_card card_id=research-auth-options status=in-progress</code></pre>
+    </div>
+  </div>
+</section>
+
+<h2 style="margin-top: 3rem;" id="agent-orchestration-examples">Agent orchestration examples</h2>
+<p>Step-by-step build guides for running kanban-lite inside popular AI agent frameworks. Each example is a self-contained runnable app with a matching guide under <code>/docs/examples/</code> and source under <code>examples/</code>.</p>
+<div class="examples-grid">
+  <div class="example-card" id="chat-sdk">
+    <h3 id="chat-sdk-vercel-ai"><a href="/docs/examples/chat-sdk/">Chat SDK / Vercel AI</a></h3>
+    <p>A kanban-lite-backed triage assistant built with the Vercel AI ecosystem — streaming chat interface, board-native task creation, and a Next.js app shell.</p>
+    <p><code>examples/chat-sdk-vercel-ai/</code></p>
+    <a href="/docs/examples/chat-sdk/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+  <div class="example-card" id="langgraph-python">
+    <h3 id="langgraph-python-2"><a href="/docs/examples/langgraph-python/">LangGraph Python</a></h3>
+    <p>Durable backlog orchestration with human-approval interrupts. Each graph step maps to a kanban-lite card progressing through an approval checkpoint.</p>
+    <p><code>examples/langgraph-python/</code></p>
+    <a href="/docs/examples/langgraph-python/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+  <div class="example-card" id="mastra">
+    <h3 id="mastra-agent-ops"><a href="/docs/examples/mastra/">Mastra Agent Ops</a></h3>
+    <p>Supervisor-style project-ops orchestration: a Mastra agent network with approval-aware steps that read and write kanban-lite tasks.</p>
+    <p><code>examples/mastra-agent-ops/</code></p>
+    <a href="/docs/examples/mastra/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+</div>
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/cli/">CLI Reference</a> &middot;
+  <a href="/docs/api/">REST API</a> &middot;
+  <a href="/docs/sdk/">SDK</a> &middot;
+  <a href="/docs/mcp/">MCP Server</a> &middot;
+  <a href="/docs/forms/">Forms</a> &middot;
+  <a href="/docs/webhooks/">Webhooks</a>
+</div>
+<p style="margin-top: 1.5rem;"><a href="/docs/faq/" class="btn btn--primary">Read the FAQ &rarr;</a></p>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server — Kanban Lite</title>
+    <meta name="description" content="Model Context Protocol server tools for AI agents — Claude, Codex, and any MCP-compatible client.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link" aria-current="page">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="mcp-server">MCP Server</h1>
+  <p>Kanban Lite ships a first-class <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer">Model Context Protocol</a> server so AI agents can read and mutate your boards using natural language. Works with Claude Code, Cursor, OpenCode, and any MCP-compatible client.</p>
+  <ul class="capability-list">
+    <li>40+ tools covering boards, cards, columns, comments, logs, attachments, webhooks, and storage</li>
+    <li>Consistent search semantics shared with the CLI and REST API (<code>searchQuery</code>, <code>fuzzy</code>, <code>metaFilter</code>)</li>
+    <li>Stdio transport — start with <code>kl mcp</code> or via <code>npx kanban-lite mcp</code></li>
+    <li>All mutations go through the same SDK paths as the UI and CLI</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Claude Code setup (<code>.claude/settings.json</code>)</strong>
+    <pre><code>{
+  "mcpServers": {
+    "kanban": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["kanban-lite", "mcp"],
+      "env": { "KANBAN_DIR": "/path/to/your/project/.kanban" }
+    }
+  }
+}</code></pre>
+  </div>
+</div>
+
+<h2 id="mcp-server-2">MCP Server</h2>
+<p>Expose your kanban board to AI agents (Claude, Cursor, etc.) via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a>.</p>
+<h3 id="setup-with-claude-code">Setup with Claude Code</h3>
+<p>Add to your <code>.claude/settings.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;kanban&quot;: {
+      &quot;type&quot;: &quot;stdio&quot;,
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [&quot;kanban-lite&quot;, &quot;mcp&quot;],
+      &quot;env&quot;: {
+        &quot;KANBAN_DIR&quot;: &quot;/path/to/your/project/.kanban&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p>Or run directly:</p>
+<pre><code class="language-bash">kl mcp                          # Auto-detect directory
+kl mcp --dir .kanban            # Explicit directory
+kanban-mcp --dir .kanban        # Via dedicated binary
+</code></pre>
+<h3 id="available-tools">Available Tools</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_boards</code></td>
+<td>List all boards in the workspace</td>
+</tr>
+<tr>
+<td><code>create_board</code></td>
+<td>Create a new board with optional custom columns</td>
+</tr>
+<tr>
+<td><code>get_board</code></td>
+<td>Get board configuration and details</td>
+</tr>
+<tr>
+<td><code>delete_board</code></td>
+<td>Delete an empty board</td>
+</tr>
+<tr>
+<td><code>list_board_actions</code></td>
+<td>List all named actions defined on a board</td>
+</tr>
+<tr>
+<td><code>add_board_action</code></td>
+<td>Add or update a named board action</td>
+</tr>
+<tr>
+<td><code>remove_board_action</code></td>
+<td>Remove a named board action</td>
+</tr>
+<tr>
+<td><code>trigger_board_action</code></td>
+<td>Trigger a board action webhook event</td>
+</tr>
+<tr>
+<td><code>transfer_card</code></td>
+<td>Move a card from one board to another</td>
+</tr>
+<tr>
+<td><code>list_cards</code></td>
+<td>List/filter cards by status, priority, assignee, label, <code>searchQuery</code>, <code>fuzzy</code>, and <code>metaFilter</code></td>
+</tr>
+<tr>
+<td><code>get_card</code></td>
+<td>Get full details of a card (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>get_active_card</code></td>
+<td>Get the currently active/open card, or <code>null</code> if none is active</td>
+</tr>
+<tr>
+<td><code>create_card</code></td>
+<td>Create a new card with title, body, status, priority, metadata, forms, and formData</td>
+</tr>
+<tr>
+<td><code>update_card</code></td>
+<td>Update fields of an existing card, including forms and formData</td>
+</tr>
+<tr>
+<td><code>submit_card_form</code></td>
+<td>Validate and submit a card form payload through the shared SDK workflow</td>
+</tr>
+<tr>
+<td><code>move_card</code></td>
+<td>Move a card to a different status column</td>
+</tr>
+<tr>
+<td><code>delete_card</code></td>
+<td>Permanently delete a card</td>
+</tr>
+<tr>
+<td><code>trigger_action</code></td>
+<td>Trigger a named action on a card, calling the configured action webhook</td>
+</tr>
+<tr>
+<td><code>list_attachments</code></td>
+<td>List attachments on a card</td>
+</tr>
+<tr>
+<td><code>add_attachment</code></td>
+<td>Attach a file to a card (copies to card directory)</td>
+</tr>
+<tr>
+<td><code>remove_attachment</code></td>
+<td>Remove an attachment reference from a card</td>
+</tr>
+<tr>
+<td><code>list_comments</code></td>
+<td>List comments on a card</td>
+</tr>
+<tr>
+<td><code>add_comment</code></td>
+<td>Add a comment to a card</td>
+</tr>
+<tr>
+<td><code>update_comment</code></td>
+<td>Edit a comment's content</td>
+</tr>
+<tr>
+<td><code>delete_comment</code></td>
+<td>Remove a comment from a card</td>
+</tr>
+<tr>
+<td><code>list_logs</code></td>
+<td>List log entries on a card</td>
+</tr>
+<tr>
+<td><code>add_log</code></td>
+<td>Add a log entry to a card</td>
+</tr>
+<tr>
+<td><code>clear_logs</code></td>
+<td>Clear all log entries from a card</td>
+</tr>
+<tr>
+<td><code>list_board_logs</code></td>
+<td>List board-level log entries</td>
+</tr>
+<tr>
+<td><code>add_board_log</code></td>
+<td>Add a board-level log entry</td>
+</tr>
+<tr>
+<td><code>clear_board_logs</code></td>
+<td>Clear all board-level log entries</td>
+</tr>
+<tr>
+<td><code>list_columns</code></td>
+<td>List all board columns</td>
+</tr>
+<tr>
+<td><code>add_column</code></td>
+<td>Add a new column to the board</td>
+</tr>
+<tr>
+<td><code>update_column</code></td>
+<td>Update a column's name or color</td>
+</tr>
+<tr>
+<td><code>remove_column</code></td>
+<td>Remove a column (must be empty)</td>
+</tr>
+<tr>
+<td><code>get_settings</code></td>
+<td>Get board display settings</td>
+</tr>
+<tr>
+<td><code>update_settings</code></td>
+<td>Update board display settings</td>
+</tr>
+<tr>
+<td><code>list_webhooks</code></td>
+<td>List registered webhooks</td>
+</tr>
+<tr>
+<td><code>add_webhook</code></td>
+<td>Register a new webhook</td>
+</tr>
+<tr>
+<td><code>update_webhook</code></td>
+<td>Update a webhook (url, events, secret, active)</td>
+</tr>
+<tr>
+<td><code>remove_webhook</code></td>
+<td>Remove a webhook</td>
+</tr>
+<tr>
+<td><code>get_workspace_info</code></td>
+<td>Get workspace root path, kanban directory, and active storage provider metadata</td>
+</tr>
+</tbody>
+</table>
+<p>For agent-driven search, pass <code>searchQuery</code> for free text (including inline tokens like <code>meta.team: backend</code>), set <code>fuzzy: true</code> to widen matching across text and metadata values, or use <code>metaFilter</code> when you want structured dot-notation field filters.
+| <code>get_storage_status</code> | Get current card/attachment storage provider status |
+| <code>migrate_to_sqlite</code> | Migrate all card data from markdown to SQLite |
+| <code>migrate_to_markdown</code> | Migrate all card data from SQLite back to markdown files |</p>
+<p>All card, column, comment, and attachment tools accept an optional <code>boardId</code> parameter to target a specific board.</p>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/sdk/">SDK</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

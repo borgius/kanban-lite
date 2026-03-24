@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Reference — Kanban Lite</title>
+    <meta name="description" content="Command-line interface reference for Kanban Lite — manage boards, cards, columns, and more.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link" aria-current="page">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="cli-reference">CLI Reference</h1>
+  <p>The <code>kl</code> (or <code>kanban-lite</code>) CLI gives you full control of every board resource from the terminal. All mutations fire the same webhooks as the UI and REST API, making the CLI a first-class citizen in your automation pipelines.</p>
+  <ul class="capability-list">
+    <li>Create, update, move, and delete cards with <code>kl add</code> / <code>kl edit</code> / <code>kl move</code></li>
+    <li>Fuzzy and metadata-scoped search: <code>kl list --search "meta.team: backend" --fuzzy</code></li>
+    <li>Manage columns, webhooks, settings, and storage migrations</li>
+    <li><code>--json</code> flag for machine-readable output in scripts</li>
+    <li>Start the web server or MCP server with <code>kl serve</code> / <code>kl mcp</code></li>
+  </ul>
+  <div class="usage-example">
+    <strong>Common commands</strong>
+    <pre><code># Install
+npm install -g kanban-lite
+
+# Create and work with cards
+kl add --title "Implement search" --priority high --label frontend
+kl list --status todo
+kl move implement-search in-progress
+kl edit implement-search --assignee alice
+
+# Start the board UI
+kl serve</code></pre>
+  </div>
+</div>
+
+<h2 id="cli">CLI</h2>
+<p>Manage your kanban board from the terminal using <code>kanban-lite</code> or the shorthand <code>kl</code>:</p>
+<pre><code class="language-bash"># List all cards
+kl list
+
+# List with filters
+kl list --status todo --priority high
+
+# Exact and fuzzy search
+kl list --search &quot;release meta.team: backend&quot;
+kl list --search &quot;meta.team: backnd api plumbng&quot; --fuzzy
+
+# Combine fuzzy search with structured metadata filters
+kl list --search &quot;release&quot; --fuzzy --meta sprint=Q1 --meta links.jira=PROJ-123
+
+# Create a card
+kl add --title &quot;Implement search&quot; --priority high --label &quot;frontend,search&quot;
+
+# Create a card with actions
+kl add --title &quot;Deploy service&quot; --actions &quot;retry,rollback,notify&quot;
+
+# Create a card with attached forms
+kl add --title &quot;Investigate outage&quot; --forms '[{&quot;name&quot;:&quot;incident-report&quot;}]'
+
+# Update form attachments or persisted per-form data
+kl edit investigate-outage --forms @forms.json --form-data @form-data.json
+
+# Show card details
+kl show implement-search
+
+# Show the currently active/open card
+kl active
+
+# Move to a different column
+kl move implement-search in-progress
+
+# Update fields
+kl edit implement-search --assignee alice --due 2026-03-01
+
+# Add actions to an existing card
+kl edit deploy-service --actions &quot;retry,rollback,notify&quot;
+
+# Trigger an action
+kl action trigger deploy-service retry
+
+# Submit a card form payload
+kl form submit investigate-outage incident-report --data '{&quot;severity&quot;:&quot;high&quot;,&quot;owner&quot;:&quot;alice&quot;}'
+
+# Delete a card
+kl delete implement-search
+
+# Attachments
+kl attach implement-search                              # List attachments
+kl attach add implement-search ./screenshot.png         # Attach a file
+kl attach remove implement-search screenshot.png        # Remove attachment
+
+# Comments
+kl comment implement-search                             # List comments
+kl comment add implement-search --author alice \
+  --body &quot;Looks good, needs tests&quot;                      # Add a comment
+kl comment edit implement-search c1 --body &quot;Updated&quot;    # Edit a comment
+kl comment remove implement-search c1                   # Remove a comment
+
+# Logs
+kl log list implement-search                             # List log entries
+kl log add implement-search --text &quot;Build passed&quot;         # Add a log entry
+kl log add implement-search --text &quot;Deployed&quot; \
+  --source ci --object '{&quot;version&quot;:&quot;1.0&quot;}'               # With source and data
+kl log clear implement-search                            # Clear all logs
+
+# Board Logs
+kl board-log list                                        # List board-level log entries
+kl board-log add --text &quot;Deployment complete&quot;            # Add a board log entry
+kl board-log add --text &quot;Pipeline passed&quot; \
+  --source ci --object '{&quot;build&quot;:&quot;42&quot;}'                    # With source and data
+kl board-log clear                                       # Clear all board logs
+
+# Board Actions
+kl board-actions list --board default                    # List board-level actions
+kl board-actions add --board default \
+  --key deploy --title &quot;Deploy to Production&quot;            # Add/update a board action
+kl board-actions fire --board default deploy             # Trigger a board action
+
+# Boards
+kl boards                                               # List boards
+kl boards add --id bugs --name &quot;Bug Tracker&quot;            # Create a board
+kl boards show bugs                                     # Show board details
+kl boards remove bugs                                   # Remove an empty board
+kl boards default bugs                                  # Set default board
+kl transfer card-42 --from default --to bugs            # Transfer card between boards
+
+# Target a specific board (works with most commands)
+kl list --board bugs                                    # List cards in a board
+kl add --title &quot;Login bug&quot; --board bugs                 # Create card in a board
+
+# Manage columns
+kl columns                                              # List columns
+kl columns add --id testing --name Testing              # Add column
+kl columns update testing --color &quot;#ff9900&quot;             # Update column
+kl columns remove testing                               # Remove column
+
+# Webhooks
+kl webhooks                                             # List webhooks
+kl webhooks add --url https://example.com/hook          # Register webhook
+kl webhooks add --url https://example.com/hook \
+  --events task.created,task.moved --secret mykey       # With event filter and secret
+kl webhooks update wh_abc123 --active false             # Disable a webhook
+kl webhooks update wh_abc123 --events task.created      # Change subscribed events
+kl webhooks remove wh_abc123                            # Remove webhook
+
+# Settings
+kl settings                                             # Show current settings
+kl settings update --compactMode true                   # Update a setting
+
+# Workspace
+kl pwd                                                  # Print workspace root path
+
+# Storage providers
+kl storage status                                       # Show current provider + capability status
+kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db  # Migrate to SQLite
+kl storage migrate-to-markdown                          # Migrate back to markdown
+
+# Start web server
+kl serve                                                # Start on port 3000
+kl serve --port 8080 --no-browser                       # Custom port, no auto-open
+
+# Start MCP server (stdio transport for AI agent integrations)
+kl mcp                                                  # Auto-detect directory
+kl mcp --dir .kanban                                    # Explicit directory
+
+# Initialize features directory
+kl init
+
+# Other
+kl version                                              # Print version
+kl help                                                 # Show help
+kl help sdk                                             # Show SDK documentation
+kl help api                                             # Show REST API documentation
+</code></pre>
+<p>Use <code>--json</code> for machine-readable output. Use <code>--dir &lt;path&gt;</code> to specify a custom features directory. Use <code>--board &lt;id&gt;</code> to target a specific board.</p>
+<p><code>--forms</code> accepts a JSON array of attached form descriptors, and <code>--form-data</code> accepts a JSON object keyed by resolved form id. Both flags also support <code>@path/to/file.json</code>.</p>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/mcp/">MCP Server</a> ·
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/storage/">Storage Providers</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

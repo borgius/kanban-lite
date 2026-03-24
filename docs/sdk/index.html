@@ -1,0 +1,4234 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDK Reference — Kanban Lite</title>
+    <meta name="description" content="JavaScript/TypeScript SDK for Kanban Lite — full method reference and examples.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link" aria-current="page">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="sdk-reference">SDK Reference</h1>
+  <p>The <code>KanbanSDK</code> class is the single source of truth for all Kanban Lite business logic. Every interface — CLI, REST API, MCP server, and VS Code extension — delegates to the same SDK methods, so your code uses the same proven paths that power the web UI.</p>
+  <ul class="capability-list">
+    <li>Create and manage boards, cards, columns, and settings programmatically</li>
+    <li>Full webhook CRUD and event subscription via <code>sdk.on()</code></li>
+    <li>Storage-agnostic: works with markdown, SQLite, MySQL, or custom providers</li>
+    <li>TypeScript-first with full type exports</li>
+    <li>Auth and policy hooks for access control</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Quick usage</strong>
+    <pre><code>import { KanbanSDK } from 'kanban-lite';
+
+const sdk = new KanbanSDK({ dir: '.kanban' });
+
+// Create a card
+const card = await sdk.createCard({ title: 'Fix login bug', priority: 'high', status: 'todo' });
+
+// Move it
+await sdk.moveCard(card.id, 'in-progress');
+
+// Subscribe to events
+sdk.on('task.created', (card) => console.log('New card:', card.id));</code></pre>
+  </div>
+</div>
+
+<h1 id="kanban-lite-sdk">Kanban Lite SDK</h1>
+<p>The <code>KanbanSDK</code> class is the core engine behind Kanban Lite. It provides a complete, async API for managing cards, comments, attachments, columns, and board settings. The CLI, MCP server, VSCode extension, and standalone web server all delegate to this single SDK — so behavior is consistent everywhere.</p>
+<h2 id="installation">Installation</h2>
+<pre><code class="language-bash">npm install kanban-lite
+</code></pre>
+<h2 id="import">Import</h2>
+<pre><code class="language-typescript">import { KanbanSDK } from 'kanban-lite/sdk'
+</code></pre>
+<p>You can also import types and utilities:</p>
+<pre><code class="language-typescript">import type { Card, CardStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
+import { parseCardFile, serializeCard, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
+</code></pre>
+<h2 id="quick-start">Quick Start</h2>
+<pre><code class="language-typescript">import { KanbanSDK } from 'kanban-lite/sdk'
+
+const sdk = new KanbanSDK('/path/to/project/.kanban')
+
+// Create a card
+const card = await sdk.createCard({
+  content: '# Implement auth\n\nAdd OAuth2 login flow.',
+  status: 'todo',
+  priority: 'high',
+  labels: ['backend', 'security']
+})
+
+// List all cards (sorted by order)
+const cards = await sdk.listCards()
+
+// Move card to a different column
+await sdk.moveCard(card.id, 'in-progress')
+
+// Add a comment
+await sdk.addComment(card.id, 'alice', 'Started working on this')
+
+// Clean up
+await sdk.deleteCard(card.id)
+</code></pre>
+<hr>
+<h2 id="kanbansdk-class">KanbanSDK Class</h2>
+<p><a name="KanbanSDK"></a></p>
+<h3 id="kanbansdk">KanbanSDK</h3>
+<p>Core SDK for managing kanban boards with provider-backed card storage.</p>
+<p>Provides full CRUD operations for boards, cards, columns, comments,
+attachments, and display settings. By default cards are persisted as
+markdown files with YAML frontmatter under the <code>.kanban/</code> directory,
+organized by board and status column, but the resolved <code>card.storage</code>
+provider may also route card/comment persistence to SQLite, MySQL, or an
+external plugin.</p>
+<p>This class is the foundation that the CLI, MCP server, and standalone
+HTTP server are all built on top of.</p>
+<p><strong>Kind</strong>: global class</p>
+<ul>
+<li><a href="#KanbanSDK">KanbanSDK</a>
+<ul>
+<li><a href="#new_KanbanSDK_new">new KanbanSDK(kanbanDir, options)</a></li>
+<li><em>instance</em>
+<ul>
+<li><a href="#KanbanSDK+eventBus">.eventBus</a></li>
+<li><a href="#KanbanSDK+storageEngine">.storageEngine</a></li>
+<li><a href="#KanbanSDK+capabilities">.capabilities</a></li>
+<li><a href="#KanbanSDK+_currentAuthContext">._currentAuthContext</a></li>
+<li><a href="#KanbanSDK+workspaceRoot">.workspaceRoot</a> ⇒</li>
+<li><a href="#KanbanSDK+on">.on()</a></li>
+<li><a href="#KanbanSDK+once">.once()</a></li>
+<li><a href="#KanbanSDK+many">.many()</a></li>
+<li><a href="#KanbanSDK+onAny">.onAny()</a></li>
+<li><a href="#KanbanSDK+off">.off()</a></li>
+<li><a href="#KanbanSDK+offAny">.offAny()</a></li>
+<li><a href="#KanbanSDK+removeAllListeners">.removeAllListeners()</a></li>
+<li><a href="#KanbanSDK+eventNames">.eventNames()</a></li>
+<li><a href="#KanbanSDK+listenerCount">.listenerCount()</a></li>
+<li><a href="#KanbanSDK+hasListeners">.hasListeners()</a></li>
+<li><a href="#KanbanSDK+waitFor">.waitFor()</a></li>
+<li><a href="#KanbanSDK+getStorageStatus">.getStorageStatus()</a> ⇒</li>
+<li><a href="#KanbanSDK+getAuthStatus">.getAuthStatus()</a> ⇒</li>
+<li><a href="#KanbanSDK+getWebhookStatus">.getWebhookStatus()</a> ⇒</li>
+<li><a href="#KanbanSDK+_authorizeAction">._authorizeAction(action, context)</a> ⇒</li>
+<li><a href="#KanbanSDK+runWithAuth">.runWithAuth(auth, fn)</a> ⇒</li>
+<li><a href="#KanbanSDK+_resolveEventActor">._resolveEventActor()</a></li>
+<li><a href="#KanbanSDK+_runBeforeEvent">._runBeforeEvent(event, input, actor, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+_runAfterEvent">._runAfterEvent(event, data, actor, boardId, meta)</a></li>
+<li><a href="#KanbanSDK+getLocalCardPath">.getLocalCardPath(card)</a> ⇒</li>
+<li><a href="#KanbanSDK+getAttachmentStoragePath">.getAttachmentStoragePath(card)</a> ⇒</li>
+<li><a href="#KanbanSDK+appendAttachment">.appendAttachment()</a></li>
+<li><a href="#KanbanSDK+materializeAttachment">.materializeAttachment(card, attachment)</a> ⇒</li>
+<li><a href="#KanbanSDK+copyAttachment">.copyAttachment(sourcePath, card)</a></li>
+<li><a href="#KanbanSDK+close">.close()</a></li>
+<li><a href="#KanbanSDK+destroy">.destroy()</a></li>
+<li><a href="#KanbanSDK+emitEvent">.emitEvent()</a></li>
+<li><a href="#KanbanSDK+_resolveBoardId">._resolveBoardId()</a></li>
+<li><a href="#KanbanSDK+_boardDir">._boardDir()</a></li>
+<li><a href="#KanbanSDK+_isCompletedStatus">._isCompletedStatus()</a></li>
+<li><a href="#KanbanSDK+_ensureMigrated">._ensureMigrated()</a></li>
+<li><a href="#KanbanSDK+init">.init()</a> ⇒</li>
+<li><a href="#KanbanSDK+listBoards">.listBoards()</a> ⇒</li>
+<li><a href="#KanbanSDK+createBoard">.createBoard(id, name, options)</a> ⇒</li>
+<li><a href="#KanbanSDK+deleteBoard">.deleteBoard(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getBoard">.getBoard(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+updateBoard">.updateBoard(boardId, updates)</a> ⇒</li>
+<li><a href="#KanbanSDK+getBoardActions">.getBoardActions(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addBoardAction">.addBoardAction(boardId, key, title)</a> ⇒</li>
+<li><a href="#KanbanSDK+removeBoardAction">.removeBoardAction(boardId, key)</a> ⇒</li>
+<li><a href="#KanbanSDK+triggerBoardAction">.triggerBoardAction(boardId, actionKey)</a></li>
+<li><a href="#KanbanSDK+transferCard">.transferCard(cardId, fromBoardId, toBoardId, targetStatus)</a> ⇒</li>
+<li><a href="#KanbanSDK+getCard">.getCard(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getActiveCard">.getActiveCard(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+setActiveCard">.setActiveCard()</a></li>
+<li><a href="#KanbanSDK+clearActiveCard">.clearActiveCard()</a></li>
+<li><a href="#KanbanSDK+createCard">.createCard(data)</a> ⇒</li>
+<li><a href="#KanbanSDK+updateCard">.updateCard(cardId, updates, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+submitForm">.submitForm(input)</a> ⇒</li>
+<li><a href="#KanbanSDK+triggerAction">.triggerAction(cardId, action, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+moveCard">.moveCard(cardId, newStatus, position, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+deleteCard">.deleteCard(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+permanentlyDeleteCard">.permanentlyDeleteCard(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getCardsByStatus">.getCardsByStatus(status, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getUniqueAssignees">.getUniqueAssignees(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getUniqueLabels">.getUniqueLabels(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getLabels">.getLabels()</a> ⇒</li>
+<li><a href="#KanbanSDK+setLabel">.setLabel(name, definition)</a></li>
+<li><a href="#KanbanSDK+deleteLabel">.deleteLabel(name)</a></li>
+<li><a href="#KanbanSDK+renameLabel">.renameLabel(oldName, newName)</a></li>
+<li><a href="#KanbanSDK+getLabelsInGroup">.getLabelsInGroup(group)</a> ⇒</li>
+<li><a href="#KanbanSDK+filterCardsByLabelGroup">.filterCardsByLabelGroup(group, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addAttachment">.addAttachment(cardId, sourcePath, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+removeAttachment">.removeAttachment(cardId, attachment, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+listAttachments">.listAttachments(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getAttachmentDir">.getAttachmentDir(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+listComments">.listComments(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addComment">.addComment(cardId, author, content, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+updateComment">.updateComment(cardId, commentId, content, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+deleteComment">.deleteComment(cardId, commentId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getLogFilePath">.getLogFilePath(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+listLogs">.listLogs(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addLog">.addLog(cardId, text, options, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+clearLogs">.clearLogs(cardId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getBoardLogFilePath">.getBoardLogFilePath(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+listBoardLogs">.listBoardLogs(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addBoardLog">.addBoardLog(text, options, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+clearBoardLogs">.clearBoardLogs(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+listColumns">.listColumns(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+addColumn">.addColumn(column, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+updateColumn">.updateColumn(columnId, updates, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+removeColumn">.removeColumn(columnId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+cleanupColumn">.cleanupColumn(columnId, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+purgeDeletedCards">.purgeDeletedCards(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+reorderColumns">.reorderColumns(columnIds, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getMinimizedColumns">.getMinimizedColumns(boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+setMinimizedColumns">.setMinimizedColumns(columnIds, boardId)</a> ⇒</li>
+<li><a href="#KanbanSDK+getSettings">.getSettings()</a> ⇒</li>
+<li><a href="#KanbanSDK+updateSettings">.updateSettings(settings)</a></li>
+<li><a href="#KanbanSDK+migrateToSqlite">.migrateToSqlite(dbPath)</a> ⇒</li>
+<li><a href="#KanbanSDK+migrateToMarkdown">.migrateToMarkdown()</a> ⇒</li>
+<li><a href="#KanbanSDK+setDefaultBoard">.setDefaultBoard(boardId)</a></li>
+<li><a href="#KanbanSDK+listWebhooks">.listWebhooks()</a> ⇒</li>
+<li><a href="#KanbanSDK+createWebhook">.createWebhook(webhookConfig)</a> ⇒</li>
+<li><a href="#KanbanSDK+deleteWebhook">.deleteWebhook(id)</a> ⇒</li>
+<li><a href="#KanbanSDK+updateWebhook">.updateWebhook(id, updates)</a> ⇒</li>
+</ul>
+</li>
+<li><em>static</em>
+<ul>
+<li><a href="#KanbanSDK._authStorage">._authStorage</a></li>
+<li><a href="#KanbanSDK._runWithScopedAuth">._runWithScopedAuth()</a></li>
+<li><a href="#KanbanSDK._getScopedAuth">._getScopedAuth()</a></li>
+<li><a href="#KanbanSDK._cloneMergeValue">._cloneMergeValue()</a></li>
+<li><a href="#KanbanSDK._deepMerge">._deepMerge()</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<hr>
+<p><a name="new_KanbanSDK_new"></a></p>
+<h4 id="new-kanbansdk-kanbandir-options">new KanbanSDK(kanbanDir, options)</h4>
+<p>Creates a new KanbanSDK instance.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kanbanDir</td>
+<td>Absolute path to the <code>.kanban</code> kanban directory.   When omitted, the directory is auto-detected by walking up from   <code>process.cwd()</code> to find the workspace root (via <code>.git</code>, <code>package.json</code>,   or <code>.kanban.json</code>), then reading <code>kanbanDirectory</code> from <code>.kanban.json</code>   (defaults to <code>'.kanban'</code>).</td>
+</tr>
+<tr>
+<td>options</td>
+<td>Optional configuration including an event handler callback   and storage engine selection.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const sdk = new KanbanSDK('/path/to/project/.kanban')
+await sdk.init()
+const cards = await sdk.listCards()
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+eventBus"></a></p>
+<h4 id="kanbansdk-eventbus">kanbanSDK.eventBus</h4>
+<p>The underlying SDK event bus for advanced event workflows.</p>
+<p>Most consumers can use the convenience proxy methods on <code>KanbanSDK</code>
+itself (<code>on</code>, <code>once</code>, <code>many</code>, <code>onAny</code>, <code>waitFor</code>, etc.). Access the
+raw bus directly when you specifically need the shared <code>EventBus</code>
+instance.</p>
+<p><strong>Kind</strong>: instance property of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+storageEngine"></a></p>
+<h4 id="kanbansdk-storageengine">kanbanSDK.storageEngine</h4>
+<p>The active storage engine powering this SDK instance.
+Returns the resolved <code>card.storage</code> provider implementation
+(for example <code>markdown</code>, <code>sqlite</code>, or <code>mysql</code>).</p>
+<p><strong>Kind</strong>: instance property of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+capabilities"></a></p>
+<h4 id="kanbansdk-capabilities">kanbanSDK.capabilities</h4>
+<p>The resolved storage/attachment capability bag for this SDK instance.
+Returns <code>null</code> when a pre-built storage engine was injected directly.</p>
+<p><strong>Kind</strong>: instance property of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+_currentAuthContext"></a></p>
+<h4 id="kanbansdk-currentauthcontext">kanbanSDK._currentAuthContext</h4>
+<p>Returns the auth context installed by the nearest enclosing <a href="runWithAuth">runWithAuth</a> call, if any. @internal</p>
+<p><strong>Kind</strong>: instance property of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+workspaceRoot"></a></p>
+<h4 id="kanbansdk-workspaceroot">kanbanSDK.workspaceRoot ⇒</h4>
+<p>The workspace root directory (parent of the kanban directory).</p>
+<p>This is the project root where <code>.kanban.json</code> configuration lives.</p>
+<p><strong>Kind</strong>: instance property of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The absolute path to the workspace root directory.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const sdk = new KanbanSDK('/home/user/my-project/.kanban')
+console.log(sdk.workspaceRoot) // '/home/user/my-project'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+on"></a></p>
+<h4 id="kanbansdk-on">kanbanSDK.on()</h4>
+<p>Subscribe to an SDK event or wildcard pattern.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+once"></a></p>
+<h4 id="kanbansdk-once">kanbanSDK.once()</h4>
+<p>Subscribe to the next matching SDK event only once.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+many"></a></p>
+<h4 id="kanbansdk-many">kanbanSDK.many()</h4>
+<p>Subscribe to an SDK event a fixed number of times.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+onAny"></a></p>
+<h4 id="kanbansdk-onany">kanbanSDK.onAny()</h4>
+<p>Subscribe to every SDK event regardless of name.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+off"></a></p>
+<h4 id="kanbansdk-off">kanbanSDK.off()</h4>
+<p>Remove a specific event listener.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+offAny"></a></p>
+<h4 id="kanbansdk-offany">kanbanSDK.offAny()</h4>
+<p>Remove a specific catch-all listener.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+removeAllListeners"></a></p>
+<h4 id="kanbansdk-removealllisteners">kanbanSDK.removeAllListeners()</h4>
+<p>Remove all event listeners for one event, or all listeners when omitted.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+eventNames"></a></p>
+<h4 id="kanbansdk-eventnames">kanbanSDK.eventNames()</h4>
+<p>Return the registered event names currently tracked by the bus.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+listenerCount"></a></p>
+<h4 id="kanbansdk-listenercount">kanbanSDK.listenerCount()</h4>
+<p>Get the number of listeners for a specific event, or all listeners when omitted.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+hasListeners"></a></p>
+<h4 id="kanbansdk-haslisteners">kanbanSDK.hasListeners()</h4>
+<p>Check whether any listeners are registered for an event or for the bus overall.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+waitFor"></a></p>
+<h4 id="kanbansdk-waitfor">kanbanSDK.waitFor()</h4>
+<p>Wait for the next matching SDK event and resolve with its payload.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+getStorageStatus"></a></p>
+<h4 id="kanbansdk-getstoragestatus">kanbanSDK.getStorageStatus() ⇒</h4>
+<p>Returns storage/provider metadata for host surfaces and diagnostics.</p>
+<p>Use this to inspect resolved provider ids, file-backed status, and
+watcher behavior without reaching into capability internals.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A <a href="StorageStatus">StorageStatus</a> snapshot containing the active provider id,
+resolved provider selections (when available), whether cards are backed by
+local files, and the watcher glob used by file-backed hosts.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const status = sdk.getStorageStatus()
+console.log(status.storageEngine) // 'markdown' | 'sqlite' | 'mysql' | ...
+console.log(status.watchGlob) // e.g. markdown card glob for board/status directories
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getAuthStatus"></a></p>
+<h4 id="kanbansdk-getauthstatus">kanbanSDK.getAuthStatus() ⇒</h4>
+<p>Returns auth provider metadata for host surfaces and diagnostics.</p>
+<p>Use this to inspect which identity and policy providers are active
+and whether real auth enforcement is enabled.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: An <a href="AuthStatus">AuthStatus</a> snapshot containing the active provider ids
+and boolean flags indicating whether non-noop providers are live.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const status = sdk.getAuthStatus()
+console.log(status.identityProvider) // 'noop' | 'my-token-plugin' | ...
+console.log(status.identityEnabled)  // false when no plugin configured
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getWebhookStatus"></a></p>
+<h4 id="kanbansdk-getwebhookstatus">kanbanSDK.getWebhookStatus() ⇒</h4>
+<p>Returns webhook provider metadata for host surfaces and diagnostics.</p>
+<p>Use this to inspect which webhook delivery provider is active and whether
+an external provider plugin is installed or the built-in fallback is used.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A <a href="WebhookStatus">WebhookStatus</a> snapshot containing the active provider id
+and a boolean flag indicating whether the provider is an external plugin.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const status = sdk.getWebhookStatus()
+console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
+console.log(status.webhookProviderActive) // false when no plugin configured
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+_authorizeAction"></a></p>
+<h4 id="kanbansdk-authorizeaction-action-context">kanbanSDK._authorizeAction(action, context) ⇒</h4>
+<p>Resolves caller identity and evaluates whether the named action is permitted.</p>
+<p>This is the internal SDK pre-action authorization seam. SDK methods that
+represent mutating or privileged operations should call this before
+executing their logic.</p>
+<p>When no auth plugins are configured the built-in noop path allows all
+actions anonymously, preserving the current open-access behavior
+for workspaces without an auth configuration.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: Fulfilled <a href="AuthDecision">AuthDecision</a> when the action is permitted.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>AuthError</code> When the policy plugin denies the action.</li>
+</ul>
+<p><strong>Internal</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>action</td>
+<td>Canonical action name (e.g. <code>'card.create'</code>, <code>'board.delete'</code>).</td>
+</tr>
+<tr>
+<td>context</td>
+<td>Optional auth context from the inbound request.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+runWithAuth"></a></p>
+<h4 id="kanbansdk-runwithauth-auth-fn">kanbanSDK.runWithAuth(auth, fn) ⇒</h4>
+<p>Runs <code>fn</code> within an async scope where <code>auth</code> is the active auth context.</p>
+<p>Use this on host surfaces (REST routes, CLI commands, MCP handlers) to
+bind a request-scoped <a href="AuthContext">AuthContext</a> before calling SDK mutators.
+The context is propagated automatically through every <code>await</code> in the call
+tree without being threaded through method signatures.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The promise returned by <code>fn</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>auth</td>
+<td>Request-scoped auth context to install for the duration of <code>fn</code>.</td>
+</tr>
+<tr>
+<td>fn</td>
+<td>Async callback to execute with the auth context active.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.runWithAuth({ token: req.headers.authorization }, () =&gt;
+  sdk.createCard({ boardId: 'default', title: 'New task' })
+)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+_resolveEventActor"></a></p>
+<h4 id="kanbansdk-resolveeventactor">kanbanSDK._resolveEventActor()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_runBeforeEvent"></a></p>
+<h4 id="kanbansdk-runbeforeevent-event-input-actor-boardid">kanbanSDK._runBeforeEvent(event, input, actor, boardId) ⇒</h4>
+<p>Dispatches a before-event to all registered listeners and returns a
+deep-merged clone of the input.</p>
+<p>Clones <code>input</code> immediately with <code>structuredClone</code> so the caller's object
+is never mutated. Awaits all registered before-event listeners in
+registration order via <a href="EventBus.emitAsync">EventBus.emitAsync</a>. Each plain-object
+listener response is deep-merged in registration order over the clone so
+that later-registered listeners override earlier ones at every nesting
+depth. Arrays in listener responses <strong>replace</strong> (no concatenation).
+Non-plain-object, <code>void</code>, or empty <code>{}</code> responses contribute no keys and
+the accumulated input stays effectively unchanged.</p>
+<p><strong>Throwing aborts the mutation:</strong> any error thrown by a listener —
+including <a href="AuthError">AuthError</a> — propagates immediately to the caller.
+No subsequent listeners execute and no mutation write occurs.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: Promise resolving to the deep-merged input clone after all listeners settle.<br>
+<strong>Internal</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>event</td>
+<td>Before-event name (e.g. <code>'card.create'</code>).</td>
+</tr>
+<tr>
+<td>input</td>
+<td>Initial mutation input used as the clone/merge base.</td>
+</tr>
+<tr>
+<td>actor</td>
+<td>Resolved acting principal, if known.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Board context for this action, if applicable.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+_runAfterEvent"></a></p>
+<h4 id="kanbansdk-runafterevent-event-data-actor-boardid-meta">kanbanSDK._runAfterEvent(event, data, actor, boardId, meta)</h4>
+<p>Emits an after-event exactly once after a mutation has been committed.</p>
+<p>Wraps <code>data</code> in an <a href="AfterEventPayload">AfterEventPayload</a> envelope and emits it on the event
+bus as an <a href="SDKEvent">SDKEvent</a>. After-event listeners are non-blocking: the event bus
+isolates errors per listener so a failing listener never prevents sibling listeners
+from executing and never propagates to the SDK caller.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>event</td>
+<td>After-event name (e.g. <code>'task.created'</code>).</td>
+</tr>
+<tr>
+<td>data</td>
+<td>The committed mutation result.</td>
+</tr>
+<tr>
+<td>actor</td>
+<td>Resolved acting principal, if known.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Board context for this event, if applicable.</td>
+</tr>
+<tr>
+<td>meta</td>
+<td>Optional audit metadata.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+getLocalCardPath"></a></p>
+<h4 id="kanbansdk-getlocalcardpath-card">kanbanSDK.getLocalCardPath(card) ⇒</h4>
+<p>Returns the local file path for a card when the active provider exposes one.</p>
+<p>This is most useful for editor integrations or diagnostics that need to open
+or reveal the underlying source file. Providers that do not expose stable
+local card files return <code>null</code>.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The absolute on-disk card path, or <code>null</code> when the active provider
+does not expose one.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>card</td>
+<td>The resolved card object.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.getCard('42')
+if (card) {
+  console.log(sdk.getLocalCardPath(card))
+}
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getAttachmentStoragePath"></a></p>
+<h4 id="kanbansdk-getattachmentstoragepath-card">kanbanSDK.getAttachmentStoragePath(card) ⇒</h4>
+<p>Returns the local attachment directory for a card when the active
+attachment provider exposes one.</p>
+<p>File-backed providers typically return an absolute directory under the
+workspace, while database-backed or remote attachment providers may return
+<code>null</code> when attachments are not directly browseable on disk.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The absolute attachment directory, or <code>null</code> when the active
+attachment provider cannot expose one.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>card</td>
+<td>The resolved card object.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+appendAttachment"></a></p>
+<h4 id="kanbansdk-appendattachment">kanbanSDK.appendAttachment()</h4>
+<p>Requests an efficient in-place append for an attachment when the active
+attachment provider supports it.</p>
+<p>Returns <code>true</code> when the provider handled the append directly and <code>false</code>
+when callers should fall back to rewriting the attachment through the
+normal copy/materialization path.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+materializeAttachment"></a></p>
+<h4 id="kanbansdk-materializeattachment-card-attachment">kanbanSDK.materializeAttachment(card, attachment) ⇒</h4>
+<p>Resolves or materializes a safe local file path for a named attachment.</p>
+<p>For simple file-backed providers this usually returns the existing file.
+Other providers may need to materialize a temporary local copy first.
+The method also guards against invalid attachment names and only resolves
+files already attached to the card.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: An absolute local path, or <code>null</code> when the attachment cannot be
+safely exposed by the current provider.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>card</td>
+<td>The resolved card object.</td>
+</tr>
+<tr>
+<td>attachment</td>
+<td>Attachment filename exactly as stored on the card.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.getCard('42')
+const pdfPath = card ? await sdk.materializeAttachment(card, 'report.pdf') : null
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+copyAttachment"></a></p>
+<h4 id="kanbansdk-copyattachment-sourcepath-card">kanbanSDK.copyAttachment(sourcePath, card)</h4>
+<p>Copies an attachment through the resolved attachment-storage capability.</p>
+<p>This is a low-level helper used by higher-level attachment flows. It writes
+the supplied source file into the active attachment provider for the given
+card, whether that provider is local filesystem storage or a custom plugin.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sourcePath</td>
+<td>Absolute or relative path to the source file to copy.</td>
+</tr>
+<tr>
+<td>card</td>
+<td>The target card that should own the copied attachment.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+close"></a></p>
+<h4 id="kanbansdk-close">kanbanSDK.close()</h4>
+<p>Closes the storage engine and releases any held resources (e.g. database
+connections). Call this when the SDK instance is no longer needed.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+destroy"></a></p>
+<h4 id="kanbansdk-destroy">kanbanSDK.destroy()</h4>
+<p>Tear down the SDK, destroying the event bus and all listeners.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+emitEvent"></a></p>
+<h4 id="kanbansdk-emitevent">kanbanSDK.emitEvent()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_resolveBoardId"></a></p>
+<h4 id="kanbansdk-resolveboardid">kanbanSDK._resolveBoardId()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_boardDir"></a></p>
+<h4 id="kanbansdk-boarddir">kanbanSDK._boardDir()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_isCompletedStatus"></a></p>
+<h4 id="kanbansdk-iscompletedstatus">kanbanSDK._isCompletedStatus()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_ensureMigrated"></a></p>
+<h4 id="kanbansdk-ensuremigrated">kanbanSDK._ensureMigrated()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+init"></a></p>
+<h4 id="kanbansdk-init">kanbanSDK.init() ⇒</h4>
+<p>Initializes the SDK by running any pending filesystem migrations and
+ensuring the default board's directory structure exists.</p>
+<p>This should be called once before performing any operations, especially
+on a fresh workspace or after upgrading from a single-board layout.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when initialization is complete.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const sdk = new KanbanSDK('/path/to/project/.kanban')
+await sdk.init()
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listBoards"></a></p>
+<h4 id="kanbansdk-listboards">kanbanSDK.listBoards() ⇒</h4>
+<p>Lists all boards defined in the workspace configuration.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: An array of <a href="BoardInfo">BoardInfo</a> objects containing each board's
+<code>id</code>, <code>name</code>, and optional <code>description</code>.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const boards = sdk.listBoards()
+// [{ id: 'default', name: 'Default Board', description: undefined }]
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+createBoard"></a></p>
+<h4 id="kanbansdk-createboard-id-name-options">kanbanSDK.createBoard(id, name, options) ⇒</h4>
+<p>Creates a new board with the given ID and name.</p>
+<p>If no columns are specified, the new board inherits columns from the
+default board. If the default board has no columns, a standard set of
+five columns (Backlog, To Do, In Progress, Review, Done) is used.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A <a href="BoardInfo">BoardInfo</a> object for the newly created board.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If a board with the given <code>id</code> already exists.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>Unique identifier for the board (used in file paths and API calls).</td>
+</tr>
+<tr>
+<td>name</td>
+<td>Human-readable display name for the board.</td>
+</tr>
+<tr>
+<td>options</td>
+<td>Optional configuration for the new board.</td>
+</tr>
+<tr>
+<td>options.description</td>
+<td>A short description of the board's purpose.</td>
+</tr>
+<tr>
+<td>options.columns</td>
+<td>Custom column definitions. Defaults to the default board's columns.</td>
+</tr>
+<tr>
+<td>options.defaultStatus</td>
+<td>The default status for new cards. Defaults to the first column's ID.</td>
+</tr>
+<tr>
+<td>options.defaultPriority</td>
+<td>The default priority for new cards. Defaults to the workspace default.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const board = sdk.createBoard('bugs', 'Bug Tracker', {
+  description: 'Track and triage bugs',
+  defaultStatus: 'triage'
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+deleteBoard"></a></p>
+<h4 id="kanbansdk-deleteboard-boardid">kanbanSDK.deleteBoard(boardId) ⇒</h4>
+<p>Deletes a board and its directory from the filesystem.</p>
+<p>The board must be empty (no cards) and must not be the default board.
+The board's directory is removed recursively from disk, and the board
+entry is removed from the workspace configuration.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when the board has been deleted.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+<li><code>Error</code> If the board is the default board.</li>
+<li><code>Error</code> If the board still contains cards.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>The ID of the board to delete.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.deleteBoard('old-sprint')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getBoard"></a></p>
+<h4 id="kanbansdk-getboard-boardid">kanbanSDK.getBoard(boardId) ⇒</h4>
+<p>Retrieves the full configuration for a specific board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The <a href="BoardConfig">BoardConfig</a> object containing columns, settings, and metadata.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>The ID of the board to retrieve.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const config = sdk.getBoard('default')
+console.log(config.columns) // [{ id: 'backlog', name: 'Backlog', ... }, ...]
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+updateBoard"></a></p>
+<h4 id="kanbansdk-updateboard-boardid-updates">kanbanSDK.updateBoard(boardId, updates) ⇒</h4>
+<p>Updates properties of an existing board.</p>
+<p>Only the provided fields are updated; omitted fields remain unchanged.
+The <code>nextCardId</code> counter cannot be modified through this method.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The updated <a href="BoardConfig">BoardConfig</a> object.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>The ID of the board to update.</td>
+</tr>
+<tr>
+<td>updates</td>
+<td>A partial object containing the fields to update.</td>
+</tr>
+<tr>
+<td><a href="http://updates.name">updates.name</a></td>
+<td>New display name for the board.</td>
+</tr>
+<tr>
+<td>updates.description</td>
+<td>New description for the board.</td>
+</tr>
+<tr>
+<td>updates.columns</td>
+<td>Replacement column definitions.</td>
+</tr>
+<tr>
+<td>updates.defaultStatus</td>
+<td>New default status for new cards.</td>
+</tr>
+<tr>
+<td>updates.defaultPriority</td>
+<td>New default priority for new cards.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const updated = sdk.updateBoard('bugs', {
+  name: 'Bug Tracker v2',
+  defaultPriority: 'high'
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getBoardActions"></a></p>
+<h4 id="kanbansdk-getboardactions-boardid">kanbanSDK.getBoardActions(boardId) ⇒</h4>
+<p>Returns the named actions defined on a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A map of action key to display title.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Board ID. Defaults to the active board when omitted.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const actions = sdk.getBoardActions('deployments')
+console.log(actions.deploy) // 'Deploy now'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addBoardAction"></a></p>
+<h4 id="kanbansdk-addboardaction-boardid-key-title">kanbanSDK.addBoardAction(boardId, key, title) ⇒</h4>
+<p>Adds or updates a named action on a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The updated actions map.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Board ID.</td>
+</tr>
+<tr>
+<td>key</td>
+<td>Unique action key (used as identifier).</td>
+</tr>
+<tr>
+<td>title</td>
+<td>Human-readable display title for the action.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.addBoardAction('deployments', 'deploy', 'Deploy now')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+removeBoardAction"></a></p>
+<h4 id="kanbansdk-removeboardaction-boardid-key">kanbanSDK.removeBoardAction(boardId, key) ⇒</h4>
+<p>Removes a named action from a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The updated actions map.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+<li><code>Error</code> If the action key is not found on the board.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Board ID.</td>
+</tr>
+<tr>
+<td>key</td>
+<td>The action key to remove.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.removeBoardAction('deployments', 'deploy')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+triggerBoardAction"></a></p>
+<h4 id="kanbansdk-triggerboardaction-boardid-actionkey">kanbanSDK.triggerBoardAction(boardId, actionKey)</h4>
+<p>Fires the <code>board.action</code> webhook event for a named board action.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+<li><code>Error</code> If the action key is not defined on the board.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>The board that owns the action.</td>
+</tr>
+<tr>
+<td>actionKey</td>
+<td>The key of the action to trigger.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.triggerBoardAction('deployments', 'deploy')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+transferCard"></a></p>
+<h4 id="kanbansdk-transfercard-cardid-fromboardid-toboardid-targetstatus">kanbanSDK.transferCard(cardId, fromBoardId, toBoardId, targetStatus) ⇒</h4>
+<p>Transfers a card from one board to another.</p>
+<p>The card file is physically moved to the target board's directory. If a
+target status is not specified, the card is placed in the target board's
+default status column. The card's order is recalculated to place it at
+the end of the target column. Timestamps (<code>modified</code>, <code>completedAt</code>)
+are updated accordingly.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card object.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If either board does not exist.</li>
+<li><code>Error</code> If the card is not found in the source board.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to transfer.</td>
+</tr>
+<tr>
+<td>fromBoardId</td>
+<td>The ID of the source board.</td>
+</tr>
+<tr>
+<td>toBoardId</td>
+<td>The ID of the destination board.</td>
+</tr>
+<tr>
+<td>targetStatus</td>
+<td>Optional status column in the destination board.   Defaults to the destination board's default status.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.transferCard('42', 'inbox', 'bugs', 'triage')
+console.log(card.boardId) // 'bugs'
+console.log(card.status)  // 'triage'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getCard"></a></p>
+<h4 id="kanbansdk-getcard-cardid-boardid">kanbanSDK.getCard(cardId, boardId) ⇒</h4>
+<p>Retrieves a single card by its ID.</p>
+<p>Supports partial ID matching -- the provided <code>cardId</code> is matched against
+all cards on the board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the matching <a href="Card">Card</a> card, or <code>null</code> if not found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The full or partial ID of the card to retrieve.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.getCard('42')
+if (card) {
+  console.log(card.content)
+}
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getActiveCard"></a></p>
+<h4 id="kanbansdk-getactivecard-boardid">kanbanSDK.getActiveCard(boardId) ⇒</h4>
+<p>Retrieves the card currently marked as active/open in this workspace.</p>
+<p>Active-card state is persisted in the workspace so other interfaces
+(standalone server, CLI, MCP, and VS Code) can query the same card.
+Returns <code>null</code> when no card is currently active.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the active <a href="Card">Card</a>, or <code>null</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. When provided, returns the active card   only if it belongs to that board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const active = await sdk.getActiveCard()
+if (active) {
+  console.log(active.id)
+}
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+setActiveCard"></a></p>
+<h4 id="kanbansdk-setactivecard">kanbanSDK.setActiveCard()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+clearActiveCard"></a></p>
+<h4 id="kanbansdk-clearactivecard">kanbanSDK.clearActiveCard()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+createCard"></a></p>
+<h4 id="kanbansdk-createcard-data">kanbanSDK.createCard(data) ⇒</h4>
+<p>Creates a new card on a board.</p>
+<p>The card is assigned an auto-incrementing numeric ID, placed at the end
+of its target status column using fractional indexing, and persisted as a
+markdown file with YAML frontmatter. If no status or priority is provided,
+the board's defaults are used.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the newly created <a href="Card">Card</a> card.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>data</td>
+<td>The card creation input. See <a href="CreateCardInput">CreateCardInput</a>.</td>
+</tr>
+<tr>
+<td>data.content</td>
+<td>Markdown content for the card. The first <code># Heading</code> becomes the title.</td>
+</tr>
+<tr>
+<td>data.status</td>
+<td>Optional status column. Defaults to the board's default status.</td>
+</tr>
+<tr>
+<td>data.priority</td>
+<td>Optional priority level. Defaults to the board's default priority.</td>
+</tr>
+<tr>
+<td>data.assignee</td>
+<td>Optional assignee name.</td>
+</tr>
+<tr>
+<td>data.dueDate</td>
+<td>Optional due date as an ISO 8601 string.</td>
+</tr>
+<tr>
+<td>data.labels</td>
+<td>Optional array of label strings.</td>
+</tr>
+<tr>
+<td>data.attachments</td>
+<td>Optional array of attachment filenames.</td>
+</tr>
+<tr>
+<td>data.metadata</td>
+<td>Optional arbitrary key-value metadata stored in the card's frontmatter.</td>
+</tr>
+<tr>
+<td>data.actions</td>
+<td>Optional per-card actions as action keys or key-to-title map.</td>
+</tr>
+<tr>
+<td>data.forms</td>
+<td>Optional attached forms, using workspace-form references or inline definitions.</td>
+</tr>
+<tr>
+<td>data.formData</td>
+<td>Optional per-form persisted values keyed by resolved form ID.</td>
+</tr>
+<tr>
+<td>data.boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.createCard({
+  content: '# Fix login bug\n\nUsers cannot log in with email.',
+  status: 'todo',
+  priority: 'high',
+  labels: ['bug', 'auth'],
+  boardId: 'bugs'
+})
+console.log(card.id) // '7'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+updateCard"></a></p>
+<h4 id="kanbansdk-updatecard-cardid-updates-boardid">kanbanSDK.updateCard(cardId, updates, boardId) ⇒</h4>
+<p>Updates an existing card's properties.</p>
+<p>Only the provided fields are updated; omitted fields remain unchanged.
+The <code>filePath</code>, <code>id</code>, and <code>boardId</code> fields are protected and cannot be
+overwritten. If the card's title changes, the underlying file is renamed.
+If the status changes, the file is moved to the new status subdirectory
+and <code>completedAt</code> is updated accordingly.</p>
+<p>Common update fields include <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>,
+<code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>actions</code>, <code>forms</code>, and <code>formData</code>.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to update.</td>
+</tr>
+<tr>
+<td>updates</td>
+<td>A partial <a href="Card">Card</a> object with the fields to update.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const updated = await sdk.updateCard('42', {
+  priority: 'critical',
+  assignee: 'alice',
+  labels: ['urgent', 'backend']
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+submitForm"></a></p>
+<h4 id="kanbansdk-submitform-input">kanbanSDK.submitForm(input) ⇒</h4>
+<p>Validates and persists a form submission for a card, then emits <code>form.submit</code>
+through the normal SDK event/webhook pipeline.</p>
+<p>The target form must already be attached to the card, either as an inline
+card-local form or as a named reusable workspace form reference.</p>
+<p><strong>Partial-at-rest semantics:</strong> <code>card.formData[formId]</code> may be a partial
+record at rest (containing only previously submitted or pre-seeded fields).
+The merge below always produces a full canonical object, and that full
+object is what gets persisted and returned as <code>result.data</code>.</p>
+<p>Merge order for the resolved base payload (lowest → highest priority):</p>
+<ol>
+<li>Workspace-config form defaults (<code>KanbanConfig.forms[formName].data</code>)</li>
+<li>Card-scoped attachment defaults (<code>attachment.data</code>)</li>
+<li>Persisted per-card form data (<code>card.formData[formId]</code>, may be partial)</li>
+<li>Card metadata fields that are declared in the form schema</li>
+<li>The submitted payload passed to this method</li>
+</ol>
+<p>Before the merge, string values in each source layer are prepared via
+<code>prepareFormData()</code> (from <code>src/shared/formDataPreparation</code>), which resolves
+<code>${path}</code> placeholders against the full card interpolation context.</p>
+<p>Validation happens authoritatively in the SDK before persistence and before
+any event/webhook emission, so CLI/API/MCP/UI callers all share the same rules.
+After a successful submit, the SDK also appends a system card log entry that
+records the submitted payload under <code>payload</code> for audit/debug visibility.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The canonical persisted payload and event context. <code>result.data</code> is
+always the full merged and validated object (never a partial snapshot).<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card or form cannot be found, or if validation fails.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>input</td>
+<td>The form submission input.</td>
+</tr>
+<tr>
+<td>input.cardId</td>
+<td>ID of the card that owns the target form.</td>
+</tr>
+<tr>
+<td>input.formId</td>
+<td>Resolved form ID/name to submit.</td>
+</tr>
+<tr>
+<td>input.data</td>
+<td>Submitted field values to merge over the resolved base payload.</td>
+</tr>
+<tr>
+<td>input.boardId</td>
+<td>Optional board ID. Defaults to the workspace default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const result = await sdk.submitForm({
+  cardId: '42',
+  formId: 'bug-report',
+  data: { severity: 'high', title: 'Crash on save' }
+})
+console.log(result.data.severity) // 'high'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+triggerAction"></a></p>
+<h4 id="kanbansdk-triggeraction-cardid-action-boardid">kanbanSDK.triggerAction(cardId, action, boardId) ⇒</h4>
+<p>Triggers a named action for a card by POSTing to the global <code>actionWebhookUrl</code>
+configured in <code>.kanban.json</code>.</p>
+<p>The payload sent to the webhook is:</p>
+<pre><code class="language-json">{ &quot;action&quot;: &quot;retry&quot;, &quot;board&quot;: &quot;default&quot;, &quot;list&quot;: &quot;in-progress&quot;, &quot;card&quot;: { ...sanitizedCard } }
+</code></pre>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving when the webhook responds with 2xx.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If no <code>actionWebhookUrl</code> is configured in <code>.kanban.json</code>.</li>
+<li><code>Error</code> If the card is not found.</li>
+<li><code>Error</code> If the webhook responds with a non-2xx status.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to trigger the action for.</td>
+</tr>
+<tr>
+<td>action</td>
+<td>The action name string (e.g. <code>'retry'</code>, <code>'sendEmail'</code>).</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.triggerAction('42', 'retry')
+await sdk.triggerAction('42', 'sendEmail', 'bugs')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+moveCard"></a></p>
+<h4 id="kanbansdk-movecard-cardid-newstatus-position-boardid">kanbanSDK.moveCard(cardId, newStatus, position, boardId) ⇒</h4>
+<p>Moves a card to a different status column and/or position within that column.</p>
+<p>The card's fractional order key is recalculated based on the target
+position. If the status changes, the underlying file is moved to the
+corresponding subdirectory and <code>completedAt</code> is updated accordingly.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to move.</td>
+</tr>
+<tr>
+<td>newStatus</td>
+<td>The target status/column ID.</td>
+</tr>
+<tr>
+<td>position</td>
+<td>Optional zero-based index within the target column.   Defaults to the end of the column.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">// Move card to 'in-progress' at position 0 (top of column)
+const card = await sdk.moveCard('42', 'in-progress', 0)
+
+// Move card to 'done' at the end (default)
+const done = await sdk.moveCard('42', 'done')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+deleteCard"></a></p>
+<h4 id="kanbansdk-deletecard-cardid-boardid">kanbanSDK.deleteCard(cardId, boardId) ⇒</h4>
+<p>Soft-deletes a card by moving it to the <code>deleted</code> status column.
+The file remains on disk and can be restored.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when the card has been moved to deleted status.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to soft-delete.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.deleteCard('42', 'bugs')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+permanentlyDeleteCard"></a></p>
+<h4 id="kanbansdk-permanentlydeletecard-cardid-boardid">kanbanSDK.permanentlyDeleteCard(cardId, boardId) ⇒</h4>
+<p>Permanently deletes a card's markdown file from disk.
+This cannot be undone.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when the card file has been removed from disk.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to permanently delete.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.permanentlyDeleteCard('42', 'bugs')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getCardsByStatus"></a></p>
+<h4 id="kanbansdk-getcardsbystatus-status-boardid">kanbanSDK.getCardsByStatus(status, boardId) ⇒</h4>
+<p>Returns all cards in a specific status column.</p>
+<p>This is a convenience wrapper around <a href="listCards">listCards</a> that filters
+by a single status value.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to an array of <a href="Card">Card</a> cards in the given status.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>status</td>
+<td>The status/column ID to filter by (e.g., <code>'todo'</code>, <code>'in-progress'</code>).</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const inProgress = await sdk.getCardsByStatus('in-progress')
+console.log(`${inProgress.length} cards in progress`)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getUniqueAssignees"></a></p>
+<h4 id="kanbansdk-getuniqueassignees-boardid">kanbanSDK.getUniqueAssignees(boardId) ⇒</h4>
+<p>Returns a sorted list of unique assignee names across all cards on a board.</p>
+<p>Cards with no assignee are excluded from the result.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to a sorted array of unique assignee name strings.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const assignees = await sdk.getUniqueAssignees('bugs')
+// ['alice', 'bob', 'charlie']
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getUniqueLabels"></a></p>
+<h4 id="kanbansdk-getuniquelabels-boardid">kanbanSDK.getUniqueLabels(boardId) ⇒</h4>
+<p>Returns a sorted list of unique labels across all cards on a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to a sorted array of unique label strings.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const labels = await sdk.getUniqueLabels()
+// ['bug', 'enhancement', 'frontend', 'urgent']
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getLabels"></a></p>
+<h4 id="kanbansdk-getlabels">kanbanSDK.getLabels() ⇒</h4>
+<p>Returns all label definitions from the workspace configuration.</p>
+<p>Label definitions map label names to their color and optional group.
+Labels on cards that have no definition will render with default gray styling.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A record mapping label names to <a href="LabelDefinition">LabelDefinition</a> objects.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const labels = sdk.getLabels()
+// { bug: { color: '#e11d48', group: 'Type' }, docs: { color: '#16a34a' } }
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+setLabel"></a></p>
+<h4 id="kanbansdk-setlabel-name-definition">kanbanSDK.setLabel(name, definition)</h4>
+<p>Creates or updates a label definition in the workspace configuration.</p>
+<p>If the label already exists, its definition is replaced entirely.
+The change is persisted to <code>.kanban.json</code> immediately.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>name</td>
+<td>The label name (e.g. <code>'bug'</code>, <code>'frontend'</code>).</td>
+</tr>
+<tr>
+<td>definition</td>
+<td>The label definition with color and optional group.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+sdk.setLabel('docs', { color: '#16a34a' })
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+deleteLabel"></a></p>
+<h4 id="kanbansdk-deletelabel-name">kanbanSDK.deleteLabel(name)</h4>
+<p>Removes a label definition from the workspace configuration and cascades
+the deletion to all cards by removing the label from their <code>labels</code> array.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>name</td>
+<td>The label name to remove.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.deleteLabel('bug')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+renameLabel"></a></p>
+<h4 id="kanbansdk-renamelabel-oldname-newname">kanbanSDK.renameLabel(oldName, newName)</h4>
+<p>Renames a label in the configuration and cascades the change to all cards.</p>
+<p>Updates the label key in <code>.kanban.json</code> and replaces the old label name
+with the new one on every card that uses it.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>oldName</td>
+<td>The current label name.</td>
+</tr>
+<tr>
+<td>newName</td>
+<td>The new label name.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.renameLabel('bug', 'defect')
+// Config updated: 'defect' now has bug's color/group
+// All cards with 'bug' label now have 'defect' instead
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getLabelsInGroup"></a></p>
+<h4 id="kanbansdk-getlabelsingroup-group">kanbanSDK.getLabelsInGroup(group) ⇒</h4>
+<p>Returns a sorted list of label names that belong to the given group.</p>
+<p>Labels without an explicit <code>group</code> property are not matched by any
+group name (they are considered ungrouped).</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A sorted array of label names in the group.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>group</td>
+<td>The group name to filter by (e.g. <code>'Type'</code>, <code>'Priority'</code>).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+sdk.setLabel('feature', { color: '#2563eb', group: 'Type' })
+
+sdk.getLabelsInGroup('Type')
+// ['bug', 'feature']
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+filterCardsByLabelGroup"></a></p>
+<h4 id="kanbansdk-filtercardsbylabelgroup-group-boardid">kanbanSDK.filterCardsByLabelGroup(group, boardId) ⇒</h4>
+<p>Returns all cards that have at least one label belonging to the given group.</p>
+<p>Looks up all labels in the group via <a href="getLabelsInGroup">getLabelsInGroup</a>, then filters
+cards to those containing any of those labels.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to an array of matching <a href="Card">Card</a> cards.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>group</td>
+<td>The group name to filter by.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const typeCards = await sdk.filterCardsByLabelGroup('Type')
+// Returns all cards with 'bug', 'feature', or any other 'Type' label
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addAttachment"></a></p>
+<h4 id="kanbansdk-addattachment-cardid-sourcepath-boardid">kanbanSDK.addAttachment(cardId, sourcePath, boardId) ⇒</h4>
+<p>Adds a file attachment to a card.</p>
+<p>The source file is copied into the card's directory (alongside its
+markdown file) unless it already resides there. The attachment filename
+is added to the card's <code>attachments</code> array if not already present.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to attach the file to.</td>
+</tr>
+<tr>
+<td>sourcePath</td>
+<td>Path to the file to attach. Can be absolute or relative.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.addAttachment('42', '/tmp/screenshot.png')
+console.log(card.attachments) // ['screenshot.png']
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+removeAttachment"></a></p>
+<h4 id="kanbansdk-removeattachment-cardid-attachment-boardid">kanbanSDK.removeAttachment(cardId, attachment, boardId) ⇒</h4>
+<p>Removes an attachment reference from a card's metadata.</p>
+<p>This removes the attachment filename from the card's <code>attachments</code> array
+but does not delete the physical file from disk.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to remove the attachment from.</td>
+</tr>
+<tr>
+<td>attachment</td>
+<td>The attachment filename to remove (e.g., <code>'screenshot.png'</code>).</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.removeAttachment('42', 'old-screenshot.png')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listAttachments"></a></p>
+<h4 id="kanbansdk-listattachments-cardid-boardid">kanbanSDK.listAttachments(cardId, boardId) ⇒</h4>
+<p>Lists all attachment filenames for a card.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to an array of attachment filename strings.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card whose attachments to list.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const files = await sdk.listAttachments('42')
+// ['screenshot.png', 'debug-log.txt']
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getAttachmentDir"></a></p>
+<h4 id="kanbansdk-getattachmentdir-cardid-boardid">kanbanSDK.getAttachmentDir(cardId, boardId) ⇒</h4>
+<p>Returns the absolute path to the attachment directory for a card.</p>
+<p>For the default markdown/localfs path this is typically
+<code>{column_dir}/attachments/</code>. Other providers may return a different local
+directory or <code>null</code> when attachments are not directly browseable on disk.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the absolute directory path, or <code>null</code> if the card is not found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const dir = await sdk.getAttachmentDir('42')
+// '/workspace/.kanban/boards/default/backlog/attachments'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listComments"></a></p>
+<h4 id="kanbansdk-listcomments-cardid-boardid">kanbanSDK.listComments(cardId, boardId) ⇒</h4>
+<p>Lists all comments on a card.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to an array of <a href="Comment">Comment</a> objects.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card whose comments to list.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const comments = await sdk.listComments('42')
+for (const c of comments) {
+  console.log(`${c.author}: ${c.content}`)
+}
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addComment"></a></p>
+<h4 id="kanbansdk-addcomment-cardid-author-content-boardid">kanbanSDK.addComment(cardId, author, content, boardId) ⇒</h4>
+<p>Adds a comment to a card.</p>
+<p>The comment is assigned an auto-incrementing ID (e.g., <code>'c1'</code>, <code>'c2'</code>)
+based on the existing comments. The card's <code>modified</code> timestamp is updated.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card (including the new comment).<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to comment on.</td>
+</tr>
+<tr>
+<td>author</td>
+<td>The name of the comment author.</td>
+</tr>
+<tr>
+<td>content</td>
+<td>The comment text content.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.addComment('42', 'alice', 'This needs more investigation.')
+console.log(card.comments.length) // 1
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+updateComment"></a></p>
+<h4 id="kanbansdk-updatecomment-cardid-commentid-content-boardid">kanbanSDK.updateComment(cardId, commentId, content, boardId) ⇒</h4>
+<p>Updates the content of an existing comment on a card.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+<li><code>Error</code> If the comment is not found on the card.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card containing the comment.</td>
+</tr>
+<tr>
+<td>commentId</td>
+<td>The ID of the comment to update (e.g., <code>'c1'</code>).</td>
+</tr>
+<tr>
+<td>content</td>
+<td>The new content for the comment.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+deleteComment"></a></p>
+<h4 id="kanbansdk-deletecomment-cardid-commentid-boardid">kanbanSDK.deleteComment(cardId, commentId, boardId) ⇒</h4>
+<p>Deletes a comment from a card.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated <a href="Card">Card</a> card.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card containing the comment.</td>
+</tr>
+<tr>
+<td>commentId</td>
+<td>The ID of the comment to delete (e.g., <code>'c1'</code>).</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const card = await sdk.deleteComment('42', 'c2')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getLogFilePath"></a></p>
+<h4 id="kanbansdk-getlogfilepath-cardid-boardid">kanbanSDK.getLogFilePath(cardId, boardId) ⇒</h4>
+<p>Returns the absolute path to the log file for a card.</p>
+<p>The log file is stored as the card attachment <code>&lt;cardId&gt;.log</code> through the
+active <code>attachment.storage</code> provider. File-backed providers usually return
+a stable workspace path, while remote providers may return a materialized
+temporary local file path instead.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the log file path, or <code>null</code> if the card is not found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+listLogs"></a></p>
+<h4 id="kanbansdk-listlogs-cardid-boardid">kanbanSDK.listLogs(cardId, boardId) ⇒</h4>
+<p>Lists all log entries for a card.</p>
+<p>Reads the card's <code>.log</code> file and parses each line into a <a href="LogEntry">LogEntry</a>.
+Returns an empty array if no log file exists.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to an array of <a href="LogEntry">LogEntry</a> objects.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card whose logs to list.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const logs = await sdk.listLogs('42')
+for (const entry of logs) {
+  console.log(`[${entry.source}] ${entry.text}`)
+}
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addLog"></a></p>
+<h4 id="kanbansdk-addlog-cardid-text-options-boardid">kanbanSDK.addLog(cardId, text, options, boardId) ⇒</h4>
+<p>Adds a log entry to a card.</p>
+<p>Appends a new line to the card's <code>.log</code> attachment via the active
+attachment-storage capability. Providers may handle this with a native
+append hook when available, otherwise the SDK falls back to a safe
+read/modify/write cycle. If the file does not exist, it is created and
+automatically added to the card's attachments array.
+The timestamp defaults to the current time if not provided.
+The source defaults to <code>'default'</code> if not provided.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the created <a href="LogEntry">LogEntry</a>.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card to add the log to.</td>
+</tr>
+<tr>
+<td>text</td>
+<td>The log message text. Supports inline markdown.</td>
+</tr>
+<tr>
+<td>options</td>
+<td>Optional log entry parameters.</td>
+</tr>
+<tr>
+<td>options.source</td>
+<td>Source/origin label. Defaults to <code>'default'</code>.</td>
+</tr>
+<tr>
+<td>options.timestamp</td>
+<td>ISO 8601 timestamp. Defaults to current time.</td>
+</tr>
+<tr>
+<td>options.object</td>
+<td>Optional structured data to attach as JSON.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const entry = await sdk.addLog('42', 'Build started')
+const entry2 = await sdk.addLog('42', 'Deploy complete', {
+  source: 'ci',
+  object: { version: '1.2.3', duration: 42 }
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+clearLogs"></a></p>
+<h4 id="kanbansdk-clearlogs-cardid-boardid">kanbanSDK.clearLogs(cardId, boardId) ⇒</h4>
+<p>Clears all log entries for a card by deleting the <code>.log</code> file.</p>
+<p>The log attachment reference is removed from the card's attachments array.
+When a local/materialized file exists, it is deleted best-effort as well.
+New log entries recreate the log attachment automatically.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when the logs have been cleared.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the card is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cardId</td>
+<td>The ID of the card whose logs to clear.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.clearLogs('42')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getBoardLogFilePath"></a></p>
+<h4 id="kanbansdk-getboardlogfilepath-boardid">kanbanSDK.getBoardLogFilePath(boardId) ⇒</h4>
+<p>Returns the absolute path to the board-level log file for a given board.</p>
+<p>The board log file is located at <code>.kanban/boards/&lt;boardId&gt;/board.log</code>,
+at the same level as the column folders.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The absolute path to <code>board.log</code> for the specified board.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const logPath = sdk.getBoardLogFilePath()
+// '/workspace/.kanban/boards/default/board.log'
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listBoardLogs"></a></p>
+<h4 id="kanbansdk-listboardlogs-boardid">kanbanSDK.listBoardLogs(boardId) ⇒</h4>
+<p>Lists all log entries from the board-level log file.</p>
+<p>Returns an empty array if the log file does not exist yet.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves to an array of <a href="LogEntry">LogEntry</a> objects, oldest first.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const logs = await sdk.listBoardLogs()
+// [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'api', text: 'Card created' }]
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addBoardLog"></a></p>
+<h4 id="kanbansdk-addboardlog-text-options-boardid">kanbanSDK.addBoardLog(text, options, boardId) ⇒</h4>
+<p>Appends a new log entry to the board-level log file.</p>
+<p>Creates the log file if it does not yet exist.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves to the created <a href="LogEntry">LogEntry</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>text</td>
+<td>The human-readable log message.</td>
+</tr>
+<tr>
+<td>options</td>
+<td>Optional entry metadata: source label, ISO timestamp override, and structured object.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const entry = await sdk.addBoardLog('Board archived', { source: 'cli' })
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+clearBoardLogs"></a></p>
+<h4 id="kanbansdk-clearboardlogs-boardid">kanbanSDK.clearBoardLogs(boardId) ⇒</h4>
+<p>Clears all log entries for a board by deleting the board-level <code>board.log</code> file.</p>
+<p>New log entries will recreate the file automatically.
+No error is thrown if the file does not exist.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise that resolves when the logs have been cleared.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">await sdk.clearBoardLogs()
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listColumns"></a></p>
+<h4 id="kanbansdk-listcolumns-boardid">kanbanSDK.listColumns(boardId) ⇒</h4>
+<p>Lists all columns defined for a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: An array of <a href="KanbanColumn">KanbanColumn</a> objects in their current order.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const columns = sdk.listColumns('bugs')
+// [{ id: 'triage', name: 'Triage', color: '#ef4444' }, ...]
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+addColumn"></a></p>
+<h4 id="kanbansdk-addcolumn-column-boardid">kanbanSDK.addColumn(column, boardId) ⇒</h4>
+<p>Adds a new column to a board.</p>
+<p>The column is appended to the end of the board's column list.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The full updated array of <a href="KanbanColumn">KanbanColumn</a> objects for the board.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board is not found.</li>
+<li><code>Error</code> If a column with the same ID already exists.</li>
+<li><code>Error</code> If the column ID is <code>'deleted'</code> (reserved for soft-delete).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>column</td>
+<td>The column definition to add.</td>
+</tr>
+<tr>
+<td><a href="http://column.id">column.id</a></td>
+<td>Unique identifier for the column (used as status values on cards).</td>
+</tr>
+<tr>
+<td><a href="http://column.name">column.name</a></td>
+<td>Human-readable display name.</td>
+</tr>
+<tr>
+<td>column.color</td>
+<td>CSS color string for the column header.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const columns = sdk.addColumn(
+  { id: 'blocked', name: 'Blocked', color: '#ef4444' },
+  'default'
+)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+updateColumn"></a></p>
+<h4 id="kanbansdk-updatecolumn-columnid-updates-boardid">kanbanSDK.updateColumn(columnId, updates, boardId) ⇒</h4>
+<p>Updates the properties of an existing column.</p>
+<p>Only the provided fields (<code>name</code>, <code>color</code>) are updated; the column's
+<code>id</code> cannot be changed.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The full updated array of <a href="KanbanColumn">KanbanColumn</a> objects for the board.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board is not found.</li>
+<li><code>Error</code> If the column is not found.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>columnId</td>
+<td>The ID of the column to update.</td>
+</tr>
+<tr>
+<td>updates</td>
+<td>A partial object with the fields to update.</td>
+</tr>
+<tr>
+<td><a href="http://updates.name">updates.name</a></td>
+<td>New display name for the column.</td>
+</tr>
+<tr>
+<td>updates.color</td>
+<td>New CSS color string for the column.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const columns = sdk.updateColumn('in-progress', {
+  name: 'Working On',
+  color: '#f97316'
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+removeColumn"></a></p>
+<h4 id="kanbansdk-removecolumn-columnid-boardid">kanbanSDK.removeColumn(columnId, boardId) ⇒</h4>
+<p>Removes a column from a board.</p>
+<p>The column must be empty (no cards currently assigned to it).
+This operation cannot be undone.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the updated array of <a href="KanbanColumn">KanbanColumn</a> objects.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board is not found.</li>
+<li><code>Error</code> If the column is not found.</li>
+<li><code>Error</code> If the column still contains cards.</li>
+<li><code>Error</code> If the column ID is <code>'deleted'</code> (reserved for soft-delete).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>columnId</td>
+<td>The ID of the column to remove.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const columns = await sdk.removeColumn('blocked', 'default')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+cleanupColumn"></a></p>
+<h4 id="kanbansdk-cleanupcolumn-columnid-boardid">kanbanSDK.cleanupColumn(columnId, boardId) ⇒</h4>
+<p>Moves all cards in the specified column to the <code>deleted</code> (soft-delete) column.</p>
+<p>This is a non-destructive operation — cards are moved to the reserved
+<code>deleted</code> status and can be restored or permanently deleted later.
+The column itself is not removed.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the number of cards that were moved.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the column is <code>'deleted'</code> (no-op protection).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>columnId</td>
+<td>The ID of the column whose cards should be moved to <code>deleted</code>.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const moved = await sdk.cleanupColumn('blocked')
+console.log(`Moved ${moved} cards to deleted`)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+purgeDeletedCards"></a></p>
+<h4 id="kanbansdk-purgedeletedcards-boardid">kanbanSDK.purgeDeletedCards(boardId) ⇒</h4>
+<p>Permanently deletes all cards currently in the <code>deleted</code> column.</p>
+<p>This is equivalent to &quot;empty trash&quot;. All soft-deleted cards are
+removed from disk. This operation cannot be undone.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: A promise resolving to the number of cards that were permanently deleted.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const count = await sdk.purgeDeletedCards()
+console.log(`Permanently deleted ${count} cards`)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+reorderColumns"></a></p>
+<h4 id="kanbansdk-reordercolumns-columnids-boardid">kanbanSDK.reorderColumns(columnIds, boardId) ⇒</h4>
+<p>Reorders the columns of a board.</p>
+<p>The <code>columnIds</code> array must contain every existing column ID exactly once,
+in the desired new order.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The reordered array of <a href="KanbanColumn">KanbanColumn</a> objects.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board is not found.</li>
+<li><code>Error</code> If any column ID in the array does not exist.</li>
+<li><code>Error</code> If the array does not include all column IDs.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>columnIds</td>
+<td>An array of all column IDs in the desired order.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const columns = sdk.reorderColumns(
+  ['backlog', 'todo', 'blocked', 'in-progress', 'review', 'done'],
+  'default'
+)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+getMinimizedColumns"></a></p>
+<h4 id="kanbansdk-getminimizedcolumns-boardid">kanbanSDK.getMinimizedColumns(boardId) ⇒</h4>
+<p>Returns the minimized column IDs for a board.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: Array of column IDs currently marked as minimized.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>Board to query (uses default board if omitted).</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+setMinimizedColumns"></a></p>
+<h4 id="kanbansdk-setminimizedcolumns-columnids-boardid">kanbanSDK.setMinimizedColumns(columnIds, boardId) ⇒</h4>
+<p>Sets the minimized column IDs for a board, persisting the state to the
+workspace config file. Stale or invalid IDs are silently dropped.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The sanitized list of minimized column IDs that was saved.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>columnIds</td>
+<td>Column IDs to mark as minimized.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Board to update (uses default board if omitted).</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+getSettings"></a></p>
+<h4 id="kanbansdk-getsettings">kanbanSDK.getSettings() ⇒</h4>
+<p>Returns the global card display settings for the workspace.</p>
+<p>Display settings control which fields are shown on card previews
+(e.g., priority badges, assignee avatars, due dates, labels).</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The current <a href="CardDisplaySettings">CardDisplaySettings</a> object.<br>
+<strong>Example</strong></p>
+<pre><code class="language-ts">const settings = sdk.getSettings()
+console.log(settings.showPriority) // true
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+updateSettings"></a></p>
+<h4 id="kanbansdk-updatesettings-settings">kanbanSDK.updateSettings(settings)</h4>
+<p>Updates the global card display settings for the workspace.</p>
+<p>The provided settings object fully replaces the display settings
+in the workspace configuration file (<code>.kanban.json</code>).</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>settings</td>
+<td>The new <a href="CardDisplaySettings">CardDisplaySettings</a> to apply.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.updateSettings({
+  showPriority: true,
+  showAssignee: true,
+  showDueDate: false,
+  showLabels: true
+})
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+migrateToSqlite"></a></p>
+<h4 id="kanbansdk-migratetosqlite-dbpath">kanbanSDK.migrateToSqlite(dbPath) ⇒</h4>
+<p>Migrates all card data from the current storage engine to SQLite.</p>
+<p>Cards are scanned from every board using the active engine, then written
+through the configured <code>sqlite</code> compatibility provider. After all data has
+been copied the workspace <code>.kanban.json</code> is updated with
+<code>storageEngine: 'sqlite'</code> and <code>sqlitePath</code> so that subsequent SDK instances
+resolve the same compatibility provider.</p>
+<p>The existing markdown files are <strong>not</strong> deleted; they serve as a manual
+backup until the caller explicitly removes them.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The total number of cards migrated.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the current engine is already <code>'sqlite'</code>.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dbPath</td>
+<td>Path to the SQLite database file. Relative paths are   resolved from the workspace root. Defaults to <code>'.kanban/kanban.db'</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const count = await sdk.migrateToSqlite()
+console.log(`Migrated ${count} cards to SQLite`)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+migrateToMarkdown"></a></p>
+<h4 id="kanbansdk-migratetomarkdown">kanbanSDK.migrateToMarkdown() ⇒</h4>
+<p>Migrates all card data from the current <code>sqlite</code> compatibility provider back
+to markdown files.</p>
+<p>Cards are scanned from every board in the SQLite database and written as
+individual <code>.md</code> files under <code>.kanban/boards/&lt;boardId&gt;/&lt;status&gt;/</code>. After
+migration the workspace <code>.kanban.json</code> is updated to remove the
+<code>storageEngine</code>/<code>sqlitePath</code> overrides so the default markdown engine is
+used by subsequent SDK instances.</p>
+<p>The SQLite database file is <strong>not</strong> deleted; it serves as a manual backup.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The total number of cards migrated.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the current engine is already <code>'markdown'</code>.</li>
+</ul>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const count = await sdk.migrateToMarkdown()
+console.log(`Migrated ${count} cards to markdown`)
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+setDefaultBoard"></a></p>
+<h4 id="kanbansdk-setdefaultboard-boardid">kanbanSDK.setDefaultBoard(boardId)</h4>
+<p>Sets the default board for the workspace.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the board does not exist.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>boardId</td>
+<td>The ID of the board to set as the default.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">sdk.setDefaultBoard('sprint-2')
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+listWebhooks"></a></p>
+<h4 id="kanbansdk-listwebhooks">kanbanSDK.listWebhooks() ⇒</h4>
+<p>Lists all registered webhooks.
+Delegates to the resolved external <code>webhook.delivery</code> provider when available,
+otherwise uses the built-in compatibility registry path against the same
+<code>.kanban.json</code> <code>webhooks</code> array.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: Array of <a href="Webhook">Webhook</a> objects.</p>
+<hr>
+<p><a name="KanbanSDK+createWebhook"></a></p>
+<h4 id="kanbansdk-createwebhook-webhookconfig">kanbanSDK.createWebhook(webhookConfig) ⇒</h4>
+<p>Creates and persists a new webhook.
+Delegates to the resolved external <code>webhook.delivery</code> provider when available,
+otherwise uses the built-in compatibility registry path.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The newly created <a href="Webhook">Webhook</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>webhookConfig</td>
+<td>The webhook configuration.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+deleteWebhook"></a></p>
+<h4 id="kanbansdk-deletewebhook-id">kanbanSDK.deleteWebhook(id) ⇒</h4>
+<p>Deletes a webhook by its ID.
+Delegates to the resolved external <code>webhook.delivery</code> provider when available,
+otherwise uses the built-in compatibility registry path.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: <code>true</code> if deleted, <code>false</code> if not found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>The webhook ID to delete.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK+updateWebhook"></a></p>
+<h4 id="kanbansdk-updatewebhook-id-updates">kanbanSDK.updateWebhook(id, updates) ⇒</h4>
+<p>Updates an existing webhook's configuration.
+Delegates to the resolved external <code>webhook.delivery</code> provider when available,
+otherwise uses the built-in compatibility registry path.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The updated <a href="Webhook">Webhook</a>, or <code>null</code> if not found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>The webhook ID to update.</td>
+</tr>
+<tr>
+<td>updates</td>
+<td>Partial webhook fields to merge.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="KanbanSDK._authStorage"></a></p>
+<h4 id="kanbansdk-authstorage">KanbanSDK._authStorage</h4>
+<p><strong>Kind</strong>: static property of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>: Async-scoped auth carrier. Installed per request scope via <a href="runWithAuth">runWithAuth</a>.</p>
+<hr>
+<p><a name="KanbanSDK._runWithScopedAuth"></a></p>
+<h4 id="kanbansdk-runwithscopedauth">KanbanSDK._runWithScopedAuth()</h4>
+<p><strong>Kind</strong>: static method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK._getScopedAuth"></a></p>
+<h4 id="kanbansdk-getscopedauth">KanbanSDK._getScopedAuth()</h4>
+<p><strong>Kind</strong>: static method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK._cloneMergeValue"></a></p>
+<h4 id="kanbansdk-clonemergevalue">KanbanSDK._cloneMergeValue()</h4>
+<p><strong>Kind</strong>: static method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK._deepMerge"></a></p>
+<h4 id="kanbansdk-deepmerge">KanbanSDK._deepMerge()</h4>
+<p>Recursively deep-merges <code>source</code> into a shallow copy of <code>target</code>.</p>
+<ul>
+<li>Plain objects are merged recursively; later keys override earlier keys at
+every depth.</li>
+<li>Arrays, primitives, and class instances in <code>source</code> <strong>replace</strong> the
+corresponding value in <code>target</code> (no concatenation of arrays).</li>
+<li><code>target</code> itself is never mutated; the caller receives the merged clone.</li>
+</ul>
+<p><strong>Kind</strong>: static method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="_isPlainObject"></a></p>
+<h3 id="isplainobject">_isPlainObject()</h3>
+<p>Returns <code>true</code> when <code>value</code> is a plain-object merge candidate.</p>
+<p>Accepts <code>{}</code> literals and <code>Object.create(null)</code> objects. Rejects arrays,
+class instances, primitives, and <code>null</code>. Used by <code>KanbanSDK._deepMerge</code>.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<h2 id="types">Types</h2>
+<p><a name="AuthError"></a></p>
+<h3 id="autherror">AuthError</h3>
+<p>Typed error thrown by the SDK authorization seam when a policy plugin
+denies an action.</p>
+<p>Host surfaces should catch this to return appropriate error responses
+(HTTP 403, CLI error output, MCP tool error) without leaking token material.</p>
+<p><strong>Kind</strong>: global class</p>
+<hr>
+<p><a name="CARD_FORMAT_VERSION"></a></p>
+<h3 id="card-format-version">CARD_FORMAT_VERSION</h3>
+<p>Current card frontmatter schema version. Increment when the format changes.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="DEFAULT_COLUMNS"></a></p>
+<h3 id="default-columns">DEFAULT_COLUMNS</h3>
+<p>The default set of five kanban columns provided when no custom columns
+are configured: Backlog, To Do, In Progress, Review, and Done.</p>
+<p><strong>Kind</strong>: global variable<br>
+<strong>Example</strong></p>
+<pre><code class="language-js">// Use as the initial column configuration
+const config = { columns: [...DEFAULT_COLUMNS] }
+</code></pre>
+<hr>
+<p><a name="getTitleFromContent"></a></p>
+<h3 id="gettitlefromcontent-content">getTitleFromContent(content) ⇒</h3>
+<p>Extracts a title from markdown content by finding the first <code># heading</code>.
+Falls back to the first non-empty line if no heading is found,
+or <code>'Untitled'</code> if the content is empty.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The extracted title string.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>content</td>
+<td>Raw markdown string to extract the title from.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">getTitleFromContent('# My Card\nSome body text')
+// =&gt; 'My Card'
+</code></pre>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">getTitleFromContent('Just a line of text')
+// =&gt; 'Just a line of text'
+</code></pre>
+<hr>
+<p><a name="generateSlug"></a></p>
+<h3 id="generateslug-title">generateSlug(title) ⇒</h3>
+<p>Creates a filename-safe slug from a title string.</p>
+<p>The slug is lowercased, stripped of special characters, limited to 50
+characters, and falls back to <code>'card'</code> if the result would be empty.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A URL/filename-safe slug string.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>title</td>
+<td>The human-readable title to slugify.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">generateSlug('Build Dashboard UI')
+// =&gt; 'build-dashboard-ui'
+</code></pre>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">generateSlug('Hello, World!!!')
+// =&gt; 'hello-world'
+</code></pre>
+<hr>
+<p><a name="formatFormDisplayName"></a></p>
+<h3 id="formatformdisplayname-formkey">formatFormDisplayName(formKey) ⇒</h3>
+<p>Converts a stable form key such as <code>'bug-report'</code> into a human-friendly
+display name such as <code>'Bug Report'</code>.</p>
+<p>This is used as the default display name for reusable config-backed forms
+when <code>FormDefinition.name</code> is omitted.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A human-readable title-cased name.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>formKey</td>
+<td>Stable config form key or resolved form identifier.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="generateCardFilename"></a></p>
+<h3 id="generatecardfilename-id-title-id">generateCardFilename(id, title) ⇒ <code>id</code></h3>
+<p>Generates a card filename from an incremental numeric ID and a title.</p>
+<p>The filename is composed of the ID prefix followed by a slugified title
+(e.g. <code>'42-build-dashboard'</code>).</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: <code>id</code> - A filename string in the format <code>'-{slug}'</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>The numeric card ID.</td>
+</tr>
+<tr>
+<td>title</td>
+<td>The human-readable card title.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">generateCardFilename(42, 'Build Dashboard')
+// =&gt; '42-build-dashboard'
+</code></pre>
+<hr>
+<p><a name="extractNumericId"></a></p>
+<h3 id="extractnumericid-filenameorid">extractNumericId(filenameOrId) ⇒</h3>
+<p>Extracts the numeric ID prefix from a filename or card ID string.</p>
+<p>Looks for a leading sequence of digits optionally followed by a hyphen
+(e.g. <code>'42-build-dashboard'</code> yields <code>42</code>).</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The parsed numeric ID, or <code>null</code> if no numeric prefix is found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>filenameOrId</td>
+<td>A filename or card ID string such as <code>'42-build-dashboard'</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">extractNumericId('42-build-dashboard')
+// =&gt; 42
+</code></pre>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">extractNumericId('no-number')
+// =&gt; null
+</code></pre>
+<hr>
+<p><a name="sanitizeCard"></a></p>
+<h3 id="sanitizecard-card">sanitizeCard(card) ⇒</h3>
+<p>Strips the <code>filePath</code> property from a card before exposing it
+in webhook payloads or API responses. The file path is an internal
+implementation detail that should not be leaked externally.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A copy of the card without the <code>filePath</code> field.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>card</td>
+<td>The card object to sanitize.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const safe = sanitizeCard(card)
+// safe.filePath is undefined
+</code></pre>
+<hr>
+<h2 id="configuration">Configuration</h2>
+<p><a name="DEFAULT_CONFIG"></a></p>
+<h3 id="default-config">DEFAULT_CONFIG</h3>
+<p>Default configuration used when no <code>.kanban.json</code> file exists or when
+fields are missing from an existing config. Includes a single <code>'default'</code>
+board with the standard five columns.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="CONFIG_FILENAME"></a></p>
+<h3 id="config-filename">CONFIG_FILENAME</h3>
+<p>The filename used for the kanban configuration file: <code>'.kanban.json'</code>.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="configPath"></a></p>
+<h3 id="configpath-workspaceroot">configPath(workspaceRoot) ⇒</h3>
+<p>Returns the absolute path to the <code>.kanban.json</code> config file for a workspace.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: Absolute path to the config file.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">configPath('/home/user/my-project')
+// =&gt; '/home/user/my-project/.kanban.json'
+</code></pre>
+<hr>
+<p><a name="readConfig"></a></p>
+<h3 id="readconfig-workspaceroot">readConfig(workspaceRoot) ⇒</h3>
+<p>Reads the kanban config from disk. If the file is missing or unreadable,
+returns the default config. If the file contains a v1 config, it is
+automatically migrated to v2 format and persisted back to disk.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The parsed (and possibly migrated) kanban configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const config = readConfig('/home/user/my-project')
+console.log(config.defaultBoard) // =&gt; 'default'
+</code></pre>
+<hr>
+<p><a name="writeConfig"></a></p>
+<h3 id="writeconfig-workspaceroot-config">writeConfig(workspaceRoot, config)</h3>
+<p>Writes the kanban config to disk as pretty-printed JSON.</p>
+<p><strong>Kind</strong>: global function</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+<tr>
+<td>config</td>
+<td>The kanban configuration to persist.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const config = readConfig('/home/user/my-project')
+config.defaultBoard = 'sprint-1'
+writeConfig('/home/user/my-project', config)
+</code></pre>
+<hr>
+<p><a name="getDefaultBoardId"></a></p>
+<h3 id="getdefaultboardid-workspaceroot">getDefaultBoardId(workspaceRoot) ⇒</h3>
+<p>Returns the default board ID from the workspace config.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The default board ID string (e.g. <code>'default'</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const boardId = getDefaultBoardId('/home/user/my-project')
+// =&gt; 'default'
+</code></pre>
+<hr>
+<p><a name="getBoardConfig"></a></p>
+<h3 id="getboardconfig-workspaceroot-boardid">getBoardConfig(workspaceRoot, boardId) ⇒</h3>
+<p>Returns the configuration for a specific board. If <code>boardId</code> is omitted,
+the default board is used.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The board configuration object.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the resolved board ID does not exist in the config.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const board = getBoardConfig('/home/user/my-project', 'sprint-1')
+console.log(board.name) // =&gt; 'Sprint 1'
+</code></pre>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">// Uses default board
+const board = getBoardConfig('/home/user/my-project')
+</code></pre>
+<hr>
+<p><a name="allocateCardId"></a></p>
+<h3 id="allocatecardid-workspaceroot-boardid">allocateCardId(workspaceRoot, boardId) ⇒</h3>
+<p>Allocates the next card ID for a board by reading and incrementing the
+board's <code>nextCardId</code> counter. The updated config is persisted to disk.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The newly allocated numeric card ID.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> If the resolved board ID does not exist in the config.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>Optional board ID. Defaults to the workspace's default board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const id = allocateCardId('/home/user/my-project')
+// =&gt; 1 (first call), 2 (second call), etc.
+</code></pre>
+<hr>
+<p><a name="syncCardIdCounter"></a></p>
+<h3 id="synccardidcounter-workspaceroot-boardid-existingids">syncCardIdCounter(workspaceRoot, boardId, existingIds)</h3>
+<p>Synchronizes the board's <code>nextCardId</code> counter to be greater than all
+existing card IDs. This prevents ID collisions when cards have been
+created outside the normal allocation flow (e.g. manual file creation).</p>
+<p>Does nothing if <code>existingIds</code> is empty or the counter is already ahead.</p>
+<p><strong>Kind</strong>: global function</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>workspaceRoot</td>
+<td>Absolute path to the workspace root directory.</td>
+</tr>
+<tr>
+<td>boardId</td>
+<td>The board ID to synchronize.</td>
+</tr>
+<tr>
+<td>existingIds</td>
+<td>Array of numeric card IDs currently present on the board.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">syncCardIdCounter('/home/user/my-project', 'default', [1, 5, 12])
+// Board's nextCardId is now at least 13
+</code></pre>
+<hr>
+<p><a name="configToSettings"></a></p>
+<h3 id="configtosettings-config">configToSettings(config) ⇒</h3>
+<p>Extracts <a href="CardDisplaySettings">CardDisplaySettings</a> from a <a href="KanbanConfig">KanbanConfig</a> by
+picking out the global display-related fields.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A <code>CardDisplaySettings</code> object with the current display preferences.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>config</td>
+<td>The kanban configuration to extract settings from.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const config = readConfig('/home/user/my-project')
+const settings = configToSettings(config)
+console.log(settings.compactMode) // =&gt; true
+</code></pre>
+<hr>
+<p><a name="settingsToConfig"></a></p>
+<h3 id="settingstoconfig-config-settings">settingsToConfig(config, settings) ⇒</h3>
+<p>Merges <a href="CardDisplaySettings">CardDisplaySettings</a> back into a <a href="KanbanConfig">KanbanConfig</a>,
+returning a new config object with the display fields updated.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A new <code>KanbanConfig</code> with the display settings applied.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>config</td>
+<td>The existing kanban configuration to update.</td>
+</tr>
+<tr>
+<td>settings</td>
+<td>The display settings to merge into the config.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-js">const config = readConfig('/home/user/my-project')
+const updated = settingsToConfig(config, { ...configToSettings(config), compactMode: true })
+writeConfig('/home/user/my-project', updated)
+</code></pre>
+<hr>
+<p><a name="normalizeAuthCapabilities"></a></p>
+<h3 id="normalizeauthcapabilities">normalizeAuthCapabilities()</h3>
+<p>Normalizes auth capability selections into a complete runtime capability map.</p>
+<p>Omitted auth providers default to the <code>noop</code> compatibility ids. When the
+external <code>kl-auth-plugin</code> package is installed those ids resolve there;
+otherwise core keeps a built-in compatibility fallback so behavior is
+unchanged when auth is not configured.</p>
+<p>The input object is never mutated.</p>
+<p><strong>Kind</strong>: global function</p>
+<hr>
+<p><a name="normalizeStorageCapabilities"></a></p>
+<h3 id="normalizestoragecapabilities">normalizeStorageCapabilities()</h3>
+<p>Normalizes legacy storage settings plus capability-based plugin selections
+into a complete runtime capability map.</p>
+<p>Precedence:</p>
+<ol>
+<li>Explicit <code>plugins[namespace]</code></li>
+<li>Legacy <code>storageEngine</code> / <code>sqlitePath</code> for <code>card.storage</code></li>
+<li>Backward-compatible defaults (<code>markdown</code> + <code>localfs</code>)</li>
+</ol>
+<p>Explicit built-in <code>attachment.storage</code> providers such as <code>sqlite</code> and
+<code>mysql</code> remain opt-in. Omitting <code>attachment.storage</code> never auto-switches
+it away from the legacy <code>localfs</code> default.</p>
+<p>The input object is never mutated.</p>
+<p><strong>Kind</strong>: global function</p>
+<hr>
+<p><a name="normalizeWebhookCapabilities"></a></p>
+<h3 id="normalizewebhookcapabilities">normalizeWebhookCapabilities()</h3>
+<p>Normalizes webhook capability selections into a complete runtime capability map.</p>
+<p>When no explicit provider is configured, defaults to <code>{ provider: 'webhooks' }</code>, which
+maps to the <code>kl-webhooks-plugin</code> external package via <code>WEBHOOK_PROVIDER_ALIASES</code>.
+The built-in webhook delivery path remains active as a compatibility fallback when
+the external package is absent.</p>
+<p>The input object is never mutated.</p>
+<p><strong>Kind</strong>: global function</p>
+<hr>
+<h2 id="parser">Parser</h2>
+<p><a name="parseCardFile"></a></p>
+<h3 id="parsecardfile-content-filepath">parseCardFile(content, filePath) ⇒</h3>
+<p>Parses a markdown file with YAML frontmatter into a Card object.</p>
+<p>The file is expected to have a YAML frontmatter block delimited by <code>---</code> at the
+top, followed by the card body content. Additional <code>---</code> delimited blocks after
+the body are parsed as comment sections (if they contain <code>comment: true</code>),
+otherwise they are treated as part of the body content.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The parsed <a href="Card">Card</a> object, or <code>null</code> if no valid frontmatter block is found.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>content</td>
+<td>The raw string content of the markdown file.</td>
+</tr>
+<tr>
+<td>filePath</td>
+<td>The absolute file path, used to extract the card ID from the filename   if no <code>id</code> field is present in the frontmatter.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="serializeCard"></a></p>
+<h3 id="serializecard-card">serializeCard(card) ⇒</h3>
+<p>Serializes a Card object back to markdown with YAML frontmatter.</p>
+<p>Produces a string with a <code>---</code> delimited YAML frontmatter block containing all
+card metadata, followed by the card body content. Any comments attached to the
+card are appended as additional <code>---</code> delimited sections at the end of the file.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The complete markdown string ready to be written to a <code>.md</code> file.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>card</td>
+<td>The <a href="Card">Card</a> object to serialize.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="file-utilities">File Utilities</h2>
+<p><a name="findWorkspaceRootSync"></a></p>
+<h3 id="findworkspacerootsync-startdir">findWorkspaceRootSync(startDir) ⇒</h3>
+<p>Synchronously walks up from <code>startDir</code> looking for a workspace root.</p>
+<p>Preference order:</p>
+<ol>
+<li>A directory containing <code>.git</code> (authoritative project root)</li>
+<li>The nearest directory containing <code>.kanban.json</code></li>
+<li>The nearest directory containing <code>package.json</code></li>
+</ol>
+<p>This ensures monorepo package folders do not shadow the actual repository
+root when a <code>.git</code> directory exists higher up the tree.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The detected workspace root, or <code>startDir</code> on no match.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>startDir</td>
+<td>Directory to start scanning from.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="resolveWorkspaceRoot"></a></p>
+<h3 id="resolveworkspaceroot-startdir-configfilepath">resolveWorkspaceRoot(startDir, configFilePath) ⇒</h3>
+<p>Resolves the workspace root from either an explicit config file path or the
+current directory tree.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The absolute workspace root path.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>startDir</td>
+<td>Optional directory to start scanning from. Defaults to <code>process.cwd()</code>.</td>
+</tr>
+<tr>
+<td>configFilePath</td>
+<td>Optional path to a specific <code>.kanban.json</code> file.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="resolveKanbanDir"></a></p>
+<h3 id="resolvekanbandir-startdir-configfilepath">resolveKanbanDir(startDir, configFilePath) ⇒</h3>
+<p>Resolves the kanban directory without an explicit path by locating the
+workspace root, then reading <code>kanbanDirectory</code> from the effective
+<code>.kanban.json</code> file (defaults to <code>'.kanban'</code>).</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The absolute path to the kanban directory.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>startDir</td>
+<td>Optional directory to start scanning from. Defaults to <code>process.cwd()</code>.</td>
+</tr>
+<tr>
+<td>configFilePath</td>
+<td>Optional path to a specific <code>.kanban.json</code> file.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="getCardFilePath"></a></p>
+<h3 id="getcardfilepath-kanbandir-status-filename">getCardFilePath(kanbanDir, status, filename) ⇒</h3>
+<p>Constructs the full file path for a card markdown file.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The absolute path to the card file, including the <code>.md</code> extension.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kanbanDir</td>
+<td>The root kanban directory (e.g., <code>.kanban</code>).</td>
+</tr>
+<tr>
+<td>status</td>
+<td>The status subdirectory name (e.g., <code>backlog</code>, <code>in-progress</code>).</td>
+</tr>
+<tr>
+<td>filename</td>
+<td>The card filename without the <code>.md</code> extension.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="ensureDirectories"></a></p>
+<h3 id="ensuredirectories-kanbandir">ensureDirectories(kanbanDir) ⇒</h3>
+<p>Creates the kanban directory if it does not already exist.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A promise that resolves when the directory has been created or already exists.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kanbanDir</td>
+<td>The root kanban directory path to ensure exists.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="ensureStatusSubfolders"></a></p>
+<h3 id="ensurestatussubfolders-kanbandir-statuses">ensureStatusSubfolders(kanbanDir, statuses) ⇒</h3>
+<p>Creates subdirectories for each status column under the kanban directory.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A promise that resolves when all status subdirectories have been created.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kanbanDir</td>
+<td>The root kanban directory containing status subdirectories.</td>
+</tr>
+<tr>
+<td>statuses</td>
+<td>An array of status names to create as subdirectories.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="moveCardFile"></a></p>
+<h3 id="movecardfile-currentpath-kanbandir-newstatus-attachments">moveCardFile(currentPath, kanbanDir, newStatus, attachments) ⇒</h3>
+<p>Moves a card file to a new status directory, handling name collisions by
+appending a numeric suffix (e.g., <code>card-1.md</code>, <code>card-2.md</code>). Optionally
+co-moves attachment files from the source directory to the target directory.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A promise that resolves to the new absolute path of the moved card file.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>currentPath</td>
+<td>The current absolute path of the card file.</td>
+</tr>
+<tr>
+<td>kanbanDir</td>
+<td>The root kanban directory.</td>
+</tr>
+<tr>
+<td>newStatus</td>
+<td>The target status subdirectory to move the card into.</td>
+</tr>
+<tr>
+<td>attachments</td>
+<td>Optional array of attachment filenames to co-move alongside the card.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="renameCardFile"></a></p>
+<h3 id="renamecardfile-currentpath-newfilename">renameCardFile(currentPath, newFilename) ⇒</h3>
+<p>Renames a card file in place within its current directory.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A promise that resolves to the new absolute path of the renamed card file.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>currentPath</td>
+<td>The current absolute path of the card file.</td>
+</tr>
+<tr>
+<td>newFilename</td>
+<td>The new filename without the <code>.md</code> extension.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="getStatusFromPath"></a></p>
+<h3 id="getstatusfrompath-filepath-kanbandir">getStatusFromPath(filePath, kanbanDir) ⇒</h3>
+<p>Extracts the status from a card's file path by examining the directory structure.</p>
+<p>Expects the file to be located at <code>{kanbanDir}/{status}/{filename}.md</code>. If the
+relative path does not match this two-level structure, returns <code>null</code>.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: The status string extracted from the path, or <code>null</code> if the path structure is unexpected.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>filePath</td>
+<td>The absolute path to the card file.</td>
+</tr>
+<tr>
+<td>kanbanDir</td>
+<td>The root kanban directory used to compute the relative path.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="auth-plugin-contracts">Auth Plugin Contracts</h2>
+<p><a name="WORKSPACE_ROOT"></a></p>
+<h3 id="workspace-root">WORKSPACE_ROOT</h3>
+<p>The pnpm workspace root directory, resolved once at module load time.</p>
+<ul>
+<li>Inside the monorepo checkout: the absolute path to the repository root
+(contains <code>pnpm-workspace.yaml</code>).</li>
+<li>Outside the monorepo (standalone npm install): <code>null</code>.</li>
+</ul>
+<p>Used by the plugin loader to probe <code>packages/{name}</code> as the primary
+workspace-local resolution path during the staged monorepo migration.</p>
+<p><strong>Kind</strong>: global variable<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="RBAC_USER_ACTIONS"></a></p>
+<h3 id="rbac-user-actions">RBAC_USER_ACTIONS</h3>
+<p>Actions available to the <code>user</code> role.</p>
+<p>Covers non-destructive card-interaction operations: form submission,
+comments, attachments, action triggers, and card-level log writes.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="RBAC_MANAGER_ACTIONS"></a></p>
+<h3 id="rbac-manager-actions">RBAC_MANAGER_ACTIONS</h3>
+<p>Actions available to the <code>manager</code> role (includes all <code>user</code> actions).</p>
+<p>Adds card lifecycle mutations (create, update, move, transfer, delete),
+board-action triggers, card-log clearing, and board-level log writes.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="RBAC_ADMIN_ACTIONS"></a></p>
+<h3 id="rbac-admin-actions">RBAC_ADMIN_ACTIONS</h3>
+<p>Actions available to the <code>admin</code> role (includes all <code>manager</code> and <code>user</code> actions).</p>
+<p>Adds all destructive and configuration operations: board create/update/delete,
+settings, webhooks, labels, columns, board-action config edits, board-log
+clearing, migrations, default-board changes, and deleted-card purge.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="RBAC_ROLE_MATRIX"></a></p>
+<h3 id="rbac-role-matrix">RBAC_ROLE_MATRIX</h3>
+<p>Fixed RBAC role matrix keyed by <a href="RbacRole">RbacRole</a>.</p>
+<p>Each entry maps to the complete set of canonical action names that the role
+is permitted to perform. This is the single canonical source of truth consumed
+by the shipped <code>rbac</code> auth provider pair and by host tests that verify denial
+semantics. Hosts must not replicate or extend this matrix locally.</p>
+<p><strong>Kind</strong>: global variable<br>
+<strong>Example</strong></p>
+<pre><code class="language-js">// Check whether a resolved role may perform an action:
+const allowed = RBAC_ROLE_MATRIX['manager'].has('card.create') // true
+const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
+</code></pre>
+<hr>
+<p><a name="NOOP_IDENTITY_PLUGIN"></a></p>
+<h3 id="noop-identity-plugin">NOOP_IDENTITY_PLUGIN</h3>
+<p>No-op identity provider resolved from <code>kl-auth-plugin</code> when available.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="NOOP_POLICY_PLUGIN"></a></p>
+<h3 id="noop-policy-plugin">NOOP_POLICY_PLUGIN</h3>
+<p>No-op policy provider resolved from <code>kl-auth-plugin</code> when available.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="RBAC_IDENTITY_PLUGIN"></a></p>
+<h3 id="rbac-identity-plugin">RBAC_IDENTITY_PLUGIN</h3>
+<p>RBAC identity provider resolved from <code>kl-auth-plugin</code> when available.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="RBAC_POLICY_PLUGIN"></a></p>
+<h3 id="rbac-policy-plugin">RBAC_POLICY_PLUGIN</h3>
+<p>RBAC policy provider resolved from <code>kl-auth-plugin</code> when available.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="PROVIDER_ALIASES"></a></p>
+<h3 id="provider-aliases">PROVIDER_ALIASES</h3>
+<p>Maps short user-facing provider ids to their installable npm package names.</p>
+<p>The ids <code>sqlite</code> and <code>mysql</code> are compatibility aliases that keep the familiar
+user-visible provider id in <code>.kanban.json</code> while delegating implementation
+ownership to standalone, versioned packages. When a provider id is listed
+here and no built-in implementation is registered, the resolver loads the
+mapped package name and issues install hints that reference it.</p>
+<p>Install targets:</p>
+<ul>
+<li><code>sqlite</code> → <code>npm install kl-sqlite-storage</code></li>
+<li><code>mysql</code>  → <code>npm install kl-mysql-storage</code></li>
+</ul>
+<p>Both packages must export <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>
+with CJS entry <code>dist/index.cjs</code>.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="WEBHOOK_PROVIDER_ALIASES"></a></p>
+<h3 id="webhook-provider-aliases">WEBHOOK_PROVIDER_ALIASES</h3>
+<p>Maps short webhook provider ids to their installable npm package names.</p>
+<ul>
+<li><code>webhooks</code> → <code>npm install kl-webhooks-plugin</code></li>
+</ul>
+<p>External packages must export <code>webhookProviderPlugin</code> (or a default export)
+with a manifest that provides <code>'webhook.delivery'</code> and CRUD methods.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="AUTH_PROVIDER_ALIASES"></a></p>
+<h3 id="auth-provider-aliases">AUTH_PROVIDER_ALIASES</h3>
+<p>Maps built-in auth compatibility ids to the external auth package.</p>
+<ul>
+<li><code>noop</code> → <code>npm install kl-auth-plugin</code></li>
+<li><code>rbac</code> → <code>npm install kl-auth-plugin</code></li>
+</ul>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="BUILTIN_ATTACHMENT_IDS"></a></p>
+<h3 id="builtin-attachment-ids">BUILTIN_ATTACHMENT_IDS</h3>
+<p>Set of provider ids that are handled as built-in attachment plugins.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="FALLBACK_NOOP_IDENTITY_PLUGIN"></a></p>
+<h3 id="fallback-noop-identity-plugin">FALLBACK_NOOP_IDENTITY_PLUGIN</h3>
+<p>Built-in compatibility no-op identity provider. Always resolves to <code>null</code> (anonymous).</p>
+<p><strong>Kind</strong>: global constant</p>
+<hr>
+<p><a name="FALLBACK_NOOP_POLICY_PLUGIN"></a></p>
+<h3 id="fallback-noop-policy-plugin">FALLBACK_NOOP_POLICY_PLUGIN</h3>
+<p>Built-in compatibility no-op policy provider. Always returns <code>{ allowed: true }</code> (allow-all).</p>
+<p><strong>Kind</strong>: global constant</p>
+<hr>
+<p><a name="BUILTIN_CARD_PLUGINS"></a></p>
+<h3 id="builtin-card-plugins">BUILTIN_CARD_PLUGINS</h3>
+<p>Registry of built-in card.storage plugins keyed by provider id.</p>
+<p><strong>Kind</strong>: global constant</p>
+<hr>
+<p><a name="findWorkspaceRoot"></a></p>
+<h3 id="findworkspaceroot">findWorkspaceRoot()</h3>
+<p>Walks up from <code>startDir</code> looking for a <code>pnpm-workspace.yaml</code> file that
+marks the workspace root.  Returns the first matching ancestor directory,
+or <code>null</code> when running outside the monorepo (e.g., after a standalone npm
+install by a user).</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="createRbacIdentityPlugin"></a></p>
+<h3 id="createrbacidentityplugin-principals">createRbacIdentityPlugin(principals)</h3>
+<p>Creates a runtime-validated RBAC identity plugin backed by a host-supplied
+principal registry.</p>
+<p>Tokens are treated as opaque strings and looked up in <code>principals</code>. A token
+present in the map resolves to the associated principal entry; any token
+absent from the map resolves to <code>null</code> (anonymous / deny). Roles are taken
+from the registry entry and are never inferred from token text.</p>
+<p>Token values and principal material — including role assignments — must
+remain in host/runtime configuration only and must never appear in
+<code>.kanban.json</code>, diagnostics, or log output.</p>
+<p><strong>Kind</strong>: global function</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>principals</td>
+<td>Map of opaque token → <a href="RbacPrincipalEntry">RbacPrincipalEntry</a>, owned   and populated by the host at startup.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="tryLoadWorkspacePackage"></a></p>
+<h3 id="tryloadworkspacepackage">tryLoadWorkspacePackage()</h3>
+<p>Tries to load an external plugin from the workspace-local <code>packages/</code>
+directory (monorepo layout).  Requires <a href="#WORKSPACE_ROOT">WORKSPACE_ROOT</a> to be
+discovered; throws <code>MODULE_NOT_FOUND</code> when the path does not exist so the
+caller can distinguish &quot;not present in monorepo&quot; from other errors.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="tryLoadGlobalPackage"></a></p>
+<h3 id="tryloadglobalpackage">tryLoadGlobalPackage()</h3>
+<p>Tries to load an external plugin from the global npm node_modules directory.
+The global prefix is derived from the Node.js binary path (<a href="process.execPath">process.execPath</a>).
+On Unix-like systems the global node_modules directory is <code>{prefix}/lib/node_modules</code>;
+on Windows it is <code>{prefix}/node_modules</code>.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="loadExternalCardPlugin"></a></p>
+<h3 id="loadexternalcardplugin">loadExternalCardPlugin()</h3>
+<p>Lazily loads an external npm card-storage plugin.
+Returns a deterministic, actionable error when the package is not installed
+rather than letting Node throw a confusing MODULE_NOT_FOUND.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="loadExternalAttachmentPlugin"></a></p>
+<h3 id="loadexternalattachmentplugin">loadExternalAttachmentPlugin()</h3>
+<p>Lazily loads an external npm attachment-storage plugin.
+Returns a deterministic, actionable error when the package is not installed.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="isValidSDKEventListenerPlugin"></a></p>
+<h3 id="isvalidsdkeventlistenerplugin">isValidSDKEventListenerPlugin()</h3>
+<p>Type guard for <a href="SDKEventListenerPlugin">SDKEventListenerPlugin</a> — validates that <code>plugin</code> has
+the <code>register</code> / <code>unregister</code> lifecycle and a valid manifest.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="loadWebhookPluginPack"></a></p>
+<h3 id="loadwebhookpluginpack">loadWebhookPluginPack()</h3>
+<p>Lazily loads an external npm webhook provider plugin.</p>
+<p>Accepts packages that export:</p>
+<ul>
+<li><code>webhookProviderPlugin</code> (or a default): CRUD webhook provider.</li>
+<li><code>webhookListenerPlugin</code> (optional): a <a href="SDKEventListenerPlugin">SDKEventListenerPlugin</a> for
+runtime delivery.</li>
+<li><code>WebhookListenerPlugin</code> (optional): a class export constructed with the
+workspace root when the runtime listener needs workspace-local config.</li>
+</ul>
+<p>Returns a deterministic, actionable error when the package is not installed
+or does not export the expected shape.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="resolveWebhookPlugins"></a></p>
+<h3 id="resolvewebhookplugins">resolveWebhookPlugins()</h3>
+<p>Attempts to resolve a webhook provider and its runtime delivery listener from
+a normalized <a href="ProviderRef">ProviderRef</a>.</p>
+<p>Listener resolution priority:</p>
+<ol>
+<li><code>webhookListenerPlugin: SDKEventListenerPlugin</code> named export from package.</li>
+<li><code>WebhookListenerPlugin</code> class export constructed with the workspace root.</li>
+<li><code>null</code> — caller falls back to the built-in <code>WebhookListenerPlugin</code>.</li>
+</ol>
+<p>Returns <code>null</code> when the package is simply not installed yet (not-installed error),
+so the built-in listener path in <code>KanbanSDK</code> continues to function as a fallback.
+Throws for any other loading or validation error.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="createBuiltinAuthListenerPlugin"></a></p>
+<h3 id="createbuiltinauthlistenerplugin-authidentity-authpolicy-getauthcontext">createBuiltinAuthListenerPlugin(authIdentity, authPolicy, getAuthContext) ⇒</h3>
+<p>Creates the built-in auth event listener plugin that enforces authorization
+during the before-event phase.</p>
+<p>The listener resolves identity from the active request-scoped auth carrier,
+evaluates
+the configured policy for <a href="BeforeEventPayload.event">BeforeEventPayload.event</a>, emits
+<code>auth.allowed</code> / <code>auth.denied</code>, and throws <a href="AuthError">AuthError</a> when a mutation
+must be vetoed.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: A registered <a href="SDKEventListenerPlugin">SDKEventListenerPlugin</a> for the auth runtime seam.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>authIdentity</td>
+<td>Resolved identity provider used to establish the caller.</td>
+</tr>
+<tr>
+<td>authPolicy</td>
+<td>Resolved policy provider used to authorize each action.</td>
+</tr>
+<tr>
+<td>getAuthContext</td>
+<td>Optional accessor for the active scoped auth context.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="resolveCapabilityBag"></a></p>
+<h3 id="resolvecapabilitybag-capabilities-kanbandir-authcapabilities-webhookcapabilities">resolveCapabilityBag(capabilities, kanbanDir, authCapabilities, webhookCapabilities)</h3>
+<p>Resolves a fully typed <a href="ResolvedCapabilityBag">ResolvedCapabilityBag</a> from a normalized
+<a href="ResolvedCapabilities">ResolvedCapabilities</a> map.</p>
+<p>Attachment storage fallback precedence:</p>
+<ol>
+<li>Explicit provider in <code>capabilities['attachment.storage']</code> (built-in or external)</li>
+<li>Card storage engine's explicit built-in attachment provider</li>
+<li>Built-in <code>localfs</code></li>
+</ol>
+<p>Auth plugins default to the <code>noop</code> compatibility providers (anonymous identity,
+allow-all policy) when <code>authCapabilities</code> is not supplied, preserving
+the current open-access behavior.</p>
+<p><strong>Kind</strong>: global function</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>capabilities</td>
+<td>Normalized provider selections from <a href="normalizeStorageCapabilities">normalizeStorageCapabilities</a>.</td>
+</tr>
+<tr>
+<td>kanbanDir</td>
+<td>Absolute path to the <code>.kanban</code> directory.</td>
+</tr>
+<tr>
+<td>authCapabilities</td>
+<td>Optional normalized auth provider selections from                           <a href="normalizeAuthCapabilities">normalizeAuthCapabilities</a>. Defaults to noop providers.</td>
+</tr>
+<tr>
+<td>webhookCapabilities</td>
+<td>Optional normalized webhook provider selections from                           <a href="normalizeWebhookCapabilities">normalizeWebhookCapabilities</a>. When omitted, webhook                           provider resolution is skipped and <code>bag.webhookProvider</code> is <code>null</code>.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="data-storage">Data Storage</h2>
+<p>Cards are stored as markdown files with YAML frontmatter:</p>
+<pre><code>.kanban/
+  boards/
+    default/
+      backlog/
+        1-implement-auth.md
+        2-setup-ci.md
+      todo/
+      in-progress/
+      review/
+      done/
+    bugs/
+      new/
+      investigating/
+      fixed/
+  .kanban.json          # Board config, forms, labels, settings, and webhook definitions
+</code></pre>
+<p>Each card file contains YAML frontmatter (id, status, priority, assignee, dates, labels, order) followed by markdown content and optional comment sections.</p>
+<hr>
+<h2 id="error-handling">Error Handling</h2>
+<p>All SDK methods throw standard <code>Error</code> objects with descriptive messages:</p>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Card not found: {id}</code></td>
+<td>No card matches the given ID</td>
+</tr>
+<tr>
+<td><code>Board not found: {id}</code></td>
+<td>Board ID doesn't exist in config</td>
+</tr>
+<tr>
+<td><code>Board already exists: {id}</code></td>
+<td>Duplicate board ID on create</td>
+</tr>
+<tr>
+<td><code>Cannot delete the default board: {id}</code></td>
+<td>Attempted to delete default board</td>
+</tr>
+<tr>
+<td><code>Cannot delete board &quot;{id}&quot;: N card(s) still exist</code></td>
+<td>Board has cards</td>
+</tr>
+<tr>
+<td><code>Column not found: {id}</code></td>
+<td>Column ID doesn't exist</td>
+</tr>
+<tr>
+<td><code>Column already exists: {id}</code></td>
+<td>Duplicate column ID on add</td>
+</tr>
+<tr>
+<td><code>Cannot remove column &quot;{id}&quot;: N card(s) still in this column</code></td>
+<td>Column has cards</td>
+</tr>
+<tr>
+<td><code>Must include all column IDs when reordering</code></td>
+<td>Missing columns in reorder</td>
+</tr>
+<tr>
+<td><code>Comment not found: {id}</code></td>
+<td>Comment ID doesn't exist</td>
+</tr>
+</tbody>
+</table>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/mcp/">MCP Server</a> ·
+  <a href="/docs/plugins/">Plugin System</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

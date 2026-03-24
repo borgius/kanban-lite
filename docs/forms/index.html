@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forms — Kanban Lite</title>
+    <meta name="description" content="Reusable card forms — define, attach, render, and submit structured data from cards.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link" aria-current="page">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="forms">Forms</h1>
+  <p>Forms let you attach structured JSON Schema-driven workflows directly to cards. Each attachment becomes its own tab in the card editor, is validated by the SDK, and can be submitted from any interface. Submitted data is persisted per-form on the card and fires a <code>form.submit</code> webhook event.</p>
+  <ul class="capability-list">
+    <li>Define reusable workspace forms in <code>.kanban.json</code> under the <code>forms</code> key</li>
+    <li>Attach named or inline forms in card YAML frontmatter</li>
+    <li>Full JSON Schema validation before persistence</li>
+    <li><code>${path}</code> placeholder interpolation against card metadata at runtime</li>
+    <li>Submit from UI, CLI (<code>kl form submit</code>), REST API, SDK, or MCP</li>
+  </ul>
+</div>
+
+<p>After a successful submission, Kanban Lite also appends a card log entry containing the submitted payload under <code>payload</code>.</p>
+<h1 id="card-forms">Card Forms</h1>
+<p>Card forms let a card carry one or more structured data-entry tabs backed by JSON Schema and rendered with <a href="https://jsonforms.io/">JSON Forms</a>.</p>
+<p>They are designed for workflows where free-form markdown is not enough: incident reports, release checklists, QA sign-off, deployment approvals, intake forms, and other repeatable data capture.</p>
+<p>This guide explains the feature end-to-end:</p>
+<ul>
+<li>where forms are declared</li>
+<li>how forms are attached to cards</li>
+<li>how form IDs and labels are resolved</li>
+<li>how initial values are merged</li>
+<li>how validation works</li>
+<li>how data is persisted</li>
+<li>how submissions emit the <code>form.submit</code> webhook event</li>
+<li>how to work with the feature via the UI, CLI, REST API, and MCP</li>
+</ul>
+<hr>
+<h2 id="at-a-glance">At a glance</h2>
+<p>A card form has three conceptual layers:</p>
+<ol>
+<li>
+<p><strong>Definition</strong></p>
+<ul>
+<li>A reusable workspace form in <code>.kanban.json</code> under <code>forms.&lt;name&gt;</code></li>
+<li>or an inline form definition attached directly to a card</li>
+</ul>
+</li>
+<li>
+<p><strong>Attachment</strong></p>
+<ul>
+<li>A card declares which forms it uses via <code>forms</code> in card frontmatter</li>
+</ul>
+</li>
+<li>
+<p><strong>State</strong></p>
+<ul>
+<li>Submitted values are persisted per card under <code>formData[formId]</code></li>
+</ul>
+</li>
+</ol>
+<p>At runtime, Kanban Lite resolves each attachment into a normalized form descriptor with:</p>
+<ul>
+<li>a stable <code>id</code></li>
+<li>a display <code>label</code></li>
+<li>a resolved JSON Schema</li>
+<li>an optional JSON Forms UI schema</li>
+<li>merged <code>initialData</code></li>
+<li>a <code>fromConfig</code> flag</li>
+</ul>
+<hr>
+<h2 id="what-problem-card-forms-solve">What problem card forms solve</h2>
+<p>Markdown is great for narrative text, but many workflows need structured fields:</p>
+<ul>
+<li>required values</li>
+<li>typed inputs</li>
+<li>repeatable checklists</li>
+<li>layout hints</li>
+<li>validation before submission</li>
+<li>machine-readable payloads for automation</li>
+</ul>
+<p>Card forms add this structure without removing the existing markdown workflow. A single card can still contain:</p>
+<ul>
+<li>markdown content</li>
+<li>comments</li>
+<li>logs</li>
+<li>actions</li>
+<li>and now one or more <strong>form tabs</strong></li>
+</ul>
+<p>The fixed card tabs remain:</p>
+<ul>
+<li><code>write</code></li>
+<li><code>preview</code></li>
+<li><code>comments</code></li>
+<li><code>logs</code></li>
+</ul>
+<p>Each attached form contributes an additional dynamic tab using the route format:</p>
+<ul>
+<li><code>form:&lt;resolved-form-id&gt;</code></li>
+</ul>
+<hr>
+<h2 id="architecture-overview">Architecture overview</h2>
+<pre><code class="language-mermaid">flowchart LR
+  A[.kanban.json\nforms.&lt;name&gt;] --&gt; D[Resolved form descriptor]
+  B[Card frontmatter\nforms[]] --&gt; D
+  C[Card frontmatter\nformData] --&gt; D
+  E[Card metadata] --&gt; D
+  D --&gt; F[Dynamic card tab]
+  F --&gt; G[JSON Forms renderer]
+  G --&gt; H[Validated submit]
+  H --&gt; I[Persist formData[formId]]
+  I --&gt; J[Emit form.submit]
+</code></pre>
+<hr>
+<h2 id="core-concepts">Core concepts</h2>
+<h3 id="workspace-form-definitions">Workspace form definitions</h3>
+<p>Reusable forms live in <code>.kanban.json</code> under the root-level <code>forms</code> object.</p>
+<p>These forms are <strong>workspace-scoped</strong>. They are surfaced through board info at runtime, but the source of truth is the workspace config, not an individual board.</p>
+<p>Each reusable form is a <code>FormDefinition</code> with:</p>
+<ul>
+<li><code>schema</code>: required JSON Schema object</li>
+<li><code>ui</code>: optional JSON Forms UI schema</li>
+<li><code>data</code>: optional default values</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;forms&quot;: {
+    &quot;incident-report&quot;: {
+      &quot;schema&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;title&quot;: &quot;Incident Report&quot;,
+        &quot;required&quot;: [&quot;severity&quot;, &quot;summary&quot;],
+        &quot;properties&quot;: {
+          &quot;severity&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;enum&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;critical&quot;]
+          },
+          &quot;summary&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;minLength&quot;: 1
+          },
+          &quot;owner&quot;: {
+            &quot;type&quot;: &quot;string&quot;
+          }
+        }
+      },
+      &quot;ui&quot;: {
+        &quot;type&quot;: &quot;VerticalLayout&quot;,
+        &quot;elements&quot;: [
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/severity&quot; },
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/summary&quot;, &quot;options&quot;: { &quot;multi&quot;: true } },
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/owner&quot; }
+        ]
+      },
+      &quot;data&quot;: {
+        &quot;severity&quot;: &quot;medium&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h3 id="card-form-attachments">Card form attachments</h3>
+<p>A card opts into forms through the <code>forms</code> array in its frontmatter.</p>
+<p>Each item is a <code>CardFormAttachment</code>.</p>
+<p>Supported shapes:</p>
+<h4 id="1-named-reusable-form-reference">1. Named reusable form reference</h4>
+<pre><code class="language-yaml">forms:
+  - name: incident-report
+</code></pre>
+<h4 id="2-string-shorthand-for-a-named-form">2. String shorthand for a named form</h4>
+<p>String shorthand is supported and normalizes to <code>{ name: &quot;...&quot; }</code>.</p>
+<pre><code class="language-yaml">forms:
+  - incident-report
+  - &quot;qa-signoff&quot;
+</code></pre>
+<h4 id="3-inline-card-local-form">3. Inline card-local form</h4>
+<pre><code class="language-yaml">forms:
+  - schema:
+      type: object
+      title: Release Checklist
+      required:
+        - owner
+      properties:
+        owner:
+          type: string
+        approved:
+          type: boolean
+    ui:
+      type: VerticalLayout
+      elements:
+        - type: Control
+          scope: &quot;#/properties/owner&quot;
+        - type: Control
+          scope: &quot;#/properties/approved&quot;
+    data:
+      approved: false
+</code></pre>
+<h4 id="4-named-form-with-attachment-level-overrides">4. Named form with attachment-level overrides</h4>
+<p>When both <code>name</code> and inline fields are present, the attachment uses the named config form as a base and overrides parts of it.</p>
+<pre><code class="language-yaml">forms:
+  - name: incident-report
+    data:
+      severity: high
+</code></pre>
+<p>Important resolution rules:</p>
+<ul>
+<li>Either <code>name</code> or <code>schema</code> must be present.</li>
+<li>If both are present, the attachment’s inline <code>schema</code> wins over the config schema.</li>
+<li>Attachment-level <code>ui</code> wins over config <code>ui</code>.</li>
+<li>Attachment-level <code>data</code> is merged after config-level <code>data</code>.</li>
+</ul>
+<h3 id="per-card-persisted-form-data">Per-card persisted form data</h3>
+<p>Submitted values are stored on the card in <code>formData</code>, keyed by resolved form ID.</p>
+<pre><code class="language-yaml">formData:
+  incident-report:
+    severity: critical
+    summary: API outage in eu-west
+    owner: alice
+</code></pre>
+<p>This isolation is deliberate: two forms on one card can both contain a field named <code>status</code> without colliding, because persistence is namespaced by form ID.</p>
+<hr>
+<h2 id="runtime-resolution-model">Runtime resolution model</h2>
+<p>Kanban Lite does not render raw attachments directly. It first resolves them into a normalized runtime shape.</p>
+<p>A resolved form descriptor contains:</p>
+<ul>
+<li><code>id</code></li>
+<li><code>name</code></li>
+<li><code>description</code></li>
+<li><code>label</code></li>
+<li><code>schema</code></li>
+<li><code>ui</code> (optional)</li>
+<li><code>initialData</code></li>
+<li><code>fromConfig</code></li>
+</ul>
+<h3 id="resolved-form-id-rules">Resolved form ID rules</h3>
+<p>Resolved IDs matter because they control:</p>
+<ul>
+<li>tab routes</li>
+<li>persistence keys in <code>formData</code></li>
+<li>submission targets (<code>formId</code>)</li>
+</ul>
+<p>Resolution rules:</p>
+<h4 id="named-reusable-form">Named reusable form</h4>
+<p>If the attachment references a reusable form by <code>name</code>, the resolved ID is the form name.</p>
+<p>Example:</p>
+<ul>
+<li>attachment: <code>{ name: &quot;incident-report&quot; }</code></li>
+<li>resolved ID: <code>incident-report</code></li>
+</ul>
+<h4 id="inline-form">Inline form</h4>
+<p>If the form is inline only:</p>
+<ul>
+<li>Kanban Lite tries to slugify <code>schema.title</code></li>
+<li>if there is no usable title, it falls back to <code>form-&lt;index&gt;</code></li>
+</ul>
+<p>Examples:</p>
+<ul>
+<li><code>title: &quot;Release Checklist&quot;</code> → <code>release-checklist</code></li>
+<li>no title on the second inline form → <code>form-1</code></li>
+</ul>
+<h4 id="duplicate-inline-titles">Duplicate inline titles</h4>
+<p>If multiple inline forms resolve to the same base ID, later ones receive a numeric suffix.</p>
+<p>Example:</p>
+<ul>
+<li>first: <code>release-checklist</code></li>
+<li>second: <code>release-checklist-2</code></li>
+</ul>
+<h3 id="form-labels">Form labels</h3>
+<p>Labels shown in the card UI are resolved as follows:</p>
+<ul>
+<li>named reusable form: uses <code>KanbanConfig.forms[formKey].name</code></li>
+<li>named reusable form without <code>name</code>: defaults to a capitalized form key (<code>incident-report</code> → <code>Incident Report</code>)</li>
+<li>inline form: uses <code>schema.title</code></li>
+<li>fallback: a humanized resolved <code>id</code></li>
+</ul>
+<h3 id="form-descriptions">Form descriptions</h3>
+<ul>
+<li>reusable workspace forms may define <code>description</code></li>
+<li>when omitted, the description defaults to an empty string</li>
+<li>inline forms currently resolve to an empty description</li>
+</ul>
+<h3 id="when-a-form-is-renderable">When a form is renderable</h3>
+<p>A form tab is only created when the attachment can resolve to a schema.</p>
+<p>That means:</p>
+<ul>
+<li>inline attachment with <code>schema</code> → renderable</li>
+<li>named attachment whose config form exists and has <code>schema</code> → renderable</li>
+<li>named attachment with missing config form → <strong>not renderable</strong></li>
+</ul>
+<p>Kanban Lite does <strong>not</strong> rely on JSON Forms schema generation. The app expects a real schema to exist before a form becomes a usable tab.</p>
+<hr>
+<h2 id="initial-data-merge-order">Initial data merge order</h2>
+<p>The resolved form descriptor includes <code>initialData</code>, which is the prefilled state shown when the form tab opens.</p>
+<p>Current merge order, from lowest to highest priority:</p>
+<ol>
+<li>workspace config defaults: <code>KanbanConfig.forms[formName].data</code></li>
+<li>attachment defaults: <code>attachment.data</code></li>
+<li>persisted card form data: <code>card.formData[formId]</code> <em>(may be partial at rest)</em></li>
+<li>matching card metadata fields: <code>card.metadata[key]</code>, <strong>only</strong> for keys declared in <code>schema.properties</code></li>
+</ol>
+<p>Sources 1–3 are subject to <code>${path}</code> placeholder interpolation against the card context before being merged.
+See <a href="#placeholder-interpolation-in-form-data">Placeholder interpolation in form data</a> below for supported
+placeholder fields and the missing-value rule.</p>
+<p>In other words, metadata can intentionally overlay earlier values, but only for schema-declared fields.</p>
+<h3 id="metadata-overlay-behavior">Metadata overlay behavior</h3>
+<p>Metadata is not copied wholesale into the form.</p>
+<p>Only metadata keys that exist in the form schema’s <code>properties</code> are merged.</p>
+<p>If a card contains:</p>
+<pre><code class="language-yaml">metadata:
+  owner: alice
+  ignored: true
+</code></pre>
+<p>and the schema properties are only:</p>
+<ul>
+<li><code>owner</code></li>
+<li><code>severity</code></li>
+</ul>
+<p>then only <code>owner</code> is merged into <code>initialData</code>. <code>ignored</code> is skipped.</p>
+<h3 id="placeholder-interpolation-in-form-data">Placeholder interpolation in form data</h3>
+<p>Before sources are merged, Kanban Lite prepares string values in config defaults, attachment defaults, and
+persisted <code>formData</code> entries by resolving <code>${path}</code> placeholders against the full card context.</p>
+<p>Supported context fields:</p>
+<table>
+<thead>
+<tr>
+<th>Placeholder</th>
+<th>Resolved from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>${id}</code></td>
+<td>Card identifier</td>
+</tr>
+<tr>
+<td><code>${boardId}</code></td>
+<td>Parent board identifier</td>
+</tr>
+<tr>
+<td><code>${status}</code></td>
+<td>Current column/status</td>
+</tr>
+<tr>
+<td><code>${priority}</code></td>
+<td>Priority level (<code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code>)</td>
+</tr>
+<tr>
+<td><code>${assignee}</code></td>
+<td>Assignee name, or empty string if unassigned</td>
+</tr>
+<tr>
+<td><code>${dueDate}</code></td>
+<td>ISO 8601 due date, or empty string if none</td>
+</tr>
+<tr>
+<td><code>${created}</code></td>
+<td>ISO 8601 creation timestamp</td>
+</tr>
+<tr>
+<td><code>${modified}</code></td>
+<td>ISO 8601 last-modified timestamp</td>
+</tr>
+<tr>
+<td><code>${completedAt}</code></td>
+<td>ISO 8601 completion timestamp, or empty string if not completed</td>
+</tr>
+<tr>
+<td><code>${order}</code></td>
+<td>Fractional index controlling sort order within a column</td>
+</tr>
+<tr>
+<td><code>${content}</code></td>
+<td>Markdown body content of the card</td>
+</tr>
+<tr>
+<td><code>${labels}</code></td>
+<td>Comma-separated label list (array coerced to string)</td>
+</tr>
+<tr>
+<td><code>${attachments}</code></td>
+<td>Comma-separated attachment filename list (not filesystem paths)</td>
+</tr>
+<tr>
+<td><code>${metadata.key}</code></td>
+<td>Any card metadata value using dot-notation (e.g. <code>${metadata.owner}</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><code>filePath</code> is intentionally excluded to prevent filesystem paths from leaking into stored or rendered form data values. <code>actions</code>, <code>forms</code>, and <code>formData</code> are available for advanced dot-notation access but rarely needed in string templates.</p>
+<p><strong>Missing-value rule:</strong> placeholders whose paths do not resolve (missing or <code>undefined</code> keys) are replaced with
+an <strong>empty string</strong>. This keeps form fields blank rather than showing a raw <code>${path}</code> fragment.</p>
+<p><strong>Security note:</strong> placeholder resolution is a pure path-lookup over the card context object — no JavaScript
+expressions are evaluated and arbitrary code execution is not possible.</p>
+<p><strong>Interpolation scope:</strong> Sources 1–3 in the merge order below (config defaults, attachment defaults, persisted
+form data) are interpolated before the merge. The metadata overlay (source 4) is applied after, and always
+wins for schema-declared keys.</p>
+<h4 id="interpolation-example">Interpolation example</h4>
+<p>Given a config form with:</p>
+<pre><code class="language-json">{
+  &quot;forms&quot;: {
+    &quot;incident-report&quot;: {
+      &quot;data&quot;: {
+        &quot;owner&quot;: &quot;${assignee}&quot;,
+        &quot;region&quot;: &quot;${metadata.region}&quot;,
+        &quot;cardRef&quot;: &quot;${id}&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p>And a card:</p>
+<pre><code class="language-yaml">assignee: alice
+metadata:
+  region: eu-west
+</code></pre>
+<p>The prepared config defaults become:</p>
+<pre><code class="language-json">{
+  &quot;owner&quot;: &quot;alice&quot;,
+  &quot;region&quot;: &quot;eu-west&quot;,
+  &quot;cardRef&quot;: &quot;card-123&quot;
+}
+</code></pre>
+<p>A placeholder with no matching key (e.g. <code>${metadata.missing}</code>) resolves to <code>&quot;&quot;</code>.</p>
+<hr>
+<h3 id="example-initial-data-resolution">Example initial-data resolution</h3>
+<p>Given:</p>
+<ul>
+<li>config defaults:
+<ul>
+<li><code>severity: low</code></li>
+<li><code>title: Config Title</code></li>
+</ul>
+</li>
+<li>attachment defaults:
+<ul>
+<li><code>severity: medium</code></li>
+</ul>
+</li>
+<li>persisted form data:
+<ul>
+<li><code>severity: high</code></li>
+</ul>
+</li>
+<li>metadata:
+<ul>
+<li><code>title: Metadata Title</code></li>
+</ul>
+</li>
+</ul>
+<p>The resulting <code>initialData</code> is:</p>
+<pre><code class="language-json">{
+  &quot;title&quot;: &quot;Metadata Title&quot;,
+  &quot;severity&quot;: &quot;high&quot;
+}
+</code></pre>
+<p>Why?</p>
+<ul>
+<li>config seeds the base</li>
+<li>attachment overrides config</li>
+<li>persisted form data overrides attachment</li>
+<li>metadata overlays schema-matching keys last</li>
+</ul>
+<hr>
+<h2 id="submission-merge-and-validation">Submission merge and validation</h2>
+<p>Submitting a form is not just “send the current visible fields.” The SDK builds and validates the canonical payload.</p>
+<h3 id="submission-merge-order">Submission merge order</h3>
+<p>When a submission is triggered, the SDK starts from the resolved <code>initialData</code> and merges the submitted payload on top.</p>
+<p>Effective order, from lowest to highest priority:</p>
+<ol>
+<li>config form defaults</li>
+<li>attachment defaults</li>
+<li>persisted card form data</li>
+<li>schema-matching card metadata</li>
+<li>submitted payload</li>
+</ol>
+<h3 id="why-validation-is-authoritative-in-the-sdk">Why validation is authoritative in the SDK</h3>
+<p>The UI performs immediate validation for good UX, but the SDK is the source of truth.</p>
+<p>The SDK:</p>
+<ul>
+<li>resolves the target form</li>
+<li>merges the final payload</li>
+<li>validates against the resolved schema</li>
+<li>persists only if validation succeeds</li>
+<li>emits <code>form.submit</code> only after a successful write</li>
+</ul>
+<p>This guarantees identical rules across:</p>
+<ul>
+<li>webview UI</li>
+<li>standalone browser UI</li>
+<li>CLI</li>
+<li>REST API</li>
+<li>MCP</li>
+</ul>
+<h3 id="validation-engine">Validation engine</h3>
+<p>Kanban Lite uses AJV through JSON Forms’ <code>createAjv</code> helper with:</p>
+<ul>
+<li><code>allErrors: true</code></li>
+<li><code>strict: false</code></li>
+</ul>
+<p>In the card form tab, JSON Forms is rendered with:</p>
+<ul>
+<li><code>validationMode=&quot;ValidateAndShow&quot;</code></li>
+</ul>
+<p>That means the UI both validates and shows validation errors while editing.</p>
+<h3 id="ui-validation-behavior">UI validation behavior</h3>
+<p>The card form tab:</p>
+<ul>
+<li>validates the initial payload immediately</li>
+<li>disables the <strong>Submit</strong> button if validation errors exist</li>
+<li>renders a summary block listing validation issues</li>
+<li>formats missing-property style messages into clearer text</li>
+</ul>
+<p>Example displayed state:</p>
+<ul>
+<li>header text: <code>Fix 1 validation error before submitting.</code></li>
+<li>validation panel: <code>Validation issues</code></li>
+<li>submit button: disabled until valid</li>
+</ul>
+<h3 id="sdk-validation-failure-behavior">SDK validation failure behavior</h3>
+<p>If validation fails in the SDK:</p>
+<ul>
+<li>persistence does not occur</li>
+<li><code>form.submit</code> is not emitted</li>
+<li>callers receive an error</li>
+</ul>
+<hr>
+<h2 id="persistence-model">Persistence model</h2>
+<p>Successful submissions are written back to the card under:</p>
+<pre><code class="language-yaml">formData:
+  &lt;resolved-form-id&gt;: { ...validatedPayload }
+</code></pre>
+<p>This means:</p>
+<ul>
+<li>each form gets its own persisted object</li>
+<li>future tab opens use that object as part of initial data resolution</li>
+<li>cards can safely attach multiple forms with overlapping field names</li>
+</ul>
+<h3 id="example-persisted-card-frontmatter">Example persisted card frontmatter</h3>
+<pre><code class="language-yaml">---
+version: &quot;1&quot;
+id: &quot;230&quot;
+status: &quot;backlog&quot;
+priority: &quot;medium&quot;
+assignee: null
+dueDate: null
+created: &quot;2026-03-20T00:00:00.000Z&quot;
+modified: &quot;2026-03-20T00:10:00.000Z&quot;
+completedAt: null
+labels: []
+attachments: []
+order: &quot;a0&quot;
+metadata:
+  reporter: alice
+forms:
+  - incident-report
+  - schema:
+      type: object
+      title: Release Checklist
+      properties:
+        approved:
+          type: boolean
+formData:
+  incident-report:
+    severity: high
+    summary: API outage
+    reporter: alice
+  release-checklist:
+    approved: true
+---
+# Investigate outage
+</code></pre>
+<hr>
+<h2 id="ui-behavior">UI behavior</h2>
+<h3 id="dynamic-card-tabs">Dynamic card tabs</h3>
+<p>The card editor always includes the fixed tabs:</p>
+<ul>
+<li><code>write</code></li>
+<li><code>preview</code></li>
+<li><code>comments</code></li>
+<li><code>logs</code></li>
+</ul>
+<p>Attached forms add dynamic tabs using <code>form:&lt;id&gt;</code>.</p>
+<p>Examples:</p>
+<ul>
+<li><code>form:incident-report</code></li>
+<li><code>form:release-checklist</code></li>
+<li><code>form:release-checklist-2</code></li>
+</ul>
+<p>Deep links and internal tab state preserve these dynamic IDs so the correct form tab stays selected when possible.</p>
+<h3 id="shared-badge">Shared badge</h3>
+<p>When a resolved form comes from workspace config, the card form tab shows a <strong>Shared</strong> badge.</p>
+<p>This indicates the form is backed by a reusable definition rather than existing only inline on that card.</p>
+<h3 id="tab-labels">Tab labels</h3>
+<p>Attached form tabs display the resolved form name with a <code>form:</code> prefix.</p>
+<p>Examples:</p>
+<ul>
+<li><code>form: Bug Report</code></li>
+<li><code>form: Release Checklist</code></li>
+</ul>
+<p>Inside the tab body, the header shows the resolved form name and, when present, the form description.</p>
+<h3 id="json-forms-renderer-set">JSON Forms renderer set</h3>
+<p>Kanban Lite renders forms with:</p>
+<ul>
+<li><code>@jsonforms/react</code></li>
+<li><code>@jsonforms/vanilla-renderers</code></li>
+</ul>
+<p>The rendered form is wrapped in a <code>.card-jsonforms</code> container so theme-aware CSS can style the vanilla renderer output consistently inside the app.</p>
+<p>This scoped styling covers layout, labels, controls, validation messages, arrays, groups, and focus states.</p>
+<h3 id="success-and-error-feedback">Success and error feedback</h3>
+<p>After submit:</p>
+<ul>
+<li>a successful save shows a confirmation message like <code>Saved Incident Report</code></li>
+<li>transport or SDK failures show an error message block</li>
+<li>validation issues remain visible until resolved</li>
+<li>a system card log entry is appended with <code>formId</code>, <code>formName</code>, and the submitted <code>payload</code></li>
+</ul>
+<h3 id="standalone-offline-behavior">Standalone offline behavior</h3>
+<p>In standalone mode, form submission fails immediately while disconnected.</p>
+<p>Instead of leaving the UI in an indefinite pending state, the frontend receives a transport error:</p>
+<ul>
+<li><code>You are offline. Form submissions are unavailable until the standalone backend reconnects.</code></li>
+</ul>
+<p>This behavior is specific to the standalone/browser transport path.</p>
+<hr>
+<h2 id="submit-flow">Submit flow</h2>
+<pre><code class="language-mermaid">sequenceDiagram
+  participant U as User
+  participant T as Card form tab
+  participant H as Host transport
+  participant S as SDK
+  participant W as Webhook pipeline
+
+  U-&gt;&gt;T: Edit fields
+  T-&gt;&gt;T: Validate with JSON Forms/AJV
+  U-&gt;&gt;T: Click Submit
+  T-&gt;&gt;H: submitForm(cardId, formId, data, callbackKey)
+  H-&gt;&gt;S: submitForm(input)
+  S-&gt;&gt;S: Resolve form + merge payload
+  S-&gt;&gt;S: Validate schema
+  alt valid
+    S-&gt;&gt;S: Persist card.formData[formId]
+    S-&gt;&gt;W: Emit form.submit
+    S--&gt;&gt;H: SubmitFormResult
+    H--&gt;&gt;T: submitFormResult(result)
+  else invalid
+    S--&gt;&gt;H: Error
+    H--&gt;&gt;T: submitFormResult(error)
+  end
+</code></pre>
+<hr>
+<h2 id="webhook-behavior">Webhook behavior</h2>
+<p>Successful form submissions emit the SDK event type:</p>
+<ul>
+<li><code>form.submit</code></li>
+</ul>
+<p>The emitted payload includes:</p>
+<ul>
+<li><code>boardId</code></li>
+<li>sanitized <code>card</code> snapshot</li>
+<li>resolved <code>form</code> descriptor</li>
+<li>canonical validated <code>data</code></li>
+</ul>
+<h3 id="event-payload-shape">Event payload shape</h3>
+<p>Conceptually:</p>
+<pre><code class="language-json">{
+  &quot;boardId&quot;: &quot;default&quot;,
+  &quot;card&quot;: {
+    &quot;id&quot;: &quot;230&quot;,
+    &quot;status&quot;: &quot;backlog&quot;,
+    &quot;forms&quot;: [{ &quot;name&quot;: &quot;incident-report&quot; }],
+    &quot;formData&quot;: {
+      &quot;incident-report&quot;: {
+        &quot;severity&quot;: &quot;high&quot;,
+        &quot;summary&quot;: &quot;API outage&quot;
+      }
+    }
+  },
+  &quot;form&quot;: {
+    &quot;id&quot;: &quot;incident-report&quot;,
+    &quot;label&quot;: &quot;incident-report&quot;,
+    &quot;schema&quot;: { &quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: { &quot;severity&quot;: { &quot;type&quot;: &quot;string&quot; } } },
+    &quot;initialData&quot;: {
+      &quot;severity&quot;: &quot;medium&quot;
+    },
+    &quot;fromConfig&quot;: true
+  },
+  &quot;data&quot;: {
+    &quot;severity&quot;: &quot;high&quot;,
+    &quot;summary&quot;: &quot;API outage&quot;
+  }
+}
+</code></pre>
+<h3 id="important-webhook-guarantee">Important webhook guarantee</h3>
+<p><code>form.submit</code> is emitted <strong>after</strong> persistence succeeds.</p>
+<p>That means the webhook consumer sees the same payload that was actually stored on the card.</p>
+<hr>
+<h2 id="authoring-reusable-forms-in-kanban-json">Authoring reusable forms in <code>.kanban.json</code></h2>
+<h3 id="smallest-valid-reusable-form">Smallest valid reusable form</h3>
+<pre><code class="language-json">{
+  &quot;forms&quot;: {
+    &quot;checklist&quot;: {
+      &quot;schema&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+          &quot;done&quot;: { &quot;type&quot;: &quot;boolean&quot; }
+        }
+      }
+    }
+  }
+}
+</code></pre>
+<h3 id="reusable-form-with-layout-and-defaults">Reusable form with layout and defaults</h3>
+<pre><code class="language-json">{
+  &quot;forms&quot;: {
+    &quot;qa-signoff&quot;: {
+      &quot;schema&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;title&quot;: &quot;QA Sign-off&quot;,
+        &quot;required&quot;: [&quot;owner&quot;, &quot;result&quot;],
+        &quot;properties&quot;: {
+          &quot;owner&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;result&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;enum&quot;: [&quot;pass&quot;, &quot;fail&quot;, &quot;blocked&quot;]
+          },
+          &quot;notes&quot;: { &quot;type&quot;: &quot;string&quot; }
+        }
+      },
+      &quot;ui&quot;: {
+        &quot;type&quot;: &quot;VerticalLayout&quot;,
+        &quot;elements&quot;: [
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/owner&quot; },
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/result&quot; },
+          { &quot;type&quot;: &quot;Control&quot;, &quot;scope&quot;: &quot;#/properties/notes&quot;, &quot;options&quot;: { &quot;multi&quot;: true } }
+        ]
+      },
+      &quot;data&quot;: {
+        &quot;result&quot;: &quot;blocked&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h3 id="ui-schema-notes">UI schema notes</h3>
+<p>JSON Forms UI schema is optional. If omitted, JSON Forms can generate a default UI layout from the JSON Schema.</p>
+<p>Kanban Lite passes the resolved <code>ui</code> directly to JSON Forms, so common JSON Forms UI schema features are available, including:</p>
+<ul>
+<li>controls</li>
+<li>layouts</li>
+<li>rules</li>
+<li>renderer-specific <code>options</code></li>
+</ul>
+<p>JSON Forms documentation for UI schema concepts:</p>
+<ul>
+<li>controls</li>
+<li>layouts</li>
+<li>rules</li>
+</ul>
+<hr>
+<h2 id="attaching-forms-to-cards">Attaching forms to cards</h2>
+<h3 id="reusable-form-by-name">Reusable form by name</h3>
+<pre><code class="language-yaml">forms:
+  - incident-report
+</code></pre>
+<h3 id="multiple-reusable-forms">Multiple reusable forms</h3>
+<pre><code class="language-yaml">forms:
+  - incident-report
+  - qa-signoff
+</code></pre>
+<h3 id="inline-form-on-a-single-card">Inline form on a single card</h3>
+<pre><code class="language-yaml">forms:
+  - schema:
+      type: object
+      title: Approval
+      required:
+        - approver
+      properties:
+        approver:
+          type: string
+        notes:
+          type: string
+</code></pre>
+<h3 id="reusable-form-with-card-specific-defaults">Reusable form with card-specific defaults</h3>
+<pre><code class="language-yaml">forms:
+  - name: incident-report
+    data:
+      severity: critical
+</code></pre>
+<h3 id="reusable-form-with-a-card-local-schema-override">Reusable form with a card-local schema override</h3>
+<pre><code class="language-yaml">forms:
+  - name: incident-report
+    schema:
+      type: object
+      title: Incident Report Override
+      properties:
+        severity:
+          type: string
+        region:
+          type: string
+</code></pre>
+<p>When you override the schema inline, that schema becomes authoritative for validation and rendering on that card.</p>
+<hr>
+<h2 id="working-with-metadata-driven-prefills">Working with metadata-driven prefills</h2>
+<p>Card metadata can seed form fields, but only if the schema explicitly declares those field names.</p>
+<p>Example card:</p>
+<pre><code class="language-yaml">metadata:
+  reporter: alice
+  region: eu-west
+  internalOnly: true
+forms:
+  - name: incident-report
+</code></pre>
+<p>If the form schema defines <code>reporter</code> and <code>region</code> but not <code>internalOnly</code>, then the resolved initial data includes:</p>
+<ul>
+<li><code>reporter: alice</code></li>
+<li><code>region: eu-west</code></li>
+</ul>
+<p>and excludes:</p>
+<ul>
+<li><code>internalOnly</code></li>
+</ul>
+<p>This makes metadata useful for:</p>
+<ul>
+<li>inheriting card context into forms</li>
+<li>avoiding duplicate data entry</li>
+<li>keeping automation fields machine-readable</li>
+</ul>
+<hr>
+<h2 id="cli-usage">CLI usage</h2>
+<h3 id="create-a-card-with-attached-forms">Create a card with attached forms</h3>
+<pre><code class="language-bash">kl add --title &quot;Investigate outage&quot; --forms '[{&quot;name&quot;:&quot;incident-report&quot;}]'
+</code></pre>
+<h3 id="update-form-attachments-on-an-existing-card">Update form attachments on an existing card</h3>
+<pre><code class="language-bash">kl edit investigate-outage --forms @forms.json
+</code></pre>
+<h3 id="seed-persisted-form-data">Seed persisted form data</h3>
+<pre><code class="language-bash">kl edit investigate-outage --form-data @form-data.json
+</code></pre>
+<h3 id="submit-a-form">Submit a form</h3>
+<pre><code class="language-bash">kl form submit investigate-outage incident-report --data '{&quot;severity&quot;:&quot;high&quot;,&quot;owner&quot;:&quot;alice&quot;}'
+</code></pre>
+<h3 id="cli-behavior-notes">CLI behavior notes</h3>
+<ul>
+<li><code>--forms</code> expects a JSON array</li>
+<li><code>--form-data</code> expects a JSON object keyed by resolved form ID</li>
+<li><code>form submit</code> requires both <code>&lt;card-id&gt;</code> and <code>&lt;form-id&gt;</code></li>
+<li><code>--data</code> is required for <code>form submit</code> and must parse to a JSON object</li>
+</ul>
+<p>When successful, the CLI prints either:</p>
+<ul>
+<li>a success message, or</li>
+<li>the full JSON result when <code>--json</code> is used</li>
+</ul>
+<hr>
+<h2 id="rest-api-usage">REST API usage</h2>
+<h3 id="create-a-card-with-forms">Create a card with forms</h3>
+<p><code>POST /api/boards/:boardId/tasks</code></p>
+<p>Example body:</p>
+<pre><code class="language-json">{
+  &quot;content&quot;: &quot;# Investigate outage&quot;,
+  &quot;forms&quot;: [
+    { &quot;name&quot;: &quot;incident-report&quot; }
+  ],
+  &quot;formData&quot;: {
+    &quot;incident-report&quot;: {
+      &quot;severity&quot;: &quot;high&quot;
+    }
+  }
+}
+</code></pre>
+<h3 id="update-a-card-s-forms">Update a card’s forms</h3>
+<p><code>PUT /api/boards/:boardId/tasks/:id</code></p>
+<p>Example body:</p>
+<pre><code class="language-json">{
+  &quot;forms&quot;: [
+    { &quot;name&quot;: &quot;incident-report&quot; },
+    {
+      &quot;schema&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;title&quot;: &quot;Release Checklist&quot;,
+        &quot;properties&quot;: {
+          &quot;approved&quot;: { &quot;type&quot;: &quot;boolean&quot; }
+        }
+      }
+    }
+  ]
+}
+</code></pre>
+<h3 id="submit-a-form-2">Submit a form</h3>
+<p><code>POST /api/boards/:boardId/tasks/:id/forms/:formId/submit</code></p>
+<p>Example body:</p>
+<pre><code class="language-json">{
+  &quot;data&quot;: {
+    &quot;severity&quot;: &quot;critical&quot;,
+    &quot;summary&quot;: &quot;Database unavailable&quot;
+  }
+}
+</code></pre>
+<p>Success returns the same canonical structure as the SDK submit result:</p>
+<ul>
+<li><code>boardId</code></li>
+<li><code>card</code></li>
+<li><code>form</code></li>
+<li><code>data</code></li>
+</ul>
+<p>Validation or lookup failures return an error response.</p>
+<hr>
+<h2 id="mcp-usage">MCP usage</h2>
+<p>The MCP server exposes forms through the same SDK contract.</p>
+<h3 id="create-a-card-with-forms-2">Create a card with forms</h3>
+<p>Tool: <code>create_card</code></p>
+<p>Relevant fields:</p>
+<ul>
+<li><code>forms</code></li>
+<li><code>formData</code></li>
+</ul>
+<h3 id="update-a-card-s-form-attachments-or-persisted-form-data">Update a card’s form attachments or persisted form data</h3>
+<p>Tool: <code>update_card</code></p>
+<p>Relevant fields:</p>
+<ul>
+<li><code>forms</code></li>
+<li><code>formData</code></li>
+</ul>
+<h3 id="submit-a-form-3">Submit a form</h3>
+<p>Tool: <code>submit_card_form</code></p>
+<p>Parameters:</p>
+<ul>
+<li><code>cardId</code></li>
+<li><code>formId</code></li>
+<li><code>data</code></li>
+<li>optional <code>boardId</code></li>
+</ul>
+<p>The tool resolves partial card IDs using the same card lookup conventions as other MCP card tools.</p>
+<hr>
+<h2 id="json-forms-behavior-used-by-kanban-lite">JSON Forms behavior used by Kanban Lite</h2>
+<p>Kanban Lite currently relies on the JSON Forms standalone React component and passes:</p>
+<ul>
+<li><code>schema</code></li>
+<li><code>uischema</code></li>
+<li><code>data</code></li>
+<li><code>renderers</code></li>
+<li><code>cells</code></li>
+<li><code>ajv</code></li>
+<li><code>validationMode</code></li>
+<li><code>onChange</code></li>
+</ul>
+<h3 id="practical-implications">Practical implications</h3>
+<ul>
+<li>The JSON Schema controls validation and base field semantics.</li>
+<li>The UI schema controls layout and presentation hints.</li>
+<li><code>onChange</code> emits both the updated data and the latest validation result.</li>
+<li>JSON Forms performs initial validation immediately, even before the user edits fields.</li>
+<li>The app uses vanilla renderers, then themes them with scoped CSS.</li>
+</ul>
+<h3 id="what-kanban-lite-adds-on-top-of-json-forms">What Kanban Lite adds on top of JSON Forms</h3>
+<p>JSON Forms handles rendering and frontend validation, but Kanban Lite adds the application-specific behavior:</p>
+<ul>
+<li>card attachment resolution</li>
+<li>merge order for defaults, persisted state, and metadata</li>
+<li>stable per-card form IDs</li>
+<li>form tab routing</li>
+<li>persistence into card frontmatter</li>
+<li>SDK-authoritative validation before write</li>
+<li><code>form.submit</code> event emission</li>
+<li>transport between webview and host runtime</li>
+</ul>
+<hr>
+<h2 id="best-practices">Best practices</h2>
+<h3 id="prefer-reusable-forms-for-shared-workflows">Prefer reusable forms for shared workflows</h3>
+<p>Use <code>.kanban.json</code> <code>forms</code> for workflows that appear on many cards:</p>
+<ul>
+<li>incident reports</li>
+<li>QA sign-off</li>
+<li>launch checklists</li>
+<li>deployment approvals</li>
+</ul>
+<p>Benefits:</p>
+<ul>
+<li>one source of truth</li>
+<li>consistent schema</li>
+<li>consistent default layout</li>
+<li>easier automation downstream</li>
+</ul>
+<h3 id="use-inline-forms-for-card-specific-structure">Use inline forms for card-specific structure</h3>
+<p>Inline forms are best when the structure is unique to a single card or a one-off experiment.</p>
+<h3 id="keep-resolved-ids-stable">Keep resolved IDs stable</h3>
+<p>If you rely on persisted <code>formData</code> or automation by <code>formId</code>, avoid changing:</p>
+<ul>
+<li>reusable form names</li>
+<li>inline schema titles used to generate IDs</li>
+</ul>
+<p>Changing either may produce a different resolved form ID and therefore a different <code>formData</code> key.</p>
+<h3 id="use-metadata-intentionally">Use metadata intentionally</h3>
+<p>If a value already exists as card metadata and should appear in the form, define a matching schema property so the metadata overlay can prefill it.</p>
+<h3 id="treat-form-names-as-api-surface">Treat form names as API surface</h3>
+<p>For reusable forms, the <code>name</code> becomes:</p>
+<ul>
+<li>the resolved ID</li>
+<li>the persistence key</li>
+<li>the CLI/API/MCP <code>formId</code></li>
+<li>the webhook context identifier</li>
+</ul>
+<p>Choose stable, automation-friendly names such as:</p>
+<ul>
+<li><code>incident-report</code></li>
+<li><code>qa-signoff</code></li>
+<li><code>release-checklist</code></li>
+</ul>
+<hr>
+<h2 id="common-pitfalls">Common pitfalls</h2>
+<h3 id="the-form-tab-does-not-appear">The form tab does not appear</h3>
+<p>Check the following:</p>
+<ol>
+<li>The card has a <code>forms</code> array.</li>
+<li>Each item is either:
+<ul>
+<li>a string shorthand form name,</li>
+<li>an object with <code>name</code>,</li>
+<li>or an object with <code>schema</code>.</li>
+</ul>
+</li>
+<li>Named forms exist in <code>.kanban.json</code> under <code>forms</code>.</li>
+<li>The named config form has a valid <code>schema</code>.</li>
+</ol>
+<p>If no schema can be resolved, Kanban Lite will skip the dynamic form tab.</p>
+<h3 id="submission-fails-even-though-the-ui-looked-valid">Submission fails even though the UI looked valid</h3>
+<p>The SDK is authoritative. A caller can still receive a validation error if:</p>
+<ul>
+<li>the submitted payload differs from the last visible UI state</li>
+<li>the target card or form cannot be resolved</li>
+<li>the schema rejects the merged payload after defaults/metadata are applied</li>
+</ul>
+<h3 id="persisted-data-seems-to-win-over-config-defaults">Persisted data seems to “win” over config defaults</h3>
+<p>That is by design. <code>card.formData[formId]</code> is merged after config defaults and attachment defaults.</p>
+<h3 id="metadata-is-not-prefilling-a-field">Metadata is not prefilling a field</h3>
+<p>That usually means the metadata key is not declared in <code>schema.properties</code>.</p>
+<h3 id="inline-form-ids-changed-unexpectedly">Inline form IDs changed unexpectedly</h3>
+<p>Inline forms derive IDs from <code>schema.title</code> when present. Renaming the title can change the resolved ID.</p>
+<hr>
+<h2 id="reference-summary">Reference summary</h2>
+<h3 id="reusable-config-form">Reusable config form</h3>
+<p>Location:</p>
+<ul>
+<li><code>.kanban.json</code></li>
+<li><code>forms.&lt;name&gt;</code></li>
+</ul>
+<p>Shape:</p>
+<pre><code class="language-ts">{
+  schema: Record&lt;string, unknown&gt;
+  ui?: Record&lt;string, unknown&gt;
+  data?: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<h3 id="card-attachment">Card attachment</h3>
+<p>Location:</p>
+<ul>
+<li>card frontmatter</li>
+<li><code>forms[]</code></li>
+</ul>
+<p>Shape:</p>
+<pre><code class="language-ts">{
+  name?: string
+  schema?: Record&lt;string, unknown&gt;
+  ui?: Record&lt;string, unknown&gt;
+  data?: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<p>String shorthand is also supported for named forms:</p>
+<pre><code class="language-yaml">forms:
+  - incident-report
+</code></pre>
+<h3 id="persisted-card-form-data">Persisted card form data</h3>
+<p>Location:</p>
+<ul>
+<li>card frontmatter</li>
+<li><code>formData[resolvedFormId]</code></li>
+</ul>
+<p>Shape:</p>
+<pre><code class="language-ts">Record&lt;string, Record&lt;string, unknown&gt;&gt;
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> Persisted entries may be partial. At runtime Kanban Lite prepares the full canonical
+<code>initialData</code> by merging all four sources described above. The stored object is never required to
+contain every schema field.</p>
+</blockquote>
+<h3 id="submit-result">Submit result</h3>
+<p>Shape:</p>
+<pre><code class="language-ts">{
+  boardId: string
+  card: Omit&lt;Card, 'filePath'&gt;
+  form: ResolvedFormDescriptor
+  data: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<hr>
+<h2 id="recommended-workflow">Recommended workflow</h2>
+<p>For most teams, this is the cleanest pattern:</p>
+<ol>
+<li>Define reusable schemas in <code>.kanban.json</code> under <code>forms</code></li>
+<li>Attach forms to cards by name</li>
+<li>Use metadata for cross-cutting context you want prefilled</li>
+<li>Let the form persist into <code>formData</code></li>
+<li>Trigger automation from the <code>form.submit</code> event</li>
+</ol>
+<p>This gives you:</p>
+<ul>
+<li>human-readable markdown cards</li>
+<li>structured machine-readable submissions</li>
+<li>consistent validation</li>
+<li>UI/CLI/API/MCP parity</li>
+<li>deterministic webhook payloads</li>
+</ul>
+<hr>
+<h2 id="source-of-truth-notes">Source-of-truth notes</h2>
+<p>This document reflects the current implementation in:</p>
+<ul>
+<li>shared form and transport types</li>
+<li>SDK form resolution and submission flow</li>
+<li>parser and serializer behavior</li>
+<li>webview dynamic tab generation</li>
+<li>standalone and VS Code host transport handling</li>
+</ul>
+<p>If behavior changes in the future, prefer the implementation and its tests as the final authority.</p>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/examples/">Examples</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

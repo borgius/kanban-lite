@@ -1,0 +1,3907 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REST API Reference — Kanban Lite</title>
+    <meta name="description" content="Full OpenAPI-documented REST API for the Kanban Lite standalone server.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link" aria-current="page">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="rest-api-reference">REST API Reference</h1>
+  <p>The standalone server exposes a complete REST API at <code>/api</code>. All responses follow <code>{ "ok": true, "data": ... }</code> or <code>{ "ok": false, "error": "message" }</code>. CORS is enabled for all origins. An interactive Swagger/OpenAPI UI is available at <code>http://localhost:3000/api/docs</code> when the server is running.</p>
+  <ul class="capability-list">
+    <li>Full CRUD for boards, cards, columns, comments, logs, and attachments</li>
+    <li>Fuzzy and metadata-scoped search: <code>?q=release&amp;fuzzy=true&amp;meta.team=backend</code></li>
+    <li>Card forms submission and webhook management</li>
+    <li>Storage migration endpoints</li>
+    <li>Board-scoped variants for every card operation</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Create a card via API</strong>
+    <pre><code>curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# My task", "status": "todo", "priority": "high"}'</code></pre>
+  </div>
+</div>
+
+<h1 id="kanban-lite-rest-api">Kanban Lite REST API</h1>
+<blockquote>
+<p>This file is generated from <code>packages/kanban-lite/src/standalone/internal/openapi-spec.ts</code> via <code>scripts/generate-api-docs.ts</code>.</p>
+</blockquote>
+<p>Version: 1.0.0</p>
+<ul>
+<li>Authoritative source: Swagger/OpenAPI in <code>packages/kanban-lite/src/standalone/internal/openapi-spec.ts</code></li>
+<li>Interactive docs: <code>http://localhost:3000/api/docs</code></li>
+<li>OpenAPI JSON: <code>http://localhost:3000/api/docs/json</code></li>
+<li>Base API URL: <code>http://localhost:3000/api</code></li>
+</ul>
+<p>The standalone server exposes a full REST API for managing kanban boards programmatically.</p>
+<p><strong>Base URL:</strong> <code>http://localhost:3000/api</code></p>
+<p>Start the server with <code>kl serve</code> or <code>kanban-md</code>. Use <code>--port &lt;number&gt;</code> to change the port.</p>
+<p><strong>Response envelope:</strong></p>
+<pre><code class="language-json">{ &quot;ok&quot;: true, &quot;data&quot;: { ... } }   // success
+{ &quot;ok&quot;: false, &quot;error&quot;: &quot;...&quot; }    // error
+</code></pre>
+<p>CORS is enabled for all origins.</p>
+<p><strong>Conventions:</strong> Card/task IDs support partial matching within a board.
+<code>/api/tasks/*</code> operates on the default board; <code>/api/boards/:boardId/tasks/*</code> targets a specific board explicitly.</p>
+<h2 id="boards">Boards</h2>
+<p>Board CRUD and board-level actions</p>
+<h3 id="get-api-boards">GET <code>/api/boards</code></h3>
+<p><strong>List boards</strong></p>
+<p>Returns all boards in the workspace.</p>
+<h4 id="responses">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>List of board summaries.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards">POST <code>/api/boards</code></h3>
+<p><strong>Create board</strong></p>
+<p>Creates a new board and persists it to <code>.kanban.json</code>. When <code>columns</code> is omitted, the board inherits the default board's columns (or built-in standard columns when the default board has none).</p>
+<h4 id="request-body">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Unique board identifier.</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Display name.</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>string</td>
+<td>No</td>
+<td>Board description.</td>
+</tr>
+<tr>
+<td><code>columns</code></td>
+<td>array</td>
+<td>No</td>
+<td>Custom columns. Inherits from default board if omitted.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-2">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Board created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error (missing id or name).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid">GET <code>/api/boards/{boardId}</code></h3>
+<p><strong>Get board</strong></p>
+<p>Returns the full configuration for a board.</p>
+<h4 id="parameters">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-3">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Board config.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Board not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-boards-boardid">PUT <code>/api/boards/{boardId}</code></h3>
+<p><strong>Update board</strong></p>
+<p>Updates an existing board in place. Only provided fields are changed; omitted properties keep their current values.</p>
+<h4 id="parameters-2">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-2">Request Body</h4>
+<p>Required: Yes</p>
+<p>Any subset of board config fields: <code>name</code>, <code>description</code>, <code>columns</code>, <code>defaultStatus</code>, <code>defaultPriority</code>.</p>
+<h4 id="responses-4">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated board.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid">DELETE <code>/api/boards/{boardId}</code></h3>
+<p><strong>Delete board</strong></p>
+<p>Deletes a board. The board must be empty (no cards) and cannot be the default board.</p>
+<h4 id="parameters-3">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-5">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Board not empty or is default board.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-actions">GET <code>/api/boards/{boardId}/actions</code></h3>
+<p><strong>Get board actions</strong></p>
+<p>Returns the defined actions for the board as a map of key → title.</p>
+<h4 id="parameters-4">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-6">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Action map.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Board not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-actions">POST <code>/api/boards/{boardId}/actions</code></h3>
+<p><strong>Set board actions</strong></p>
+<p>Replaces all board actions with the provided set. Keys present in the existing set but absent from the new set are removed.</p>
+<h4 id="parameters-5">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-3">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>actions</code></td>
+<td>Record&lt;string, string&gt;</td>
+<td>Yes</td>
+<td>Map of action key → display title.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-7">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated action map.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-boards-boardid-actions-key">PUT <code>/api/boards/{boardId}/actions/{key}</code></h3>
+<p><strong>Add/update board action</strong></p>
+<p>Adds a new board action or updates the title of an existing one.</p>
+<h4 id="parameters-6">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-4">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>title</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Display title for the action.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-8">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated actions.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-actions-key">DELETE <code>/api/boards/{boardId}/actions/{key}</code></h3>
+<p><strong>Delete board action</strong></p>
+<p>Removes a board action by key.</p>
+<h4 id="parameters-7">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-9">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>204</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-actions-key-trigger">POST <code>/api/boards/{boardId}/actions/{key}/trigger</code></h3>
+<p><strong>Trigger board action</strong></p>
+<p>Fires the configured webhook for the named board action.</p>
+<h4 id="parameters-8">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-10">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>204</code></td>
+<td>Triggered.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-columns">GET <code>/api/boards/{boardId}/columns</code></h3>
+<p><strong>List board columns</strong></p>
+<p>Returns the ordered column definitions for the specified board, including each column's <code>id</code>, display <code>name</code>, and <code>color</code>.</p>
+<h4 id="parameters-9">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-11">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Ordered column list.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tasks">Tasks</h2>
+<p>Task operations on the default board</p>
+<h3 id="get-api-tasks">GET <code>/api/tasks</code></h3>
+<p><strong>List tasks</strong></p>
+<p>Returns tasks on the default board. Supports exact free-text search via <code>q</code>, optional fuzzy matching via <code>fuzzy=true</code>, and field-scoped metadata filters via <code>meta.&lt;field&gt;=value</code>.</p>
+<h4 id="parameters-10">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>q</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Free-text search. May include inline <code>meta.field: value</code> tokens.</td>
+</tr>
+<tr>
+<td><code>fuzzy</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Enable fuzzy matching for free-text search and metadata tokens.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by status.</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td>query</td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Filter by priority.</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by assignee name.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label.</td>
+</tr>
+<tr>
+<td><code>labelGroup</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label group name.</td>
+</tr>
+<tr>
+<td><code>includeDeleted</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Include soft-deleted tasks.</td>
+</tr>
+<tr>
+<td><code>meta.&lt;field&gt;</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Field-scoped metadata filter. Repeat for multiple metadata fields.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-12">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task list.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks">POST <code>/api/tasks</code></h3>
+<p><strong>Create task</strong></p>
+<p>Creates a task on the default board. Title is derived from the first Markdown <code># heading</code>. Omitted <code>status</code>/<code>priority</code> fall back to board defaults.</p>
+<h4 id="request-body-5">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Markdown content. Task title is derived from the first <code># heading</code>.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>No</td>
+<td>Initial status (defaults to board default).</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Priority level (default: <code>medium</code>).</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>string</td>
+<td>No</td>
+<td>Assigned team member.</td>
+</tr>
+<tr>
+<td><code>dueDate</code></td>
+<td>string</td>
+<td>No</td>
+<td>Due date (ISO 8601).</td>
+</tr>
+<tr>
+<td><code>labels</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>Labels/tags.</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>object</td>
+<td>No</td>
+<td>Arbitrary user-defined key/value metadata.</td>
+</tr>
+<tr>
+<td><code>forms</code></td>
+<td>array</td>
+<td>No</td>
+<td>Attached forms — named workspace references (<code>{ &quot;name&quot;: &quot;...&quot; }</code>) or inline definitions.</td>
+</tr>
+<tr>
+<td><code>formData</code></td>
+<td>object</td>
+<td>No</td>
+<td>Per-form saved data keyed by resolved form ID.</td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td>array</td>
+<td>No</td>
+<td>Action names or map of key → title available on this card.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-13">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-tasks-active">GET <code>/api/tasks/active</code></h3>
+<p><strong>Get active task</strong></p>
+<p>Returns the currently active/open task on the default board, or <code>null</code> when no task is active.</p>
+<h4 id="responses-14">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Active task or null.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-tasks-id">GET <code>/api/tasks/{id}</code></h3>
+<p><strong>Get task</strong></p>
+<p>Returns a single task from the default board. The <code>:id</code> segment supports partial ID matching.</p>
+<h4 id="parameters-11">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-15">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-tasks-id">PUT <code>/api/tasks/{id}</code></h3>
+<p><strong>Update task</strong></p>
+<p>Updates an existing task. Only the supplied fields are modified; omitted fields remain unchanged.</p>
+<h4 id="parameters-12">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-6">Request Body</h4>
+<p>Required: Yes</p>
+<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
+<h4 id="responses-16">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id">DELETE <code>/api/tasks/{id}</code></h3>
+<p><strong>Delete task</strong></p>
+<p>Soft-deletes a task by moving it into the hidden deleted column.</p>
+<h4 id="parameters-13">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-17">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-forms-formid-submit">POST <code>/api/tasks/{id}/forms/{formId}/submit</code></h3>
+<p><strong>Submit task form</strong></p>
+<p>Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the <code>form.submit</code> webhook event.</p>
+<h4 id="parameters-14">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>formId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Form identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-7">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data</code></td>
+<td>object</td>
+<td>Yes</td>
+<td>Submitted field values.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-18">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Submission result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="patch-api-tasks-id-move">PATCH <code>/api/tasks/{id}/move</code></h3>
+<p><strong>Move task</strong></p>
+<p>Moves a task to a different column and/or position on the default board.</p>
+<h4 id="parameters-15">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-8">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Target column.</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td>integer</td>
+<td>No</td>
+<td>Zero-based position (default: <code>0</code>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-19">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id-permanent">DELETE <code>/api/tasks/{id}/permanent</code></h3>
+<p><strong>Permanently delete task</strong></p>
+<p>Permanently and irreversibly deletes a task from the default board. This cannot be undone.</p>
+<h4 id="parameters-16">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-20">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-actions-action">POST <code>/api/tasks/{id}/actions/{action}</code></h3>
+<p><strong>Trigger task action</strong></p>
+<p>Fires the configured webhook for the named card-level action.</p>
+<h4 id="parameters-17">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-21">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>204</code></td>
+<td>Triggered.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="board-tasks">Board Tasks</h2>
+<p>Board-scoped task operations</p>
+<h3 id="get-api-boards-boardid-tasks">GET <code>/api/boards/{boardId}/tasks</code></h3>
+<p><strong>List tasks (board-scoped)</strong></p>
+<p>Returns tasks for the specified board. Supports the same <code>q</code>, <code>fuzzy</code>, <code>meta.*</code>, and field filters as <code>/api/tasks</code>.</p>
+<h4 id="parameters-18">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Free-text search. May include inline <code>meta.field: value</code> tokens.</td>
+</tr>
+<tr>
+<td><code>fuzzy</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Enable fuzzy matching for free-text search and metadata tokens.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by status.</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td>query</td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Filter by priority.</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by assignee name.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label.</td>
+</tr>
+<tr>
+<td><code>labelGroup</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label group name.</td>
+</tr>
+<tr>
+<td><code>includeDeleted</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Include soft-deleted tasks.</td>
+</tr>
+<tr>
+<td><code>meta.&lt;field&gt;</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Field-scoped metadata filter. Repeat for multiple metadata fields.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-22">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task list.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks">POST <code>/api/boards/{boardId}/tasks</code></h3>
+<p><strong>Create task (board-scoped)</strong></p>
+<p>Creates a task on the specified board. Title is derived from the first Markdown <code># heading</code>. Omitted <code>status</code>/<code>priority</code> fall back to the board defaults.</p>
+<h4 id="parameters-19">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-9">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Markdown content. Task title is derived from the first <code># heading</code>.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>No</td>
+<td>Initial status (defaults to board default).</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Priority level (default: <code>medium</code>).</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>string</td>
+<td>No</td>
+<td>Assigned team member.</td>
+</tr>
+<tr>
+<td><code>dueDate</code></td>
+<td>string</td>
+<td>No</td>
+<td>Due date (ISO 8601).</td>
+</tr>
+<tr>
+<td><code>labels</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>Labels/tags.</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>object</td>
+<td>No</td>
+<td>Arbitrary user-defined key/value metadata.</td>
+</tr>
+<tr>
+<td><code>forms</code></td>
+<td>array</td>
+<td>No</td>
+<td>Attached forms — named workspace references (<code>{ &quot;name&quot;: &quot;...&quot; }</code>) or inline definitions.</td>
+</tr>
+<tr>
+<td><code>formData</code></td>
+<td>object</td>
+<td>No</td>
+<td>Per-form saved data keyed by resolved form ID.</td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td>array</td>
+<td>No</td>
+<td>Action names or map of key → title available on this card.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-23">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-tasks-active">GET <code>/api/boards/{boardId}/tasks/active</code></h3>
+<p><strong>Get active task (board-scoped)</strong></p>
+<p>Returns the currently active/open task for the board, or <code>null</code> when none is active.</p>
+<h4 id="parameters-20">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-24">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Active task or null.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-tasks-id">GET <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Get task (board-scoped)</strong></p>
+<p>Returns a single task from the specified board. The <code>:id</code> segment supports partial ID matching.</p>
+<h4 id="parameters-21">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-25">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-boards-boardid-tasks-id">PUT <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Update task (board-scoped)</strong></p>
+<p>Updates fields of a task. Only supplied fields are modified; omitted fields remain unchanged.</p>
+<h4 id="parameters-22">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-10">Request Body</h4>
+<p>Required: Yes</p>
+<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
+<h4 id="responses-26">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-tasks-id">DELETE <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Delete task (board-scoped)</strong></p>
+<p>Soft-deletes the task by moving it to the hidden deleted column.</p>
+<h4 id="parameters-23">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-27">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="patch-api-boards-boardid-tasks-id-move">PATCH <code>/api/boards/{boardId}/tasks/{id}/move</code></h3>
+<p><strong>Move task (board-scoped)</strong></p>
+<p>Moves a task to a different column and/or position within the board.</p>
+<h4 id="parameters-24">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-11">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Target column.</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td>integer</td>
+<td>No</td>
+<td>Zero-based position (default: <code>0</code>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-28">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-forms-formid-submit">POST <code>/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit</code></h3>
+<p><strong>Submit task form (board-scoped)</strong></p>
+<p>Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the <code>form.submit</code> webhook event.</p>
+<h4 id="parameters-25">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>formId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Form identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-12">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data</code></td>
+<td>object</td>
+<td>Yes</td>
+<td>Submitted field values.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-29">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Submission result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-actions-action">POST <code>/api/boards/{boardId}/tasks/{id}/actions/{action}</code></h3>
+<p><strong>Trigger task action (board-scoped)</strong></p>
+<p>Fires the configured webhook for the named card-level action.</p>
+<h4 id="parameters-26">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-30">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>204</code></td>
+<td>Triggered.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-tasks-id-permanent">DELETE <code>/api/boards/{boardId}/tasks/{id}/permanent</code></h3>
+<p><strong>Permanently delete task (board-scoped)</strong></p>
+<p>Permanently and irreversibly removes the task. This cannot be undone.</p>
+<h4 id="parameters-27">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-31">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-transfer">POST <code>/api/boards/{boardId}/tasks/{id}/transfer</code></h3>
+<p><strong>Transfer task to another board</strong></p>
+<p>Moves a task from the current board context to the specified destination board. The <code>:boardId</code> path segment is the <strong>destination</strong> board. The source board is the server's currently active board context.</p>
+<h4 id="parameters-28">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-13">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>targetStatus</code></td>
+<td>string</td>
+<td>No</td>
+<td>Status in the destination board (defaults to the board's default status).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-32">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Transferred task.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="columns">Columns</h2>
+<p>Column management for the default board</p>
+<h3 id="get-api-columns">GET <code>/api/columns</code></h3>
+<p><strong>List columns</strong></p>
+<p>Returns the ordered column definitions for the default board.</p>
+<h4 id="responses-33">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Column list.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-columns">POST <code>/api/columns</code></h3>
+<p><strong>Add column</strong></p>
+<p>Creates a new column on the default board. New columns are appended to the end of the board's current column order.</p>
+<h4 id="request-body-14">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Unique column identifier.</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Display name.</td>
+</tr>
+<tr>
+<td><code>color</code></td>
+<td>string</td>
+<td>No</td>
+<td>Hex color (default: <code>#6b7280</code>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-34">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-columns-reorder">PUT <code>/api/columns/reorder</code></h3>
+<p><strong>Reorder columns</strong></p>
+<p>Reorders the columns for the specified board (or default board if <code>boardId</code> is omitted).</p>
+<h4 id="parameters-29">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Target board ID (uses default if omitted).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-15">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>columnIds</code></td>
+<td>string[]</td>
+<td>Yes</td>
+<td>Ordered array of column IDs.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-35">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Reordered columns.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-columns-minimized">PUT <code>/api/columns/minimized</code></h3>
+<p><strong>Set minimized columns</strong></p>
+<p>Sets which columns are minimized for the specified board (or default board if <code>boardId</code> is omitted).</p>
+<h4 id="parameters-30">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Target board ID (uses default if omitted).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-16">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>columnIds</code></td>
+<td>string[]</td>
+<td>Yes</td>
+<td>IDs of columns to minimize.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-36">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated minimized columns.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-columns-id">PUT <code>/api/columns/{id}</code></h3>
+<p><strong>Update column</strong></p>
+<p>Updates a column's display name and/or color on the default board.</p>
+<h4 id="parameters-31">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Column identifier.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-17">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>No</td>
+<td>New display name.</td>
+</tr>
+<tr>
+<td><code>color</code></td>
+<td>string</td>
+<td>No</td>
+<td>New hex color.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-37">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated column.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-columns-id">DELETE <code>/api/columns/{id}</code></h3>
+<p><strong>Delete column</strong></p>
+<p>Deletes a column on the default board. Fails if the column still contains tasks.</p>
+<h4 id="parameters-32">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Column identifier.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-38">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Column not empty.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="comments">Comments</h2>
+<p>Task comment threads</p>
+<h3 id="get-api-tasks-id-comments">GET <code>/api/tasks/{id}/comments</code></h3>
+<p><strong>List comments</strong></p>
+<p>Returns all comments currently attached to the task, in stored order.</p>
+<h4 id="parameters-33">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-39">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Comment list.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Task not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-comments">POST <code>/api/tasks/{id}/comments</code></h3>
+<p><strong>Add comment</strong></p>
+<p>Adds a new comment to the task and emits the <code>comment.created</code> webhook event.</p>
+<h4 id="parameters-34">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-18">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>author</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Comment author.</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Comment body (Markdown).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-40">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created comment.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error (missing author or content).</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Task not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-tasks-id-comments-commentid">PUT <code>/api/tasks/{id}/comments/{commentId}</code></h3>
+<p><strong>Update comment</strong></p>
+<p>Updates the Markdown content of an existing comment.</p>
+<h4 id="parameters-35">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>commentId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Comment identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-19">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>New comment body (Markdown).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-41">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated comment.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Comment not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id-comments-commentid">DELETE <code>/api/tasks/{id}/comments/{commentId}</code></h3>
+<p><strong>Delete comment</strong></p>
+<p>Deletes the specified comment from the task.</p>
+<h4 id="parameters-36">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>commentId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Comment identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-42">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="attachments">Attachments</h2>
+<p>File attachments on tasks</p>
+<h3 id="post-api-tasks-id-attachments">POST <code>/api/tasks/{id}/attachments</code></h3>
+<p><strong>Upload attachments</strong></p>
+<p>Uploads one or more files as task attachments. Files are sent as base64-encoded strings in a JSON body and stored through the active attachment-storage provider.</p>
+<h4 id="parameters-37">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-20">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>files</code></td>
+<td>object[]</td>
+<td>Yes</td>
+<td>Array of files to upload.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-43">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task including new attachment references.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error (missing or malformed <code>files</code> array).</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Task not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-tasks-id-attachments-filename">GET <code>/api/tasks/{id}/attachments/{filename}</code></h3>
+<p><strong>Download attachment</strong></p>
+<p>Materializes and streams the named attachment back to the client. Most browsers render known types (PDFs, images) inline unless <code>?download=1</code> is set.</p>
+<h4 id="parameters-38">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>filename</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Attachment filename</td>
+</tr>
+<tr>
+<td><code>download</code></td>
+<td>query</td>
+<td><code>0</code> | <code>1</code></td>
+<td>No</td>
+<td>Set to <code>1</code> to force a download prompt instead of inline display.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-44">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>File content with appropriate Content-Type.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Task or attachment not found.</td>
+</tr>
+<tr>
+<td><code>501</code></td>
+<td>Attachment provider does not expose a local file path.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id-attachments-filename">DELETE <code>/api/tasks/{id}/attachments/{filename}</code></h3>
+<p><strong>Delete attachment</strong></p>
+<p>Removes the named attachment from the task and deletes the provider-backed payload when supported.</p>
+<h4 id="parameters-39">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>filename</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Attachment filename</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-45">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Task not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="logs">Logs</h2>
+<p>Append-only log entries on tasks and boards</p>
+<h3 id="get-api-boards-boardid-logs">GET <code>/api/boards/{boardId}/logs</code></h3>
+<p><strong>List board logs</strong></p>
+<p>Returns all board-level log entries.</p>
+<h4 id="parameters-40">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-46">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Log entries.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-logs">POST <code>/api/boards/{boardId}/logs</code></h3>
+<p><strong>Add board log</strong></p>
+<p>Appends a log entry to the board.</p>
+<h4 id="parameters-41">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-21">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Log message text (supports Markdown).</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td>No</td>
+<td>Source/origin label (default: <code>&quot;default&quot;</code>).</td>
+</tr>
+<tr>
+<td><code>object</code></td>
+<td>object</td>
+<td>No</td>
+<td>Optional structured data stored as JSON.</td>
+</tr>
+<tr>
+<td><code>timestamp</code></td>
+<td>string</td>
+<td>No</td>
+<td>ISO 8601 timestamp (auto-generated if omitted).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-47">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-logs">DELETE <code>/api/boards/{boardId}/logs</code></h3>
+<p><strong>Clear board logs</strong></p>
+<p>Removes all board-level log entries.</p>
+<h4 id="parameters-42">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-48">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Cleared.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-tasks-id-logs">GET <code>/api/tasks/{id}/logs</code></h3>
+<p><strong>List task logs</strong></p>
+<p>Returns all log entries for the task.</p>
+<h4 id="parameters-43">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-49">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Log entries.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-logs">POST <code>/api/tasks/{id}/logs</code></h3>
+<p><strong>Add task log</strong></p>
+<p>Appends a log entry to the task.</p>
+<h4 id="parameters-44">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-22">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Log message text (supports Markdown).</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td>No</td>
+<td>Source/origin label (default: <code>&quot;default&quot;</code>).</td>
+</tr>
+<tr>
+<td><code>object</code></td>
+<td>object</td>
+<td>No</td>
+<td>Optional structured data stored as JSON.</td>
+</tr>
+<tr>
+<td><code>timestamp</code></td>
+<td>string</td>
+<td>No</td>
+<td>ISO 8601 timestamp (auto-generated if omitted).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-50">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id-logs">DELETE <code>/api/tasks/{id}/logs</code></h3>
+<p><strong>Clear task logs</strong></p>
+<p>Removes all log entries for the task.</p>
+<h4 id="parameters-45">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-51">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Cleared.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="settings">Settings</h2>
+<p>Workspace display settings</p>
+<h3 id="get-api-settings">GET <code>/api/settings</code></h3>
+<p><strong>Get settings</strong></p>
+<p>Returns the workspace's current display and behavior settings used by the UI surfaces.</p>
+<h4 id="responses-52">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Settings object.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-settings">PUT <code>/api/settings</code></h3>
+<p><strong>Update settings</strong></p>
+<p>Updates workspace display settings and immediately broadcasts the change to connected WebSocket clients.</p>
+<h4 id="request-body-23">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>showPriorityBadges</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>showAssignee</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>showDueDate</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>showLabels</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>showFileName</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>compactMode</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>showDeletedColumn</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>defaultPriority</code></td>
+<td>string</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>defaultStatus</code></td>
+<td>string</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>boardBackgroundMode</code></td>
+<td><code>fancy</code> | <code>plain</code></td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>boardBackgroundPreset</code></td>
+<td><code>aurora</code> | <code>sunset</code> | <code>meadow</code> | <code>nebula</code> | <code>lagoon</code> | <code>candy</code> | <code>ember</code> | <code>violet</code> | <code>paper</code> | <code>mist</code> | <code>sand</code></td>
+<td>No</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-53">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated settings.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="webhooks">Webhooks</h2>
+<p>Webhook subscriptions</p>
+<h3 id="get-api-webhooks">GET <code>/api/webhooks</code></h3>
+<p><strong>List webhooks</strong></p>
+<p>Returns all registered webhook subscriptions from the workspace <code>.kanban.json</code> webhook registry. Runtime delivery normally comes from the external <code>kl-webhooks-plugin</code> package via the <code>webhook.delivery</code> provider id <code>webhooks</code>, while current releases retain a built-in compatibility fallback when the package is not installed yet.</p>
+<h4 id="responses-54">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Webhook list.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-webhooks">POST <code>/api/webhooks</code></h3>
+<p><strong>Register webhook</strong></p>
+<p>Registers a new webhook destination. When <code>events</code> is omitted, the webhook subscribes to every event.
+Registrations remain stored in the workspace <code>.kanban.json</code> <code>webhooks</code> array regardless of whether the external provider package or the built-in compatibility fallback is active.</p>
+<p><strong>Available events:</strong> <code>task.created</code>, <code>form.submit</code>, <code>task.updated</code>, <code>task.moved</code>, <code>task.deleted</code>,
+<code>comment.created</code>, <code>comment.updated</code>, <code>comment.deleted</code>, <code>log.added</code>, <code>log.cleared</code>,
+<code>column.created</code>, <code>column.updated</code>, <code>column.deleted</code>, <code>attachment.added</code>, <code>attachment.removed</code>,
+<code>settings.updated</code>, <code>board.created</code>, <code>board.updated</code>, <code>board.deleted</code>, <code>board.action</code>,
+<code>board.log.added</code>, <code>board.log.cleared</code>.</p>
+<h4 id="request-body-24">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Target URL.</td>
+</tr>
+<tr>
+<td><code>events</code></td>
+<td>string[]</td>
+<td>Yes</td>
+<td>Events to subscribe to (use <code>[&quot;*&quot;]</code> for all).</td>
+</tr>
+<tr>
+<td><code>secret</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional HMAC-SHA256 signing secret.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-55">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-webhooks-id">PUT <code>/api/webhooks/{id}</code></h3>
+<p><strong>Update webhook</strong></p>
+<p>Updates an existing webhook's URL, event subscriptions, signing secret, or active state. The persisted registry format stays the same whether delivery is handled by <code>kl-webhooks-plugin</code> or the built-in compatibility fallback.</p>
+<h4 id="parameters-46">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Webhook identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-25">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>events</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>secret</code></td>
+<td>string</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>active</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>Enable or disable the webhook.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-56">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated webhook.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-webhooks-id">DELETE <code>/api/webhooks/{id}</code></h3>
+<p><strong>Delete webhook</strong></p>
+<p>Deletes the webhook registration permanently from the workspace <code>.kanban.json</code> registry.</p>
+<h4 id="parameters-47">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Webhook identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-57">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="labels">Labels</h2>
+<p>Label definitions and cascading renames</p>
+<h3 id="get-api-labels">GET <code>/api/labels</code></h3>
+<p><strong>List labels</strong></p>
+<p>Returns all label definitions with their colors and groups.</p>
+<h4 id="responses-58">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Label map.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-labels-name">PUT <code>/api/labels/{name}</code></h3>
+<p><strong>Set label</strong></p>
+<p>Creates or updates a label definition (color and optional group).</p>
+<h4 id="parameters-48">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Label name (URL-encoded)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-26">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>color</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Hex color string.</td>
+</tr>
+<tr>
+<td><code>group</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional group name.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-59">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated label map.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="patch-api-labels-name">PATCH <code>/api/labels/{name}</code></h3>
+<p><strong>Rename label</strong></p>
+<p>Renames a label and cascades the change to all cards that use it.</p>
+<h4 id="parameters-49">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Label name (URL-encoded)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-27">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>newName</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>New label name.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-60">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated label map after rename.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-labels-name">DELETE <code>/api/labels/{name}</code></h3>
+<p><strong>Delete label</strong></p>
+<p>Deletes a label definition and removes it from all cards that reference it.</p>
+<h4 id="parameters-50">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Label name (URL-encoded)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-61">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="workspace">Workspace</h2>
+<p>Workspace metadata, storage, and auth status</p>
+<h3 id="get-api-workspace">GET <code>/api/workspace</code></h3>
+<p><strong>Get workspace info</strong></p>
+<p>Returns workspace-level connection metadata plus resolved storage, auth, and webhook provider information, including filesystem watcher support.</p>
+<h4 id="responses-62">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Workspace info.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-auth">GET <code>/api/auth</code></h3>
+<p><strong>Get auth status</strong></p>
+<p>Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.</p>
+<h4 id="responses-63">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Auth status.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-storage">GET <code>/api/storage</code></h3>
+<p><strong>Get storage status</strong></p>
+<p>Returns the active card, attachment, and webhook provider IDs plus host-facing file/watch metadata.</p>
+<h4 id="responses-64">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Storage status.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-storage-migrate-to-sqlite">POST <code>/api/storage/migrate-to-sqlite</code></h3>
+<p><strong>Migrate to SQLite</strong></p>
+<p>Migrates cards from the built-in markdown provider to the built-in SQLite provider and updates compatibility config fields in <code>.kanban.json</code>. This endpoint does not migrate into arbitrary external providers.</p>
+<h4 id="request-body-28">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sqlitePath</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional database path relative to workspace root.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-65">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Migration result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-storage-migrate-to-markdown">POST <code>/api/storage/migrate-to-markdown</code></h3>
+<p><strong>Migrate to Markdown</strong></p>
+<p>Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields. Existing source data is left in place as a manual backup.</p>
+<h4 id="responses-66">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Migration result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-resolve-path">GET <code>/api/resolve-path</code></h3>
+<p><strong>Resolve path</strong></p>
+<p>Resolves a workspace-relative, absolute, or <code>~</code>-prefixed path to its canonical absolute filesystem path.</p>
+<h4 id="parameters-51">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>query</td>
+<td>string</td>
+<td>Yes</td>
+<td>Path to resolve.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-67">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Resolved absolute path.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Path parameter missing.</td>
+</tr>
+</tbody>
+</table>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/sdk/">SDK</a> ·
+  <a href="/docs/cli/">CLI</a> ·
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/auth/">Auth</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

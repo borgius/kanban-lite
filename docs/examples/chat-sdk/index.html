@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Example: Chat SDK / Vercel AI — Kanban Lite</title>
+    <meta name="description" content="Step-by-step guide for building a kanban-lite-backed chat triage assistant with the Vercel AI ecosystem.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink" aria-current="page">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="example-chat-sdk-vercel-ai">Example: Chat SDK / Vercel AI</h1>
+<p class="docs-intro">
+  Build a streaming chat assistant that creates, lists, and moves kanban-lite tasks through a small Next.js app powered by the Vercel AI SDK.
+</p>
+
+<h2 id="what-you-will-build">What you will build</h2>
+<p>
+  The example in <code>examples/chat-sdk-vercel-ai/</code> is a compact App Router app with one chat page,
+  one server route, and one kanban-lite client module. The assistant can:
+</p>
+<ul>
+  <li>Create tasks from a natural-language request</li>
+  <li>List tasks, optionally filtered by status column</li>
+  <li>Move tasks across standard columns such as <code>backlog</code>, <code>in-progress</code>, <code>review</code>, and <code>done</code></li>
+  <li>Stream tool-backed responses into a simple chat UI on <code>http://localhost:3001</code></li>
+</ul>
+
+<ol class="qs-steps">
+  <li class="qs-step">
+    <div>
+      <h3 id="check-the-prerequisites">Check the prerequisites</h3>
+      <p>You need the following before starting:</p>
+      <ul>
+        <li><strong>Node.js 20+</strong> for the Next.js app in <code>examples/chat-sdk-vercel-ai/</code></li>
+        <li>A running <strong>kanban-lite standalone server</strong>, unless you choose mock mode</li>
+        <li>An <strong>OpenAI API key</strong>, or another provider supported by the Vercel AI SDK if you swap providers in the source</li>
+      </ul>
+      <p>
+        The example defaults to talking to a live kanban-lite server at <code>http://localhost:3000</code> and a board named <code>default</code>.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="start-kanban-lite">Start kanban-lite</h3>
+      <p>In a separate terminal, start the standalone server that the chat route will call over HTTP:</p>
+      <pre><code>npx kanban-lite serve
+
+# or, if you have the CLI installed globally:
+kl serve</code></pre>
+      <p>
+        This serves the board API on <code>http://localhost:3000</code>. The chat app intentionally runs on
+        <code>3001</code> to avoid port collisions.
+      </p>
+      <p>
+        If you do not want to run the server yet, you can set <code>KANBAN_USE_MOCK=true</code> later and the example
+        will keep all task operations in memory instead.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="install-the-example-app">Install the example app</h3>
+      <pre><code>cd examples/chat-sdk-vercel-ai
+npm install</code></pre>
+      <p>
+        The shipped <code>package.json</code> exposes three scripts: <code>npm run dev</code>, <code>npm run build</code>, and <code>npm run start</code>.
+        The app uses Next.js 15, React 19, the Vercel AI SDK, and <code>@ai-sdk/openai</code>.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="configure-the-environment">Configure the environment</h3>
+      <p>Copy the template exactly as the example README describes:</p>
+      <pre><code>cp .env.example .env.local</code></pre>
+      <p>Then set the values used by the shipped source:</p>
+      <ul>
+        <li><code>OPENAI_API_KEY</code> — required for the default OpenAI provider</li>
+        <li><code>KANBAN_API_URL</code> — defaults to <code>http://localhost:3000</code></li>
+        <li><code>KANBAN_BOARD_ID</code> — defaults to <code>default</code></li>
+        <li><code>KANBAN_API_TOKEN</code> — optional bearer token for auth-protected servers</li>
+        <li><code>KANBAN_USE_MOCK</code> — set to <code>true</code> to skip the live server</li>
+      </ul>
+      <p>
+        Mock mode is handy for UI demos and local experimentation. Live mode is the important integration path because it exercises the public kanban-lite REST API.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="run-the-chat-app">Run the chat app</h3>
+      <pre><code>npm run dev</code></pre>
+      <p>
+        Open <a href="http://localhost:3001">http://localhost:3001</a>. The app renders a single chat page with starter prompts such as:
+      </p>
+      <pre><code>Create a task: Fix the signup email flow, high priority
+List all backlog tasks
+What tasks are in progress?
+Move task mock-1 to done</code></pre>
+      <p>
+        Messages stream through the Vercel AI SDK <code>useChat</code> hook, and tool results are rendered inline under the assistant response.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="build-for-production">Build for production</h3>
+      <pre><code>npm run build
+npm run start</code></pre>
+      <p>
+        The production server also binds to port <code>3001</code>, matching the shipped script contract in the example app.
+      </p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="how-the-app-is-organized">How the app is organized</h2>
+<p>The example stays intentionally tiny. These are the files worth reading first:</p>
+<div class="example-tabs">
+  <div class="example-tab">
+    <strong><code>app/page.tsx</code></strong>
+    <p>Client component that uses <code>useChat</code>, renders the message list, and shows tool invocation results inline.</p>
+  </div>
+  <div class="example-tab">
+    <strong><code>app/api/chat/route.ts</code></strong>
+    <p>Server route that calls <code>streamText</code>, defines the tool contract, and turns tool executions into a streaming response.</p>
+  </div>
+  <div class="example-tab">
+    <strong><code>lib/kanban.ts</code></strong>
+    <p>HTTP client and mock implementation for kanban-lite. This is the integration seam between the chat app and the board.</p>
+  </div>
+  <div class="example-tab">
+    <strong><code>.env.example</code></strong>
+    <p>Documents every environment variable consumed by the example.</p>
+  </div>
+</div>
+
+<h2 id="the-kanban-lite-integration-seam">The kanban-lite integration seam</h2>
+<p>
+  The important design choice in this example is that it does <strong>not</strong> import kanban-lite internals. Instead,
+  <code>lib/kanban.ts</code> talks to the standalone server over the documented REST API. That keeps the chat app decoupled,
+  and it mirrors how a real external app would integrate with kanban-lite in production.
+</p>
+<p>The shipped module wraps three operations:</p>
+<ul>
+  <li><code>createTask(...)</code> → <code>POST /api/boards/:boardId/tasks</code></li>
+  <li><code>listTasks(...)</code> → <code>GET /api/boards/:boardId/tasks</code></li>
+  <li><code>moveTask(...)</code> → <code>PATCH /api/boards/:boardId/tasks/:id/move</code></li>
+</ul>
+<p>
+  The chat route in <code>app/api/chat/route.ts</code> exposes those operations as three AI tools: <code>create_task</code>,
+  <code>list_tasks</code>, and <code>move_task</code>. The model can call a tool, wait for the result, and then stream a short
+  human-readable summary back to the user. Tiny surface area, very real behavior — like a good espresso shot.
+</p>
+
+<h3 id="why-kanban-lite-fits-this-flow">Why kanban-lite fits this flow</h3>
+<p>
+  The board is the durable system of record, while the LLM acts as a conversational layer on top. That split matters:
+  the assistant can interpret intent in natural language, but task state still lives in explicit kanban-lite columns and cards,
+  where humans and other tools can inspect it later.
+</p>
+<ul>
+  <li>The chat UI gives you natural-language control</li>
+  <li>The kanban-lite server gives you stable task storage and a documented HTTP contract</li>
+  <li>The mock mode keeps the UI usable even when you are prototyping without a backend</li>
+</ul>
+
+<h2 id="provider-swap-notes">Provider swap notes</h2>
+<p>
+  The shipped example uses <code>@ai-sdk/openai</code> and <code>openai('gpt-4o-mini')</code>. The source comments in
+  <code>app/api/chat/route.ts</code> also show how to swap to another Vercel AI SDK provider, such as Anthropic,
+  by changing the import, model call, and corresponding API key.
+</p>
+
+<h2 id="extension-ideas">Extension ideas</h2>
+<ul>
+  <li>Add more tools for comments, labels, metadata filters, or form submission</li>
+  <li>Show richer task cards in the UI instead of raw JSON tool output</li>
+  <li>Connect to an auth-protected kanban-lite server with <code>KANBAN_API_TOKEN</code></li>
+  <li>Offer a board selector by changing <code>KANBAN_BOARD_ID</code> dynamically</li>
+  <li>Persist chat history or add guardrails around allowed columns and priorities</li>
+</ul>
+
+<h2 id="source-and-related-docs">Source and related docs</h2>
+<p>
+  The runnable app lives in <code>examples/chat-sdk-vercel-ai/</code>. For adjacent reference material, use the links below.
+</p>
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/examples/">All Examples</a> &middot;
+  <a href="/docs/api/">REST API</a> &middot;
+  <a href="/docs/sdk/">SDK Reference</a> &middot;
+  <a href="/docs/mcp/">MCP Server</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation — Kanban Lite</title>
+    <meta name="description" content="Full documentation for Kanban Lite — web UI, CLI, REST API, MCP server, SDK, plugins, and more.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent" aria-current="page">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="documentation">Documentation</h1>
+<p class="docs-intro">
+  Welcome to the Kanban Lite documentation. Choose a section below or use the sidebar to navigate.
+</p>
+<div class="section-grid">
+  
+  <a href="/docs/quick-start/" class="section-card">
+    <strong>Quick Start</strong>
+    <span>Get a kanban board running in under 60 seconds.</span>
+  </a>
+  
+  <a href="/docs/tour/" class="section-card">
+    <strong>Product Tour</strong>
+    <span>Visual walkthrough of the board, cards, and search.</span>
+  </a>
+  
+  <a href="/docs/cards/" class="section-card">
+    <strong>Cards &amp; Workflows</strong>
+    <span>Priority, labels, comments, logs, actions, and forms.</span>
+  </a>
+  
+  <a href="/docs/search/" class="section-card">
+    <strong>Search &amp; Filtering</strong>
+    <span>Fuzzy search, metadata tokens, and clickable filters.</span>
+  </a>
+  
+  <a href="/docs/boards/" class="section-card">
+    <strong>Boards &amp; Columns</strong>
+    <span>Multi-board support, column management, and board settings.</span>
+  </a>
+  
+  <a href="/docs/sdk/" class="section-card">
+    <strong>SDK</strong>
+    <span>JavaScript/TypeScript SDK — create boards, cards, and collections programmatically.</span>
+  </a>
+  
+  <a href="/docs/api/" class="section-card">
+    <strong>REST API</strong>
+    <span>Full OpenAPI-documented REST API served by the standalone server.</span>
+  </a>
+  
+  <a href="/docs/cli/" class="section-card">
+    <strong>CLI</strong>
+    <span>Manage every board resource from the terminal with `kl` or `kanban-lite`.</span>
+  </a>
+  
+  <a href="/docs/mcp/" class="section-card">
+    <strong>MCP Server</strong>
+    <span>Model Context Protocol tools for AI agents — Claude, Codex, and more.</span>
+  </a>
+  
+  <a href="/docs/plugins/" class="section-card">
+    <strong>Plugins</strong>
+    <span>Capability-based plugin system for storage, webhooks, and auth.</span>
+  </a>
+  
+  <a href="/docs/forms/" class="section-card">
+    <strong>Forms</strong>
+    <span>Attach reusable forms to cards for structured data collection.</span>
+  </a>
+  
+  <a href="/docs/webhooks/" class="section-card">
+    <strong>Webhooks</strong>
+    <span>Outbound webhook delivery on kanban events.</span>
+  </a>
+  
+  <a href="/docs/auth/" class="section-card">
+    <strong>Auth</strong>
+    <span>Identity and policy plugin contract for action-level authorization.</span>
+  </a>
+  
+  <a href="/docs/examples/" class="section-card">
+    <strong>Examples</strong>
+    <span>Recipes and runnable patterns for common Kanban Lite workflows.</span>
+  </a>
+  
+  <a href="/docs/storage/" class="section-card">
+    <strong>Storage Providers</strong>
+    <span>Switch between markdown, SQLite, MySQL, or S3-backed storage with one config change.</span>
+  </a>
+  
+  <a href="/docs/faq/" class="section-card">
+    <strong>FAQ</strong>
+    <span>Common questions before you adopt a new tool.</span>
+  </a>
+  
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

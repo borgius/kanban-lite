@@ -1,0 +1,1622 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plugin System — Kanban Lite</title>
+    <meta name="description" content="Capability-based plugin system for card storage, attachment storage, webhooks, and auth.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent" aria-current="page">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="plugin-system">Plugin System</h1>
+  <p>The plugin system splits storage, webhook delivery, and auth into independently swappable <strong>capability namespaces</strong>. You can run markdown-backed cards with S3 attachments, or SQLite cards with a custom auth policy — without touching application code.</p>
+  <div class="capability-grid">
+    <div class="capability-card">
+      <strong>card.storage</strong>
+      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-mysql-storage</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>attachment.storage</strong>
+      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-s3-attachment-storage</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>webhook.delivery</strong>
+      <span>Outbound HTTP delivery for kanban events. External: <code>kl-webhooks-plugin</code>.</span>
+    </div>
+    <div class="capability-card">
+      <strong>auth.identity / auth.policy</strong>
+      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-auth-plugin</code>.</span>
+    </div>
+  </div>
+  <div class="usage-example">
+    <strong>Select providers in <code>.kanban.json</code></strong>
+    <pre><code>{
+  "storage": {
+    "card.storage":        { "provider": "sqlite" },
+    "attachment.storage": { "provider": "kl-s3-attachment-storage" },
+    "webhook.delivery":   { "provider": "webhooks" }
+  }
+}</code></pre>
+  </div>
+</div>
+
+<h1 id="plugin-system-deep-dive">Plugin System Deep Dive</h1>
+<p>This document explains the plugin system in depth: what problem it solves, how capability resolution works, how SDK-owned before/after events drive listener-only runtime plugins, how to select and change providers in <code>.kanban.json</code>, what the core and compatibility providers do, how attachment handling works, and how to author third-party plugins that work with the current runtime.</p>
+<p>It is intentionally more detailed than the README. Think of this as the “how the machine is built” guide.</p>
+<hr>
+<h2 id="what-the-plugin-system-is-for">What the plugin system is for</h2>
+<p>Kanban Lite used to treat storage as a simple engine switch (<code>markdown</code> vs <code>sqlite</code>). That worked for built-in storage backends, but it coupled too many assumptions together:</p>
+<ul>
+<li>where cards live,</li>
+<li>whether cards have local file paths,</li>
+<li>how attachments are copied and opened,</li>
+<li>what hosts should watch for refreshes,</li>
+<li>and how future providers should integrate.</li>
+</ul>
+<p>The plugin system splits those concerns into <strong>capabilities</strong>.</p>
+<p>Today there are two <strong>storage</strong> capability namespaces:</p>
+<ul>
+<li><code>card.storage</code></li>
+<li><code>attachment.storage</code></li>
+</ul>
+<p>There is also one <strong>webhook delivery</strong> capability namespace:</p>
+<ul>
+<li><code>webhook.delivery</code></li>
+</ul>
+<p>And two <strong>auth</strong> capability namespaces (no-op by default):</p>
+<ul>
+<li><code>auth.identity</code></li>
+<li><code>auth.policy</code></li>
+</ul>
+<p>That means:</p>
+<ul>
+<li>one provider can store cards/comments,</li>
+<li>another provider can store attachments,</li>
+<li>a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,</li>
+<li>auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,</li>
+<li>or one provider can implement multiple capabilities explicitly in the plugin layer.</li>
+</ul>
+<p>This is the foundation that allows core-owned built-ins like <code>markdown</code>, compatibility ids like <code>sqlite</code> / <code>mysql</code>, fully external npm packages, and listener-only runtime plugins to coexist behind one SDK-owned action pipeline.</p>
+<hr>
+<h2 id="mental-model">Mental model</h2>
+<p>The plugin system has five layers:</p>
+<ol>
+<li>
+<p><strong>Config normalization</strong></p>
+<ul>
+<li>Reads legacy and modern config.</li>
+<li>Produces a normalized capability map.</li>
+</ul>
+</li>
+<li>
+<p><strong>Provider resolution</strong></p>
+</li>
+</ol>
+<ul>
+<li>Resolves the configured provider for each namespace.</li>
+<li>Chooses built-in plugin modules or loads external npm packages.</li>
+</ul>
+<ol start="3">
+<li>
+<p><strong>Resolved capability bag</strong></p>
+<ul>
+<li>Produces one runtime object containing:
+<ul>
+<li>the active card storage engine,</li>
+<li>the active attachment storage plugin,</li>
+<li>the active runtime listener plugins,</li>
+<li>provider metadata,</li>
+<li>host hints like <code>isFileBacked</code> and <code>watchGlob</code>.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>SDK-owned action lifecycle</strong></p>
+<ul>
+<li><code>KanbanSDK</code> emits before-events before writes and after-events after commit.</li>
+<li>Before-event listeners are awaited in registration order.</li>
+<li>After-event listeners are non-blocking and error-isolated.</li>
+</ul>
+</li>
+<li>
+<p><strong>SDK host usage</strong></p>
+<ul>
+<li><code>KanbanSDK</code>, the standalone server, the CLI, MCP, and the VS Code extension consume the resolved bag instead of hard-coding engine-specific behavior.</li>
+</ul>
+</li>
+</ol>
+<p>In short:</p>
+<ul>
+<li>config says <strong>what</strong> you want,</li>
+<li>the resolver decides <strong>which providers to load</strong>,</li>
+<li>the SDK owns <strong>when before/after events happen</strong>,</li>
+<li>and host layers use the result to decide <strong>how to behave</strong>.</li>
+</ul>
+<hr>
+<h2 id="capability-namespaces">Capability namespaces</h2>
+<h3 id="card-storage"><code>card.storage</code></h3>
+<p>This capability owns card/comment persistence.</p>
+<p>A <code>card.storage</code> provider is responsible for returning a <code>StorageEngine</code> implementation.</p>
+<p>Core built-in provider:</p>
+<ul>
+<li><code>markdown</code></li>
+</ul>
+<p>Compatibility provider ids resolved through external packages:</p>
+<ul>
+<li><code>sqlite</code></li>
+<li><code>mysql</code></li>
+</ul>
+<h3 id="attachment-storage"><code>attachment.storage</code></h3>
+<p>This capability owns attachment copy/materialization behavior.</p>
+<p>Built-in provider:</p>
+<ul>
+<li><code>localfs</code></li>
+</ul>
+<p>The <code>attachment.storage</code> capability does <strong>not</strong> currently replace all card-storage behavior. It specifically covers things like:</p>
+<ul>
+<li>where attachments live,</li>
+<li>how attachments are copied,</li>
+<li>whether a host can materialize a safe local file path for an attachment.</li>
+</ul>
+<h3 id="webhook-delivery"><code>webhook.delivery</code></h3>
+<p>This capability owns webhook registry CRUD.</p>
+<p>Compatibility/default provider id:</p>
+<ul>
+<li><code>webhooks</code></li>
+</ul>
+<p>External package:</p>
+<ul>
+<li><code>kl-webhooks-plugin</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>persists webhook definitions in the existing <code>.kanban.json</code> top-level <code>webhooks</code> array,</li>
+<li>pairs with a listener-only runtime subscriber that delivers matching committed SDK after-events via HTTP POST,</li>
+<li>preserves the existing payload envelope and HMAC signing behavior,</li>
+<li>keeps the registry format stable so existing workspaces do not need migration.</li>
+</ul>
+<p>Important config nuance: unlike storage capabilities, webhook delivery is currently configured under the top-level <code>webhookPlugin</code> key rather than the <code>plugins</code> map.</p>
+<hr>
+<h3 id="auth-identity"><code>auth.identity</code></h3>
+<p>This capability resolves a raw token to a typed identity.</p>
+<p>Compatibility/default provider ids:</p>
+<ul>
+<li><code>noop</code> (default) — always returns <code>null</code> (anonymous); preserves current open-access behavior.</li>
+<li><code>rbac</code> — validates opaque tokens against a runtime-owned principal registry and returns <code>{ subject, roles }</code> for registered principals.</li>
+<li><code>local</code> — trusts host-validated standalone session identity, or the shared <code>KANBAN_LITE_TOKEN</code> / <code>KANBAN_TOKEN</code> API token for CLI, MCP, and bearer-authenticated HTTP calls.</li>
+</ul>
+<p>External package:</p>
+<ul>
+<li><code>kl-auth-plugin</code></li>
+</ul>
+<p>Important nuance: the exported <code>RBAC_IDENTITY_PLUGIN</code> singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via <code>createRbacIdentityPlugin(principals)</code> and wire it in through custom capability wiring. Unknown or absent tokens resolve to <code>null</code>, and roles are never inferred from token text.</p>
+<h3 id="auth-policy"><code>auth.policy</code></h3>
+<p>This capability decides whether an identity may perform a named action.</p>
+<p>Compatibility/default provider ids:</p>
+<ul>
+<li><code>noop</code> (default) — always returns <code>true</code> (allow-all); preserves current open-access behavior.</li>
+<li><code>rbac</code> — enforces the fixed SDK-owned <code>RBAC_ROLE_MATRIX</code> for the cumulative <code>user</code>, <code>manager</code>, and <code>admin</code> roles.</li>
+<li><code>local</code> — requires a non-null identity and otherwise allows the action.</li>
+</ul>
+<p>External package:</p>
+<ul>
+<li><code>kl-auth-plugin</code></li>
+</ul>
+<p>The built-in <code>rbac</code> policy denies <code>null</code> identity with <code>auth.identity.missing</code>, denies uncovered actions with <code>auth.policy.denied</code>, and returns the resolved caller subject as <code>actor</code> on allow.</p>
+<blockquote>
+<p><strong>Note:</strong> Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped <code>noop</code> / <code>rbac</code> / <code>local</code> ids resolve through <code>kl-auth-plugin</code> when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the <code>local</code> provider's <code>/auth/login</code> flow) without a separate config namespace.</p>
+</blockquote>
+<hr>
+<h2 id="config-model">Config model</h2>
+<p>The canonical config lives in <code>.kanban.json</code>.</p>
+<p>Webhook delivery uses its own top-level config section:</p>
+<pre><code class="language-json">{
+  &quot;webhookPlugin&quot;: {
+    &quot;webhook.delivery&quot;: {
+      &quot;provider&quot;: &quot;webhooks&quot;
+    }
+  }
+}
+</code></pre>
+<p>If <code>webhookPlugin</code> is omitted, runtime normalization still defaults to <code>{ provider: &quot;webhooks&quot; }</code> for <code>webhook.delivery</code>. Current releases also keep a compatibility fallback when <code>kl-webhooks-plugin</code> is not installed yet.</p>
+<p>Only provider selection lives in <code>.kanban.json</code>. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing <code>event.listener</code> config namespace.</p>
+<h2 id="runtime-listener-model">Runtime listener model</h2>
+<p>Runtime plugins are now <strong>listener-only</strong>.</p>
+<ul>
+<li><code>KanbanSDK</code> owns before/after event timing for mutations.</li>
+<li>Before-events are awaited in listener-registration order.</li>
+<li><code>KanbanSDK._runBeforeEvent()</code> clones the original input, preserves it when no listener changes it, and immutably deep-merges plain-object listener overrides in registration order (arrays replace; they do not concatenate).</li>
+<li>Throwing from a before-event listener aborts the write before any mutation happens.</li>
+<li>After-events fire exactly once after commit and stay non-blocking so side effects cannot break the caller.</li>
+</ul>
+<p>For auth specifically, first-party listeners resolve request-scoped auth from <code>sdk.runWithAuth(...)</code> plus the payload's actor/board hints. <code>BeforeEventPayload</code> no longer includes an <code>auth</code> field, so plugin authors should not expect <code>payload.auth</code> to exist.</p>
+<p>The runtime listener contract is <code>SDKEventListenerPlugin</code>:</p>
+<pre><code class="language-ts">interface SDKEventListenerPlugin {
+  manifest: { id: string; provides: readonly string[] }
+  register(bus: EventBus): void
+  unregister(): void
+}
+</code></pre>
+<p>This replaces the old <code>init(...)</code> / <code>destroy()</code> runtime seam for plugin authors. Storage and attachment providers remain direct capability adapters; they do not participate in this listener contract.</p>
+<h3 id="modern-capability-based-config">Modern capability-based config</h3>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;sqlite&quot;,
+      &quot;options&quot;: {
+        &quot;sqlitePath&quot;: &quot;.kanban/kanban.db&quot;
+      }
+    },
+    &quot;attachment.storage&quot;: {
+      &quot;provider&quot;: &quot;localfs&quot;
+    }
+  }
+}
+</code></pre>
+<p>Each capability namespace maps to a <code>ProviderRef</code>:</p>
+<pre><code class="language-ts">interface ProviderRef {
+  provider: string
+  options?: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<h3 id="legacy-compatibility-config">Legacy compatibility config</h3>
+<p>Legacy fields still work:</p>
+<pre><code class="language-json">{
+  &quot;storageEngine&quot;: &quot;sqlite&quot;,
+  &quot;sqlitePath&quot;: &quot;.kanban/kanban.db&quot;
+}
+</code></pre>
+<p>These are normalized internally into capability selections.</p>
+<h3 id="precedence-rules">Precedence rules</h3>
+<p>The normalization rules are explicit and stable:</p>
+<ol>
+<li><code>plugins[namespace]</code></li>
+<li>legacy <code>storageEngine</code> / <code>sqlitePath</code> for <code>card.storage</code></li>
+<li>defaults:
+<ul>
+<li><code>card.storage</code> → <code>markdown</code></li>
+<li><code>attachment.storage</code> → <code>localfs</code></li>
+</ul>
+</li>
+</ol>
+<p>So if you have both forms present:</p>
+<pre><code class="language-json">{
+  &quot;storageEngine&quot;: &quot;sqlite&quot;,
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: { &quot;provider&quot;: &quot;markdown&quot; }
+  }
+}
+</code></pre>
+<p>then <code>card.storage</code> resolves to <code>markdown</code>.</p>
+<h3 id="what-normalization-returns">What normalization returns</h3>
+<p>Internally, config normalization produces a complete <code>ResolvedCapabilities</code> map:</p>
+<pre><code class="language-ts">type ResolvedCapabilities = Record&lt;
+  'card.storage' | 'attachment.storage',
+  ProviderRef
+&gt;
+</code></pre>
+<p>Even if you omit one namespace in config, the normalized map always includes both.</p>
+<hr>
+<h2 id="core-and-compatibility-providers">Core and compatibility providers</h2>
+<h2 id="markdown"><code>markdown</code></h2>
+<p>Namespace: <code>card.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>stores cards as markdown files under <code>.kanban/boards/...</code></li>
+<li>is file-backed</li>
+<li>exposes local card file paths</li>
+<li>reports <code>watchGlob: &quot;boards/**/*.md&quot;</code></li>
+</ul>
+<p>Host implications:</p>
+<ul>
+<li>the standalone server and VS Code extension can watch local files,</li>
+<li>cards can be opened directly in the editor,</li>
+<li>local attachment directory resolution works naturally.</li>
+</ul>
+<h2 id="sqlite"><code>sqlite</code></h2>
+<p>Namespace: <code>card.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>stores cards/comments in a SQLite database,</li>
+<li>is <strong>not</strong> file-backed for cards,</li>
+<li>does not expose local card file paths,</li>
+<li>reports <code>watchGlob: null</code>.</li>
+</ul>
+<p>Attachments:</p>
+<ul>
+<li>attachments still default to <code>localfs</code>,</li>
+<li>attachment files are stored on disk,</li>
+<li>card/comment persistence is separate from attachment persistence.</li>
+</ul>
+<p>External package:</p>
+<p>The <code>sqlite</code> provider id is a compatibility alias for the <code>kl-sqlite-storage</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-sqlite-storage
+</code></pre>
+<p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>.</p>
+<h2 id="mysql"><code>mysql</code></h2>
+<p>Namespace: <code>card.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>stores cards/comments in MySQL tables,</li>
+<li>is <strong>not</strong> file-backed for cards,</li>
+<li>does not expose local card file paths,</li>
+<li>reports <code>watchGlob: null</code>.</li>
+</ul>
+<p>Requirements:</p>
+<ul>
+<li><code>database</code> is required in provider options,</li>
+<li>the <code>mysql2</code> driver is loaded lazily,</li>
+<li>environments that do not use MySQL do not need <code>mysql2</code> installed.</li>
+</ul>
+<p>External package:</p>
+<p>The <code>mysql</code> provider id is a compatibility alias for the <code>kl-mysql-storage</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-mysql-storage
+</code></pre>
+<p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>mysql2</code> load semantics.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;mysql&quot;,
+      &quot;options&quot;: {
+        &quot;host&quot;: &quot;localhost&quot;,
+        &quot;port&quot;: 3306,
+        &quot;user&quot;: &quot;kanban&quot;,
+        &quot;password&quot;: &quot;secret&quot;,
+        &quot;database&quot;: &quot;kanban_db&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p>Runtime failure mode when the driver is missing:</p>
+<ul>
+<li>clear error message,</li>
+<li>actionable install hint,</li>
+<li>no hidden hard dependency for users who never select MySQL.</li>
+</ul>
+<h2 id="localfs"><code>localfs</code></h2>
+<p>Namespace: <code>attachment.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>copies attachments to a local directory,</li>
+<li>can resolve a card attachment directory,</li>
+<li>can materialize a local file path for safe serving/opening.</li>
+</ul>
+<p><code>localfs</code> is implemented as an explicit built-in attachment plugin in the plugin layer.</p>
+<p>That means:</p>
+<ul>
+<li>with core <code>markdown</code>, <code>localfs</code> delegates directly to the markdown engine,</li>
+<li>with external card providers that expose the same local attachment semantics, <code>localfs</code> delegates to the active engine,</li>
+<li>when <code>attachment.storage</code> stays on <code>localfs</code>, the resolver still gives the selected external card provider package a same-package chance to provide <code>attachment.storage</code> first.</li>
+</ul>
+<hr>
+<h2 id="resolver-architecture">Resolver architecture</h2>
+<p>The central resolver is <code>resolveCapabilityBag(...)</code> in <code>src/sdk/plugins/index.ts</code>.</p>
+<p>It takes:</p>
+<ul>
+<li>a fully normalized capability map,</li>
+<li>the absolute <code>.kanban</code> directory path.</li>
+</ul>
+<p>It returns a <code>ResolvedCapabilityBag</code> containing:</p>
+<ul>
+<li><code>cardStorage</code></li>
+<li><code>attachmentStorage</code></li>
+<li><code>providers</code></li>
+<li><code>isFileBacked</code></li>
+<li><code>getLocalCardPath(...)</code></li>
+<li><code>getAttachmentDir(...)</code></li>
+<li><code>materializeAttachment(...)</code></li>
+<li><code>getWatchGlob()</code></li>
+</ul>
+<h3 id="why-this-bag-exists">Why this bag exists</h3>
+<p>Without the bag, each host would need to know too much:</p>
+<ul>
+<li>“If markdown, watch <code>.md</code> files”</li>
+<li>“If sqlite, don’t watch anything”</li>
+<li>“If mysql, don’t open native files”</li>
+<li>“If attachments are local, serve from disk”</li>
+</ul>
+<p>That logic used to leak into host code.</p>
+<p>Now the hosts ask the bag instead:</p>
+<ul>
+<li><code>isFileBacked</code></li>
+<li><code>getWatchGlob()</code></li>
+<li><code>getLocalCardPath(card)</code></li>
+<li><code>materializeAttachment(card, name)</code></li>
+</ul>
+<p>This keeps plugin-specific knowledge in the plugin layer.</p>
+<hr>
+<h2 id="card-storage-plugin-interface">Card storage plugin interface</h2>
+<p>The runtime contract for a <code>card.storage</code> provider is shape-based.</p>
+<p>Current interface:</p>
+<pre><code class="language-ts">interface CardStoragePlugin {
+  manifest: PluginManifest
+  createEngine(kanbanDir: string, options?: Record&lt;string, unknown&gt;): StorageEngine
+  nodeCapabilities?: {
+    isFileBacked: boolean
+    getLocalCardPath(card: Card): string | null
+    getWatchGlob(): string | null
+  }
+}
+</code></pre>
+<h3 id="manifest"><code>manifest</code></h3>
+<p>The manifest declares:</p>
+<ul>
+<li><code>id</code>: provider id</li>
+<li><code>provides</code>: array of capability namespaces</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-ts">manifest: {
+  id: 'my-provider',
+  provides: ['card.storage']
+}
+</code></pre>
+<h3 id="createengine"><code>createEngine(...)</code></h3>
+<p>This must return a <code>StorageEngine</code>.</p>
+<p>That engine is the actual persistence backend consumed by <code>KanbanSDK</code>.</p>
+<h3 id="nodecapabilities"><code>nodeCapabilities</code></h3>
+<p>These are optional but important.</p>
+<p>They tell node-hosted consumers:</p>
+<ul>
+<li>whether cards are file-backed,</li>
+<li>whether they have local paths,</li>
+<li>which file glob to watch for refreshes.</li>
+</ul>
+<p>If your provider does not store cards as local files, return:</p>
+<pre><code class="language-ts">nodeCapabilities: {
+  isFileBacked: false,
+  getLocalCardPath() { return null },
+  getWatchGlob() { return null }
+}
+</code></pre>
+<p>If your provider is file-backed, this metadata should be accurate. Host behavior depends on it.</p>
+<hr>
+<h2 id="attachment-storage-plugin-interface">Attachment storage plugin interface</h2>
+<p>Current runtime contract:</p>
+<pre><code class="language-ts">interface AttachmentStoragePlugin {
+  manifest: PluginManifest
+  getCardDir?(card: Card): string | null
+  copyAttachment(sourcePath: string, card: Card): Promise&lt;void&gt;
+  appendAttachment?(
+    card: Card,
+    attachment: string,
+    content: string | Uint8Array
+  ): Promise&lt;boolean&gt;
+  materializeAttachment?(card: Card, attachment: string): Promise&lt;string | null&gt;
+}
+</code></pre>
+<h3 id="copyattachment"><code>copyAttachment(...)</code></h3>
+<p>Required.</p>
+<p>This is how the SDK moves a source file into the provider-owned attachment location.</p>
+<h3 id="appendattachment"><code>appendAttachment(...)</code></h3>
+<p>Optional.</p>
+<p>Use this when your backend can append efficiently to an existing attachment without rewriting the whole object.</p>
+<p>Current intended use case:</p>
+<ul>
+<li>card log attachments such as <code>&lt;cardId&gt;.log</code></li>
+</ul>
+<p>Contract:</p>
+<ul>
+<li>return <code>true</code> when the provider handled the append in-place</li>
+<li>return <code>false</code> when the provider cannot do native append and the runtime should fall back to a normal read/modify/write update via <code>copyAttachment(...)</code></li>
+</ul>
+<p>Examples:</p>
+<ul>
+<li>S3 directory buckets / S3 Express One Zone can use <code>PutObject</code> with <code>WriteOffsetBytes</code></li>
+<li>standard S3 buckets or MinIO may not support native append, so returning <code>false</code> is correct and expected</li>
+</ul>
+<h3 id="getcarddir"><code>getCardDir(...)</code></h3>
+<p>Optional, but useful when your attachment storage is directory-based and local.</p>
+<h3 id="materializeattachment"><code>materializeAttachment(...)</code></h3>
+<p>Optional, but highly recommended when attachment access is not a trivial directory lookup.</p>
+<p>Use this when:</p>
+<ul>
+<li>files are stored outside the standard <code>.kanban</code> tree,</li>
+<li>you need to map attachment names to provider-owned files,</li>
+<li>you want to enforce validation or temporary file materialization.</li>
+</ul>
+<p>If <code>materializeAttachment(...)</code> is not implemented, the runtime falls back to building a path from <code>getCardDir(...)</code>.</p>
+<h3 id="card-logs-and-attachment-providers">Card logs and attachment providers</h3>
+<p>Card logs are stored as the attachment file <code>&lt;cardId&gt;.log</code>.</p>
+<p>That means log behavior now follows the active <code>attachment.storage</code> provider:</p>
+<ul>
+<li>file-backed providers usually store the log file in a local attachment directory</li>
+<li>remote providers can materialize the log file temporarily through <code>materializeAttachment(...)</code></li>
+<li>append-capable providers may accelerate repeated log writes through <code>appendAttachment(...)</code></li>
+<li>providers without native append support still work through the runtime fallback path</li>
+</ul>
+<hr>
+<h2 id="plugin-manifest-validation">Plugin manifest validation</h2>
+<p>Validation is intentionally simple.</p>
+<p>The loader checks:</p>
+<ul>
+<li>that the plugin object exists,</li>
+<li>that required methods exist,</li>
+<li>that <code>manifest.id</code> is a string,</li>
+<li>that <code>manifest.provides</code> includes the expected namespace.</li>
+</ul>
+<p>For external plugins this means runtime validation is <strong>shape-based</strong>, not class-based.</p>
+<p>That is convenient, but it also means plugin authors must match the current expected object shape exactly.</p>
+<hr>
+<h2 id="external-plugin-loading">External plugin loading</h2>
+<p>External providers are loaded lazily via <code>createRequire(...)</code>.</p>
+<p>Important consequences:</p>
+<ul>
+<li>the host environment must be able to resolve the npm package,</li>
+<li>plugin loading happens in node-hosted contexts,</li>
+<li>missing packages produce explicit install hints,</li>
+<li>invalid exports produce explicit validation errors.</li>
+</ul>
+<h3 id="where-the-package-must-be-installed">Where the package must be installed</h3>
+<p>Install the plugin in the environment that is actually running Kanban Lite:</p>
+<ul>
+<li>CLI runtime</li>
+<li>standalone server runtime</li>
+<li>MCP server runtime</li>
+<li>VS Code extension host runtime</li>
+<li>SDK consumer environment</li>
+</ul>
+<p>The resolver checks these locations in order and uses the first match:</p>
+<ol>
+<li><code>{workspaceRoot}/packages/{name}</code> — monorepo-local package (dev/staging only)</li>
+<li>Local <code>node_modules</code> — standard <code>npm install</code> / pnpm workspace symlink</li>
+<li>Global <code>node_modules</code> — <code>npm install -g {name}</code> (useful for CLI/MCP server use-cases)</li>
+<li>Sibling directory <code>../{name}</code> — legacy non-monorepo checkout layout</li>
+</ol>
+<p>If the package is not found in any of these locations, the resolver throws an actionable install hint.</p>
+<h3 id="export-shapes-supported-today">Export shapes supported today</h3>
+<p>For a card storage plugin, the loader accepts either:</p>
+<ul>
+<li>named export <code>cardStoragePlugin</code></li>
+<li>default export containing the plugin object</li>
+</ul>
+<p>For an attachment storage plugin, the loader accepts either:</p>
+<ul>
+<li>named export <code>attachmentStoragePlugin</code></li>
+<li>default export containing the plugin object</li>
+</ul>
+<p>For a webhook package, the loader accepts:</p>
+<ul>
+<li>named export <code>webhookProviderPlugin</code> (or a compatible default export) for CRUD capability ownership</li>
+<li>named export <code>webhookListenerPlugin</code> for listener-only runtime delivery</li>
+</ul>
+<h3 id="error-behavior">Error behavior</h3>
+<p>Missing plugin package:</p>
+<ul>
+<li><code>Card storage plugin &quot;x&quot; is not installed. Run: npm install x</code></li>
+<li><code>Attachment storage plugin &quot;x&quot; is not installed. Run: npm install x</code></li>
+</ul>
+<p>Invalid plugin export:</p>
+<ul>
+<li>explicit error describing the missing export shape or capability mismatch</li>
+</ul>
+<p>This is deliberate: plugin errors should be operator-friendly, not stack-trace archaeology.</p>
+<hr>
+<h2 id="compatibility-aliases">Compatibility aliases</h2>
+<p>The short provider ids <code>sqlite</code> and <code>mysql</code> are compatibility aliases. They allow existing
+<code>.kanban.json</code> configurations to continue using the familiar short names while implementation
+ownership moves to standalone, versioned npm packages.</p>
+<table>
+<thead>
+<tr>
+<th>Provider id</th>
+<th>Install target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sqlite</code></td>
+<td><code>kl-sqlite-storage</code></td>
+</tr>
+<tr>
+<td><code>mysql</code></td>
+<td><code>kl-mysql-storage</code></td>
+</tr>
+</tbody>
+</table>
+<p>The alias map lives in <code>PROVIDER_ALIASES</code> in <code>src/sdk/plugins/index.ts</code> and is exported so
+downstream tasks and tests can reference it directly.</p>
+<p>Resolution rules:</p>
+<ol>
+<li>If a core built-in implementation is registered for the provider id, use it.</li>
+<li>Otherwise, look up the provider id in <code>PROVIDER_ALIASES</code> and load that package.</li>
+<li>If there is no alias, treat the provider id as-is (bare npm package name).</li>
+</ol>
+<p>This means install errors for <code>sqlite</code> and <code>mysql</code> always name <code>kl-sqlite-storage</code> and
+<code>kl-mysql-storage</code>, not the short alias.</p>
+<p>Both packages must export:</p>
+<ul>
+<li><code>cardStoragePlugin</code> — implements the <code>CardStoragePlugin</code> interface</li>
+<li><code>attachmentStoragePlugin</code> — implements the <code>AttachmentStoragePlugin</code> interface</li>
+</ul>
+<p>CJS entry: <code>dist/index.cjs</code></p>
+<hr>
+<h2 id="test-ownership">Test ownership</h2>
+<p>Core (<code>kanban-light</code>) retains host-contract coverage. Provider packages own provider internals.</p>
+<p><strong>Core keeps:</strong></p>
+<ul>
+<li>Plugin capability normalization and alias resolution tests</li>
+<li>Same-package attachment fallback behavior tests</li>
+<li>Migration/config cleanup behavior (using the externally loaded provider path)</li>
+<li>Manifest shape validation and actionable-error assertions</li>
+<li>Auth capability default tests</li>
+</ul>
+<p><strong>Provider packages own:</strong></p>
+<ul>
+<li>CRUD/schema tests for their storage engine</li>
+<li>Live-database integration tests</li>
+<li>Schema migration correctness</li>
+<li>Provider-specific attachment behavior</li>
+</ul>
+<p>This boundary prevents core from owning provider internals while keeping host observable
+behavior verifiable without a running database.</p>
+<hr>
+<h2 id="cjs-vs-esm-considerations">CJS vs ESM considerations</h2>
+<p>The runtime currently loads external plugins through <code>createRequire(...)</code>.</p>
+<p>That means the safest packaging strategy for third-party plugins is:</p>
+<ul>
+<li>CommonJS, or</li>
+<li>dual-package output with a CommonJS-compatible entry.</li>
+</ul>
+<p>If you ship a pure ESM-only plugin with no require-compatible entry, it may not load in the current resolver path.</p>
+<p>For maximum compatibility, publish with one of these patterns:</p>
+<ul>
+<li><code>dist/index.cjs</code></li>
+<li>dual <code>exports</code> with a <code>require</code> target</li>
+</ul>
+<p>Example <code>package.json</code> sketch:</p>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;kanban-s3-attachments&quot;,
+  &quot;main&quot;: &quot;dist/index.cjs&quot;,
+  &quot;exports&quot;: {
+    &quot;.&quot;: {
+      &quot;require&quot;: &quot;./dist/index.cjs&quot;,
+      &quot;default&quot;: &quot;./dist/index.cjs&quot;
+    }
+  }
+}
+</code></pre>
+<hr>
+<h2 id="attachment-fallback-rules">Attachment fallback rules</h2>
+<p>Attachment resolution has explicit fallback behavior.</p>
+<h3 id="precedence">Precedence</h3>
+<p>When resolving attachments, the runtime uses this order:</p>
+<ol>
+<li>explicit <code>attachment.storage</code> provider if it is non-<code>localfs</code></li>
+<li>same-package attachment plugin attempt when:
+<ul>
+<li><code>attachment.storage</code> is <code>localfs</code>, and</li>
+<li><code>card.storage</code> is an external provider</li>
+</ul>
+</li>
+<li>built-in <code>localfs</code> attachment plugin</li>
+</ol>
+<h3 id="why-the-same-package-attachment-plugin-attempt-exists">Why the “same-package attachment plugin attempt” exists</h3>
+<p>If you install an external card provider and leave <code>attachment.storage</code> at its default <code>localfs</code>, the resolver gives that same provider package a chance to also export an attachment plugin.</p>
+<p>If it does not, the resolver falls back to the built-in <code>localfs</code> attachment plugin.</p>
+<p>This makes it possible for one external package to support both capabilities without requiring users to configure both namespaces separately.</p>
+<h3 id="example">Example</h3>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;kanban-acme-storage&quot;
+    }
+  }
+}
+</code></pre>
+<p>In this case:</p>
+<ul>
+<li><code>card.storage</code> resolves to <code>kanban-acme-storage</code></li>
+<li><code>attachment.storage</code> defaults to <code>localfs</code></li>
+<li>resolver tries to load <code>attachmentStoragePlugin</code> from <code>kanban-acme-storage</code></li>
+<li>if not found, it falls back to the built-in <code>localfs</code> attachment plugin</li>
+</ul>
+<hr>
+<h2 id="host-facing-behavior">Host-facing behavior</h2>
+<p>The plugin system changes how hosts decide what they can do.</p>
+<h2 id="file-backed-vs-non-file-backed">File-backed vs non-file-backed</h2>
+<p>The most important host flag is:</p>
+<ul>
+<li><code>isFileBacked</code></li>
+</ul>
+<p>If <code>true</code>:</p>
+<ul>
+<li>the host may watch files,</li>
+<li>native file editors may be used,</li>
+<li>direct local paths may exist.</li>
+</ul>
+<p>If <code>false</code>:</p>
+<ul>
+<li>don’t assume a card file exists,</li>
+<li>use temp/materialization flows where supported,</li>
+<li>don’t set up file watchers unless a watch glob is explicitly provided.</li>
+</ul>
+<h2 id="watcher-behavior">Watcher behavior</h2>
+<p>The host uses:</p>
+<ul>
+<li><code>getWatchGlob()</code></li>
+</ul>
+<p>Examples:</p>
+<ul>
+<li><code>markdown</code> → <code>boards/**/*.md</code></li>
+<li><code>sqlite</code> → <code>null</code></li>
+<li><code>mysql</code> → <code>null</code></li>
+</ul>
+<p>That means a provider can be file-backed <strong>without</strong> the host inferring the watched file type from provider name. The provider declares it.</p>
+<h2 id="local-card-paths">Local card paths</h2>
+<p>The host uses:</p>
+<ul>
+<li><code>getLocalCardPath(card)</code></li>
+</ul>
+<p>Instead of reading <code>card.filePath</code> directly.</p>
+<p>This is essential for non-file-backed providers because <code>card.filePath</code> is not a stable cross-provider contract anymore.</p>
+<h2 id="local-attachment-paths">Local attachment paths</h2>
+<p>The host uses:</p>
+<ul>
+<li><code>getAttachmentDir(card)</code></li>
+<li><code>materializeAttachment(card, attachment)</code></li>
+</ul>
+<p>This allows providers to:</p>
+<ul>
+<li>use local attachment directories,</li>
+<li>use provider-owned locations outside the normal tree,</li>
+<li>deny path materialization safely,</li>
+<li>or generate temp files when needed.</li>
+</ul>
+<hr>
+<h2 id="sdk-integration-points">SDK integration points</h2>
+<p>The plugin system is centralized in <code>KanbanSDK</code>.</p>
+<h3 id="constructor-flow">Constructor flow</h3>
+<p>The constructor does the following when no prebuilt storage engine is injected:</p>
+<ol>
+<li>resolves the workspace config,</li>
+<li>normalizes storage capabilities,</li>
+<li>applies SDK option overrides,</li>
+<li>resolves the capability bag,</li>
+<li>stores:
+<ul>
+<li><code>_storage = bag.cardStorage</code></li>
+<li><code>_capabilities = bag</code></li>
+</ul>
+</li>
+</ol>
+<h3 id="sdk-options">SDK options</h3>
+<p>The SDK still supports older and newer override styles.</p>
+<h4 id="legacy-style-constructor-override">Legacy-style constructor override</h4>
+<pre><code class="language-ts">const sdk = new KanbanSDK('.kanban', {
+  storageEngine: 'sqlite',
+  sqlitePath: '.kanban/kanban.db'
+})
+</code></pre>
+<h4 id="capability-based-override">Capability-based override</h4>
+<pre><code class="language-ts">const sdk = new KanbanSDK('.kanban', {
+  capabilities: {
+    'card.storage': {
+      provider: 'mysql',
+      options: {
+        database: 'kanban_db'
+      }
+    }
+  }
+})
+</code></pre>
+<h4 id="fully-injected-engine">Fully injected engine</h4>
+<pre><code class="language-ts">const sdk = new KanbanSDK('.kanban', {
+  storage: myCustomEngine
+})
+</code></pre>
+<p>If <code>storage</code> is injected directly:</p>
+<ul>
+<li><code>sdk.capabilities</code> is <code>null</code></li>
+<li>provider metadata is unavailable</li>
+<li>you are bypassing plugin resolution on purpose</li>
+</ul>
+<p>That is still supported, but it is a lower-level escape hatch.</p>
+<hr>
+<h2 id="storage-status-and-diagnostics">Storage status and diagnostics</h2>
+<p>The SDK exposes <code>getStorageStatus()</code> to make provider behavior inspectable.</p>
+<p>Current output shape:</p>
+<pre><code class="language-ts">{
+  storageEngine: string,
+  providers: ResolvedCapabilities | null,
+  isFileBacked: boolean,
+  watchGlob: string | null
+}
+</code></pre>
+<p>This is the source used by:</p>
+<ul>
+<li>CLI storage status</li>
+<li>standalone <code>/api/storage</code></li>
+<li>standalone <code>/api/workspace</code></li>
+<li>MCP storage/workspace info</li>
+<li>extension/standalone host watcher decisions</li>
+</ul>
+<p>When debugging a provider issue, this is your first checkpoint.</p>
+<hr>
+<h2 id="source-of-truth-in-the-codebase">Source of truth in the codebase</h2>
+<p>There is no longer a parallel <code>src/sdk/storage</code> implementation layer.</p>
+<p>The plugin layer is now the real home of the remaining core providers:</p>
+<ul>
+<li><code>src/sdk/plugins/markdown.ts</code></li>
+<li><code>src/sdk/plugins/localfs.ts</code></li>
+<li><code>src/sdk/plugins/index.ts</code></li>
+<li><code>src/sdk/plugins/types.ts</code></li>
+</ul>
+<p>That means:</p>
+<ul>
+<li>the remaining core engine class lives under <code>src/sdk/plugins/*</code></li>
+<li>the remaining core attachment provider lives under <code>src/sdk/plugins/*</code></li>
+<li>the registry resolves explicit providers from plugin-owned factories</li>
+<li>there is no separate storage factory path to keep in sync</li>
+</ul>
+<p>If you are reading the code to understand how storage works, start in
+<code>src/sdk/plugins/index.ts</code>, not in an old storage folder.</p>
+<h2 id="mysql-compatibility-alias-deep-dive">MySQL compatibility alias deep dive</h2>
+<p>Core no longer owns a first-party MySQL implementation. The provider id <code>mysql</code> is a compatibility alias for the external package <code>kl-mysql-storage</code>.</p>
+<h3 id="what-it-does">What it does</h3>
+<ul>
+<li>implements <code>StorageEngine</code></li>
+<li>stores cards in <code>kanban_cards</code></li>
+<li>stores comments in <code>kanban_comments</code></li>
+<li>keeps board/settings/config state in <code>.kanban.json</code></li>
+<li>keeps attachments on local filesystem</li>
+</ul>
+<h3 id="what-it-does-not-do">What it does not do</h3>
+<ul>
+<li>it does not store attachments in MySQL,</li>
+<li>it does not claim file-backed card behavior,</li>
+<li>it does not require <code>mysql2</code> unless actually selected.</li>
+</ul>
+<h3 id="why-the-driver-is-lazy">Why the driver is lazy</h3>
+<p>Bundling MySQL as a hard dependency would penalize all users.</p>
+<p>Instead:</p>
+<ul>
+<li>the provider id stays stable in <code>.kanban.json</code>,</li>
+<li>the package is loaded externally at runtime,</li>
+<li>the external package only loads <code>mysql2/promise</code> when the engine is created/initialized.</li>
+</ul>
+<h3 id="schema-notes">Schema notes</h3>
+<p>The external MySQL engine stores core card fields directly in relational columns and serializes flexible fields like:</p>
+<ul>
+<li><code>labels</code></li>
+<li><code>attachments</code></li>
+<li><code>metadata</code></li>
+<li><code>actions</code></li>
+</ul>
+<p>as JSON text.</p>
+<p>This mirrors the SQLite package strategy in spirit, but uses MySQL tables and lazy pool management.</p>
+<hr>
+<h2 id="how-to-switch-providers">How to switch providers</h2>
+<h2 id="switch-from-markdown-to-sqlite">Switch from markdown to sqlite</h2>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;sqlite&quot;,
+      &quot;options&quot;: {
+        &quot;sqlitePath&quot;: &quot;.kanban/kanban.db&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<p>Or keep using legacy compatibility fields:</p>
+<pre><code class="language-json">{
+  &quot;storageEngine&quot;: &quot;sqlite&quot;,
+  &quot;sqlitePath&quot;: &quot;.kanban/kanban.db&quot;
+}
+</code></pre>
+<h2 id="switch-from-sqlite-to-mysql">Switch from sqlite to mysql</h2>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;mysql&quot;,
+      &quot;options&quot;: {
+        &quot;host&quot;: &quot;localhost&quot;,
+        &quot;user&quot;: &quot;kanban&quot;,
+        &quot;password&quot;: &quot;secret&quot;,
+        &quot;database&quot;: &quot;kanban_db&quot;
+      }
+    },
+    &quot;attachment.storage&quot;: {
+      &quot;provider&quot;: &quot;localfs&quot;
+    }
+  }
+}
+</code></pre>
+<h2 id="add-a-dedicated-attachment-provider">Add a dedicated attachment provider</h2>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;mysql&quot;,
+      &quot;options&quot;: {
+        &quot;database&quot;: &quot;kanban_db&quot;
+      }
+    },
+    &quot;attachment.storage&quot;: {
+      &quot;provider&quot;: &quot;kanban-s3-attachments&quot;,
+      &quot;options&quot;: {
+        &quot;bucket&quot;: &quot;my-kanban-bucket&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h2 id="revert-to-defaults">Revert to defaults</h2>
+<p>Remove <code>plugins</code> and legacy storage overrides entirely.</p>
+<p>Resolved defaults become:</p>
+<ul>
+<li><code>card.storage</code> → <code>markdown</code></li>
+<li><code>attachment.storage</code> → <code>localfs</code></li>
+</ul>
+<hr>
+<h2 id="how-to-author-a-third-party-card-storage-plugin">How to author a third-party card storage plugin</h2>
+<p>At runtime, Kanban Lite validates by object shape. That means your package does not need to extend a base class, but it <strong>must</strong> export the correct object shape.</p>
+<h3 id="minimal-card-storage-plugin-example">Minimal card storage plugin example</h3>
+<pre><code class="language-ts">import type { Card } from 'kanban-lite/dist-types-or-local-copy'
+
+class AcmeStorageEngine {
+  type = 'kanban-acme-storage'
+  kanbanDir
+
+  constructor(kanbanDir, options = {}) {
+    this.kanbanDir = kanbanDir
+    this.options = options
+  }
+
+  async init() {}
+  close() {}
+  async migrate() {}
+  async ensureBoardDirs() {}
+  async deleteBoardData(_boardDir, _boardId) {}
+  async scanCards(_boardDir, _boardId) { return [] }
+  async writeCard(_card) {}
+  async moveCard(_card, _boardDir, _newStatus) { return '' }
+  async renameCard(_card, _newFilename) { return '' }
+  async deleteCard(_card) {}
+  getCardDir(card) { return `/tmp/${card.id}` }
+  async copyAttachment(_sourcePath, _card) {}
+}
+
+export const cardStoragePlugin = {
+  manifest: {
+    id: 'kanban-acme-storage',
+    provides: ['card.storage']
+  },
+  createEngine(kanbanDir, options) {
+    return new AcmeStorageEngine(kanbanDir, options)
+  },
+  nodeCapabilities: {
+    isFileBacked: false,
+    getLocalCardPath() {
+      return null
+    },
+    getWatchGlob() {
+      return null
+    }
+  }
+}
+</code></pre>
+<h3 id="implementation-guidance">Implementation guidance</h3>
+<p>If your storage is remote:</p>
+<ul>
+<li>set <code>isFileBacked: false</code></li>
+<li>return <code>null</code> for <code>getLocalCardPath</code></li>
+<li>return <code>null</code> for <code>getWatchGlob</code></li>
+</ul>
+<p>If your storage writes local files:</p>
+<ul>
+<li>set <code>isFileBacked: true</code></li>
+<li>return real card file paths</li>
+<li>return the correct watch glob</li>
+</ul>
+<h3 id="important-note-on-public-typing">Important note on public typing</h3>
+<p>Today, plugin interfaces are documented in source and enforced at runtime by shape, but they are <strong>not yet exported as a polished public plugin-author SDK surface</strong> from <code>src/sdk/index.ts</code>.</p>
+<p>So for now, plugin authors should treat this document plus the runtime shape checks as the source of truth.</p>
+<p>In other words:</p>
+<ul>
+<li>the contract is real,</li>
+<li>the contract is validated,</li>
+<li>but the public “plugin author package API” is still lightweight.</li>
+</ul>
+<hr>
+<h2 id="how-to-author-a-third-party-attachment-plugin">How to author a third-party attachment plugin</h2>
+<h3 id="minimal-attachment-plugin-example">Minimal attachment plugin example</h3>
+<pre><code class="language-ts">import * as path from 'node:path'
+import * as fs from 'node:fs/promises'
+
+export const attachmentStoragePlugin = {
+  manifest: {
+    id: 'kanban-acme-attachments',
+    provides: ['attachment.storage']
+  },
+
+  getCardDir(card) {
+    return path.join('/var/lib/kanban-attachments', card.boardId ?? 'default', card.id)
+  },
+
+  async copyAttachment(sourcePath, card) {
+    const dir = this.getCardDir(card)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.copyFile(sourcePath, path.join(dir, path.basename(sourcePath)))
+  },
+
+  async appendAttachment(_card, _attachment, _content) {
+    // optional optimization for append-heavy files like card logs
+    return false
+  },
+
+  async materializeAttachment(card, attachment) {
+    const dir = this.getCardDir(card)
+    return path.join(dir, attachment)
+  }
+}
+</code></pre>
+<h3 id="when-to-implement-materializeattachment">When to implement <code>materializeAttachment(...)</code></h3>
+<p>Implement it when:</p>
+<ul>
+<li>attachment files are not stored in a predictable directory,</li>
+<li>you need validation before returning a path,</li>
+<li>you may download/create a temp file first,</li>
+<li>or <code>getCardDir(...)</code> is not sufficient.</li>
+</ul>
+<h3 id="when-to-implement-appendattachment">When to implement <code>appendAttachment(...)</code></h3>
+<p>Implement it when your backend supports efficient native append semantics for an existing object or blob.</p>
+<p>Good candidates:</p>
+<ul>
+<li>append-only object APIs</li>
+<li>storage backends with server-side append or offset-write support</li>
+</ul>
+<p>If your backend only supports overwrite, omit the hook or return <code>false</code> so the runtime can safely fall back.</p>
+<h3 id="security-recommendation">Security recommendation</h3>
+<p>Always validate the requested attachment name.</p>
+<p>The built-in resolver logic is careful about rejecting unsafe path shapes like nested traversal. Third-party plugins should preserve that spirit.</p>
+<hr>
+<h2 id="one-package-multi-capability-plugins">One-package multi-capability plugins</h2>
+<p>A provider package may support:</p>
+<ul>
+<li>only <code>card.storage</code></li>
+<li>only <code>attachment.storage</code></li>
+<li>or both</li>
+</ul>
+<p>A practical pattern is to export both:</p>
+<pre><code class="language-ts">export const cardStoragePlugin = { ... }
+export const attachmentStoragePlugin = { ... }
+</code></pre>
+<p>This works especially well when:</p>
+<ul>
+<li>one package owns both remote card persistence and remote attachment persistence,</li>
+<li>or you want users to configure only the card provider and rely on automatic same-package attachment discovery when <code>attachment.storage</code> is left as <code>localfs</code>.</li>
+</ul>
+<hr>
+<h2 id="what-attach-change-plugins-means-in-practice">What “attach/change plugins” means in practice</h2>
+<p>There are three common operations users perform.</p>
+<h2 id="1-select-a-provider">1. Select a provider</h2>
+<p>Set the capability in <code>.kanban.json</code>.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;kanban-acme-storage&quot;
+    }
+  }
+}
+</code></pre>
+<h2 id="2-change-provider-options">2. Change provider options</h2>
+<p>Keep the same provider id and edit <code>options</code>.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;mysql&quot;,
+      &quot;options&quot;: {
+        &quot;host&quot;: &quot;db.internal&quot;,
+        &quot;port&quot;: 3306,
+        &quot;user&quot;: &quot;kanban&quot;,
+        &quot;password&quot;: &quot;secret&quot;,
+        &quot;database&quot;: &quot;kanban_prod&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<h2 id="3-swap-providers-entirely">3. Swap providers entirely</h2>
+<p>Replace the <code>provider</code> string (and usually <code>options</code>).</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;markdown&quot;
+    },
+    &quot;attachment.storage&quot;: {
+      &quot;provider&quot;: &quot;localfs&quot;
+    }
+  }
+}
+</code></pre>
+<p>When doing this in a real workspace, remember:</p>
+<ul>
+<li>changing config changes future runtime resolution,</li>
+<li>it does <strong>not</strong> automatically migrate old data between arbitrary providers,</li>
+<li>only markdown ↔ sqlite compatibility helpers are currently exposed as migration commands.</li>
+</ul>
+<hr>
+<h2 id="current-migration-story">Current migration story</h2>
+<p>Current migration commands are compatibility helpers for the built-in-markdown / compatibility-sqlite flow:</p>
+<ul>
+<li>markdown → sqlite</li>
+<li>sqlite → markdown</li>
+</ul>
+<p>These helpers do <strong>not</strong> currently provide generic plugin-to-plugin migration.</p>
+<p>So if you:</p>
+<ul>
+<li>switch from <code>markdown</code> to <code>mysql</code>, or</li>
+<li>switch to a completely external provider,</li>
+</ul>
+<p>then you should treat provider change and data migration as separate concerns unless your provider includes its own import path.</p>
+<hr>
+<h2 id="current-limitations">Current limitations</h2>
+<p>This is important for plugin authors and operators.</p>
+<h3 id="only-two-capability-namespaces-today">Only two capability namespaces today</h3>
+<p>Supported now:</p>
+<ul>
+<li><code>card.storage</code></li>
+<li><code>attachment.storage</code></li>
+</ul>
+<p>Future namespaces are possible, but not implemented yet.</p>
+<h3 id="public-plugin-author-api-is-still-runtime-shape-oriented">Public plugin-author API is still runtime-shape-oriented</h3>
+<p>The system is real and tested, but plugin authoring currently relies on:</p>
+<ul>
+<li>documented object shape,</li>
+<li>runtime validation,</li>
+<li>current source structure.</li>
+</ul>
+<p>There is not yet a polished exported “plugin SDK package” with stable helper factories.</p>
+<h3 id="generic-migration-is-not-yet-public">Generic migration is not yet public</h3>
+<p>Only built-in compatibility migrations are first-class.</p>
+<h3 id="external-plugin-loading-is-node-host-only">External plugin loading is node-host only</h3>
+<p>The webview does not load plugins directly.</p>
+<h3 id="pure-esm-only-external-plugins-may-be-problematic">Pure ESM-only external plugins may be problematic</h3>
+<p>Because the loader uses <code>createRequire(...)</code>, require-compatible packaging is the safest route.</p>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h2 id="plugin-is-not-installed">“Plugin is not installed”</h2>
+<p>Meaning:</p>
+<ul>
+<li>Node could not resolve the npm package in the current runtime environment.</li>
+</ul>
+<p>Fix:</p>
+<ul>
+<li>install the package in the environment running Kanban Lite.</li>
+</ul>
+<h2 id="plugin-does-not-export-a-valid-cardstorageplugin">“Plugin does not export a valid cardStoragePlugin”</h2>
+<p>Meaning:</p>
+<ul>
+<li>the package loaded, but the expected export shape was wrong.</li>
+</ul>
+<p>Fix:</p>
+<ul>
+<li>export either <code>cardStoragePlugin</code> or a default object with:
+<ul>
+<li><code>manifest</code></li>
+<li><code>createEngine(...)</code></li>
+</ul>
+</li>
+<li>ensure <code>manifest.provides</code> includes <code>card.storage</code></li>
+</ul>
+<h2 id="plugin-does-not-export-a-valid-attachmentstorageplugin">“Plugin does not export a valid attachmentStoragePlugin”</h2>
+<p>Meaning:</p>
+<ul>
+<li>the package loaded, but the attachment plugin shape was wrong.</li>
+</ul>
+<p>Fix:</p>
+<ul>
+<li>export either <code>attachmentStoragePlugin</code> or a default object with:
+<ul>
+<li><code>manifest</code></li>
+<li><code>copyAttachment(...)</code></li>
+<li>optional <code>appendAttachment(...)</code></li>
+<li>and either <code>getCardDir(...)</code> or <code>materializeAttachment(...)</code></li>
+</ul>
+</li>
+<li>ensure <code>manifest.provides</code> includes <code>attachment.storage</code></li>
+</ul>
+<h2 id="mysql-storage-requires-the-mysql2-driver">“MySQL storage requires the mysql2 driver”</h2>
+<p>Meaning:</p>
+<ul>
+<li>you selected the <code>mysql</code> compatibility provider id without installing <code>kl-mysql-storage</code>, or</li>
+<li><code>kl-mysql-storage</code> is present but its peer driver <code>mysql2</code> is missing.</li>
+</ul>
+<p>Fix:</p>
+<pre><code class="language-bash">npm install kl-mysql-storage mysql2
+</code></pre>
+<h2 id="watchers-don-t-refresh">Watchers don’t refresh</h2>
+<p>Check <code>getStorageStatus()</code> output:</p>
+<ul>
+<li><code>isFileBacked</code></li>
+<li><code>watchGlob</code></li>
+</ul>
+<p>If <code>watchGlob</code> is <code>null</code>, the provider is saying the host should not rely on filesystem watching.</p>
+<p>If your provider is file-backed and refreshes matter, implement <code>nodeCapabilities.getWatchGlob()</code> correctly.</p>
+<h2 id="editor-open-file-flows-don-t-work">Editor/open-file flows don’t work</h2>
+<p>Check whether your provider returns:</p>
+<ul>
+<li><code>isFileBacked: true</code></li>
+<li>a real <code>getLocalCardPath(...)</code></li>
+</ul>
+<p>If not, hosts will correctly avoid assuming a card file exists.</p>
+<hr>
+<h2 id="practical-recommendations-for-plugin-authors">Practical recommendations for plugin authors</h2>
+<p>If you are building a plugin today, follow these rules:</p>
+<ol>
+<li>
+<p><strong>Keep the provider id stable.</strong></p>
+<ul>
+<li>That id becomes the config contract.</li>
+</ul>
+</li>
+<li>
+<p><strong>Be explicit about node capabilities.</strong></p>
+<ul>
+<li>Especially <code>isFileBacked</code> and <code>watchGlob</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Ship require-compatible packaging.</strong></p>
+<ul>
+<li>CommonJS or dual package is safest.</li>
+</ul>
+</li>
+<li>
+<p><strong>Return actionable errors.</strong></p>
+<ul>
+<li>Missing credentials, missing database names, etc.</li>
+</ul>
+</li>
+<li>
+<p><strong>Treat attachment paths carefully.</strong></p>
+<ul>
+<li>Never assume a user-provided attachment name is safe.</li>
+</ul>
+</li>
+<li>
+<p><strong>Document your provider-specific <code>options</code>.</strong></p>
+<ul>
+<li>The core runtime treats them as opaque.</li>
+</ul>
+</li>
+<li>
+<p><strong>If you support both cards and attachments, export both plugin objects.</strong></p>
+<ul>
+<li>That makes same-package resolution much smoother.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="quick-reference">Quick reference</h2>
+<h2 id="core-and-compatibility-providers-2">Core and compatibility providers</h2>
+<table>
+<thead>
+<tr>
+<th>Namespace</th>
+<th>Provider</th>
+<th style="text-align:right">File-backed</th>
+<th>Watch glob</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>card.storage</code></td>
+<td><code>markdown</code></td>
+<td style="text-align:right">yes</td>
+<td><code>boards/**/*.md</code></td>
+<td>Default card provider</td>
+</tr>
+<tr>
+<td><code>card.storage</code></td>
+<td><code>sqlite</code></td>
+<td style="text-align:right">no</td>
+<td><code>null</code></td>
+<td>Compatibility id backed by <code>kl-sqlite-storage</code></td>
+</tr>
+<tr>
+<td><code>card.storage</code></td>
+<td><code>mysql</code></td>
+<td style="text-align:right">no</td>
+<td><code>null</code></td>
+<td>Compatibility id backed by <code>kl-mysql-storage</code></td>
+</tr>
+<tr>
+<td><code>attachment.storage</code></td>
+<td><code>localfs</code></td>
+<td style="text-align:right">n/a</td>
+<td>n/a</td>
+<td>Default attachment provider</td>
+</tr>
+</tbody>
+</table>
+<h2 id="resolver-precedence">Resolver precedence</h2>
+<h3 id="capability-config-precedence">Capability config precedence</h3>
+<ol>
+<li><code>plugins[namespace]</code></li>
+<li>legacy <code>storageEngine</code> / <code>sqlitePath</code> for <code>card.storage</code></li>
+<li>defaults</li>
+</ol>
+<h3 id="attachment-resolution-precedence">Attachment resolution precedence</h3>
+<ol>
+<li>explicit external <code>attachment.storage</code></li>
+<li>same-package attachment plugin attempt for external card providers when attachment provider is <code>localfs</code></li>
+<li>built-in <code>localfs</code> attachment plugin</li>
+</ol>
+<hr>
+<h2 id="summary">Summary</h2>
+<p>The plugin system is not just a new config shape. It is a shift from “engine name drives everything” to “capability contracts drive runtime behavior.”</p>
+<p>That gives Kanban Lite:</p>
+<ul>
+<li>built-in provider flexibility,</li>
+<li>external provider support,</li>
+<li>correct host behavior for local vs remote storage,</li>
+<li>cleaner attachment handling,</li>
+<li>clearer diagnostics,</li>
+<li>and a path to future capabilities without re-hardcoding the world.</li>
+</ul>
+<p>If you are only selecting providers, you mostly care about:</p>
+<ul>
+<li><code>.kanban.json</code></li>
+<li>precedence rules</li>
+<li>install/runtime requirements</li>
+</ul>
+<p>If you are authoring providers, you care about:</p>
+<ul>
+<li>manifest shape</li>
+<li>plugin export names</li>
+<li><code>StorageEngine</code> behavior</li>
+<li>node capability hints</li>
+<li>attachment materialization and safety</li>
+</ul>
+<p>That split is exactly the point: simple to use, but structured enough to extend without chaos.</p>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/storage/">Storage Providers</a> ·
+  <a href="/docs/auth/">Auth</a> ·
+  <a href="/docs/webhooks/">Webhooks</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth — Kanban Lite</title>
+    <meta name="description" content="Identity and policy plugin contract for action-level authorization in Kanban Lite.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link" aria-current="page">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink" aria-current="page">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="auth">Auth</h1>
+  <p>Kanban Lite's auth layer is a two-part plugin contract: <code>auth.identity</code> resolves who is making the request, and <code>auth.policy</code> decides whether that identity is allowed to perform an action. Both default to no-op pass-through, so zero configuration is needed for local or single-user setups.</p>
+  <ul class="capability-list">
+    <li>Plug in any identity source — JWT, API key, session cookie, or custom header</li>
+    <li>Policy plugins receive the resolved identity and the requested action for fine-grained RBAC</li>
+    <li>First-party <code>kl-auth-plugin</code> package for RBAC and common identity strategies</li>
+    <li>Auth events integrate with the SDK event bus for audit logging via webhooks</li>
+  </ul>
+</div>
+
+<h1 id="auth-plugins-and-auth-capabilities">Auth plugins and auth capabilities</h1>
+<p>This document is the detailed reference for Kanban Lite's auth system as it exists today in the codebase.</p>
+<p>It explains:</p>
+<ul>
+<li>what the auth plugin capabilities are,</li>
+<li>how they are configured,</li>
+<li>how the SDK evaluates authorization,</li>
+<li>how each host surface passes tokens into the SDK,</li>
+<li>which actions are currently protected,</li>
+<li>what diagnostics are available,</li>
+<li>and what is intentionally <strong>not</strong> implemented yet.</li>
+</ul>
+<p>This guide is deliberately more detailed than the short auth section in <code>README.md</code> and more implementation-focused than the ADR/plan documents under <code>docs/plan/20260320-auth-authz-plugin-architecture/</code>.</p>
+<hr>
+<h2 id="executive-summary">Executive summary</h2>
+<p>Kanban Lite models auth as <strong>two capability namespaces</strong>:</p>
+<ul>
+<li><code>auth.identity</code></li>
+<li><code>auth.policy</code></li>
+</ul>
+<p>Those capabilities are resolved by the SDK in the same general style as storage capabilities.</p>
+<p>The key rule is:</p>
+<blockquote>
+<p>If no auth plugin is configured, behavior must not change.</p>
+</blockquote>
+<p>That rule is preserved by <strong>no-op</strong> providers resolved from <code>kl-auth-plugin</code> when available (with a core compatibility fallback when the package is absent):</p>
+<ul>
+<li><code>auth.identity: noop</code> → always resolves to anonymous (<code>null</code> identity)</li>
+<li><code>auth.policy: noop</code> → always allows the action</li>
+</ul>
+<p>The current release also ships a <strong>starter RBAC</strong> provider pair through <code>kl-auth-plugin</code>:</p>
+<ul>
+<li><code>auth.identity: rbac</code> → validates opaque tokens against a runtime-owned principal registry</li>
+<li><code>auth.policy: rbac</code> → enforces a fixed cumulative role matrix for <code>user</code>, <code>manager</code>, and <code>admin</code></li>
+</ul>
+<p>So a workspace with no auth configuration continues to behave exactly like an open-access workspace.</p>
+<p>When a non-noop auth provider is active, the SDK performs <strong>pre-action authorization</strong> at the SDK method boundary before protected work executes.</p>
+<hr>
+<h2 id="getting-started-fresh-install-with-the-local-auth-plugin">Getting started: fresh install with the local auth plugin</h2>
+<p>This section walks a new user through installing Kanban Lite in an empty folder with the <code>local</code> auth provider enabled so that the UI and REST API are protected by a username/password login and an API bearer token.</p>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li>Node.js ≥ 18</li>
+<li>npm, pnpm, or yarn</li>
+</ul>
+<h3 id="step-1-create-a-project-folder-and-initialise-it">Step 1 — create a project folder and initialise it</h3>
+<pre><code class="language-bash">mkdir my-kanban &amp;&amp; cd my-kanban
+npm init -y
+</code></pre>
+<h3 id="step-2-install-kanban-lite-and-the-auth-plugin">Step 2 — install kanban-lite and the auth plugin</h3>
+<pre><code class="language-bash">npm install kanban-lite kl-auth-plugin
+</code></pre>
+<p>The standalone server binary is installed at <code>node_modules/.bin/kanban-lite</code> (or at the <code>kanban-lite</code> bin if you use npm scripts).</p>
+<h3 id="step-3-generate-bcrypt-password-hashes">Step 3 — generate bcrypt password hashes</h3>
+<p>The <code>local</code> provider stores passwords as bcrypt hashes, never plain text. Generate one hash per user:</p>
+<pre><code class="language-bash">node -e &quot;require('bcryptjs').hash('admin123', 12).then(h =&gt; console.log('admin   :', h))&quot;
+node -e &quot;require('bcryptjs').hash('manager123', 12).then(h =&gt; console.log('manager :', h))&quot;
+node -e &quot;require('bcryptjs').hash('user123', 12).then(h =&gt; console.log('user    :', h))&quot;
+</code></pre>
+<p>Copy the three output strings — you will paste them into <code>.kanban.json</code> in the next step.</p>
+<h3 id="step-4-create-kanban-json-with-local-auth">Step 4 — create <code>.kanban.json</code> with local auth</h3>
+<p>Create a <code>.kanban.json</code> file in your project root (substitute the hashes from Step 3):</p>
+<pre><code class="language-json">{
+  &quot;version&quot;: 2,
+  &quot;port&quot;: 2954,
+  &quot;plugins&quot;: {
+    &quot;auth.identity&quot;: {
+      &quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+      &quot;options&quot;: {
+        &quot;users&quot;: [
+          { &quot;username&quot;: &quot;admin&quot;,   &quot;password&quot;: &quot;&lt;bcrypt-hash-for-admin&gt;&quot;,   &quot;role&quot;: &quot;admin&quot; },
+          { &quot;username&quot;: &quot;manager&quot;, &quot;password&quot;: &quot;&lt;bcrypt-hash-for-manager&gt;&quot;, &quot;role&quot;: &quot;manager&quot; },
+          { &quot;username&quot;: &quot;user&quot;,    &quot;password&quot;: &quot;&lt;bcrypt-hash-for-user&gt;&quot;,    &quot;role&quot;: &quot;user&quot; }
+        ]
+      }
+    },
+    &quot;auth.policy&quot;: {
+      &quot;provider&quot;: &quot;kl-auth-plugin&quot;
+    }
+  }
+}
+</code></pre>
+<p>What each field does:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auth.identity.provider = &quot;local&quot;</code></td>
+<td>Resolves identity from a browser session cookie (set after <code>/auth/login</code>) or from the <code>Authorization: Bearer &lt;token&gt;</code> header</td>
+</tr>
+<tr>
+<td><code>auth.identity.options.users</code></td>
+<td>List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional <code>role</code> (<code>user</code>, <code>manager</code>, or <code>admin</code>) to enforce RBAC permissions</td>
+</tr>
+<tr>
+<td><code>auth.policy.provider = &quot;local&quot;</code></td>
+<td>Allows any authenticated caller; denies anonymous requests</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-5-set-the-api-bearer-token-in-env">Step 5 — set the API bearer token in <code>.env</code></h3>
+<p>The <code>local</code> provider also accepts a shared API token for programmatic access (MCP, CLI calls, REST scripts). Generate one and put it in <code>.env</code>:</p>
+<pre><code class="language-bash">node -e &quot;const c=require('crypto');console.log('KANBAN_LITE_TOKEN=kl-'+c.randomBytes(24).toString('hex'))&quot;
+</code></pre>
+<p>Append the printed line to <code>.env</code>:</p>
+<pre><code>KANBAN_LITE_TOKEN=kl-&lt;your-generated-token&gt;
+</code></pre>
+<blockquote>
+<p>The <code>local</code> provider reads <code>KANBAN_LITE_TOKEN</code> (or the fallback <code>KANBAN_TOKEN</code>) from the environment at startup. If neither is set, it auto-generates a token and writes it to <code>.env</code> the first time the server starts.</p>
+</blockquote>
+<h3 id="step-6-start-the-server">Step 6 — start the server</h3>
+<pre><code class="language-bash">npx kanban-lite
+# or, if you added it to package.json scripts:
+npm start
+</code></pre>
+<p>On first start you should see something like:</p>
+<pre><code>Kanban Lite listening on http://localhost:2954
+Auth: local (identity) + local (policy)
+</code></pre>
+<h3 id="step-7-log-in-via-the-browser">Step 7 — log in via the browser</h3>
+<p>Open <code>http://localhost:2954</code> in a browser. You will be redirected to <code>/auth/login</code>. Enter one of the usernames and passwords from Step 4. After a successful login you are redirected back and a session cookie is set — subsequent browser requests are authenticated automatically.</p>
+<p>Log out at any time by visiting <code>http://localhost:2954/auth/logout</code>.</p>
+<h3 id="step-8-authenticate-programmatic-rest-calls">Step 8 — authenticate programmatic / REST calls</h3>
+<p>Pass the token from <code>.env</code> as a bearer token:</p>
+<pre><code class="language-bash">curl -H &quot;Authorization: Bearer kl-&lt;your-token&gt;&quot; \
+  http://localhost:2954/api/boards
+</code></pre>
+<p>MCP and CLI calls running inside the same shell automatically pick up <code>KANBAN_LITE_TOKEN</code> from the environment — no extra configuration needed.</p>
+<h3 id="what-is-still-open-access">What is still open-access</h3>
+<p>The <code>local</code> policy provider allows <strong>any</strong> authenticated identity and denies <strong>anonymous</strong> callers. It does not enforce role-based restrictions between <code>admin</code>, <code>manager</code>, and <code>user</code>. If you need role-based access control, configure the <code>rbac</code> provider pair instead and supply a principal registry at runtime (see the <a href="#starter-rbac-provider">Starter RBAC provider</a> section below).</p>
+<hr>
+<h2 id="design-goals">Design goals</h2>
+<p>The auth design is built around a few principles:</p>
+<ol>
+<li>
+<p><strong>SDK first</strong></p>
+<ul>
+<li>The SDK is the authoritative enforcement seam.</li>
+<li>REST, CLI, MCP, and the extension host must not implement their own allow/deny rules.</li>
+</ul>
+</li>
+<li>
+<p><strong>Host-owned token acquisition</strong></p>
+<ul>
+<li>Each host decides where a token comes from.</li>
+<li>The SDK consumes a normalized <code>AuthContext</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>No secrets in <code>.kanban.json</code></strong></p>
+<ul>
+<li>Workspace config can select providers.</li>
+<li>It must not store bearer tokens or similar secret material.</li>
+</ul>
+</li>
+<li>
+<p><strong>Action-level authorization only</strong></p>
+<ul>
+<li>Current authorization is based on named SDK actions.</li>
+<li>It does not do partial filtering of card lists or board lists.</li>
+</ul>
+</li>
+<li>
+<p><strong>No-plugin = no behavior change</strong></p>
+<ul>
+<li>The default path remains anonymous + allow-all via <code>noop</code>, with a compatibility fallback when <code>kl-auth-plugin</code> is not installed yet.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="capability-model">Capability model</h2>
+<p>Auth uses two capability namespaces defined in <code>src/shared/config.ts</code>:</p>
+<ul>
+<li><code>AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'</code></li>
+<li><code>AuthCapabilitySelections = Partial&lt;Record&lt;AuthCapabilityNamespace, ProviderRef&gt;&gt;</code></li>
+<li><code>ResolvedAuthCapabilities = Record&lt;AuthCapabilityNamespace, ProviderRef&gt;</code></li>
+</ul>
+<p>The same <code>ProviderRef</code> shape used by storage capabilities is reused here:</p>
+<pre><code class="language-ts">interface ProviderRef {
+	provider: string
+	options?: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<p>That means auth provider selection looks structurally like storage provider selection.</p>
+<hr>
+<h2 id="the-two-auth-capabilities">The two auth capabilities</h2>
+<h3 id="auth-identity"><code>auth.identity</code></h3>
+<p>Responsibility:</p>
+<ul>
+<li>take a host-supplied <code>AuthContext</code>,</li>
+<li>inspect token-related input,</li>
+<li>and resolve a normalized caller identity.</li>
+</ul>
+<p>The runtime identity shape is defined in <code>src/sdk/plugins/index.ts</code>:</p>
+<pre><code class="language-ts">export interface AuthIdentity {
+	subject: string
+	roles?: string[]
+}
+</code></pre>
+<p>Current shipped provider ids:</p>
+<ul>
+<li><code>noop</code></li>
+<li><code>rbac</code></li>
+<li><code>local</code></li>
+</ul>
+<p>Current <code>noop</code> behavior:</p>
+<ul>
+<li>always returns <code>null</code></li>
+<li>treats the caller as anonymous</li>
+<li>preserves open-access behavior when no real identity plugin is active</li>
+</ul>
+<p>Current <code>rbac</code> behavior:</p>
+<ul>
+<li>treats tokens as opaque strings</li>
+<li>strips a <code>Bearer </code> prefix defensively before lookup</li>
+<li>resolves identity from a runtime-owned principal registry (<code>token -&gt; { subject, roles }</code>)</li>
+<li>returns <code>null</code> for absent or unregistered tokens</li>
+<li>never infers roles from token text</li>
+</ul>
+<p>Important implementation detail:</p>
+<ul>
+<li>the exported singleton <code>RBAC_IDENTITY_PLUGIN</code> is constructed with an <strong>empty</strong> principal registry</li>
+<li>that means selecting <code>auth.identity = rbac</code> resolves a real provider id, but no token will authenticate until the host/runtime supplies principal material via <code>createRbacIdentityPlugin(principals)</code> and injects that plugin through custom capability wiring</li>
+</ul>
+<p>Current <code>local</code> behavior:</p>
+<p>Identity is resolved in the following priority order:</p>
+<ol>
+<li><strong>Pre-installed identity</strong> — if <code>context.identity</code> is already set (e.g. from a valid session cookie installed by the <code>standalone.http</code> middleware), that identity is returned directly.</li>
+<li><strong>API bearer token</strong> — if <code>Authorization: Bearer &lt;token&gt;</code> matches the <code>KANBAN_LITE_TOKEN</code> / <code>KANBAN_TOKEN</code> environment variable, the identity <code>{ subject: context.actorHint ?? 'api-token' }</code> is returned.</li>
+<li><strong>Actor hint</strong> — if <code>context.actorHint</code> is present (e.g. set by the CLI or MCP surface), that value becomes the subject.</li>
+<li><strong><code>null</code></strong> — anonymous caller; the local policy will deny the request.</li>
+</ol>
+<p>Important implementation details:</p>
+<ul>
+<li><code>KANBAN_LITE_TOKEN</code> takes precedence over the fallback <code>KANBAN_TOKEN</code></li>
+<li>token comparison uses <code>crypto.timingSafeEqual</code> to prevent timing attacks</li>
+<li>a <code>Bearer </code> prefix is stripped before comparison</li>
+<li>the exported singleton <code>LOCAL_IDENTITY_PLUGIN</code> is stateless and suitable for standalone use</li>
+<li>when the <code>local</code> provider is active inside the standalone server, <code>createStandaloneHttpPlugin</code> auto-generates a <code>kl-…</code> token and persists it to <code>&lt;workspaceRoot&gt;/.env</code> if neither env var is set</li>
+</ul>
+<h3 id="auth-policy"><code>auth.policy</code></h3>
+<p>Responsibility:</p>
+<ul>
+<li>receive the resolved identity,</li>
+<li>receive the canonical action name,</li>
+<li>receive the normalized <code>AuthContext</code>,</li>
+<li>return an allow/deny decision.</li>
+</ul>
+<p>The decision shape is defined in <code>src/sdk/types.ts</code>:</p>
+<pre><code class="language-ts">export interface AuthDecision {
+	allowed: boolean
+	reason?: AuthErrorCategory
+	actor?: string
+	metadata?: Record&lt;string, unknown&gt;
+}
+</code></pre>
+<p>Current shipped provider ids:</p>
+<ul>
+<li><code>noop</code></li>
+<li><code>rbac</code></li>
+<li><code>local</code></li>
+</ul>
+<p>Current <code>noop</code> behavior:</p>
+<ul>
+<li>always returns <code>{ allowed: true }</code></li>
+<li>allows every protected action</li>
+<li>preserves open-access behavior when no real policy plugin is active</li>
+</ul>
+<p>Current <code>rbac</code> behavior:</p>
+<ul>
+<li>denies <code>null</code> identity with <code>reason = 'auth.identity.missing'</code></li>
+<li>checks the caller's roles against the fixed <code>RBAC_ROLE_MATRIX</code></li>
+<li>returns <code>{ allowed: true, actor: identity.subject }</code> on success</li>
+<li>returns <code>{ allowed: false, reason: 'auth.policy.denied', actor: identity.subject }</code> when the action is outside the caller's role set</li>
+<li>implements three cumulative roles: <code>user</code>, <code>manager</code>, and <code>admin</code></li>
+</ul>
+<p>Current <code>local</code> behavior:</p>
+<ul>
+<li>denies <code>null</code> identity with <code>reason = 'auth.identity.missing'</code></li>
+<li>allows <strong>all</strong> actions for any non-null identity (<code>{ allowed: true, actor: identity.subject }</code>)</li>
+<li>does <strong>not</strong> enforce role distinctions — every authenticated caller has equal access</li>
+<li>intended for single-operator setups or when role separation is not required</li>
+</ul>
+<hr>
+<h2 id="current-implementation-status">Current implementation status</h2>
+<p>This part is important because the <strong>architecture</strong> is slightly broader than the <strong>currently shipped resolver behavior</strong>.</p>
+<h3 id="what-exists-today">What exists today</h3>
+<p>Today the codebase includes:</p>
+<ul>
+<li>auth capability types in config,</li>
+<li>auth plugin interfaces,</li>
+<li><code>kl-auth-plugin</code> package with three fully-shipped provider ids: <code>noop</code>, <code>rbac</code>, and <code>local</code>,</li>
+<li><code>noop</code> identity/policy providers that preserve open-access behavior,</li>
+<li><code>rbac</code> identity/policy providers with runtime-backed token registry,</li>
+<li><code>local</code> identity/policy providers for username/password + API token auth,</li>
+<li><code>createStandaloneHttpPlugin</code> — registers <code>/auth/login</code>, <code>/auth/logout</code>, and identity middleware for the <code>local</code> provider,</li>
+<li>the exported <code>createRbacIdentityPlugin(principals)</code> helper for runtime-backed token validation,</li>
+<li>the fixed <code>RBAC_USER_ACTIONS</code>, <code>RBAC_MANAGER_ACTIONS</code>, <code>RBAC_ADMIN_ACTIONS</code>, and <code>RBAC_ROLE_MATRIX</code> exports,</li>
+<li><code>RbacRole</code> type (<code>'user' | 'manager' | 'admin'</code>),</li>
+<li>listener runtime helpers: <code>createAuthListenerPlugin</code>, <code>createLocalAuthListenerPlugin</code>, <code>createNoopAuthListenerPlugin</code>, <code>createRbacAuthListenerPlugin</code>,</li>
+<li>the <code>ProviderBackedAuthListenerPlugin</code> class for custom listener wiring,</li>
+<li><code>authListenerPluginFactories</code> convenience map,</li>
+<li><code>authIdentityPlugins</code> and <code>authPolicyPlugins</code> provider registries,</li>
+<li>SDK auth status reporting,</li>
+<li>SDK pre-action authorization hooks,</li>
+<li>normalized host <code>AuthContext</code> wiring for standalone, CLI, MCP, and extension host surfaces,</li>
+<li>auth diagnostics/status endpoints and commands,</li>
+<li>tests for the auth seam and host wiring.</li>
+</ul>
+<h3 id="what-is-still-intentionally-limited">What is still intentionally limited</h3>
+<p>The shipped auth provider ids are:</p>
+<ul>
+<li><code>auth.identity.provider = &quot;noop&quot; | &quot;rbac&quot; | &quot;local&quot;</code></li>
+<li><code>auth.policy.provider = &quot;noop&quot; | &quot;rbac&quot; | &quot;local&quot;</code></li>
+</ul>
+<p>If another provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.</p>
+<p>So the system now has:</p>
+<ul>
+<li>the <strong>capability contract</strong>,</li>
+<li>the <strong>SDK enforcement seam</strong>,</li>
+<li>the built-in <strong><code>noop</code></strong> open-access default,</li>
+<li>the built-in <strong>starter <code>rbac</code></strong> policy implementation,</li>
+<li>the turnkey <strong><code>local</code></strong> username/password + API token provider with a browser login UI,</li>
+<li>and the <strong>host integration path for token acquisition</strong>.</li>
+</ul>
+<p>One remaining limitation:</p>
+<ul>
+<li>The shipped <code>RBAC_IDENTITY_PLUGIN</code> singleton uses an empty registry; real RBAC token validation requires host/runtime wiring via <code>createRbacIdentityPlugin(principals)</code>. The <code>local</code> provider does not have this limitation — it works out of the box with <code>.kanban.json</code> user config.</li>
+</ul>
+<hr>
+<h2 id="configuration">Configuration</h2>
+<p>Auth provider selection lives in <code>.kanban.json</code> under the <code>plugins</code> key, using the npm package name as the provider id. Both <code>auth.identity</code> and <code>auth.policy</code> capability namespaces sit alongside storage providers in the same <code>plugins</code> object.</p>
+<h3 id="default-no-auth">Default (no auth)</h3>
+<p>Omit auth namespaces entirely — the SDK defaults both to <code>noop</code> (open-access).</p>
+<h3 id="local-provider-config">Local provider config</h3>
+<p>Requires <code>kl-auth-plugin</code> installed. Passwords are bcrypt hashes (cost 12 recommended):</p>
+<pre><code class="language-json">{
+	&quot;plugins&quot;: {
+		&quot;auth.identity&quot;: {
+			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;options&quot;: {
+				&quot;users&quot;: [
+					{ &quot;username&quot;: &quot;admin&quot;,   &quot;password&quot;: &quot;$2b$12$...&quot;, &quot;role&quot;: &quot;admin&quot; },
+					{ &quot;username&quot;: &quot;manager&quot;, &quot;password&quot;: &quot;$2b$12$...&quot;, &quot;role&quot;: &quot;manager&quot; },
+					{ &quot;username&quot;: &quot;user&quot;,    &quot;password&quot;: &quot;$2b$12$...&quot;, &quot;role&quot;: &quot;user&quot; }
+				]
+			}
+		},
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; }
+	}
+}
+</code></pre>
+<p>Set <code>KANBAN_LITE_TOKEN</code> in <code>.env</code> for API bearer token access (auto-generated if absent):</p>
+<pre><code>KANBAN_LITE_TOKEN=kl-&lt;48-hex-chars&gt;
+</code></pre>
+<h3 id="starter-rbac-config">Starter RBAC config</h3>
+<pre><code class="language-json">{
+	&quot;plugins&quot;: {
+		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; },
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; }
+	}
+}
+</code></pre>
+<p>What this does in the current implementation:</p>
+<ul>
+<li>switches both auth capability ids to the <code>kl-auth-plugin</code> RBAC provider pair</li>
+<li>enables action-level authorization using the fixed SDK-owned role matrix</li>
+<li>requires the host/runtime to provide the principal registry used by <code>createRbacIdentityPlugin(principals)</code> if you want any token to resolve successfully</li>
+</ul>
+<p>What this does <strong>not</strong> do:</p>
+<ul>
+<li>it does not store token-to-role mappings in <code>.kanban.json</code></li>
+<li>it does not create a login flow</li>
+<li>it does not make the empty-registry <code>RBAC_IDENTITY_PLUGIN</code> singleton accept arbitrary token text</li>
+</ul>
+<h3 id="shape-of-auth-config-full-example">Shape of auth config (full example)</h3>
+<pre><code class="language-json">{
+	&quot;plugins&quot;: {
+		&quot;auth.identity&quot;: {
+			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;options&quot;: {}
+		},
+		&quot;auth.policy&quot;: {
+			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;options&quot;: {}
+		}
+	}
+}
+</code></pre>
+<h3 id="normalization-behavior">Normalization behavior</h3>
+<p><code>normalizeAuthCapabilities()</code> in <code>src/shared/config.ts</code> guarantees that both auth namespaces are always resolved.</p>
+<p>Lookup order: <code>plugins[&quot;auth.identity&quot;]</code> → <code>{ provider: &quot;noop&quot; }</code>.</p>
+<p>If both <code>plugins</code> auth keys and the <code>auth</code> key are omitted entirely, the normalized result is:</p>
+<pre><code class="language-json">{
+	&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;noop&quot; },
+	&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; }
+}
+</code></pre>
+<p>So there is always a complete runtime auth capability map, even when the workspace has no auth config.</p>
+<h3 id="what-must-never-go-in-kanban-json">What must never go in <code>.kanban.json</code></h3>
+<p>Do <strong>not</strong> store:</p>
+<ul>
+<li>bearer tokens,</li>
+<li>refresh tokens,</li>
+<li>session secrets,</li>
+<li>API keys used as auth credentials,</li>
+<li>cookies,</li>
+<li>or any other secret credential material.</li>
+</ul>
+<p><code>.kanban.json</code> is for provider <strong>selection/configuration</strong>, not secret storage.</p>
+<hr>
+<h2 id="auth-plugin-contracts">Auth plugin contracts</h2>
+<p>The core auth plugin contracts live in <code>src/sdk/plugins/index.ts</code>.</p>
+<h3 id="identity-plugin-contract">Identity plugin contract</h3>
+<pre><code class="language-ts">export interface AuthIdentityPlugin {
+	readonly manifest: AuthPluginManifest
+	resolveIdentity(context: AuthContext): Promise&lt;AuthIdentity | null&gt;
+}
+</code></pre>
+<h3 id="policy-plugin-contract">Policy plugin contract</h3>
+<pre><code class="language-ts">export interface AuthPolicyPlugin {
+	readonly manifest: AuthPluginManifest
+	checkPolicy(
+		identity: AuthIdentity | null,
+		action: string,
+		context: AuthContext
+	): Promise&lt;AuthDecision&gt;
+}
+</code></pre>
+<h3 id="auth-plugin-manifest">Auth plugin manifest</h3>
+<pre><code class="language-ts">export interface AuthPluginManifest {
+	readonly id: string
+	readonly provides: readonly AuthCapabilityNamespace[]
+}
+</code></pre>
+<p>That means an auth plugin identifies itself by:</p>
+<ul>
+<li>a provider id,</li>
+<li>and the auth namespace(s) it implements.</li>
+</ul>
+<h3 id="starter-rbac-helper-contract">Starter RBAC helper contract</h3>
+<p>The built-in starter RBAC implementation also exports a small runtime helper contract:</p>
+<pre><code class="language-ts">export interface RbacPrincipalEntry {
+	subject: string
+	roles: string[]
+}
+
+export function createRbacIdentityPlugin(
+	principals: ReadonlyMap&lt;string, RbacPrincipalEntry&gt;,
+): AuthIdentityPlugin
+</code></pre>
+<p>That helper is the runtime-backed identity path for the shipped <code>rbac</code> provider:</p>
+<ul>
+<li>keys are opaque tokens</li>
+<li>values contain the resolved caller <code>subject</code> and <code>roles</code></li>
+<li>unknown tokens resolve to <code>null</code></li>
+<li>roles come from runtime-owned data, not token parsing</li>
+</ul>
+<p>The built-in singleton <code>RBAC_IDENTITY_PLUGIN</code> simply calls this helper with <code>new Map()</code>.</p>
+<hr>
+<h2 id="local-provider-standalone-http-capability"><code>local</code> provider — standalone.http capability</h2>
+<p>When <code>plugins[&quot;auth.identity&quot;].provider</code> or <code>plugins[&quot;auth.policy&quot;].provider</code> is <code>&quot;kl-auth-plugin&quot;</code>, the standalone server automatically loads the <code>standalone.http</code> capability exported by <code>createStandaloneHttpPlugin</code> from <code>kl-auth-plugin</code>.</p>
+<h3 id="what-it-registers">What it registers</h3>
+<p><strong>Middleware</strong> (runs before every request):</p>
+<ul>
+<li>reads <code>Authorization: Bearer &lt;token&gt;</code> and compares it to the workspace API token using <code>crypto.timingSafeEqual</code></li>
+<li>reads the <code>kanban_lite_session</code> cookie and looks up the session in an in-memory store</li>
+<li>if neither succeeds:
+<ul>
+<li>API requests (<code>/api/...</code>) → <code>401 { ok: false, error: &quot;Authentication required&quot; }</code></li>
+<li>Page requests → <code>302</code> redirect to <code>/auth/login?returnTo=&lt;current path&gt;</code></li>
+</ul>
+</li>
+</ul>
+<p><strong>Routes</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/auth/login</code></td>
+<td>Serves the login HTML form. Redirects to <code>returnTo</code> if already authenticated.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/auth/login</code></td>
+<td>Verifies username + bcrypt password. On success: sets session cookie, redirects to <code>returnTo</code>. On failure: re-renders form with error. Accepts both <code>application/json</code> and <code>application/x-www-form-urlencoded</code>.</td>
+</tr>
+<tr>
+<td><code>GET</code> or <code>POST</code></td>
+<td><code>/auth/logout</code></td>
+<td>Deletes the session, clears the cookie, redirects to <code>/auth/login</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="session-details">Session details</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cookie name</td>
+<td><code>kanban_lite_session</code></td>
+</tr>
+<tr>
+<td>Cookie flags</td>
+<td><code>HttpOnly; SameSite=Lax; Path=/</code></td>
+</tr>
+<tr>
+<td>TTL</td>
+<td>7 days</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>In-memory <code>Map</code> (lost on server restart)</td>
+</tr>
+<tr>
+<td>Session ID</td>
+<td>24 random bytes, hex-encoded</td>
+</tr>
+</tbody>
+</table>
+<h3 id="api-token-auto-provisioning">API token auto-provisioning</h3>
+<p>On startup, <code>createStandaloneHttpPlugin</code> calls <code>ensureWorkspaceApiToken(workspaceRoot)</code>:</p>
+<ol>
+<li>Checks <code>KANBAN_LITE_TOKEN</code> and <code>KANBAN_TOKEN</code> environment variables.</li>
+<li>If found, uses that value (and back-fills <code>process.env.KANBAN_LITE_TOKEN</code> if only <code>KANBAN_TOKEN</code> was set).</li>
+<li>If neither is set, generates a <code>kl-&lt;48-hex-chars&gt;</code> token, writes <code>KANBAN_LITE_TOKEN=&lt;token&gt;</code> to <code>&lt;workspaceRoot&gt;/.env</code>, and sets <code>process.env.KANBAN_LITE_TOKEN</code>.</li>
+</ol>
+<h3 id="security-notes">Security notes</h3>
+<ul>
+<li>Passwords are never stored in plain text — only bcrypt hashes in <code>.kanban.json</code>.</li>
+<li>Token comparison uses <code>crypto.timingSafeEqual</code> to prevent timing attacks.</li>
+<li><code>returnTo</code> is validated to reject external redirects (must start with <code>/</code> and must not start with <code>//</code>).</li>
+<li>The login form HTML-escapes all user-supplied values before rendering.</li>
+<li>Session IDs are cryptographically random; they are never derived from user input.</li>
+</ul>
+<hr>
+<h2 id="listener-runtime-helpers">Listener runtime helpers</h2>
+<p><code>kl-auth-plugin</code> exports a set of standalone listener helpers that plug into the SDK event bus directly, separate from the capability-provider path. These are useful when you want to enforce auth from application code rather than from <code>.kanban.json</code> config.</p>
+<h3 id="providerbackedauthlistenerplugin"><code>ProviderBackedAuthListenerPlugin</code></h3>
+<p>The underlying class that all factory functions produce:</p>
+<pre><code class="language-ts">class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+
+  constructor(
+    authIdentity: AuthIdentityPlugin,
+    authPolicy: AuthPolicyPlugin,
+    options?: AuthListenerPluginOptions,
+  )
+
+  register(bus: EventBus): void
+  unregister(): void
+}
+</code></pre>
+<p>Registers across <strong>all</strong> SDK before-events. For each event it:</p>
+<ol>
+<li>Merges the request-scoped <code>AuthContext</code> (from <code>options.getAuthContext?.()</code>) with event payload hints.</li>
+<li>Calls <code>authIdentity.resolveIdentity(context)</code>.</li>
+<li>Calls <code>authPolicy.checkPolicy(identity, action, context)</code>.</li>
+<li>On denial: emits <code>auth.denied</code> and throws <code>AuthError</code>.</li>
+<li>On success: emits <code>auth.allowed</code> and optionally returns <code>options.overrideInput(...)</code> as an input override.</li>
+</ol>
+<h3 id="authlistenerpluginoptions"><code>AuthListenerPluginOptions</code></h3>
+<pre><code class="language-ts">interface AuthListenerPluginOptions {
+  id?: string
+  getAuthContext?: () =&gt; AuthContext | undefined
+  overrideInput?: (context: AuthListenerOverrideContext) =&gt;
+    BeforeEventListenerResponse | Promise&lt;BeforeEventListenerResponse&gt;
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>Custom plugin manifest id (defaults to <code>auth-listener:&lt;identity id&gt;:&lt;policy id&gt;</code>).</td>
+</tr>
+<tr>
+<td><code>getAuthContext</code></td>
+<td>Callback that returns the active request-scoped <code>AuthContext</code>. Use this to thread auth from your host surface into the listener.</td>
+</tr>
+<tr>
+<td><code>overrideInput</code></td>
+<td>Optional callback called <strong>after</strong> a successful auth decision. Return a plain object to deep-merge into the before-event input.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="authlisteneroverridecontext"><code>AuthListenerOverrideContext</code></h3>
+<p>Passed to <code>overrideInput</code>:</p>
+<pre><code class="language-ts">interface AuthListenerOverrideContext {
+  readonly payload: BeforeEventPayload&lt;Record&lt;string, unknown&gt;&gt;
+  readonly identity: AuthIdentity | null
+  readonly decision: AuthDecision
+}
+</code></pre>
+<h3 id="factory-functions">Factory functions</h3>
+<pre><code class="language-ts">// Wrap any identity+policy pair
+createAuthListenerPlugin(
+  identity: AuthIdentityPlugin,
+  policy: AuthPolicyPlugin,
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// local provider pair
+createLocalAuthListenerPlugin(
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// noop provider pair (open-access)
+createNoopAuthListenerPlugin(
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// rbac provider pair with optional principal registry
+createRbacAuthListenerPlugin(
+  principals?: ReadonlyMap&lt;string, RbacPrincipalEntry&gt;,
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+</code></pre>
+<h3 id="authlistenerpluginfactories"><code>authListenerPluginFactories</code></h3>
+<p>A convenience map keyed by provider id:</p>
+<pre><code class="language-ts">const authListenerPluginFactories: {
+  local: typeof createLocalAuthListenerPlugin
+  noop:  typeof createNoopAuthListenerPlugin
+  rbac:  typeof createRbacAuthListenerPlugin
+}
+</code></pre>
+<h3 id="auth-allowed-and-auth-denied-events"><code>auth.allowed</code> and <code>auth.denied</code> events</h3>
+<p>Both events are emitted on the SDK event bus by the listener after every authorization decision:</p>
+<pre><code class="language-ts">// auth.allowed
+{
+  type: 'auth.allowed',
+  data: { action: string, actor?: string },
+  timestamp: string,
+  actor?: string,
+  boardId?: string,
+}
+
+// auth.denied
+{
+  type: 'auth.denied',
+  data: { action: string, actor?: string, reason: AuthErrorCategory },
+  timestamp: string,
+  actor?: string,
+  boardId?: string,
+}
+</code></pre>
+<hr>
+<h2 id="plugin-registries">Plugin registries</h2>
+<p><code>kl-auth-plugin</code> exports two flat registry objects for programmatic plugin lookup:</p>
+<pre><code class="language-ts">const authIdentityPlugins: Record&lt;string, AuthIdentityPlugin&gt; = {
+  local: LOCAL_IDENTITY_PLUGIN,
+  noop:  NOOP_IDENTITY_PLUGIN,
+  rbac:  RBAC_IDENTITY_PLUGIN,   // empty principal registry
+}
+
+const authPolicyPlugins: Record&lt;string, AuthPolicyPlugin&gt; = {
+  local: LOCAL_POLICY_PLUGIN,
+  noop:  NOOP_POLICY_PLUGIN,
+  rbac:  RBAC_POLICY_PLUGIN,
+}
+</code></pre>
+<p>These are used by the SDK's capability resolver to look up providers by the id string from <code>.kanban.json</code>. You can also use them directly in application code:</p>
+<pre><code class="language-ts">import { authIdentityPlugins, authPolicyPlugins } from 'kl-auth-plugin'
+
+const identity = authIdentityPlugins['local']
+const policy   = authPolicyPlugins['local']
+</code></pre>
+<hr>
+<h2 id="starter-rbac-provider">Starter RBAC provider</h2>
+<p>The current shipped RBAC contract is intentionally small and fixed.</p>
+<h3 id="canonical-roles">Canonical roles</h3>
+<ul>
+<li><code>user</code></li>
+<li><code>manager</code></li>
+<li><code>admin</code></li>
+</ul>
+<p>Roles are cumulative upward:</p>
+<ul>
+<li><code>manager</code> includes every <code>user</code> action</li>
+<li><code>admin</code> includes every <code>manager</code> and <code>user</code> action</li>
+</ul>
+<h3 id="identity-side-behavior">Identity-side behavior</h3>
+<ul>
+<li>token validation is runtime-owned</li>
+<li>token values are opaque strings</li>
+<li>a defensive <code>Bearer </code> prefix strip happens before the registry lookup</li>
+<li>the resolved identity shape is still just:</li>
+</ul>
+<pre><code class="language-ts">{ subject: string, roles?: string[] }
+</code></pre>
+<h3 id="policy-side-behavior">Policy-side behavior</h3>
+<p>The built-in <code>rbac</code> policy provider consumes <code>RBAC_ROLE_MATRIX</code>.</p>
+<ul>
+<li><code>null</code> identity → deny with <code>auth.identity.missing</code></li>
+<li>action not covered by the caller's role set → deny with <code>auth.policy.denied</code></li>
+<li>allowed action → returns the caller subject as <code>actor</code></li>
+</ul>
+<h3 id="runtime-boundary">Runtime boundary</h3>
+<p>The current built-in RBAC provider is <strong>Node-hosted only</strong>.</p>
+<ul>
+<li>hosts are responsible for token acquisition</li>
+<li>hosts are responsible for any runtime principal material</li>
+<li>the webview is not an auth plugin host</li>
+<li><code>.kanban.json</code> selects providers but does not contain token registries or secrets</li>
+</ul>
+<hr>
+<h2 id="the-auth-context-passed-into-the-sdk">The auth context passed into the SDK</h2>
+<p>Hosts normalize token-related information into <code>AuthContext</code> from <code>src/sdk/types.ts</code>.</p>
+<p>Important fields include:</p>
+<ul>
+<li><code>token?: string</code></li>
+<li><code>tokenSource?: string</code></li>
+<li><code>transport?: string</code></li>
+<li><code>actorHint?: string</code></li>
+<li><code>boardId?: string</code></li>
+<li><code>cardId?: string</code></li>
+<li><code>fromBoardId?: string</code></li>
+<li><code>toBoardId?: string</code></li>
+<li><code>columnId?: string</code></li>
+<li><code>commentId?: string</code></li>
+<li><code>formId?: string</code></li>
+<li><code>attachment?: string</code></li>
+<li><code>labelName?: string</code></li>
+<li><code>webhookId?: string</code></li>
+<li><code>actionKey?: string</code></li>
+</ul>
+<h3 id="why-authcontext-exists">Why <code>AuthContext</code> exists</h3>
+<p>It gives the SDK one transport-neutral structure so the same authorization seam can work across:</p>
+<ul>
+<li>HTTP requests,</li>
+<li>WebSocket calls,</li>
+<li>CLI commands,</li>
+<li>MCP tools,</li>
+<li>and extension-host actions.</li>
+</ul>
+<h3 id="what-the-fields-are-for">What the fields are for</h3>
+<ul>
+<li><code>token</code> is the write-only credential input for identity resolution.</li>
+<li><code>tokenSource</code> is diagnostics-only metadata such as <code>request-header</code>, <code>env</code>, or <code>secret-storage</code>.</li>
+<li><code>transport</code> identifies the surface such as <code>http</code>, <code>cli</code>, <code>mcp</code>, or <code>extension</code>.</li>
+<li>resource hint fields let the policy plugin evaluate context-rich actions like:
+<ul>
+<li>deleting a specific card,</li>
+<li>renaming a specific label,</li>
+<li>transferring between boards,</li>
+<li>submitting a specific form,</li>
+<li>or triggering a named action.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="sdk-runtime-flow">SDK runtime flow</h2>
+<p>The auth runtime is centered in <code>src/sdk/KanbanSDK.ts</code>.</p>
+<h3 id="step-1-resolve-configured-auth-capabilities">Step 1: resolve configured auth capabilities</h3>
+<p>During SDK construction, auth capabilities are resolved via workspace config normalization.</p>
+<h3 id="step-2-resolve-capability-bag">Step 2: resolve capability bag</h3>
+<p>The resolved capability bag contains both:</p>
+<ul>
+<li><code>authIdentity</code></li>
+<li><code>authPolicy</code></li>
+</ul>
+<p>If no auth config is present, both are no-op plugins.</p>
+<h3 id="step-3-host-surfaces-install-scoped-auth">Step 3: host surfaces install scoped auth</h3>
+<p>Node-hosted surfaces create an <code>AuthContext</code> from their inbound token source and call:</p>
+<ul>
+<li><code>sdk.runWithAuth(authContext, fn)</code></li>
+</ul>
+<p>This stores request auth in an async scope for the duration of <code>fn</code> instead of threading auth through mutation method signatures.</p>
+<h3 id="step-4-protected-methods-enter-the-before-event-seam">Step 4: protected methods enter the before-event seam</h3>
+<p>Protected SDK mutators call:</p>
+<ul>
+<li><code>_runBeforeEvent(event, input, actor?, boardId?)</code></li>
+</ul>
+<p><code>_runBeforeEvent()</code> clones the original input immediately, dispatches the before-event payload, and owns the immutable deep-merge of any listener overrides.</p>
+<h3 id="step-5-the-built-in-auth-listener-resolves-identity-and-policy">Step 5: the built-in auth listener resolves identity and policy</h3>
+<p>The built-in auth listener reads the request-scoped auth carrier installed by <code>runWithAuth()</code>, enriches it with event hints such as <code>actor</code> and <code>boardId</code>, and then calls:</p>
+<pre><code class="language-ts">const identity = await authIdentity.resolveIdentity(context)
+const decision = await authPolicy.checkPolicy(identity, action, context)
+</code></pre>
+<p>First-party auth listeners do <strong>not</strong> read <code>payload.auth</code>; <code>BeforeEventPayload</code> no longer carries auth state.</p>
+<h3 id="step-6-denial-vetoes-the-mutation-with-autherror">Step 6: denial vetoes the mutation with <code>AuthError</code></h3>
+<p>If <code>decision.allowed</code> is false, the SDK throws <code>AuthError</code>.</p>
+<p>That is what host surfaces use to map errors to:</p>
+<ul>
+<li>HTTP status codes,</li>
+<li>CLI output,</li>
+<li>MCP tool errors,</li>
+<li>and extension-host messages.</li>
+</ul>
+<hr>
+<h2 id="sequence-diagram">Sequence diagram</h2>
+<pre><code class="language-mermaid">sequenceDiagram
+	participant Host as Host surface
+	participant SDK as KanbanSDK
+	participant Runner as _runBeforeEvent
+	participant Listener as Built-in auth listener
+	participant Identity as auth.identity
+	participant Policy as auth.policy
+	participant Op as Target operation
+
+	Host-&gt;&gt;SDK: runWithAuth(authContext, fn)
+	Host-&gt;&gt;SDK: call mutation(input)
+	SDK-&gt;&gt;Runner: _runBeforeEvent(event, input, actor?, boardId?)
+	Runner-&gt;&gt;Listener: dispatch BeforeEventPayload
+	Listener-&gt;&gt;Identity: resolveIdentity(scoped context + hints)
+	Identity--&gt;&gt;SDK: identity | null
+	Listener-&gt;&gt;Policy: checkPolicy(identity, action, context)
+	Policy--&gt;&gt;SDK: AuthDecision
+	alt allowed
+		Runner--&gt;&gt;SDK: merged input
+		SDK-&gt;&gt;Op: execute mutation
+		Op--&gt;&gt;SDK: result
+		SDK--&gt;&gt;Host: success
+	else denied
+		Listener--&gt;&gt;Host: throw AuthError
+	end
+</code></pre>
+<hr>
+<h2 id="auth-decisions-and-error-categories">Auth decisions and error categories</h2>
+<p><code>AuthErrorCategory</code> in <code>src/sdk/types.ts</code> defines the canonical auth failure vocabulary.</p>
+<p>Current categories are:</p>
+<ul>
+<li><code>auth.identity.missing</code></li>
+<li><code>auth.identity.invalid</code></li>
+<li><code>auth.identity.expired</code></li>
+<li><code>auth.policy.denied</code></li>
+<li><code>auth.policy.unknown</code></li>
+<li><code>auth.provider.error</code></li>
+</ul>
+<h3 id="why-categories-matter">Why categories matter</h3>
+<p>These categories let hosts map failures without parsing fragile human-readable strings.</p>
+<p>Examples:</p>
+<ul>
+<li>HTTP can turn identity failures into <code>401</code></li>
+<li>HTTP can turn deny failures into <code>403</code></li>
+<li>CLI can print a targeted auth message</li>
+<li>MCP can return machine-usable tool errors</li>
+</ul>
+<h3 id="autherror"><code>AuthError</code></h3>
+<p><code>AuthError</code> is the typed SDK error used when a protected action is denied.</p>
+<p>It carries:</p>
+<ul>
+<li>a machine-readable category,</li>
+<li>a human-readable message,</li>
+<li>and optional actor information.</li>
+</ul>
+<hr>
+<h2 id="current-protected-action-surface">Current protected action surface</h2>
+<p>The current implementation protects the following SDK operations through the SDK-owned before-event auth listener that runs inside <code>_runBeforeEvent(...)</code>.</p>
+<h3 id="built-in-rbac-role-matrix">Built-in RBAC role matrix</h3>
+<h4 id="user"><code>user</code></h4>
+<ul>
+<li><code>form.submit</code></li>
+<li><code>comment.create</code></li>
+<li><code>comment.update</code></li>
+<li><code>comment.delete</code></li>
+<li><code>attachment.add</code></li>
+<li><code>attachment.remove</code></li>
+<li><code>card.action.trigger</code></li>
+<li><code>log.add</code></li>
+</ul>
+<h4 id="manager"><code>manager</code></h4>
+<p>Includes all <code>user</code> actions plus:</p>
+<ul>
+<li><code>card.create</code></li>
+<li><code>card.update</code></li>
+<li><code>card.move</code></li>
+<li><code>card.transfer</code></li>
+<li><code>card.delete</code></li>
+<li><code>board.action.trigger</code></li>
+<li><code>log.clear</code></li>
+<li><code>board.log.add</code></li>
+</ul>
+<h4 id="admin"><code>admin</code></h4>
+<p>Includes all <code>manager</code> and <code>user</code> actions plus:</p>
+<ul>
+<li><code>board.create</code></li>
+<li><code>board.update</code></li>
+<li><code>board.delete</code></li>
+<li><code>settings.update</code></li>
+<li><code>webhook.create</code></li>
+<li><code>webhook.update</code></li>
+<li><code>webhook.delete</code></li>
+<li><code>label.set</code></li>
+<li><code>label.rename</code></li>
+<li><code>label.delete</code></li>
+<li><code>column.create</code></li>
+<li><code>column.update</code></li>
+<li><code>column.reorder</code></li>
+<li><code>column.setMinimized</code></li>
+<li><code>column.delete</code></li>
+<li><code>column.cleanup</code></li>
+<li><code>board.action.config.add</code></li>
+<li><code>board.action.config.remove</code></li>
+<li><code>board.log.clear</code></li>
+<li><code>board.setDefault</code></li>
+<li><code>storage.migrate</code></li>
+<li><code>card.purgeDeleted</code></li>
+</ul>
+<h3 id="same-surface-grouped-by-operation-area">Same surface grouped by operation area</h3>
+<h4 id="board-actions">Board actions</h4>
+<ul>
+<li><code>board.create</code></li>
+<li><code>board.update</code></li>
+<li><code>board.delete</code></li>
+<li><code>board.setDefault</code></li>
+<li><code>board.action.config.add</code></li>
+<li><code>board.action.config.remove</code></li>
+<li><code>board.action.trigger</code></li>
+<li><code>board.log.add</code></li>
+<li><code>board.log.clear</code></li>
+</ul>
+<h4 id="card-actions">Card actions</h4>
+<ul>
+<li><code>card.create</code></li>
+<li><code>card.update</code></li>
+<li><code>card.move</code></li>
+<li><code>card.delete</code></li>
+<li><code>card.transfer</code></li>
+<li><code>card.purgeDeleted</code></li>
+<li><code>card.action.trigger</code></li>
+</ul>
+<h4 id="form-actions">Form actions</h4>
+<ul>
+<li><code>form.submit</code></li>
+</ul>
+<h4 id="attachment-actions">Attachment actions</h4>
+<ul>
+<li><code>attachment.add</code></li>
+<li><code>attachment.remove</code></li>
+</ul>
+<h4 id="comment-actions">Comment actions</h4>
+<ul>
+<li><code>comment.create</code></li>
+<li><code>comment.update</code></li>
+<li><code>comment.delete</code></li>
+</ul>
+<h4 id="log-actions">Log actions</h4>
+<ul>
+<li><code>log.add</code></li>
+<li><code>log.clear</code></li>
+</ul>
+<h4 id="column-actions">Column actions</h4>
+<ul>
+<li><code>column.create</code></li>
+<li><code>column.update</code></li>
+<li><code>column.reorder</code></li>
+<li><code>column.setMinimized</code></li>
+<li><code>column.delete</code></li>
+<li><code>column.cleanup</code></li>
+</ul>
+<h4 id="label-actions">Label actions</h4>
+<ul>
+<li><code>label.set</code></li>
+<li><code>label.rename</code></li>
+<li><code>label.delete</code></li>
+</ul>
+<h4 id="settings-and-storage-actions">Settings and storage actions</h4>
+<ul>
+<li><code>settings.update</code></li>
+<li><code>storage.migrate</code></li>
+</ul>
+<h4 id="webhook-actions">Webhook actions</h4>
+<ul>
+<li><code>webhook.create</code></li>
+<li><code>webhook.update</code></li>
+<li><code>webhook.delete</code></li>
+</ul>
+<h3 id="important-note-on-scope">Important note on scope</h3>
+<p>Not every synchronous/local mutation path in the codebase is currently routed through the auth seam.</p>
+<p>For example, the current action-protected surface is focused on the <strong>privileged async mutation seam</strong> already used by the Node-hosted adapters. The action matrix above is the authoritative list of what is currently protected.</p>
+<p>This doc intentionally describes the implementation as it exists now, not as an aspirational superset.</p>
+<hr>
+<h2 id="how-scoped-auth-and-before-event-hints-work">How scoped auth and before-event hints work</h2>
+<p>Hosts do not pass auth through every SDK mutator. Instead, they establish request scope once with <code>runWithAuth(...)</code>, and the SDK supplies operation hints when it dispatches each before-event.</p>
+<p>Examples:</p>
+<ul>
+<li>a REST route extracts a bearer token, builds <code>{ token, tokenSource: 'request-header', transport: 'http' }</code>, and wraps the mutator in <code>sdk.runWithAuth(...)</code></li>
+<li><code>deleteCard(cardId, boardId)</code> dispatches a before-event whose payload includes the relevant card/board context</li>
+<li><code>transferCard(...)</code> dispatches a before-event with the transfer-specific board and card hints</li>
+<li><code>updateComment(...)</code> and <code>submitForm(...)</code> dispatch before-events that carry their operation-specific identifiers in <code>input</code></li>
+</ul>
+<p>The auth listener combines that scoped request auth with the event payload's actor/board hints before resolving identity and policy.</p>
+<p>Important boundary:</p>
+<ul>
+<li><code>BeforeEventPayload</code> contains <code>event</code>, <code>input</code>, <code>actor</code>, <code>boardId</code>, and <code>timestamp</code></li>
+<li>it does <strong>not</strong> contain <code>auth</code></li>
+<li>first-party auth listeners resolve auth from the scoped carrier, not from the payload</li>
+</ul>
+<hr>
+<h2 id="host-token-acquisition-and-auth-context-sources">Host token acquisition and auth context sources</h2>
+<p>Each host surface is responsible for creating <code>AuthContext</code>.</p>
+<h3 id="standalone-http-api">Standalone HTTP API</h3>
+<p>Source file:</p>
+<ul>
+<li><code>src/standalone/authUtils.ts</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>reads <code>Authorization: Bearer &lt;token&gt;</code></li>
+<li>strips the <code>Bearer </code> prefix</li>
+<li>wraps SDK mutators in <code>sdk.runWithAuth(extractAuthContext(req), fn)</code></li>
+<li>produces:</li>
+</ul>
+<pre><code class="language-ts">{ token, tokenSource: 'request-header', transport: 'http' }
+</code></pre>
+<p>If no bearer token is present:</p>
+<pre><code class="language-ts">{ transport: 'http' }
+</code></pre>
+<h3 id="standalone-websocket">Standalone WebSocket</h3>
+<p>The standalone WebSocket path also extracts auth context from the upgrade request and threads that same context into WebSocket-triggered mutations.</p>
+<p>That means browser-triggered socket actions and REST mutations use the same token source model and the same <code>runWithAuth(...)</code>-scoped execution path on the standalone server.</p>
+<h3 id="cli">CLI</h3>
+<p>Source file:</p>
+<ul>
+<li><code>src/cli/index.ts</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>reads <code>process.env.KANBAN_TOKEN</code></li>
+<li>wraps mutators in <code>sdk.runWithAuth(resolveCliAuthContext(), fn)</code></li>
+<li>if present, produces:</li>
+</ul>
+<pre><code class="language-ts">{ token, tokenSource: 'env', transport: 'cli' }
+</code></pre>
+<ul>
+<li>otherwise:</li>
+</ul>
+<pre><code class="language-ts">{ transport: 'cli' }
+</code></pre>
+<p>The CLI also has an auth status command:</p>
+<ul>
+<li><code>kl auth status</code></li>
+</ul>
+<h3 id="mcp-server">MCP server</h3>
+<p>Source file:</p>
+<ul>
+<li><code>src/mcp-server/index.ts</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>reads <code>process.env.KANBAN_TOKEN</code></li>
+<li>wraps mutators in <code>sdk.runWithAuth(resolveMcpAuthContext(), fn)</code></li>
+<li>if present, produces:</li>
+</ul>
+<pre><code class="language-ts">{ token, tokenSource: 'env', transport: 'mcp' }
+</code></pre>
+<ul>
+<li>otherwise:</li>
+</ul>
+<pre><code class="language-ts">{ transport: 'mcp' }
+</code></pre>
+<p>The MCP server exposes auth diagnostics via:</p>
+<ul>
+<li><code>get_auth_status</code></li>
+</ul>
+<h3 id="vs-code-extension-host">VS Code extension host</h3>
+<p>Source files:</p>
+<ul>
+<li><code>src/extension/auth.ts</code></li>
+<li><code>src/extension/index.ts</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>stores the token in VS Code <code>SecretStorage</code></li>
+<li>secret key: <code>kanban-lite.authToken</code></li>
+<li>wraps privileged mutations in <code>sdk.runWithAuth(await getAuthContext(), fn)</code></li>
+<li>produces:</li>
+</ul>
+<pre><code class="language-ts">{ token, tokenSource: 'secret-storage', transport: 'extension' }
+</code></pre>
+<p>or, when no token is stored:</p>
+<pre><code class="language-ts">{ transport: 'extension' }
+</code></pre>
+<p>Extension commands:</p>
+<ul>
+<li><code>Kanban Lite: Set Auth Token</code></li>
+<li><code>Kanban Lite: Clear Auth Token</code></li>
+</ul>
+<p>Important boundary:</p>
+<ul>
+<li>the token stays in the Node extension host</li>
+<li>raw token material is not supposed to flow into the webview bundle</li>
+</ul>
+<hr>
+<h2 id="diagnostics-and-status-surfaces">Diagnostics and status surfaces</h2>
+<p>There are two layers of auth diagnostics.</p>
+<h3 id="sdk-level-status">SDK-level status</h3>
+<p><code>sdk.getAuthStatus()</code> returns:</p>
+<ul>
+<li><code>identityProvider</code></li>
+<li><code>policyProvider</code></li>
+<li><code>identityEnabled</code></li>
+<li><code>policyEnabled</code></li>
+</ul>
+<p>This tells you which provider ids are active and whether they are non-noop.</p>
+<h3 id="host-augmented-status">Host-augmented status</h3>
+<p>Each host adds transport/token-source diagnostics on top of <code>sdk.getAuthStatus()</code>.</p>
+<p>Typical extra fields are:</p>
+<ul>
+<li><code>configured</code></li>
+<li><code>tokenPresent</code></li>
+<li><code>tokenSource</code></li>
+<li><code>transport</code></li>
+</ul>
+<p>These status surfaces do <strong>not</strong> reveal token contents or the RBAC principal registry. They report safe metadata only: provider ids, whether auth is configured, whether a token is currently present, and the token-source / transport labels.</p>
+<h3 id="standalone-rest-diagnostics">Standalone REST diagnostics</h3>
+<p>Endpoints:</p>
+<ul>
+<li><code>GET /api/auth</code></li>
+<li><code>GET /api/workspace</code></li>
+</ul>
+<p>These expose safe auth metadata only.</p>
+<h3 id="cli-diagnostics">CLI diagnostics</h3>
+<p>Command:</p>
+<ul>
+<li><code>kl auth status</code></li>
+</ul>
+<p>This prints:</p>
+<ul>
+<li>identity provider id</li>
+<li>policy provider id</li>
+<li>whether auth is configured</li>
+<li>whether a token is present</li>
+<li>token source label</li>
+<li>transport label</li>
+</ul>
+<h3 id="mcp-diagnostics">MCP diagnostics</h3>
+<p>Tool:</p>
+<ul>
+<li><code>get_auth_status</code></li>
+</ul>
+<h3 id="extension-diagnostics">Extension diagnostics</h3>
+<p>The extension computes auth status in the host and passes safe metadata to the UI state for display/awareness.</p>
+<hr>
+<h2 id="http-error-mapping">HTTP error mapping</h2>
+<p>The standalone auth utility maps <code>AuthError</code> categories to HTTP status codes.</p>
+<p>Current mapping in <code>src/standalone/authUtils.ts</code>:</p>
+<ul>
+<li><code>auth.identity.missing</code> → <code>401</code></li>
+<li><code>auth.identity.invalid</code> → <code>401</code></li>
+<li><code>auth.identity.expired</code> → <code>401</code></li>
+<li><code>auth.policy.denied</code> → <code>403</code></li>
+<li><code>auth.policy.unknown</code> → <code>403</code></li>
+<li>everything else → <code>500</code></li>
+</ul>
+<p>That mapping is intentionally category-based rather than string-based.</p>
+<hr>
+<h2 id="security-guarantees-in-the-current-design">Security guarantees in the current design</h2>
+<p>The current implementation makes several explicit promises.</p>
+<h3 id="1-tokens-are-host-inputs-not-workspace-config">1. Tokens are host inputs, not workspace config</h3>
+<p>Tokens are acquired from:</p>
+<ul>
+<li>request headers,</li>
+<li>environment variables,</li>
+<li>or VS Code <code>SecretStorage</code>.</li>
+</ul>
+<p>They are not stored in <code>.kanban.json</code>.</p>
+<h3 id="2-tokens-are-write-only">2. Tokens are write-only</h3>
+<p>Raw tokens are intended to be consumed for identity resolution and not re-exposed.</p>
+<p>They should not appear in:</p>
+<ul>
+<li>REST responses,</li>
+<li>CLI output,</li>
+<li>MCP output,</li>
+<li>logs,</li>
+<li>denial messages,</li>
+<li>or webview messages.</li>
+</ul>
+<h3 id="3-the-webview-is-not-an-auth-plugin-host">3. The webview is not an auth plugin host</h3>
+<p>Auth plugins are for Node-hosted surfaces.</p>
+<p>The webview does not execute auth logic directly.</p>
+<h3 id="4-policy-is-centralized">4. Policy is centralized</h3>
+<p>The SDK is the only authoritative allow/deny layer.</p>
+<p>This avoids parity drift between:</p>
+<ul>
+<li>standalone server,</li>
+<li>CLI,</li>
+<li>MCP,</li>
+<li>and extension host behavior.</li>
+</ul>
+<hr>
+<h2 id="reference-examples">Reference examples</h2>
+<h3 id="minimal-open-access-workspace">Minimal open-access workspace</h3>
+<p>No auth config at all:</p>
+<pre><code class="language-json">{
+	&quot;version&quot;: 2,
+	&quot;defaultBoard&quot;: &quot;default&quot;,
+	&quot;boards&quot;: {
+		&quot;default&quot;: {
+			&quot;name&quot;: &quot;Default&quot;,
+			&quot;columns&quot;: [
+				{ &quot;id&quot;: &quot;backlog&quot;, &quot;name&quot;: &quot;Backlog&quot;, &quot;color&quot;: &quot;#6b7280&quot; }
+			],
+			&quot;nextCardId&quot;: 1,
+			&quot;defaultStatus&quot;: &quot;backlog&quot;,
+			&quot;defaultPriority&quot;: &quot;medium&quot;
+		}
+	},
+	&quot;kanbanDirectory&quot;: &quot;.kanban&quot;,
+	&quot;defaultPriority&quot;: &quot;medium&quot;,
+	&quot;defaultStatus&quot;: &quot;backlog&quot;,
+	&quot;nextCardId&quot;: 1
+}
+</code></pre>
+<p>Normalized auth result:</p>
+<ul>
+<li><code>auth.identity = noop</code></li>
+<li><code>auth.policy = noop</code></li>
+</ul>
+<h3 id="explicitly-declaring-noop-auth">Explicitly declaring noop auth</h3>
+<pre><code class="language-json">{
+	&quot;auth&quot;: {
+		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;noop&quot; },
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; }
+	}
+}
+</code></pre>
+<p>This is functionally equivalent to omitting the <code>auth</code> block.</p>
+<h3 id="selecting-the-built-in-starter-rbac-provider-pair">Selecting the built-in starter RBAC provider pair</h3>
+<pre><code class="language-json">{
+	&quot;auth&quot;: {
+		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;rbac&quot; },
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;rbac&quot; }
+	}
+}
+</code></pre>
+<p>This enables the built-in RBAC provider ids, but successful identity resolution still depends on runtime-owned principal data.</p>
+<h3 id="example-runtime-principal-registry">Example runtime principal registry</h3>
+<pre><code class="language-ts">const principals = new Map([
+	['opaque-admin-abc', { subject: 'alice', roles: ['admin'] }],
+	['opaque-mgr-xyz', { subject: 'bob', roles: ['manager'] }],
+	['opaque-user-tok', { subject: 'carol', roles: ['user'] }],
+])
+
+const identityPlugin = createRbacIdentityPlugin(principals)
+</code></pre>
+<p>This helper-backed plugin validates tokens against runtime-owned data.</p>
+<ul>
+<li>unknown tokens resolve to <code>null</code></li>
+<li>roles come from the registry entry</li>
+<li>token text is never parsed for role inference</li>
+</ul>
+<h3 id="example-host-token-usage">Example host token usage</h3>
+<p>Standalone REST:</p>
+<pre><code class="language-http">GET /api/auth HTTP/1.1
+Authorization: Bearer &lt;token&gt;
+</code></pre>
+<p>CLI:</p>
+<pre><code class="language-sh">KANBAN_TOKEN=example-token kl auth status
+</code></pre>
+<p>MCP:</p>
+<pre><code class="language-sh">KANBAN_TOKEN=example-token kanban-mcp
+</code></pre>
+<hr>
+<h2 id="limitations-and-non-goals">Limitations and non-goals</h2>
+<p>The following are not currently implemented as a completed shared feature set.</p>
+<h3 id="no-dynamic-external-auth-provider-loading-yet">No dynamic external auth provider loading yet</h3>
+<p>The current resolver supports two built-in auth provider ids:</p>
+<ul>
+<li><code>noop</code></li>
+<li><code>rbac</code></li>
+</ul>
+<p>But it does <strong>not</strong> yet dynamically load arbitrary external auth providers.</p>
+<p>Also, the exported <code>RBAC_IDENTITY_PLUGIN</code> singleton uses an empty registry by default, so a host/runtime must provide principal material through <code>createRbacIdentityPlugin(principals)</code> if it wants real token validation.</p>
+<h3 id="no-row-card-filtering">No row/card filtering</h3>
+<p>Auth currently does not rewrite or filter list/query results.</p>
+<p>If a protected action is denied, the system returns an error rather than silently filtering results.</p>
+<h3 id="no-browser-login-ux-contract">No browser login UX contract</h3>
+<p>There is no standardized shared login flow such as OAuth popup or browser-mediated refresh flow.</p>
+<h3 id="no-token-refresh-contract">No token refresh contract</h3>
+<p>Refresh behavior is not part of the shared auth contract.</p>
+<h3 id="no-universal-host-side-token-precedence-framework">No universal host-side token precedence framework</h3>
+<p>Current host token handling exists and is normalized into <code>AuthContext</code>, but the full future story for multi-source precedence and richer auth UX is still intentionally limited.</p>
+<hr>
+<h2 id="relationship-to-storage-capabilities">Relationship to storage capabilities</h2>
+<p>Auth capabilities are separate from storage capabilities.</p>
+<p>Current storage capabilities:</p>
+<ul>
+<li><code>card.storage</code></li>
+<li><code>attachment.storage</code></li>
+</ul>
+<p>Current auth capabilities:</p>
+<ul>
+<li><code>auth.identity</code></li>
+<li><code>auth.policy</code></li>
+</ul>
+<p>They share the same broad configuration style and capability-resolution pattern, but they solve different problems:</p>
+<ul>
+<li>storage decides <strong>where data lives</strong></li>
+<li>auth decides <strong>who may perform protected actions</strong></li>
+</ul>
+<hr>
+<h2 id="where-to-look-in-the-codebase">Where to look in the codebase</h2>
+<p>If you want the implementation source of truth, start here:</p>
+<h3 id="config-and-capability-types">Config and capability types</h3>
+<ul>
+<li><code>src/shared/config.ts</code></li>
+</ul>
+<h3 id="auth-plugin-contracts-and-noop-implementations">Auth plugin contracts and noop implementations</h3>
+<ul>
+<li><code>src/sdk/plugins/index.ts</code></li>
+</ul>
+<h3 id="auth-context-decisions-and-errors">Auth context, decisions, and errors</h3>
+<ul>
+<li><code>src/sdk/types.ts</code></li>
+</ul>
+<h3 id="sdk-auth-runtime-and-protected-action-hooks">SDK auth runtime and protected action hooks</h3>
+<ul>
+<li><code>src/sdk/KanbanSDK.ts</code></li>
+</ul>
+<h3 id="standalone-auth-utilities">Standalone auth utilities</h3>
+<ul>
+<li><code>src/standalone/authUtils.ts</code></li>
+</ul>
+<h3 id="cli-auth-adapter">CLI auth adapter</h3>
+<ul>
+<li><code>src/cli/index.ts</code></li>
+</ul>
+<h3 id="mcp-auth-adapter">MCP auth adapter</h3>
+<ul>
+<li><code>src/mcp-server/index.ts</code></li>
+</ul>
+<h3 id="vs-code-extension-auth-adapter">VS Code extension auth adapter</h3>
+<ul>
+<li><code>src/extension/auth.ts</code></li>
+<li><code>src/extension/index.ts</code></li>
+</ul>
+<h3 id="tests">Tests</h3>
+<ul>
+<li><code>src/sdk/__tests__/plugin-registry.test.ts</code></li>
+<li><code>src/sdk/__tests__/auth-enforcement.test.ts</code></li>
+<li><code>src/standalone/__tests__/server.integration.test.ts</code></li>
+</ul>
+<h3 id="planning-and-architecture-docs">Planning and architecture docs</h3>
+<ul>
+<li><code>docs/plan/20260320-auth-authz-plugin-architecture/architecture-decision-record.md</code></li>
+<li><code>docs/plan/20260320-auth-authz-plugin-architecture/architecture-requirements-stage-2.md</code></li>
+</ul>
+<hr>
+<h2 id="final-mental-model">Final mental model</h2>
+<p>If you only remember five things, remember these:</p>
+<ol>
+<li>Auth is split into <strong>identity</strong> and <strong>policy</strong> capabilities.</li>
+<li>Both default to <strong>noop</strong>, so existing workspaces remain open unless auth is explicitly activated.</li>
+<li>The SDK is the <strong>only authoritative enforcement seam</strong>.</li>
+<li>Hosts supply tokens via <code>AuthContext</code>, but secrets do <strong>not</strong> belong in <code>.kanban.json</code>.</li>
+<li>The current release ships <code>noop</code> plus a built-in starter <code>rbac</code> provider pair, but live RBAC identity resolution still depends on runtime-owned principal data rather than anything stored in <code>.kanban.json</code>.</li>
+</ol>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/plugins/">Plugin System</a> ·
+  <a href="/docs/webhooks/">Webhooks</a> ·
+  <a href="/docs/api/">REST API</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhooks — Kanban Lite</title>
+    <meta name="description" content="Outbound webhook delivery for kanban board events — configuration, payloads, and retry behavior.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link" aria-current="page">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink" aria-current="page">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <div class="ref-intro">
+  <h1 id="webhooks">Webhooks</h1>
+  <p>Register HTTP endpoints to receive real-time notifications when boards, cards, columns, or attachments change. Webhooks fire from <strong>all interfaces</strong> — web UI, CLI, REST API, MCP server, and SDK — ensuring consistent delivery regardless of how a mutation is triggered.</p>
+  <ul class="capability-list">
+    <li>20+ event types covering boards, cards, columns, comments, attachments, and forms</li>
+    <li>HMAC-SHA256 signature verification with optional per-webhook secrets</li>
+    <li>Manage via CLI (<code>kl webhooks add</code>), REST API, SDK, or MCP tools</li>
+    <li>Powered by the <code>kl-webhooks-plugin</code> package with built-in fallback</li>
+    <li>Registrations stored in <code>.kanban.json</code> and persist across restarts</li>
+  </ul>
+  <div class="usage-example">
+    <strong>Register a webhook</strong>
+    <pre><code>kl webhooks add \
+  --url https://example.com/hook \
+  --events task.created,task.moved \
+  --secret mykey</code></pre>
+  </div>
+</div>
+
+<h1 id="webhooks-2">Webhooks</h1>
+<p>Kanban Lite fires webhooks on every mutation — task, comment, column, attachment, settings, and board changes. Webhooks are delivered via HTTP POST to any registered endpoint.</p>
+<h2 id="overview">Overview</h2>
+<ul>
+<li>Webhooks fire from <strong>all interfaces</strong>: REST API, CLI, MCP server, and the UI (via the standalone server).</li>
+<li>Events are emitted by the SDK event bus and delivered by the resolved <code>webhook.delivery</code> provider, ensuring consistent behavior regardless of entry point.</li>
+<li>The default runtime provider id is <code>webhooks</code>, which resolves to the external <code>kl-webhooks-plugin</code> package.</li>
+<li>Webhook registrations are stored in <code>.kanban.json</code> and persist across server restarts.</li>
+<li>Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).</li>
+<li>Existing workspaces keep the same <code>.kanban.json</code> <code>webhooks</code> array; no migration is required.</li>
+<li>Current releases retain a built-in webhook fallback while <code>kl-webhooks-plugin</code> is absent, so CRUD and delivery remain backward-compatible during the rollout.</li>
+</ul>
+<h2 id="install-and-linking">Install and linking</h2>
+<p>Install <code>kl-webhooks-plugin</code> in the same environment that loads Kanban Lite:</p>
+<pre><code class="language-bash">npm install kl-webhooks-plugin
+</code></pre>
+<p>For local development, a sibling checkout at <code>../kl-webhooks-plugin</code> is resolved automatically. <code>npm link ../kl-webhooks-plugin</code> is optional when you want an explicit local package link.</p>
+<h2 id="configuration">Configuration</h2>
+<p>Webhook delivery can be selected explicitly through <code>webhookPlugin</code>, while webhook registrations themselves stay in the existing top-level <code>.kanban.json</code> <code>webhooks</code> array:</p>
+<pre><code class="language-json">{
+  &quot;webhookPlugin&quot;: {
+    &quot;webhook.delivery&quot;: {
+      &quot;provider&quot;: &quot;webhooks&quot;
+    }
+  }
+}
+</code></pre>
+<p>Registered webhooks are stored in your project's <code>.kanban.json</code> file:</p>
+<pre><code class="language-json">{
+  &quot;webhooks&quot;: [
+    {
+      &quot;id&quot;: &quot;wh_a1b2c3d4e5f67890&quot;,
+      &quot;url&quot;: &quot;https://example.com/webhook&quot;,
+      &quot;events&quot;: [&quot;task.created&quot;, &quot;task.moved&quot;],
+      &quot;secret&quot;: &quot;my-signing-key&quot;,
+      &quot;active&quot;: true
+    }
+  ]
+}
+</code></pre>
+<h2 id="managing-webhooks">Managing Webhooks</h2>
+<h3 id="rest-api">REST API</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/webhooks</code></td>
+<td>List all webhooks</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/webhooks</code></td>
+<td>Register a new webhook</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/api/webhooks/:id</code></td>
+<td>Update a webhook</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/api/webhooks/:id</code></td>
+<td>Delete a webhook</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cli">CLI</h3>
+<pre><code class="language-bash"># List webhooks
+kl webhooks
+
+# Register a webhook
+kl webhooks add --url https://example.com/hook --events task.created,task.moved
+
+# Update a webhook
+kl webhooks update &lt;id&gt; --active false
+kl webhooks update &lt;id&gt; --events task.created,task.deleted --url https://new-url.com
+
+# Delete a webhook
+kl webhooks remove &lt;id&gt;
+</code></pre>
+<h3 id="mcp-server">MCP Server</h3>
+<p>Tools: <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, <code>remove_webhook</code></p>
+<h2 id="payload-format">Payload Format</h2>
+<p>Every webhook delivery sends a JSON POST request with the following structure:</p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;task.created&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
+  &quot;data&quot;: { ... }
+}
+</code></pre>
+<p><strong>Headers:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Content-Type</code></td>
+<td><code>application/json</code></td>
+</tr>
+<tr>
+<td><code>X-Webhook-Event</code></td>
+<td>The event type (e.g., <code>task.created</code>)</td>
+</tr>
+<tr>
+<td><code>X-Webhook-Signature</code></td>
+<td>HMAC-SHA256 signature (only if a secret is configured)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="signature-verification">Signature Verification</h2>
+<p>If you provide a <code>secret</code> when registering a webhook, every delivery includes an <code>X-Webhook-Signature</code> header with the format <code>sha256=&lt;hex-digest&gt;</code>.</p>
+<p>To verify:</p>
+<pre><code class="language-javascript">const crypto = require('crypto')
+
+function verifySignature(payload, signature, secret) {
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex')
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expected)
+  )
+}
+</code></pre>
+<h2 id="delivery-behavior">Delivery Behavior</h2>
+<ul>
+<li>Webhooks are delivered <strong>asynchronously</strong> — the SDK operation completes without waiting for delivery.</li>
+<li>Each delivery has a <strong>10-second timeout</strong>.</li>
+<li>Failed deliveries are logged to stderr but <strong>do not retry</strong>.</li>
+<li>Only HTTP <code>2xx</code> responses are considered successful.</li>
+<li>Inactive webhooks (<code>active: false</code>) are skipped.</li>
+<li>Subscribing to <code>[&quot;*&quot;]</code> matches all events.</li>
+</ul>
+<hr>
+<h2 id="event-reference">Event Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Category</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>task.created</code></td>
+<td>Task</td>
+<td>A new task was created.</td>
+</tr>
+<tr>
+<td><code>form.submit</code></td>
+<td>Task</td>
+<td>A card form payload was validated, persisted, and submitted.</td>
+</tr>
+<tr>
+<td><code>task.updated</code></td>
+<td>Task</td>
+<td>A task was updated (fields changed, not moved).</td>
+</tr>
+<tr>
+<td><code>task.moved</code></td>
+<td>Task</td>
+<td>A task was moved to a different column or transferred between boards.</td>
+</tr>
+<tr>
+<td><code>task.deleted</code></td>
+<td>Task</td>
+<td>A task was permanently deleted.</td>
+</tr>
+<tr>
+<td><code>comment.created</code></td>
+<td>Comment</td>
+<td>A comment was added to a task.</td>
+</tr>
+<tr>
+<td><code>comment.updated</code></td>
+<td>Comment</td>
+<td>A comment was edited.</td>
+</tr>
+<tr>
+<td><code>comment.deleted</code></td>
+<td>Comment</td>
+<td>A comment was removed from a task.</td>
+</tr>
+<tr>
+<td><code>column.created</code></td>
+<td>Column</td>
+<td>A new column was added to a board.</td>
+</tr>
+<tr>
+<td><code>column.updated</code></td>
+<td>Column</td>
+<td>A column was renamed or its color changed.</td>
+</tr>
+<tr>
+<td><code>column.deleted</code></td>
+<td>Column</td>
+<td>A column was removed from a board.</td>
+</tr>
+<tr>
+<td><code>attachment.added</code></td>
+<td>Attachment</td>
+<td>A file was attached to a task.</td>
+</tr>
+<tr>
+<td><code>attachment.removed</code></td>
+<td>Attachment</td>
+<td>A file was removed from a task.</td>
+</tr>
+<tr>
+<td><code>settings.updated</code></td>
+<td>Settings</td>
+<td>Board display settings were changed.</td>
+</tr>
+<tr>
+<td><code>board.created</code></td>
+<td>Board</td>
+<td>A new board was created.</td>
+</tr>
+<tr>
+<td><code>board.updated</code></td>
+<td>Board</td>
+<td>A board configuration was changed.</td>
+</tr>
+<tr>
+<td><code>board.deleted</code></td>
+<td>Board</td>
+<td>A board was deleted.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="task-events">Task Events</h3>
+<h4 id="task-created"><code>task.created</code></h4>
+<p>A new task was created.</p>
+<p><strong>Trigger:</strong> Creating a task via API, CLI, MCP, or the UI.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;task.created&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;status&quot;: &quot;backlog&quot;,
+    &quot;priority&quot;: &quot;critical&quot;,
+    &quot;assignee&quot;: &quot;alice&quot;,
+    &quot;labels&quot;: [&quot;bug&quot;, &quot;auth&quot;],
+    &quot;dueDate&quot;: null,
+    &quot;comments&quot;: [],
+    &quot;attachments&quot;: [],
+    &quot;created&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
+    &quot;modified&quot;: &quot;2026-02-24T12:00:00.000Z&quot;
+  }
+}
+</code></pre>
+<h4 id="form-submit"><code>form.submit</code></h4>
+<p>A card form payload was validated, persisted, and submitted.</p>
+<p><strong>Trigger:</strong> Submitting an attached card form via the SDK, REST API, CLI, MCP, or the webview form tab.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;form.submit&quot;,
+  &quot;timestamp&quot;: &quot;2026-03-19T12:10:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;boardId&quot;: &quot;default&quot;,
+    &quot;card&quot;: {
+      &quot;id&quot;: &quot;investigate-outage-2026-03-19&quot;,
+      &quot;status&quot;: &quot;todo&quot;,
+      &quot;priority&quot;: &quot;high&quot;,
+      &quot;formData&quot;: {
+        &quot;incident-report&quot;: {
+          &quot;severity&quot;: &quot;critical&quot;,
+          &quot;owner&quot;: &quot;alice&quot;,
+          &quot;service&quot;: &quot;billing&quot;
+        }
+      }
+    },
+    &quot;form&quot;: {
+      &quot;id&quot;: &quot;incident-report&quot;,
+      &quot;label&quot;: &quot;incident-report&quot;,
+      &quot;fromConfig&quot;: true
+    },
+    &quot;data&quot;: {
+      &quot;severity&quot;: &quot;critical&quot;,
+      &quot;owner&quot;: &quot;alice&quot;,
+      &quot;service&quot;: &quot;billing&quot;
+    }
+  }
+}
+</code></pre>
+<h4 id="task-updated"><code>task.updated</code></h4>
+<p>A task was updated (fields changed, not moved).</p>
+<p><strong>Trigger:</strong> Updating task content, priority, assignee, labels, or due date.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;task.updated&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:05:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;status&quot;: &quot;backlog&quot;,
+    &quot;priority&quot;: &quot;high&quot;,
+    &quot;assignee&quot;: &quot;bob&quot;,
+    &quot;labels&quot;: [&quot;bug&quot;],
+    &quot;dueDate&quot;: &quot;2026-03-01&quot;,
+    &quot;comments&quot;: [],
+    &quot;attachments&quot;: [],
+    &quot;created&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
+    &quot;modified&quot;: &quot;2026-02-24T12:05:00.000Z&quot;
+  }
+}
+</code></pre>
+<h4 id="task-moved"><code>task.moved</code></h4>
+<p>A task was moved to a different column or transferred between boards.</p>
+<p><strong>Trigger:</strong> Moving a task to a new status, or transferring it to another board.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;task.moved&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:10:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;status&quot;: &quot;in-progress&quot;,
+    &quot;previousStatus&quot;: &quot;backlog&quot;,
+    &quot;priority&quot;: &quot;high&quot;,
+    &quot;assignee&quot;: &quot;bob&quot;,
+    &quot;modified&quot;: &quot;2026-02-24T12:10:00.000Z&quot;
+  }
+}
+</code></pre>
+<h4 id="task-deleted"><code>task.deleted</code></h4>
+<p>A task was permanently deleted.</p>
+<p><strong>Trigger:</strong> Deleting a task via API, CLI, MCP, or the UI.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;task.deleted&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:15:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;status&quot;: &quot;in-progress&quot;,
+    &quot;priority&quot;: &quot;high&quot;
+  }
+}
+</code></pre>
+<h3 id="comment-events">Comment Events</h3>
+<h4 id="comment-created"><code>comment.created</code></h4>
+<p>A comment was added to a task.</p>
+<p><strong>Trigger:</strong> Adding a comment to any task.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;comment.created&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: 1,
+    &quot;author&quot;: &quot;alice&quot;,
+    &quot;content&quot;: &quot;Looks good, needs tests&quot;,
+    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
+    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
+  }
+}
+</code></pre>
+<h4 id="comment-updated"><code>comment.updated</code></h4>
+<p>A comment was edited.</p>
+<p><strong>Trigger:</strong> Updating the content of an existing comment.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;comment.updated&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:25:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: 1,
+    &quot;author&quot;: &quot;alice&quot;,
+    &quot;content&quot;: &quot;Updated: Looks great, tests added&quot;,
+    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
+    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
+  }
+}
+</code></pre>
+<h4 id="comment-deleted"><code>comment.deleted</code></h4>
+<p>A comment was removed from a task.</p>
+<p><strong>Trigger:</strong> Deleting a comment from any task.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;comment.deleted&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T12:30:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: 1,
+    &quot;author&quot;: &quot;alice&quot;,
+    &quot;content&quot;: &quot;Updated: Looks great, tests added&quot;,
+    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
+    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
+  }
+}
+</code></pre>
+<h3 id="column-events">Column Events</h3>
+<h4 id="column-created"><code>column.created</code></h4>
+<p>A new column was added to a board.</p>
+<p><strong>Trigger:</strong> Adding a column via API, CLI, MCP, or settings.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;column.created&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:00:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;testing&quot;,
+    &quot;name&quot;: &quot;Testing&quot;,
+    &quot;color&quot;: &quot;#ff9900&quot;
+  }
+}
+</code></pre>
+<h4 id="column-updated"><code>column.updated</code></h4>
+<p>A column was renamed or its color changed.</p>
+<p><strong>Trigger:</strong> Updating column name or color.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;column.updated&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:05:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;testing&quot;,
+    &quot;name&quot;: &quot;QA Testing&quot;,
+    &quot;color&quot;: &quot;#ff9900&quot;
+  }
+}
+</code></pre>
+<h4 id="column-deleted"><code>column.deleted</code></h4>
+<p>A column was removed from a board.</p>
+<p><strong>Trigger:</strong> Deleting an empty column.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;column.deleted&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:10:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;testing&quot;,
+    &quot;name&quot;: &quot;QA Testing&quot;,
+    &quot;color&quot;: &quot;#ff9900&quot;
+  }
+}
+</code></pre>
+<h3 id="attachment-events">Attachment Events</h3>
+<h4 id="attachment-added"><code>attachment.added</code></h4>
+<p>A file was attached to a task.</p>
+<p><strong>Trigger:</strong> Uploading or adding an attachment to any task.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;attachment.added&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:15:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;attachment&quot;: &quot;screenshot.png&quot;
+  }
+}
+</code></pre>
+<h4 id="attachment-removed"><code>attachment.removed</code></h4>
+<p>A file was removed from a task.</p>
+<p><strong>Trigger:</strong> Deleting an attachment from any task.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;attachment.removed&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:20:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;,
+    &quot;attachment&quot;: &quot;screenshot.png&quot;
+  }
+}
+</code></pre>
+<h3 id="settings-events">Settings Events</h3>
+<h4 id="settings-updated"><code>settings.updated</code></h4>
+<p>Board display settings were changed.</p>
+<p><strong>Trigger:</strong> Updating settings via API, CLI, MCP, or the UI.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;settings.updated&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T13:25:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;showPriorityBadges&quot;: true,
+    &quot;showAssignee&quot;: true,
+    &quot;showDueDate&quot;: true,
+    &quot;showLabels&quot;: true,
+    &quot;compactMode&quot;: true,
+    &quot;showFileName&quot;: false,
+    &quot;defaultPriority&quot;: &quot;medium&quot;,
+    &quot;defaultStatus&quot;: &quot;backlog&quot;
+  }
+}
+</code></pre>
+<h3 id="board-events">Board Events</h3>
+<h4 id="board-created"><code>board.created</code></h4>
+<p>A new board was created.</p>
+<p><strong>Trigger:</strong> Creating a board via API, CLI, or MCP.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;board.created&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T14:00:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;bugs&quot;,
+    &quot;name&quot;: &quot;Bug Tracker&quot;,
+    &quot;description&quot;: &quot;Track production bugs&quot;
+  }
+}
+</code></pre>
+<h4 id="board-updated"><code>board.updated</code></h4>
+<p>A board configuration was changed.</p>
+<p><strong>Trigger:</strong> Updating board name, description, or columns.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;board.updated&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T14:05:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;bugs&quot;,
+    &quot;name&quot;: &quot;Bug Tracker v2&quot;
+  }
+}
+</code></pre>
+<h4 id="board-deleted"><code>board.deleted</code></h4>
+<p>A board was deleted.</p>
+<p><strong>Trigger:</strong> Deleting an empty board via API, CLI, or MCP.</p>
+<p><strong>Example payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;event&quot;: &quot;board.deleted&quot;,
+  &quot;timestamp&quot;: &quot;2026-02-24T14:10:00.000Z&quot;,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;bugs&quot;
+  }
+}
+</code></pre>
+
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/plugins/">Plugin System</a> ·
+  <a href="/docs/forms/">Forms</a> ·
+  <a href="/docs/api/">REST API</a> ·
+  <a href="/docs/examples/">Examples</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

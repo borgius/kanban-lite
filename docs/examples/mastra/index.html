@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Example: Mastra Agent Ops — Kanban Lite</title>
+    <meta name="description" content="Step-by-step guide for supervisor-style project-ops orchestration over kanban-lite with Mastra.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink" aria-current="page">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="example-mastra-agent-ops">Example: Mastra Agent Ops</h1>
+<p class="docs-intro">
+  Build a supervisor-style Mastra coordinator that triages, plans, and reports on a kanban-lite board with approval-aware write actions.
+</p>
+
+<p>
+  The runnable source for this guide lives in <code>examples/mastra-agent-ops/</code>. The app is a small Next.js UI backed by a single Mastra
+  Coordinator agent and a thin kanban-lite REST tool layer.
+</p>
+
+<h2 id="what-you-will-build">What you will build</h2>
+<p>A TypeScript app that keeps the orchestration story intentionally simple and concrete:</p>
+<ul>
+  <li>A single <strong>Coordinator</strong> agent that switches between intake, planning, and reporting modes</li>
+  <li>A streaming chat route that sends user messages to Mastra and streams text back to the browser</li>
+  <li>Approval-aware card writes: create, update, and move actions require an explicit confirmation step</li>
+  <li>A self-contained integration seam that talks to kanban-lite only through the standalone REST API</li>
+</ul>
+
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+  <li><strong>Node.js 20 or later</strong></li>
+  <li><strong>npm</strong> (the example uses npm commands directly)</li>
+  <li><strong>A running kanban-lite server</strong> on port <code>3001</code></li>
+  <li><strong>An OpenAI API key</strong> for the shipped default model configuration</li>
+</ul>
+
+<ol class="qs-steps">
+  <li class="qs-step">
+    <div>
+      <h3 id="start-kanban-lite-in-a-separate-terminal">Start kanban-lite in a separate terminal</h3>
+      <pre><code>npx kanban-lite serve --port 3001</code></pre>
+      <p>
+        The Mastra example does not import kanban-lite internals. It expects the standalone API to be reachable at
+        <code>http://localhost:3001/api</code>.
+      </p>
+      <p>If you do not already have a board, initialize one first and then start the server:</p>
+      <pre><code>npx kanban-lite init
+npx kanban-lite serve --port 3001</code></pre>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="copy-the-example-environment-file">Copy the example environment file</h3>
+      <pre><code>cp .env.example .env</code></pre>
+      <p>
+        The shipped <code>.env.example</code> defines two values:
+        <code>OPENAI_API_KEY</code> for the default model router target and <code>KANBAN_API_URL</code>, which defaults to
+        <code>http://localhost:3001/api</code>.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="install-the-example-dependencies">Install the example dependencies</h3>
+      <pre><code>npm install</code></pre>
+      <p>
+        Run this from <code>examples/mastra-agent-ops/</code>. The example stays self-contained and is not wired into the root workspace build.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="run-the-next-js-development-server">Run the Next.js development server</h3>
+      <pre><code>npm run dev</code></pre>
+      <p>
+        The app starts on <a href="http://localhost:3002">http://localhost:3002</a>. The browser UI talks to the local
+        <code>/api/agent</code> route, which then streams Mastra output back as plain text.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="drive-the-coordinator-through-its-three-modes">Drive the coordinator through its three modes</h3>
+      <pre><code>Show current board status
+Intake: add a new bug report
+Plan: organize backlog by priority
+Report: what is currently in progress?</code></pre>
+      <p>
+        These example prompts map directly to the Coordinator instructions in <code>src/mastra/agents/coordinator.ts</code>.
+      </p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="how-the-app-is-structured">How the app is structured</h2>
+<pre><code>examples/mastra-agent-ops/
+├── app/
+│   ├── api/agent/route.ts
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── src/mastra/
+│   ├── index.ts
+│   ├── agents/coordinator.ts
+│   └── tools/kanban.ts
+├── .env.example
+├── next.config.ts
+├── package.json
+└── tsconfig.json</code></pre>
+
+<ul>
+  <li><code>src/mastra/index.ts</code> creates the Mastra registry and registers the <code>coordinator</code> agent.</li>
+  <li><code>src/mastra/agents/coordinator.ts</code> defines the operating modes, approval rules, and tool access.</li>
+  <li><code>src/mastra/tools/kanban.ts</code> wraps the kanban-lite REST API as Mastra tools.</li>
+  <li><code>app/api/agent/route.ts</code> accepts chat history and streams text deltas from <code>agent.stream()</code>.</li>
+  <li><code>app/page.tsx</code> renders the chat interface and turns proposal blocks into Approve / Reject buttons.</li>
+</ul>
+
+<h2 id="supervisor-and-orchestration-flow">Supervisor and orchestration flow</h2>
+<ol>
+  <li>The browser sends the current chat history to <code>POST /api/agent</code>.</li>
+  <li>The route resolves <code>mastra.getAgent("coordinator")</code> and calls <code>agent.stream(messages)</code>.</li>
+  <li>The Coordinator decides whether the user is asking for <strong>intake</strong>, <strong>planning</strong>, or <strong>reporting</strong>.</li>
+  <li>To ground its response, it uses kanban-lite tools such as <code>listCards</code> or <code>getCard</code> before proposing changes.</li>
+  <li>If the next step is a write, the agent must emit a formatted <code>PROPOSED ACTION</code> block and pause for confirmation.</li>
+  <li>The UI detects that block and injects <code>approve</code> or <code>reject</code> as the next user message when the buttons are clicked.</li>
+  <li>Only after an <code>approve</code> message does the Coordinator call <code>createCard</code>, <code>updateCard</code>, or <code>moveCard</code>.</li>
+</ol>
+
+<p>
+  This is why the example is described as <em>supervisor-style</em>: one coordinator stays in control of the board-wide picture and decides when to read,
+  propose, and write, rather than letting tools mutate state immediately.
+</p>
+
+<h2 id="approval-aware-actions">Approval-aware actions</h2>
+<p>The approval split is encoded in both the Coordinator instructions and the UI behavior.</p>
+
+<div class="example-tabs">
+  <div class="example-tab">
+    <strong>Read immediately</strong>
+    <ul>
+      <li><code>listCards</code> — survey the board, optionally by status, priority, or assignee</li>
+      <li><code>getCard</code> — inspect one card in detail</li>
+    </ul>
+  </div>
+  <div class="example-tab">
+    <strong>Require approval</strong>
+    <ul>
+      <li><code>createCard</code> — create a new Markdown-backed kanban card</li>
+      <li><code>updateCard</code> — change content, priority, assignee, labels, or due date</li>
+      <li><code>moveCard</code> — transition a card to another status column</li>
+    </ul>
+  </div>
+</div>
+
+<p>
+  In practice, this means the user gets a human-readable explanation before anything mutates the board. The example is useful when you want agent help
+  with prioritization or triage, but still want a person to stay in the approval loop.
+</p>
+
+<h2 id="kanban-lite-integration-seam">kanban-lite integration seam</h2>
+<p>
+  The only integration surface is the kanban-lite standalone REST API. The shared fetch helper in <code>src/mastra/tools/kanban.ts</code> reads
+  <code>KANBAN_API_URL</code> and calls the default board endpoints under that base URL.
+</p>
+
+<pre><code>GET    /tasks
+GET    /tasks/:id
+POST   /tasks
+PUT    /tasks/:id
+PATCH  /tasks/:id/move</code></pre>
+
+<p>
+  That separation is intentional: you can run this example against any kanban-lite server started with <code>npx kanban-lite serve</code>, whether the
+  board data lives in markdown or a different supported storage backend.
+</p>
+
+<h2 id="changing-the-model-or-provider">Changing the model or provider</h2>
+<p>
+  The shipped configuration uses <code>model: "openai/gpt-4o-mini"</code> in <code>src/mastra/agents/coordinator.ts</code>. If you want a different
+  provider, change that model string and add the matching AI SDK provider package to this example before setting its API key in <code>.env</code>.
+</p>
+
+<h2 id="extension-ideas">Extension ideas</h2>
+<ul>
+  <li>Add more agents or workflows in <code>src/mastra/index.ts</code> once the single-coordinator flow feels too narrow.</li>
+  <li>Persist memory or session state so reporting can compare the current board with prior runs.</li>
+  <li>Add richer board-aware prompts, such as stale-card detection or SLA checks, before moving work.</li>
+  <li>Replace the minimal plain-text stream UI with richer streaming or tool-state visualization.</li>
+  <li>Introduce auth or policy checks at the kanban-lite server layer when approvals need to map to real user permissions.</li>
+</ul>
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/examples/">All Examples</a> &middot;
+  <a href="/docs/api/">REST API</a> &middot;
+  <a href="/docs/examples/chat-sdk/">Chat SDK Example</a> &middot;
+  <a href="/docs/examples/langgraph-python/">LangGraph Example</a>
+</div>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

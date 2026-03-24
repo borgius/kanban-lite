@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boards &amp; Columns — Kanban Lite</title>
+    <meta name="description" content="Multi-board support, column management, board settings, and standalone vs VS Code usage.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink" aria-current="page">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="boards-and-columns">Boards &amp; Columns</h1>
+<p class="docs-intro">Run multiple independent boards, configure columns per board, and tailor settings to your workflow.</p>
+
+<section class="guide-section">
+  <h2 id="multiple-boards">Multiple boards</h2>
+  <p>Every project can have as many boards as it needs. Boards live side by side in the same <code>.kanban/</code> directory, each with its own column set, labels, settings, and card namespace.</p>
+  <pre><code>kl boards                                    # list all boards
+kl boards add --id bugs --name "Bug Tracker"
+kl boards show bugs
+kl boards default bugs                       # set the active board
+kl list --board bugs                         # target a specific board</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2 id="column-management">Column management</h2>
+  <p>The five default columns (<strong>Backlog, To Do, In Progress, Review, Done</strong>) can be renamed, recolored, added, or removed.</p>
+  <pre><code>kl columns                                              # list columns
+kl columns add --id testing --name Testing --color "#ff9900"
+kl columns update testing --color "#00cc66"
+kl columns remove testing                               # only removes empty columns</code></pre>
+  <div class="guide-callout">
+    Removing a column only succeeds when it has no cards. Move or delete the cards first, or clean the column from the web UI column menu.
+  </div>
+</section>
+
+<section class="guide-section">
+  <h2 id="column-visibility-controls">Column visibility controls</h2>
+  <p>Open the column menu (<strong>&hellip;</strong>) and choose <strong>Minimize</strong> to collapse a column to a slim rail showing the name and card count. Use <strong>Board options &rarr; Columns</strong> to toggle visibility of any column without removing it.</p>
+</section>
+
+<section class="guide-section">
+  <h2 id="board-settings">Board settings</h2>
+  <p>A tabbed settings panel provides three areas:</p>
+  <ul>
+    <li><strong>General</strong> &mdash; board name, default priority, compact card mode, background theme</li>
+    <li><strong>Defaults</strong> &mdash; default column for new cards, display options, zoom preset</li>
+    <li><strong>Labels</strong> &mdash; define label names and hex colors used across the board</li>
+  </ul>
+  <pre><code>kl settings                                  # print current settings
+kl settings update --compactMode true        # update via CLI</code></pre>
+</section>
+
+<section class="guide-section">
+  <h2 id="standalone-server">Standalone server</h2>
+  <p>Run <code>kl serve</code> to start the standalone web server. Anyone on your local network (or VPN) can open the board in their browser. Suitable for team use, CI pipelines, and scripting via the REST API.</p>
+  <pre><code>kl serve                          # start on port 3000, auto-open browser
+kl serve --port 8080 --no-browser # custom port, headless</code></pre>
+  <p>The server provides the full React web UI at <code>/</code>, the REST API at <code>/api</code>, Swagger UI at <code>/api/docs</code>, and a WebSocket endpoint for real-time sync.</p>
+</section>
+
+<section class="guide-section">
+  <h2 id="vs-code-extension">VS Code extension</h2>
+  <p>The extension is bundled in the same npm package. It renders the board as a webview panel inside VS Code — no browser tab required. The extension runs the same server process as <code>kl serve</code> and reads from the same <code>.kanban/</code> directory.</p>
+  <p>Works in remote SSH and devcontainer sessions because the server runs in the remote environment and the webview opens in the VS Code UI.</p>
+</section>
+
+<section class="guide-section">
+  <h2 id="card-transfer-between-boards">Card transfer between boards</h2>
+  <p>Move a card from one board to another with a single command:</p>
+  <pre><code>kl transfer card-42 --from default --to bugs</code></pre>
+</section>
+
+<p><a href="/docs/examples/" class="btn btn--primary">Examples &amp; Recipes &rarr;</a></p>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

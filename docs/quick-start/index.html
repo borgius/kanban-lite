@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Start — Kanban Lite</title>
+    <meta name="description" content="Get a Kanban Lite board running in under 60 seconds — install, init, and start managing tasks.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink" aria-current="page">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="quick-start">Quick Start</h1>
+<p class="docs-intro">Get a board running in under 60 seconds. No configuration required.</p>
+
+<ol class="qs-steps">
+  <li class="qs-step">
+    <div>
+      <h3 id="install-globally">Install globally</h3>
+      <pre><code>npm install -g kanban-lite</code></pre>
+      <p>Or use <code>npx kanban-lite</code> for one-off runs without a global install.</p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="initialize-your-board">Initialize your board</h3>
+      <pre><code>kl init</code></pre>
+      <p>Creates a <code>.kanban/</code> directory with an empty default board in your current project directory.</p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="start-the-web-ui">Start the web UI</h3>
+      <pre><code>kl serve</code></pre>
+      <p>Opens the board at <a href="http://localhost:3000">localhost:3000</a>. All connected clients receive real-time updates via WebSocket.</p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="create-your-first-card">Create your first card</h3>
+      <pre><code>kl add --title "My first task" --priority high</code></pre>
+      <p>The card appears in the web UI immediately. By default it lands in the Backlog column.</p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="use-the-cli-to-manage-cards">Use the CLI to manage cards</h3>
+      <pre><code>kl list                           # see all cards
+kl move my-first-task in-progress # move to In Progress
+kl edit my-first-task --assignee alice --due 2026-04-01</code></pre>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3 id="for-ai-agents-start-the-mcp-server">For AI agents &mdash; start the MCP server</h3>
+      <pre><code>kl mcp</code></pre>
+      <p>Exposes all board operations as MCP tools. Works with Claude, Codex, and any MCP-compatible agent.</p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="what-just-happened">What just happened?</h2>
+<p><code>kl init</code> created a <code>.kanban/</code> directory. Inside that directory, each kanban card is a plain <code>.md</code> file with YAML frontmatter, organized into sub-directories by status. Cards are human-readable, version-controllable, and diff-friendly &mdash; just like source code.</p>
+<p>Commit <code>.kanban/</code> to your git repository. Every card change becomes a commit, and any team member can pull and see the current board state.</p>
+
+<h2 id="next-steps">Next steps</h2>
+<p>If you want runnable integration walkthroughs instead of a blank board, head to the examples hub for the shipped <strong>Chat SDK / Vercel AI</strong>, <strong>LangGraph Python</strong>, and <strong>Mastra Agent Ops</strong> guides.</p>
+<div class="qs-nav-cards">
+  <a href="/docs/tour/" class="qs-nav-card">
+    <strong>Product Tour</strong>
+    <span>See the board, editor, and search in action.</span>
+  </a>
+  <a href="/docs/cards/" class="qs-nav-card">
+    <strong>Cards &amp; Workflows</strong>
+    <span>Priority, labels, comments, actions, and forms.</span>
+  </a>
+  <a href="/docs/cli/" class="qs-nav-card">
+    <strong>CLI Reference</strong>
+    <span>Everything you can do from the terminal.</span>
+  </a>
+  <a href="/docs/mcp/" class="qs-nav-card">
+    <strong>MCP Server</strong>
+    <span>Let AI agents manage your board.</span>
+  </a>
+  <a href="/docs/examples/" class="qs-nav-card">
+    <strong>Examples &amp; Recipes</strong>
+    <span>Chat SDK, LangGraph Python, Mastra Agent Ops, and more.</span>
+  </a>
+  <a href="/docs/faq/" class="qs-nav-card">
+    <strong>FAQ</strong>
+    <span>Common questions before you commit.</span>
+  </a>
+</div>
+
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

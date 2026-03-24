@@ -1,0 +1,21 @@
+{
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "kanban-lite.showPriorityBadges": true,
+  "kanban-lite.showAssignee": true,
+  "kanban-lite.showDueDate": true,
+  "kanban-lite.showLabels": true,
+  "kanban-lite.showBuildWithAI": false,
+  "kanban-lite.showFileName": false,
+  "kanban-lite.compactMode": false,
+  "kanban-lite.markdownEditorMode": false,
+  "kanban-lite.defaultPriority": "medium",
+  "kanban-lite.defaultStatus": "backlog"
+}

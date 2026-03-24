@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ — Kanban Lite</title>
+    <meta name="description" content="Common questions about installing, using, and deploying Kanban Lite — honest answers before you commit.">
+    <link rel="stylesheet" href="/assets/css/main.css">
+  </head>
+  <body>
+    <a class="skip-nav" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a href="/" class="site-logo">Kanban Lite</a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <ul>
+            
+            <li>
+              <a href="/docs/">Docs</a>
+            </li>
+            
+            <li>
+              <a href="/docs/tour/">Tour</a>
+            </li>
+            
+            <li>
+              <a href="/docs/sdk/">SDK</a>
+            </li>
+            
+            <li>
+              <a href="/docs/api/">API</a>
+            </li>
+            
+            <li>
+              <a href="/docs/cli/">CLI</a>
+            </li>
+            
+            <li>
+              <a href="/docs/mcp/">MCP</a>
+            </li>
+            
+            <li>
+              <a href="/docs/plugins/">Plugins</a>
+            </li>
+            
+            <li>
+              <a href="https://github.com/borgius/kanban-lite" rel="noopener noreferrer" target="_blank">GitHub</a>
+            </li>
+            
+          </ul>
+        </nav>
+        <a href="/docs/quick-start/" class="btn btn--primary">Get Started</a>
+      </div>
+    </header>
+    
+    <main id="main-content">
+      
+      <div class="docs-shell">
+        <aside class="docs-sidebar" aria-label="Documentation navigation">
+          <nav class="sidebar-nav" aria-label="Documentation sidebar">
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Getting Started</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/" class="sidebar-link sidebar-link--parent">Overview</a>
+        
+        <ul class="sidebar-subnav" aria-label="Overview subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/quick-start/" class="sidebar-sublink">Quick Start</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/tour/" class="sidebar-sublink">Product Tour</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Feature Guides</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/cards/" class="sidebar-link sidebar-link--parent">Workflow Guides</a>
+        
+        <ul class="sidebar-subnav" aria-label="Workflow Guides subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/cards/" class="sidebar-sublink">Cards &amp; Workflows</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/search/" class="sidebar-sublink">Search &amp; Filtering</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/boards/" class="sidebar-sublink">Boards &amp; Columns</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Interfaces</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/cli/" class="sidebar-link">CLI</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/api/" class="sidebar-link">REST API</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/mcp/" class="sidebar-link">MCP Server</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Reference</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item">
+        <a href="/docs/sdk/" class="sidebar-link">SDK</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/forms/" class="sidebar-link">Forms</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/webhooks/" class="sidebar-link">Webhooks</a>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/auth/" class="sidebar-link">Auth</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Extending</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/plugins/" class="sidebar-link sidebar-link--parent">Plugin System</a>
+        
+        <ul class="sidebar-subnav" aria-label="Plugin System subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/storage/" class="sidebar-sublink">Storage Providers</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <p class="sidebar-section__label">Resources</p>
+    <ul class="sidebar-section__list">
+      
+      <li class="sidebar-item sidebar-item--has-children">
+        <a href="/docs/examples/" class="sidebar-link sidebar-link--parent">Examples</a>
+        
+        <ul class="sidebar-subnav" aria-label="Examples subsections">
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/chat-sdk/" class="sidebar-sublink">Chat SDK / Vercel AI</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/langgraph-python/" class="sidebar-sublink">LangGraph Python</a>
+          </li>
+          
+          <li class="sidebar-subitem">
+            <a href="/docs/examples/mastra/" class="sidebar-sublink">Mastra Agent Ops</a>
+          </li>
+          
+        </ul>
+        
+      </li>
+      
+      <li class="sidebar-item">
+        <a href="/docs/faq/" class="sidebar-link" aria-current="page">FAQ</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+  
+</nav>
+
+        </aside>
+        <article class="docs-content prose">
+          <h1 id="frequently-asked-questions">Frequently Asked Questions</h1>
+<p class="docs-intro">Honest answers to the questions that come up before people commit to a new tool.</p>
+
+<section class="faq-category">
+  <h2 id="getting-started-and-installation">Getting Started &amp; Installation</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>Do I need anything besides Node.js?</summary>
+      <div class="faq-answer">
+        <p>No. Node.js 18 or later plus npm is all you need. Install the CLI with <code>npm install -g kanban-lite</code>, then run <code>kl init</code> in any directory to create your first board. No database setup, no config file required.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I try it without a global install?</summary>
+      <div class="faq-answer">
+        <p>Yes. Use <code>npx kanban-lite init</code> and <code>npx kanban-lite serve</code> for one-off runs. Everything works the same way — you just prefix with <code>npx kanban-lite</code> instead of <code>kl</code>.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Where does my data live?</summary>
+      <div class="faq-answer">
+        <p>In a <code>.kanban/</code> directory created by <code>kl init</code> in your current working directory. Each card is a plain <code>.md</code> file with YAML frontmatter, organized into sub-directories by status (e.g. <code>.kanban/in-progress/</code>). Everything is human-readable text.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Should I commit my board to git?</summary>
+      <div class="faq-answer">
+        <p>Yes — that is the main advantage. Every status change, card edit, and comment is a git commit. You get diffs, blame, pull request reviews, rollbacks, and branch-per-feature boards all for free. Add <code>.kanban/</code> to your repo like any other directory.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Does it work on macOS, Linux, and Windows?</summary>
+      <div class="faq-answer">
+        <p>Yes. Kanban Lite is a Node.js package and runs on any platform Node.js supports. The CLI, web server, and VS Code extension all work cross-platform.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="working-with-cards">Working with Cards</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>How do I move a card to a different status column?</summary>
+      <div class="faq-answer">
+        <p>From the CLI: <code>kl move &lt;card-id&gt; in-progress</code>. From the web UI: drag the card or use the status dropdown in the card detail panel. From the API: <code>PATCH /api/tasks/:id</code> with <code>{"status": "in-progress"}</code>.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I add custom fields (metadata) to cards?</summary>
+      <div class="faq-answer">
+        <p>Yes. Use <code>--meta key=value</code> in the CLI when creating or editing a card. Metadata is stored in the card frontmatter and is searchable with <code>meta.field: value</code> tokens from the toolbar or CLI. Example: <code>kl add --title "New feature" --meta sprint=Q2 --meta points=5</code>.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>What is the difference between labels and metadata?</summary>
+      <div class="faq-answer">
+        <p>Labels are predefined, board-level tags for broad categories ("bug", "ux", "backend"). They display as colored chips on board cards. Metadata is arbitrary key-value data per card for structured fields like sprint, story points, Jira ticket IDs, or any other information you want to filter on. Use labels for visual categorization and metadata for queryable structured data.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>How are card IDs generated and can I set them manually?</summary>
+      <div class="faq-answer">
+        <p>Card IDs are auto-generated from the title and a timestamp — for example <code>implement-dark-mode-2026-01-29</code>. This keeps IDs stable, URL-safe, and human-readable. You cannot currently set a custom ID at creation time, but you can reference the auto-generated ID in all CLI, API, and MCP operations.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I delete a card and get it back?</summary>
+      <div class="faq-answer">
+        <p>The default <code>kl delete</code> soft-deletes a card (moves to a deleted status column). It remains on disk and is recoverable from git history. Use <code>kl permanent-delete &lt;card-id&gt;</code> to remove it from disk entirely. If your board is in a git repo, <code>git checkout HEAD -- .kanban/</code> can restore any card.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="teams-and-collaboration">Teams &amp; Collaboration</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can multiple people share the same board?</summary>
+      <div class="faq-answer">
+        <p>Yes, two ways: (1) commit <code>.kanban/</code> to a shared git repo — each team member pulls changes and the board is in sync with code. (2) Run <code>kl serve</code> on a shared machine and let everyone connect to the web UI over the local network. The server streams updates to all clients via WebSocket.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>What happens when two people edit a card at the same time?</summary>
+      <div class="faq-answer">
+        <p>The default markdown storage does not have row-level locking, so concurrent file writes can collide. For teams with many parallel editors, switch to the SQLite storage plugin (<code>kl storage migrate-to-sqlite</code>), which handles concurrent writes safely. The git-based workflow (commit and pull) also avoids collisions naturally.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Is there authentication for the web UI?</summary>
+      <div class="faq-answer">
+        <p>Not by default — the server binds to localhost. For team deployments, use the auth plugin (see <a href="/docs/auth/">auth docs</a>) to add identity and access control, or put a reverse proxy (nginx, Caddy, Cloudflare Tunnel) in front of the server to handle authentication at the network layer.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I deploy this as a private team server?</summary>
+      <div class="faq-answer">
+        <p>Yes. Run <code>kl serve --port 8080 --no-browser</code> in a Docker container or on a VPS and expose it over your internal network or VPN. Mount a volume at the <code>.kanban/</code> directory path and set <code>KANBAN_DIR</code> to point to it. The REST API is then available for CI automation and scripting.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="data-and-storage">Data &amp; Storage</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>Do I need a database to run Kanban Lite?</summary>
+      <div class="faq-answer">
+        <p>No. Default storage is plain markdown files — no database setup, no migration scripts, no connection strings. If you later need concurrent write performance (parallel CI jobs, many simultaneous team editors), switch to the bundled SQLite plugin with <code>kl storage migrate-to-sqlite</code>. External MySQL is available via a separate package.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>When should I switch to SQLite?</summary>
+      <div class="faq-answer">
+        <p>Switch to SQLite when multiple processes write to the board simultaneously: parallel CI jobs, multiple MCP agents, or teams with more than a few members editing cards at the same time. The migration is non-destructive and reversible — <code>kl storage migrate-to-markdown</code> converts back.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I import from Trello, Jira, or Linear?</summary>
+      <div class="faq-answer">
+        <p>There is no built-in importer yet. You can script a bulk import by reading a JSON export from those tools and calling <code>kl add</code> for each item, or <code>POST /api/tasks</code> for a programmatic approach. Community import scripts are welcome contributions.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>How do I back up my board?</summary>
+      <div class="faq-answer">
+        <p>If the board is in a git repo, <code>git push</code> is your backup. Otherwise: <code>cp -r .kanban/ backup/</code> — it is just files. For SQLite users, back up the <code>.kanban/kanban.db</code> file like any other SQLite database.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>What happens if I move or rename the .kanban/ directory?</summary>
+      <div class="faq-answer">
+        <p>Pass <code>--dir &lt;path&gt;</code> to any CLI command or set the <code>KANBAN_DIR</code> environment variable to point to the new location. All commands pick up the custom path at runtime.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="interfaces-web-ui-cli-api-mcp">Interfaces (Web UI, CLI, API, MCP)</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>Is the REST API stable and versioned?</summary>
+      <div class="faq-answer">
+        <p>The API is documented via OpenAPI/Swagger (browse interactively at <code>/api/docs</code>). Follow the CHANGELOG for breaking changes. The API follows the main package version and is stable within a major version.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>What is the MCP server, and do I actually need it?</summary>
+      <div class="faq-answer">
+        <p>The MCP (Model Context Protocol) server exposes all board operations as structured tools that AI agents like Claude, Codex, or OpenCode can call directly. You only need it if you want AI agents to interact with your board. Run <code>kl mcp</code> to start it on stdio transport. For human-only teams you can ignore it entirely.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Does the board work offline?</summary>
+      <div class="faq-answer">
+        <p>Yes. The server runs locally — no internet connection required. The web UI loads all its assets locally from <code>localhost:3000</code>. There are no CDN dependencies at runtime.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I embed the board data in my own web application?</summary>
+      <div class="faq-answer">
+        <p>Yes. The REST API is public and CORS-enabled (<code>*</code> origin by default). Query <code>GET /api/tasks</code> from any frontend to read card data, or use the SDK in a Node.js backend for server-side integration. <a href="/docs/sdk/">SDK docs &rarr;</a></p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="vs-code-extension">VS Code Extension</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>Is the VS Code extension published on the Marketplace?</summary>
+      <div class="faq-answer">
+        <p>The extension is bundled in the same <code>kanban-lite</code> npm package. It renders the board as a webview panel inside VS Code using the same server and file storage as the standalone mode. Install the npm package and the extension activates automatically.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Does it work in remote SSH or devcontainer sessions?</summary>
+      <div class="faq-answer">
+        <p>Yes. The board server runs inside the remote environment and the webview panel opens in your local VS Code window, just like any other VS Code extension webview. The <code>.kanban/</code> directory is accessed from the remote filesystem.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="faq-category">
+  <h2 id="customization-and-extensibility">Customization &amp; Extensibility</h2>
+
+  <div class="faq-item">
+    <details>
+      <summary>How do I change the column names and add new columns?</summary>
+      <div class="faq-answer">
+        <p>Use <code>kl columns add --id &lt;id&gt; --name &lt;name&gt;</code>, <code>kl columns update &lt;id&gt; --name &lt;new-name&gt;</code>, or manage columns from the Board Settings panel in the web UI. Each board has its own independent column configuration.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Can I build my own storage backend?</summary>
+      <div class="faq-answer">
+        <p>Yes. The plugin system has a <code>card.storage</code> extension point. Implement the storage interface, publish it as an npm package, and select it in <code>.kanban.json</code>. See the <a href="/docs/plugins/#card-storage">storage plugin docs</a> and the <code>kanban-storage-plugin-author</code> skill for a guided authoring workflow.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>How do webhooks work?</summary>
+      <div class="faq-answer">
+        <p>Kanban Lite sends a signed HMAC-SHA256 <code>POST</code> to your registered URL on each matching event. Register with <code>kl webhooks add --url https://example.com/hook --events task.created,task.moved --secret mysecret</code>. The delivery includes the full card payload and the event type. See <a href="/docs/webhooks/">webhooks docs &rarr;</a></p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>How do I run Kanban Lite in Docker?</summary>
+      <div class="faq-answer">
+        <p>Mount a volume at your <code>.kanban/</code> path, set <code>KANBAN_DIR</code> to that path, expose port 3000, and run <code>kanban-md --no-browser</code> as the container entrypoint. A <code>docker-compose.yml</code> is included in the repository as a reference.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>Is there a paid cloud version or a free tier limit?</summary>
+      <div class="faq-answer">
+        <p>No. Kanban Lite is fully open source under the MIT license. There are no paid tiers, usage caps, or seat limits. You can use it privately, commercially, and internally without restrictions.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="faq-item">
+    <details>
+      <summary>What is the license?</summary>
+      <div class="faq-answer">
+        <p>MIT. Free for personal, commercial, and internal use. See the <a href="https://github.com/borgius/kanban-lite/blob/main/LICENSE" rel="noopener noreferrer" target="_blank">LICENSE file on GitHub</a>.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<p style="margin-top: 2rem;"><a href="/docs/quick-start/" class="btn btn--primary">Get started &rarr;</a></p>
+
+        </article>
+      </div>
+      
+    </main>
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>
+          <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
+          MIT licensed · v1.2.0
+        </p>
+        <p>&copy; 2026 Kanban Lite contributors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

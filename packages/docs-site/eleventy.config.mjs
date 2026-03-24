@@ -8,6 +8,9 @@ export default function (eleventyConfig) {
   // Passthrough: static assets
   eleventyConfig.addPassthroughCopy("src/assets");
 
+  // Passthrough: .nojekyll tells GitHub Pages not to process the site with Jekyll
+  eleventyConfig.addPassthroughCopy({ "src/.nojekyll": ".nojekyll" });
+
   // Passthrough: docs images from repo root (read-only, do not copy sources)
   eleventyConfig.addPassthroughCopy({ "../../docs/images": "docs/images" });
 

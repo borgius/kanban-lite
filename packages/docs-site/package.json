@@ -8,9 +8,11 @@
   "scripts": {
     "build": "eleventy",
     "dev": "eleventy --serve --incremental",
-    "clean": "node -e \"require('fs').rmSync('_site', { recursive: true, force: true })\""
+    "clean": "node -e \"require('fs').rmSync('_site', { recursive: true, force: true })\"",
+    "deploy": "eleventy && gh-pages -d _site"
   },
   "devDependencies": {
-    "@11ty/eleventy": "^3.1.0"
+    "@11ty/eleventy": "^3.1.0",
+    "gh-pages": "^6.3.0"
   }
 }

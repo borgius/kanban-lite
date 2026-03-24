@@ -3114,6 +3114,10 @@ describe('Standalone Server Integration', () => {
   // ── Local standalone auth plugin ──
 
   describe('local standalone auth plugin', () => {
+    let localAuthServer: http.Server
+    let localAuthPort: number
+    let localAuthWorkspaceRoot: string
+
     function writeLocalAuthConfig(): string {
       const workspaceRoot = path.dirname(tempDir)
       const configPath = path.join(workspaceRoot, '.kanban.json')
@@ -3133,63 +3137,58 @@ describe('Standalone Server Integration', () => {
       return workspaceRoot
     }
 
-    it('redirects unauthenticated browser requests to the plugin login page', async () => {
-      writeLocalAuthConfig()
-      const localPort = await getPort()
-      const localServer = startServer(tempDir, localPort, webviewDir)
+    beforeAll(async () => {
+      localAuthWorkspaceRoot = writeLocalAuthConfig()
+      localAuthPort = await getPort()
+      localAuthServer = startServer(tempDir, localAuthPort, webviewDir)
       await sleep(200)
-      try {
-        const homeRes = await httpGet(`http://localhost:${localPort}/`)
-        expect(homeRes.status).toBe(302)
-        expect(homeRes.headers.location).toContain('/auth/login')
+    })
 
-        const loginRes = await httpGet(`http://localhost:${localPort}/auth/login`)
-        expect(loginRes.status).toBe(200)
-        expect(loginRes.body).toContain('Sign in')
-      } finally {
-        await new Promise<void>((resolve) => localServer.close(() => resolve()))
-      }
+    afterAll(async () => {
+      await new Promise<void>((resolve) => localAuthServer.close(() => resolve()))
+    })
+
+    it('redirects unauthenticated browser requests to the plugin login page', async () => {
+      const homeRes = await httpGet(`http://localhost:${localAuthPort}/`)
+      expect(homeRes.status).toBe(302)
+      expect(homeRes.headers.location).toContain('/auth/login')
+
+      const loginRes = await httpGet(`http://localhost:${localAuthPort}/auth/login`)
+      expect(loginRes.status).toBe(200)
+      expect(loginRes.body).toContain('Sign in')
     })
 
     it('requires auth for API requests, creates a workspace token, and accepts cookie sessions', async () => {
-      const workspaceRoot = writeLocalAuthConfig()
-      const localPort = await getPort()
-      const localServer = startServer(tempDir, localPort, webviewDir)
-      await sleep(200)
-      try {
-        const unauthorizedRes = await httpGet(`http://localhost:${localPort}/api/health`)
-        expect(unauthorizedRes.status).toBe(401)
-        expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
+      const unauthorizedRes = await httpGet(`http://localhost:${localAuthPort}/api/health`)
+      expect(unauthorizedRes.status).toBe(401)
+      expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
 
-        const envContent = fs.readFileSync(path.join(workspaceRoot, '.env'), 'utf-8')
-        const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
-        expect(token).toMatch(/^kl-/)
+      const envContent = fs.readFileSync(path.join(localAuthWorkspaceRoot, '.env'), 'utf-8')
+      const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
+      expect(token).toMatch(/^kl-/)
 
-        const bearerRes = await httpGet(`http://localhost:${localPort}/api/health`, {
-          Authorization: `Bearer ${token}`,
-        })
-        expect(bearerRes.status).toBe(200)
+      const bearerRes = await httpGet(`http://localhost:${localAuthPort}/api/health`, {
+        Authorization: `Bearer ${token}`,
+      })
+      expect(bearerRes.status).toBe(200)
 
-        const loginRes = await httpRequest(
-          'POST',
-          `http://localhost:${localPort}/auth/login`,
-          'username=alice&password=secret123&returnTo=%2F',
-          { 'Content-Type': 'application/x-www-form-urlencoded' },
-        )
-        expect(loginRes.status).toBe(302)
-        const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
-          ? loginRes.headers['set-cookie'][0]
-          : loginRes.headers['set-cookie']
-        expect(typeof setCookieHeader).toBe('string')
-        const cookieHeader = String(setCookieHeader).split(';')[0]
+      const loginRes = await httpRequest(
+        'POST',
+        `http://localhost:${localAuthPort}/auth/login`,
+        'username=alice&password=secret123&returnTo=%2F',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+      )
+      expect(loginRes.status).toBe(302)
+      const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
+        ? loginRes.headers['set-cookie'][0]
+        : loginRes.headers['set-cookie']
+      expect(typeof setCookieHeader).toBe('string')
+      const cookieHeader = String(setCookieHeader).split(';')[0]
 
-        const cookieRes = await httpGet(`http://localhost:${localPort}/api/health`, {
-          Cookie: cookieHeader,
-        })
-        expect(cookieRes.status).toBe(200)
-      } finally {
-        await new Promise<void>((resolve) => localServer.close(() => resolve()))
-      }
+      const cookieRes = await httpGet(`http://localhost:${localAuthPort}/api/health`, {
+        Cookie: cookieHeader,
+      })
+      expect(cookieRes.status).toBe(200)
     })
   })
 

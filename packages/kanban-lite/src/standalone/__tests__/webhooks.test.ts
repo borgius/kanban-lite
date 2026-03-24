@@ -6,7 +6,7 @@
  * helper internals directly. End-to-end provider-backed delegation and the single-delivery
  * guarantee are tested in src/sdk/__tests__/webhook-delegation.test.ts.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as net from 'node:net'
@@ -390,7 +390,7 @@ describe('Standalone webhook routes via plugin-owned path', () => {
   let server: http.Server
   let port: number
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     ;({ workspaceDir, kanbanDir, cleanup } = createTempWorkspace())
     enableStandaloneWebhookPlugin(workspaceDir)
     port = await getAvailablePort()
@@ -401,7 +401,7 @@ describe('Standalone webhook routes via plugin-owned path', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
     cleanup()
   })

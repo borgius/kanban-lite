@@ -1,4 +1,4 @@
-import { IdAttributePlugin } from "@11ty/eleventy";
+import { IdAttributePlugin, HtmlBasePlugin } from "@11ty/eleventy";
 import MarkdownIt from "markdown-it";
 
 const md = new MarkdownIt({ html: true, linkify: true });
@@ -21,6 +21,7 @@ export default function (eleventyConfig) {
 
   // Plugins
   eleventyConfig.addPlugin(IdAttributePlugin);
+  eleventyConfig.addPlugin(HtmlBasePlugin);
 
   // Watch targets that live outside the input directory
   eleventyConfig.addWatchTarget("../../README.md");
@@ -40,5 +41,6 @@ export default function (eleventyConfig) {
     markdownTemplateEngine: "njk",
     htmlTemplateEngine: "njk",
     templateFormats: ["njk", "md", "html"],
+    pathPrefix: "/kanban-lite/",
   };
 }

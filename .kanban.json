@@ -202,6 +202,36 @@
   "plugins": {
     "attachment.storage": {
       "provider": "kl-s3-attachment-storage"
+    },
+    "auth.identity": {
+      "provider": "kl-auth-plugin",
+      "options": {
+        "users": [
+          {
+            "username": "admin",
+            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
+            "role": "admin"
+          },
+          {
+            "username": "manager",
+            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
+            "role": "manager"
+          },
+          {
+            "username": "user",
+            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
+            "role": "user"
+          },
+          {
+            "username": "alice",
+            "password": "$2b$12$oMWKFEGCaJMEjqD/1P1/0eo77mEAKZCyqldS.FvYqTjES8Pv7iboC",
+            "role": "user"
+          }
+        ]
+      }
+    },
+    "auth.policy": {
+      "provider": "kl-auth-plugin"
     }
   },
   "logsFilter": {

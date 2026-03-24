@@ -229,9 +229,19 @@ export interface KanbanConfig {
      * Built-in attachment providers `sqlite` and `mysql` are additive opt-ins.
      * They require the matching `card.storage` provider and do not change the
      * legacy omitted-default behavior, which remains `attachment.storage: localfs`.
+     *
+     * Auth capabilities (`auth.identity`, `auth.policy`) can also be declared
+     * here using the npm package name as the provider id (e.g.
+     * `"provider": "kl-auth-plugin"`). When present they take precedence over
+     * any value in the legacy {@link auth} key.
    */
-  plugins?: CapabilitySelections
-  /** Optional auth provider selections. Defaults to noop compatibility ids resolved via `kl-auth-plugin` when available. */
+  plugins?: CapabilitySelections & AuthCapabilitySelections
+  /**
+   * Legacy auth provider selections.
+   * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
+   * `plugins` key using the package name as provider id. This field is still
+   * supported for backward compatibility but `plugins` takes precedence.
+   */
   auth?: AuthCapabilitySelections
   /**
    * Named reusable form definitions available on all boards in the workspace.
@@ -640,15 +650,19 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
  * The input object is never mutated.
  */
 export function normalizeAuthCapabilities(
-  config: Pick<KanbanConfig, 'auth'>,
+  config: Pick<KanbanConfig, 'auth' | 'plugins'>,
 ): ResolvedAuthCapabilities {
   return {
-    'auth.identity': config.auth?.['auth.identity']
-      ? cloneProviderRef(config.auth['auth.identity'])
-      : { provider: 'noop' },
-    'auth.policy': config.auth?.['auth.policy']
-      ? cloneProviderRef(config.auth['auth.policy'])
-      : { provider: 'noop' },
+    'auth.identity': config.plugins?.['auth.identity']
+      ? cloneProviderRef(config.plugins['auth.identity'])
+      : config.auth?.['auth.identity']
+        ? cloneProviderRef(config.auth['auth.identity'])
+        : { provider: 'noop' },
+    'auth.policy': config.plugins?.['auth.policy']
+      ? cloneProviderRef(config.plugins['auth.policy'])
+      : config.auth?.['auth.policy']
+        ? cloneProviderRef(config.auth['auth.policy'])
+        : { provider: 'noop' },
   }
 }
 

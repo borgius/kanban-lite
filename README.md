@@ -41,6 +41,16 @@ kl serve
 kl add --title "My first task" --priority high
 ```
 
+## Examples
+
+Start with the stable docs hub at <code>/docs/examples/</code> for the shipped walkthroughs, then jump into the matching runnable apps:
+
+- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md)
+- LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
+- Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
+
+See [`examples/README.md`](examples/README.md) for the canonical top-level example app slugs, local install/run expectations, and the placeholder-only env-file convention. The examples stay self-contained outside the root `pnpm` workspace by default so the main repo build/watch flow remains unchanged.
+
 ## Features
 
 ### Web UI
@@ -1263,9 +1273,9 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. The provider ids `noop`, `rbac`, and `local` resolve through the external `kl-auth-plugin` package, and the SDK now enforces authorization through listener-only before-events that run before a write is committed.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`, enforced through listener-only before-events that run before a write is committed.
 
-That means the runtime contract changed for plugin authors even though the user experience did not: auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host. Current releases still retain the compatibility provider path when the package is not installed so existing workspaces behave the same.
+Auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host.
 
 Host surfaces now install request-scoped auth with `sdk.runWithAuth(authContext, fn)` before calling SDK mutators. The first-party auth listener resolves identity/policy from that scoped carrier plus the before-event's actor/board hints; auth is no longer threaded through positional mutation args or a `BeforeEventPayload.auth` field.
 
@@ -1284,13 +1294,13 @@ The shipped provider ids behave as before:
 
 When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface used by the Node-hosted adapters (standalone server, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
 
-Provider references for both namespaces are read from `.kanban.json` the same way storage providers are:
+Provider references for both namespaces are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
 
 ```json
 {
-  "auth": {
-    "auth.identity": { "provider": "my-identity-plugin" },
-    "auth.policy": { "provider": "my-policy-plugin", "options": { "strict": true } }
+  "plugins": {
+    "auth.identity": { "provider": "kl-auth-plugin" },
+    "auth.policy": { "provider": "kl-auth-plugin", "options": { "strict": true } }
   }
 }
 ```
@@ -1305,9 +1315,9 @@ Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pa
 
 ```json
 {
-  "auth": {
-    "auth.identity": { "provider": "rbac" },
-    "auth.policy": { "provider": "rbac" }
+  "plugins": {
+    "auth.identity": { "provider": "kl-auth-plugin" },
+    "auth.policy": { "provider": "kl-auth-plugin" }
   }
 }
 ```
@@ -1345,24 +1355,34 @@ Enable it in `.kanban.json` with bcrypt-hashed passwords:
 
 ```json
 {
-  "auth": {
+  "plugins": {
     "auth.identity": {
-      "provider": "local",
+      "provider": "kl-auth-plugin",
       "options": {
         "users": [
           {
             "username": "alice",
-            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH"
+            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
+            "role": "user"
           }
         ]
       }
     },
-    "auth.policy": { "provider": "local" }
+    "auth.policy": { "provider": "kl-auth-plugin" }
   }
 }
 ```
 
-The `local` policy is intentionally simple: any authenticated identity is allowed to perform SDK actions, and anonymous callers are denied with `auth.identity.missing`.
+Use the CLI to add users without manually computing bcrypt hashes:
+
+```sh
+kl auth create-user --username alice --password s3cr3t
+kl auth create-user --username admin --password s3cr3t --role admin
+```
+
+This command hashes the password and appends the user entry to `plugins["auth.identity"].options.users` in `.kanban.json`.
+
+The `local` policy supports RBAC roles. When a user has a `role` (`user`, `manager`, or `admin`), only the actions permitted for that role are allowed. Users without a `role` field are allowed to perform any action. Anonymous callers are denied with `auth.identity.missing`.
 
 
 

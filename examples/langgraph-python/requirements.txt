@@ -1,0 +1,13 @@
+# Core runtime
+langgraph>=0.2.28
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Optional LLM providers — uncomment to enable AI-powered proposals
+# (see README § "Swapping in an LLM")
+# langchain-openai>=0.1.17
+# langchain-anthropic>=0.1.15
+
+# Optional persistent checkpointer — uncomment for cross-process durability
+# (see README § "Using a persistent checkpointer")
+# langgraph-checkpoint-sqlite>=1.0.0

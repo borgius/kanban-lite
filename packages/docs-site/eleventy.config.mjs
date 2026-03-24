@@ -24,6 +24,7 @@ export default function (eleventyConfig) {
   eleventyConfig.addWatchTarget("../../CHANGELOG.md");
   eleventyConfig.addWatchTarget("../../docs/**/*.md");
   eleventyConfig.addWatchTarget("../../packages/*/README.md");
+  eleventyConfig.addWatchTarget("../../examples/**/*.md");
 
   return {
     dir: {

@@ -628,7 +628,14 @@ Install the plugin in the environment that is actually running Kanban Lite:
 - VS Code extension host runtime
 - SDK consumer environment
 
-If the package is not installed there, the resolver cannot load it.
+The resolver checks these locations in order and uses the first match:
+
+1. `{workspaceRoot}/packages/{name}` — monorepo-local package (dev/staging only)
+2. Local `node_modules` — standard `npm install` / pnpm workspace symlink
+3. Global `node_modules` — `npm install -g {name}` (useful for CLI/MCP server use-cases)
+4. Sibling directory `../{name}` — legacy non-monorepo checkout layout
+
+If the package is not found in any of these locations, the resolver throws an actionable install hint.
 
 ### Export shapes supported today
 

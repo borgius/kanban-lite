@@ -89,7 +89,15 @@ export default {
     {
       label: "Resources",
       items: [
-        { label: "Examples", href: "/docs/examples/" },
+        {
+          label: "Examples",
+          href: "/docs/examples/",
+          children: [
+            { label: "Chat SDK / Vercel AI", href: "/docs/examples/chat-sdk/" },
+            { label: "LangGraph Python", href: "/docs/examples/langgraph-python/" },
+            { label: "Mastra Agent Ops", href: "/docs/examples/mastra/" },
+          ],
+        },
         { label: "FAQ", href: "/docs/faq/" },
       ],
     },

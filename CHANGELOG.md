@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Role-based access control for local auth users**: Each user entry in `plugins["auth.identity"].options.users` now accepts an optional `role` field (`user`, `manager`, or `admin`). When present, the `kl-auth-plugin` local policy enforces the RBAC role matrix for that user — only permitted actions are allowed. Users without a `role` field retain the previous behaviour (any authenticated identity is allowed).
+- **`--role` flag for `kl auth create-user`**: The CLI command now accepts `--role user|manager|admin` to embed the role into the new user entry written to `.kanban.json`.
+- **Session identity carries user roles**: After login, the session-backed `AuthIdentity` now includes the user's configured role in its `roles` array so that policy checks see the correct role on every request.
+
+### Added
+- **Examples discoverability refresh**: The stable `/docs/examples/` hub, quick-start guide, and root README now point more directly to the shipped Chat SDK / Vercel AI, LangGraph Python, and Mastra Agent Ops walkthroughs and their matching runnable example folders.
+- **Plugin CLI command contributions**: Plugins can now contribute `kl` sub-commands by exporting a `cliPlugin` object satisfying the new `KanbanCliPlugin` SDK interface. The CLI reads active plugin package names from `.kanban.json` at startup, dynamically loads each package's `cliPlugin` export, and dispatches matching commands to the plugin. Unknown sub-commands of built-in namespaces (e.g. `kl auth`) also fall through to the plugin before erroring.
+- **`kl auth create-user` command**: `kl-auth-plugin` now exports a `cliPlugin` that adds a `create-user` sub-command. Running `kl auth create-user --username alice --password s3cr3t` bcrypt-hashes the password and appends the user entry to `plugins["auth.identity"].options.users` in `.kanban.json`.
+- **Top-level examples topology contract**: Added `examples/README.md` to reserve the canonical `chat-sdk-vercel-ai`, `langgraph-python`, and `mastra-agent-ops` example slugs, document self-contained local install/run expectations, and define placeholder-only `.env.example` conventions without enrolling `examples/*` into the root workspace.
 - **Standalone plugin HTTP integration hooks**: Active plugin packages can now contribute standalone-only request middleware and HTTP routes, allowing features such as plugin-owned login pages and cookie-backed auth flows without introducing a separate user-facing config namespace.
 - **Local auth provider with standalone login flow**: `kl-auth-plugin` now ships a first-party `local` auth provider pair plus standalone `/auth/login` / `/auth/logout` handling. Browser requests redirect to the plugin-served login page when unauthenticated, standalone API requests accept authenticated cookies or bearer tokens, and CLI/MCP can use the shared workspace token.
 - **Workspace API token bootstrap**: The standalone local auth flow now creates `KANBAN_LITE_TOKEN=kl-...` in `<workspaceRoot>/.env` when missing, making the same token available to standalone API, CLI, and MCP clients.

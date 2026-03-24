@@ -242,6 +242,29 @@ move_card card_id=research-auth-options status=in-progress</code></pre>
   </div>
 </section>
 
+<h2 style="margin-top: 3rem;">Agent orchestration examples</h2>
+<p>Step-by-step build guides for running kanban-lite inside popular AI agent frameworks. Each example is a self-contained runnable app with a matching guide under <code>/docs/examples/</code> and source under <code>examples/</code>.</p>
+<div class="examples-grid">
+  <div class="example-card" id="chat-sdk">
+    <h3><a href="/docs/examples/chat-sdk/">Chat SDK / Vercel AI</a></h3>
+    <p>A kanban-lite-backed triage assistant built with the Vercel AI ecosystem — streaming chat interface, board-native task creation, and a Next.js app shell.</p>
+    <p><code>examples/chat-sdk-vercel-ai/</code></p>
+    <a href="/docs/examples/chat-sdk/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+  <div class="example-card" id="langgraph-python">
+    <h3><a href="/docs/examples/langgraph-python/">LangGraph Python</a></h3>
+    <p>Durable backlog orchestration with human-approval interrupts. Each graph step maps to a kanban-lite card progressing through an approval checkpoint.</p>
+    <p><code>examples/langgraph-python/</code></p>
+    <a href="/docs/examples/langgraph-python/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+  <div class="example-card" id="mastra">
+    <h3><a href="/docs/examples/mastra/">Mastra Agent Ops</a></h3>
+    <p>Supervisor-style project-ops orchestration: a Mastra agent network with approval-aware steps that read and write kanban-lite tasks.</p>
+    <p><code>examples/mastra-agent-ops/</code></p>
+    <a href="/docs/examples/mastra/" class="btn btn--secondary">View guide &rarr;</a>
+  </div>
+</div>
+
 <div class="ref-links">
   <strong>Related:</strong>
   <a href="/docs/cli/">CLI Reference</a> &middot;

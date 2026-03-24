@@ -1,0 +1,253 @@
+---
+layout: docs.njk
+title: "Example: LangGraph Python"
+description: Step-by-step guide for durable backlog orchestration with human-approval interrupts using LangGraph and kanban-lite.
+permalink: /docs/examples/langgraph-python/
+---
+<h1>Example: LangGraph Python</h1>
+<p class="docs-intro">
+  Durable backlog orchestration with human-in-the-loop approval interrupts — each graph step maps to a kanban-lite card.
+</p>
+
+<p>
+  The runnable app lives in <code>examples/langgraph-python/</code>. It uses a small LangGraph state machine to fetch backlog cards,
+  generate proposed field changes, pause for human review, and then write only the approved updates back through the public kanban-lite REST API.
+</p>
+
+<h2>What you will build</h2>
+<p>A Python backlog-review agent that follows this graph:</p>
+<pre><code>fetch_backlog  -&gt;  propose_updates  -&gt;  human_approval  -&gt;  apply_updates  -&gt;  END
+                                          ^
+                                   interrupt() pauses here</code></pre>
+<p>The shipped example demonstrates:</p>
+<ul>
+  <li>Typed LangGraph state shared across four nodes</li>
+  <li>A human-approval checkpoint created with <code>interrupt()</code></li>
+  <li>Resume behavior via <code>Command(resume=...)</code> and a stable <code>THREAD_ID</code></li>
+  <li>A thin kanban-lite API client that reads tasks and applies partial updates</li>
+</ul>
+
+<h2>Before you start</h2>
+<ul>
+  <li>Python 3.11 or later</li>
+  <li>A local clone of this repository</li>
+  <li>A running kanban-lite server, because the example talks to the live REST API rather than mocks</li>
+</ul>
+
+<ol class="qs-steps">
+  <li class="qs-step">
+    <div>
+      <h3>Start kanban-lite in one terminal</h3>
+      <pre><code>cd /path/to/kanban-light
+kl serve</code></pre>
+      <p>
+        The Python example expects the standalone server at <code>http://localhost:3000</code> by default. If you prefer,
+        the alternative binary noted in the example comments is <code>kanban-md</code>.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3>Create a virtual environment inside the example folder</h3>
+      <pre><code>cd /path/to/kanban-light/examples/langgraph-python
+python -m venv .venv
+source .venv/bin/activate</code></pre>
+      <p>On Windows, activate with <code>.venv\Scripts\activate</code>.</p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3>Install the Python dependencies</h3>
+      <pre><code>pip install -r requirements.txt</code></pre>
+      <p>
+        The shipped dependencies are intentionally small: <code>langgraph</code>, <code>python-dotenv</code>, and <code>requests</code>.
+        You do not need an LLM provider key for the default rule-based proposal engine.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3>Copy the environment template</h3>
+      <pre><code>cp .env.example .env</code></pre>
+      <p>
+        The example reads <code>KANBAN_LITE_URL</code> and <code>THREAD_ID</code> from <code>.env</code>. Optional provider keys stay commented out unless
+        you replace the default proposal function with an LLM-backed one.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3>Run the graph</h3>
+      <pre><code>python main.py</code></pre>
+      <p>
+        The entrypoint prints three phases: fetch/propose, human review, and apply. For a safe rehearsal that fetches tasks and generates proposals
+        without prompting for approval or writing changes, run <code>python main.py --dry-run</code> instead.
+      </p>
+    </div>
+  </li>
+  <li class="qs-step">
+    <div>
+      <h3>Approve, skip, or apply everything</h3>
+      <p>When proposals exist, the terminal prompt accepts the same formats implemented in <code>main.py</code>:</p>
+      <pre><code>all        # approve every proposal
+none       # skip every proposal
+0, 2, 3    # approve specific proposal indices
+
+# blank input also skips everything</code></pre>
+      <p>
+        After you respond, the graph resumes from the paused approval node and sends the approved field changes to kanban-lite.
+      </p>
+    </div>
+  </li>
+</ol>
+
+<h2>Environment variables</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Variable</th>
+      <th>Default</th>
+      <th>How the example uses it</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>KANBAN_LITE_URL</code></td>
+      <td><code>http://localhost:3000</code></td>
+      <td>Base URL for the live kanban-lite server that serves <code>GET /api/tasks</code> and <code>PUT /api/tasks/{id}</code>.</td>
+    </tr>
+    <tr>
+      <td><code>THREAD_ID</code></td>
+      <td><code>backlog-review-001</code></td>
+      <td>Execution-session key passed into LangGraph config so pause/resume behavior can retrieve the same checkpoint.</td>
+    </tr>
+    <tr>
+      <td><code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code></td>
+      <td>commented out</td>
+      <td>Unused by the shipped example. Only enable them if you replace the rule-based proposal engine described in the README.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>What happens during a run?</h2>
+<p>The example is easiest to understand as a three-phase loop:</p>
+<ol>
+  <li>
+    <strong>Phase 1 — fetch and propose.</strong>
+    <code>fetch_backlog</code> calls the kanban-lite client to list tasks. <code>propose_updates</code> then applies the built-in rules from
+    <code>graph.py</code>: urgent titles become high priority, and otherwise untriaged backlog items get promoted to medium priority.
+  </li>
+  <li>
+    <strong>Phase 2 — interrupt for review.</strong>
+    <code>human_approval</code> calls <code>interrupt(payload)</code>. LangGraph pauses execution and exposes the payload through
+    <code>graph.get_state(config)</code>, which <code>main.py</code> reads to print each proposal in the terminal.
+  </li>
+  <li>
+    <strong>Phase 3 — resume and apply.</strong>
+    <code>main.py</code> parses your terminal input, resumes the graph with <code>Command(resume=approved_indices)</code>, and
+    <code>apply_updates</code> writes only the approved field changes back to kanban-lite.
+  </li>
+</ol>
+
+<h2>Key files</h2>
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Why it matters</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>examples/langgraph-python/main.py</code></td>
+      <td>CLI-style entrypoint that runs the graph, prints proposals, accepts operator input, and resumes execution.</td>
+    </tr>
+    <tr>
+      <td><code>examples/langgraph-python/graph.py</code></td>
+      <td>Defines <code>BacklogState</code>, the four nodes, the rule-based proposal logic, and the compiled graph with its checkpointer.</td>
+    </tr>
+    <tr>
+      <td><code>examples/langgraph-python/kanban_lite_client.py</code></td>
+      <td>Small synchronous REST client that keeps the kanban-lite integration seam obvious and replaceable.</td>
+    </tr>
+    <tr>
+      <td><code>examples/langgraph-python/.env.example</code></td>
+      <td>Documents the runtime knobs the example actually supports today.</td>
+    </tr>
+    <tr>
+      <td><code>examples/langgraph-python/README.md</code></td>
+      <td>Companion source-of-truth reference with the same commands plus notes about LLM providers and persistent checkpoint storage.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Durable execution and interrupts</h2>
+<p>
+  The example is durable in the LangGraph sense because the graph is compiled with a checkpointer and resumed by <code>THREAD_ID</code>.
+  In the shipped files, <code>build_graph()</code> uses <code>MemorySaver</code>, which keeps checkpointed state in RAM for the life of the current process.
+</p>
+<ul>
+  <li>Reusing the same <code>THREAD_ID</code> within the same process lets LangGraph resume the paused approval gate.</li>
+  <li>Restarting the Python process resets the in-memory checkpoint store, so the default example starts clean again.</li>
+  <li>The README includes the exact <code>SqliteSaver</code> swap if you want persistence across process restarts without changing the node logic.</li>
+</ul>
+<p>
+  The interrupt boundary itself lives in <code>human_approval()</code>. That node sends a structured payload containing proposal indices, task IDs,
+  task titles, and field changes. When <code>main.py</code> resumes with approved indices, LangGraph returns that value from <code>interrupt()</code>
+  and the same node produces <code>approved_proposals</code> for the final write step.
+</p>
+
+<h2>kanban-lite integration seam</h2>
+<p>
+  The example deliberately keeps kanban-lite integration boring and explicit. Everything goes through the public REST API, so you can inspect,
+  replace, or extend the seam without touching LangGraph internals.
+</p>
+<table>
+  <thead>
+    <tr>
+      <th>API call</th>
+      <th>Used for</th>
+      <th>Where</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>GET /api/tasks</code></td>
+      <td>Load the current backlog from the default board.</td>
+      <td><code>KanbanLiteClient.list_tasks()</code> → <code>fetch_backlog</code></td>
+    </tr>
+    <tr>
+      <td><code>PUT /api/tasks/{id}</code></td>
+      <td>Apply the approved field updates with server-side partial-update semantics.</td>
+      <td><code>KanbanLiteClient.update_task()</code> → <code>apply_updates</code></td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  That means kanban-lite acts as the work queue and source of truth for task state, while LangGraph handles orchestration, pause/resume behavior,
+  and operator review.
+</p>
+
+<h2>Extension ideas</h2>
+<ul>
+  <li>Swap the rule-based <code>_generate_proposals()</code> function for an LLM-backed proposal step using the optional provider keys.</li>
+  <li>Replace <code>MemorySaver</code> with the README’s <code>SqliteSaver</code> example to keep interrupts resumable across process restarts.</li>
+  <li>Extend <code>kanban_lite_client.py</code> with a <code>board_id</code> parameter if you want the graph to target a non-default board.</li>
+  <li>Propose more than priority changes — for example assignee, labels, or metadata — while keeping the same human approval gate.</li>
+</ul>
+
+<div class="admonition admonition--info">
+  <strong>Tip:</strong> Open <a href="http://localhost:3000/api/docs">the API docs</a> while you run the example if you want to inspect the exact task payloads moving between the graph and kanban-lite.
+</div>
+
+<h2>Related references</h2>
+<p>
+  If you want to go deeper after the example is running, jump to the CLI, SDK, or examples hub next.
+</p>
+
+<div class="ref-links">
+  <strong>Related:</strong>
+  <a href="/docs/examples/">All Examples</a> &middot;
+  <a href="/docs/sdk/">SDK Reference</a> &middot;
+  <a href="/docs/api/">REST API</a>
+</div>

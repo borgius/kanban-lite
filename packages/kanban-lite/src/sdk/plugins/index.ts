@@ -132,6 +132,8 @@ interface AuthPluginModule {
   readonly RBAC_ADMIN_ACTIONS?: unknown
   readonly RBAC_ROLE_MATRIX?: unknown
   readonly createRbacIdentityPlugin?: unknown
+  /** Optional factory for a configurable policy plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as a custom RBAC matrix. */
+  readonly createAuthPolicyPlugin?: ((options?: Record<string, unknown>) => unknown) | unknown
   readonly default?: unknown
 }
 
@@ -253,7 +255,7 @@ function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
   if (ref.provider === 'noop') return NOOP_POLICY_PLUGIN
   if (ref.provider === 'rbac') return RBAC_POLICY_PLUGIN
   const packageName = AUTH_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
-  return loadExternalAuthPolicyPlugin(packageName, ref.provider)
+  return loadExternalAuthPolicyPlugin(packageName, ref.provider, ref.options)
 }
 
 // ---------------------------------------------------------------------------
@@ -772,7 +774,24 @@ function tryLoadWorkspacePackage(request: string): unknown {
   return runtimeRequire(workspacePackagePath)
 }
 
-function loadExternalModule(request: string): unknown {
+/**
+ * Tries to load an external plugin from the global npm node_modules directory.
+ * The global prefix is derived from the Node.js binary path ({@link process.execPath}).
+ * On Unix-like systems the global node_modules directory is `{prefix}/lib/node_modules`;
+ * on Windows it is `{prefix}/node_modules`.
+ *
+ * @internal
+ */
+function tryLoadGlobalPackage(request: string): unknown {
+  const npmPrefix = path.resolve(process.execPath, '..', '..')
+  const globalNodeModules = process.platform === 'win32'
+    ? path.join(npmPrefix, 'node_modules')
+    : path.join(npmPrefix, 'lib', 'node_modules')
+  const globalRequire = createRequire(path.join(globalNodeModules, '_kanban_sentinel_.js'))
+  return globalRequire(request)
+}
+
+export function loadExternalModule(request: string): unknown {
   // 1. Workspace-local packages/{request} (monorepo layout — primary path
   //    during the staged migration before the package is published to npm).
   if (WORKSPACE_ROOT) {
@@ -791,7 +810,14 @@ function loadExternalModule(request: string): unknown {
     if (!isMissingRequestedModule(request, err)) throw err
   }
 
-  // 3. Legacy sibling path ../request (backward-compat for non-monorepo
+  // 3. Globally installed npm package (npm install -g ...).
+  try {
+    return tryLoadGlobalPackage(request)
+  } catch (err: unknown) {
+    if (!isMissingRequestedModule(request, err)) throw err
+  }
+
+  // 4. Legacy sibling path ../request (backward-compat for non-monorepo
   //    checkouts where plugin repos live as siblings of this repository).
   const siblingPackagePath = path.resolve(process.cwd(), '..', request)
   try {
@@ -857,8 +883,14 @@ function loadExternalAuthIdentityPlugin(packageName: string, providerId: string)
   return plugin
 }
 
-function loadExternalAuthPolicyPlugin(packageName: string, providerId: string): AuthPolicyPlugin {
+function loadExternalAuthPolicyPlugin(packageName: string, providerId: string, options?: Record<string, unknown>): AuthPolicyPlugin {
   const mod = loadExternalModule(packageName) as AuthPluginModule
+
+  if (options !== undefined && typeof mod.createAuthPolicyPlugin === 'function') {
+    const created = (mod.createAuthPolicyPlugin as (opts?: Record<string, unknown>) => unknown)(options)
+    if (isValidAuthPolicyPlugin(created, providerId)) return created
+  }
+
   const plugin = selectAuthPolicyPlugin(mod, providerId)
   if (!plugin) {
     throw new Error(

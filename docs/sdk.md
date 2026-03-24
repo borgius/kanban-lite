@@ -3374,6 +3374,19 @@ caller can distinguish "not present in monorepo" from other errors.
 
 * * *
 
+<a name="tryLoadGlobalPackage"></a>
+
+### tryLoadGlobalPackage()
+Tries to load an external plugin from the global npm node_modules directory.
+The global prefix is derived from the Node.js binary path ([process.execPath](process.execPath)).
+On Unix-like systems the global node_modules directory is `{prefix}/lib/node_modules`;
+on Windows it is `{prefix}/node_modules`.
+
+**Kind**: global function  
+**Internal**:   
+
+* * *
+
 <a name="loadExternalCardPlugin"></a>
 
 ### loadExternalCardPlugin()

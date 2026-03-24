@@ -484,3 +484,55 @@ export class AuthError extends Error {
     this.actor = actor
   }
 }
+
+/**
+ * Runtime context supplied to a {@link KanbanCliPlugin} when it is invoked by
+ * the `kl` CLI.
+ */
+export interface CliPluginContext {
+  /** Absolute path to the workspace root that contains `.kanban.json`. */
+  workspaceRoot: string
+}
+
+/**
+ * Optional CLI extension that a plugin package may export as the named export
+ * `cliPlugin`.
+ *
+ * When the `kl` CLI resolves a top-level command that matches the plugin's
+ * {@link command} namespace (and no built-in handler claims it), or when a
+ * built-in handler encounters an unknown sub-command, it delegates to
+ * {@link run}.
+ *
+ * @example
+ * ```typescript
+ * // exported from the plugin package as `export const cliPlugin`
+ * export const cliPlugin: KanbanCliPlugin = {
+ *   manifest: { id: 'my-plugin' },
+ *   command: 'auth',
+ *   async run(subArgs, flags, context) {
+ *     // handle sub-commands
+ *   },
+ * }
+ * ```
+ */
+export interface KanbanCliPlugin {
+  /** Plugin manifest identifying this extension. */
+  readonly manifest: { readonly id: string }
+  /**
+   * Top-level CLI namespace owned by this plugin (e.g. `"auth"`).
+   * Must match the first positional argument after `kl`.
+   */
+  readonly command: string
+  /**
+   * Execute the plugin CLI command.
+   *
+   * @param subArgs  Positional arguments after the top-level command token.
+   * @param flags    Parsed flag map (`string | boolean` values).
+   * @param context  Runtime context including the workspace root path.
+   */
+  run(
+    subArgs: string[],
+    flags: Record<string, string | boolean | string[]>,
+    context: CliPluginContext,
+  ): Promise<void>
+}

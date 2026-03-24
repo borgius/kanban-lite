@@ -6,7 +6,8 @@ import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
-import { AuthError, type AuthContext } from '../sdk/types'
+import { AuthError, type AuthContext, type KanbanCliPlugin } from '../sdk/types'
+import { loadExternalModule } from '../sdk/plugins/index'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
@@ -1781,9 +1782,44 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
   process.exit(1)
 }
 
-async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+/**
+ * Load CLI plugin contributions from packages referenced in `.kanban.json`.
+ * Silently skips packages that are not installed or export no `cliPlugin`.
+ */
+function loadCliPlugins(workspaceRoot: string): KanbanCliPlugin[] {
+  let config: ReturnType<typeof readConfig>
+  try {
+    config = readConfig(workspaceRoot)
+  } catch {
+    return []
+  }
+  const providers = new Set<string>()
+  for (const ref of Object.values(config.plugins ?? {})) {
+    if (ref?.provider) providers.add(ref.provider)
+  }
+  const plugins: KanbanCliPlugin[] = []
+  for (const pkg of providers) {
+    try {
+      const mod = loadExternalModule(pkg) as Record<string, unknown>
+      const cli = mod.cliPlugin
+      if (cli && typeof (cli as KanbanCliPlugin).run === 'function') {
+        plugins.push(cli as KanbanCliPlugin)
+      }
+    } catch {
+      // plugin not installed or exports no cliPlugin — skip
+    }
+  }
+  return plugins
+}
+
+async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags, cliPlugins: KanbanCliPlugin[], workspaceRoot: string): Promise<void> {
   const sub = positional[0] || 'status'
   if (sub !== 'status') {
+    const authPlugin = cliPlugins.find(p => p.command === 'auth')
+    if (authPlugin) {
+      await authPlugin.run(positional, flags, { workspaceRoot })
+      return
+    }
     console.error(red(`Unknown auth sub-command: ${sub}`))
     console.error('Usage: kl auth status')
     process.exit(1)
@@ -1839,6 +1875,7 @@ async function main(): Promise<void> {
 
   const workspaceRoot = resolveWorkspaceRootForFlags(flags)
   const kanbanDir = resolveKanbanDirForFlags(flags)
+  const cliPlugins = loadCliPlugins(workspaceRoot)
   const sdk = new KanbanSDK(kanbanDir)
 
   switch (command) {
@@ -1937,12 +1974,18 @@ async function main(): Promise<void> {
       await cmdStorage(sdk, positional, flags, workspaceRoot)
       break
     case 'auth':
-      await cmdAuth(sdk, positional, flags)
+      await cmdAuth(sdk, positional, flags, cliPlugins, workspaceRoot)
       break
-    default:
+    default: {
+      const fallback = cliPlugins.find(p => p.command === command)
+      if (fallback) {
+        await fallback.run(positional, flags, { workspaceRoot })
+        break
+      }
       console.error(red(`Unknown command: ${command}`))
       showHelp()
       process.exit(1)
+    }
   }
 }
 

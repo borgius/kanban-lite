@@ -45,6 +45,130 @@ When a non-noop auth provider is active, the SDK performs **pre-action authoriza
 
 ---
 
+## Getting started: fresh install with the local auth plugin
+
+This section walks a new user through installing Kanban Lite in an empty folder with the `local` auth provider enabled so that the UI and REST API are protected by a username/password login and an API bearer token.
+
+### Prerequisites
+
+- Node.js ≥ 18
+- npm, pnpm, or yarn
+
+### Step 1 — create a project folder and initialise it
+
+```bash
+mkdir my-kanban && cd my-kanban
+npm init -y
+```
+
+### Step 2 — install kanban-lite and the auth plugin
+
+```bash
+npm install kanban-lite kl-auth-plugin
+```
+
+The standalone server binary is installed at `node_modules/.bin/kanban-lite` (or at the `kanban-lite` bin if you use npm scripts).
+
+### Step 3 — generate bcrypt password hashes
+
+The `local` provider stores passwords as bcrypt hashes, never plain text. Generate one hash per user:
+
+```bash
+node -e "require('bcryptjs').hash('admin123', 12).then(h => console.log('admin   :', h))"
+node -e "require('bcryptjs').hash('manager123', 12).then(h => console.log('manager :', h))"
+node -e "require('bcryptjs').hash('user123', 12).then(h => console.log('user    :', h))"
+```
+
+Copy the three output strings — you will paste them into `.kanban.json` in the next step.
+
+### Step 4 — create `.kanban.json` with local auth
+
+Create a `.kanban.json` file in your project root (substitute the hashes from Step 3):
+
+```json
+{
+  "version": 2,
+  "port": 2954,
+  "plugins": {
+    "auth.identity": {
+      "provider": "kl-auth-plugin",
+      "options": {
+        "users": [
+          { "username": "admin",   "password": "<bcrypt-hash-for-admin>",   "role": "admin" },
+          { "username": "manager", "password": "<bcrypt-hash-for-manager>", "role": "manager" },
+          { "username": "user",    "password": "<bcrypt-hash-for-user>",    "role": "user" }
+        ]
+      }
+    },
+    "auth.policy": {
+      "provider": "kl-auth-plugin"
+    }
+  }
+}
+```
+
+What each field does:
+
+| Field | Purpose |
+|-------|---------|
+| `auth.identity.provider = "local"` | Resolves identity from a browser session cookie (set after `/auth/login`) or from the `Authorization: Bearer <token>` header |
+| `auth.identity.options.users` | List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional `role` (`user`, `manager`, or `admin`) to enforce RBAC permissions |
+| `auth.policy.provider = "local"` | Allows any authenticated caller; denies anonymous requests |
+
+### Step 5 — set the API bearer token in `.env`
+
+The `local` provider also accepts a shared API token for programmatic access (MCP, CLI calls, REST scripts). Generate one and put it in `.env`:
+
+```bash
+node -e "const c=require('crypto');console.log('KANBAN_LITE_TOKEN=kl-'+c.randomBytes(24).toString('hex'))"
+```
+
+Append the printed line to `.env`:
+
+```
+KANBAN_LITE_TOKEN=kl-<your-generated-token>
+```
+
+> The `local` provider reads `KANBAN_LITE_TOKEN` (or the fallback `KANBAN_TOKEN`) from the environment at startup. If neither is set, it auto-generates a token and writes it to `.env` the first time the server starts.
+
+### Step 6 — start the server
+
+```bash
+npx kanban-lite
+# or, if you added it to package.json scripts:
+npm start
+```
+
+On first start you should see something like:
+
+```
+Kanban Lite listening on http://localhost:2954
+Auth: local (identity) + local (policy)
+```
+
+### Step 7 — log in via the browser
+
+Open `http://localhost:2954` in a browser. You will be redirected to `/auth/login`. Enter one of the usernames and passwords from Step 4. After a successful login you are redirected back and a session cookie is set — subsequent browser requests are authenticated automatically.
+
+Log out at any time by visiting `http://localhost:2954/auth/logout`.
+
+### Step 8 — authenticate programmatic / REST calls
+
+Pass the token from `.env` as a bearer token:
+
+```bash
+curl -H "Authorization: Bearer kl-<your-token>" \
+  http://localhost:2954/api/boards
+```
+
+MCP and CLI calls running inside the same shell automatically pick up `KANBAN_LITE_TOKEN` from the environment — no extra configuration needed.
+
+### What is still open-access
+
+The `local` policy provider allows **any** authenticated identity and denies **anonymous** callers. It does not enforce role-based restrictions between `admin`, `manager`, and `user`. If you need role-based access control, configure the `rbac` provider pair instead and supply a principal registry at runtime (see the [Starter RBAC provider](#starter-rbac-provider) section below).
+
+---
+
 ## Design goals
 
 The auth design is built around a few principles:
@@ -114,6 +238,7 @@ Current shipped provider ids:
 
 - `noop`
 - `rbac`
+- `local`
 
 Current `noop` behavior:
 
@@ -133,6 +258,23 @@ Important implementation detail:
 
 - the exported singleton `RBAC_IDENTITY_PLUGIN` is constructed with an **empty** principal registry
 - that means selecting `auth.identity = rbac` resolves a real provider id, but no token will authenticate until the host/runtime supplies principal material via `createRbacIdentityPlugin(principals)` and injects that plugin through custom capability wiring
+
+Current `local` behavior:
+
+Identity is resolved in the following priority order:
+
+1. **Pre-installed identity** — if `context.identity` is already set (e.g. from a valid session cookie installed by the `standalone.http` middleware), that identity is returned directly.
+2. **API bearer token** — if `Authorization: Bearer <token>` matches the `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variable, the identity `{ subject: context.actorHint ?? 'api-token' }` is returned.
+3. **Actor hint** — if `context.actorHint` is present (e.g. set by the CLI or MCP surface), that value becomes the subject.
+4. **`null`** — anonymous caller; the local policy will deny the request.
+
+Important implementation details:
+
+- `KANBAN_LITE_TOKEN` takes precedence over the fallback `KANBAN_TOKEN`
+- token comparison uses `crypto.timingSafeEqual` to prevent timing attacks
+- a `Bearer ` prefix is stripped before comparison
+- the exported singleton `LOCAL_IDENTITY_PLUGIN` is stateless and suitable for standalone use
+- when the `local` provider is active inside the standalone server, `createStandaloneHttpPlugin` auto-generates a `kl-…` token and persists it to `<workspaceRoot>/.env` if neither env var is set
 
 ### `auth.policy`
 
@@ -158,6 +300,7 @@ Current shipped provider ids:
 
 - `noop`
 - `rbac`
+- `local`
 
 Current `noop` behavior:
 
@@ -173,6 +316,13 @@ Current `rbac` behavior:
 - returns `{ allowed: false, reason: 'auth.policy.denied', actor: identity.subject }` when the action is outside the caller's role set
 - implements three cumulative roles: `user`, `manager`, and `admin`
 
+Current `local` behavior:
+
+- denies `null` identity with `reason = 'auth.identity.missing'`
+- allows **all** actions for any non-null identity (`{ allowed: true, actor: identity.subject }`)
+- does **not** enforce role distinctions — every authenticated caller has equal access
+- intended for single-operator setups or when role separation is not required
+
 ---
 
 ## Current implementation status
@@ -185,10 +335,18 @@ Today the codebase includes:
 
 - auth capability types in config,
 - auth plugin interfaces,
-- `kl-auth-plugin` package-backed no-op identity/policy providers,
-- a package-backed starter `rbac` identity/policy provider pair,
+- `kl-auth-plugin` package with three fully-shipped provider ids: `noop`, `rbac`, and `local`,
+- `noop` identity/policy providers that preserve open-access behavior,
+- `rbac` identity/policy providers with runtime-backed token registry,
+- `local` identity/policy providers for username/password + API token auth,
+- `createStandaloneHttpPlugin` — registers `/auth/login`, `/auth/logout`, and identity middleware for the `local` provider,
 - the exported `createRbacIdentityPlugin(principals)` helper for runtime-backed token validation,
 - the fixed `RBAC_USER_ACTIONS`, `RBAC_MANAGER_ACTIONS`, `RBAC_ADMIN_ACTIONS`, and `RBAC_ROLE_MATRIX` exports,
+- `RbacRole` type (`'user' | 'manager' | 'admin'`),
+- listener runtime helpers: `createAuthListenerPlugin`, `createLocalAuthListenerPlugin`, `createNoopAuthListenerPlugin`, `createRbacAuthListenerPlugin`,
+- the `ProviderBackedAuthListenerPlugin` class for custom listener wiring,
+- `authListenerPluginFactories` convenience map,
+- `authIdentityPlugins` and `authPolicyPlugins` provider registries,
 - SDK auth status reporting,
 - SDK pre-action authorization hooks,
 - normalized host `AuthContext` wiring for standalone, CLI, MCP, and extension host surfaces,
@@ -197,51 +355,72 @@ Today the codebase includes:
 
 ### What is still intentionally limited
 
-In the current core resolver implementation, the shipped auth compatibility ids are:
+The shipped auth provider ids are:
 
-- `auth.identity.provider = "noop" | "rbac"`
-- `auth.policy.provider = "noop" | "rbac"`
+- `auth.identity.provider = "noop" | "rbac" | "local"`
+- `auth.policy.provider = "noop" | "rbac" | "local"`
 
-If another auth provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.
+If another provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.
 
 So the system now has:
 
 - the **capability contract**,
 - the **SDK enforcement seam**,
-- the built-in **starter RBAC** policy implementation,
-- and the **host integration path for token acquisition**,
+- the built-in **`noop`** open-access default,
+- the built-in **starter `rbac`** policy implementation,
+- the turnkey **`local`** username/password + API token provider with a browser login UI,
+- and the **host integration path for token acquisition**.
 
-but it is still intentionally limited in two important ways:
+One remaining limitation:
 
-1. The shipped compatibility ids are still just `noop` and `rbac`; turnkey multi-provider auth packaging remains deliberately small.
-2. The shipped `RBAC_IDENTITY_PLUGIN` singleton uses an empty registry, so real token validation requires host/runtime wiring via `createRbacIdentityPlugin(principals)`.
-
-That distinction matters for docs, operators, and plugin authors: this is a shipped starter RBAC contract, not a turnkey login system.
+- The shipped `RBAC_IDENTITY_PLUGIN` singleton uses an empty registry; real RBAC token validation requires host/runtime wiring via `createRbacIdentityPlugin(principals)`. The `local` provider does not have this limitation — it works out of the box with `.kanban.json` user config.
 
 ---
 
 ## Configuration
 
-Auth provider selection lives in `.kanban.json` under the `auth` key.
+Auth provider selection lives in `.kanban.json` under the `plugins` key, using the npm package name as the provider id. Both `auth.identity` and `auth.policy` capability namespaces sit alongside storage providers in the same `plugins` object.
 
-### Current safe/default config
+
+### Default (no auth)
+
+Omit auth namespaces entirely — the SDK defaults both to `noop` (open-access).
+
+### Local provider config
+
+Requires `kl-auth-plugin` installed. Passwords are bcrypt hashes (cost 12 recommended):
 
 ```json
 {
-	"auth": {
-		"auth.identity": { "provider": "noop" },
-		"auth.policy": { "provider": "noop" }
+	"plugins": {
+		"auth.identity": {
+			"provider": "kl-auth-plugin",
+			"options": {
+				"users": [
+					{ "username": "admin",   "password": "$2b$12$...", "role": "admin" },
+					{ "username": "manager", "password": "$2b$12$...", "role": "manager" },
+					{ "username": "user",    "password": "$2b$12$...", "role": "user" }
+				]
+			}
+		},
+		"auth.policy": { "provider": "kl-auth-plugin" }
 	}
 }
+```
+
+Set `KANBAN_LITE_TOKEN` in `.env` for API bearer token access (auto-generated if absent):
+
+```
+KANBAN_LITE_TOKEN=kl-<48-hex-chars>
 ```
 
 ### Starter RBAC config
 
 ```json
 {
-	"auth": {
-		"auth.identity": { "provider": "rbac" },
-		"auth.policy": { "provider": "rbac" }
+	"plugins": {
+		"auth.identity": { "provider": "kl-auth-plugin" },
+		"auth.policy": { "provider": "kl-auth-plugin" }
 	}
 }
 ```
@@ -258,17 +437,17 @@ What this does **not** do:
 - it does not create a login flow
 - it does not make the empty-registry `RBAC_IDENTITY_PLUGIN` singleton accept arbitrary token text
 
-### Shape of auth config
+### Shape of auth config (full example)
 
 ```json
 {
-	"auth": {
+	"plugins": {
 		"auth.identity": {
-			"provider": "noop",
+			"provider": "kl-auth-plugin",
 			"options": {}
 		},
 		"auth.policy": {
-			"provider": "noop",
+			"provider": "kl-auth-plugin",
 			"options": {}
 		}
 	}
@@ -279,7 +458,9 @@ What this does **not** do:
 
 `normalizeAuthCapabilities()` in `src/shared/config.ts` guarantees that both auth namespaces are always resolved.
 
-If `auth` is omitted entirely, the normalized result is:
+Lookup order: `plugins["auth.identity"]` → `{ provider: "noop" }`.
+
+If both `plugins` auth keys and the `auth` key are omitted entirely, the normalized result is:
 
 ```json
 {
@@ -368,6 +549,210 @@ That helper is the runtime-backed identity path for the shipped `rbac` provider:
 - roles come from runtime-owned data, not token parsing
 
 The built-in singleton `RBAC_IDENTITY_PLUGIN` simply calls this helper with `new Map()`.
+
+---
+
+## `local` provider — standalone.http capability
+
+When `plugins["auth.identity"].provider` or `plugins["auth.policy"].provider` is `"kl-auth-plugin"`, the standalone server automatically loads the `standalone.http` capability exported by `createStandaloneHttpPlugin` from `kl-auth-plugin`.
+
+### What it registers
+
+**Middleware** (runs before every request):
+
+- reads `Authorization: Bearer <token>` and compares it to the workspace API token using `crypto.timingSafeEqual`
+- reads the `kanban_lite_session` cookie and looks up the session in an in-memory store
+- if neither succeeds:
+  - API requests (`/api/...`) → `401 { ok: false, error: "Authentication required" }`
+  - Page requests → `302` redirect to `/auth/login?returnTo=<current path>`
+
+**Routes**:
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/auth/login` | Serves the login HTML form. Redirects to `returnTo` if already authenticated. |
+| `POST` | `/auth/login` | Verifies username + bcrypt password. On success: sets session cookie, redirects to `returnTo`. On failure: re-renders form with error. Accepts both `application/json` and `application/x-www-form-urlencoded`. |
+| `GET` or `POST` | `/auth/logout` | Deletes the session, clears the cookie, redirects to `/auth/login`. |
+
+### Session details
+
+| Property | Value |
+|---|---|
+| Cookie name | `kanban_lite_session` |
+| Cookie flags | `HttpOnly; SameSite=Lax; Path=/` |
+| TTL | 7 days |
+| Storage | In-memory `Map` (lost on server restart) |
+| Session ID | 24 random bytes, hex-encoded |
+
+### API token auto-provisioning
+
+On startup, `createStandaloneHttpPlugin` calls `ensureWorkspaceApiToken(workspaceRoot)`:
+
+1. Checks `KANBAN_LITE_TOKEN` and `KANBAN_TOKEN` environment variables.
+2. If found, uses that value (and back-fills `process.env.KANBAN_LITE_TOKEN` if only `KANBAN_TOKEN` was set).
+3. If neither is set, generates a `kl-<48-hex-chars>` token, writes `KANBAN_LITE_TOKEN=<token>` to `<workspaceRoot>/.env`, and sets `process.env.KANBAN_LITE_TOKEN`.
+
+### Security notes
+
+- Passwords are never stored in plain text — only bcrypt hashes in `.kanban.json`.
+- Token comparison uses `crypto.timingSafeEqual` to prevent timing attacks.
+- `returnTo` is validated to reject external redirects (must start with `/` and must not start with `//`).
+- The login form HTML-escapes all user-supplied values before rendering.
+- Session IDs are cryptographically random; they are never derived from user input.
+
+---
+
+## Listener runtime helpers
+
+`kl-auth-plugin` exports a set of standalone listener helpers that plug into the SDK event bus directly, separate from the capability-provider path. These are useful when you want to enforce auth from application code rather than from `.kanban.json` config.
+
+### `ProviderBackedAuthListenerPlugin`
+
+The underlying class that all factory functions produce:
+
+```ts
+class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
+
+  constructor(
+    authIdentity: AuthIdentityPlugin,
+    authPolicy: AuthPolicyPlugin,
+    options?: AuthListenerPluginOptions,
+  )
+
+  register(bus: EventBus): void
+  unregister(): void
+}
+```
+
+Registers across **all** SDK before-events. For each event it:
+
+1. Merges the request-scoped `AuthContext` (from `options.getAuthContext?.()`) with event payload hints.
+2. Calls `authIdentity.resolveIdentity(context)`.
+3. Calls `authPolicy.checkPolicy(identity, action, context)`.
+4. On denial: emits `auth.denied` and throws `AuthError`.
+5. On success: emits `auth.allowed` and optionally returns `options.overrideInput(...)` as an input override.
+
+### `AuthListenerPluginOptions`
+
+```ts
+interface AuthListenerPluginOptions {
+  id?: string
+  getAuthContext?: () => AuthContext | undefined
+  overrideInput?: (context: AuthListenerOverrideContext) =>
+    BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
+}
+```
+
+| Field | Purpose |
+|---|---|
+| `id` | Custom plugin manifest id (defaults to `auth-listener:<identity id>:<policy id>`). |
+| `getAuthContext` | Callback that returns the active request-scoped `AuthContext`. Use this to thread auth from your host surface into the listener. |
+| `overrideInput` | Optional callback called **after** a successful auth decision. Return a plain object to deep-merge into the before-event input. |
+
+### `AuthListenerOverrideContext`
+
+Passed to `overrideInput`:
+
+```ts
+interface AuthListenerOverrideContext {
+  readonly payload: BeforeEventPayload<Record<string, unknown>>
+  readonly identity: AuthIdentity | null
+  readonly decision: AuthDecision
+}
+```
+
+### Factory functions
+
+```ts
+// Wrap any identity+policy pair
+createAuthListenerPlugin(
+  identity: AuthIdentityPlugin,
+  policy: AuthPolicyPlugin,
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// local provider pair
+createLocalAuthListenerPlugin(
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// noop provider pair (open-access)
+createNoopAuthListenerPlugin(
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+
+// rbac provider pair with optional principal registry
+createRbacAuthListenerPlugin(
+  principals?: ReadonlyMap<string, RbacPrincipalEntry>,
+  options?: AuthListenerPluginOptions,
+): ProviderBackedAuthListenerPlugin
+```
+
+### `authListenerPluginFactories`
+
+A convenience map keyed by provider id:
+
+```ts
+const authListenerPluginFactories: {
+  local: typeof createLocalAuthListenerPlugin
+  noop:  typeof createNoopAuthListenerPlugin
+  rbac:  typeof createRbacAuthListenerPlugin
+}
+```
+
+### `auth.allowed` and `auth.denied` events
+
+Both events are emitted on the SDK event bus by the listener after every authorization decision:
+
+```ts
+// auth.allowed
+{
+  type: 'auth.allowed',
+  data: { action: string, actor?: string },
+  timestamp: string,
+  actor?: string,
+  boardId?: string,
+}
+
+// auth.denied
+{
+  type: 'auth.denied',
+  data: { action: string, actor?: string, reason: AuthErrorCategory },
+  timestamp: string,
+  actor?: string,
+  boardId?: string,
+}
+```
+
+---
+
+## Plugin registries
+
+`kl-auth-plugin` exports two flat registry objects for programmatic plugin lookup:
+
+```ts
+const authIdentityPlugins: Record<string, AuthIdentityPlugin> = {
+  local: LOCAL_IDENTITY_PLUGIN,
+  noop:  NOOP_IDENTITY_PLUGIN,
+  rbac:  RBAC_IDENTITY_PLUGIN,   // empty principal registry
+}
+
+const authPolicyPlugins: Record<string, AuthPolicyPlugin> = {
+  local: LOCAL_POLICY_PLUGIN,
+  noop:  NOOP_POLICY_PLUGIN,
+  rbac:  RBAC_POLICY_PLUGIN,
+}
+```
+
+These are used by the SDK's capability resolver to look up providers by the id string from `.kanban.json`. You can also use them directly in application code:
+
+```ts
+import { authIdentityPlugins, authPolicyPlugins } from 'kl-auth-plugin'
+
+const identity = authIdentityPlugins['local']
+const policy   = authPolicyPlugins['local']
+```
 
 ---
 

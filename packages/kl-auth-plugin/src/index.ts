@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { compare } from 'bcryptjs'
+import { compare, hash } from 'bcryptjs'
 
 export type AuthErrorCategory =
   | 'auth.identity.missing'
@@ -214,6 +214,7 @@ export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
 interface LocalAuthUser {
   username: string
   password: string
+  role?: RbacRole
 }
 
 interface LocalAuthSession {
@@ -276,11 +277,21 @@ export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 
 export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'local', provides: ['auth.policy'] },
-  async checkPolicy(identity: AuthIdentity | null, _action: string, _context: AuthContext): Promise<AuthDecision> {
+  async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
     }
-    return { allowed: true, actor: identity.subject }
+    const roles = identity.roles ?? []
+    if (roles.length === 0) {
+      return { allowed: true, actor: identity.subject }
+    }
+    for (const role of roles) {
+      const permitted = RBAC_ROLE_MATRIX[role as RbacRole]
+      if (permitted?.has(action)) {
+        return { allowed: true, actor: identity.subject }
+      }
+    }
+    return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
   },
 }
 
@@ -291,10 +302,13 @@ function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalA
     if (!user || typeof user !== 'object') return []
     const username = (user as { username?: unknown }).username
     const password = (user as { password?: unknown }).password
+    const role = (user as { role?: unknown }).role
     if (typeof username !== 'string' || username.length === 0 || typeof password !== 'string' || password.length === 0) {
       return []
     }
-    return [{ username, password }]
+    const entry: LocalAuthUser = { username, password }
+    if (role === 'user' || role === 'manager' || role === 'admin') entry.role = role
+    return [entry]
   })
 }
 
@@ -453,7 +467,10 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       sessionStore.delete(sessionId)
       return null
     }
-    return { subject: session.username }
+    const user = users.find((u) => u.username === session.username)
+    const identity: AuthIdentity = { subject: session.username }
+    if (user?.role) identity.roles = [user.role]
+    return identity
   }
 
   const applyRequestIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
@@ -650,16 +667,94 @@ export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
   },
 }
 
+/**
+ * Default auth identity plugin exported under the package name.
+ * Allows `"provider": "kl-auth-plugin"` in `.kanban.json` `plugins` config,
+ * using the same local-auth identity behaviour.
+ */
+const KL_AUTH_DEFAULT_IDENTITY_PLUGIN: AuthIdentityPlugin = {
+  manifest: { id: 'kl-auth-plugin', provides: ['auth.identity'] },
+  resolveIdentity: LOCAL_IDENTITY_PLUGIN.resolveIdentity,
+}
+
+/**
+ * Default auth policy plugin exported under the package name.
+ * Allows `"provider": "kl-auth-plugin"` in `.kanban.json` `plugins` config,
+ * using the same local-auth policy behaviour.
+ */
+const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
+  manifest: { id: 'kl-auth-plugin', provides: ['auth.policy'] },
+  checkPolicy: LOCAL_POLICY_PLUGIN.checkPolicy,
+}
+
+/**
+ * Factory for a configurable RBAC policy plugin for the `kl-auth-plugin` provider.
+ *
+ * When `options.matrix` is provided it **overrides** the default RBAC role matrix.
+ * Each key is a role name and its value is the list of allowed action strings for
+ * that role.  Roles are evaluated independently — there is no implicit inheritance;
+ * define every action you want each role to be able to perform.
+ *
+ * When `options.matrix` is absent the factory returns the default policy plugin,
+ * which allows any authenticated identity (equivalent to the `local` policy).
+ *
+ * @example
+ * ```json
+ * "auth.policy": {
+ *   "provider": "kl-auth-plugin",
+ *   "options": {
+ *     "matrix": {
+ *       "user":    ["form.submit", "comment.create", "card.action.trigger"],
+ *       "manager": ["card.create", "card.update", "card.move", "card.delete"],
+ *       "admin":   ["settings.update", "webhook.create", "column.create"]
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export function createAuthPolicyPlugin(options?: Record<string, unknown>): AuthPolicyPlugin {
+  const matrixConfig = options?.matrix
+  if (!matrixConfig || typeof matrixConfig !== 'object' || Array.isArray(matrixConfig)) {
+    return KL_AUTH_DEFAULT_POLICY_PLUGIN
+  }
+
+  const resolvedMatrix: Record<string, ReadonlySet<string>> = {}
+  for (const [role, actions] of Object.entries(matrixConfig as Record<string, unknown>)) {
+    if (Array.isArray(actions)) {
+      resolvedMatrix[role] = new Set(actions.filter((a): a is string => typeof a === 'string'))
+    }
+  }
+
+  return {
+    manifest: { id: 'kl-auth-plugin', provides: ['auth.policy'] },
+    async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
+      if (!identity) {
+        return { allowed: false, reason: 'auth.identity.missing' }
+      }
+      const roles = identity.roles ?? []
+      for (const role of roles) {
+        const permitted = resolvedMatrix[role]
+        if (permitted?.has(action)) {
+          return { allowed: true, actor: identity.subject }
+        }
+      }
+      return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+    },
+  }
+}
+
 export const authIdentityPlugins: Record<string, AuthIdentityPlugin> = {
   local: LOCAL_IDENTITY_PLUGIN,
   noop: NOOP_IDENTITY_PLUGIN,
   rbac: RBAC_IDENTITY_PLUGIN,
+  'kl-auth-plugin': KL_AUTH_DEFAULT_IDENTITY_PLUGIN,
 }
 
 export const authPolicyPlugins: Record<string, AuthPolicyPlugin> = {
   local: LOCAL_POLICY_PLUGIN,
   noop: NOOP_POLICY_PLUGIN,
   rbac: RBAC_POLICY_PLUGIN,
+  'kl-auth-plugin': KL_AUTH_DEFAULT_POLICY_PLUGIN,
 }
 
 const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
@@ -927,9 +1022,94 @@ export const authListenerPluginFactories = {
   rbac: createRbacAuthListenerPlugin,
 }
 
+/**
+ * CLI extension contributed by kl-auth-plugin.
+ *
+ * Registers `kl auth create-user` for adding bcrypt-hashed users to the
+ * `plugins["auth.identity"].options.users` array in `.kanban.json`.
+ *
+ * @example
+ * ```sh
+ * kl auth create-user --username alice --password s3cr3t
+ * kl auth create-user --username admin --password s3cr3t --role admin
+ * ```
+ */
+export const cliPlugin = {
+  manifest: { id: 'kl-auth-plugin' },
+  command: 'auth',
+  async run(
+    subArgs: string[],
+    flags: Record<string, string | boolean | string[]>,
+    context: { workspaceRoot: string },
+  ): Promise<void> {
+    const sub = subArgs[0]
+
+    if (sub === 'create-user') {
+      const username = flags.username as string | undefined
+      const password = flags.password as string | undefined
+      const role = flags.role as string | undefined
+      if (!username || !password) {
+        console.error('Usage: kl auth create-user --username <name> --password <pass> [--role user|manager|admin]')
+        process.exit(1)
+      }
+      if (role !== undefined && role !== 'user' && role !== 'manager' && role !== 'admin') {
+        console.error('--role must be one of: user, manager, admin')
+        process.exit(1)
+      }
+
+      const cfgPath = path.join(context.workspaceRoot, '.kanban.json')
+      let cfg: Record<string, unknown> = {}
+      try {
+        cfg = JSON.parse(await fs.promises.readFile(cfgPath, 'utf-8')) as Record<string, unknown>
+      } catch {
+        // no .kanban.json yet — will be created
+      }
+
+      const plugins =
+        typeof cfg.plugins === 'object' && cfg.plugins !== null
+          ? (cfg.plugins as Record<string, unknown>)
+          : {}
+      const identity =
+        typeof plugins['auth.identity'] === 'object' && plugins['auth.identity'] !== null
+          ? (plugins['auth.identity'] as Record<string, unknown>)
+          : { provider: 'kl-auth-plugin' }
+      const options =
+        typeof identity.options === 'object' && identity.options !== null
+          ? (identity.options as Record<string, unknown>)
+          : {}
+      const users: { username: string; password: string; role?: string }[] = Array.isArray(options.users)
+        ? (options.users as { username: string; password: string; role?: string }[])
+        : []
+
+      if (users.some(u => u.username === username)) {
+        console.error(`User "${username}" already exists.`)
+        process.exit(1)
+      }
+
+      const hashed = await hash(password, 12)
+      const newUser: { username: string; password: string; role?: string } = { username, password: hashed }
+      if (role) newUser.role = role
+      users.push(newUser)
+      options.users = users
+      identity.options = options
+      plugins['auth.identity'] = identity
+      cfg.plugins = plugins
+
+      await fs.promises.writeFile(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf-8')
+      console.log(`User "${username}" added.`)
+      return
+    }
+
+    console.error(`Unknown auth sub-command: ${sub ?? '(none)'}`)
+    console.error('Available sub-commands: create-user')
+    process.exit(1)
+  },
+}
+
 const authPluginPackage = {
   authIdentityPlugins,
   authPolicyPlugins,
+  createAuthPolicyPlugin,
   createStandaloneHttpPlugin,
   createAuthListenerPlugin,
   createLocalAuthListenerPlugin,

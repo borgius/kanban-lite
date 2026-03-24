@@ -1,0 +1,736 @@
+plan_id: "20260323-agent-orchestration-examples"
+objective: |
+  Add a new top-level `examples/` folder containing three runnable example applications that demonstrate
+  kanban-lite integrations for (1) Chat SDK / Vercel AI ecosystem, (2) LangGraph Python, and (3) Mastra
+  agent orchestration, then integrate those examples into the docs site with step-by-step build guides
+  while keeping `/docs/examples/` as the stable discovery URL.
+created_at: "2026-03-23"
+created_by: "gem-planner"
+status: completed
+research_confidence: high
+
+tldr: |
+  Four-wave plan: first lock the top-level examples topology and docs-site route contract, then build the
+  three self-contained example apps in parallel, then author step-by-step build guides plus repo-level
+  discoverability updates, and finally run review/smoke validation on example run paths and docs navigation.
+  The plan deliberately avoids core SDK/API/CLI/MCP feature work unless an example exposes a blocker severe
+  enough to justify a separate follow-up plan.
+
+open_questions:
+  - "The plan assumes the new `examples/*` apps stay self-contained and outside the root pnpm workspace unless a concrete build blocker requires opt-in workspace wiring."
+  - "The plan assumes all example env files use placeholders only and document supported model/provider choices rather than baking in one required vendor secret."
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "Adding top-level example apps contaminates the root workspace/build flow and makes normal repo installs slower or more fragile."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Keep `examples/*` self-contained by default, change `pnpm-workspace.yaml` and root scripts only if a concrete
+        developer-experience payoff outweighs the added maintenance, and verify the existing root `build` contract remains unchanged.
+    - scenario: "Docs-site guides drift from the runnable example apps, leaving `/docs/examples/` attractive but inaccurate."
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Treat each example README/run contract as the input for its matching docs guide, add watch targets for example-owned content when needed,
+        and reserve a final review pass that checks commands, routes, and naming consistency across app folders and docs pages.
+    - scenario: "While building the examples, the work expands into off-scope core feature changes across SDK/API/CLI/MCP surfaces."
+      likelihood: medium
+      impact: critical
+      mitigation: |
+        Keep the examples on documented/public integration seams only. If a missing seam or bug is discovered, capture it as a blocker and spin a separate
+        follow-up plan instead of widening this examples/docs task.
+  assumptions:
+    - "Examples and docs are the requested deliverables; no core parity work is planned unless a blocker is discovered."
+    - "`packages/docs-site/src/docs/examples.njk` remains the stable examples hub entry at `/docs/examples/`."
+    - "`packages/docs-site/src/docs/quick-start.njk` is the right reference pattern for step-by-step build-guide structure."
+    - "Two TypeScript examples may use app-local `package.json` manifests; the Python example may use `requirements.txt` or equivalent app-local tooling without changing the monorepo build contract."
+
+implementation_specification:
+  code_structure: |
+    Introduce a new top-level `examples/` directory with three self-contained sub-apps:
+    `examples/chat-sdk-vercel-ai/`, `examples/langgraph-python/`, and `examples/mastra-agent-ops/`.
+    Each example owns its runtime manifest, minimal source entrypoints, and local run contract. The docs site keeps
+    `/docs/examples/` as the stable hub, adds three dedicated build-guide pages, and optionally watches/reads example-owned
+    README or metadata content if that improves drift resistance. Root repo changes stay limited to discoverability files
+    (`README.md`, `CHANGELOG.md`, and only optional root/workspace wiring if clearly justified).
+  affected_areas:
+    - "examples/**/*"
+    - "packages/docs-site/src/docs/examples.njk"
+    - "packages/docs-site/src/docs/quick-start.njk"
+    - "packages/docs-site/src/_data/nav.js"
+    - "packages/docs-site/eleventy.config.mjs"
+    - "README.md"
+    - "CHANGELOG.md"
+    - "pnpm-workspace.yaml (conditional only if workspace enrollment becomes necessary)"
+    - "package.json (conditional only if root scripts materially improve example discoverability)"
+  component_details:
+    - component: examples folder contract
+      responsibility: "Define naming, isolation boundaries, local run/install conventions, and shared expectations for example-owned env/docs files without disturbing the main workspace flows."
+      interfaces:
+        - "Top-level `examples/README.md` with example index and run expectations"
+        - "Per-example local install/run contract documented in each app"
+        - "Optional root script/workspace contract only if justified by developer ergonomics"
+    - component: Chat SDK / Vercel AI example
+      responsibility: "Provide a runnable TypeScript app that demonstrates kanban-lite-backed chat triage flows in the Vercel AI ecosystem."
+      interfaces:
+        - "App-local package manifest and runnable dev/build commands"
+        - "A single user-facing route plus chat/server integration entrypoint"
+        - "Documented kanban-lite integration seam (SDK and/or standalone API)"
+    - component: LangGraph Python example
+      responsibility: "Provide a runnable Python app that demonstrates durable backlog orchestration with interrupts/human approval around kanban-lite tasks."
+      interfaces:
+        - "Python dependency manifest and runnable entrypoint"
+        - "Graph orchestration module with approval/checkpoint flow"
+        - "Documented kanban-lite integration seam (SDK/API wrapper)"
+    - component: Mastra agent orchestration example
+      responsibility: "Provide a runnable TypeScript app that demonstrates supervisor-style project ops orchestration over kanban-lite with approval-aware agent steps."
+      interfaces:
+        - "App-local package manifest and runnable dev/build commands"
+        - "Mastra agent graph/registry entrypoint"
+        - "UI or route surface that shows kanban-lite task operations in context"
+    - component: docs-site example guides
+      responsibility: "Publish one step-by-step guide per example plus hub discoverability updates while preserving `/docs/examples/` as the stable landing page."
+      interfaces:
+        - "Three guide pages linked from `/docs/examples/`"
+        - "Navigation metadata and optional watch targets for example-owned docs"
+        - "Quick-start/README/CHANGELOG discoverability references"
+  dependencies:
+    - component: examples folder contract
+      relationship: "Must land before any app-specific implementation so folder names, runtime boundaries, and root-workspace rules are fixed."
+    - component: docs-site example routing contract
+      relationship: "Should land early so example slugs, guide URLs, and watch targets remain stable while apps are authored."
+    - component: example apps
+      relationship: "Depend on the folder contract and produce run/build commands consumed by the step-by-step guides."
+    - component: docs-site example guides
+      relationship: "Depend on each example app's final commands, env placeholders, and story framing."
+  integration_points:
+    - "`packages/docs-site/src/docs/examples.njk` remains the public examples hub and should link out to guide pages plus repo folders."
+    - "`packages/docs-site/src/docs/quick-start.njk` and `README.md` are the primary discoverability surfaces outside the hub itself."
+    - "`packages/docs-site/eleventy.config.mjs` may need example-folder watch targets if guides consume example-owned content."
+    - "No SDK/API/CLI/MCP interface changes are planned; examples should consume existing supported seams only."
+
+contracts:
+  - from_task: A1
+    to_task: A3
+    interface: "Approved example folder names, runtime isolation rules, and local run/install contract"
+    format: "Directory slugs + manifest strategy + env-file convention"
+  - from_task: A1
+    to_task: A4
+    interface: "Approved example folder names, runtime isolation rules, and local run/install contract"
+    format: "Directory slugs + manifest strategy + env-file convention"
+  - from_task: A1
+    to_task: A5
+    interface: "Approved example folder names, runtime isolation rules, and local run/install contract"
+    format: "Directory slugs + manifest strategy + env-file convention"
+  - from_task: A2
+    to_task: A6
+    interface: "Stable docs-site route slot and guide-page naming contract for the Chat SDK example"
+    format: "Docs route path + examples hub section metadata + optional watch-target contract"
+  - from_task: A2
+    to_task: A7
+    interface: "Stable docs-site route slot and guide-page naming contract for the LangGraph example"
+    format: "Docs route path + examples hub section metadata + optional watch-target contract"
+  - from_task: A2
+    to_task: A8
+    interface: "Stable docs-site route slot and guide-page naming contract for the Mastra example"
+    format: "Docs route path + examples hub section metadata + optional watch-target contract"
+  - from_task: A3
+    to_task: A6
+    interface: "Final app commands, env placeholders, and integration story for the Chat SDK example"
+    format: "README-level run contract + route/feature summary"
+  - from_task: A4
+    to_task: A7
+    interface: "Final app commands, env placeholders, and approval-flow story for the LangGraph example"
+    format: "README-level run contract + graph/approval summary"
+  - from_task: A5
+    to_task: A8
+    interface: "Final app commands, env placeholders, and orchestration story for the Mastra example"
+    format: "README-level run contract + agent/supervisor summary"
+  - from_task: A6
+    to_task: A9
+    interface: "Published Chat SDK guide URL and summary copy"
+    format: "Guide permalink + short teaser text"
+  - from_task: A7
+    to_task: A9
+    interface: "Published LangGraph guide URL and summary copy"
+    format: "Guide permalink + short teaser text"
+  - from_task: A8
+    to_task: A9
+    interface: "Published Mastra guide URL and summary copy"
+    format: "Guide permalink + short teaser text"
+
+tasks:
+  - id: A1
+    title: Establish the top-level `examples/` topology and runtime-boundary contract
+    description: |
+      Create the new top-level `examples/` index and lock the folder naming, app isolation strategy, and environment-file conventions
+      for the three example apps. Default to self-contained examples that do not widen the root pnpm workspace unless a concrete
+      build/run benefit justifies limited workspace wiring.
+    wave: 1
+    agent: gem-devops
+    assigned_agent: gem-devops
+    priority: high
+    status: completed
+    status_note: "Added examples/README.md with fixed slugs, placeholder-only env guidance, and explicit no-workspace-wiring/no-root-script changes."
+    dependencies: []
+    context_files:
+      - pnpm-workspace.yaml: "Current workspace membership contract."
+      - package.json: "Root scripts and existing build boundaries."
+      - README.md: "Top-level discoverability language and install expectations."
+    deliverables:
+      - "Top-level `examples/README.md` that indexes the three example apps and defines local run/install expectations"
+      - "A documented decision on whether `examples/*` remain outside the root workspace or require explicit opt-in wiring"
+      - "Per-example env-file naming convention (`.env.example`/placeholder-only)"
+    files_expected:
+      - "examples/README.md"
+      - "pnpm-workspace.yaml (conditional)"
+      - "package.json (conditional)"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: examples_topology
+    verification:
+      - "The repo has a clear top-level examples index and naming contract."
+      - "The default root build/watch flow remains unchanged unless explicitly justified."
+      - "Example env conventions are placeholder-only and documented."
+    acceptance_criteria:
+      - "Three canonical example folder slugs are fixed and reusable by downstream tasks."
+      - "Workspace enrollment is either intentionally omitted or narrowly documented and implemented."
+      - "No accidental root-build coupling is introduced."
+    failure_modes:
+      - scenario: "The task silently enrolls examples into the workspace and changes root install/build behavior without enough payoff."
+        likelihood: medium
+        impact: high
+        mitigation: "Require an explicit rationale before touching workspace membership or root scripts; otherwise keep examples self-contained."
+    tech_stack:
+      - "pnpm workspace controller"
+      - "Self-contained app manifests under `examples/*`"
+    test_coverage: "Structure and script-contract verification only"
+    environment: development
+    requires_approval: false
+    security_sensitive: false
+
+  - id: A2
+    title: Prepare docs-site routing, nav, and watch-target contract for example guides
+    description: |
+      Reserve the docs-site route structure for the three new example guides, update the stable `/docs/examples/` hub shape,
+      and add any Eleventy watch-target support needed if docs pages should track example-owned content. This task establishes
+      the docs IA contract before example-specific guide authoring begins.
+    wave: 1
+    agent: gem-implementer
+    assigned_agent: gem-implementer
+    priority: high
+    status: completed
+    completed_at: "2026-03-23"
+    completion_note: |
+      Reserved three guide-page route slots (/docs/examples/chat-sdk/, /docs/examples/langgraph-python/,
+      /docs/examples/mastra/), updated examples.njk hub with agent-orchestration section + card links,
+      added nav.js sidebar children under Examples, added examples/**/*.md watch target to eleventy.config.mjs.
+    dependencies: []
+    context_files:
+      - packages/docs-site/src/docs/examples.njk: "Current hub page and stable permalink."
+      - packages/docs-site/src/_data/nav.js: "Docs navigation model."
+      - packages/docs-site/eleventy.config.mjs: "External watch targets and passthrough config."
+    deliverables:
+      - "Reserved guide-page route structure for Chat SDK, LangGraph, and Mastra examples"
+      - "Updated `/docs/examples/` hub skeleton ready to surface the three new examples"
+      - "Eleventy watch-target strategy for `examples/*` content if needed"
+    files_expected:
+      - "packages/docs-site/src/docs/examples.njk"
+      - "packages/docs-site/src/_data/nav.js"
+      - "packages/docs-site/eleventy.config.mjs"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 220
+    focus_area: docs_examples_contract
+    verification:
+      - "`/docs/examples/` remains the stable public URL."
+      - "Guide-page slugs and link slots exist before copy is written."
+      - "Docs-site watch behavior is explicit if example-owned content is referenced."
+    acceptance_criteria:
+      - "The hub can link three dedicated guides without later route churn."
+      - "Navigation metadata exposes the examples section cleanly."
+      - "No unrelated docs-site sections are restructured."
+    failure_modes:
+      - scenario: "Guide URLs or hub structure change after app work starts, creating avoidable rework and broken links."
+        likelihood: medium
+        impact: high
+        mitigation: "Lock guide slugs and hub section slots up front and treat them as contracts for downstream docs tasks."
+    tech_stack:
+      - "Eleventy 3"
+      - "Nunjucks docs pages"
+      - "Docs-site global data"
+    test_coverage: "Static route and nav contract verification"
+
+  - id: A3
+    title: Build the Chat SDK / Vercel AI example app
+    description: |
+      Implement a runnable TypeScript example app that demonstrates an omnichannel-style kanban triage assistant using the
+      Vercel AI ecosystem plus kanban-lite as the task system. Keep the footprint small: one primary UI route, one chat/server
+      integration seam, and app-local setup instructions or placeholders.
+    wave: 2
+    agent: gem-implementer
+    assigned_agent: gem-implementer
+    priority: high
+    status: completed
+    completed_at: "2026-03-23"
+    completion_note: |
+      Built examples/chat-sdk-vercel-ai/ with: package.json (Next.js 15 + ai@^4.3.0 + @ai-sdk/openai),
+      tsconfig.json, next.config.ts, .env.example, README.md, lib/kanban.ts (real HTTP client with
+      KANBAN_USE_MOCK in-memory fallback), app/globals.css, app/layout.tsx, app/page.tsx (useChat hook,
+      streaming UI, tool-result bubbles), app/api/chat/route.ts (streamText + create_task/list_tasks/move_task
+      tools). Port 3001 avoids clash with kanban-lite server on 3000. Integration seam is real REST API
+      calls to /api/boards/:boardId/tasks and PATCH .../move — no internal imports.
+    dependencies:
+      - A1
+    context_files:
+      - examples/README.md: "Top-level examples contract from A1."
+      - README.md: "Canonical product framing for kanban-lite capabilities."
+      - packages/docs-site/src/docs/sdk.njk: "Existing SDK positioning language for guide alignment."
+    deliverables:
+      - "Runnable Chat SDK example app folder under `examples/chat-sdk-vercel-ai/`"
+      - "A working chat interaction seam that reads/writes kanban-lite tasks through a documented supported path"
+      - "Placeholder env contract for AI provider and kanban-lite connection settings"
+    files_expected:
+      - "examples/chat-sdk-vercel-ai/package.json"
+      - "examples/chat-sdk-vercel-ai/app/page.tsx"
+      - "examples/chat-sdk-vercel-ai/app/api/chat/route.ts"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: chat_sdk_example
+    verification:
+      - "The example starts locally with documented install/dev commands."
+      - "The app demonstrates kanban-lite-backed chat triage, not a static mock only."
+      - "Secrets are placeholder-only and clearly documented."
+    acceptance_criteria:
+      - "A developer can identify the app entrypoint, the chat route, and the kanban-lite integration seam immediately."
+      - "The example remains self-contained under `examples/chat-sdk-vercel-ai/`."
+      - "The implementation does not require repo-wide script changes to run."
+    failure_modes:
+      - scenario: "The example depends on unpublished internal repo imports instead of a stable public integration seam."
+        likelihood: medium
+        impact: critical
+        mitigation: "Use only documented/public kanban-lite SDK or standalone API seams and document that choice in the app."
+    tech_stack:
+      - "TypeScript"
+      - "Next.js app-router style app shell"
+      - "Vercel AI ecosystem / Chat SDK"
+      - "kanban-lite SDK or standalone API"
+    test_coverage: "Local app boot + representative chat-to-kanban flow smoke validation"
+
+  - id: A4
+    title: Build the LangGraph Python backlog orchestrator example app
+    description: |
+      Implement a runnable Python example app that demonstrates durable backlog orchestration with interrupts or human approval,
+      using kanban-lite tasks as the working queue. Keep the example focused on graph durability, checkpoint/approval flow,
+      and explicit kanban-lite read/write boundaries.
+    wave: 2
+    agent: gem-implementer
+    assigned_agent: gem-implementer
+    priority: high
+    status: completed
+    completed_at: "2026-03-23"
+    completion_note: |
+      Built self-contained Python example under examples/langgraph-python/ with six files:
+      kanban_lite_client.py (REST API wrapper), graph.py (StateGraph + four nodes + interrupt gate),
+      main.py (three-phase run loop with Command(resume=...)), requirements.txt, .env.example,
+      and README.md. Rule-based proposal engine is the default (no API keys needed); README
+      documents how to swap in LangChain/OpenAI. Uses only public kanban-lite REST seams
+      (GET /api/tasks and PUT /api/tasks/{id}). Self-contained; no root workspace changes.
+    dependencies:
+      - A1
+    context_files:
+      - examples/README.md: "Top-level examples contract from A1."
+      - README.md: "Canonical product framing for kanban-lite capabilities."
+      - packages/docs-site/src/docs/mcp.njk: "Useful existing AI-agent positioning language to avoid contradictory docs."
+    deliverables:
+      - "Runnable LangGraph example app folder under `examples/langgraph-python/`"
+      - "A durable/approval-aware graph entrypoint that works against kanban-lite tasks"
+      - "Python dependency manifest and placeholder env contract"
+    files_expected:
+      - "examples/langgraph-python/requirements.txt"
+      - "examples/langgraph-python/graph.py"
+      - "examples/langgraph-python/main.py"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 380
+    focus_area: langgraph_example
+    verification:
+      - "The example installs in a fresh Python environment with documented commands."
+      - "The approval/interrupt step is explicit and tied to kanban-lite task progression."
+      - "The example does not assume hidden infrastructure outside documented placeholders."
+    acceptance_criteria:
+      - "A developer can run the graph locally and understand where human approval enters the flow."
+      - "The example remains self-contained under `examples/langgraph-python/`."
+      - "The kanban-lite integration seam is visible and documented in-code or adjacent docs."
+    failure_modes:
+      - scenario: "The example becomes a generic LangGraph demo with kanban-lite mentioned but not meaningfully integrated."
+        likelihood: medium
+        impact: high
+        mitigation: "Anchor the flow on concrete kanban-lite task fetch/update steps and show approvals affecting board state."
+    tech_stack:
+      - "Python"
+      - "LangGraph"
+      - "kanban-lite standalone API or supported local wrapper"
+    test_coverage: "Install/run smoke validation plus approval-path sanity check"
+
+  - id: A5
+    title: Build the Mastra supervisor-style agent orchestration example app
+    description: |
+      Implement a runnable TypeScript example app that demonstrates Mastra-based project-ops orchestration over kanban-lite,
+      with a supervisor-style coordination story and explicit approval-aware steps. Keep the app focused and small enough to be a copyable reference.
+    wave: 2
+    agent: gem-implementer
+    assigned_agent: gem-implementer
+    priority: high
+    status: completed
+    completed_at: "2026-03-23"
+    completion_note: |
+      Built examples/mastra-agent-ops/ — Next.js App Router app with Mastra Coordinator agent (src/mastra/index.ts,
+      src/mastra/agents/coordinator.ts, src/mastra/tools/kanban.ts), streaming chat route (app/api/agent/route.ts),
+      approval-aware chat UI (app/page.tsx), .env.example, README.md matching docs/examples/mastra/ route.
+      kanban-lite seam: REST API only (GET/POST /api/tasks, PUT/PATCH /api/tasks/:id/move).
+    dependencies:
+      - A1
+    context_files:
+      - examples/README.md: "Top-level examples contract from A1."
+      - README.md: "Canonical product framing for kanban-lite capabilities."
+      - packages/docs-site/src/docs/examples.njk: "Hub positioning for the final example story."
+    deliverables:
+      - "Runnable Mastra example app folder under `examples/mastra-agent-ops/`"
+      - "A Mastra orchestration entrypoint with kanban-lite task operations and approval-aware coordination"
+      - "Placeholder env contract for model/provider settings and kanban-lite connection details"
+    files_expected:
+      - "examples/mastra-agent-ops/package.json"
+      - "examples/mastra-agent-ops/src/mastra/index.ts"
+      - "examples/mastra-agent-ops/app/page.tsx"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 420
+    focus_area: mastra_example
+    verification:
+      - "The example starts locally with documented install/dev commands."
+      - "The supervisor/project-ops orchestration story is visible in code and UI output."
+      - "The kanban-lite integration seam uses documented supported behavior only."
+    acceptance_criteria:
+      - "A developer can identify the agent entrypoint, the task-ops flow, and the approval touchpoints quickly."
+      - "The example remains self-contained under `examples/mastra-agent-ops/`."
+      - "No unrelated repo packages are modified to support the example."
+    failure_modes:
+      - scenario: "The example overreaches into framework boilerplate and buries the kanban-lite orchestration lesson."
+        likelihood: medium
+        impact: high
+        mitigation: "Favor a minimal runnable app shell and keep the orchestration surface concentrated in one obvious entrypoint."
+    tech_stack:
+      - "TypeScript"
+      - "Mastra"
+      - "Next.js app-router style app shell"
+      - "kanban-lite SDK or standalone API"
+    test_coverage: "Local app boot + representative orchestration flow smoke validation"
+
+  - id: A6
+    title: Author the step-by-step Chat SDK build guide page
+    description: |
+      Create the dedicated docs-site guide that teaches a developer how to build the Chat SDK / Vercel AI example with kanban-lite,
+      using the quick-start page as the structural reference. The guide should mirror the actual app commands and explain the integration seam clearly.
+    wave: 3
+    agent: gem-documentation-writer
+    assigned_agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    status_note: "Published /docs/examples/chat-sdk/ from the existing stub route using the shipped Next.js example, README commands, env placeholders, and REST API integration seam as source of truth."
+    dependencies:
+      - A2
+      - A3
+    context_files:
+      - packages/docs-site/src/docs/quick-start.njk: "Step-by-step layout reference."
+      - examples/chat-sdk-vercel-ai/README.md: "Run commands and app story if added during implementation."
+      - packages/docs-site/src/docs/examples.njk: "Hub copy and link tone."
+    deliverables:
+      - "A docs page for building the Chat SDK example end-to-end"
+      - "Commands, env placeholders, and kanban-lite integration explanation aligned with the actual runnable app"
+    files_expected:
+      - "packages/docs-site/src/docs/examples-chat-sdk.njk"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 220
+    focus_area: docs_chat_guide
+    verification:
+      - "Every documented command maps to the implemented example."
+      - "The guide explains why kanban-lite is used in the flow, not just how to run the app."
+    acceptance_criteria:
+      - "A new developer can follow the page without consulting source code first."
+      - "The guide uses the same naming and slugs established earlier."
+    failure_modes:
+      - scenario: "The guide paraphrases an intended architecture rather than the actual commands and files shipped in the example."
+        likelihood: medium
+        impact: medium
+        mitigation: "Treat the implemented example as the source of truth for command order, env names, and file references."
+    task_type: documentation
+    audience: developers
+    coverage_matrix:
+      - "Local prerequisites"
+      - "Install and env setup"
+      - "Run/dev commands"
+      - "kanban-lite integration explanation"
+      - "Suggested extension ideas"
+
+  - id: A7
+    title: Author the step-by-step LangGraph build guide page
+    description: |
+      Create the dedicated docs-site guide that teaches a developer how to build the LangGraph Python example with kanban-lite,
+      with special emphasis on durability, interrupts, and human approval around task orchestration.
+    wave: 3
+    agent: gem-documentation-writer
+    assigned_agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - A2
+      - A4
+    context_files:
+      - packages/docs-site/src/docs/quick-start.njk: "Step-by-step layout reference."
+      - examples/langgraph-python/README.md: "Run commands and app story if added during implementation."
+      - packages/docs-site/src/docs/examples.njk: "Hub copy and link tone."
+    deliverables:
+      - "A docs page for building the LangGraph example end-to-end"
+      - "Explicit explanation of approval checkpoints and kanban-lite task updates"
+    files_expected:
+      - "packages/docs-site/src/docs/examples-langgraph-python.njk"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 220
+    focus_area: docs_langgraph_guide
+    verification:
+      - "The guide documents the actual Python environment and run commands."
+      - "The approval/interrupt story is concrete and matches the example implementation."
+    acceptance_criteria:
+      - "A new developer can build and run the example from the guide alone."
+      - "The guide frames kanban-lite as the work queue/state system in the graph."
+    failure_modes:
+      - scenario: "The guide is technically correct but fails to explain the durable approval story that makes this example distinct."
+        likelihood: medium
+        impact: medium
+        mitigation: "Include a specific walkthrough of interrupt, approval, and board-state consequences."
+    task_type: documentation
+    audience: developers
+    coverage_matrix:
+      - "Python prerequisites"
+      - "Environment and dependency install"
+      - "Run/approval loop"
+      - "kanban-lite task-state integration"
+      - "Suggested extension ideas"
+
+  - id: A8
+    title: Author the step-by-step Mastra build guide page
+    description: |
+      Create the dedicated docs-site guide that teaches a developer how to build the Mastra example with kanban-lite,
+      focusing on supervisor-style orchestration, approvals, and how the app turns board work into agent-operable flows.
+    wave: 3
+    agent: gem-documentation-writer
+    assigned_agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    status_note: "Replaced the reserved-route placeholder at packages/docs-site/src/docs/examples-mastra.njk with a full quick-start-style guide covering setup, orchestration flow, approval gating, and the kanban-lite REST seam."
+    dependencies:
+      - A2
+      - A5
+    context_files:
+      - packages/docs-site/src/docs/quick-start.njk: "Step-by-step layout reference."
+      - examples/mastra-agent-ops/README.md: "Run commands and app story if added during implementation."
+      - packages/docs-site/src/docs/examples.njk: "Hub copy and link tone."
+    deliverables:
+      - "A docs page for building the Mastra example end-to-end"
+      - "Clear explanation of the supervisor/project-ops orchestration story over kanban-lite"
+    files_expected:
+      - "packages/docs-site/src/docs/examples-mastra.njk"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 220
+    focus_area: docs_mastra_guide
+    verification:
+      - "The guide mirrors the actual app commands and file structure."
+      - "The orchestration and approval story is concrete, not purely conceptual."
+    acceptance_criteria:
+      - "A developer can understand what Mastra is coordinating and how kanban-lite participates."
+      - "The guide uses the same slugs/naming promised by the examples hub."
+    failure_modes:
+      - scenario: "The guide describes Mastra generically and leaves the kanban-lite integration under-specified."
+        likelihood: medium
+        impact: medium
+        mitigation: "Anchor the narrative on concrete task intake, delegation, approval, and task-state update steps."
+    task_type: documentation
+    audience: developers
+    coverage_matrix:
+      - "Local prerequisites"
+      - "Install and env setup"
+      - "Run/dev commands"
+      - "Supervisor/orchestration flow"
+      - "kanban-lite task-state integration"
+
+  - id: A9
+    title: Sync examples discoverability across the hub, quick start, README, and changelog
+    description: |
+      Wire the three new guide pages into the stable `/docs/examples/` hub, refresh nearby discoverability surfaces,
+      and add the required release-note/user-facing documentation updates. Keep the edits surgical and focused on discoverability.
+    wave: 4
+    agent: gem-documentation-writer
+    assigned_agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    status_note: "Updated the stable examples hub copy, quick-start next steps, root README examples section, and Unreleased changelog so the three shipped example guides and folders are easier to find without implying new core product features."
+    dependencies:
+      - A6
+      - A7
+      - A8
+    context_files:
+      - packages/docs-site/src/docs/examples.njk: "Stable examples hub."
+      - packages/docs-site/src/docs/quick-start.njk: "High-traffic next-step page."
+      - README.md: "Root discoverability surface."
+    deliverables:
+      - "Updated `/docs/examples/` hub linking all three guide pages"
+      - "Quick-start and root README discoverability updates for the new examples"
+      - "A CHANGELOG entry under `[Unreleased]` describing the new examples/docs additions"
+    files_expected:
+      - "packages/docs-site/src/docs/examples.njk"
+      - "packages/docs-site/src/docs/quick-start.njk"
+      - "README.md"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: examples_discoverability
+    verification:
+      - "All three example guides are reachable from `/docs/examples/`."
+      - "Root discoverability text matches the shipped example names."
+      - "User-facing documentation updates stay focused on examples/docs and do not imply new core product features."
+    acceptance_criteria:
+      - "The examples are discoverable from the docs hub and at least one adjacent onboarding surface."
+      - "Root docs language is consistent with the final example slugs and positioning."
+      - "CHANGELOG updates are accounted for in the implementation sequence even if landed in a separate small commit."
+    failure_modes:
+      - scenario: "Discoverability updates oversell the examples or imply features that are not actually present."
+        likelihood: medium
+        impact: medium
+        mitigation: "Copy should describe the shipped example flows only and avoid claiming new core capabilities."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "Examples hub links"
+      - "Quick-start cross-links"
+      - "README discoverability"
+      - "CHANGELOG release notes"
+
+  - id: A10
+    title: Smoke-test docs navigation and runnable example paths
+    description: |
+      Validate the end-to-end developer journey: examples are discoverable, each guide references a runnable app, and the docs site
+      preserves stable routes and working navigation. This task focuses on behavior validation rather than code review.
+    wave: 4
+    agent: gem-browser-tester
+    assigned_agent: gem-browser-tester
+    priority: high
+    status: completed
+    status_note: "Validated built docs-site navigation from /docs/examples/ to all three guides, confirmed quick-start discoverability path to the examples hub, and cross-checked each guide's folder/command contract against the shipped example files."
+    dependencies:
+      - A3
+      - A4
+      - A5
+      - A9
+    context_files:
+      - packages/docs-site/src/docs/examples.njk: "Hub route to validate."
+      - packages/docs-site/src/docs/quick-start.njk: "Onboarding surface to validate."
+      - examples/README.md: "Expected example folder inventory."
+    deliverables:
+      - "Validation notes covering example discoverability, guide navigation, and runnable command presence"
+      - "A pass/fail matrix for the three example app journeys"
+    files_expected:
+      - "No permanent files expected; validation output should be attached to orchestrator results"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: examples_smoke_validation
+    verification:
+      - "`/docs/examples/` renders links to all three new guide pages."
+      - "Each guide references the correct example folder and runnable commands."
+      - "Quick-start and README discoverability links do not dead-end."
+    acceptance_criteria:
+      - "A tester can trace a clean path from docs hub to guide to example folder for each integration."
+      - "Any broken or missing route/command is captured as a blocker before review sign-off."
+    failure_modes:
+      - scenario: "Pages render, but command snippets or folder references are mismatched enough to waste developer time."
+        likelihood: medium
+        impact: high
+        mitigation: "Cross-check page content against the actual example folders and fail the task on any mismatch."
+    validation_matrix:
+      - scenario: "Chat SDK example journey"
+        steps:
+          - "Open `/docs/examples/` and confirm the Chat SDK guide link is visible."
+          - "Open the Chat SDK guide and verify install/env/run steps reference `examples/chat-sdk-vercel-ai/`."
+          - "Confirm the example folder contains the files implied by the guide."
+        expected_result: "Guide and folder names match, and the app has a clear runnable path."
+      - scenario: "LangGraph example journey"
+        steps:
+          - "Open `/docs/examples/` and confirm the LangGraph guide link is visible."
+          - "Open the LangGraph guide and verify Python setup and approval-flow steps reference `examples/langgraph-python/`."
+          - "Confirm the example folder contains the files implied by the guide."
+        expected_result: "Guide and folder names match, and the approval-oriented Python app has a clear runnable path."
+      - scenario: "Mastra example journey"
+        steps:
+          - "Open `/docs/examples/` and confirm the Mastra guide link is visible."
+          - "Open the Mastra guide and verify install/env/run steps reference `examples/mastra-agent-ops/`."
+          - "Confirm the example folder contains the files implied by the guide."
+        expected_result: "Guide and folder names match, and the app has a clear runnable path."
+
+  - id: A11
+    title: Review scope discipline, repo contracts, and release-note completeness
+    description: |
+      Perform a final review pass to ensure the implementation stayed within the requested examples/docs scope, kept root build contracts stable,
+      and included the necessary user-facing documentation updates without drifting into unrelated core feature work.
+    wave: 4
+    agent: gem-reviewer
+    assigned_agent: gem-reviewer
+    priority: high
+    status: completed
+    status_note: "Scoped final review passed: examples/docs-only changes, stable root build/workspace contracts, and accurate README/CHANGELOG updates with no off-scope core feature drift."
+    dependencies:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8
+      - A9
+      - A10
+    context_files:
+      - AGENTS.md: "Minimal-edit and parity guidance."
+      - README.md: "Root user-facing messaging and examples discoverability."
+      - CHANGELOG.md: "Required release-note surface."
+    deliverables:
+      - "Review notes confirming scope discipline, docs completeness, and contract safety"
+      - "Explicit blocker list if any task widened into off-scope core changes"
+    files_expected:
+      - "No permanent files expected; review output should be attached to orchestrator results"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 100
+    focus_area: final_review
+    verification:
+      - "Examples/docs work does not claim or require unintended SDK/API/CLI/MCP feature changes."
+      - "Root build/workspace behavior remained stable unless narrowly justified and documented."
+      - "README and CHANGELOG updates are present and accurate."
+    acceptance_criteria:
+      - "The repo changes read as examples/docs additions, not as a stealth core refactor."
+      - "Any discovered blocker is explicitly called out rather than silently worked around."
+    failure_modes:
+      - scenario: "Implementation succeeds technically but leaves the repo with muddled ownership boundaries or misleading release notes."
+        likelihood: medium
+        impact: high
+        mitigation: "Require final review sign-off on scope, ownership boundaries, and user-facing copy before closing the plan."
+    requires_review: true
+    review_depth: standard
+    security_sensitive: false

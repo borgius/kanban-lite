@@ -62,13 +62,37 @@ When `local` starts inside the standalone server and `KANBAN_LITE_TOKEN` is miss
 
 ## `.kanban.json` examples
 
+Auth capabilities are declared in the `plugins` key alongside storage providers. Use the npm package name `kl-auth-plugin` as the provider value.
+
 ### RBAC
 
 ```json
 {
-  "auth": {
-    "auth.identity": { "provider": "rbac" },
-    "auth.policy": { "provider": "rbac" }
+  "plugins": {
+    "auth.identity": { "provider": "kl-auth-plugin" },
+    "auth.policy": { "provider": "kl-auth-plugin" }
+  }
+}
+```
+
+### Custom RBAC matrix
+
+Provide `options.matrix` on `auth.policy` to override the default behaviour per role.  Each key is a role name and the value is the list of actions that role may perform.  Roles are **not** cumulative — list every action explicitly for each role.
+
+```json
+{
+  "plugins": {
+    "auth.identity": { "provider": "kl-auth-plugin" },
+    "auth.policy": {
+      "provider": "kl-auth-plugin",
+      "options": {
+        "matrix": {
+          "user":    ["form.submit", "comment.create", "comment.update", "comment.delete", "attachment.add", "attachment.remove", "card.action.trigger", "log.add"],
+          "manager": ["card.create", "card.update", "card.move", "card.transfer", "card.delete", "board.action.trigger", "log.clear", "board.log.add"],
+          "admin":   ["board.create", "board.update", "board.delete", "settings.update", "webhook.create", "webhook.update", "webhook.delete", "label.set", "label.rename", "label.delete", "column.create", "column.update", "column.reorder", "column.setMinimized", "column.delete", "column.cleanup", "board.action.config.add", "board.action.config.remove", "board.log.clear", "board.setDefault", "storage.migrate", "card.purgeDeleted"]
+        }
+      }
+    }
   }
 }
 ```
@@ -77,22 +101,32 @@ When `local` starts inside the standalone server and `KANBAN_LITE_TOKEN` is miss
 
 ```json
 {
-  "auth": {
+  "plugins": {
     "auth.identity": {
-      "provider": "local",
+      "provider": "kl-auth-plugin",
       "options": {
         "users": [
           {
             "username": "alice",
-            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH"
+            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
+            "role": "user"
           }
         ]
       }
     },
-    "auth.policy": { "provider": "local" }
+    "auth.policy": { "provider": "kl-auth-plugin" }
   }
 }
 ```
+
+Use the `kl` CLI to add users without computing hashes manually:
+
+```sh
+kl auth create-user --username alice --password s3cr3t
+kl auth create-user --username admin --password s3cr3t --role admin
+```
+
+The command bcrypt-hashes the password and appends the user to `plugins["auth.identity"].options.users` in `.kanban.json`.
 
 ## Local development / monorepo workflow
 

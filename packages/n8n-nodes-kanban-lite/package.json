@@ -28,7 +28,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "release": "npm run clean && npm run build && npm version patch && npm publish",
+    "release:minor": "npm run clean && npm run build && npm version minor && npm publish",
+    "release:major": "npm run clean && npm run build && npm version major && npm publish"
   },
   "files": [
     "dist",

@@ -51,10 +51,10 @@
     "site:dev": "pnpm --filter @kanban-lite/docs-site dev",
     "site:deploy": "pnpm --filter @kanban-lite/docs-site deploy",
     "package": "vsce package --no-dependencies -o releases/",
-    "release": "npm version patch && npm run build && npm publish && npm run package && npm run release:github",
-    "release:minor": "npm version minor && npm run build && npm publish && npm run package && npm run release:github",
-    "release:major": "npm version major && npm run build && npm publish && npm run package && npm run release:github",
-    "release:github": "git push origin v$(node -p \"require('./package.json').version\") && gh release create v$(node -p \"require('./package.json').version\") releases/kanban-lite-$(node -p \"require('./package.json').version\").vsix --generate-notes"
+    "release": "pnpm --filter './packages/*' --if-present run release && npm run release:github",
+    "release:minor": "pnpm --filter './packages/*' --if-present run release:minor && npm run release:github",
+    "release:major": "pnpm --filter './packages/*' --if-present run release:major && npm run release:github",
+    "release:github": "git push origin v$(node -p \"require('./packages/kanban-lite/package.json').version\") && gh release create v$(node -p \"require('./packages/kanban-lite/package.json').version\") releases/kanban-lite-$(node -p \"require('./packages/kanban-lite/package.json').version\").vsix --generate-notes"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

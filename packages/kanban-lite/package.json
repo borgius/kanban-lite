@@ -1,6 +1,6 @@
 {
   "name": "kanban-lite",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Kanban board manager - VSCode extension, CLI, MCP server, and standalone web app",
   "license": "MIT",
   "repository": {
@@ -125,6 +125,9 @@
     "docs:api": "pnpm --dir ../.. run docs:root:api",
     "docs:webhooks": "pnpm --dir ../.. run docs:root:webhooks",
     "package": "vsce package --no-dependencies -o ../../releases/",
-    "publish:all": "vsce publish && ovsx publish"
+    "publish:all": "vsce publish && ovsx publish",
+    "release": "npm version patch && pnpm run build && pnpm run package && pnpm run publish:all",
+    "release:minor": "npm version minor && pnpm run build && pnpm run package && pnpm run publish:all",
+    "release:major": "npm version major && pnpm run build && pnpm run package && pnpm run publish:all"
   }
 }

@@ -1,15 +1,20 @@
 # kl-webhooks-plugin
 
-A [kanban-lite](https://github.com/borgius/kanban-lite) webhook delivery provider that implements:
+A [kanban-lite](https://github.com/borgius/kanban-lite) webhook package that owns webhook behavior on every host surface that already supports plugins. It implements:
 
 - `webhook.delivery`
+
+and also exports plugin-owned host integrations for:
+
+- `standalone.http` (`/api/webhooks` route ownership)
+- `cliPlugin` (`kl webhooks ...` command ownership)
 
 The package exports `webhookProviderPlugin` using the provider id `webhooks`.
 
 For runtime delivery it also exports `WebhookListenerPlugin`, a listener-only
 after-event subscriber that the SDK registers via `register()` / `unregister()` under the current plugin loader.
 
-It ports webhook registry CRUD plus listener-only runtime delivery out of kanban-lite core into a standalone, versioned package, with no behavior drift from the existing user experience.
+It is the canonical owner of webhook registry CRUD, listener-only runtime delivery, standalone webhook routes, and CLI webhook commands. MCP intentionally remains a thin core facade that delegates to the same SDK/provider path.
 
 ## Install
 
@@ -25,17 +30,21 @@ npm install kl-webhooks-plugin
 
 - `webhook.delivery`
 - listener-only `event.listener` runtime delivery via `WebhookListenerPlugin`
+- `standalone.http` route contribution for `/api/webhooks`
+- `cliPlugin` command contribution for `kl webhooks`
 
 ## What it does
 
 - Persists the webhook registry in the workspace `.kanban.json` `webhooks` array — the same shape used by kanban-lite core, so no migration is needed
 - Filters each SDK event against active webhooks subscribed to that event (or to `*`)
 - Subscribes only to committed SDK after-events, so pending before-events never trigger outbound delivery
+- Owns `/api/webhooks` registration through the standalone plugin seam when loaded by the standalone server
+- Owns `kl webhooks` command registration through the CLI plugin seam when loaded by the CLI host
 - Delivers events via HTTP POST with a JSON payload envelope: `{ event, timestamp, data }`
 - Signs payloads with HMAC-SHA256 when a `secret` is configured (`X-Webhook-Signature: sha256=…`)
 - Sets a 10-second request timeout; delivery failures are logged and swallowed (fire-and-forget)
 
-Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delivery is now owned by the separate listener export.
+Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delivery is owned by the separate listener export; MCP webhook tools stay core-owned by design and call the same SDK/provider implementation.
 
 ## `.kanban.json` example
 
@@ -51,13 +60,15 @@ Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delive
 
 Because `webhooks` is the default provider id, the block above is equivalent to omitting `webhookPlugin` from `.kanban.json` entirely once this package is installed.
 
+A workspace that only sets `webhookPlugin` still activates plugin discovery for this package's provider, standalone route contribution, and CLI command contribution.
+
 Webhooks are registered at runtime via the kanban-lite SDK/API/CLI/MCP and stored in the same config:
 
 ```json
 {
   "webhooks": [
     {
-      "id": "wh_a1b2c3d4e5f6",
+      "id": "wh_a1b2c3d4e5f6a7b8",
       "url": "https://example.com/hook",
       "events": ["task.created", "task.updated"],
       "secret": "my-signing-secret",
@@ -112,6 +123,8 @@ npm run test:integration
 ```
 
 Inside this monorepo, Kanban Lite resolves `packages/kl-webhooks-plugin` directly. The legacy sibling checkout fallback at `../kl-webhooks-plugin` intentionally remains for temporary compatibility outside the monorepo, so `npm link ../kl-webhooks-plugin` is optional rather than the primary workflow.
+
+Generated docs such as `docs/webhooks.md` are source-driven from `scripts/generate-webhooks-docs.ts`; update the generator metadata and regenerate instead of editing generated markdown by hand.
 
 ## License
 

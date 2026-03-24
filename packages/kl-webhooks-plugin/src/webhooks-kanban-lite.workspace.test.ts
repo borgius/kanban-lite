@@ -19,7 +19,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 interface WorkspaceKanbanSDK {
   getWebhookStatus(): { webhookProvider: string; webhookProviderActive: boolean }
-  readonly capabilities?: { webhookListener?: { manifest: { id: string } } } | null
+  readonly capabilities?: {
+    webhookListener?: { manifest: { id: string } }
+    standaloneHttpPlugins?: ReadonlyArray<{ manifest: { id: string } }>
+  } | null
   createCard(input: { content: string }): Promise<unknown>
   close(): void
 }
@@ -128,6 +131,14 @@ describe('kl-webhooks-plugin: consumption via kanban-lite workspace SDK', () => 
     } finally {
       sdk.close()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+
     }
+  })
+
+  it('plugin standaloneHttpPlugin is registered under webhook-only config', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+    const standalonePlugins = sdk.capabilities?.standaloneHttpPlugins ?? []
+    expect(standalonePlugins.some((p) => p.manifest.id === 'webhooks')).toBe(true)
+    sdk.close()
   })
 })

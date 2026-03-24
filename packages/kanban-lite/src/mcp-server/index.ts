@@ -1348,17 +1348,28 @@ async function main(): Promise<void> {
 
   // --- Webhook Tools ---
 
+  /** Strip the HMAC secret from a webhook object before returning it to an MCP caller. */
+  function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
+    const { secret: _s, ...safe } = w
+    return safe as Omit<T, 'secret'>
+  }
+
   server.tool(
     'list_webhooks',
     'List all registered webhooks.',
     {},
     async () => {
-      const webhooks = sdk.listWebhooks()
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(webhooks, null, 2),
-        }],
+      try {
+        const webhooks = await runWithMcpAuth(() => Promise.resolve(sdk.listWebhooks()))
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(webhooks.map(redactWebhook), null, 2),
+          }],
+        }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
       }
     }
   )
@@ -1374,7 +1385,7 @@ async function main(): Promise<void> {
     async ({ url, events, secret }) => {
       try {
         const webhook = await runWithMcpAuth(() => sdk.createWebhook({ url, events: events || ['*'], secret }))
-        return { content: [{ type: 'text' as const, text: JSON.stringify(webhook, null, 2) }] }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(webhook), null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
         return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
@@ -1423,7 +1434,7 @@ async function main(): Promise<void> {
         if (!updated) {
           return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
         }
-        return { content: [{ type: 'text' as const, text: JSON.stringify(updated, null, 2) }] }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(updated), null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
         return { content: [{ type: 'text' as const, text: String(err) }], isError: true }

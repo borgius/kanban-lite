@@ -49,7 +49,7 @@ Start with the stable docs hub at <code>/docs/examples/</code> for the shipped w
 - LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
 - Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
 
-See [`examples/README.md`](examples/README.md) for the canonical top-level example app slugs, local install/run expectations, and the placeholder-only env-file convention. The examples stay self-contained outside the root `pnpm` workspace by default so the main repo build/watch flow remains unchanged.
+See [`examples/README.md`](examples/README.md) for the canonical top-level example app slugs, local install/run expectations, and the placeholder-only env-file convention. The Chat SDK / Vercel AI example now also ships an example-local integration suite that drives the real chat route and verifies live card mutations when `OPENAI_API_KEY` is available. The examples stay self-contained outside the root `pnpm` workspace by default so the main repo build/watch flow remains unchanged.
 
 ## Features
 
@@ -496,14 +496,15 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 
 ### Install and compatibility
 
-Webhook CRUD now resolves through the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`, while runtime delivery happens through that package's listener-only after-event subscriber.
+Webhook runtime behavior is now owned by the external `kl-webhooks-plugin` package wherever the host already exposes a plugin seam. That package owns the `webhook.delivery` provider, the listener-only runtime subscriber, the standalone `/api/webhooks` routes, and the `kl webhooks` CLI command surface.
 
 The SDK owns the mutation lifecycle: it awaits before-event listeners before a write, emits after-events exactly once after commit, and webhook delivery listens only to that committed after-event phase.
 
 - Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
 - Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array; no migration is required.
-- If `webhookPlugin` is omitted, runtime normalization still defaults to `{ "webhook.delivery": { "provider": "webhooks" } }`.
-- If the package is not installed, current releases keep the compatibility provider/listener path so existing workspaces continue to see the same delivery behavior while external-package installs roll out.
+- A workspace that only sets `webhookPlugin` still activates webhook plugin discovery for the provider, standalone routes, and CLI command loading.
+- MCP remains a thin core facade: the MCP server keeps the `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` tools in core, but those tools delegate straight to the SDK/provider path instead of owning runtime delivery.
+- Generated docs such as `docs/webhooks.md` are source-driven; update generator metadata and regenerate them instead of editing the generated markdown by hand.
 
 ```bash
 npm install kl-webhooks-plugin
@@ -520,7 +521,7 @@ For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is res
   },
   "webhooks": [
     {
-      "id": "wh_a1b2c3d4e5f6",
+      "id": "wh_a1b2c3d4e5f67890",
       "url": "https://example.com/hook",
       "events": ["task.created", "task.updated"],
       "active": true
@@ -529,12 +530,12 @@ For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is res
 }
 ```
 
-All webhook CRUD surfaces still delegate to the same SDK methods:
+Webhook management still converges on the same SDK methods, but ownership is now split by host surface:
 
 - SDK: `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, `sdk.getWebhookStatus()`
-- REST API: `/api/webhooks`
-- CLI: `kl webhooks`, `kl webhooks add`, `kl webhooks update`, `kl webhooks remove`
-- MCP: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
+- REST API: plugin-owned `/api/webhooks` routes via the standalone HTTP plugin seam
+- CLI: plugin-owned `kl webhooks`, `kl webhooks add`, `kl webhooks update`, `kl webhooks remove`
+- MCP: thin core facade tools — `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
 
 ### Events
 
@@ -1170,7 +1171,7 @@ The same pattern applies to MySQL:
 
 ### Webhook delivery provider
 
-Webhook delivery keeps its own top-level `webhookPlugin` config key. The `webhook.delivery` provider owns registry CRUD, while a paired listener-only runtime plugin subscribes to committed SDK after-events for outbound delivery:
+Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting that key is enough to activate webhook package discovery for every supported plugin-owned surface: `webhook.delivery`, standalone `/api/webhooks`, and the CLI `webhooks` command. MCP intentionally stays in core as a thin SDK facade.
 
 ```json
 {
@@ -1185,8 +1186,10 @@ Webhook delivery keeps its own top-level `webhookPlugin` config key. The `webhoo
 - The default runtime provider id is `webhooks`.
 - The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
 - The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
+- The package owns runtime delivery, standalone webhook routes, and CLI webhook commands where those plugin seams are available.
+- MCP webhook tools remain in core and delegate through the SDK/provider path rather than registering from the plugin package.
 - A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
-- If the package is absent, current releases retain a compatibility provider/listener fallback so end-user webhook behavior stays intact.
+- Generated webhook reference docs are emitted from `scripts/generate-webhooks-docs.ts`; regenerate them from source metadata instead of editing `docs/webhooks.md` directly.
 
 ### MySQL setup and runtime expectations
 
@@ -1229,7 +1232,7 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active or the compatibility delivery path is still in use.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
 
 ### Migrating between compatibility-backed providers
 
@@ -1520,6 +1523,38 @@ npm run site:dev
 # Or use the workspace-scoped commands directly
 pnpm --filter @kanban-lite/docs-site build
 pnpm --filter @kanban-lite/docs-site dev
+```
+
+### Release Workflow
+
+Use the root release commands for the coordinated npm + GitHub release path:
+
+```bash
+# Patch release
+npm run release
+
+# Minor release
+npm run release:minor
+
+# Major release
+npm run release:major
+```
+
+The coordinated release flow now:
+
+1. verifies the git working tree is clean
+2. checks npm and GitHub auth, pausing so you can refresh the npm release token if needed
+3. builds `kanban-lite` once and each publishable workspace package once
+4. bumps every public package version without creating intermediate git tags
+5. packages `releases/kanban-lite-<version>.vsix`
+6. publishes all public workspace packages to npm, including `kanban-lite`
+7. creates a single `chore: release vX.Y.Z` commit, tags it, and pushes the branch plus tag
+8. creates or updates the matching GitHub release artifact in place
+
+If you also need VS Code Marketplace and Open VSX publishing for the extension package, run this separately after the release build is ready:
+
+```bash
+pnpm --filter kanban-lite run publish:all
 ```
 
 ### Tech Stack

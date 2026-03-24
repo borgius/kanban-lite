@@ -57,7 +57,23 @@ function injectDenyAll(sdk: KanbanSDK, kanbanDir: string): string[] {
     { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
     kanbanDir,
   )
-  setCapabilities(sdk, { ...bag, authPolicy: makeDenyAllPolicy(captured) })
+  setCapabilities(sdk, {
+    ...bag,
+    webhookProvider: {
+      manifest: { id: 'deny-all-webhook-provider', provides: ['webhook.delivery'] as const },
+      listWebhooks: () => [],
+      createWebhook: (_root: string, input: { url: string; events: string[]; secret?: string }) =>
+        ({ id: 'wh_mock', url: input.url, events: input.events, active: true as const }),
+      updateWebhook: () => null,
+      deleteWebhook: () => false,
+    },
+    webhookListener: {
+      manifest: { id: 'deny-all-webhook-listener', provides: ['event.listener'] as const },
+      register: () => {},
+      unregister: () => {},
+    },
+    authPolicy: makeDenyAllPolicy(captured),
+  })
   return captured
 }
 

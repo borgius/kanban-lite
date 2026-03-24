@@ -1,3 +1,12 @@
+/**
+ * @internal Temporary compatibility shim — canonical webhook implementation moved to `kl-webhooks-plugin`.
+ *
+ * This module retains the original core webhook CRUD and delivery helpers so that workspaces
+ * without an explicit `webhook.delivery` provider configured continue to function. When
+ * `kl-webhooks-plugin` is active, {@link KanbanSDK} delegates all webhook operations to the
+ * plugin instead of calling the functions exported here. These helpers are intentional
+ * compatibility shims and will be removed once full plugin-ownership migration is verified.
+ */
 import * as crypto from 'crypto'
 import * as http from 'http'
 import * as https from 'https'

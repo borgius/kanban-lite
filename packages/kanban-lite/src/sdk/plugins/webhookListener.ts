@@ -1,3 +1,13 @@
+/**
+ * @internal Temporary compatibility shim — canonical webhook runtime delivery moved to `kl-webhooks-plugin`.
+ *
+ * {@link WebhookListenerPlugin} here is the built-in fallback instantiated by `KanbanSDK`
+ * only when no external webhook provider exports a compatible listener. When
+ * `kl-webhooks-plugin` is active (it exports its own `WebhookListenerPlugin` class), that
+ * plugin-owned listener is registered instead and this module is never reached for delivery.
+ * This module remains as a temporary compatibility fallback until plugin-ownership parity
+ * is fully verified; it will be removed in a subsequent migration wave.
+ */
 import type { SDKEvent, SDKEventListenerPlugin, SDKAfterEventType } from '../types'
 import type { EventBus, EventBusAnyListener } from '../eventBus'
 import { fireWebhooks } from '../webhooks'
@@ -38,11 +48,16 @@ const SDK_AFTER_EVENT_NAMES: ReadonlySet<string> = new Set<SDKAfterEventType>([
 ])
 
 /**
- * Built-in event listener plugin that delivers SDK after-events to configured webhooks.
+ * Built-in compatibility-shim listener plugin that delivers SDK after-events to configured webhooks.
+ *
+ * **This is a compatibility shim.** The canonical runtime delivery implementation is
+ * owned by `kl-webhooks-plugin`. `KanbanSDK` instantiates this class only when no
+ * external webhook provider exports a compatible `WebhookListenerPlugin`. When
+ * `kl-webhooks-plugin` is active, its own listener is registered instead and this
+ * class is never reached for delivery.
  *
  * Implements {@link SDKEventListenerPlugin} — registers and unregisters via
- * {@link register} / {@link unregister}, replacing the legacy `init` / `destroy`
- * lifecycle from the deprecated {@link import('../types').EventListenerPlugin}.
+ * {@link register} / {@link unregister}.
  *
  * Subscribes to all SDK events via the event bus but **delivers only after-events**
  * to webhooks. Before-events (pre-mutation dispatches) are intentionally ignored to
@@ -50,9 +65,9 @@ const SDK_AFTER_EVENT_NAMES: ReadonlySet<string> = new Set<SDKAfterEventType>([
  *
  * @example
  * ```ts
+ * // Used automatically by KanbanSDK as a fallback when no plugin provides a listener.
  * const plugin = new WebhookListenerPlugin('/path/to/workspace')
  * plugin.register(sdk.eventBus)
- * // webhook delivery is now active for all committed after-events
  * plugin.unregister()
  * ```
  */

@@ -45,7 +45,7 @@ export type ResolvedWebhookCapabilities = Record<WebhookCapabilityNamespace, Pro
  * are fired asynchronously whenever a matching event occurs.
  */
 export interface Webhook {
-  /** Unique identifier (e.g., `'wh_a1b2c3d4e5f6'`). */
+  /** Unique identifier (e.g., `'wh_a1b2c3d4e5f67890'`). */
   id: string
   /** The HTTP(S) URL that receives POST requests with event payloads. */
   url: string
@@ -235,7 +235,7 @@ export interface KanbanConfig {
      * `"provider": "kl-auth-plugin"`). When present they take precedence over
      * any value in the legacy {@link auth} key.
    */
-  plugins?: CapabilitySelections & AuthCapabilitySelections
+  plugins?: CapabilitySelections & AuthCapabilitySelections & WebhookCapabilitySelections
   /**
    * Legacy auth provider selections.
    * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
@@ -254,9 +254,8 @@ export interface KanbanConfig {
   forms?: Record<string, import('./config').FormDefinition>
   /**
    * Optional webhook provider selection.
-   * When omitted, defaults to `{ provider: 'webhooks' }` at runtime, which maps to the
-   * `kl-webhooks-plugin` external package. The persisted `.kanban.json` webhook registry
-   * shape (`webhooks` array) is unchanged regardless of which provider is active.
+   * @deprecated Prefer declaring `webhook.delivery` inside the `plugins` key.
+   * This field is still supported for backward compatibility but `plugins` takes precedence.
    */
   webhookPlugin?: WebhookCapabilitySelections
 }
@@ -706,17 +705,19 @@ export function normalizeStorageCapabilities(
  *
  * When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
  * maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
- * The built-in webhook delivery path remains active as a compatibility fallback when
- * the external package is absent.
+ * Core no longer provides a built-in webhook delivery fallback; hosts must install
+ * that package anywhere webhook CRUD or runtime delivery is expected to work.
  *
  * The input object is never mutated.
  */
 export function normalizeWebhookCapabilities(
-  config: Pick<KanbanConfig, 'webhookPlugin'>,
+  config: Pick<KanbanConfig, 'webhookPlugin' | 'plugins'>,
 ): ResolvedWebhookCapabilities {
   return {
-    'webhook.delivery': config.webhookPlugin?.['webhook.delivery']
-      ? cloneProviderRef(config.webhookPlugin['webhook.delivery'])
-      : { provider: 'webhooks' },
+    'webhook.delivery': config.plugins?.['webhook.delivery']
+      ? cloneProviderRef(config.plugins['webhook.delivery'])
+      : config.webhookPlugin?.['webhook.delivery']
+        ? cloneProviderRef(config.webhookPlugin['webhook.delivery'])
+        : { provider: 'webhooks' },
   }
 }

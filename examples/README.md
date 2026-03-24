@@ -6,7 +6,7 @@ This directory reserves the canonical home for runnable kanban-lite integration 
 
 | Folder | Runtime | Purpose | Local install/run expectation |
 | --- | --- | --- | --- |
-| `chat-sdk-vercel-ai/` | TypeScript / Node.js | Show a kanban-lite workflow integrated with the Chat SDK / Vercel AI ecosystem. | Install and run **inside the example folder only** using the app-local manifest and commands. |
+| `chat-sdk-vercel-ai/` | TypeScript / Node.js | Show a kanban-lite workflow integrated with the Chat SDK / Vercel AI ecosystem. | Install and run **inside the example folder only** using the app-local manifest and commands; `npm test` there runs the live chat→card integration suite. |
 | `langgraph-python/` | Python | Show durable task orchestration and approval flows backed by kanban-lite. | Create a local virtual environment inside the example folder and install only that app's Python dependencies. |
 | `mastra-agent-ops/` | TypeScript / Node.js | Show supervisor-style agent orchestration around kanban-lite operations. | Install and run **inside the example folder only** using the app-local manifest and commands. |
 

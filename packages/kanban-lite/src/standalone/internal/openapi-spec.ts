@@ -57,14 +57,6 @@ const commentIdParam = {
   description: 'Comment identifier',
 }
 
-const webhookIdParam = {
-  name: 'id',
-  in: 'path' as const,
-  required: true as const,
-  schema: { type: 'string' as const },
-  description: 'Webhook identifier',
-}
-
 const labelNameParam = {
   name: 'name',
   in: 'path' as const,
@@ -150,7 +142,6 @@ export const KANBAN_OPENAPI_SPEC = {
     { name: 'Attachments', description: 'File attachments on tasks' },
     { name: 'Logs', description: 'Append-only log entries on tasks and boards' },
     { name: 'Settings', description: 'Workspace display settings' },
-    { name: 'Webhooks', description: 'Webhook subscriptions' },
     { name: 'Labels', description: 'Label definitions and cascading renames' },
     { name: 'Workspace', description: 'Workspace metadata, storage, and auth status' },
   ],
@@ -193,17 +184,6 @@ export const KANBAN_OPENAPI_SPEC = {
           id: { type: 'string' },
           name: { type: 'string' },
           color: { type: 'string', description: 'Hex color string.' },
-        },
-      },
-      Webhook: {
-        type: 'object',
-        description: 'A registered webhook subscription.',
-        properties: {
-          id: { type: 'string' },
-          url: { type: 'string' },
-          events: { type: 'array', items: { type: 'string' } },
-          secret: { type: 'string' },
-          active: { type: 'boolean' },
         },
       },
       ApiOk: {
@@ -983,80 +963,6 @@ export const KANBAN_OPENAPI_SPEC = {
           },
         },
         responses: { 200: { description: 'Updated settings.' }, 400: { description: 'Error.' } },
-      },
-    },
-    // ------------------------------------------------------------------
-    // Webhooks
-    // ------------------------------------------------------------------
-    '/api/webhooks': {
-      get: {
-        tags: ['Webhooks'],
-        summary: 'List webhooks',
-        description: 'Returns all registered webhook subscriptions from the workspace `.kanban.json` webhook registry. Runtime delivery normally comes from the external `kl-webhooks-plugin` package via the `webhook.delivery` provider id `webhooks`, while current releases retain a built-in compatibility fallback when the package is not installed yet.',
-        responses: { 200: { description: 'Webhook list.' } },
-      },
-      post: {
-        tags: ['Webhooks'],
-        summary: 'Register webhook',
-        description: [
-          'Registers a new webhook destination. When `events` is omitted, the webhook subscribes to every event.',
-          'Registrations remain stored in the workspace `.kanban.json` `webhooks` array regardless of whether the external provider package or the built-in compatibility fallback is active.',
-          '',
-          '**Available events:** `task.created`, `form.submit`, `task.updated`, `task.moved`, `task.deleted`,',
-          '`comment.created`, `comment.updated`, `comment.deleted`, `log.added`, `log.cleared`,',
-          '`column.created`, `column.updated`, `column.deleted`, `attachment.added`, `attachment.removed`,',
-          '`settings.updated`, `board.created`, `board.updated`, `board.deleted`, `board.action`,',
-          '`board.log.added`, `board.log.cleared`.',
-        ].join('\n'),
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['url', 'events'],
-                properties: {
-                  url: { type: 'string', description: 'Target URL.' },
-                  events: { type: 'array', items: { type: 'string' }, description: 'Events to subscribe to (use `["*"]` for all).' },
-                  secret: { type: 'string', description: 'Optional HMAC-SHA256 signing secret.' },
-                },
-              },
-            },
-          },
-        },
-        responses: { 201: { description: 'Created.' }, 400: { description: 'Validation error.' } },
-      },
-    },
-    '/api/webhooks/{id}': {
-      put: {
-        tags: ['Webhooks'],
-        summary: 'Update webhook',
-        description: "Updates an existing webhook's URL, event subscriptions, signing secret, or active state. The persisted registry format stays the same whether delivery is handled by `kl-webhooks-plugin` or the built-in compatibility fallback.",
-        parameters: [webhookIdParam],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  url: { type: 'string' },
-                  events: { type: 'array', items: { type: 'string' } },
-                  secret: { type: 'string' },
-                  active: { type: 'boolean', description: 'Enable or disable the webhook.' },
-                },
-              },
-            },
-          },
-        },
-        responses: { 200: { description: 'Updated webhook.' }, 404: { description: 'Not found.' } },
-      },
-      delete: {
-        tags: ['Webhooks'],
-        summary: 'Delete webhook',
-        description: 'Deletes the webhook registration permanently from the workspace `.kanban.json` registry.',
-        parameters: [webhookIdParam],
-        responses: { 200: { description: 'Deleted.' }, 404: { description: 'Not found.' } },
       },
     },
     // ------------------------------------------------------------------

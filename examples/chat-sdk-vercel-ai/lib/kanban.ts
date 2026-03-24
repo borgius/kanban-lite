@@ -16,12 +16,13 @@
  *   PATCH  /api/boards/:boardId/tasks/:id/move  – move task to a column
  */
 
-export interface KanbanTask {
+export interface KanbanCard {
   id: string;
   title: string;
   status: string;
   priority: string;
   body?: string;
+  content?: string;
 }
 
 interface ApiEnvelope<T> {
@@ -34,6 +35,38 @@ const KANBAN_API_URL = process.env.KANBAN_API_URL ?? 'http://localhost:3000';
 const KANBAN_BOARD_ID = process.env.KANBAN_BOARD_ID ?? 'default';
 const KANBAN_API_TOKEN = process.env.KANBAN_API_TOKEN;
 const USE_MOCK = process.env.KANBAN_USE_MOCK === 'true';
+
+function parseCardContent(content: string | undefined, fallbackTitle: string): Pick<KanbanCard, 'title' | 'body'> {
+  if (!content) {
+    return { title: fallbackTitle };
+  }
+
+  const lines = content.split(/\r?\n/);
+  const headingLine = lines.find((line) => line.startsWith('# '));
+  const title = headingLine?.replace(/^#\s+/, '').trim() || fallbackTitle;
+  const body = lines
+    .filter((line, index) => !(index === lines.indexOf(headingLine ?? '') && line === headingLine))
+    .join('\n')
+    .trim();
+
+  return {
+    title,
+    ...(body ? { body } : {}),
+  };
+}
+
+function normalizeCard(card: Partial<KanbanCard> & { id: string; status: string; priority: string }): KanbanCard {
+  const { title, body } = parseCardContent(card.content, card.id);
+
+  return {
+    id: card.id,
+    title,
+    status: card.status,
+    priority: card.priority,
+    ...(body ? { body } : {}),
+    ...(card.content ? { content: card.content } : {}),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -53,9 +86,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { ...getHeaders(), ...(init?.headers ?? {}) },
   });
-  const json: ApiEnvelope<T> = await res.json();
-  if (!json.ok) {
-    throw new Error(json.error ?? `kanban-lite API error ${res.status} – ${url}`);
+  const contentType = res.headers.get('content-type') ?? '';
+  const json = contentType.includes('application/json')
+    ? (await res.json()) as ApiEnvelope<T>
+    : null;
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error ?? `kanban-lite API error ${res.status} – ${url}`);
   }
   return json.data;
 }
@@ -65,36 +101,36 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // Used for demos or UI development when the kanban-lite server is unavailable.
 // ---------------------------------------------------------------------------
 
-const mockStore: KanbanTask[] = [];
+const mockStore: KanbanCard[] = [];
 let mockSeq = 0;
 
 function mockCreate(
   title: string,
   description: string | undefined,
   priority: string,
-): KanbanTask {
-  const task: KanbanTask = {
+): KanbanCard {
+  const card: KanbanCard = {
     id: `mock-${++mockSeq}`,
     title,
     status: 'backlog',
     priority,
     body: description,
   };
-  mockStore.push(task);
-  return task;
+  mockStore.push(card);
+  return card;
 }
 
-function mockList(status?: string): KanbanTask[] {
+function mockList(status?: string): KanbanCard[] {
   return status ? mockStore.filter((t) => t.status === status) : [...mockStore];
 }
 
-function mockMove(idFragment: string, status: string): KanbanTask {
-  const task = mockStore.find(
+function mockMove(idFragment: string, status: string): KanbanCard {
+  const card = mockStore.find(
     (t) => t.id === idFragment || t.id.startsWith(idFragment),
   );
-  if (!task) throw new Error(`No mock task found matching id: ${idFragment}`);
-  task.status = status;
-  return task;
+  if (!card) throw new Error(`No mock card found matching id: ${idFragment}`);
+  card.status = status;
+  return card;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,47 +138,52 @@ function mockMove(idFragment: string, status: string): KanbanTask {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a new task on the kanban board.
+ * Create a new card on the kanban board.
  *
  * The kanban-lite API derives a task's title from the first Markdown `# heading`
  * in the `content` field — this wrapper builds that content string automatically.
  */
-export async function createTask(
+export async function createCard(
   title: string,
   description: string | undefined,
   priority = 'medium',
-): Promise<KanbanTask> {
+): Promise<KanbanCard> {
   if (USE_MOCK) return mockCreate(title, description, priority);
 
   const content = description ? `# ${title}\n\n${description}` : `# ${title}`;
-  return apiFetch<KanbanTask>(`/api/boards/${KANBAN_BOARD_ID}/tasks`, {
+  const card = await apiFetch<KanbanCard>(`/api/boards/${KANBAN_BOARD_ID}/tasks`, {
     method: 'POST',
     body: JSON.stringify({ content, priority }),
   });
+
+  return normalizeCard(card);
 }
 
 /**
- * List tasks from the kanban board, optionally filtered by status column.
+ * List cards from the kanban board, optionally filtered by status column.
  */
-export async function listTasks(status?: string): Promise<KanbanTask[]> {
+export async function listCards(status?: string): Promise<KanbanCard[]> {
   if (USE_MOCK) return mockList(status);
 
   const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-  return apiFetch<KanbanTask[]>(`/api/boards/${KANBAN_BOARD_ID}/tasks${qs}`);
+  const cards = await apiFetch<KanbanCard[]>(`/api/boards/${KANBAN_BOARD_ID}/tasks${qs}`);
+  return cards.map((card) => normalizeCard(card));
 }
 
 /**
- * Move a task to a different status column.
- * The `taskId` supports partial ID matching (kanban-lite resolves it server-side).
+ * Move a card to a different status column.
+ * The `cardId` supports partial ID matching (kanban-lite resolves it server-side).
  */
-export async function moveTask(taskId: string, status: string): Promise<KanbanTask> {
-  if (USE_MOCK) return mockMove(taskId, status);
+export async function moveCard(cardId: string, status: string): Promise<KanbanCard> {
+  if (USE_MOCK) return mockMove(cardId, status);
 
-  return apiFetch<KanbanTask>(
-    `/api/boards/${KANBAN_BOARD_ID}/tasks/${encodeURIComponent(taskId)}/move`,
+  const card = await apiFetch<KanbanCard>(
+    `/api/boards/${KANBAN_BOARD_ID}/tasks/${encodeURIComponent(cardId)}/move`,
     {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     },
   );
+
+  return normalizeCard(card);
 }

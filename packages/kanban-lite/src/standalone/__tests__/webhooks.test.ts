@@ -87,14 +87,13 @@ function createSDK(kanbanDir: string): KanbanSDK {
 // CRUD tests — exercised through KanbanSDK public methods
 // ---------------------------------------------------------------------------
 
-describe('Webhook CRUD via KanbanSDK (built-in fallback path)', () => {
-  let workspaceDir: string
+describe('Webhook CRUD via KanbanSDK (no provider — throws deterministic error)', () => {
   let kanbanDir: string
   let cleanup: () => void
   let sdk: KanbanSDK
 
   beforeEach(() => {
-    ;({ workspaceDir, kanbanDir, cleanup } = createTempWorkspace())
+    ;({ kanbanDir, cleanup } = createTempWorkspace())
     sdk = createSDK(kanbanDir)
   })
 
@@ -103,105 +102,22 @@ describe('Webhook CRUD via KanbanSDK (built-in fallback path)', () => {
     cleanup()
   })
 
-  // ── listWebhooks ──
+  const pluginError = /Webhook commands require kl-webhooks-plugin/
 
-  describe('listWebhooks', () => {
-    it('returns empty array when no webhooks are registered', () => {
-      expect(sdk.listWebhooks()).toEqual([])
-    })
-
-    it('returns webhooks persisted in .kanban.json written outside the SDK session', () => {
-      const configPath = path.join(workspaceDir, '.kanban.json')
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-      config.webhooks = [
-        { id: 'wh_test1', url: 'https://example.com/hook1', events: ['*'], active: true },
-        { id: 'wh_test2', url: 'https://example.com/hook2', events: ['task.created'], secret: 'mysecret', active: true },
-      ]
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
-
-      const sdk2 = createSDK(kanbanDir)
-      try {
-        const webhooks = sdk2.listWebhooks()
-        expect(webhooks).toHaveLength(2)
-        expect(webhooks[0].id).toBe('wh_test1')
-        expect(webhooks[1].secret).toBe('mysecret')
-      } finally {
-        sdk2.destroy()
-      }
-    })
+  it('listWebhooks throws when no plugin is active', () => {
+    expect(() => sdk.listWebhooks()).toThrow(pluginError)
   })
 
-  // ── createWebhook ──
-
-  describe('createWebhook', () => {
-    it('creates a webhook with a generated ID', async () => {
-      const wh = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['task.created', 'task.moved'] })
-      expect(wh.id).toMatch(/^wh_[0-9a-f]+$/)
-      expect(wh.url).toBe('https://example.com/hook')
-      expect(wh.events).toEqual(['task.created', 'task.moved'])
-      expect(wh.active).toBe(true)
-      expect(wh.secret).toBeUndefined()
-    })
-
-    it('stores the optional secret', async () => {
-      const wh = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'], secret: 'my-secret-key' })
-      expect(wh.secret).toBe('my-secret-key')
-    })
-
-    it('persists the webhook so it appears in listWebhooks', async () => {
-      await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] })
-      expect(sdk.listWebhooks()).toHaveLength(1)
-    })
-
-    it('appends to existing webhooks', async () => {
-      await sdk.createWebhook({ url: 'https://one.com', events: ['*'] })
-      await sdk.createWebhook({ url: 'https://two.com', events: ['*'] })
-      expect(sdk.listWebhooks()).toHaveLength(2)
-    })
+  it('createWebhook throws when no plugin is active', async () => {
+    await expect(sdk.createWebhook({ url: 'https://example.com', events: ['*'] })).rejects.toThrow(pluginError)
   })
 
-  // ── deleteWebhook ──
-
-  describe('deleteWebhook', () => {
-    it('removes a webhook by ID and returns true', async () => {
-      const wh = await sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] })
-      expect(await sdk.deleteWebhook(wh.id)).toBe(true)
-      expect(sdk.listWebhooks()).toHaveLength(0)
-    })
-
-    it('returns false for a non-existent ID', async () => {
-      expect(await sdk.deleteWebhook('wh_nonexistent')).toBe(false)
-    })
-
-    it('removes only the targeted webhook', async () => {
-      const wh1 = await sdk.createWebhook({ url: 'https://one.com', events: ['*'] })
-      await sdk.createWebhook({ url: 'https://two.com', events: ['*'] })
-      await sdk.deleteWebhook(wh1.id)
-      const remaining = sdk.listWebhooks()
-      expect(remaining).toHaveLength(1)
-      expect(remaining[0].url).toBe('https://two.com')
-    })
+  it('deleteWebhook throws when no plugin is active', async () => {
+    await expect(sdk.deleteWebhook('wh_any')).rejects.toThrow(pluginError)
   })
 
-  // ── updateWebhook ──
-
-  describe('updateWebhook', () => {
-    it('updates the URL of an existing webhook', async () => {
-      const wh = await sdk.createWebhook({ url: 'https://old.com', events: ['*'] })
-      const updated = await sdk.updateWebhook(wh.id, { url: 'https://new.com' })
-      expect(updated).not.toBeNull()
-      expect(updated!.url).toBe('https://new.com')
-    })
-
-    it('returns null for a non-existent ID', async () => {
-      expect(await sdk.updateWebhook('wh_nonexistent', { url: 'https://new.com' })).toBeNull()
-    })
-
-    it('can deactivate a webhook via updateWebhook', async () => {
-      const wh = await sdk.createWebhook({ url: 'https://example.com', events: ['*'] })
-      const updated = await sdk.updateWebhook(wh.id, { active: false })
-      expect(updated!.active).toBe(false)
-    })
+  it('updateWebhook throws when no plugin is active', async () => {
+    await expect(sdk.updateWebhook('wh_any', { url: 'https://new.com' })).rejects.toThrow(pluginError)
   })
 })
 
@@ -211,7 +127,7 @@ describe('Webhook CRUD via KanbanSDK (built-in fallback path)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Webhook delivery via built-in listener (built-in fallback path)', () => {
-  it('POSTs exactly once to a matching webhook when an SDK mutation fires a matching event', async () => {
+  it('does NOT POST to a matching webhook when no plugin is active', async () => {
     const received: Array<{ event: string; data: unknown }> = []
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
@@ -235,12 +151,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
-      await sdk.createCard({ content: '# Delivery regression\n\nTest body.' })
-      await waitFor(() => received.length === 1)
-      await sleep(250)
-      expect(received).toHaveLength(1)
-      expect(received[0].event).toBe('task.created')
-      expect(received[0].data).toBeDefined()
+      await sdk.createCard({ content: '# No delivery without plugin.' })
+      await sleep(400)
+      expect(received).toHaveLength(0)
       sdk.destroy()
     } finally {
       cleanup()
@@ -301,7 +214,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     }
   })
 
-  it('POSTs to wildcard webhooks for any event', async () => {
+  it('does NOT POST to wildcard webhook when no plugin is active', async () => {
     let receivedEvent = ''
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
@@ -327,7 +240,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Wildcard test.' })
       await sleep(400)
-      expect(receivedEvent).toBe('task.created')
+      expect(receivedEvent).toBe('')
       sdk.destroy()
     } finally {
       cleanup()
@@ -335,16 +248,15 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     }
   })
 
-  it('includes HMAC signature header when secret is configured', async () => {
+  it('does NOT deliver HMAC-signed POST when no plugin is active', async () => {
     let receivedHeaders: http.IncomingHttpHeaders = {}
-    let receivedBody = ''
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
       let body = ''
       req.on('data', chunk => { body += String(chunk) })
       req.on('end', () => {
         receivedHeaders = req.headers
-        receivedBody = body
+        void body
         res.writeHead(200); res.end()
       })
     })
@@ -364,13 +276,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
       await sdk.createCard({ content: '# HMAC signature test.' })
       await sleep(500)
 
-      const signature = receivedHeaders['x-webhook-signature'] as string
-      expect(signature).toBeDefined()
-      expect(signature).toMatch(/^sha256=[0-9a-f]+$/)
-
-      const crypto = await import('node:crypto')
-      const expected = crypto.createHmac('sha256', 'test-secret').update(receivedBody).digest('hex')
-      expect(signature).toBe(`sha256=${expected}`)
+      expect(receivedHeaders['x-webhook-signature']).toBeUndefined()
 
       sdk.destroy()
     } finally {

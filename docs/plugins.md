@@ -187,7 +187,7 @@ Webhook delivery uses its own top-level config section:
 }
 ```
 
-If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. Current releases also keep a compatibility fallback when `kl-webhooks-plugin` is not installed yet.
+If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. That default resolves to the external `kl-webhooks-plugin` package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.
 
 Only provider selection lives in `.kanban.json`. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing `event.listener` config namespace.
 

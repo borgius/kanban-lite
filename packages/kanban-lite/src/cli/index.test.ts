@@ -4,12 +4,11 @@ import * as path from 'node:path'
 import { execFile } from 'node:child_process'
 import type { ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
-import type { Webhook } from '../shared/config'
-import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdWebhooks, parseArgs, showHelp } from './index'
+import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, parseArgs, showHelp } from './index'
 
 const execFileAsync = promisify(execFile)
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../../..')
@@ -251,7 +250,7 @@ describe('CLI form-aware card commands', () => {
       boardId: undefined,
       forms: [{ name: 'bug-report' }],
       formData: { 'bug-report': { severity: 'high' } },
-    }, { transport: 'cli' })
+    })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(card)
   })
 
@@ -274,7 +273,7 @@ describe('CLI form-aware card commands', () => {
     expect(sdk.updateCard).toHaveBeenCalledWith('card-edit', {
       forms: [{ schema: { type: 'object', title: 'Checklist' } }],
       formData: { checklist: { approved: true } },
-    }, undefined, { transport: 'cli' })
+    }, undefined)
     expect(logSpy.mock.calls[0][0]).toContain('Updated: card-edit')
   })
 
@@ -308,7 +307,7 @@ describe('CLI form-aware card commands', () => {
       formId: 'bug-report',
       data: { severity: 'high' },
       boardId: undefined,
-    }, { transport: 'cli' })
+    })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       form: { id: 'bug-report' },
       data: { severity: 'high' },
@@ -353,7 +352,7 @@ describe('CLI form-aware card commands', () => {
       formId: 'bug-report',
       data: { severity: 'critical' },
       boardId: undefined,
-    }, { transport: 'cli' })
+    })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       data: { severity: 'critical' },
     })
@@ -493,229 +492,50 @@ describe('CLI denial UX regression', () => {
     }
   })
 
-  it('does not print success output before propagating a denied webhook create error', async () => {
-    const sdk = {
-      createWebhook: vi.fn().mockRejectedValue(
-        new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined),
-      ),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'createWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await expect(
-      cmdWebhooks(['add'], { url: 'https://example.com/hook' }, sdk as KanbanSDK),
-    ).rejects.toMatchObject({
-      category: 'auth.policy.denied',
-      message: 'Action "webhook.create" denied',
-    })
-    expect(logSpy).not.toHaveBeenCalled()
-  })
 })
 
-function makeWebhook(overrides: Partial<Webhook> = {}): Webhook {
-  return {
-    id: 'wh_abc123',
-    url: 'https://example.com/hook',
-    events: ['*'],
-    active: true,
-    ...overrides,
-  }
-}
+describe('Webhook CLI routing — plugin-owned dispatch', () => {
+  let workspaceDir: string
+  let configPath: string
 
-describe('CLI webhook commands — happy path', () => {
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-wh-route-'))
+    fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
+    configPath = path.join(workspaceDir, '.kanban.json')
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 2,
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        boards: {
+          default: {
+            name: 'Default',
+            columns: [{ id: 'backlog', name: 'Backlog' }],
+            nextCardId: 1,
+            defaultStatus: 'backlog',
+            defaultPriority: 'medium',
+          },
+        },
+      }, null, 2) + '\n',
+      'utf-8',
+    )
+  })
+
   afterEach(() => {
-    vi.restoreAllMocks()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('lists webhooks as a table', async () => {
-    const wh = makeWebhook()
-    const sdk = {
-      listWebhooks: vi.fn().mockReturnValue([wh]),
-    } as unknown as Pick<KanbanSDK, 'listWebhooks'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['list'], {}, sdk as KanbanSDK)
-
-    expect(sdk.listWebhooks).toHaveBeenCalledOnce()
-    const output = logSpy.mock.calls.map(c => c.join('')).join('\n')
-    expect(output).toContain(wh.id)
-    expect(output).toContain(wh.url)
+  it('routes "wh list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+    const result = await runCliCommand(['wh', 'list', '--config', configPath])
+    expect(result.exitCode).toBe(0)
+    expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
   })
 
-  it('lists webhooks as JSON', async () => {
-    const wh = makeWebhook()
-    const sdk = {
-      listWebhooks: vi.fn().mockReturnValue([wh]),
-    } as unknown as Pick<KanbanSDK, 'listWebhooks'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['list'], { json: true }, sdk as KanbanSDK)
-
-    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual([wh])
-  })
-
-  it('prints empty message when no webhooks are registered', async () => {
-    const sdk = {
-      listWebhooks: vi.fn().mockReturnValue([]),
-    } as unknown as Pick<KanbanSDK, 'listWebhooks'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['list'], {}, sdk as KanbanSDK)
-
-    expect(logSpy.mock.calls[0][0]).toContain('No webhooks')
-  })
-
-  it('adds a webhook and prints confirmation', async () => {
-    const wh = makeWebhook({ events: ['task.created'] })
-    const sdk = {
-      createWebhook: vi.fn().mockResolvedValue(wh),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'createWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['add'], { url: 'https://example.com/hook', events: 'task.created' }, sdk as KanbanSDK)
-
-    expect(sdk.createWebhook).toHaveBeenCalledWith(
-      { url: 'https://example.com/hook', events: ['task.created'], secret: undefined },
-    )
-    const output = logSpy.mock.calls.map(c => c.join('')).join('\n')
-    expect(output).toContain('Created webhook')
-    expect(output).toContain(wh.id)
-  })
-
-  it('adds a webhook and outputs JSON', async () => {
-    const wh = makeWebhook()
-    const sdk = {
-      createWebhook: vi.fn().mockResolvedValue(wh),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'createWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['add'], { url: 'https://example.com/hook', json: true }, sdk as KanbanSDK)
-
-    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(wh)
-  })
-
-  it('removes a webhook by id', async () => {
-    const sdk = {
-      deleteWebhook: vi.fn().mockResolvedValue(true),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'deleteWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['remove', 'wh_abc123'], {}, sdk as KanbanSDK)
-
-    expect(sdk.deleteWebhook).toHaveBeenCalledWith('wh_abc123')
-    expect(logSpy.mock.calls[0][0]).toContain('Removed webhook')
-  })
-
-  it('updates a webhook and prints confirmation', async () => {
-    const updated = makeWebhook({ url: 'https://new.example.com/hook', active: false })
-    const sdk = {
-      updateWebhook: vi.fn().mockResolvedValue(updated),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'updateWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(
-      ['update', 'wh_abc123'],
-      { url: 'https://new.example.com/hook', active: 'false' },
-      sdk as KanbanSDK,
-    )
-
-    expect(sdk.updateWebhook).toHaveBeenCalledWith(
-      'wh_abc123',
-      { url: 'https://new.example.com/hook', active: false },
-    )
-    const output = logSpy.mock.calls.map(c => c.join('')).join('\n')
-    expect(output).toContain('Updated webhook')
-  })
-
-  it('updates a webhook and outputs JSON', async () => {
-    const updated = makeWebhook({ events: ['task.updated'] })
-    const sdk = {
-      updateWebhook: vi.fn().mockResolvedValue(updated),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'updateWebhook' | 'runWithAuth'>
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    await cmdWebhooks(['update', 'wh_abc123'], { events: 'task.updated', json: true }, sdk as KanbanSDK)
-
-    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual(updated)
+  it('routes "webhook list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+    const result = await runCliCommand(['webhook', 'list', '--config', configPath])
+    expect(result.exitCode).toBe(0)
+    expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
   })
 })
 
-describe('CLI webhook commands — missing provider / error paths', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('exits with error when remove target is not found', async () => {
-    const sdk = {
-      deleteWebhook: vi.fn().mockResolvedValue(false),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'deleteWebhook' | 'runWithAuth'>
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const exitSpy = mockProcessExit()
-
-    await expect(
-      cmdWebhooks(['remove', 'wh_missing'], {}, sdk as KanbanSDK),
-    ).rejects.toThrow('process.exit:1')
-
-    expect(errSpy.mock.calls[0][0]).toContain('Webhook not found')
-    exitSpy.mockRestore()
-  })
-
-  it('exits with error when update target is not found', async () => {
-    const sdk = {
-      updateWebhook: vi.fn().mockResolvedValue(null),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'updateWebhook' | 'runWithAuth'>
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const exitSpy = mockProcessExit()
-
-    await expect(
-      cmdWebhooks(['update', 'wh_missing'], { url: 'https://x.com' }, sdk as KanbanSDK),
-    ).rejects.toThrow('process.exit:1')
-
-    expect(errSpy.mock.calls[0][0]).toContain('Webhook not found')
-    exitSpy.mockRestore()
-  })
-
-  it('propagates AuthError from createWebhook (access denied)', async () => {
-    const sdk = {
-      createWebhook: vi.fn().mockRejectedValue(
-        new AuthError('auth.policy.denied', 'Action "webhook.create" denied', undefined),
-      ),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'createWebhook' | 'runWithAuth'>
-
-    await expect(
-      cmdWebhooks(['add'], { url: 'https://example.com/hook' }, sdk as KanbanSDK),
-    ).rejects.toBeInstanceOf(AuthError)
-  })
-
-  it('propagates AuthError from deleteWebhook (access denied)', async () => {
-    const sdk = {
-      deleteWebhook: vi.fn().mockRejectedValue(
-        new AuthError('auth.policy.denied', 'Action "webhook.delete" denied', undefined),
-      ),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'deleteWebhook' | 'runWithAuth'>
-
-    await expect(
-      cmdWebhooks(['remove', 'wh_abc123'], {}, sdk as KanbanSDK),
-    ).rejects.toBeInstanceOf(AuthError)
-  })
-
-  it('propagates provider errors from createWebhook', async () => {
-    const sdk = {
-      createWebhook: vi.fn().mockRejectedValue(new Error('Webhook provider not available')),
-      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
-    } as unknown as Pick<KanbanSDK, 'createWebhook' | 'runWithAuth'>
-
-    await expect(
-      cmdWebhooks(['add'], { url: 'https://example.com/hook' }, sdk as KanbanSDK),
-    ).rejects.toThrow('Webhook provider not available')
-  })
-})

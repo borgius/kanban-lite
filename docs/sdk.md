@@ -413,16 +413,16 @@ console.log(status.identityEnabled)  // false when no plugin configured
 Returns webhook provider metadata for host surfaces and diagnostics.
 
 Use this to inspect which webhook delivery provider is active and whether
-an external provider plugin is installed or the built-in fallback is used.
+`kl-webhooks-plugin` is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A [WebhookStatus](WebhookStatus) snapshot containing the active provider id
-  and a boolean flag indicating whether the provider is an external plugin.  
+  and a boolean flag indicating whether a provider is active.  
 **Example**  
 ```ts
 const status = sdk.getWebhookStatus()
-console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
-console.log(status.webhookProviderActive) // false when no plugin configured
+console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
+console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
 ```
 
 * * *
@@ -2324,12 +2324,16 @@ sdk.setDefaultBoard('sprint-2')
 
 #### kanbanSDK.listWebhooks() ⇒
 Lists all registered webhooks.
-Delegates to the resolved external `webhook.delivery` provider when available,
-otherwise uses the built-in compatibility registry path against the same
-`.kanban.json` `webhooks` array.
+
+Delegates to the resolved `kl-webhooks-plugin` provider.
+Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: Array of [Webhook](Webhook) objects.  
+**Throws**:
+
+- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+
 
 * * *
 
@@ -2337,11 +2341,16 @@ otherwise uses the built-in compatibility registry path against the same
 
 #### kanbanSDK.createWebhook(webhookConfig) ⇒
 Creates and persists a new webhook.
-Delegates to the resolved external `webhook.delivery` provider when available,
-otherwise uses the built-in compatibility registry path.
+
+Delegates to the resolved `kl-webhooks-plugin` provider.
+Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The newly created [Webhook](Webhook).  
+**Throws**:
+
+- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+
 
 | Param | Description |
 | --- | --- |
@@ -2354,11 +2363,16 @@ otherwise uses the built-in compatibility registry path.
 
 #### kanbanSDK.deleteWebhook(id) ⇒
 Deletes a webhook by its ID.
-Delegates to the resolved external `webhook.delivery` provider when available,
-otherwise uses the built-in compatibility registry path.
+
+Delegates to the resolved `kl-webhooks-plugin` provider.
+Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: `true` if deleted, `false` if not found.  
+**Throws**:
+
+- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+
 
 | Param | Description |
 | --- | --- |
@@ -2371,11 +2385,16 @@ otherwise uses the built-in compatibility registry path.
 
 #### kanbanSDK.updateWebhook(id, updates) ⇒
 Updates an existing webhook's configuration.
-Delegates to the resolved external `webhook.delivery` provider when available,
-otherwise uses the built-in compatibility registry path.
+
+Delegates to the resolved `kl-webhooks-plugin` provider.
+Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The updated [Webhook](Webhook), or `null` if not found.  
+**Throws**:
+
+- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+
 
 | Param | Description |
 | --- | --- |
@@ -2911,8 +2930,8 @@ Normalizes webhook capability selections into a complete runtime capability map.
 
 When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
 maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
-The built-in webhook delivery path remains active as a compatibility fallback when
-the external package is absent.
+Core no longer provides a built-in webhook delivery fallback; hosts must install
+that package anywhere webhook CRUD or runtime delivery is expected to work.
 
 The input object is never mutated.
 
@@ -3450,10 +3469,9 @@ a normalized [ProviderRef](ProviderRef).
 Listener resolution priority:
 1. `webhookListenerPlugin: SDKEventListenerPlugin` named export from package.
 2. `WebhookListenerPlugin` class export constructed with the workspace root.
-3. `null` — caller falls back to the built-in `WebhookListenerPlugin`.
+3. `null` — no webhook runtime listener is available.
 
-Returns `null` when the package is simply not installed yet (not-installed error),
-so the built-in listener path in `KanbanSDK` continues to function as a fallback.
+Returns `null` when the package is simply not installed yet (not-installed error).
 Throws for any other loading or validation error.
 
 **Kind**: global function  
@@ -3481,6 +3499,33 @@ must be vetoed.
 | authIdentity | Resolved identity provider used to establish the caller. |
 | authPolicy | Resolved policy provider used to authorize each action. |
 | getAuthContext | Optional accessor for the active scoped auth context. |
+
+
+* * *
+
+<a name="collectActiveExternalPackageNames"></a>
+
+### collectActiveExternalPackageNames(config) ⇒
+Collects the canonical set of external npm package names that should be
+probed for plugin extension contributions (e.g. `cliPlugin`, `standaloneHttpPlugin`)
+from a raw workspace config object.
+
+Applies the same alias translations used by the standalone HTTP plugin discovery
+path (`collectStandaloneHttpPackageNames`), and reads both the normalized `plugins`
+key and the legacy `webhookPlugin` key so that webhook-only configurations
+deterministically activate the webhook package for all surfaces.
+
+When no explicit webhook provider is configured, falls through to the default
+`'webhooks'` → `'kl-webhooks-plugin'` alias, matching the behaviour of
+[normalizeWebhookCapabilities](normalizeWebhookCapabilities) and the standalone discovery path so that
+both surfaces activate the same set of packages.
+
+**Kind**: global function  
+**Returns**: Deduplicated list of external npm package names to probe for extensions.  
+
+| Param | Description |
+| --- | --- |
+| config | Raw workspace config. Only the consumed fields need to be present. |
 
 
 * * *

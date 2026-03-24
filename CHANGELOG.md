@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Coordinated release orchestration**: Root release commands now verify npm/GitHub auth up front, build each public package only once, bump every public package version without per-package git tags, publish all npm packages (including `kanban-lite`), create one release commit/tag, and upload or replace the matching GitHub VSIX asset. The `kanban-lite` VSIX packaging hook and the n8n package `prepack` hook now verify existing build output instead of triggering another rebuild.
+
+### Removed
+- **Core webhook runtime shims deleted**: `packages/kanban-lite/src/sdk/webhooks.ts` and `packages/kanban-lite/src/sdk/plugins/webhookListener.ts` (built-in compatibility shims) have been permanently removed along with their test file. The public `WebhookListenerPlugin` / `createWebhookListenerPlugin` re-exports are also removed from the SDK `index.ts`. `kl-webhooks-plugin` is the sole source of webhook runtime delivery; without it, webhook CRUD methods throw a deterministic install error. The orphaned `Webhooks` OpenAPI tag and `Webhook` component schema have been removed from the standalone OpenAPI spec.
+
+### Changed
+- **Webhook fallback removal**: Core SDK (`KanbanSDK`) no longer owns built-in webhook runtime delivery or CRUD logic. When `kl-webhooks-plugin` is not installed, webhook CRUD methods (`listWebhooks`, `createWebhook`, `updateWebhook`, `deleteWebhook`) throw a deterministic install error. `getWebhookStatus()` returns `'none'` instead of `'built-in'` when no plugin is active. Core standalone `/api/webhooks` routes and CLI help text for webhook commands have been removed; `kl-webhooks-plugin` is the sole owner of these surfaces. The `webhook`/`wh` CLI alias shims are retained for discoverability.
+
+### Added
+- **Webhook plugin ownership documentation parity**: The root README, `packages/kl-webhooks-plugin/README.md`, and generated webhook reference now describe `kl-webhooks-plugin` as the owner of webhook runtime delivery, standalone `/api/webhooks` routes, and CLI `kl webhooks` commands where plugin seams exist, while MCP remains an intentional thin core facade.
+
+### Changed
+- **Webhook discovery/source-doc workflow docs**: Documentation now states that `webhookPlugin` configuration activates webhook package discovery for provider, standalone, and CLI surfaces, and that generated webhook docs must be regenerated from `scripts/generate-webhooks-docs.ts` instead of being edited by hand.
+
+### Added
+- **Chat SDK / Vercel AI example integration coverage**: `examples/chat-sdk-vercel-ai` now includes example-local Vitest integration tests that boot the standalone server against a temporary workspace, call the real chat route with an OpenAI model, and assert that card create/move operations mutate kanban state correctly.
+- **Example-local placeholder env defaults for the Chat SDK app**: Added a placeholder-only local `.env` workflow plus `OPENAI_MODEL` support so the example can use shell-exported `OPENAI_API_KEY` values without forcing secrets into the repo.
+
+### Fixed
+- **Chat SDK example card workflow wording and reliability**: The chat route and UI now use card-centric tool naming, stronger tool-use instructions, a deterministic temperature setting, and more robust kanban API error handling so the example behaves more consistently under live integration tests.
+
 ### Added
 - **Role-based access control for local auth users**: Each user entry in `plugins["auth.identity"].options.users` now accepts an optional `role` field (`user`, `manager`, or `admin`). When present, the `kl-auth-plugin` local policy enforces the RBAC role matrix for that user — only permitted actions are allowed. Users without a `role` field retain the previous behaviour (any authenticated identity is allowed).
 - **`--role` flag for `kl auth create-user`**: The CLI command now accepts `--role user|manager|admin` to embed the role into the new user entry written to `.kanban.json`.
@@ -66,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auth before-event execution model**: Request auth is now carried through scoped `runWithAuth(...)` execution instead of `_withAuthContext()` / payload-carried auth, and first-party auth listeners resolve identity from that scoped carrier rather than `BeforeEventPayload.auth`.
 - **Before-event input merge semantics**: `_runBeforeEvent()` now owns immutable deep-merge behavior for listener overrides while preserving the original mutation input when listeners return no effective changes.
 - **Plugin runtime model (breaking for plugin authors)**: `KanbanSDK` now owns async before-event dispatch and post-commit after-event emission. Runtime auth/webhook integrations are listener-only (`register` / `unregister`) rather than legacy direct runtime seams, while end-user denial behavior and webhook delivery timing remain consistent across SDK, CLI, MCP, standalone, and extension-host flows.
-- **Webhook compatibility behavior**: Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array with no migration required, while current releases keep a built-in webhook fallback in place until `kl-webhooks-plugin` is installed.
+- **Webhook compatibility behavior**: Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array with no migration required. After the extraction, webhook CRUD and runtime delivery require `kl-webhooks-plugin`; core no longer provides a built-in fallback path.
 - **Refreshed card detail view**: The card editor now uses a calmer desktop-first popup/drawer presentation with tighter control density, smaller type and surface rhythm on large screens, and cleaner attachment/comment composition across desktop and mobile layouts.
 - **Swagger-backed REST API docs pipeline**: `docs/api.md` is now generated from the standalone OpenAPI spec used by Fastify Swagger, and the standalone server exposes interactive API docs at `/api/docs` plus raw OpenAPI JSON at `/api/docs/json`.
 - **Core sqlite/mysql provider boundary**: `markdown` and `localfs` are now the only true built-ins in core. The provider ids `sqlite` and `mysql` remain supported as compatibility aliases that resolve to `kl-sqlite-storage` and `kl-mysql-storage`, and core test coverage now focuses on host/plugin contracts rather than provider-owned CRUD/schema behavior.

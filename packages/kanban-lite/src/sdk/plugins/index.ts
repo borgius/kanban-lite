@@ -619,9 +619,8 @@ export interface ResolvedCapabilityBag {
   /** Raw resolved webhook provider selection used to resolve webhook plugins. */
   readonly webhookProviders: ResolvedWebhookCapabilities | null
   /**
-   * Resolved webhook runtime delivery listener, or `null` when no webhook package
-   * is installed. When `null`, the SDK falls back to the built-in
-   * {@link import('./webhookListener').WebhookListenerPlugin}.
+    * Resolved webhook runtime delivery listener, or `null` when no webhook package
+    * is installed.
    *
    * Implements {@link SDKEventListenerPlugin} — registered via `register(bus)` at
    * SDK startup to subscribe to after-events and deliver outbound HTTP webhooks.
@@ -1211,10 +1210,9 @@ function loadWebhookPluginPack(providerName: string, workspaceRoot: string): Web
  * Listener resolution priority:
  * 1. `webhookListenerPlugin: SDKEventListenerPlugin` named export from package.
  * 2. `WebhookListenerPlugin` class export constructed with the workspace root.
- * 3. `null` — caller falls back to the built-in `WebhookListenerPlugin`.
+ * 3. `null` — no webhook runtime listener is available.
  *
- * Returns `null` when the package is simply not installed yet (not-installed error),
- * so the built-in listener path in `KanbanSDK` continues to function as a fallback.
+ * Returns `null` when the package is simply not installed yet (not-installed error).
  * Throws for any other loading or validation error.
  *
  * @internal
@@ -1407,6 +1405,75 @@ export function createBuiltinAuthListenerPlugin(
       }
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Active external package name collection (canonical source for CLI discovery)
+// ---------------------------------------------------------------------------
+
+/**
+ * Collects the canonical set of external npm package names that should be
+ * probed for plugin extension contributions (e.g. `cliPlugin`, `standaloneHttpPlugin`)
+ * from a raw workspace config object.
+ *
+ * Applies the same alias translations used by the standalone HTTP plugin discovery
+ * path (`collectStandaloneHttpPackageNames`), and reads both the normalized `plugins`
+ * key and the legacy `webhookPlugin` key so that webhook-only configurations
+ * deterministically activate the webhook package for all surfaces.
+ *
+ * When no explicit webhook provider is configured, falls through to the default
+ * `'webhooks'` → `'kl-webhooks-plugin'` alias, matching the behaviour of
+ * {@link normalizeWebhookCapabilities} and the standalone discovery path so that
+ * both surfaces activate the same set of packages.
+ *
+ * @param config - Raw workspace config. Only the consumed fields need to be present.
+ * @returns Deduplicated list of external npm package names to probe for extensions.
+ */
+export function collectActiveExternalPackageNames(config: {
+  readonly plugins?: Partial<Record<string, ProviderRef>>
+  readonly webhookPlugin?: Partial<Record<string, ProviderRef>>
+  readonly auth?: Partial<Record<string, ProviderRef>>
+}): string[] {
+  const packageNames = new Set<string>()
+  const add = (pkg: string | undefined): void => {
+    if (pkg) packageNames.add(pkg)
+  }
+
+  // Card and attachment storage providers from normalized plugins key.
+  const cardProvider = config.plugins?.['card.storage']?.provider
+  if (cardProvider && !BUILTIN_CARD_PLUGINS.has(cardProvider)) {
+    add(PROVIDER_ALIASES.get(cardProvider) ?? cardProvider)
+  }
+
+  const attachmentProvider = config.plugins?.['attachment.storage']?.provider
+  if (attachmentProvider && !BUILTIN_ATTACHMENT_IDS.has(attachmentProvider)) {
+    add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
+  }
+
+  // Auth providers — plugins key takes precedence over legacy auth key;
+  // both resolve through AUTH_PROVIDER_ALIASES.
+  const identityProvider = config.plugins?.['auth.identity']?.provider
+    ?? config.auth?.['auth.identity']?.provider
+  if (identityProvider) {
+    add(AUTH_PROVIDER_ALIASES.get(identityProvider) ?? identityProvider)
+  }
+
+  const policyProvider = config.plugins?.['auth.policy']?.provider
+    ?? config.auth?.['auth.policy']?.provider
+  if (policyProvider) {
+    add(AUTH_PROVIDER_ALIASES.get(policyProvider) ?? policyProvider)
+  }
+
+  // Webhook provider — plugins['webhook.delivery'] takes precedence over the
+  // legacy webhookPlugin key; falls through to the canonical default alias
+  // 'webhooks' → 'kl-webhooks-plugin' when neither is configured, matching
+  // normalizeWebhookCapabilities and the standalone HTTP discovery path.
+  const webhookProvider = config.plugins?.['webhook.delivery']?.provider
+    ?? config.webhookPlugin?.['webhook.delivery']?.provider
+    ?? 'webhooks'
+  add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+
+  return [...packageNames]
 }
 
 function resolveCardPlugin(ref: ProviderRef): CardStoragePlugin {

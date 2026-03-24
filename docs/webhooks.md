@@ -7,10 +7,13 @@ Kanban Lite fires webhooks on every mutation — task, comment, column, attachme
 - Webhooks fire from **all interfaces**: REST API, CLI, MCP server, and the UI (via the standalone server).
 - Events are emitted by the SDK event bus and delivered by the resolved `webhook.delivery` provider, ensuring consistent behavior regardless of entry point.
 - The default runtime provider id is `webhooks`, which resolves to the external `kl-webhooks-plugin` package.
+- `kl-webhooks-plugin` owns runtime delivery plus the standalone `/api/webhooks` routes and `kl webhooks` CLI commands where those plugin seams are available.
+- MCP remains a thin core facade: webhook MCP tools stay in core and delegate to the same SDK/provider path.
 - Webhook registrations are stored in `.kanban.json` and persist across server restarts.
 - Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).
 - Existing workspaces keep the same `.kanban.json` `webhooks` array; no migration is required.
-- Current releases retain a built-in webhook fallback while `kl-webhooks-plugin` is absent, so CRUD and delivery remain backward-compatible during the rollout.
+- A workspace that only configures `webhookPlugin` still activates webhook package discovery for provider, standalone, and CLI surfaces.
+- This file is generated from source metadata; do not edit `docs/webhooks.md` by hand.
 
 ## Install and linking
 
@@ -24,7 +27,7 @@ For local development, a sibling checkout at `../kl-webhooks-plugin` is resolved
 
 ## Configuration
 
-Webhook delivery can be selected explicitly through `webhookPlugin`, while webhook registrations themselves stay in the existing top-level `.kanban.json` `webhooks` array:
+Webhook delivery keeps its own top-level `webhookPlugin` config key. That key is also enough to activate plugin discovery for the webhook package's standalone routes and CLI commands; the persisted registrations themselves stay in the existing top-level `.kanban.json` `webhooks` array:
 
 ```json
 {
@@ -56,6 +59,8 @@ Registered webhooks are stored in your project's `.kanban.json` file:
 
 ### REST API
 
+These routes are plugin-owned when `kl-webhooks-plugin` is loaded by the standalone host.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/webhooks` | List all webhooks |
@@ -64,6 +69,8 @@ Registered webhooks are stored in your project's `.kanban.json` file:
 | `DELETE` | `/api/webhooks/:id` | Delete a webhook |
 
 ### CLI
+
+These commands are plugin-owned when `kl-webhooks-plugin` is loaded by the CLI host.
 
 ```bash
 # List webhooks
@@ -82,7 +89,7 @@ kl webhooks remove <id>
 
 ### MCP Server
 
-Tools: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
+MCP intentionally remains a thin core facade. Tools: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
 
 ## Payload Format
 

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT } from '../plugins'
+import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import { MarkdownStorageEngine } from '../plugins/markdown'
@@ -914,11 +914,11 @@ describe('KanbanSDK.getWebhookStatus', () => {
     sdk.close()
   })
 
-  it('returns built-in provider when pre-built storage engine is injected', () => {
+  it('returns none for webhookProvider when pre-built storage engine is injected (no plugin)', () => {
     const engine = new MarkdownStorageEngine(kanbanDir)
     const sdk = new KanbanSDK(kanbanDir, { storage: engine })
     const status = sdk.getWebhookStatus()
-    expect(status.webhookProvider).toBe('built-in')
+    expect(status.webhookProvider).toBe('none')
     expect(status.webhookProviderActive).toBe(false)
     sdk.close()
   })
@@ -1450,6 +1450,31 @@ describe('AUTH_PROVIDER_ALIASES', () => {
 })
 
 // ---------------------------------------------------------------------------
+// collectActiveExternalPackageNames — webhook-only config activation
+// ---------------------------------------------------------------------------
+
+describe('collectActiveExternalPackageNames', () => {
+  it('includes kl-webhooks-plugin for an empty config (default webhook activation)', () => {
+    const result = collectActiveExternalPackageNames({})
+    expect(result).toContain('kl-webhooks-plugin')
+  })
+
+  it('includes kl-webhooks-plugin when webhookPlugin key is explicitly configured', () => {
+    const result = collectActiveExternalPackageNames({
+      webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
+    })
+    expect(result).toContain('kl-webhooks-plugin')
+  })
+
+  it('includes kl-webhooks-plugin via plugins["webhook.delivery"] override', () => {
+    const result = collectActiveExternalPackageNames({
+      plugins: { 'webhook.delivery': { provider: 'webhooks' } },
+    })
+    expect(result).toContain('kl-webhooks-plugin')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // resolveCapabilityBag – webhook provider resolution
 // ---------------------------------------------------------------------------
 
@@ -1541,6 +1566,17 @@ describe('resolveCapabilityBag – webhookProvider', () => {
     } finally {
       cleanup()
     }
+  })
+
+  it('standaloneHttpPlugins includes kl-webhooks-plugin under webhook-only config', () => {
+    const webhookCaps = normalizeWebhookCapabilities({})
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+      undefined,
+      webhookCaps,
+    )
+    expect(bag.standaloneHttpPlugins.some((p) => p.manifest.id === 'webhooks')).toBe(true)
   })
 })
 

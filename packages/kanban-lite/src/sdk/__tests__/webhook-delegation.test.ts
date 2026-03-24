@@ -13,7 +13,6 @@ import * as path from 'node:path'
 import { createRequire } from 'node:module'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
-import { WebhookListenerPlugin } from '../plugins/webhookListener'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 
 const runtimeRequire = createRequire(import.meta.url)
@@ -157,44 +156,31 @@ module.exports = {
 `
 
 // ---------------------------------------------------------------------------
-// Tests using options.storage (pre-built engine path — always falls back to built-in)
+// Tests using options.storage (pre-built engine path — no plugin, no fallback)
 // ---------------------------------------------------------------------------
 
 describe('KanbanSDK – webhook delegation without provider (pre-built storage path)', () => {
-  it('registers built-in WebhookListenerPlugin when options.storage is injected directly', () => {
-    const registerSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'register')
+  it('capabilities is null when options.storage is injected directly (no provider path)', () => {
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       // Inject a pre-built storage engine — this bypasses resolveCapabilityBag entirely,
-      // so capabilities is null and the built-in listener is always the fallback.
+      // so capabilities is null.
       const storage = new MarkdownStorageEngine(kanbanDir)
       const sdk = new KanbanSDK(kanbanDir, { storage })
-      expect(registerSpy).toHaveBeenCalledOnce()
       expect(sdk.capabilities).toBeNull()
+      expect(sdk.getWebhookStatus().webhookProvider).toBe('none')
       sdk.destroy()
     } finally {
       cleanup()
-      registerSpy.mockRestore()
     }
   })
 
-  it('listWebhooks reads from .kanban.json via built-in fallback when options.storage injected', () => {
-    const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const config = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'))
-    config.webhooks = [
-      { id: 'wh_fallback', url: 'http://fallback.example.com', events: ['*'], active: true },
-    ]
-    fs.writeFileSync(
-      path.join(workspaceDir, '.kanban.json'),
-      JSON.stringify(config, null, 2) + '\n',
-      'utf-8',
-    )
+  it('listWebhooks throws a plugin-missing error when options.storage injected without provider', () => {
+    const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       const storage = new MarkdownStorageEngine(kanbanDir)
       const sdk = new KanbanSDK(kanbanDir, { storage })
-      const webhooks = sdk.listWebhooks()
-      expect(webhooks).toHaveLength(1)
-      expect(webhooks[0].id).toBe('wh_fallback')
+      expect(() => sdk.listWebhooks()).toThrow('Webhook commands require kl-webhooks-plugin')
       sdk.destroy()
     } finally {
       cleanup()
@@ -301,20 +287,15 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     }
   })
 
-  it('uses provider webhook listener when exported, otherwise falls back to the built-in listener', () => {
-    const registerSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'register')
+  it('uses the plugin-provided webhook listener when the plugin exports one', () => {
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       const sdk = new KanbanSDK(kanbanDir)
-      if (sdk.capabilities!.webhookListener) {
-        expect(registerSpy).not.toHaveBeenCalled()
-      } else {
-        expect(registerSpy).toHaveBeenCalledOnce()
-      }
+      // kl-webhooks-plugin exports WebhookListenerPlugin; capabilities.webhookListener must be non-null.
+      expect(sdk.capabilities!.webhookListener).not.toBeNull()
       sdk.destroy()
     } finally {
       cleanup()
-      registerSpy.mockRestore()
     }
   })
 
@@ -392,22 +373,34 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     }
   })
 
-  it('unregisters the active webhook listener on destroy', () => {
+  it('unregisters the plugin listener on destroy', () => {
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
-      const fallbackUnregisterSpy = vi.spyOn(WebhookListenerPlugin.prototype, 'unregister')
       const sdk = new KanbanSDK(kanbanDir)
       const providerListener = sdk.capabilities!.webhookListener
-      const providerUnregisterSpy = providerListener
-        ? vi.spyOn(providerListener, 'unregister')
-        : null
+      expect(providerListener).not.toBeNull()
+      const providerUnregisterSpy = vi.spyOn(providerListener!, 'unregister')
       sdk.destroy()
-      if (providerUnregisterSpy) {
-        expect(providerUnregisterSpy).toHaveBeenCalledOnce()
-      } else {
-        expect(fallbackUnregisterSpy).toHaveBeenCalledOnce()
-      }
-      fallbackUnregisterSpy.mockRestore()
+      expect(providerUnregisterSpy).toHaveBeenCalledOnce()
+    } finally {
+      cleanup()
+    }
+  })
+
+  /**
+   * Single-path / no-duplicate guarantee:
+   * When the plugin exports its own WebhookListenerPlugin the listener manifest id
+   * must not be 'builtin:webhook-listener' — exactly one (plugin-owned) delivery path is active.
+   */
+  it('exactly one listener path active — plugin-owned listener has non-builtin manifest id', () => {
+    const { kanbanDir, cleanup } = createTempWorkspace()
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const listener = sdk.capabilities!.webhookListener
+      expect(listener).not.toBeNull()
+      // Verify it is NOT the removed core built-in shim id.
+      expect(listener?.manifest.id).not.toBe('builtin:webhook-listener')
+      sdk.destroy()
     } finally {
       cleanup()
     }

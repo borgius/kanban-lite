@@ -12,10 +12,10 @@ import type { ToolInvocation } from 'ai';
 import { useEffect, useRef } from 'react';
 
 const SUGGESTIONS = [
-  'Create a task: Fix the signup email flow, high priority',
-  'List all backlog tasks',
-  'What tasks are in progress?',
-  'Move task mock-1 to done',
+  'Create a card: Fix the signup email flow, high priority',
+  'List all backlog cards',
+  'What cards are in progress?',
+  'Move card mock-1 to done',
 ];
 
 export default function ChatPage() {
@@ -35,7 +35,7 @@ export default function ChatPage() {
       <header style={s.header}>
         <h1 style={s.h1}>Kanban Chat Triage</h1>
         <p style={s.sub}>
-          Natural-language task management &bull; kanban-lite + Vercel AI
+          Natural-language card management &bull; kanban-lite + Vercel AI
         </p>
       </header>
 
@@ -92,7 +92,7 @@ export default function ChatPage() {
         <input
           value={input}
           onChange={handleInputChange}
-          placeholder="Create a task, list tasks, move a task…"
+          placeholder="Create a card, list cards, move a card…"
           disabled={isLoading}
           style={s.input}
           autoComplete="off"

@@ -42,7 +42,6 @@ REST API available at http://localhost:<port>/api
   Move:     PATCH /api/tasks/:id/move
   Columns:  GET/POST /api/columns, PUT/DELETE /api/columns/:id
   Settings: GET/PUT /api/settings
-  Webhooks: GET/POST /api/webhooks, DELETE /api/webhooks/:id
 `)
         process.exit(0)
     }

@@ -11,8 +11,6 @@ import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
 import { AuthError, sanitizeCard } from './types'
 import type { StorageEngine } from './plugins/types'
-import { loadWebhooks, createWebhook as _createWebhook, deleteWebhook as _deleteWebhook, updateWebhook as _updateWebhook } from './webhooks'
-import { WebhookListenerPlugin } from './plugins/webhookListener'
 import { resolveKanbanDir } from './fileUtils'
 import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from './plugins'
 import type { ResolvedCapabilityBag } from './plugins'
@@ -103,13 +101,12 @@ type MethodInput<TMethod> =
 export interface WebhookStatus {
   /**
    * Active `webhook.delivery` provider id.
-   * Returns `'built-in'` when the external `kl-webhooks-plugin` package is not resolved
-   * and the compatibility fallback remains active.
+   * Returns `'none'` when `kl-webhooks-plugin` is not installed.
    */
   webhookProvider: string
   /**
    * `true` when an external webhook provider plugin is active.
-   * `false` when falling back to the built-in compatibility webhook implementation.
+   * `false` when `kl-webhooks-plugin` is not installed.
    */
   webhookProviderActive: boolean
 }
@@ -335,9 +332,8 @@ export class KanbanSDK {
     if (options?.storage) {
       this._storage = options.storage
       this._capabilities = null
-      // Pre-built storage engine injected: fall back to built-in webhook listener.
-      this._webhookPlugin = new WebhookListenerPlugin(this.workspaceRoot)
-      this._webhookPlugin.register(this._eventBus)
+      // Pre-built storage engine injected: no webhook provider available.
+      // _webhookPlugin stays null; webhook CRUD methods throw plugin-missing errors.
       return
     }
 
@@ -359,13 +355,12 @@ export class KanbanSDK {
 
     const webhookListener = this._capabilities.webhookListener
     if (webhookListener) {
-      // Provider-supplied listener (external package or wrapped legacy createListener).
+      // Provider-supplied listener from the external webhook package.
       this._webhookPlugin = webhookListener
-    } else {
-      // kl-webhooks-plugin not yet installed: fall back to built-in listener.
-      this._webhookPlugin = new WebhookListenerPlugin(this.workspaceRoot)
+      this._webhookPlugin.register(this._eventBus)
     }
-    this._webhookPlugin.register(this._eventBus)
+    // When no listener is provided, _webhookPlugin stays null. No delivery listener is
+    // registered. Webhook CRUD methods will return plugin-missing errors.
 
     // Register the built-in auth listener plugin.
     this._capabilities.authListener.register(this._eventBus)
@@ -510,20 +505,20 @@ export class KanbanSDK {
    * Returns webhook provider metadata for host surfaces and diagnostics.
    *
    * Use this to inspect which webhook delivery provider is active and whether
-   * an external provider plugin is installed or the built-in fallback is used.
+   * `kl-webhooks-plugin` is installed.
    *
    * @returns A {@link WebhookStatus} snapshot containing the active provider id
-   *   and a boolean flag indicating whether the provider is an external plugin.
+   *   and a boolean flag indicating whether a provider is active.
    *
    * @example
    * ```ts
    * const status = sdk.getWebhookStatus()
-   * console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
-   * console.log(status.webhookProviderActive) // false when no plugin configured
+   * console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
+   * console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
    * ```
    */
   getWebhookStatus(): WebhookStatus {
-    const webhookProvider = this._capabilities?.webhookProvider?.manifest.id ?? 'built-in'
+    const webhookProvider = this._capabilities?.webhookProvider?.manifest.id ?? 'none'
     return {
       webhookProvider,
       webhookProviderActive: this._capabilities?.webhookProvider != null,
@@ -2455,67 +2450,74 @@ export class KanbanSDK {
 
   /**
    * Lists all registered webhooks.
-    * Delegates to the resolved external `webhook.delivery` provider when available,
-    * otherwise uses the built-in compatibility registry path against the same
-    * `.kanban.json` `webhooks` array.
+   *
+   * Delegates to the resolved `kl-webhooks-plugin` provider.
+   * Throws if no `webhook.delivery` provider is installed.
    *
    * @returns Array of {@link Webhook} objects.
+   * @throws {Error} When `kl-webhooks-plugin` is not installed.
    */
   listWebhooks(): Webhook[] {
     if (this._capabilities?.webhookProvider) {
       return this._capabilities.webhookProvider.listWebhooks(this.workspaceRoot)
     }
-    return loadWebhooks(this.workspaceRoot)
+    throw new Error('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin')
   }
 
   /**
    * Creates and persists a new webhook.
-    * Delegates to the resolved external `webhook.delivery` provider when available,
-    * otherwise uses the built-in compatibility registry path.
+   *
+   * Delegates to the resolved `kl-webhooks-plugin` provider.
+   * Throws if no `webhook.delivery` provider is installed.
    *
    * @param webhookConfig - The webhook configuration.
    * @returns The newly created {@link Webhook}.
+   * @throws {Error} When `kl-webhooks-plugin` is not installed.
    */
   async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Promise<Webhook> {
-    const mergedInput = await this._runBeforeEvent<{ url: string; events: string[]; secret?: string }>('webhook.create', { ...webhookConfig })
-    if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, mergedInput)
+    if (!this._capabilities?.webhookProvider) {
+      throw new Error('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin')
     }
-    return _createWebhook(this.workspaceRoot, mergedInput)
+    const mergedInput = await this._runBeforeEvent<{ url: string; events: string[]; secret?: string }>('webhook.create', { ...webhookConfig })
+    return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, mergedInput)
   }
 
   /**
    * Deletes a webhook by its ID.
-    * Delegates to the resolved external `webhook.delivery` provider when available,
-    * otherwise uses the built-in compatibility registry path.
+   *
+   * Delegates to the resolved `kl-webhooks-plugin` provider.
+   * Throws if no `webhook.delivery` provider is installed.
    *
    * @param id - The webhook ID to delete.
    * @returns `true` if deleted, `false` if not found.
+   * @throws {Error} When `kl-webhooks-plugin` is not installed.
    */
   async deleteWebhook(id: string): Promise<boolean> {
-    const mergedInput = await this._runBeforeEvent<{ id: string }>('webhook.delete', { id })
-    if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, mergedInput.id)
+    if (!this._capabilities?.webhookProvider) {
+      throw new Error('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin')
     }
-    return _deleteWebhook(this.workspaceRoot, mergedInput.id)
+    const mergedInput = await this._runBeforeEvent<{ id: string }>('webhook.delete', { id })
+    return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, mergedInput.id)
   }
 
   /**
    * Updates an existing webhook's configuration.
-    * Delegates to the resolved external `webhook.delivery` provider when available,
-    * otherwise uses the built-in compatibility registry path.
+   *
+   * Delegates to the resolved `kl-webhooks-plugin` provider.
+   * Throws if no `webhook.delivery` provider is installed.
    *
    * @param id - The webhook ID to update.
    * @param updates - Partial webhook fields to merge.
    * @returns The updated {@link Webhook}, or `null` if not found.
+   * @throws {Error} When `kl-webhooks-plugin` is not installed.
    */
   async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null> {
+    if (!this._capabilities?.webhookProvider) {
+      throw new Error('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin')
+    }
     const mergedInput = await this._runBeforeEvent<{ id: string; url?: string; events?: string[]; secret?: string; active?: boolean }>('webhook.update', { id, ...updates })
     const { id: resolvedId, ...resolvedUpdates } = mergedInput
-    if (this._capabilities?.webhookProvider) {
-      return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
-    }
-    return _updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
+    return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
   }
 
 }

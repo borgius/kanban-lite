@@ -7,7 +7,7 @@ import { getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import { AuthError, type AuthContext, type KanbanCliPlugin } from '../sdk/types'
-import { loadExternalModule } from '../sdk/plugins/index'
+import { loadExternalModule, collectActiveExternalPackageNames } from '../sdk/plugins/index'
 
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
@@ -409,7 +409,7 @@ export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
 
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData }, resolveCliAuthContext())
+  const card = await sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData })
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -440,7 +440,7 @@ async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
   const position = typeof flags.position === 'string' ? parseInt(flags.position, 10) : undefined
-  const updated = await sdk.moveCard(resolvedId, newStatus, position, boardId, resolveCliAuthContext())
+  const updated = await sdk.moveCard(resolvedId, newStatus, position, boardId)
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
@@ -498,7 +498,7 @@ export async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags
     process.exit(1)
   }
 
-  const updated = await sdk.updateCard(resolvedId, updates, boardId, resolveCliAuthContext())
+  const updated = await sdk.updateCard(resolvedId, updates, boardId)
   console.log(green(`Updated: ${updated.id}`))
 }
 
@@ -527,7 +527,7 @@ export async function cmdForm(sdk: KanbanSDK, positional: string[], flags: Flags
         formId,
         data,
         boardId,
-      }, resolveCliAuthContext())
+      })
 
       if (flags.json) {
         console.log(JSON.stringify(result, null, 2))
@@ -555,7 +555,7 @@ async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
   // Support partial ID match
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
-  await sdk.deleteCard(resolvedId, boardId, resolveCliAuthContext())
+  await sdk.deleteCard(resolvedId, boardId)
   console.log(green(`Soft-deleted: ${resolvedId} (moved to deleted)`))
 }
 
@@ -569,7 +569,7 @@ async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], flags: F
   const boardId = getBoardId(flags)
   const resolvedId = await resolveCardId(sdk, cardId, boardId)
 
-  await sdk.permanentlyDeleteCard(resolvedId, boardId, resolveCliAuthContext())
+  await sdk.permanentlyDeleteCard(resolvedId, boardId)
   console.log(green(`Permanently deleted: ${resolvedId}`))
 }
 
@@ -607,7 +607,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         process.exit(1)
       }
       const description = typeof flags.description === 'string' ? flags.description : undefined
-      const board = await sdk.createBoard(id, name, { description }, resolveCliAuthContext())
+      const board = await sdk.createBoard(id, name, { description })
       if (flags.json) {
         console.log(JSON.stringify(board, null, 2))
       } else {
@@ -641,7 +641,7 @@ async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Flags, wor
         console.error(red('Usage: kl boards remove <id>'))
         process.exit(1)
       }
-      await sdk.deleteBoard(boardId, resolveCliAuthContext())
+      await sdk.deleteBoard(boardId)
       console.log(green(`Removed board: ${boardId}`))
       break
     }
@@ -699,7 +699,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions add --board <id> --key <key> --title <title>'))
         process.exit(1)
       }
-      const result = await sdk.addBoardAction(boardId, key, title, resolveCliAuthContext())
+      const result = await sdk.addBoardAction(boardId, key, title)
       if (flags.json) {
         console.log(JSON.stringify(result, null, 2))
       } else {
@@ -714,7 +714,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions remove --board <id> <key>'))
         process.exit(1)
       }
-      await sdk.removeBoardAction(boardId, key, resolveCliAuthContext())
+      await sdk.removeBoardAction(boardId, key)
       console.log(green(`Removed action "${key}" from board ${boardId}`))
       break
     }
@@ -725,7 +725,7 @@ async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flags: Flag
         console.error(red('Usage: kl board-actions fire --board <id> <key>'))
         process.exit(1)
       }
-      await sdk.triggerBoardAction(boardId, key, resolveCliAuthContext())
+      await sdk.triggerBoardAction(boardId, key)
       console.log(green(`Fired board action "${key}" on board ${boardId}`))
       break
     }
@@ -807,7 +807,7 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const updated = await sdk.addAttachment(resolvedId, filePath, boardId, resolveCliAuthContext())
+      const updated = await sdk.addAttachment(resolvedId, filePath, boardId)
       console.log(green(`Attached to ${updated.id}: ${path.basename(filePath)}`))
       break
     }
@@ -823,7 +823,7 @@ async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const updated = await sdk.removeAttachment(resolvedId, filename, boardId, resolveCliAuthContext())
+      const updated = await sdk.removeAttachment(resolvedId, filename, boardId)
       console.log(green(`Removed from ${updated.id}: ${filename}`))
       break
     }
@@ -909,7 +909,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const card = await sdk.addComment(resolvedId, author, body, boardId, resolveCliAuthContext())
+      const card = await sdk.addComment(resolvedId, author, body, boardId)
       const added = card.comments[card.comments.length - 1]
       if (flags.json) {
         console.log(JSON.stringify(added, null, 2))
@@ -934,7 +934,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.updateComment(resolvedId, commentId, body, boardId, resolveCliAuthContext())
+      await sdk.updateComment(resolvedId, commentId, body, boardId)
       if (flags.json) {
         const comments = await sdk.listComments(resolvedId, boardId)
         const updated = comments.find(c => c.id === commentId)
@@ -956,7 +956,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.deleteComment(resolvedId, commentId, boardId, resolveCliAuthContext())
+      await sdk.deleteComment(resolvedId, commentId, boardId)
       console.log(green(`Deleted comment ${commentId}`))
       break
     }
@@ -1029,7 +1029,7 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
         }
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      const entry = await sdk.addLog(resolvedId, text, { source, object: obj }, boardId, resolveCliAuthContext())
+      const entry = await sdk.addLog(resolvedId, text, { source, object: obj }, boardId)
       if (flags.json) {
         console.log(JSON.stringify(entry, null, 2))
       } else {
@@ -1043,7 +1043,7 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
-      await sdk.clearLogs(resolvedId, boardId, resolveCliAuthContext())
+      await sdk.clearLogs(resolvedId, boardId)
       console.log(green(`Cleared logs for card ${resolvedId}`))
       break
     }
@@ -1087,7 +1087,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
           process.exit(1)
         }
       }
-      const entry = await sdk.addBoardLog(text, { source, object: obj }, boardId, resolveCliAuthContext())
+      const entry = await sdk.addBoardLog(text, { source, object: obj }, boardId)
       if (flags.json) {
         console.log(JSON.stringify(entry, null, 2))
       } else {
@@ -1096,7 +1096,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
       break
     }
     case 'clear': {
-      await sdk.clearBoardLogs(boardId, resolveCliAuthContext())
+      await sdk.clearBoardLogs(boardId)
       console.log(green('Cleared board logs'))
       break
     }
@@ -1321,97 +1321,6 @@ async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Flags): Pr
   }
 }
 
-// --- Webhook Commands ---
-
-export async function cmdWebhooks(positional: string[], flags: Flags, sdk: KanbanSDK): Promise<void> {
-  const subcommand = positional[0] || 'list'
-
-  switch (subcommand) {
-    case 'list': {
-      const webhooks = sdk.listWebhooks()
-      if (flags.json) {
-        console.log(JSON.stringify(webhooks, null, 2))
-      } else if (webhooks.length === 0) {
-        console.log(dim('  No webhooks registered.'))
-      } else {
-        console.log(`  ${dim('ID'.padEnd(22))}  ${dim('URL'.padEnd(40))}  ${dim('EVENTS'.padEnd(20))}  ${dim('ACTIVE')}`)
-        console.log(dim('  ' + '-'.repeat(90)))
-        for (const w of webhooks) {
-          const events = w.events.join(', ')
-          const active = w.active ? green('yes') : red('no')
-          console.log(`  ${bold(w.id.padEnd(22))}  ${w.url.padEnd(40)}  ${events.padEnd(20)}  ${active}`)
-        }
-      }
-      break
-    }
-    case 'add': {
-      const url = typeof flags.url === 'string' ? flags.url : ''
-      if (!url) {
-        console.error(red('Usage: kl webhooks add --url <url> [--events <event1,event2>] [--secret <key>]'))
-        process.exit(1)
-      }
-      const events = typeof flags.events === 'string' ? flags.events.split(',').map(e => e.trim()) : ['*']
-      const secret = typeof flags.secret === 'string' ? flags.secret : undefined
-      const webhook = await runWithCliAuth(sdk, () => sdk.createWebhook({ url, events, secret }))
-      if (flags.json) {
-        console.log(JSON.stringify(webhook, null, 2))
-      } else {
-        console.log(green(`Created webhook: ${webhook.id}`))
-        console.log(`  URL:    ${webhook.url}`)
-        console.log(`  Events: ${webhook.events.join(', ')}`)
-        if (webhook.secret) console.log(`  Secret: ${dim('(configured)')}`)
-      }
-      break
-    }
-    case 'remove':
-    case 'rm': {
-      const webhookId = positional[1]
-      if (!webhookId) {
-        console.error(red('Usage: kl webhooks remove <id>'))
-        process.exit(1)
-      }
-      const removed = await runWithCliAuth(sdk, () => sdk.deleteWebhook(webhookId))
-      if (removed) {
-        console.log(green(`Removed webhook: ${webhookId}`))
-      } else {
-        console.error(red(`Webhook not found: ${webhookId}`))
-        process.exit(1)
-      }
-      break
-    }
-    case 'update': {
-      const webhookId = positional[1]
-      if (!webhookId) {
-        console.error(red('Usage: kl webhooks update <id> [--url <url>] [--events <e1,e2>] [--secret <key>] [--active true|false]'))
-        process.exit(1)
-      }
-      const updates: Partial<{ url: string; events: string[]; secret: string; active: boolean }> = {}
-      if (typeof flags.url === 'string') updates.url = flags.url
-      if (typeof flags.events === 'string') updates.events = flags.events.split(',').map(e => e.trim())
-      if (typeof flags.secret === 'string') updates.secret = flags.secret
-      if (typeof flags.active === 'string') updates.active = flags.active === 'true'
-      const updated = await runWithCliAuth(sdk, () => sdk.updateWebhook(webhookId, updates))
-      if (!updated) {
-        console.error(red(`Webhook not found: ${webhookId}`))
-        process.exit(1)
-      }
-      if (flags.json) {
-        console.log(JSON.stringify(updated, null, 2))
-      } else {
-        console.log(green(`Updated webhook: ${updated.id}`))
-        console.log(`  URL:    ${updated.url}`)
-        console.log(`  Events: ${updated.events.join(', ')}`)
-        console.log(`  Active: ${updated.active ? green('yes') : red('no')}`)
-      }
-      break
-    }
-    default:
-      console.error(red(`Unknown webhooks subcommand: ${subcommand}`))
-      console.error('Available: list, add, update, remove')
-      process.exit(1)
-  }
-}
-
 // --- Settings Commands ---
 
 const SETTINGS_KEYS = [
@@ -1461,7 +1370,7 @@ async function cmdSettings(positional: string[], flags: Flags, sdk: KanbanSDK): 
         console.error(`Available: ${SETTINGS_KEYS.join(', ')}`)
         process.exit(1)
       }
-      await sdk.updateSettings(settings, resolveCliAuthContext())
+      await sdk.updateSettings(settings)
       console.log(green('Settings updated.'))
       if (flags.json) {
         console.log(JSON.stringify(sdk.getSettings(), null, 2))
@@ -1638,12 +1547,6 @@ ${bold('Label Commands:')}
 ${bold('Form Commands:')}
   form submit <id> <form>     Submit a card form (--data <json|@file>)
 
-${bold('Webhook Commands:')}
-  webhooks                    List registered webhooks
-  webhooks add                Register a webhook (--url, --events, --secret)
-  webhooks update <id>        Update a webhook (--url, --events, --secret, --active)
-  webhooks remove <id>        Remove a webhook
-
 ${bold('Settings Commands:')}
   settings                    Show current settings
   settings update             Update settings (--<key> <value>)
@@ -1698,11 +1601,6 @@ ${bold('Log Options:')}
   --source <label>            Source/origin label (default: "default")
   --object '<json>'           Structured data object as JSON string
 
-${bold('Webhook Options:')}
-  --url <url>                 Webhook target URL (required for add)
-  --events <e1,e2>            Events to subscribe to (default: *)
-  --secret <key>              HMAC-SHA256 signing secret
-
 ${bold('Serve Options:')}
   --port <number>             Port to listen on (default: 3000)
   --no-browser                Don't open browser automatically
@@ -1755,7 +1653,7 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
   if (sub === 'migrate-to-sqlite') {
     const dbPath = typeof flags['sqlite-path'] === 'string' ? flags['sqlite-path'] : undefined
     console.log('Migrating cards to SQLite…')
-    const count = await sdk.migrateToSqlite(dbPath, resolveCliAuthContext())
+    const count = await sdk.migrateToSqlite(dbPath)
     if (flags.json) {
       console.log(JSON.stringify({ ok: true, count, storageEngine: 'sqlite' }))
     } else {
@@ -1768,7 +1666,7 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
 
   if (sub === 'migrate-to-markdown') {
     console.log('Migrating cards to markdown…')
-    const count = await sdk.migrateToMarkdown(resolveCliAuthContext())
+    const count = await sdk.migrateToMarkdown()
     if (flags.json) {
       console.log(JSON.stringify({ ok: true, count, storageEngine: 'markdown' }))
     } else {
@@ -1793,12 +1691,8 @@ function loadCliPlugins(workspaceRoot: string): KanbanCliPlugin[] {
   } catch {
     return []
   }
-  const providers = new Set<string>()
-  for (const ref of Object.values(config.plugins ?? {})) {
-    if (ref?.provider) providers.add(ref.provider)
-  }
   const plugins: KanbanCliPlugin[] = []
-  for (const pkg of providers) {
+  for (const pkg of collectActiveExternalPackageNames(config)) {
     try {
       const mod = loadExternalModule(pkg) as Record<string, unknown>
       const cli = mod.cliPlugin
@@ -1952,11 +1846,18 @@ async function main(): Promise<void> {
     case 'forms':
       await cmdForm(sdk, positional, flags)
       break
-    case 'webhooks':
     case 'webhook':
-    case 'wh':
-      await cmdWebhooks(positional, flags, sdk)
+    case 'wh': {
+      // Alias shim: route to the plugin-owned `webhooks` command.
+      const webhookPlugin = cliPlugins.find(p => p.command === 'webhooks')
+      if (webhookPlugin) {
+        await webhookPlugin.run(positional, flags, { workspaceRoot, sdk, runWithCliAuth: (fn) => runWithCliAuth(sdk, fn) })
+      } else {
+        console.error(red('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin'))
+        process.exit(1)
+      }
       break
+    }
     case 'settings':
       await cmdSettings(positional, flags, sdk)
       break
@@ -1979,7 +1880,7 @@ async function main(): Promise<void> {
     default: {
       const fallback = cliPlugins.find(p => p.command === command)
       if (fallback) {
-        await fallback.run(positional, flags, { workspaceRoot })
+        await fallback.run(positional, flags, { workspaceRoot, sdk, runWithCliAuth: (fn) => runWithCliAuth(sdk, fn) })
         break
       }
       console.error(red(`Unknown command: ${command}`))

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
+import { collectActiveExternalPackageNames } from '../plugins'
 
 /** Minimal valid config scaffold for tests. */
 function makeConfig(overrides: Partial<KanbanConfig> = {}): KanbanConfig {
@@ -204,5 +205,142 @@ describe('normalizeWebhookCapabilities', () => {
   it('accepts a plain object with only webhookPlugin field (Pick<KanbanConfig, "webhookPlugin">)', () => {
     const result = normalizeWebhookCapabilities({})
     expect(result['webhook.delivery']).toEqual({ provider: 'webhooks' })
+  })
+
+  it('plugins["webhook.delivery"] takes precedence over webhookPlugin', () => {
+    const result = normalizeWebhookCapabilities(
+      makeConfig({
+        plugins: { 'webhook.delivery': { provider: 'from-plugins' } },
+        webhookPlugin: { 'webhook.delivery': { provider: 'from-webhookPlugin' } },
+      })
+    )
+    expect(result['webhook.delivery']).toEqual({ provider: 'from-plugins' })
+  })
+
+  it('falls back to webhookPlugin when plugins["webhook.delivery"] is absent', () => {
+    const result = normalizeWebhookCapabilities(
+      makeConfig({ webhookPlugin: { 'webhook.delivery': { provider: 'legacy-provider' } } })
+    )
+    expect(result['webhook.delivery']).toEqual({ provider: 'legacy-provider' })
+  })
+})
+
+describe('collectActiveExternalPackageNames', () => {
+  describe('webhook provider discovery', () => {
+    it('includes kl-webhooks-plugin by default when no webhook config is present', () => {
+      const result = collectActiveExternalPackageNames({})
+      expect(result).toContain('kl-webhooks-plugin')
+    })
+
+    it('legacy webhookPlugin config activates kl-webhooks-plugin via alias', () => {
+      const result = collectActiveExternalPackageNames({
+        webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
+      })
+      expect(result).toContain('kl-webhooks-plugin')
+    })
+
+    it('plugins["webhook.delivery"] with alias "webhooks" resolves to kl-webhooks-plugin', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'webhook.delivery': { provider: 'webhooks' } },
+      })
+      expect(result).toContain('kl-webhooks-plugin')
+    })
+
+    it('plugins["webhook.delivery"] takes precedence over webhookPlugin', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'webhook.delivery': { provider: 'my-custom-delivery' } },
+        webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
+      })
+      expect(result).toContain('my-custom-delivery')
+      expect(result).not.toContain('kl-webhooks-plugin')
+    })
+
+    it('custom webhook package name from webhookPlugin is passed through without alias', () => {
+      const result = collectActiveExternalPackageNames({
+        webhookPlugin: { 'webhook.delivery': { provider: 'my-webhook-delivery-pkg' } },
+      })
+      expect(result).toContain('my-webhook-delivery-pkg')
+      expect(result).not.toContain('kl-webhooks-plugin')
+    })
+  })
+
+  describe('auth provider discovery', () => {
+    it('auth providers from legacy auth key are resolved via alias', () => {
+      const result = collectActiveExternalPackageNames({
+        auth: {
+          'auth.identity': { provider: 'noop' },
+          'auth.policy': { provider: 'rbac' },
+        },
+      })
+      expect(result).toContain('kl-auth-plugin')
+    })
+
+    it('plugins auth key takes precedence over legacy auth key', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'auth.identity': { provider: 'noop' } },
+        auth: { 'auth.identity': { provider: 'custom-auth' } },
+      })
+      expect(result).toContain('kl-auth-plugin')
+      expect(result).not.toContain('custom-auth')
+    })
+  })
+
+  describe('storage provider discovery', () => {
+    it('custom external card provider from plugins is included', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.storage': { provider: 'my-custom-storage' } },
+      })
+      expect(result).toContain('my-custom-storage')
+    })
+
+    it('built-in "markdown" card provider is excluded', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.storage': { provider: 'markdown' } },
+      })
+      expect(result).not.toContain('markdown')
+    })
+
+    it('built-in "localfs" attachment provider is excluded', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'attachment.storage': { provider: 'localfs' } },
+      })
+      expect(result).not.toContain('localfs')
+    })
+
+    it('storage alias "sqlite" resolves to kl-sqlite-storage', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.storage': { provider: 'sqlite' } },
+      })
+      expect(result).toContain('kl-sqlite-storage')
+    })
+  })
+
+  describe('general contract', () => {
+    it('result is deduplicated when same package provides multiple capabilities', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: {
+          'auth.identity': { provider: 'noop' },
+          'auth.policy': { provider: 'rbac' },
+        },
+      })
+      const authPkgCount = result.filter(p => p === 'kl-auth-plugin').length
+      expect(authPkgCount).toBe(1)
+    })
+
+    it('does not mutate the input config', () => {
+      const config = {
+        plugins: { 'webhook.delivery': { provider: 'webhooks', options: { x: 1 } } },
+        webhookPlugin: { 'webhook.delivery': { provider: 'legacy', options: { y: 2 } } },
+      }
+      const before = JSON.stringify(config)
+      collectActiveExternalPackageNames(config)
+      expect(JSON.stringify(config)).toBe(before)
+    })
+
+    it('accepts a plain object with no fields (minimal Pick)', () => {
+      const result = collectActiveExternalPackageNames({})
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+    })
   })
 })

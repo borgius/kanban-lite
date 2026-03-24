@@ -51,10 +51,11 @@
     "site:dev": "pnpm --filter @kanban-lite/docs-site dev",
     "site:deploy": "pnpm --filter @kanban-lite/docs-site deploy",
     "package": "vsce package --no-dependencies -o releases/",
-    "release": "pnpm --filter './packages/*' --if-present run release && npm run release:github",
-    "release:minor": "pnpm --filter './packages/*' --if-present run release:minor && npm run release:github",
-    "release:major": "pnpm --filter './packages/*' --if-present run release:major && npm run release:github",
-    "release:github": "git push origin v$(node -p \"require('./packages/kanban-lite/package.json').version\") && gh release create v$(node -p \"require('./packages/kanban-lite/package.json').version\") releases/kanban-lite-$(node -p \"require('./packages/kanban-lite/package.json').version\").vsix --generate-notes"
+    "release": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
+    "release:github": "node scripts/release.mjs github",
+    "release:check-auth": "node scripts/release.mjs check-auth"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

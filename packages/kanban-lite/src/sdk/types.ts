@@ -1,5 +1,5 @@
 import type { Card, CardFormAttachment, CardFormDataMap, Priority, ResolvedFormDescriptor } from '../shared/types'
-import type { CapabilitySelections } from '../shared/config'
+import type { CapabilitySelections, Webhook } from '../shared/config'
 import type { StorageEngine, StorageEngineType } from './plugins/types'
 
 export type { StorageEngine, StorageEngineType } from './plugins/types'
@@ -486,12 +486,46 @@ export class AuthError extends Error {
 }
 
 /**
+ * Minimal SDK webhook facade supplied to CLI plugins via {@link CliPluginContext}.
+ *
+ * Structural subset of `KanbanSDK`; plugins should use this surface instead of
+ * importing `KanbanSDK` directly so they remain decoupled from core internals.
+ */
+export interface CliPluginSdk {
+  listWebhooks(): Webhook[]
+  createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
+  updateWebhook(
+    id: string,
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+  ): Promise<Webhook | null>
+  deleteWebhook(id: string): Promise<boolean>
+}
+
+/**
  * Runtime context supplied to a {@link KanbanCliPlugin} when it is invoked by
  * the `kl` CLI.
  */
 export interface CliPluginContext {
   /** Absolute path to the workspace root that contains `.kanban.json`. */
   workspaceRoot: string
+  /**
+   * Resolved SDK instance for the current workspace.
+   *
+   * Present when the plugin is invoked through the core `kl` CLI.
+   * Absent in isolated unit tests or standalone invocations.
+   * Plugins should prefer this over constructing their own SDK so that
+   * SDK-level auth policy is honoured.
+   */
+  sdk?: CliPluginSdk
+  /**
+   * Core-owned CLI auth helper.
+   *
+   * Wraps mutating SDK calls with the CLI auth context derived from the
+   * environment (`KANBAN_LITE_TOKEN` / `KANBAN_TOKEN`).  Use this instead
+   * of calling SDK methods directly from CLI plugins so authentication and
+   * policy enforcement are handled by core.
+   */
+  runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T>
 }
 
 /**

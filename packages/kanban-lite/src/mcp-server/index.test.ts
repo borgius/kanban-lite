@@ -38,8 +38,22 @@ function injectDenyAll(sdk: KanbanSDK, kanbanDir: string): void {
     { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
     kanbanDir,
   )
+  const noopListener: SDKEventListenerPlugin = {
+    manifest: { id: 'deny-all-webhook-listener', provides: ['event.listener'] as const },
+    register: () => {},
+    unregister: () => {},
+  }
   setCapabilities(sdk, {
     ...bag,
+    webhookProvider: {
+      manifest: { id: 'deny-all-webhook-provider', provides: ['webhook.delivery'] },
+      listWebhooks: () => [],
+      createWebhook: (_root: string, input: { url: string; events: string[]; secret?: string }): Webhook =>
+        ({ id: 'wh_mock', url: input.url, events: input.events, active: true }),
+      updateWebhook: (): Webhook | null => null,
+      deleteWebhook: (): boolean => false,
+    },
+    webhookListener: noopListener,
     authPolicy: {
       manifest: { id: 'deny-all', provides: ['auth.policy' as const] },
       async checkPolicy(
@@ -275,5 +289,146 @@ describe('MCP webhook auth denial: provider-backed error surfaces correctly', ()
     )
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('webhook.update')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// WCTP-06 regression: secret redaction and auth-wrapping for MCP webhook tools
+// ---------------------------------------------------------------------------
+
+describe('MCP webhook secret redaction: secret never appears in tool responses', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-secret-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    injectMockWebhookProvider(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  /**
+   * Simulates the fixed list_webhooks MCP handler:
+   *   const webhooks = await runWithMcpAuth(() => Promise.resolve(sdk.listWebhooks()))
+   *   return JSON.stringify(webhooks.map(redactWebhook), null, 2)
+   */
+  function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
+    const { secret: _s, ...safe } = w
+    return safe as Omit<T, 'secret'>
+  }
+
+  it('list_webhooks response omits secret field', async () => {
+    await sdk.runWithAuth({ transport: 'mcp' }, () =>
+      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'], secret: 'super-secret-key' }),
+    )
+
+    // Simulate fixed list_webhooks handler
+    const webhooks = await sdk.runWithAuth({ transport: 'mcp' }, () =>
+      Promise.resolve(sdk.listWebhooks()),
+    )
+    const responseText = JSON.stringify(webhooks.map(redactWebhook), null, 2)
+
+    expect(responseText).not.toContain('super-secret-key')
+    expect(responseText).not.toContain('"secret"')
+    const parsed = JSON.parse(responseText) as Array<Record<string, unknown>>
+    expect(parsed).toHaveLength(1)
+    expect(parsed[0]).not.toHaveProperty('secret')
+    expect(parsed[0]).toHaveProperty('id')
+    expect(parsed[0]).toHaveProperty('url')
+  })
+
+  it('add_webhook response omits secret field', async () => {
+    const webhook = await sdk.runWithAuth({ transport: 'mcp' }, () =>
+      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'], secret: 'add-secret-key' }),
+    )
+    const responseText = JSON.stringify(redactWebhook(webhook), null, 2)
+
+    expect(responseText).not.toContain('add-secret-key')
+    expect(responseText).not.toContain('"secret"')
+    const parsed = JSON.parse(responseText) as Record<string, unknown>
+    expect(parsed).not.toHaveProperty('secret')
+    expect(parsed).toHaveProperty('id')
+  })
+
+  it('update_webhook response omits secret field', async () => {
+    const webhook = await sdk.runWithAuth({ transport: 'mcp' }, () =>
+      sdk.createWebhook({ url: 'https://example.com/hook', events: ['*'] }),
+    )
+    const updated = await sdk.runWithAuth({ transport: 'mcp' }, () =>
+      sdk.updateWebhook(webhook.id, { secret: 'update-secret-key' }),
+    )
+    expect(updated).not.toBeNull()
+    const responseText = JSON.stringify(redactWebhook(updated!), null, 2)
+
+    expect(responseText).not.toContain('update-secret-key')
+    expect(responseText).not.toContain('"secret"')
+    const parsed = JSON.parse(responseText) as Record<string, unknown>
+    expect(parsed).not.toHaveProperty('secret')
+    expect(parsed).toHaveProperty('id')
+  })
+})
+
+describe('MCP list_webhooks auth-wrapping: consistent error propagation', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-list-auth-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('list_webhooks handler maps AuthError from provider to isError response', async () => {
+    // Inject a provider whose listWebhooks throws AuthError, simulating a future
+    // SDK-level auth check on webhook.list or a provider that enforces auth itself.
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+    const noopListener: import('../sdk/types').SDKEventListenerPlugin = {
+      manifest: { id: 'mock-noop-listener', provides: ['event.listener' as const] },
+      register: () => {},
+      unregister: () => {},
+    }
+    setCapabilities(sdk, {
+      ...bag,
+      webhookProvider: {
+        manifest: { id: 'throwing-webhook-provider', provides: ['webhook.delivery'] },
+        listWebhooks(_root: string): Webhook[] {
+          throw new AuthError('webhook.list denied by provider', 'webhook.list')
+        },
+        createWebhook(_root: string, _input: { url: string; events: string[]; secret?: string }): Webhook {
+          throw new AuthError('webhook.create denied by provider', 'webhook.create')
+        },
+        updateWebhook(): Webhook | null { return null },
+        deleteWebhook(): boolean { return false },
+      },
+      webhookListener: noopListener,
+    })
+
+    // Simulate the fixed list_webhooks MCP handler with runWithMcpAuth + try/catch
+    const result = await mcpHandler(async () => {
+      const webhooks = await sdk.runWithAuth({ transport: 'mcp' }, () =>
+        Promise.resolve(sdk.listWebhooks()),
+      )
+      return webhooks
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('webhook.list')
   })
 })

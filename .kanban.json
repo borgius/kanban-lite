@@ -200,6 +200,9 @@
     }
   },
   "plugins": {
+    "webhook.delivery": {
+      "provider": "kl-webhooks-plugin"
+    },
     "attachment.storage": {
       "provider": "kl-s3-attachment-storage"
     },

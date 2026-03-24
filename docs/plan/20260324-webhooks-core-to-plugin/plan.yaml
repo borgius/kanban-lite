@@ -1,0 +1,645 @@
+plan_id: 20260324-webhooks-core-to-plugin
+objective: |
+  Move webhook functionality out of kanban-lite core and into the webhook plugin package,
+  including runtime delivery ownership and related user-facing command surfaces wherever the
+  current architecture already provides plugin seams. Ensure CLI webhook commands move to the
+  plugin, standalone webhook routes move to the plugin if the existing standalone extension seam
+  can host them cleanly, and keep MCP as a thin core facade unless a low-risk plugin seam is
+  discovered during implementation. Preserve SDK auth/orchestration, update README and CHANGELOG,
+  and regenerate generated docs from source metadata only.
+created_at: "2026-03-24"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+tldr: |
+  The safest migration is to treat `packages/kl-webhooks-plugin` as the canonical owner of
+  webhook runtime behavior and any existing pluggable command surfaces, while shrinking core to
+  orchestration, auth, and compatibility glue. The plan starts by tightening webhook-pack
+  discovery and activation in the SDK layer, then moves runtime ownership, standalone route
+  ownership, and CLI command ownership into the plugin in that order. MCP should be reduced to a
+  thin SDK facade unless a minimal plugin seam is found during the first wave; creating a brand-new
+  generic MCP plugin architecture is not recommended for this refactor.
+
+open_questions:
+  - "Should webhook route documentation be emitted from plugin-provided route metadata/openapi fragments, or should core retain only the aggregation/generation hook while the plugin owns the route definitions?"
+  - "If a lightweight MCP extension seam is discovered during wave 1, should webhook MCP tools move fully into the plugin, or should the project keep MCP as a deliberate core facade for now?"
+  - "Should the migration also normalize the webhook ID generator drift (`randomBytes(6)` vs `randomBytes(8)`) as part of canonicalizing plugin ownership, or defer that to a follow-up compatibility task?"
+
+pre_mortem:
+  overall_risk_level: high
+  critical_failure_modes:
+    - scenario: Core and plugin both continue registering webhook runtime listeners or command surfaces, causing duplicate deliveries or duplicate CLI/HTTP registrations.
+      likelihood: high
+      impact: critical
+      mitigation: |
+        Make plugin activation exclusive for webhook-owned surfaces, remove the built-in fallback
+        listener and built-in webhook route/CLI registrations only after plugin-backed parity tests
+        pass, and add explicit regression coverage for single delivery and single registration.
+    - scenario: Workspaces using only `webhookPlugin` configuration fail to discover plugin-owned CLI or standalone extensions.
+      likelihood: high
+      impact: high
+      mitigation: |
+        Tighten SDK/config normalization and plugin discovery first so webhook-only configuration
+        activates the webhook package for CLI and standalone hosting before host-surface migration
+        begins.
+    - scenario: Standalone route ownership moves to the plugin, but generated API/openapi docs drift because the plugin routes are not represented in source metadata.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Define a minimal plugin-owned route metadata/openapi contribution path during the API wave,
+        update generator sources in the same change set, and regenerate docs before sign-off.
+    - scenario: Core webhook fallback removal exposes hidden dependencies in tests or non-plugin installations.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Convert core webhook modules into temporary compatibility shims first, keep SDK-level
+        install/configuration errors deterministic, and only delete fallback ownership after
+        provider-backed tests and smoke checks pass.
+  assumptions:
+    - The existing SDK plugin loader, `KanbanCliPlugin`, and `StandaloneHttpPlugin` seams are sufficient for webhook CLI and standalone migration with only surgical adjustments.
+    - SDK auth/orchestration remains in core; plugin ownership is about runtime behavior and host-surface implementations, not authorization policy.
+    - No repository-level `docs/prd.yaml` currently exists, so this plan does not need to reconcile against an existing PRD.
+    - Adding a brand-new generic MCP plugin system would be larger than this migration and should be avoided unless wave 1 reveals an already-available seam.
+
+implementation_specification:
+  code_structure: |
+    Keep `KanbanSDK` as the orchestrator and auth boundary, but make the webhook plugin package the
+    canonical source for webhook CRUD/runtime behavior and any pluggable host surfaces. Core should
+    provide only the minimum capability resolution, lifecycle management, and compatibility shims
+    needed to load a webhook package from normalized config. The plugin package should export a
+    cohesive webhook pack: `webhook.delivery` provider, runtime listener, standalone HTTP
+    contribution, and CLI contribution. MCP should remain in core as a thin facade unless a
+    lightweight extension seam is validated early.
+  affected_areas:
+    - packages/kanban-lite/src/shared/config.ts
+    - packages/kanban-lite/src/sdk/plugins/index.ts
+    - packages/kanban-lite/src/sdk/types.ts
+    - packages/kanban-lite/src/sdk/KanbanSDK.ts
+    - packages/kanban-lite/src/sdk/webhooks.ts
+    - packages/kanban-lite/src/sdk/plugins/webhookListener.ts
+    - packages/kanban-lite/src/standalone/server.ts
+    - packages/kanban-lite/src/standalone/internal/routes/system.ts
+    - packages/kanban-lite/src/standalone/internal/openapi-spec.ts
+    - packages/kanban-lite/src/cli/index.ts
+    - packages/kanban-lite/src/mcp-server/index.ts
+    - packages/kl-webhooks-plugin/src/index.ts
+    - packages/kl-webhooks-plugin/README.md
+    - README.md
+    - CHANGELOG.md
+    - scripts/generate-api-docs.ts
+    - scripts/generate-sdk-docs.ts
+    - scripts/generate-webhooks-docs.ts
+  component_details:
+    - component: Webhook pack activation and discovery in core
+      responsibility: Normalize webhook-related config and ensure webhook-only configuration activates provider, CLI, and standalone webhook pack contributions without requiring separate `plugins` entries.
+      interfaces:
+        - "Normalized webhook capability selection in `packages/kanban-lite/src/shared/config.ts`"
+        - "Webhook pack resolution and host-surface discovery in `packages/kanban-lite/src/sdk/plugins/index.ts`"
+        - "Any small contract additions required in `packages/kanban-lite/src/sdk/types.ts`"
+    - component: Plugin-owned canonical webhook runtime
+      responsibility: Make `packages/kl-webhooks-plugin` the single implementation source for webhook CRUD and delivery semantics, including listener lifecycle.
+      interfaces:
+        - "`webhookProviderPlugin` export"
+        - "`webhookListenerPlugin` export or class export"
+        - "Plugin-local helpers for CRUD persistence, signing, filtering, and delivery"
+    - component: Plugin-owned standalone webhook surface
+      responsibility: Register `/api/webhooks` behavior through the standalone plugin seam and contribute any needed source metadata for openapi/doc generation.
+      interfaces:
+        - "`StandaloneHttpPlugin` export from `packages/kl-webhooks-plugin`"
+        - "Core standalone host aggregation hook"
+        - "Route metadata/openapi contribution path used by doc generators"
+    - component: Plugin-owned CLI webhook surface
+      responsibility: Provide webhook CLI commands from the webhook package and remove built-in core ownership of those commands.
+      interfaces:
+        - "`cliPlugin` export from `packages/kl-webhooks-plugin`"
+        - "Core CLI plugin registration and command collision guardrails"
+    - component: Core thin facades and compatibility shims
+      responsibility: Reduce core webhook modules and MCP handlers to SDK-backed orchestration only, with no webhook persistence or delivery logic left in core.
+      interfaces:
+        - "`KanbanSDK` webhook methods delegating to the resolved plugin provider"
+        - "Temporary compatibility shims in legacy core webhook modules"
+        - "MCP webhook handlers calling SDK only"
+    - component: Documentation and verification
+      responsibility: Keep generated docs source-driven and update user-facing docs to explain the new ownership model, install path, and rollback path.
+      interfaces:
+        - "README and package README updates"
+        - "CHANGELOG Unreleased entry"
+        - "Generator-source updates for API/SDK/webhook docs"
+  dependencies:
+    - component: Webhook pack activation and discovery in core
+      relationship: Must land first so the plugin-owned CLI and standalone surfaces activate reliably in existing workspaces.
+    - component: Plugin-owned canonical webhook runtime
+      relationship: Depends on activation/discovery and provides the canonical behavior that all later surfaces will call.
+    - component: Plugin-owned standalone webhook surface
+      relationship: Depends on canonical runtime ownership and any route metadata contract defined in the first wave.
+    - component: Plugin-owned CLI webhook surface
+      relationship: Depends on activation/discovery and stable SDK delegation so CLI commands do not duplicate core logic.
+    - component: Core thin facades and compatibility shims
+      relationship: Depends on plugin-owned runtime and host surfaces so fallback ownership can be safely removed.
+    - component: Documentation and verification
+      relationship: Depends on final ownership boundaries and verified runtime behavior.
+  integration_points:
+    - "`packages/kanban-lite/src/shared/config.ts` is the compatibility seam for webhook-only config discovery."
+    - "`packages/kanban-lite/src/sdk/plugins/index.ts` already owns alias loading, capability resolution, CLI plugin loading, and standalone plugin aggregation."
+    - "`packages/kanban-lite/src/standalone/server.ts` is the host seam for plugin-provided routes and middleware."
+    - "`packages/kanban-lite/src/cli/index.ts` already has a CLI plugin contract and should stop owning webhook commands directly."
+    - "`packages/kanban-lite/src/mcp-server/index.ts` should remain a thin facade unless wave 1 validates an existing MCP plugin seam."
+    - "Generated docs must be updated through source metadata, never by hand-editing generated markdown."
+
+contracts:
+  - from_task: WCTP-01
+    to_task: WCTP-02
+    interface: Webhook pack activation contract
+    format: "Normalized config + loader behavior that guarantees a workspace with webhook config activates the webhook package for provider, CLI, and standalone surfaces."
+  - from_task: WCTP-02
+    to_task: WCTP-03
+    interface: Canonical runtime implementation
+    format: "Plugin exports for webhook CRUD and runtime listener with canonical delivery/signing/filtering semantics and a stable provider manifest."
+  - from_task: WCTP-03
+    to_task: WCTP-04
+    interface: SDK-only webhook orchestration
+    format: "`KanbanSDK` webhook methods delegate to the plugin provider and no longer own direct fallback runtime behavior."
+  - from_task: WCTP-04
+    to_task: WCTP-05
+    interface: Plugin-owned standalone webhook route surface
+    format: "Standalone route registration plus route metadata/openapi contribution owned by the plugin and hosted by core."
+  - from_task: WCTP-03
+    to_task: WCTP-06
+    interface: SDK-backed CLI command hooks
+    format: "Stable SDK method signatures and deterministic provider errors consumed by plugin-owned CLI commands."
+  - from_task: WCTP-05
+    to_task: WCTP-07
+    interface: Finalized host-surface ownership boundary
+    format: "API and CLI moved to plugin where supported; MCP boundary explicitly kept thin in core unless a validated seam exists."
+  - from_task: WCTP-06
+    to_task: WCTP-07
+    interface: Finalized host-surface ownership boundary
+    format: "Plugin-owned CLI commands registered without duplicate core command ownership."
+  - from_task: WCTP-07
+    to_task: WCTP-08
+    interface: Verified behavior matrix
+    format: "Regression expectations covering runtime delivery, standalone routes, CLI commands, and MCP thin-facade behavior."
+  - from_task: WCTP-07
+    to_task: WCTP-09
+    interface: Final ownership and install story
+    format: "Source-of-truth behavior and migration notes needed for README, CHANGELOG, and generated docs."
+  - from_task: WCTP-08
+    to_task: WCTP-10
+    interface: Verified implementation evidence
+    format: "Passing focused tests and smoke checks demonstrating plugin ownership and rollback readiness."
+  - from_task: WCTP-09
+    to_task: WCTP-10
+    interface: Final documentation set
+    format: "Updated README, CHANGELOG, and regenerated docs aligned with verified ownership."
+
+rollback_notes:
+  - "Keep `packages/kanban-lite/src/sdk/webhooks.ts` and `packages/kanban-lite/src/sdk/plugins/webhookListener.ts` as temporary compatibility shims until plugin-owned runtime, standalone, and CLI parity are verified."
+  - "Do not remove built-in core webhook route or CLI registration until plugin-owned standalone and CLI surfaces are loading under webhook-only config and passing focused tests."
+  - "If standalone route metadata/openapi contribution proves too invasive, revert to SDK-backed core route hosting for this cycle and preserve plugin ownership of runtime plus CLI only."
+  - "If MCP extensibility would require a new generalized plugin system, stop at a thin core facade and record the full MCP migration as a follow-up rather than expanding scope mid-stream."
+  - "Keep alias/discovery changes isolated so they can be reverted independently from plugin runtime ownership if workspace activation regresses."
+
+tasks:
+  - id: WCTP-01
+    title: Tighten webhook pack activation and discovery in the SDK layer
+    description: |
+      Define the minimal core-side activation rules required for webhook plugin ownership: normalize
+      webhook-only config, ensure the webhook package is considered active for CLI and standalone
+      discovery, and confirm any small contract additions needed for plugin-owned route/command
+      surfaces. This task should not move runtime logic yet; it should only make plugin activation
+      deterministic and compatible with existing workspace config.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies: []
+    context_files:
+      packages/kanban-lite/src/shared/config.ts: "Webhook config normalization and defaulting."
+      packages/kanban-lite/src/sdk/plugins/index.ts: "Alias loading, capability resolution, CLI loading, and standalone aggregation."
+      packages/kanban-lite/src/sdk/types.ts: "Existing CLI and plugin surface contracts."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 260
+    focus_area: sdk activation contract
+    verification:
+      - "A workspace that only configures `webhookPlugin` still activates webhook package discovery for provider, CLI, and standalone surfaces."
+      - "No host surface requires a redundant `config.plugins` entry to discover the webhook package."
+      - "Any contract changes remain surgical and do not introduce a generic new plugin framework."
+    acceptance_criteria:
+      - "Webhook pack activation is deterministic under legacy and normalized config paths."
+      - "Core owns only discovery/orchestration concerns, not webhook runtime behavior."
+      - "Implementation order can proceed SDK-first without blocking later API/CLI migration."
+    failure_modes:
+      - scenario: Discovery changes accidentally activate unrelated plugins or alter non-webhook plugin resolution.
+        likelihood: medium
+        impact: high
+        mitigation: "Scope activation changes narrowly to webhook capability normalization and webhook pack discovery."
+      - scenario: CLI and standalone host seams still miss webhook-only config after the change.
+        likelihood: medium
+        impact: high
+        mitigation: "Add focused tests for webhook-only workspace configs before any host-surface ownership changes."
+    tech_stack:
+      - TypeScript
+      - Existing kanban-lite plugin resolver conventions
+      - Node.js createRequire package loading
+    test_coverage: "Loader and normalization tests covering webhook-only config activation across provider, CLI, and standalone discovery."
+
+  - id: WCTP-02
+    title: Canonicalize webhook CRUD and delivery ownership inside `kl-webhooks-plugin`
+    description: |
+      Make the plugin package the canonical implementation source for webhook CRUD, signing,
+      filtering, delivery, and listener lifecycle. Resolve any ownership drift inside the package
+      so later host-surface migrations consume one plugin-owned behavior set rather than duplicated
+      core logic.
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-01
+    context_files:
+      packages/kl-webhooks-plugin/src/index.ts: "Plugin runtime/provider implementation and export surface."
+      packages/kl-webhooks-plugin/src/webhooks.test.ts: "Package-level runtime and CRUD parity coverage."
+      packages/kl-webhooks-plugin/README.md: "Package-owned behavior and configuration documentation."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 320
+    focus_area: plugin runtime ownership
+    verification:
+      - "The plugin package alone can express webhook CRUD and runtime listener behavior with current parity semantics."
+      - "Any parity-sensitive drift is explicitly addressed or documented for follow-up."
+      - "The package exports stay compatible with the current core loader."
+    acceptance_criteria:
+      - "`kl-webhooks-plugin` is the canonical owner of webhook runtime semantics."
+      - "Package tests cover delivery, filtering, persistence, and secret/signature behavior."
+      - "No new dependency or broad refactor is required to host the canonical logic in the plugin."
+    failure_modes:
+      - scenario: Plugin behavior still drifts from legacy core fallback semantics in observable ways.
+        likelihood: medium
+        impact: high
+        mitigation: "Use parity tests and explicitly decide whether each drift is fixed now or documented as follow-up."
+      - scenario: Package export changes break runtime loading or sibling-linked development.
+        likelihood: medium
+        impact: high
+        mitigation: "Preserve the current export shape and validate with loader-focused integration coverage."
+    tech_stack:
+      - TypeScript
+      - Vitest
+      - Node.js crypto/http primitives
+    test_coverage: "Package-local CRUD and runtime tests, including signing, filtering, and listener lifecycle."
+
+  - id: WCTP-03
+    title: Remove core runtime ownership and reduce `KanbanSDK` to plugin-backed delegation
+    description: |
+      Update `KanbanSDK` and legacy webhook modules so core no longer owns webhook runtime delivery
+      or CRUD logic. Keep SDK auth/orchestration, but remove built-in runtime ownership and replace
+      direct implementations with delegation and temporary compatibility shims where necessary.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-02
+    context_files:
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "Webhook delegation, listener registration, and status reporting."
+      packages/kanban-lite/src/sdk/webhooks.ts: "Legacy core webhook runtime/CRUD implementation to shrink into a shim or remove."
+      packages/kanban-lite/src/sdk/plugins/webhookListener.ts: "Built-in listener fallback that should stop owning delivery."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 360
+    focus_area: sdk delegation cleanup
+    verification:
+      - "`KanbanSDK` webhook methods preserve public signatures and auth boundaries while delegating to the plugin-owned implementation."
+      - "Exactly one runtime listener path remains active for webhook delivery."
+      - "Core fallback modules no longer contain the canonical webhook implementation."
+    acceptance_criteria:
+      - "Core stops owning webhook runtime logic."
+      - "SDK remains the orchestration/auth boundary used by all host surfaces."
+      - "Legacy modules are either removed or reduced to explicit temporary compatibility shims."
+    failure_modes:
+      - scenario: Removing the built-in listener causes duplicate delivery or no delivery because legacy and plugin listener paths overlap.
+        likelihood: high
+        impact: critical
+        mitigation: "Add a single-delivery regression test and remove one ownership path at a time."
+      - scenario: Hidden imports or tests still rely on the legacy core modules.
+        likelihood: medium
+        impact: high
+        mitigation: "Use compatibility shims first and delete only after focused regression suites pass."
+    tech_stack:
+      - TypeScript
+      - Existing SDK event bus
+      - Existing SDK auth hooks
+    test_coverage: "SDK delegation, status, and single-delivery regression coverage."
+
+  - id: WCTP-04
+    title: Move standalone `/api/webhooks` ownership into the webhook plugin
+    description: |
+      Use the existing standalone HTTP plugin seam to make the webhook package own standalone route
+      registration and webhook API behavior. If needed, add only the smallest route-metadata or
+      openapi contribution mechanism required so generated API docs can continue to come from
+      source metadata rather than hand-maintained core route tables.
+    wave: 4
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-03
+    context_files:
+      packages/kl-webhooks-plugin/src/index.ts: "Plugin-owned route registration and route metadata export surface."
+      packages/kanban-lite/src/standalone/server.ts: "Standalone host aggregation for plugin routes."
+      packages/kanban-lite/src/standalone/internal/openapi-spec.ts: "OpenAPI aggregation point if plugin route metadata must be surfaced there."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 340
+    focus_area: standalone/api ownership
+    verification:
+      - "`/api/webhooks` is registered through the plugin-owned standalone contribution path."
+      - "Generated API/openapi source metadata remains accurate after ownership transfer."
+      - "Core no longer contains the built-in standalone webhook route implementation except as temporary fallback if explicitly deferred."
+    acceptance_criteria:
+      - "Plugin owns standalone webhook routes wherever the existing standalone seam supports it."
+      - "API behavior remains SDK-backed and parity-aligned."
+      - "Any remaining core role is hosting/aggregation only, not route ownership."
+    failure_modes:
+      - scenario: Plugin-owned route registration cannot contribute to docs/openapi without invasive host changes.
+        likelihood: medium
+        impact: high
+        mitigation: "Introduce only a narrow metadata aggregation hook; if that still proves too invasive, record a bounded fallback to core-hosted routes for this cycle."
+      - scenario: Standalone startup registers duplicate `/api/webhooks` routes from core and plugin.
+        likelihood: medium
+        impact: high
+        mitigation: "Gate built-in route registration behind resolved webhook-plugin ownership before removing the old path."
+    tech_stack:
+      - TypeScript
+      - Fastify
+      - Existing standalone plugin host seam
+    test_coverage: "Standalone route and openapi/doc-generation coverage for plugin-owned webhook endpoints."
+
+  - id: WCTP-05
+    title: Move webhook CLI commands into the webhook plugin and remove built-in command ownership
+    description: |
+      Implement plugin-owned webhook CLI commands through the existing CLI plugin contract and
+      remove built-in core webhook command ownership. Keep core responsible only for loading plugin
+      commands, auth wrappers, and collision guardrails.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-04
+    context_files:
+      packages/kl-webhooks-plugin/src/index.ts: "Plugin-owned `cliPlugin` export and command registration."
+      packages/kanban-lite/src/cli/index.ts: "Current built-in webhook commands and CLI plugin loading."
+      packages/kanban-lite/src/sdk/types.ts: "CLI plugin contract if a narrow webhook command contract tweak is needed."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 280
+    focus_area: cli ownership
+    verification:
+      - "Webhook CLI commands are discoverable in workspaces that only use webhook-related config."
+      - "Core no longer defines webhook command handlers directly."
+      - "CLI behavior and output stay aligned with SDK-backed semantics."
+    acceptance_criteria:
+      - "Plugin owns webhook CLI command implementation."
+      - "Core CLI remains generic command host/loading infrastructure only."
+      - "No duplicate or shadowed webhook command registration remains."
+    failure_modes:
+      - scenario: CLI discovery still depends on `config.plugins`, leaving webhook-only workspaces without commands.
+        likelihood: high
+        impact: high
+        mitigation: "Rely on wave 1 activation changes and add a focused webhook-only CLI discovery regression."
+      - scenario: Removing built-in commands changes CLI help/output in hidden tests.
+        likelihood: medium
+        impact: medium
+        mitigation: "Preserve command names and user-visible behavior; change ownership, not UX semantics."
+    tech_stack:
+      - TypeScript
+      - Node CLI runtime
+      - Existing `KanbanCliPlugin` contract
+    test_coverage: "CLI discovery and CRUD command tests rooted in webhook-only workspace configuration."
+
+  - id: WCTP-06
+    title: Re-scope MCP webhook handling to a thin core facade and decide whether plugin ownership is deferred
+    description: |
+      Review MCP after API and CLI migration, then either (a) keep MCP as a deliberate thin core
+      facade backed only by SDK methods, or (b) use a validated low-risk seam discovered in wave 1
+      to move MCP webhook tools into the plugin. The default plan is to keep MCP in core because the
+      current research did not find a webhook-capable MCP plugin surface.
+    wave: 6
+    agent: gem-implementer
+    priority: medium
+    status: completed
+    decision: |
+      MCP remains a deliberate thin core facade. No existing plugin seam supports MCP webhook tool
+      routing, and introducing one would exceed this plan's scope. Two security issues found during
+      gem-reviewer pass were resolved in-place:
+        1. Secret redaction: `redactWebhook` helper strips the `secret` field before serialising
+           webhook objects in `list_webhooks`, `add_webhook`, and `update_webhook` responses.
+        2. Auth-wrapping consistency: `list_webhooks` now uses `runWithMcpAuth` + try/catch
+           matching the pattern of `add_webhook`, `remove_webhook`, and `update_webhook`.
+      Focused regression tests added to `packages/kanban-lite/src/mcp-server/index.test.ts`
+      covering secret redaction (3 tests) and auth-error propagation from a throwing provider.
+      All 15 MCP tests pass. No new MCP plugin framework was introduced.
+    dependencies:
+      - WCTP-05
+    context_files:
+      packages/kanban-lite/src/mcp-server/index.ts: "Current MCP webhook tools and handler wiring."
+      packages/kanban-lite/src/sdk/KanbanSDK.ts: "SDK methods MCP should call after runtime ownership moves out of core."
+      docs/plan/20260324-webhooks-core-to-plugin/research_findings_packages_kl-webhooks-plugin_and_plugin_contracts.yaml: "Recorded MCP gap and architectural constraints."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: mcp boundary
+    verification:
+      - "MCP webhook handling contains no direct persistence or runtime delivery logic."
+      - "A clear decision is recorded: thin core facade retained, or minimal seam validated and adopted."
+      - "Any deferred MCP plugin migration is explicit rather than accidental."
+    acceptance_criteria:
+      - "Core no longer owns webhook runtime functionality through MCP."
+      - "MCP behavior remains aligned with SDK/API/CLI semantics."
+      - "Scope stays minimal unless a pre-existing seam is proven."
+    failure_modes:
+      - scenario: The team expands scope into a new generalized MCP plugin framework mid-refactor.
+        likelihood: medium
+        impact: high
+        mitigation: "Treat new MCP extensibility as out of scope unless wave 1 discovers an already-supported seam."
+    requires_review: true
+    review_depth: standard
+    security_sensitive: true
+
+  - id: WCTP-07
+    title: Replace ownership-coupled tests with plugin-ownership regression coverage
+    description: |
+      Update tests so they verify plugin ownership, not deleted core internals. Cover webhook-only
+      config discovery, single delivery, plugin-owned standalone routes, plugin-owned CLI commands,
+      and MCP thin-facade behavior. Include focused smoke checks for sibling-linked/local package
+      resolution because webhook behavior is moving further out of core.
+    wave: 7
+    agent: gem-reviewer
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-06
+    context_files:
+      packages/kanban-lite/src/sdk/__tests__/webhook-delegation.test.ts: "SDK/provider ownership coverage."
+      packages/kanban-lite/src/sdk/__tests__/plugin-registry.test.ts: "Plugin discovery/activation coverage."
+      packages/kl-webhooks-plugin/src/webhooks-kanban-lite.workspace.test.ts: "Workspace-level plugin resolution coverage."
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 320
+    focus_area: regression coverage
+    verification:
+      - "A regression test proves exactly one outbound delivery per qualifying event."
+      - "Webhook-only workspace config activates provider, standalone, and CLI ownership paths."
+      - "Tests no longer rely on core owning webhook route or command implementations."
+    acceptance_criteria:
+      - "Coverage follows the new ownership boundary rather than removed internals."
+      - "Focused tests exist for runtime, API, CLI, and MCP boundary behavior."
+      - "Sibling-linked/local package resolution is exercised in at least one workspace-level path."
+    failure_modes:
+      - scenario: Tests still pass only because compatibility shims remain, masking incomplete ownership transfer.
+        likelihood: medium
+        impact: high
+        mitigation: "Add assertions about plugin-owned registration paths, not just end results."
+      - scenario: Regression coverage misses webhook-only config discovery, causing hidden CLI/API failures.
+        likelihood: medium
+        impact: high
+        mitigation: "Add explicit webhook-only workspace fixtures to registry/discovery tests."
+    requires_review: true
+    review_depth: full
+    security_sensitive: true
+
+  - id: WCTP-08
+    title: Update README, CHANGELOG, and generator sources to match plugin ownership
+    description: |
+      Update the root README, the webhook plugin README, CHANGELOG, and any generator-source files
+      so documentation explains that webhook runtime, standalone routes, and CLI commands are now
+      plugin-owned where supported. Keep generated docs source-driven and document any explicit MCP
+      deferment or thin-facade boundary.
+    wave: 8
+    agent: gem-documentation-writer
+    priority: medium
+    status: completed
+    dependencies:
+      - WCTP-07
+    context_files:
+      README.md: "Primary install/configuration and capability overview."
+      CHANGELOG.md: "Required Unreleased entry."
+      scripts/generate-api-docs.ts: "Generator source for API docs if plugin route ownership changes the emitted docs."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 240
+    focus_area: documentation sync
+    verification:
+      - "README explains plugin ownership, install/link workflow, and any MCP boundary that remains in core."
+      - "CHANGELOG records the ownership transfer under Unreleased."
+      - "Generated docs can be regenerated entirely from source metadata/comments."
+    acceptance_criteria:
+      - "User-facing docs match the implemented ownership model."
+      - "No generated doc is edited by hand."
+      - "Plugin package README is aligned with the root README and docs/plugins guidance."
+    failure_modes:
+      - scenario: Docs still describe webhook CLI/routes as core-owned after the migration.
+        likelihood: medium
+        impact: medium
+        mitigation: "Update both root and package docs in the same wave and regenerate generated outputs before sign-off."
+    task_type: update
+    audience: developers
+    coverage_matrix:
+      - "Plugin-owned runtime and host surfaces"
+      - "Webhook-only config activation/discovery rules"
+      - "Install/link workflow for `kl-webhooks-plugin`"
+      - "MCP thin-facade boundary or validated plugin seam decision"
+
+  - id: WCTP-09
+    title: Run focused parity checks and confirm rollback readiness
+    description: |
+      Build the plugin and main repo, run focused verification for runtime delivery, standalone
+      webhook routes, CLI commands, and MCP behavior, and confirm rollback steps are still
+      executable while any temporary compatibility shims exist. This task should verify ownership
+      transfer rather than just compile success.
+    wave: 8
+    agent: gem-devops
+    priority: high
+    status: completed
+    dependencies:
+      - WCTP-07
+    context_files:
+      packages/kl-webhooks-plugin/package.json: "Plugin build/link contract."
+      package.json: "Main repo build/test/doc commands."
+      docs/plan/20260324-webhooks-core-to-plugin/plan.yaml: "Source-of-truth verification and rollback checklist."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 140
+    focus_area: verification and rollback
+    verification:
+      - "Focused checks prove plugin-owned runtime, standalone, and CLI behavior under a real workspace config."
+      - "MCP behavior is verified as either thin core facade or validated plugin seam, with no direct core runtime ownership."
+      - "Rollback steps are command-complete and can restore the previous ownership boundary if verification fails."
+    acceptance_criteria:
+      - "Ownership transfer is backed by real verification evidence, not just unit tests."
+      - "Rollback instructions are precise enough to execute quickly if parity regresses."
+      - "Verification covers webhook-only config activation, not just explicit `plugins` config."
+    failure_modes:
+      - scenario: Verification passes in linked-package mode but fails in sibling-resolution mode, or vice versa.
+        likelihood: medium
+        impact: high
+        mitigation: "Exercise both activation paths before removing compatibility ownership."
+      - scenario: Smoke tests cover CRUD but miss runtime delivery or duplicate registration behavior.
+        likelihood: medium
+        impact: high
+        mitigation: "Use at least one end-to-end create-task or equivalent event-driven flow to validate delivery ownership."
+    environment: development
+    requires_approval: false
+    security_sensitive: true
+
+  - id: WCTP-10
+    title: Final review of ownership boundaries and deferred follow-ups
+    description: |
+      Perform a final architectural review that confirms core no longer owns webhook runtime logic,
+      standalone routes, or CLI commands, and that any remaining core-owned MCP behavior is a
+      deliberate thin-facade choice rather than unfinished migration. Record any explicit deferrals
+      such as MCP plugin extensibility or ID-generation normalization.
+    wave: 9
+    agent: gem-reviewer
+    priority: medium
+    status: completed
+    decision: |
+      Final fallback-removal wave applied. KanbanSDK no longer imports sdk/webhooks.ts or
+      WebhookListenerPlugin; all CRUD methods throw deterministic 'kl-webhooks-plugin required'
+      errors; getWebhookStatus() returns 'none'. Core standalone /api/webhooks routes removed
+      from system.ts and openapi-spec.ts. CLI webhook help sections removed (alias shims kept).
+      Tests updated to assert no-fallback behavior. CHANGELOG updated.
+      Post-review cleanup (gem-implementer): sdk/webhooks.ts, sdk/plugins/webhookListener.ts,
+      standalone/webhooks.ts, and sdk/__tests__/webhookListener.test.ts permanently deleted.
+      WebhookListenerPlugin/createWebhookListenerPlugin re-exports removed from sdk/index.ts.
+      Orphaned 'Webhooks' OpenAPI tag and 'Webhook' component schema removed from openapi-spec.ts.
+      Stale 'compatibility delivery path' wording fixed in README.md. 1058/1058 tests pass.
+    dependencies:
+      - WCTP-08
+      - WCTP-09
+    context_files:
+      docs/plan/20260324-webhooks-core-to-plugin/plan.yaml: "Planned ownership boundary and rollback commitments."
+      README.md: "Final user-facing ownership narrative."
+      packages/kanban-lite/src/mcp-server/index.ts: "Final MCP boundary review."
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: architectural sign-off
+    verification:
+      - "The final state matches the plan's intended ownership boundaries."
+      - "Any unresolved webhook-related core ownership is explicitly documented as deferred and justified."
+      - "No unchecked migration ambiguity remains around CLI, standalone, or MCP ownership."
+    acceptance_criteria:
+      - "The migration outcome is reviewable, deliberate, and bounded."
+      - "Deferred work is clearly separated from completed ownership transfer."
+      - "The team can approve implementation or request scoped revisions without ambiguity."
+    failure_modes:
+      - scenario: Review discovers that core still owns hidden webhook functionality through compatibility glue.
+        likelihood: medium
+        impact: medium
+        mitigation: "Use the final review to separate deliberate facades from accidental leftover ownership and either reopen the relevant task or document the deferment."
+    requires_review: true
+    review_depth: standard
+    security_sensitive: false

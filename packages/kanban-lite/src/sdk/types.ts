@@ -118,6 +118,7 @@ export type SDKAfterEventType =
   | 'board.updated'
   | 'board.deleted'
   | 'board.action'
+  | 'card.action.triggered'
   | 'board.log.added'
   | 'board.log.cleared'
   | 'log.added'

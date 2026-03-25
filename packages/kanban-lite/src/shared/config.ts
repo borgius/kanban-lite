@@ -191,7 +191,10 @@ export interface KanbanConfig {
   webhooks?: Webhook[]
   /** Label definitions keyed by label name, with color and optional group. */
   labels?: Record<string, LabelDefinition>
-  /** Optional URL to POST to when a card action is triggered. */
+  /**
+   * @deprecated Removed in favour of the webhook plugin. Register a webhook
+   * for the `card.action.triggered` event instead.
+   */
   actionWebhookUrl?: string
   /**
    * Global auto-increment card ID counter shared across all boards.
@@ -271,6 +274,13 @@ export interface KanbanConfig {
   customHeadHtml?: string
   /** Path to an HTML file (relative to workspace root) whose content is injected into the standalone board's `<head>` element. Takes precedence over `customHeadHtml`. */
   customHeadHtmlFile?: string
+  /**
+   * Optional URL base path prefix for subfolder reverse-proxy deployments
+   * (e.g. `'/kanban'`). Must start with `/` and have no trailing slash.
+   * When set, all asset URLs, the WebSocket endpoint, and API routes are
+   * served under this prefix. Only applies to the standalone server.
+   */
+  basePath?: string
 }
 
 // Legacy v1 config (for migration)
@@ -420,9 +430,65 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
 }
 
 /**
+ * Recursively resolves `${VAR_NAME}` placeholders in all string values of a
+ * parsed config object against `process.env`. Mutates the object in place.
+ *
+ * Throws a descriptive error when a referenced environment variable is not
+ * set, including the JSON path to the offending value so the operator can
+ * locate it quickly. Example error message:
+ *
+ * ```
+ * missing ALICE_PASSWORD_HASH in .kanban.json: .plugins."auth.identity".options.users[3].password "${ALICE_PASSWORD_HASH}"
+ * ```
+ *
+ * Keys that contain non-identifier characters (e.g. dots) are quoted in the
+ * path segment, matching the convention used in `.kanban.json` error messages.
+ *
+ * @param node - The current node to process (object, array, string, or scalar).
+ * @param configFileName - Config filename used in error messages (e.g. `'.kanban.json'`).
+ * @param nodePath - JSON path accumulated so far (empty string at root).
+ * @returns The processed node (same reference for objects/arrays; new primitive for strings).
+ */
+function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
+  if (typeof node === 'string') {
+    return node.replace(/\$\{([^}]+)\}/g, (_match, varName: string) => {
+      const envValue = process.env[varName]
+      if (envValue === undefined) {
+        throw new Error(
+          `missing ${varName} in ${configFileName}: ${nodePath} "${node}"`
+        )
+      }
+      return envValue
+    })
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      node[i] = resolveConfigEnvVars(node[i], configFileName, `${nodePath}[${i}]`)
+    }
+    return node
+  }
+  if (node !== null && typeof node === 'object') {
+    const obj = node as Record<string, unknown>
+    for (const key of Object.keys(obj)) {
+      const jsonKey = /[^a-zA-Z0-9_]/.test(key) ? `"${key}"` : key
+      const childPath = nodePath ? `${nodePath}.${jsonKey}` : `.${jsonKey}`
+      obj[key] = resolveConfigEnvVars(obj[key], configFileName, childPath)
+    }
+    return obj
+  }
+  return node
+}
+
+/**
  * Reads the kanban config from disk. If the file is missing or unreadable,
  * returns the default config. If the file contains a v1 config, it is
  * automatically migrated to v2 format and persisted back to disk.
+ *
+ * Any `${VAR_NAME}` placeholders found in string values are resolved against
+ * `process.env` before the config is returned. If a referenced environment
+ * variable is not set the process will throw a descriptive error rather than
+ * silently falling back to defaults, because an unresolved secret is never a
+ * safe default.
  *
  * @param workspaceRoot - Absolute path to the workspace root directory.
  * @returns The parsed (and possibly migrated) kanban configuration.
@@ -434,8 +500,27 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
 export function readConfig(workspaceRoot: string): KanbanConfig {
   const filePath = configPath(workspaceRoot)
   const defaults = { ...DEFAULT_CONFIG, boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } } }
+
+  // Parse the file first; fall back to defaults only for read/parse failures.
+  let raw: Record<string, unknown>
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  } catch {
+    return defaults
+  }
+
+  // Resolve ${VAR_NAME} env placeholders. A missing env variable is a known,
+  // operator-caused misconfiguration and should produce a clean, actionable
+  // error rather than a Node.js stack trace.
+  try {
+    resolveConfigEnvVars(raw, CONFIG_FILENAME)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`\nConfiguration error: ${msg}\n\nSet the missing environment variable before starting the server.\n\n`)
+    process.exit(1)
+  }
+
+  try {
     // True v1: explicitly version 1, OR version absent AND no boards object
     // A versionless modern config (has a boards object) must NOT be treated as v1
     const isV1 = raw.version === 1 || (!raw.version && !(typeof raw.boards === 'object' && raw.boards !== null && !Array.isArray(raw.boards)))

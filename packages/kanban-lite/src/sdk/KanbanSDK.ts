@@ -1737,21 +1737,17 @@ export class KanbanSDK {
   }
 
   /**
-   * Triggers a named action for a card by POSTing to the global `actionWebhookUrl`
-   * configured in `.kanban.json`.
+   * Triggers a named action for a card.
    *
-   * The payload sent to the webhook is:
-   * ```json
-   * { "action": "retry", "board": "default", "list": "in-progress", "card": { ...sanitizedCard } }
-   * ```
+   * Validates the card, appends an activity log entry, and emits the
+   * `card.action.triggered` after-event so registered webhooks receive
+   * the action payload automatically.
    *
    * @param cardId - The ID of the card to trigger the action for.
    * @param action - The action name string (e.g. `'retry'`, `'sendEmail'`).
    * @param boardId - Optional board ID. Defaults to the workspace's default board.
-   * @returns A promise resolving when the webhook responds with 2xx.
-   * @throws {Error} If no `actionWebhookUrl` is configured in `.kanban.json`.
+   * @returns A promise that resolves when the action has been processed.
    * @throws {Error} If the card is not found.
-   * @throws {Error} If the webhook responds with a non-2xx status.
    *
    * @example
    * ```ts
@@ -1761,7 +1757,8 @@ export class KanbanSDK {
    */
   async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.triggerAction>>('card.action.trigger', { cardId, action, boardId }, undefined, boardId)
-    return Cards.triggerAction(this, mergedInput)
+    const payload = await Cards.triggerAction(this, mergedInput)
+    this._runAfterEvent('card.action.triggered', payload, undefined, payload.board)
   }
 
   /**

@@ -26,7 +26,17 @@ export interface Webhook {
 
 /** Minimal slice of a kanban workspace config needed for webhook persistence. */
 interface KanbanConfig {
-  webhooks?: Webhook[]
+  plugins?: {
+    'webhook.delivery'?: {
+      provider?: string
+      options?: {
+        webhooks?: Webhook[]
+        [key: string]: unknown
+      }
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
   [key: string]: unknown
 }
 
@@ -93,6 +103,7 @@ const SDK_AFTER_EVENT_NAMES = new Set<string>([
   'board.updated',
   'board.deleted',
   'board.action',
+  'card.action.triggered',
   'board.log.added',
   'board.log.cleared',
   'log.added',
@@ -111,7 +122,8 @@ function readWebhooks(workspaceRoot: string): Webhook[] {
   const filePath = path.join(workspaceRoot, CONFIG_FILENAME)
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as KanbanConfig
-    return Array.isArray(raw.webhooks) ? raw.webhooks : []
+    const webhooks = raw.plugins?.['webhook.delivery']?.options?.webhooks
+    return Array.isArray(webhooks) ? webhooks : []
   } catch {
     return []
   }
@@ -125,7 +137,10 @@ function writeWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
   } catch {
     // File absent — start from a blank config object.
   }
-  config.webhooks = webhooks
+  if (!config.plugins) config.plugins = {}
+  if (!config.plugins['webhook.delivery']) config.plugins['webhook.delivery'] = { provider: 'kl-webhooks-plugin' }
+  if (!config.plugins['webhook.delivery'].options) config.plugins['webhook.delivery'].options = {}
+  config.plugins['webhook.delivery'].options['webhooks'] = webhooks
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
@@ -186,10 +201,21 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
   })
 }
 
+function matchesEvent(pattern: string, event: string): boolean {
+  if (pattern === '*') return true
+  if (pattern === event) return true
+  // Support glob-style prefix wildcards: 'card.*' matches 'card.created', 'card.action.triggered', etc.
+  if (pattern.endsWith('.*')) {
+    const prefix = pattern.slice(0, -2)
+    return event === prefix || event.startsWith(prefix + '.')
+  }
+  return false
+}
+
 function fireWebhooks(workspaceRoot: string, event: string, data: unknown): void {
   const webhooks = readWebhooks(workspaceRoot)
   const matching = webhooks.filter(
-    (w) => w.active && (w.events.includes('*') || w.events.includes(event)),
+    (w) => w.active && w.events.some((p) => matchesEvent(p, event)),
   )
   if (matching.length === 0) return
 
@@ -552,6 +578,11 @@ interface PluginHttpRequestContext {
       updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
     ): Promise<Webhook | null>
     deleteWebhook(id: string): Promise<boolean>
+    addBoardLog(
+      text: string,
+      options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
+      boardId?: string,
+    ): Promise<unknown>
     runWithAuth<T>(
       auth: { token?: string; tokenSource?: string; transport?: string },
       fn: () => Promise<T>,
@@ -720,6 +751,41 @@ const handleDeleteWebhook: PluginHttpHandler = async (ctx) => {
 }
 
 /**
+ * Test endpoint: `POST /api/webhooks/test`.
+ *
+ * Receives an arbitrary webhook payload and writes it to the board log so
+ * operators can verify that webhooks are delivered correctly without needing an
+ * external receiver.  Point a webhook URL at
+ * `http://localhost:<port>/api/webhooks/test` to exercise the full delivery
+ * pipeline end-to-end.
+ */
+const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
+  if (!ctx.route('POST', '/api/webhooks/test')) return false
+  const auth = pluginExtractAuth(ctx.req)
+  try {
+    const body = await pluginReadBody(ctx.req)
+    const event = typeof body.event === 'string' ? body.event : 'unknown'
+    const ts = typeof body.timestamp === 'string' ? body.timestamp : new Date().toISOString()
+    const text = `[webhook-test] Received event: ${event}`
+    await ctx.sdk.runWithAuth(auth, () =>
+      ctx.sdk.addBoardLog(text, {
+        source: 'webhook-test',
+        timestamp: ts,
+        object: body as Record<string, unknown>,
+      }),
+    )
+    pluginJsonOk(ctx.res, { received: true, event })
+  } catch (err) {
+    if (isAuthErrorLike(err)) {
+      pluginJsonError(ctx.res, authErrToStatus(err), authErrMessage(err))
+    } else {
+      pluginJsonError(ctx.res, 500, 'Internal error')
+    }
+  }
+  return true
+}
+
+/**
  * Standalone HTTP plugin that registers `/api/webhooks` route ownership for the
  * kanban-lite standalone server.
  *
@@ -737,7 +803,7 @@ export const standaloneHttpPlugin = {
     provides: ['standalone.http'] as const,
   },
   registerRoutes(_options?: unknown): readonly PluginHttpHandler[] {
-    return [handleGetWebhooks, handlePostWebhook, handlePutWebhook, handleDeleteWebhook]
+    return [handleGetWebhooks, handlePostWebhookTest, handlePostWebhook, handlePutWebhook, handleDeleteWebhook]
   },
 } as const
 

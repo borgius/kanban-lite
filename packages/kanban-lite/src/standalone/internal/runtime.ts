@@ -6,20 +6,25 @@ import { KanbanSDK } from '../../sdk/KanbanSDK'
 import type { StandaloneContext } from '../context'
 import { broadcastLogsUpdatedToEditingClients, getClientsEditingCard } from '../broadcastService'
 
-export const indexHtml = `<!DOCTYPE html>
+export function getIndexHtml(basePath = ''): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link href="/style.css" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="${basePath}/favicon.svg">
+  <link href="${basePath}/style.css" rel="stylesheet">
   <title>Kanban Board</title>
+  <script>window.__KB_BASE__ = ${JSON.stringify(basePath)}<\/script>
 </head>
 <body>
   <div id="root"></div>
-  <script type="module" src="/index.js"></script>
+  <script type="module" src="${basePath}/index.js"><\/script>
 </body>
 </html>`
+}
+
+export const indexHtml = getIndexHtml()
 
 export interface StandaloneRuntime {
   absoluteKanbanDir: string
@@ -46,13 +51,13 @@ function resolveStandaloneWebviewDir(webviewDir?: string): string {
   return candidates[0]
 }
 
-export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, httpServer?: http.Server): StandaloneRuntime {
+export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, httpServer?: http.Server, basePath?: string): StandaloneRuntime {
   const absoluteKanbanDir = path.resolve(kanbanDir)
   const workspaceRoot = path.dirname(absoluteKanbanDir)
   const resolvedWebviewDir = resolveStandaloneWebviewDir(webviewDir)
 
   const server = httpServer ?? http.createServer()
-  const wss = new WebSocketServer({ server, path: '/ws' })
+  const wss = new WebSocketServer({ server, path: (basePath || '') + '/ws' })
 
   const ctx = {} as StandaloneContext
   const sdk = new KanbanSDK(absoluteKanbanDir, {

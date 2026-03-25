@@ -789,7 +789,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'trigger_action',
-    'Trigger a named action on a card. The action name must match one of the card\'s configured actions. Calls the configured action webhook URL with the action name and card details.',
+    'Trigger a named action on a card. The action name must match one of the card\'s configured actions. Emits a card.action.triggered event delivered to registered webhooks.',
     {
       card_id: z.string().describe('Card ID (partial match supported)'),
       action: z.string().describe('Action name to trigger'),

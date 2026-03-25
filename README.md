@@ -1482,11 +1482,14 @@ Board configuration is stored in `.kanban.json` at your project root. It support
   },
   "actionWebhookUrl": "https://example.com/kanban-actions",
   "customHeadHtml": "<script src='https://cdn.example.com/analytics.js'></script>",
-  "customHeadHtmlFile": "head-extras.html"
+  "customHeadHtmlFile": "head-extras.html",
+  "basePath": "/kanban"
 }
 ```
 
 `customHeadHtml` injects raw HTML into the standalone board's `<head>` element — useful for analytics snippets, custom CSS, or guided-tour scripts. `customHeadHtmlFile` does the same but reads from a file path relative to the workspace root; when both are set, `customHeadHtmlFile` takes precedence.
+
+`basePath` enables subfolder deployments behind a reverse proxy. Set it to the URL prefix under which the board is served (e.g. `"/kanban"`) so that all asset URLs, the WebSocket endpoint, and API routes are correctly prefixed. Leave unset (or empty) for root-domain deployments.
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 

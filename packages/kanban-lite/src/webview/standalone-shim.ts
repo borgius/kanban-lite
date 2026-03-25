@@ -6,7 +6,8 @@ import type { ConnectionStatusMessage, ExtensionMessage, WebviewMessage } from '
 
 if (!('acquireVsCodeApi' in window)) {
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
+const kbBase = (window as unknown as { __KB_BASE__?: string }).__KB_BASE__ ?? ''
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${kbBase}/ws`
 const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 4000] as const
 const MAX_RETRIES = RECONNECT_DELAYS_MS.length
 

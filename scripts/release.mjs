@@ -63,6 +63,39 @@ function listPublicPackages() {
     .filter((pkg) => pkg && !pkg.manifest.private)
 }
 
+function getLatestTag() {
+  const result = run('git', ['tag', '-l', 'v*', '--sort=-v:refname'], { capture: true })
+  const tags = (result.stdout ?? '').trim().split('\n').filter(Boolean)
+  return tags[0] ?? null
+}
+
+function getChangedPackages(packages) {
+  const latestTag = getLatestTag()
+  if (!latestTag) {
+    console.log('No previous release tag found — all packages are considered changed.')
+    return packages
+  }
+
+  console.log(`\nComparing against last release tag: ${latestTag}`)
+
+  const result = run('git', ['diff', '--name-only', `${latestTag}..HEAD`], { capture: true })
+  const changedFiles = (result.stdout ?? '').trim().split('\n').filter(Boolean)
+
+  // Files outside packages/ (e.g. src/, shared config) affect the main package
+  const rootChanges = changedFiles.some(
+    (f) => !f.startsWith('packages/') && !f.startsWith('docs/') && !f.startsWith('examples/') && !f.startsWith('tmp/') && !f.startsWith('scripts/') && !f.startsWith('.'),
+  )
+
+  const changed = packages.filter((pkg) => {
+    const relDir = path.relative(workspaceRoot, pkg.dir)
+    const hasDirectChanges = changedFiles.some((f) => f.startsWith(relDir + '/'))
+    const isMain = path.basename(pkg.dir) === mainPackageName
+    return hasDirectChanges || (isMain && rootChanges)
+  })
+
+  return changed
+}
+
 function hasScript(pkg, scriptName) {
   return typeof pkg.manifest.scripts?.[scriptName] === 'string'
 }
@@ -216,33 +249,67 @@ function updateGithubRelease(version) {
 function printUsage() {
   console.log(`Usage: node scripts/release.mjs <patch|minor|major|github|check-auth>
 
-patch|minor|major  Build once, bump all public package versions, publish npm packages, commit/tag/push, and update the GitHub release asset.
+patch|minor|major  Detect changed packages since the last release tag, bump their
+                   versions, publish to npm, commit/tag/push, and update the GitHub
+                   release asset.  Unchanged packages are skipped.
 github             Upload or replace the current kanban-lite VSIX asset on the matching GitHub release.
 check-auth         Verify npm and GitHub auth before starting a release.`)
 }
 
 async function runRelease(releaseKind) {
-  const packages = listPublicPackages()
+  const allPackages = listPublicPackages()
 
-  if (packages.length === 0) {
+  if (allPackages.length === 0) {
     throw new Error('No public workspace packages were found to release.')
   }
 
   ensureCleanGit()
+
+  const changedPackages = getChangedPackages(allPackages)
+
+  if (changedPackages.length === 0) {
+    console.log('\nNo packages have changed since the last release. Nothing to do.')
+    return
+  }
+
+  const mainPkg = allPackages.find((pkg) => path.basename(pkg.dir) === mainPackageName)
+  const mainChanged = changedPackages.some((pkg) => path.basename(pkg.dir) === mainPackageName)
+
+  // Always bump the main package to anchor the release tag
+  const packagesToBump = mainChanged
+    ? changedPackages
+    : [mainPkg, ...changedPackages]
+
+  console.log(`\nChanged packages (${changedPackages.length}/${allPackages.length}):`)
+  for (const pkg of changedPackages) {
+    console.log(`  - ${pkg.name} (${pkg.manifest.version})`)
+  }
+
   await ensureReleaseAuth()
-  buildReleaseArtifacts(packages)
-  bumpPackageVersions(releaseKind, packages)
+  buildReleaseArtifacts(allPackages)
+  bumpPackageVersions(releaseKind, packagesToBump)
 
   const version = getReleaseVersion()
   const tagName = `v${version}`
   ensureTagDoesNotExist(tagName)
 
-  packageVsix()
-  publishNpmPackages(packages)
-  commitAndPushRelease(packages, version)
-  updateGithubRelease(version)
+  if (mainChanged) {
+    packageVsix()
+  }
+
+  publishNpmPackages(changedPackages)
+  commitAndPushRelease(packagesToBump, version)
+
+  if (mainChanged) {
+    updateGithubRelease(version)
+  }
 
   console.log(`\nRelease complete: ${tagName}`)
+  console.log('Published packages:')
+  for (const pkg of changedPackages) {
+    const newVersion = readJson(pkg.manifestPath).version
+    console.log(`  - ${pkg.name}@${newVersion}`)
+  }
 }
 
 async function main() {

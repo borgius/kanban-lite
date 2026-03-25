@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`basePath` config option for subfolder deployments**: The standalone server now reads `basePath` from `.kanban.json` (e.g. `"basePath": "/kanban"`). When set, all asset URLs, the WebSocket endpoint, and API routes are served under that prefix, enabling reverse-proxy setups where the board lives at a path like `https://example.com/kanban/` rather than the domain root.
 - `customHeadHtml` and `customHeadHtmlFile` configuration options for injecting custom HTML into the standalone board's `<head>` element — useful for analytics, custom CSS, or guided tours
 - **Implemented Aspida AQ-44182 demo workflow in code**: `examples/chat-sdk-vercel-ai-aspida` now seeds the richer AQ-44182 metadata/labels/comments described in the Aspida flow docs, supports shorthand case lookup plus existing-card updates in the chat route, adds the reusable `beneficiary-correction-check` form and custom rescue columns to the shipped demo workspace, and gives the Aspida action webhook deterministic side effects for `same-day-text-rescue`, `controlled-next-day-save`, and `Investigate beneficiary` linked-ticket creation.
 - **CLI `card-state` parity commands**: The `kl` CLI now exposes `card-state status [id]`, `card-state open <cardId>`, and `card-state read <cardId>` so terminal workflows can inspect backend/default-actor status, fetch side-effect-free unread summaries, and trigger explicit SDK-backed open/read mutations with stable identity-error parity.

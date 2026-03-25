@@ -452,39 +452,21 @@ export async function updateCard(
 }
 
 /**
- * Triggers a named action for a card by POSTing to the global `actionWebhookUrl`.
+ * Triggers a named action for a card.
+ *
+ * Validates the card exists, appends an activity log entry, and returns the
+ * action payload. Webhook delivery is handled by the webhook plugin via the
+ * `card.action.triggered` after-event emitted by {@link KanbanSDK.triggerAction}.
  */
 export async function triggerAction(
   ctx: SDKContext,
   { cardId, action, boardId }: { cardId: string; action: string; boardId?: string }
-): Promise<void> {
-  const config = readConfig(ctx.workspaceRoot)
-  const { actionWebhookUrl } = config
-  if (!actionWebhookUrl) {
-    throw new Error('No action webhook URL configured. Set actionWebhookUrl in .kanban.json')
-  }
-
+): Promise<{ action: string; board: string; list: string; card: Omit<Card, 'filePath'> }> {
   const card = await getCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
 
-  const payload = {
-    action,
-    board: resolvedBoardId,
-    list: card.status,
-    card: sanitizeCard(card),
-  }
-
-  const response = await fetch(actionWebhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Action webhook responded with ${response.status}: ${response.statusText}`)
-  }
   await appendActivityLog(ctx, {
     cardId,
     boardId: resolvedBoardId,
@@ -494,6 +476,13 @@ export async function triggerAction(
       action,
     },
   }).catch(() => {})
+
+  return {
+    action,
+    board: resolvedBoardId,
+    list: card.status,
+    card: sanitizeCard(card),
+  }
 }
 
 /**

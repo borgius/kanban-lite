@@ -171,6 +171,7 @@ const AFTER_ENTRIES = [
   { event: 'board.updated'    as SDKAfterEventType, resource: 'board'      as KanbanResource, label: 'Board updated' },
   { event: 'board.deleted'    as SDKAfterEventType, resource: 'board'      as KanbanResource, label: 'Board deleted' },
   { event: 'board.action'     as SDKAfterEventType, resource: 'board'      as KanbanResource, label: 'Board action triggered' },
+  { event: 'card.action.triggered' as SDKAfterEventType, resource: 'card' as KanbanResource, label: 'Card action triggered' },
   { event: 'board.log.added'  as SDKAfterEventType, resource: 'board'      as KanbanResource, label: 'Board log added' },
   { event: 'board.log.cleared' as SDKAfterEventType, resource: 'board'     as KanbanResource, label: 'Board log cleared' },
   // card logs

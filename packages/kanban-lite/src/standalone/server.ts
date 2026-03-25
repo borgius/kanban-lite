@@ -9,7 +9,7 @@ import type { StandaloneHttpHandler, StandaloneHttpPlugin } from '../sdk'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
 import { handleCardFileRoute, setupStandaloneLifecycle } from './internal/lifecycle'
-import { createStandaloneRuntime, indexHtml } from './internal/runtime'
+import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
 import { handleBoardRoutes } from './internal/routes/boards'
 import { handleSystemRoutes } from './internal/routes/system'
 import { handleTaskRoutes } from './internal/routes/tasks'
@@ -249,11 +249,15 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     ? { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) }
     : null
 
-  const runtime = createStandaloneRuntime(kanbanDir, webviewDir, fastify.server)
+  const workspaceRoot = path.dirname(path.resolve(kanbanDir))
+  const config = readConfig(workspaceRoot)
+  const rawBase = config.basePath ?? ''
+  const basePath = rawBase ? (rawBase.startsWith('/') ? rawBase : '/' + rawBase).replace(/\/+$/, '') : ''
+
+  const runtime = createStandaloneRuntime(kanbanDir, webviewDir, fastify.server, basePath)
   const { ctx, resolvedWebviewDir } = runtime
 
-  const config = readConfig(ctx.workspaceRoot)
-  let resolvedIndexHtml = indexHtml
+  let resolvedIndexHtml = getIndexHtml(basePath)
   let customHead = config.customHeadHtml || ''
   if (config.customHeadHtmlFile) {
     try {
@@ -262,7 +266,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     } catch { /* file not found, fall back to customHeadHtml */ }
   }
   if (customHead) {
-    resolvedIndexHtml = indexHtml.replace('</head>', `${customHead}\n</head>`)
+    resolvedIndexHtml = resolvedIndexHtml.replace('</head>', `${customHead}\n</head>`)
   }
   const standaloneHttpPlugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
   const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(standaloneHttpPlugins)
@@ -270,7 +274,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   // OpenAPI spec and interactive docs (served before the catch-all so Fastify prefers these routes)
   fastify.register(swagger, { openapi: standaloneOpenApiSpec as any })
   fastify.register(swaggerUi, {
-    routePrefix: '/api/docs',
+    routePrefix: `${basePath}/api/docs`,
     uiConfig: { docExpansion: 'list', deepLinking: false },
     logo: swaggerUiLogo,
     ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
@@ -313,6 +317,16 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       req._rawBody = request.body
     }
 
+    // Strip base path prefix so internal route handlers see root-relative paths
+    if (basePath) {
+      const rawUrl = req.url ?? '/'
+      if (rawUrl === basePath) {
+        req.url = '/'
+      } else if (rawUrl.startsWith(basePath + '/') || rawUrl.startsWith(basePath + '?')) {
+        req.url = rawUrl.slice(basePath.length)
+      }
+    }
+
     const requestContext = createRequestContext(ctx, req, reply.raw, resolvedWebviewDir, resolvedIndexHtml)
 
     await dispatchRequest(requestContext, middlewareHandlers)
@@ -334,7 +348,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       console.error('Failed to start server:', err)
       process.exit(1)
     }
-    console.log(`Kanban board running at http://localhost:${port}`)
+    console.log(`Kanban board running at http://localhost:${port}${basePath}`)
     console.log(`API available at http://localhost:${port}/api`)
     console.log(`Kanban config: ${effectiveConfigPath}`)
     console.log(`Kanban directory: ${ctx.absoluteKanbanDir}`)

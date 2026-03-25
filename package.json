@@ -15,10 +15,11 @@
   "scripts": {
     "minio:up": "docker compose up -d minio minio-init",
     "minio:down": "docker compose down",
-    "build": "pnpm --filter kanban-lite build",
+    "build": "pnpm --filter './packages/*' --if-present run build",
     "build:workspace": "pnpm --filter './packages/*' --if-present run build",
     "cli": "pnpm --filter kanban-lite cli",
     "mcp": "pnpm --filter kanban-lite mcp",
+    "start": "pnpm run build && pnpm --filter kanban-lite build:standalone-server && node packages/kanban-lite/dist/standalone.js",
     "standalone": "pnpm --filter kanban-lite standalone",
     "watch": "pnpm --filter kanban-lite watch",
     "watch:workspace": "pnpm --filter './packages/*' --if-present run watch",

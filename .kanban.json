@@ -3,23 +3,11 @@
   "boards": {
     "default": {
       "name": "Default",
-      "metadata": [
-        "location",
-        "company",
-        "position",
-        "jobUrl",
-        "salary"
-      ],
       "columns": [
         {
           "id": "backlog",
           "name": "Backlog",
           "color": "#6b7280"
-        },
-        {
-          "id": "review",
-          "name": "Review",
-          "color": "#8b5cf6"
         },
         {
           "id": "todo",
@@ -30,6 +18,11 @@
           "id": "in-progress",
           "name": "In Progress",
           "color": "#f59e0b"
+        },
+        {
+          "id": "review",
+          "name": "Review",
+          "color": "#8b5cf6"
         },
         {
           "id": "done",
@@ -57,195 +50,10 @@
   "compactMode": false,
   "markdownEditorMode": false,
   "showDeletedColumn": false,
-  "boardZoom": 120,
+  "boardZoom": 100,
   "cardZoom": 100,
-  "boardBackgroundMode": "plain",
-  "boardBackgroundPreset": "sand",
+  "boardBackgroundMode": "fancy",
+  "boardBackgroundPreset": "aurora",
   "port": 2954,
-  "labels": {},
-  "panelMode": "drawer",
-  "drawerWidth": 33.42537991199345,
-  "forms": {
-    "test": {
-      "name": "Test Form",
-      "description": "A test form for demonstration purposes.",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 3,
-            "description": "Please enter your name"
-          },
-          "vegetarian": {
-            "type": "boolean"
-          },
-          "birthDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "nationality": {
-            "type": "string",
-            "enum": [
-              "DE",
-              "IT",
-              "JP",
-              "US",
-              "RU",
-              "Other"
-            ]
-          },
-          "personalData": {
-            "type": "object",
-            "properties": {
-              "age": {
-                "type": "integer",
-                "description": "Please enter your age."
-              },
-              "height": {
-                "type": "number"
-              },
-              "drivingSkill": {
-                "type": "number",
-                "maximum": 10,
-                "minimum": 1,
-                "default": 7
-              }
-            },
-            "required": [
-              "age",
-              "height"
-            ]
-          },
-          "occupation": {
-            "type": "string"
-          },
-          "postalCode": {
-            "type": "string",
-            "maxLength": 5
-          }
-        },
-        "required": [
-          "occupation",
-          "nationality"
-        ]
-      },
-      "ui": {
-        "type": "VerticalLayout",
-        "elements": [
-          {
-            "type": "HorizontalLayout",
-            "elements": [
-              {
-                "type": "Control",
-                "scope": "#/properties/name"
-              },
-              {
-                "type": "Control",
-                "scope": "#/properties/personalData/properties/age"
-              },
-              {
-                "type": "Control",
-                "scope": "#/properties/birthDate"
-              }
-            ]
-          },
-          {
-            "type": "Label",
-            "text": "Additional Information"
-          },
-          {
-            "type": "HorizontalLayout",
-            "elements": [
-              {
-                "type": "Control",
-                "scope": "#/properties/personalData/properties/height"
-              },
-              {
-                "type": "Control",
-                "scope": "#/properties/nationality"
-              },
-              {
-                "type": "Control",
-                "scope": "#/properties/occupation",
-                "options": {
-                  "suggestion": [
-                    "Accountant",
-                    "Engineer",
-                    "Freelancer",
-                    "Journalism",
-                    "Physician",
-                    "Student",
-                    "Teacher",
-                    "Other"
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "data": {
-        "name": "John Doe",
-        "vegetarian": false,
-        "birthDate": "1990-01-01",
-        "nationality": "US",
-        "personalData": {
-          "age": 34,
-          "height": 180,
-          "drivingSkill": 7
-        },
-        "occupation": "Engineer"
-      }
-    }
-  },
-  "plugins": {
-    "webhook.delivery": {
-      "provider": "kl-webhooks-plugin"
-    },
-    "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
-    },
-    "auth.identity": {
-      "provider": "kl-auth-plugin",
-      "options": {
-        "users": [
-          {
-            "username": "admin",
-            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
-            "role": "admin"
-          },
-          {
-            "username": "manager",
-            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
-            "role": "manager"
-          },
-          {
-            "username": "user",
-            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
-            "role": "user"
-          },
-          {
-            "username": "alice",
-            "password": "$2b$12$oMWKFEGCaJMEjqD/1P1/0eo77mEAKZCyqldS.FvYqTjES8Pv7iboC",
-            "role": "user"
-          }
-        ]
-      }
-    },
-    "auth.policy": {
-      "provider": "kl-auth-plugin"
-    }
-  },
-  "logsFilter": {
-    "limit": "all",
-    "order": "desc",
-    "disabledSources": [],
-    "show": {
-      "timestamp": true,
-      "source": true,
-      "objects": false
-    }
-  },
-  "webhooks": []
+  "labels": {}
 }

@@ -84,6 +84,7 @@ export interface KanbanConfig {
   port: number
   labels?: Record<string, LabelDefinition>
   webhooks?: Webhook[]
+  /** @deprecated Use webhook plugin with `card.action.triggered` event instead. */
   actionWebhookUrl?: string
   storageEngine?: 'markdown' | 'sqlite'
   sqlitePath?: string

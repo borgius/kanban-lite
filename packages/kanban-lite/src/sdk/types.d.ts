@@ -58,7 +58,7 @@ export type SDKBeforeEventType = 'card.create' | 'card.update' | 'card.move' | '
  *
  * @see AfterEventPayload for the payload envelope passed to after-event listeners.
  */
-export type SDKAfterEventType = 'task.created' | 'task.updated' | 'task.moved' | 'task.deleted' | 'comment.created' | 'comment.updated' | 'comment.deleted' | 'column.created' | 'column.updated' | 'column.deleted' | 'attachment.added' | 'attachment.removed' | 'settings.updated' | 'board.created' | 'board.updated' | 'board.deleted' | 'board.action' | 'board.log.added' | 'board.log.cleared' | 'log.added' | 'log.cleared' | 'storage.migrated' | 'form.submitted' | 'auth.allowed' | 'auth.denied';
+export type SDKAfterEventType = 'task.created' | 'task.updated' | 'task.moved' | 'task.deleted' | 'comment.created' | 'comment.updated' | 'comment.deleted' | 'column.created' | 'column.updated' | 'column.deleted' | 'attachment.added' | 'attachment.removed' | 'settings.updated' | 'board.created' | 'board.updated' | 'board.deleted' | 'board.action' | 'card.action.triggered' | 'board.log.added' | 'board.log.cleared' | 'log.added' | 'log.cleared' | 'storage.migrated' | 'form.submitted' | 'auth.allowed' | 'auth.denied';
 /**
  * Union of all SDK event types (before-events and after-events).
  *

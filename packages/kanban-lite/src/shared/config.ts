@@ -430,6 +430,38 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
 }
 
 /**
+ * Loads key–value pairs from a `.env` file in the given directory into
+ * `process.env`. Existing environment variables are never overwritten so that
+ * real OS-level values always take precedence over file-based defaults.
+ * Silently does nothing if the file does not exist.
+ *
+ * @param dir - Directory that may contain a `.env` file.
+ */
+function loadDotEnv(dir: string): void {
+  const envPath = path.join(dir, '.env')
+  let content: string
+  try {
+    content = fs.readFileSync(envPath, 'utf-8')
+  } catch {
+    return
+  }
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx < 1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    let val = trimmed.slice(eqIdx + 1).trim()
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = val
+    }
+  }
+}
+
+/**
  * Recursively resolves `${VAR_NAME}` placeholders in all string values of a
  * parsed config object against `process.env`. Mutates the object in place.
  *
@@ -508,6 +540,11 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
   } catch {
     return defaults
   }
+
+  // Load .env from workspace root before resolving placeholders so that
+  // variables defined there are available without requiring the operator to
+  // export them in their shell.
+  loadDotEnv(workspaceRoot)
 
   // Resolve ${VAR_NAME} env placeholders. A missing env variable is a known,
   // operator-caused misconfiguration and should produce a clean, actionable

@@ -1,6 +1,6 @@
 {
   "name": "kl-s3-attachment-storage",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "kanban-lite attachment.storage plugin for Amazon S3 (and S3-compatible APIs)",
   "license": "MIT",
   "type": "commonjs",

@@ -1,6 +1,6 @@
 {
   "name": "kl-sqlite-storage",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "kanban-lite card.storage + attachment.storage plugin for SQLite (better-sqlite3)",
   "license": "MIT",
   "type": "commonjs",

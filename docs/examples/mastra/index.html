@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -374,6 +366,36 @@ Report: what is currently in progress?</code></pre>
 <p>
   In practice, this means the user gets a human-readable explanation before anything mutates the board. The example is useful when you want agent help
   with prioritization or triage, but still want a person to stay in the approval loop.
+</p>
+
+<h2 id="key-code">Key code</h2>
+<p>
+  The Coordinator is a single Mastra <code>Agent</code> with kanban-lite REST tools and an approval-aware instruction set.
+  Here is the condensed definition from <code>src/mastra/agents/coordinator.ts</code>:
+</p>
+<pre><code class="language-typescript">// src/mastra/agents/coordinator.ts
+import { Agent } from "@mastra/core/agent";
+import {
+  listCardsTool, getCardTool,
+  createCardTool, updateCardTool, moveCardTool,
+} from "../tools/kanban";
+
+export const coordinatorAgent = new Agent({
+  id: "coordinator",
+  name: "coordinator",
+  instructions: INSTRUCTIONS, // intake, planning, reporting modes
+  model: "openai/gpt-4o-mini",
+  tools: {
+    listCards: listCardsTool,   // read — no approval needed
+    getCard: getCardTool,       // read — no approval needed
+    createCard: createCardTool, // write — requires approval
+    updateCard: updateCardTool, // write — requires approval
+    moveCard: moveCardTool,     // write — requires approval
+  },
+});</code></pre>
+<p>
+  The <code>INSTRUCTIONS</code> constant above defines three operational modes (intake, planning, reporting)
+  and enforces a two-step approval gate for every write operation.
 </p>
 
 <h2 id="kanban-lite-integration-seam">kanban-lite integration seam</h2>

@@ -110,6 +110,14 @@ a {
 .btn--primary:hover {
   background: var(--color-primary-hover);
 }
+.btn--secondary {
+  border: 2px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary);
+}
+.btn--secondary:hover {
+  background: rgba(0, 102, 204, 0.08);
+}
 
 /* ── Marketing hero (homepage) ── */
 .hero {

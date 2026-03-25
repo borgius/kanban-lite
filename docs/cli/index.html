@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -372,6 +364,12 @@ kl pwd                                                  # Print workspace root p
 kl storage status                                       # Show current provider + capability status
 kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db  # Migrate to SQLite
 kl storage migrate-to-markdown                          # Migrate back to markdown
+
+# Card state / unread
+kl card-state status                                    # Show active card.state backend + default actor contract / availability
+kl card-state status &lt;card-id&gt;                          # Show side-effect-free actor-scoped unread/open summary (not active-card UI state)
+kl card-state read &lt;card-id&gt;                            # Explicitly acknowledge unread activity for the current actor
+kl card-state open &lt;card-id&gt;                            # Acknowledge unread and persist explicit actor-scoped open-card state
 
 # Start web server
 kl serve                                                # Start on port 3000

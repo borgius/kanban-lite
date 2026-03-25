@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -329,6 +321,17 @@ HTTP server are all built on top of.</p>
 <li><a href="#KanbanSDK+getStorageStatus">.getStorageStatus()</a> ⇒</li>
 <li><a href="#KanbanSDK+getAuthStatus">.getAuthStatus()</a> ⇒</li>
 <li><a href="#KanbanSDK+getWebhookStatus">.getWebhookStatus()</a> ⇒</li>
+<li><a href="#KanbanSDK+getCardStateStatus">.getCardStateStatus()</a></li>
+<li><a href="#KanbanSDK+getExtension">.getExtension(id)</a> ⇒</li>
+<li><a href="#KanbanSDK+_requireCardStateCapabilities">._requireCardStateCapabilities()</a></li>
+<li><a href="#KanbanSDK+_resolveCardStateTarget">._resolveCardStateTarget()</a></li>
+<li><a href="#KanbanSDK+_resolveCardStateActorId">._resolveCardStateActorId()</a></li>
+<li><a href="#KanbanSDK+_getLatestUnreadActivityCursor">._getLatestUnreadActivityCursor()</a></li>
+<li><a href="#KanbanSDK+_createUnreadSummary">._createUnreadSummary()</a></li>
+<li><a href="#KanbanSDK+getCardState">.getCardState()</a></li>
+<li><a href="#KanbanSDK+getUnreadSummary">.getUnreadSummary()</a></li>
+<li><a href="#KanbanSDK+markCardOpened">.markCardOpened()</a></li>
+<li><a href="#KanbanSDK+markCardRead">.markCardRead()</a></li>
 <li><a href="#KanbanSDK+_authorizeAction">._authorizeAction(action, context)</a> ⇒</li>
 <li><a href="#KanbanSDK+runWithAuth">.runWithAuth(auth, fn)</a> ⇒</li>
 <li><a href="#KanbanSDK+_resolveEventActor">._resolveEventActor()</a></li>
@@ -579,15 +582,108 @@ console.log(status.identityEnabled)  // false when no plugin configured
 <h4 id="kanbansdk-getwebhookstatus">kanbanSDK.getWebhookStatus() ⇒</h4>
 <p>Returns webhook provider metadata for host surfaces and diagnostics.</p>
 <p>Use this to inspect which webhook delivery provider is active and whether
-an external provider plugin is installed or the built-in fallback is used.</p>
+<code>kl-webhooks-plugin</code> is installed.</p>
 <p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
 <strong>Returns</strong>: A <a href="WebhookStatus">WebhookStatus</a> snapshot containing the active provider id
-and a boolean flag indicating whether the provider is an external plugin.<br>
+and a boolean flag indicating whether a provider is active.<br>
 <strong>Example</strong></p>
 <pre><code class="language-ts">const status = sdk.getWebhookStatus()
-console.log(status.webhookProvider)      // 'built-in' | 'kl-webhooks-plugin' | ...
-console.log(status.webhookProviderActive) // false when no plugin configured
+console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
+console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
 </code></pre>
+<hr>
+<p><a name="KanbanSDK+getCardStateStatus"></a></p>
+<h4 id="kanbansdk-getcardstatestatus">kanbanSDK.getCardStateStatus()</h4>
+<p>Returns card-state provider metadata for host surfaces and diagnostics.</p>
+<p>The status includes the stable auth-absent default actor contract and lets
+callers distinguish configured-identity failures from true backend
+unavailability via <code>availability</code> / <code>errorCode</code>.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+getExtension"></a></p>
+<h4 id="kanbansdk-getextension-id">kanbanSDK.getExtension(id) ⇒</h4>
+<p>Returns the SDK extension bag contributed by the plugin with the given <code>id</code>,
+or <code>undefined</code> when no active plugin has exported a matching <code>sdkExtensionPlugin</code>.</p>
+<p>Use this to access plugin-owned SDK capabilities (e.g. webhook CRUD methods
+contributed by <code>kl-webhooks-plugin</code>) without importing plugin packages directly.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Returns</strong>: The resolved extension bag cast to <code>T</code>, or <code>undefined</code> when the plugin
+is not active or has not exported <code>sdkExtensionPlugin</code>.<br>
+<strong>Typeparam</strong>: T - Shape of the expected extension bag.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>The plugin manifest id to look up (e.g. <code>'kl-webhooks-plugin'</code>).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong></p>
+<pre><code class="language-ts">const webhookExt = sdk.getExtension&lt;{ listWebhooks(): Webhook[] }&gt;('kl-webhooks-plugin')
+const webhooks = webhookExt?.listWebhooks() ?? []
+</code></pre>
+<hr>
+<p><a name="KanbanSDK+_requireCardStateCapabilities"></a></p>
+<h4 id="kanbansdk-requirecardstatecapabilities">kanbanSDK._requireCardStateCapabilities()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_resolveCardStateTarget"></a></p>
+<h4 id="kanbansdk-resolvecardstatetarget">kanbanSDK._resolveCardStateTarget()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_resolveCardStateActorId"></a></p>
+<h4 id="kanbansdk-resolvecardstateactorid">kanbanSDK._resolveCardStateActorId()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_getLatestUnreadActivityCursor"></a></p>
+<h4 id="kanbansdk-getlatestunreadactivitycursor">kanbanSDK._getLatestUnreadActivityCursor()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+_createUnreadSummary"></a></p>
+<h4 id="kanbansdk-createunreadsummary">kanbanSDK._createUnreadSummary()</h4>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="KanbanSDK+getCardState"></a></p>
+<h4 id="kanbansdk-getcardstate">kanbanSDK.getCardState()</h4>
+<p>Reads persisted card-state for the current actor without producing any side effects.</p>
+<p>When <code>domain</code> is omitted, the unread cursor domain is returned.
+This method reads actor-scoped <code>card.state</code> only and does not reflect or
+modify active-card UI state.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+getUnreadSummary"></a></p>
+<h4 id="kanbansdk-getunreadsummary">kanbanSDK.getUnreadSummary()</h4>
+<p>Derives unread state for the current actor from persisted activity logs without mutating card state.</p>
+<p>Unread derivation is SDK-owned for both the built-in file-backed backend and
+first-party compatibility backends such as <code>sqlite</code>.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+markCardOpened"></a></p>
+<h4 id="kanbansdk-markcardopened">kanbanSDK.markCardOpened()</h4>
+<p>Persists an explicit open-card mutation for the current actor.</p>
+<p>Opening a card records the <code>open</code> domain and acknowledges the latest unread
+activity cursor for that actor without depending on <code>setActiveCard</code>.
+This does not change workspace active-card UI state.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
+<hr>
+<p><a name="KanbanSDK+markCardRead"></a></p>
+<h4 id="kanbansdk-markcardread">kanbanSDK.markCardRead()</h4>
+<p>Persists an explicit read-through cursor for the current actor.</p>
+<p>Reads are side-effect free; call this method when you want to acknowledge
+unread activity explicitly. Configured-identity failures surface as
+<code>ERR_CARD_STATE_IDENTITY_UNAVAILABLE</code> rather than backend unavailability.</p>
+<p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a></p>
 <hr>
 <p><a name="KanbanSDK+_authorizeAction"></a></p>
 <h4 id="kanbansdk-authorizeaction-action-context">kanbanSDK._authorizeAction(action, context) ⇒</h4>
@@ -2915,20 +3011,27 @@ console.log(`Migrated ${count} cards to markdown`)
 <hr>
 <p><a name="KanbanSDK+listWebhooks"></a></p>
 <h4 id="kanbansdk-listwebhooks">kanbanSDK.listWebhooks() ⇒</h4>
-<p>Lists all registered webhooks.
-Delegates to the resolved external <code>webhook.delivery</code> provider when available,
-otherwise uses the built-in compatibility registry path against the same
-<code>.kanban.json</code> <code>webhooks</code> array.</p>
+<p>Lists all registered webhooks.</p>
+<p>Delegates to the resolved <code>kl-webhooks-plugin</code> provider.
+Throws if no <code>webhook.delivery</code> provider is installed.</p>
 <p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
-<strong>Returns</strong>: Array of <a href="Webhook">Webhook</a> objects.</p>
+<strong>Returns</strong>: Array of <a href="Webhook">Webhook</a> objects.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> When <code>kl-webhooks-plugin</code> is not installed.</li>
+</ul>
 <hr>
 <p><a name="KanbanSDK+createWebhook"></a></p>
 <h4 id="kanbansdk-createwebhook-webhookconfig">kanbanSDK.createWebhook(webhookConfig) ⇒</h4>
-<p>Creates and persists a new webhook.
-Delegates to the resolved external <code>webhook.delivery</code> provider when available,
-otherwise uses the built-in compatibility registry path.</p>
+<p>Creates and persists a new webhook.</p>
+<p>Delegates to the resolved <code>kl-webhooks-plugin</code> provider.
+Throws if no <code>webhook.delivery</code> provider is installed.</p>
 <p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
-<strong>Returns</strong>: The newly created <a href="Webhook">Webhook</a>.</p>
+<strong>Returns</strong>: The newly created <a href="Webhook">Webhook</a>.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> When <code>kl-webhooks-plugin</code> is not installed.</li>
+</ul>
 <table>
 <thead>
 <tr>
@@ -2946,11 +3049,15 @@ otherwise uses the built-in compatibility registry path.</p>
 <hr>
 <p><a name="KanbanSDK+deleteWebhook"></a></p>
 <h4 id="kanbansdk-deletewebhook-id">kanbanSDK.deleteWebhook(id) ⇒</h4>
-<p>Deletes a webhook by its ID.
-Delegates to the resolved external <code>webhook.delivery</code> provider when available,
-otherwise uses the built-in compatibility registry path.</p>
+<p>Deletes a webhook by its ID.</p>
+<p>Delegates to the resolved <code>kl-webhooks-plugin</code> provider.
+Throws if no <code>webhook.delivery</code> provider is installed.</p>
 <p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
-<strong>Returns</strong>: <code>true</code> if deleted, <code>false</code> if not found.</p>
+<strong>Returns</strong>: <code>true</code> if deleted, <code>false</code> if not found.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> When <code>kl-webhooks-plugin</code> is not installed.</li>
+</ul>
 <table>
 <thead>
 <tr>
@@ -2968,11 +3075,15 @@ otherwise uses the built-in compatibility registry path.</p>
 <hr>
 <p><a name="KanbanSDK+updateWebhook"></a></p>
 <h4 id="kanbansdk-updatewebhook-id-updates">kanbanSDK.updateWebhook(id, updates) ⇒</h4>
-<p>Updates an existing webhook's configuration.
-Delegates to the resolved external <code>webhook.delivery</code> provider when available,
-otherwise uses the built-in compatibility registry path.</p>
+<p>Updates an existing webhook's configuration.</p>
+<p>Delegates to the resolved <code>kl-webhooks-plugin</code> provider.
+Throws if no <code>webhook.delivery</code> provider is installed.</p>
 <p><strong>Kind</strong>: instance method of <a href="#KanbanSDK"><code>KanbanSDK</code></a><br>
-<strong>Returns</strong>: The updated <a href="Webhook">Webhook</a>, or <code>null</code> if not found.</p>
+<strong>Returns</strong>: The updated <a href="Webhook">Webhook</a>, or <code>null</code> if not found.<br>
+<strong>Throws</strong>:</p>
+<ul>
+<li><code>Error</code> When <code>kl-webhooks-plugin</code> is not installed.</li>
+</ul>
 <table>
 <thead>
 <tr>
@@ -3042,6 +3153,14 @@ denies an action.</p>
 (HTTP 403, CLI error output, MCP tool error) without leaking token material.</p>
 <p><strong>Kind</strong>: global class</p>
 <hr>
+<p><a name="CardStateError"></a></p>
+<h3 id="cardstateerror">CardStateError</h3>
+<p>Typed public error for card-state availability and identity failures.</p>
+<p><code>ERR_CARD_STATE_IDENTITY_UNAVAILABLE</code> means a configured <code>auth.identity</code>
+provider did not yield an actor. <code>ERR_CARD_STATE_UNAVAILABLE</code> means no active
+<code>card.state</code> backend is available.</p>
+<p><strong>Kind</strong>: global class</p>
+<hr>
 <p><a name="CARD_FORMAT_VERSION"></a></p>
 <h3 id="card-format-version">CARD_FORMAT_VERSION</h3>
 <p>Current card frontmatter schema version. Increment when the format changes.</p>
@@ -3056,6 +3175,40 @@ are configured: Backlog, To Do, In Progress, Review, and Done.</p>
 <pre><code class="language-js">// Use as the initial column configuration
 const config = { columns: [...DEFAULT_COLUMNS] }
 </code></pre>
+<hr>
+<p><a name="ERR_CARD_STATE_IDENTITY_UNAVAILABLE"></a></p>
+<h3 id="err-card-state-identity-unavailable">ERR_CARD_STATE_IDENTITY_UNAVAILABLE</h3>
+<p>Stable machine-readable error for configured-auth card-state calls without a resolved identity.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="ERR_CARD_STATE_UNAVAILABLE"></a></p>
+<h3 id="err-card-state-unavailable">ERR_CARD_STATE_UNAVAILABLE</h3>
+<p>Stable machine-readable error for card-state calls when no provider is active.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="CARD_STATE_DEFAULT_ACTOR_MODE"></a></p>
+<h3 id="card-state-default-actor-mode">CARD_STATE_DEFAULT_ACTOR_MODE</h3>
+<p>Stable mode name for the auth-absent card-state default actor contract.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="DEFAULT_CARD_STATE_ACTOR"></a></p>
+<h3 id="default-card-state-actor">DEFAULT_CARD_STATE_ACTOR</h3>
+<p>Shared default actor contract for auth-absent card-state mode.</p>
+<p>This actor is only valid when no real <code>auth.identity</code> provider is configured.
+All host surfaces should treat this as a stable public contract for both the
+built-in file-backed <code>builtin</code> backend and first-party compatibility backends
+such as <code>sqlite</code>.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="CARD_STATE_UNREAD_DOMAIN"></a></p>
+<h3 id="card-state-unread-domain">CARD_STATE_UNREAD_DOMAIN</h3>
+<p>Stable built-in domain name for unread/read cursor persistence.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
+<p><a name="CARD_STATE_OPEN_DOMAIN"></a></p>
+<h3 id="card-state-open-domain">CARD_STATE_OPEN_DOMAIN</h3>
+<p>Stable built-in domain name for explicit actor-scoped open-card state persistence.</p>
+<p><strong>Kind</strong>: global variable</p>
 <hr>
 <p><a name="getTitleFromContent"></a></p>
 <h3 id="gettitlefromcontent-content">getTitleFromContent(content) ⇒</h3>
@@ -3511,6 +3664,14 @@ unchanged when auth is not configured.</p>
 <p>The input object is never mutated.</p>
 <p><strong>Kind</strong>: global function</p>
 <hr>
+<p><a name="normalizeCardStateCapabilities"></a></p>
+<h3 id="normalizecardstatecapabilities">normalizeCardStateCapabilities()</h3>
+<p>Normalizes card-state capability selections into a complete runtime capability map.</p>
+<p><code>card.state</code> is first-class and defaults to the built-in provider contract when
+omitted from <code>.kanban.json</code>.</p>
+<p>The input object is never mutated.</p>
+<p><strong>Kind</strong>: global function</p>
+<hr>
 <p><a name="normalizeStorageCapabilities"></a></p>
 <h3 id="normalizestoragecapabilities">normalizeStorageCapabilities()</h3>
 <p>Normalizes legacy storage settings plus capability-based plugin selections
@@ -3532,8 +3693,8 @@ it away from the legacy <code>localfs</code> default.</p>
 <p>Normalizes webhook capability selections into a complete runtime capability map.</p>
 <p>When no explicit provider is configured, defaults to <code>{ provider: 'webhooks' }</code>, which
 maps to the <code>kl-webhooks-plugin</code> external package via <code>WEBHOOK_PROVIDER_ALIASES</code>.
-The built-in webhook delivery path remains active as a compatibility fallback when
-the external package is absent.</p>
+Core no longer provides a built-in webhook delivery fallback; hosts must install
+that package anywhere webhook CRUD or runtime delivery is expected to work.</p>
 <p>The input object is never mutated.</p>
 <p><strong>Kind</strong>: global function</p>
 <hr>
@@ -3912,6 +4073,17 @@ mapped package name and issues install hints that reference it.</p>
 with CJS entry <code>dist/index.cjs</code>.</p>
 <p><strong>Kind</strong>: global variable</p>
 <hr>
+<p><a name="CARD_STATE_PROVIDER_ALIASES"></a></p>
+<h3 id="card-state-provider-aliases">CARD_STATE_PROVIDER_ALIASES</h3>
+<p>Maps short <code>card.state</code> provider ids to their installable npm package names.</p>
+<ul>
+<li><code>sqlite</code> → <code>npm install kl-sqlite-card-state</code></li>
+</ul>
+<p>External packages must export <code>createCardStateProvider(context)</code> or a
+<code>cardStateProvider</code>/<code>default</code> object with a manifest that provides
+<code>'card.state'</code>.</p>
+<p><strong>Kind</strong>: global variable</p>
+<hr>
 <p><a name="WEBHOOK_PROVIDER_ALIASES"></a></p>
 <h3 id="webhook-provider-aliases">WEBHOOK_PROVIDER_ALIASES</h3>
 <p>Maps short webhook provider ids to their installable npm package names.</p>
@@ -3987,6 +4159,14 @@ remain in host/runtime configuration only and must never appear in
 </tbody>
 </table>
 <hr>
+<p><a name="canUseDefaultCardStateActor"></a></p>
+<h3 id="canusedefaultcardstateactor">canUseDefaultCardStateActor()</h3>
+<p>Returns <code>true</code> only when the auth configuration permits the stable default
+single-user card-state actor.</p>
+<p>Any non-noop <code>auth.identity</code> provider disables the fallback, even if the
+provider later resolves no caller for a specific request.</p>
+<p><strong>Kind</strong>: global function</p>
+<hr>
 <p><a name="tryLoadWorkspacePackage"></a></p>
 <h3 id="tryloadworkspacepackage">tryLoadWorkspacePackage()</h3>
 <p>Tries to load an external plugin from the workspace-local <code>packages/</code>
@@ -4004,6 +4184,45 @@ On Unix-like systems the global node_modules directory is <code>{prefix}/lib/nod
 on Windows it is <code>{prefix}/node_modules</code>.</p>
 <p><strong>Kind</strong>: global function<br>
 <strong>Internal</strong>:</p>
+<hr>
+<p><a name="tryLoadSDKExtensionPlugin"></a></p>
+<h3 id="tryloadsdkextensionplugin">tryLoadSDKExtensionPlugin()</h3>
+<p>Attempts to load an optional <code>sdkExtensionPlugin</code> export from an active
+package.  Returns <code>null</code> silently when the export is absent or does not
+satisfy the <a href="SDKExtensionPlugin">SDKExtensionPlugin</a> contract so that missing extensions
+never prevent capability bag resolution.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Internal</strong>:</p>
+<hr>
+<p><a name="resolveSDKExtensions"></a></p>
+<h3 id="resolvesdkextensions-capabilities-authcapabilities-webhookcapabilities">resolveSDKExtensions(capabilities, authCapabilities, webhookCapabilities) ⇒</h3>
+<p>Collects SDK extension contributions from all active external packages by
+probing each for the optional <code>sdkExtensionPlugin</code> named export.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: De-duplicated list of resolved SDK extension entries.<br>
+<strong>Internal</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>capabilities</td>
+<td>Resolved storage capability selections.</td>
+</tr>
+<tr>
+<td>authCapabilities</td>
+<td>Resolved auth capability selections.</td>
+</tr>
+<tr>
+<td>webhookCapabilities</td>
+<td>Resolved webhook capability selections, or <code>null</code>.</td>
+</tr>
+</tbody>
+</table>
 <hr>
 <p><a name="loadExternalCardPlugin"></a></p>
 <h3 id="loadexternalcardplugin">loadExternalCardPlugin()</h3>
@@ -4051,10 +4270,9 @@ a normalized <a href="ProviderRef">ProviderRef</a>.</p>
 <ol>
 <li><code>webhookListenerPlugin: SDKEventListenerPlugin</code> named export from package.</li>
 <li><code>WebhookListenerPlugin</code> class export constructed with the workspace root.</li>
-<li><code>null</code> — caller falls back to the built-in <code>WebhookListenerPlugin</code>.</li>
+<li><code>null</code> — no webhook runtime listener is available.</li>
 </ol>
-<p>Returns <code>null</code> when the package is simply not installed yet (not-installed error),
-so the built-in listener path in <code>KanbanSDK</code> continues to function as a fallback.
+<p>Returns <code>null</code> when the package is simply not installed yet (not-installed error).
 Throws for any other loading or validation error.</p>
 <p><strong>Kind</strong>: global function<br>
 <strong>Internal</strong>:</p>
@@ -4092,6 +4310,43 @@ must be vetoed.</p>
 </tr>
 </tbody>
 </table>
+<hr>
+<p><a name="collectActiveExternalPackageNames"></a></p>
+<h3 id="collectactiveexternalpackagenames-config">collectActiveExternalPackageNames(config) ⇒</h3>
+<p>Collects the canonical set of external npm package names that should be
+probed for plugin extension contributions (e.g. <code>cliPlugin</code>, <code>standaloneHttpPlugin</code>)
+from a raw workspace config object.</p>
+<p>Applies the same alias translations used by the standalone HTTP plugin discovery
+path (<code>collectStandaloneHttpPackageNames</code>), and reads both the normalized <code>plugins</code>
+key and the legacy <code>webhookPlugin</code> key so that webhook-only configurations
+deterministically activate the webhook package for all surfaces.</p>
+<p>When no explicit webhook provider is configured, falls through to the default
+<code>'webhooks'</code> → <code>'kl-webhooks-plugin'</code> alias, matching the behaviour of
+<a href="normalizeWebhookCapabilities">normalizeWebhookCapabilities</a> and the standalone discovery path so that
+both surfaces activate the same set of packages.</p>
+<p><strong>Kind</strong>: global function<br>
+<strong>Returns</strong>: Deduplicated list of external npm package names to probe for extensions.</p>
+<table>
+<thead>
+<tr>
+<th>Param</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>config</td>
+<td>Raw workspace config. Only the consumed fields need to be present.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a name="resolveMcpPlugins"></a></p>
+<h3 id="resolvemcpplugins">resolveMcpPlugins()</h3>
+<p>Resolves optional MCP tool plugins from the canonical active-package set.</p>
+<p>Reuses <a href="#collectActiveExternalPackageNames">collectActiveExternalPackageNames</a> so MCP follows the same
+activation model as CLI and standalone HTTP discovery.</p>
+<p><strong>Kind</strong>: global function</p>
 <hr>
 <p><a name="resolveCapabilityBag"></a></p>
 <h3 id="resolvecapabilitybag-capabilities-kanbandir-authcapabilities-webhookcapabilities">resolveCapabilityBag(capabilities, kanbanDir, authCapabilities, webhookCapabilities)</h3>

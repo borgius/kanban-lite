@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -243,6 +235,17 @@ dueDate: "2026-04-01"
 
 Free-form markdown body here.
 </code></pre>
+  <h3 id="sdk-create-a-card">SDK: create a card</h3>
+  <pre><code class="language-typescript">const card = await sdk.createCard({
+  content: '# Fix login bug\n\nUsers cannot log in with email.',
+  status: 'todo',
+  priority: 'high',
+  labels: ['bug', 'auth'],
+  assignee: 'alice',
+  metadata: { sprint: 'Q2', points: 5 },
+  boardId: 'bugs'
+})
+console.log(card.id) // '7'</code></pre>
 </section>
 
 <section class="guide-section">
@@ -276,6 +279,9 @@ kl list --assignee alice</code></pre>
   <p>Threaded discussion stored in the same markdown file. Timestamps and authors are tracked automatically.</p>
   <pre><code>kl comment add my-card-id --author alice --body "Looks good, needs tests"
 kl comment list my-card-id</code></pre>
+  <h3 id="sdk-add-a-comment">SDK: add a comment</h3>
+  <pre><code class="language-typescript">const card = await sdk.addComment('42', 'alice', 'This needs more investigation.')
+console.log(card.comments.length) // 1</code></pre>
 </section>
 
 <section class="guide-section">
@@ -283,6 +289,11 @@ kl comment list my-card-id</code></pre>
   <p>Timestamped append-only log entries stored in a separate <code>&lt;cardId&gt;.log</code> file. Support optional source labels and structured JSON objects — ideal for CI output, deployment events, or audit trails.</p>
   <pre><code>kl log add my-card-id --text "Build passed" --source ci --object '{"version":"1.2.0"}'
 kl log list my-card-id</code></pre>
+  <h3 id="sdk-add-a-log-entry">SDK: add a log entry</h3>
+  <pre><code class="language-typescript">const entry = await sdk.addLog('42', 'Deploy complete', {
+  source: 'ci',
+  object: { version: '1.2.3', duration: 42 }
+})</code></pre>
 </section>
 
 <section class="guide-section">
@@ -297,6 +308,15 @@ kl attach my-card-id    # list attachments</code></pre>
   <p>Named triggers attached to a card — for example <code>retry</code>, <code>deploy</code>, <code>notify</code>. Fire them from the web UI, CLI, REST API, or MCP server. Kanban Lite calls the configured webhook URL with the card's full context.</p>
   <pre><code>kl add --title "Deploy service" --actions "retry,rollback,notify"
 kl action trigger deploy-service retry</code></pre>
+  <h3 id="card-frontmatter-with-actions">Card frontmatter with actions</h3>
+  <pre><code class="language-yaml">---
+title: Deploy service
+status: in-progress
+actions: [retry, rollback, notify]
+---</code></pre>
+  <h3 id="sdk-trigger-an-action">SDK: trigger an action</h3>
+  <pre><code class="language-typescript">await sdk.triggerAction('42', 'retry')
+await sdk.triggerAction('42', 'sendEmail', 'bugs')</code></pre>
   <div class="guide-callout">
     Actions are great for triggering CI pipelines, Slack notifications, or any external webhook handler directly from a Kanban card.
   </div>
@@ -314,6 +334,23 @@ kl list --search "meta.sprint: Q2"</code></pre>
   <p>Attach reusable forms from <code>.kanban.json</code> or define card-local inline forms. Each form renders as its own tab in the card editor. Submitted data is stored per-form under <code>formData[formId]</code> in the card frontmatter.</p>
   <pre><code>kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
 kl form submit investigate-outage incident-report --data '{"severity":"high","owner":"alice"}'</code></pre>
+  <h3 id="form-definition-in-kanban-json">Form definition in .kanban.json</h3>
+  <pre><code class="language-json">{
+  "forms": {
+    "incident-report": {
+      "schema": {
+        "type": "object",
+        "required": ["severity", "summary"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string" }
+        }
+      },
+      "data": { "severity": "medium" }
+    }
+  }
+}</code></pre>
   <p><a href="/kanban-lite/docs/forms/">Full forms reference &rarr;</a></p>
 </section>
 

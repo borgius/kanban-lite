@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -351,6 +343,11 @@
 <li>the SDK owns <strong>when before/after events happen</strong>,</li>
 <li>and host layers use the result to decide <strong>how to behave</strong>.</li>
 </ul>
+<p>The new extension model adds two more narrow seams on top of that same active-package discovery path:</p>
+<ul>
+<li>plugins may export <code>sdkExtensionPlugin</code> to contribute additive SDK methods discoverable via <code>sdk.getExtension(id)</code>,</li>
+<li>and plugins may export <code>mcpPlugin</code> to register MCP tools without creating a second plugin framework.</li>
+</ul>
 <hr>
 <h2 id="capability-namespaces">Capability namespaces</h2>
 <h3 id="card-storage"><code>card.storage</code></h3>
@@ -437,7 +434,7 @@
   }
 }
 </code></pre>
-<p>If <code>webhookPlugin</code> is omitted, runtime normalization still defaults to <code>{ provider: &quot;webhooks&quot; }</code> for <code>webhook.delivery</code>. Current releases also keep a compatibility fallback when <code>kl-webhooks-plugin</code> is not installed yet.</p>
+<p>If <code>webhookPlugin</code> is omitted, runtime normalization still defaults to <code>{ provider: &quot;webhooks&quot; }</code> for <code>webhook.delivery</code>. That default resolves to the external <code>kl-webhooks-plugin</code> package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.</p>
 <p>Only provider selection lives in <code>.kanban.json</code>. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing <code>event.listener</code> config namespace.</p>
 <h2 id="runtime-listener-model">Runtime listener model</h2>
 <p>Runtime plugins are now <strong>listener-only</strong>.</p>
@@ -572,6 +569,25 @@
 <pre><code class="language-sh">npm install kl-mysql-storage
 </code></pre>
 <p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>mysql2</code> load semantics.</p>
+<h2 id="builtin-sqlite-for-card-state"><code>builtin</code> / <code>sqlite</code> for <code>card.state</code></h2>
+<p>Namespace: <code>card.state</code></p>
+<p>Behavior:</p>
+<ul>
+<li><code>builtin</code> is the core file-backed backend and persists actor-scoped unread/open state in workspace sidecar files,</li>
+<li>that persisted <code>card.state</code> data is distinct from <code>.active-card.json</code> and other active-card UI selection state,</li>
+<li><code>sqlite</code> is a first-party compatibility id backed by the <code>kl-sqlite-card-state</code> package,</li>
+<li>both backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.</li>
+</ul>
+<p>Identity behavior:</p>
+<ul>
+<li>when no real <code>auth.identity</code> provider is configured, callers use the shared default actor contract,</li>
+<li>when a real <code>auth.identity</code> provider is configured but no actor can be resolved, host surfaces report <code>identity-unavailable</code> / <code>ERR_CARD_STATE_IDENTITY_UNAVAILABLE</code>,</li>
+<li>this is intentionally different from backend unavailability (<code>unavailable</code> / <code>ERR_CARD_STATE_UNAVAILABLE</code>).</li>
+</ul>
+<p>External package:</p>
+<p>The <code>sqlite</code> provider id is a compatibility alias for the first-party <code>kl-sqlite-card-state</code> npm package:</p>
+<pre><code class="language-sh">npm install kl-sqlite-card-state
+</code></pre>
 <p>Example:</p>
 <pre><code class="language-json">{
   &quot;plugins&quot;: {
@@ -799,6 +815,39 @@
 <ul>
 <li>named export <code>webhookProviderPlugin</code> (or a compatible default export) for CRUD capability ownership</li>
 <li>named export <code>webhookListenerPlugin</code> for listener-only runtime delivery</li>
+<li>named export <code>sdkExtensionPlugin</code> for additive SDK methods surfaced through <code>sdk.getExtension(id)</code></li>
+<li>named export <code>mcpPlugin</code> for MCP tool registration through the narrow <code>registerTools(ctx)</code> seam</li>
+</ul>
+<hr>
+<h2 id="sdk-extension-packs-and-compatibility-shims">SDK extension packs and compatibility shims</h2>
+<p>Plugins can now contribute additive SDK methods without modifying <code>KanbanSDK</code> directly.</p>
+<p>The contract is intentionally small:</p>
+<ul>
+<li>the package exports <code>sdkExtensionPlugin</code>,</li>
+<li>the loader includes it in the resolved capability bag when that package is active,</li>
+<li><code>KanbanSDK.getExtension(id)</code> returns the contributed extension bag.</li>
+</ul>
+<p>Webhook migration is the first concrete use of this model.</p>
+<ul>
+<li><code>kl-webhooks-plugin</code> contributes the canonical webhook CRUD implementation through its SDK extension bag,</li>
+<li>advanced SDK consumers can call <code>sdk.getExtension('kl-webhooks-plugin')</code>,</li>
+<li>and the long-lived <code>sdk.listWebhooks()</code>, <code>sdk.createWebhook()</code>, <code>sdk.updateWebhook()</code>, and <code>sdk.deleteWebhook()</code> methods remain compatibility shims so existing callers do not need to migrate immediately.</li>
+</ul>
+<p>This keeps core as the public compatibility seam while letting plugin packages own new capabilities incrementally.</p>
+<hr>
+<h2 id="mcp-tool-registration-seam">MCP tool registration seam</h2>
+<p>MCP now follows the same active-package discovery model used by standalone HTTP and CLI plugin loading.</p>
+<p>The flow is deliberately narrow:</p>
+<ol>
+<li><code>collectActiveExternalPackageNames(...)</code> determines the canonical active package set.</li>
+<li><code>resolveMcpPlugins(...)</code> probes those packages for an optional <code>mcpPlugin</code> export.</li>
+<li>The MCP server calls <code>registerTools(ctx)</code> once per plugin and registers the returned tool definitions.</li>
+</ol>
+<p>Webhook tools are the first migrated toolset on this seam.</p>
+<ul>
+<li><code>kl-webhooks-plugin</code> registers <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, and <code>remove_webhook</code>,</li>
+<li>the public tool names and schemas stay unchanged,</li>
+<li>and core still supplies the shared auth/error context so behavior such as secret redaction and auth mapping remains stable.</li>
 </ul>
 <h3 id="error-behavior">Error behavior</h3>
 <p>Missing plugin package:</p>
@@ -1545,6 +1594,20 @@ export const attachmentStoragePlugin = { ... }
 <td style="text-align:right">no</td>
 <td><code>null</code></td>
 <td>Compatibility id backed by <code>kl-mysql-storage</code></td>
+</tr>
+<tr>
+<td><code>card.state</code></td>
+<td><code>builtin</code></td>
+<td style="text-align:right">yes</td>
+<td><code>null</code></td>
+<td>Built-in file-backed actor-scoped card-state provider</td>
+</tr>
+<tr>
+<td><code>card.state</code></td>
+<td><code>sqlite</code></td>
+<td style="text-align:right">no</td>
+<td><code>null</code></td>
+<td>First-party compatibility id backed by <code>kl-sqlite-card-state</code></td>
 </tr>
 <tr>
 <td><code>attachment.storage</code></td>

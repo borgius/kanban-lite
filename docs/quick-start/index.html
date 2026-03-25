@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -232,35 +224,40 @@
   <li class="qs-step">
     <div>
       <h3 id="install-globally">Install globally</h3>
-      <pre><code>npm install -g kanban-lite</code></pre>
-      <p>Or use <code>npx kanban-lite</code> for one-off runs without a global install.</p>
+      <pre><code class="language-bash">npm install -g kanban-lite</code></pre>
+      <p>Or skip the global install and use <code>npx</code> for every command:</p>
+      <pre><code class="language-bash">npx kanban-lite init
+npx kanban-lite serve</code></pre>
     </div>
   </li>
   <li class="qs-step">
     <div>
       <h3 id="initialize-your-board">Initialize your board</h3>
-      <pre><code>kl init</code></pre>
+      <pre><code class="language-bash">cd my-project
+kl init</code></pre>
       <p>Creates a <code>.kanban/</code> directory with an empty default board in your current project directory.</p>
     </div>
   </li>
   <li class="qs-step">
     <div>
       <h3 id="start-the-web-ui">Start the web UI</h3>
-      <pre><code>kl serve</code></pre>
+      <pre><code class="language-bash">kl serve
+# → Board running at http://localhost:3000</code></pre>
       <p>Opens the board at <a href="http://localhost:3000">localhost:3000</a>. All connected clients receive real-time updates via WebSocket.</p>
     </div>
   </li>
   <li class="qs-step">
     <div>
       <h3 id="create-your-first-card">Create your first card</h3>
-      <pre><code>kl add --title "My first task" --priority high</code></pre>
+      <pre><code class="language-bash">kl add --title "My first task" --priority high</code></pre>
       <p>The card appears in the web UI immediately. By default it lands in the Backlog column.</p>
     </div>
   </li>
   <li class="qs-step">
     <div>
       <h3 id="use-the-cli-to-manage-cards">Use the CLI to manage cards</h3>
-      <pre><code>kl list                           # see all cards
+      <pre><code class="language-bash">kl list                           # see all cards
+kl list --status todo --priority high  # filter by status & priority
 kl move my-first-task in-progress # move to In Progress
 kl edit my-first-task --assignee alice --due 2026-04-01</code></pre>
     </div>
@@ -268,7 +265,7 @@ kl edit my-first-task --assignee alice --due 2026-04-01</code></pre>
   <li class="qs-step">
     <div>
       <h3 id="for-ai-agents-start-the-mcp-server">For AI agents &mdash; start the MCP server</h3>
-      <pre><code>kl mcp</code></pre>
+      <pre><code class="language-bash">kl mcp</code></pre>
       <p>Exposes all board operations as MCP tools. Works with Claude, Codex, and any MCP-compatible agent.</p>
     </div>
   </li>

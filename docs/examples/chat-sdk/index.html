@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -370,6 +362,40 @@ npm run start</code></pre>
   <code>list_tasks</code>, and <code>move_task</code>. The model can call a tool, wait for the result, and then stream a short
   human-readable summary back to the user. Tiny surface area, very real behavior — like a good espresso shot.
 </p>
+
+<h2 id="key-code">Key code</h2>
+<p>
+  The core integration pattern is a Vercel AI SDK <code>streamText</code> call with server-side tools that delegate to the kanban-lite REST API.
+  Here is a condensed version of <code>app/api/chat/route.ts</code>:
+</p>
+<pre><code class="language-typescript">// app/api/chat/route.ts — tool registration + streaming
+import { openai } from '@ai-sdk/openai';
+import { convertToCoreMessages, streamText, tool } from 'ai';
+import { z } from 'zod';
+import { createCard, listCards, moveCard } from '@/lib/kanban';
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const result = streamText({
+    model: openai('gpt-4o-mini'),
+    system: SYSTEM_PROMPT,
+    messages: convertToCoreMessages(messages),
+    tools: {
+      create_card: tool({
+        description: 'Create a new kanban card',
+        parameters: z.object({
+          title: z.string(),
+          priority: z.enum(['critical','high','medium','low']),
+        }),
+        execute: async ({ title, priority }) =>
+          createCard({ title, priority }),
+      }),
+      list_cards: tool({ /* ... */ }),
+      move_card: tool({ /* ... */ }),
+    },
+  });
+  return result.toDataStreamResponse();
+}</code></pre>
 
 <h3 id="why-kanban-lite-fits-this-flow">Why kanban-lite fits this flow</h3>
 <p>

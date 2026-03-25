@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -323,6 +315,22 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 <tr>
 <td><code>get_card</code></td>
 <td>Get full details of a card (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>get_card_state_status</code></td>
+<td>Get the active <code>card.state</code> provider status for the workspace</td>
+</tr>
+<tr>
+<td><code>get_card_state</code></td>
+<td>Get the side-effect-free unread/open summary for one card</td>
+</tr>
+<tr>
+<td><code>open_card</code></td>
+<td>Explicitly acknowledge unread activity and persist actor-scoped open-card state</td>
+</tr>
+<tr>
+<td><code>read_card</code></td>
+<td>Explicitly acknowledge unread activity without changing open-card state</td>
 </tr>
 <tr>
 <td><code>get_active_card</code></td>

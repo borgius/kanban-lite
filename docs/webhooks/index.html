@@ -173,14 +173,6 @@
             <a href="/kanban-lite/docs/storage/" class="sidebar-sublink">Storage Providers</a>
           </li>
           
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/auth/" class="sidebar-sublink">Auth &amp; Policies</a>
-          </li>
-          
-          <li class="sidebar-subitem">
-            <a href="/kanban-lite/docs/webhooks/" class="sidebar-sublink" aria-current="page">Webhook Delivery</a>
-          </li>
-          
         </ul>
         
       </li>
@@ -232,7 +224,7 @@
     <li>20+ event types covering boards, cards, columns, comments, attachments, and forms</li>
     <li>HMAC-SHA256 signature verification with optional per-webhook secrets</li>
     <li>Manage via CLI (<code>kl webhooks add</code>), REST API, SDK, or MCP tools</li>
-    <li>Powered by the <code>kl-webhooks-plugin</code> package with built-in fallback</li>
+    <li>Powered by the external <code>kl-webhooks-plugin</code> package</li>
     <li>Registrations stored in <code>.kanban.json</code> and persist across restarts</li>
   </ul>
   <div class="usage-example">
@@ -251,10 +243,14 @@
 <li>Webhooks fire from <strong>all interfaces</strong>: REST API, CLI, MCP server, and the UI (via the standalone server).</li>
 <li>Events are emitted by the SDK event bus and delivered by the resolved <code>webhook.delivery</code> provider, ensuring consistent behavior regardless of entry point.</li>
 <li>The default runtime provider id is <code>webhooks</code>, which resolves to the external <code>kl-webhooks-plugin</code> package.</li>
+<li><code>kl-webhooks-plugin</code> owns runtime delivery plus the standalone <code>/api/webhooks</code> routes, <code>kl webhooks</code> CLI commands, and webhook MCP tools where those plugin seams are available.</li>
+<li>Advanced SDK consumers can use <code>sdk.getExtension('kl-webhooks-plugin')</code>; the direct webhook SDK methods remain stable compatibility shims.</li>
+<li>MCP uses the same active-package discovery model as CLI and standalone. <code>kl-webhooks-plugin</code> registers the public webhook tools via the narrow <code>mcpPlugin</code> seam.</li>
 <li>Webhook registrations are stored in <code>.kanban.json</code> and persist across server restarts.</li>
 <li>Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).</li>
 <li>Existing workspaces keep the same <code>.kanban.json</code> <code>webhooks</code> array; no migration is required.</li>
-<li>Current releases retain a built-in webhook fallback while <code>kl-webhooks-plugin</code> is absent, so CRUD and delivery remain backward-compatible during the rollout.</li>
+<li>A workspace that only configures <code>webhookPlugin</code> still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.</li>
+<li>This file is generated from source metadata; do not edit <code>docs/webhooks.md</code> by hand.</li>
 </ul>
 <h2 id="install-and-linking">Install and linking</h2>
 <p>Install <code>kl-webhooks-plugin</code> in the same environment that loads Kanban Lite:</p>
@@ -262,7 +258,7 @@
 </code></pre>
 <p>For local development, a sibling checkout at <code>../kl-webhooks-plugin</code> is resolved automatically. <code>npm link ../kl-webhooks-plugin</code> is optional when you want an explicit local package link.</p>
 <h2 id="configuration">Configuration</h2>
-<p>Webhook delivery can be selected explicitly through <code>webhookPlugin</code>, while webhook registrations themselves stay in the existing top-level <code>.kanban.json</code> <code>webhooks</code> array:</p>
+<p>Webhook delivery keeps its own top-level <code>webhookPlugin</code> config key. That key is also enough to activate plugin discovery for the webhook package's standalone routes, CLI commands, and MCP tools; the persisted registrations themselves stay in the existing top-level <code>.kanban.json</code> <code>webhooks</code> array:</p>
 <pre><code class="language-json">{
   &quot;webhookPlugin&quot;: {
     &quot;webhook.delivery&quot;: {
@@ -285,7 +281,11 @@
 }
 </code></pre>
 <h2 id="managing-webhooks">Managing Webhooks</h2>
+<h3 id="sdk">SDK</h3>
+<p>Webhook CRUD still converges on the same <code>KanbanSDK</code> methods: <code>listWebhooks()</code>, <code>createWebhook()</code>, <code>updateWebhook()</code>, <code>deleteWebhook()</code>, and <code>getWebhookStatus()</code>.</p>
+<p>For plugin-aware consumers, <code>kl-webhooks-plugin</code> also contributes an additive SDK extension bag available through <code>sdk.getExtension('kl-webhooks-plugin')</code>. Those extension methods and the direct SDK methods share the same backing store; the direct methods remain the compatibility path for existing callers.</p>
 <h3 id="rest-api">REST API</h3>
+<p>These routes are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the standalone host.</p>
 <table>
 <thead>
 <tr>
@@ -318,6 +318,7 @@
 </tbody>
 </table>
 <h3 id="cli">CLI</h3>
+<p>These commands are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the CLI host.</p>
 <pre><code class="language-bash"># List webhooks
 kl webhooks
 
@@ -332,7 +333,7 @@ kl webhooks update &lt;id&gt; --events task.created,task.deleted --url https://n
 kl webhooks remove &lt;id&gt;
 </code></pre>
 <h3 id="mcp-server">MCP Server</h3>
-<p>Tools: <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, <code>remove_webhook</code></p>
+<p>These tools are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the MCP host through the narrow <code>mcpPlugin.registerTools(...)</code> seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, <code>remove_webhook</code></p>
 <h2 id="payload-format">Payload Format</h2>
 <p>Every webhook delivery sends a JSON POST request with the following structure:</p>
 <pre><code class="language-json">{

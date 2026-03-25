@@ -338,7 +338,50 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     reply.hijack()
   })
 
-  attachWebSocketHandlers(ctx)
+  // Resolve auth context for WebSocket upgrade requests by running the middleware
+  // pipeline so session cookies set by auth plugins (e.g. kl-auth-plugin) are honoured.
+  const resolveWsAuthContext = async (req: http.IncomingMessage) => {
+    const silentRes = (() => {
+      const r: Record<string, unknown> = {
+        writableEnded: false,
+        writeHead() { return r },
+        setHeader() { return r },
+        removeHeader() { /* no-op */ },
+        getHeader() { return undefined },
+        getHeaders() { return {} },
+        end(..._args: unknown[]) { (r as { writableEnded: boolean }).writableEnded = true; return r },
+        write() { return false },
+      }
+      return r as unknown as import('http').ServerResponse
+    })()
+    const reqWithBody = req as IncomingMessageWithRawBody
+    const wsUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+    const requestContext: StandaloneRequestContext = {
+      ctx,
+      sdk: ctx.sdk,
+      workspaceRoot: ctx.workspaceRoot,
+      kanbanDir: ctx.absoluteKanbanDir,
+      req: reqWithBody,
+      res: silentRes,
+      url: wsUrl,
+      pathname: wsUrl.pathname,
+      method: 'GET',
+      resolvedWebviewDir,
+      indexHtml: resolvedIndexHtml,
+      route: createRouteMatcher('GET', wsUrl.pathname, matchRoute),
+      isApiRequest: false,
+      isPageRequest: false,
+      getAuthContext: () => getRequestAuthContext(req),
+      setAuthContext: (auth) => setRequestAuthContext(req, auth),
+      mergeAuthContext: (auth) => mergeRequestAuthContext(req, auth),
+    }
+    for (const handler of middlewareHandlers) {
+      if (await handler(requestContext)) break
+    }
+    return getRequestAuthContext(req)
+  }
+
+  attachWebSocketHandlers(ctx, resolveWsAuthContext)
   setupStandaloneLifecycle(ctx, fastify.server)
 
   const effectiveConfigPath = resolvedConfigPath ?? configPath(path.dirname(ctx.absoluteKanbanDir))

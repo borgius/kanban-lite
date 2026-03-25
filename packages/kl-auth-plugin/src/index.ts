@@ -492,11 +492,15 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
 
   const applyRequestIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
     const authorization = request.req.headers.authorization
-    const requestToken = normalizeToken(typeof authorization === 'string' ? authorization : undefined)
+    const queryToken = request.url.searchParams.get('token')
+    const requestToken = normalizeToken(
+      typeof authorization === 'string' ? authorization : queryToken ?? undefined,
+    )
     if (requestToken && apiToken && safeTokenEquals(requestToken, apiToken)) {
+      const tokenSource = queryToken && requestToken === normalizeToken(queryToken) ? 'query-param' : 'request-header'
       request.mergeAuthContext({
         token: requestToken,
-        tokenSource: 'request-header',
+        tokenSource,
         transport: 'http',
         identity: { subject: 'api-token' },
         actorHint: 'api-token',

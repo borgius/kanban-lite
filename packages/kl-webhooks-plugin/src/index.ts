@@ -164,6 +164,11 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     'X-Webhook-Event': event,
   }
 
+  const serverToken = process.env['KANBAN_LITE_TOKEN']
+  if (serverToken) {
+    headers['Authorization'] = `Bearer ${serverToken}`
+  }
+
   const hasSecret = !!webhook.secret
   if (webhook.secret) {
     const signature = crypto
@@ -312,10 +317,17 @@ export class WebhookListenerPlugin implements SDKEventListenerPlugin {
 
   private _unsubscribe: (() => void) | null = null
 
-  constructor(private readonly _workspaceRoot: string) {}
+  constructor(private readonly _workspaceRoot: string) {
+    console.log(`[kl-webhooks-plugin] WebhookListenerPlugin constructed | workspaceRoot=${_workspaceRoot}`)
+  }
 
   register(bus: EventBus): void {
-    if (this._unsubscribe) return
+    if (this._unsubscribe) {
+      console.log('[kl-webhooks-plugin] WebhookListenerPlugin already registered, skipping')
+      return
+    }
+    const webhooks = readWebhooks(this._workspaceRoot)
+    console.log(`[kl-webhooks-plugin] WebhookListenerPlugin.register() | ${webhooks.length} webhook(s) configured: ${webhooks.map(w => `${w.id}(${w.active ? 'active' : 'inactive'}) → ${w.url}`).join(', ') || 'none'}`)
     this._unsubscribe = bus.onAny((event, payload) => {
       if (!SDK_AFTER_EVENT_NAMES.has(event)) return
       fireWebhooks(this._workspaceRoot, event, payload.data)
@@ -778,11 +790,13 @@ const handleDeleteWebhook: PluginHttpHandler = async (ctx) => {
  */
 const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
   if (!ctx.route('POST', '/api/webhooks/test')) return false
+  console.log('[kl-webhooks-plugin] POST /api/webhooks/test received')
   try {
     const body = await pluginReadBody(ctx.req)
     const event = typeof body.event === 'string' ? body.event : 'unknown'
     const ts = typeof body.timestamp === 'string' ? body.timestamp : new Date().toISOString()
     const text = `[webhook-test] Received event: ${event}`
+    console.log(`[kl-webhooks-plugin] /test: writing board log for event=${event}`)
     // Use a pre-resolved system identity so the auth policy allows the call
     // without requiring a real user token (webhooks are server-initiated).
     const systemAuth = {
@@ -796,8 +810,10 @@ const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
         object: body as Record<string, unknown>,
       }),
     )
+    console.log(`[kl-webhooks-plugin] /test: board log written for event=${event}`)
     pluginJsonOk(ctx.res, { received: true, event })
   } catch (err) {
+    console.error('[kl-webhooks-plugin] /test: error writing board log:', err instanceof Error ? err.message : err)
     pluginJsonError(ctx.res, 500, err instanceof Error ? err.message : 'Internal error')
   }
   return true

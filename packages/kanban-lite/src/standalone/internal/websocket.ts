@@ -1,11 +1,21 @@
+import * as http from 'http'
 import { extractAuthContext, getAuthErrorLike } from '../authUtils'
+import type { AuthContext } from '../../sdk/types'
 import type { StandaloneContext } from '../context'
 import { clearClientEditingCard, setClientEditingCard } from '../broadcastService'
 import { handleMessage } from '../messageHandlers'
 
-export function attachWebSocketHandlers(ctx: StandaloneContext): void {
-  ctx.wss.on('connection', (ws, req) => {
-    const authContext = extractAuthContext(req)
+export function attachWebSocketHandlers(
+  ctx: StandaloneContext,
+  resolveAuthContext?: (req: http.IncomingMessage) => Promise<AuthContext>,
+): void {
+  ctx.wss.on('connection', async (ws, req) => {
+    let authContext: AuthContext
+    try {
+      authContext = resolveAuthContext ? await resolveAuthContext(req) : extractAuthContext(req)
+    } catch {
+      authContext = extractAuthContext(req)
+    }
     setClientEditingCard(ctx, ws, null)
     ws.on('message', (data) => {
       let message: unknown

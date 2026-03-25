@@ -56,7 +56,8 @@
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
     "release:github": "node scripts/release.mjs github",
-    "release:check-auth": "node scripts/release.mjs check-auth"
+    "release:check-auth": "node scripts/release.mjs check-auth",
+    "link": "pnpm --filter './packages/*' exec pnpm link --global"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

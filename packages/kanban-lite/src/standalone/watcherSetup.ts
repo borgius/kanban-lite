@@ -110,4 +110,13 @@ export function setupWatcher(ctx: StandaloneContext, server: http.Server): void 
       ctx.wss.close()
     })
   }
+
+  // Watch .kanban.json for config changes and re-broadcast init on change
+  const configFilePath = path.join(ctx.workspaceRoot, '.kanban.json')
+  const configWatcher = chokidar.watch(configFilePath, {
+    ignoreInitial: true,
+    awaitWriteFinish: { stabilityThreshold: 100 }
+  })
+  configWatcher.on('change', () => handleFileChange(ctx, debounceRef))
+  server.on('close', () => configWatcher.close())
 }

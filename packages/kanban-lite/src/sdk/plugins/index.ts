@@ -138,6 +138,8 @@ interface AuthPluginModule {
   readonly createRbacIdentityPlugin?: unknown
   /** Optional factory for a configurable policy plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as a custom RBAC matrix. */
   readonly createAuthPolicyPlugin?: ((options?: Record<string, unknown>) => unknown) | unknown
+  /** Optional factory for a configurable identity plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as an explicit API token. */
+  readonly createAuthIdentityPlugin?: ((options?: Record<string, unknown>) => unknown) | unknown
   readonly default?: unknown
 }
 
@@ -345,7 +347,7 @@ function resolveAuthIdentityPlugin(ref: ProviderRef): AuthIdentityPlugin {
   if (ref.provider === 'noop') return NOOP_IDENTITY_PLUGIN
   if (ref.provider === 'rbac') return RBAC_IDENTITY_PLUGIN
   const packageName = AUTH_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
-  return loadExternalAuthIdentityPlugin(packageName, ref.provider)
+  return loadExternalAuthIdentityPlugin(packageName, ref.provider, ref.options)
 }
 
 function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
@@ -1087,8 +1089,14 @@ function selectAuthPolicyPlugin(mod: AuthPluginModule, providerId: string): Auth
   return null
 }
 
-function loadExternalAuthIdentityPlugin(packageName: string, providerId: string): AuthIdentityPlugin {
+function loadExternalAuthIdentityPlugin(packageName: string, providerId: string, options?: Record<string, unknown>): AuthIdentityPlugin {
   const mod = loadExternalModule(packageName) as AuthPluginModule
+
+  if (options !== undefined && typeof mod.createAuthIdentityPlugin === 'function') {
+    const created = (mod.createAuthIdentityPlugin as (opts?: Record<string, unknown>) => unknown)(options)
+    if (isValidAuthIdentityPlugin(created, providerId)) return created
+  }
+
   const plugin = selectAuthIdentityPlugin(mod, providerId)
   if (!plugin) {
     throw new Error(

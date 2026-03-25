@@ -21,13 +21,16 @@ import {
   RBAC_ROLE_MATRIX,
   authIdentityPlugins,
   authPolicyPlugins,
+  createAuthIdentityPlugin,
   createAuthListenerPlugin,
   createNoopAuthListenerPlugin,
   createRbacAuthListenerPlugin,
   createRbacIdentityPlugin,
+  createStandaloneHttpPlugin,
   type AuthContext,
   type AuthDecision,
   type AuthIdentity,
+  type StandaloneHttpPluginRegistrationOptions,
 } from './index'
 
 type WorkspaceSdkExports = typeof import('../../kanban-lite/src/sdk')
@@ -404,5 +407,207 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
     }))
     await expect(promise).rejects.toBeInstanceOf(AuthError)
     await expect(promise).rejects.toMatchObject({ category: 'auth.policy.denied', actor: 'alice' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createStandaloneHttpPlugin – startup token validation
+// ---------------------------------------------------------------------------
+
+function makeLocalAuthOptions(
+  identityOptions: Record<string, unknown> = {},
+): StandaloneHttpPluginRegistrationOptions {
+  return {
+    workspaceRoot: '/tmp/test-workspace',
+    kanbanDir: '/tmp/test-workspace/.kanban',
+    capabilities: {
+      'card.storage': { provider: 'builtin' },
+      'attachment.storage': { provider: 'builtin' },
+    },
+    authCapabilities: {
+      'auth.identity': { provider: 'local', options: identityOptions },
+      'auth.policy': { provider: 'local' },
+    },
+    webhookCapabilities: null,
+  }
+}
+
+describe('createStandaloneHttpPlugin: startup API token validation', () => {
+  it('throws when auth.identity is configured but no apiToken option and no env var', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      expect(() => createStandaloneHttpPlugin(makeLocalAuthOptions())).toThrow(
+        /auth\.identity is configured but no API token is available/,
+      )
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('throws when provider is "kl-auth-plugin" with no apiToken and no env var', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      const opts: StandaloneHttpPluginRegistrationOptions = {
+        workspaceRoot: '/tmp/test-workspace',
+        kanbanDir: '/tmp/test-workspace/.kanban',
+        capabilities: {
+          'card.storage': { provider: 'builtin' },
+          'attachment.storage': { provider: 'builtin' },
+        },
+        authCapabilities: {
+          'auth.identity': { provider: 'kl-auth-plugin', options: { users: [] } },
+          'auth.policy': { provider: 'kl-auth-plugin' },
+        },
+        webhookCapabilities: null,
+      }
+      expect(() => createStandaloneHttpPlugin(opts)).toThrow(
+        /auth\.identity is configured but no API token is available/,
+      )
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('does not throw when provider is "kl-auth-plugin" with explicit apiToken', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      const opts: StandaloneHttpPluginRegistrationOptions = {
+        workspaceRoot: '/tmp/test-workspace',
+        kanbanDir: '/tmp/test-workspace/.kanban',
+        capabilities: {
+          'card.storage': { provider: 'builtin' },
+          'attachment.storage': { provider: 'builtin' },
+        },
+        authCapabilities: {
+          'auth.identity': { provider: 'kl-auth-plugin', options: { apiToken: 'explicit-token' } },
+          'auth.policy': { provider: 'kl-auth-plugin' },
+        },
+        webhookCapabilities: null,
+      }
+      expect(() => createStandaloneHttpPlugin(opts)).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('does not throw when options.apiToken is explicitly set', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      expect(() =>
+        createStandaloneHttpPlugin(makeLocalAuthOptions({ apiToken: 'my-explicit-token' })),
+      ).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('does not throw when KANBAN_LITE_TOKEN env var is set', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    process.env.KANBAN_LITE_TOKEN = 'kl-env-token'
+    try {
+      expect(() => createStandaloneHttpPlugin(makeLocalAuthOptions())).not.toThrow()
+    } finally {
+      if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN
+      else process.env.KANBAN_LITE_TOKEN = savedToken
+    }
+  })
+
+  it('does not throw when KANBAN_TOKEN env var is set', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    process.env.KANBAN_TOKEN = 'kl-legacy-env-token'
+    try {
+      expect(() => createStandaloneHttpPlugin(makeLocalAuthOptions())).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt === undefined) delete process.env.KANBAN_TOKEN
+      else process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('does not check token when auth is not enabled (noop provider)', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      const opts: StandaloneHttpPluginRegistrationOptions = {
+        workspaceRoot: '/tmp/test-workspace',
+        kanbanDir: '/tmp/test-workspace/.kanban',
+        capabilities: {
+          'card.storage': { provider: 'builtin' },
+          'attachment.storage': { provider: 'builtin' },
+        },
+        authCapabilities: {
+          'auth.identity': { provider: 'noop' },
+          'auth.policy': { provider: 'noop' },
+        },
+        webhookCapabilities: null,
+      }
+      expect(() => createStandaloneHttpPlugin(opts)).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createAuthIdentityPlugin – options.apiToken takes precedence over env vars
+// ---------------------------------------------------------------------------
+
+describe('createAuthIdentityPlugin: apiToken option', () => {
+  it('resolves api-token identity when options.apiToken matches the request token', async () => {
+    const plugin = createAuthIdentityPlugin({ apiToken: 'my-pinned-token' })
+    expect(plugin.manifest.id).toBe('kl-auth-plugin')
+    expect(plugin.manifest.provides).toContain('auth.identity')
+
+    const identity = await plugin.resolveIdentity({ token: 'my-pinned-token', transport: 'http' })
+    expect(identity).not.toBeNull()
+    expect(identity?.subject).toBe('api-token')
+  })
+
+  it('rejects wrong token even when env var matches', async () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    process.env.KANBAN_LITE_TOKEN = 'kl-env-token'
+    try {
+      const plugin = createAuthIdentityPlugin({ apiToken: 'pinned-only' })
+      const identity = await plugin.resolveIdentity({ token: 'kl-env-token', transport: 'http' })
+      expect(identity).toBeNull()
+    } finally {
+      if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN
+      else process.env.KANBAN_LITE_TOKEN = savedToken
+    }
+  })
+
+  it('falls back to KANBAN_LITE_TOKEN when no options.apiToken is provided', async () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    process.env.KANBAN_LITE_TOKEN = 'kl-fallback-token'
+    try {
+      const plugin = createAuthIdentityPlugin()
+      const identity = await plugin.resolveIdentity({ token: 'kl-fallback-token', transport: 'http' })
+      expect(identity).not.toBeNull()
+      expect(identity?.subject).toBe('api-token')
+    } finally {
+      if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN
+      else process.env.KANBAN_LITE_TOKEN = savedToken
+    }
   })
 })

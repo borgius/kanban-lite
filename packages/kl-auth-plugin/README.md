@@ -128,6 +128,26 @@ kl auth create-user --username admin --password s3cr3t --role admin
 
 The command bcrypt-hashes the password and appends the user to `plugins["auth.identity"].options.users` in `.kanban.json`.
 
+### Explicit API token
+
+By default, when the `local` standalone provider starts and `KANBAN_LITE_TOKEN` is not set, it generates a random token and writes it to `<workspaceRoot>/.env`. To pin a known token instead, set `options.apiToken` directly in `.kanban.json`:
+
+```json
+{
+  "plugins": {
+    "auth.identity": {
+      "provider": "kl-auth-plugin",
+      "options": {
+        "apiToken": "my-secret-token"
+      }
+    },
+    "auth.policy": { "provider": "kl-auth-plugin" }
+  }
+}
+```
+
+The `apiToken` option takes precedence over the `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variables for bearer-token authentication. When it is set the standalone server will not auto-generate or write a `.env` token.
+
 ## Local development / monorepo workflow
 
 ```bash

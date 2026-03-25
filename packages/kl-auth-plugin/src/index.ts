@@ -447,16 +447,33 @@ async function parseLoginBody(req: import('node:http').IncomingMessage & { _rawB
   }
 }
 
+const LOCAL_AUTH_PROVIDER_IDS = new Set(['local', 'kl-auth-plugin'])
+
 function isLocalAuthEnabled(options: StandaloneHttpPluginRegistrationOptions): boolean {
-  return options.authCapabilities['auth.identity'].provider === 'local'
-    || options.authCapabilities['auth.policy'].provider === 'local'
+  return LOCAL_AUTH_PROVIDER_IDS.has(options.authCapabilities['auth.identity'].provider)
+    || LOCAL_AUTH_PROVIDER_IDS.has(options.authCapabilities['auth.policy'].provider)
 }
 
 export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistrationOptions): StandaloneHttpPlugin {
   const localAuthEnabled = isLocalAuthEnabled(options)
   const users = getLocalUsers(options)
   const sessionStore = new Map<string, LocalAuthSession>()
-  const apiToken = localAuthEnabled ? ensureWorkspaceApiToken(options.workspaceRoot) : null
+  const identityOptions = options.authCapabilities['auth.identity'].options
+  const explicitApiToken =
+    typeof identityOptions?.apiToken === 'string' && identityOptions.apiToken.length > 0
+      ? identityOptions.apiToken
+      : null
+  const apiToken: string | null = (() => {
+    if (!localAuthEnabled) return null
+    if (explicitApiToken) return explicitApiToken
+    const envToken = getConfiguredApiToken()
+    if (envToken) return envToken
+    throw new Error(
+      'kl-auth-plugin: auth.identity is configured but no API token is available. ' +
+      'Set "apiToken" in auth.identity options (e.g. "options": { "apiToken": "..." }) ' +
+      'or set the KANBAN_LITE_TOKEN environment variable before starting the server.',
+    )
+  })()
 
   const getSessionIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
     const sessionId = parseCookies(request.req.headers.cookie)[LOCAL_AUTH_COOKIE]
@@ -675,6 +692,52 @@ export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
 const KL_AUTH_DEFAULT_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'kl-auth-plugin', provides: ['auth.identity'] },
   resolveIdentity: LOCAL_IDENTITY_PLUGIN.resolveIdentity,
+}
+
+/**
+ * Factory for a configurable identity plugin for the `kl-auth-plugin` provider.
+ *
+ * When `options.apiToken` is provided it is used as the API token for
+ * token-based identity resolution, taking precedence over the
+ * `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variables.  This lets
+ * operators pin a known token directly in `.kanban.json` without relying on
+ * auto-generated environment values.
+ *
+ * When `options.apiToken` is absent the plugin falls back to the standard
+ * env-var lookup, preserving existing behaviour.
+ *
+ * @example
+ * ```json
+ * "auth.identity": {
+ *   "provider": "kl-auth-plugin",
+ *   "options": { "apiToken": "my-secret-token" }
+ * }
+ * ```
+ */
+export function createAuthIdentityPlugin(options?: Record<string, unknown>): AuthIdentityPlugin {
+  const explicitToken =
+    typeof options?.apiToken === 'string' && options.apiToken.length > 0
+      ? options.apiToken
+      : null
+
+  return {
+    manifest: { id: 'kl-auth-plugin', provides: ['auth.identity'] },
+    async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
+      if (context.identity) return cloneIdentity(context.identity)
+
+      const token = normalizeToken(context.token)
+      const configuredToken = explicitToken ?? getConfiguredApiToken()
+      if (token && configuredToken && safeTokenEquals(token, configuredToken)) {
+        return { subject: context.actorHint ?? 'api-token' }
+      }
+
+      if (context.actorHint) {
+        return { subject: context.actorHint }
+      }
+
+      return null
+    },
+  }
 }
 
 /**
@@ -1109,6 +1172,7 @@ export const cliPlugin = {
 const authPluginPackage = {
   authIdentityPlugins,
   authPolicyPlugins,
+  createAuthIdentityPlugin,
   createAuthPolicyPlugin,
   createStandaloneHttpPlugin,
   createAuthListenerPlugin,

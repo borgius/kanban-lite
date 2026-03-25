@@ -32,10 +32,15 @@ import type { SDKEventType } from './types'
 export function fireWebhooks(workspaceRoot: string, event: SDKEventType, data: unknown): void {
   const config = readConfig(workspaceRoot)
   const webhooks = config.webhooks || []
+  console.log(`[kanban-lite/webhooks] fireWebhooks: event=${event} | total=${webhooks.length} registered`)
   const matching = webhooks.filter(
     w => w.active && (w.events.includes('*') || w.events.includes(event))
   )
-  if (matching.length === 0) return
+  if (matching.length === 0) {
+    console.log(`[kanban-lite/webhooks] no matching webhooks for event=${event} (${webhooks.filter(w => !w.active).length} inactive)`)
+    return
+  }
+  console.log(`[kanban-lite/webhooks] firing ${matching.length} webhook(s) for event=${event}: ${matching.map(w => w.id).join(', ')}`)
 
   const payload = JSON.stringify({
     event,
@@ -73,6 +78,7 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     'X-Webhook-Event': event
   }
 
+  const hasSecret = !!webhook.secret
   if (webhook.secret) {
     const signature = crypto
       .createHmac('sha256', webhook.secret)
@@ -80,6 +86,10 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
       .digest('hex')
     headers['X-Webhook-Signature'] = `sha256=${signature}`
   }
+
+  console.log(
+    `[kanban-lite/webhooks] → POST ${webhook.url} | event=${event} | id=${webhook.id} | secret=${hasSecret ? 'yes' : 'no'} | payloadBytes=${Buffer.byteLength(payload)}`,
+  )
 
   return new Promise((resolve, reject) => {
     const req = transport.request(
@@ -92,6 +102,9 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
         timeout: 10000
       },
       (res) => {
+        console.log(
+          `[kanban-lite/webhooks] ← ${res.statusCode} ${res.statusMessage ?? ''} | id=${webhook.id} | url=${webhook.url}`,
+        )
         res.resume() // drain response
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
           resolve()
@@ -100,8 +113,12 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
         }
       }
     )
-    req.on('error', reject)
+    req.on('error', (err) => {
+      console.error(`[kanban-lite/webhooks] request error | id=${webhook.id} | url=${webhook.url}:`, err.message)
+      reject(err)
+    })
     req.on('timeout', () => {
+      console.error(`[kanban-lite/webhooks] timeout | id=${webhook.id} | url=${webhook.url}`)
       req.destroy()
       reject(new Error('Timeout'))
     })

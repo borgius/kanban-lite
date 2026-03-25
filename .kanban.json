@@ -3,13 +3,7 @@
   "boards": {
     "default": {
       "name": "Default",
-      "metadata": [
-        "location",
-        "company",
-        "position",
-        "jobUrl",
-        "salary"
-      ],
+      "metadata": ["location", "company", "position", "jobUrl", "salary"],
       "columns": [
         {
           "id": "backlog",
@@ -86,14 +80,7 @@
           },
           "nationality": {
             "type": "string",
-            "enum": [
-              "DE",
-              "IT",
-              "JP",
-              "US",
-              "RU",
-              "Other"
-            ]
+            "enum": ["DE", "IT", "JP", "US", "RU", "Other"]
           },
           "personalData": {
             "type": "object",
@@ -112,10 +99,7 @@
                 "default": 7
               }
             },
-            "required": [
-              "age",
-              "height"
-            ]
+            "required": ["age", "height"]
           },
           "occupation": {
             "type": "string"
@@ -125,10 +109,7 @@
             "maxLength": 5
           }
         },
-        "required": [
-          "occupation",
-          "nationality"
-        ]
+        "required": ["occupation", "nationality"]
       },
       "ui": {
         "type": "VerticalLayout",

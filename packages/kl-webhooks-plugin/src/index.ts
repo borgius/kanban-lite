@@ -104,6 +104,10 @@ const SDK_AFTER_EVENT_NAMES = new Set<string>([
   'board.deleted',
   'board.action',
   'card.action.triggered',
+  'board.log.added',
+  'board.log.cleared',
+  'log.added',
+  'log.cleared',
   'storage.migrated',
   'form.submitted',
 ])
@@ -160,6 +164,7 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     'X-Webhook-Event': event,
   }
 
+  const hasSecret = !!webhook.secret
   if (webhook.secret) {
     const signature = crypto
       .createHmac('sha256', webhook.secret)
@@ -167,6 +172,10 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
       .digest('hex')
     headers['X-Webhook-Signature'] = `sha256=${signature}`
   }
+
+  console.log(
+    `[kl-webhooks-plugin] → POST ${webhook.url} | event=${event} | id=${webhook.id} | secret=${hasSecret ? 'yes' : 'no'} | payloadBytes=${Buffer.byteLength(payload)}`,
+  )
 
   return new Promise<void>((resolve, reject) => {
     const req = transport.request(
@@ -179,6 +188,9 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
         timeout: 10000,
       },
       (res) => {
+        console.log(
+          `[kl-webhooks-plugin] ← ${res.statusCode} ${res.statusMessage ?? ''} | id=${webhook.id} | url=${webhook.url}`,
+        )
         res.resume() // drain response body
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
           resolve()
@@ -187,8 +199,12 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
         }
       },
     )
-    req.on('error', reject)
+    req.on('error', (err) => {
+      console.error(`[kl-webhooks-plugin] request error | id=${webhook.id} | url=${webhook.url}:`, err.message)
+      reject(err)
+    })
     req.on('timeout', () => {
+      console.error(`[kl-webhooks-plugin] timeout | id=${webhook.id} | url=${webhook.url}`)
       req.destroy()
       reject(new Error('Timeout'))
     })
@@ -210,10 +226,15 @@ function matchesEvent(pattern: string, event: string): boolean {
 
 function fireWebhooks(workspaceRoot: string, event: string, data: unknown): void {
   const webhooks = readWebhooks(workspaceRoot)
+  console.log(`[kl-webhooks-plugin] fireWebhooks: event=${event} | total=${webhooks.length} registered`)
   const matching = webhooks.filter(
     (w) => w.active && w.events.some((p) => matchesEvent(p, event)),
   )
-  if (matching.length === 0) return
+  if (matching.length === 0) {
+    console.log(`[kl-webhooks-plugin] no matching webhooks for event=${event} (${webhooks.filter(w => !w.active).length} inactive)`)
+    return
+  }
+  console.log(`[kl-webhooks-plugin] firing ${matching.length} webhook(s) for event=${event}: ${matching.map(w => w.id).join(', ')}`)
 
   const payload = JSON.stringify({
     event,

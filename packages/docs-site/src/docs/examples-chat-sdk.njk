@@ -150,6 +150,40 @@ npm run start</code></pre>
   human-readable summary back to the user. Tiny surface area, very real behavior — like a good espresso shot.
 </p>
 
+<h2>Key code</h2>
+<p>
+  The core integration pattern is a Vercel AI SDK <code>streamText</code> call with server-side tools that delegate to the kanban-lite REST API.
+  Here is a condensed version of <code>app/api/chat/route.ts</code>:
+</p>
+<pre><code class="language-typescript">// app/api/chat/route.ts — tool registration + streaming
+import { openai } from '@ai-sdk/openai';
+import { convertToCoreMessages, streamText, tool } from 'ai';
+import { z } from 'zod';
+import { createCard, listCards, moveCard } from '@/lib/kanban';
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+  const result = streamText({
+    model: openai('gpt-4o-mini'),
+    system: SYSTEM_PROMPT,
+    messages: convertToCoreMessages(messages),
+    tools: {
+      create_card: tool({
+        description: 'Create a new kanban card',
+        parameters: z.object({
+          title: z.string(),
+          priority: z.enum(['critical','high','medium','low']),
+        }),
+        execute: async ({ title, priority }) =>
+          createCard({ title, priority }),
+      }),
+      list_cards: tool({ /* ... */ }),
+      move_card: tool({ /* ... */ }),
+    },
+  });
+  return result.toDataStreamResponse();
+}</code></pre>
+
 <h3>Why kanban-lite fits this flow</h3>
 <p>
   The board is the durable system of record, while the LLM acts as a conversational layer on top. That split matters:

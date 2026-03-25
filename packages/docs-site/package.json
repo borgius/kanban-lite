@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "prebuild": "npm run clean",
     "build": "eleventy",
     "dev": "eleventy --serve --incremental",
     "clean": "node -e \"require('fs').rmSync('_site', { recursive: true, force: true })\"",

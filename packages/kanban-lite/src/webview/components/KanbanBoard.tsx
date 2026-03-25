@@ -63,6 +63,9 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
         const overflow = cardRect.right - containerRect.right
         container.scrollBy({ left: overflow + 10, behavior: 'smooth' })
       }
+      // Vertical: scroll within the column so the card is visible when
+      // there are many cards (e.g. after a status change moves the card).
+      cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
 
     // Use a short timeout so the drawer has had time to mount and React has

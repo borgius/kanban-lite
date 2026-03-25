@@ -29,7 +29,7 @@ function extractSection(markdown, heading) {
 }
 
 export default async function () {
-  const [sdk, api, plugins, forms, webhooks, auth, readme, changelog] =
+  const [sdk, api, plugins, forms, webhooks, auth, readme] =
     await Promise.all([
       rd("docs/sdk.md"),
       rd("docs/api.md"),
@@ -38,14 +38,10 @@ export default async function () {
       rd("docs/webhooks.md"),
       rd("docs/auth.md"),
       rd("README.md"),
-      rd("CHANGELOG.md"),
     ]);
 
   const cli = extractSection(readme, "CLI");
   const mcp = extractSection(readme, "MCP Server");
-  const quickStart = extractSection(readme, "Quick Start");
-  const storage = extractSection(readme, "Standalone Server");
-  const sdkUsage = extractSection(readme, "SDK");
 
   return {
     sdk,
@@ -54,12 +50,7 @@ export default async function () {
     forms,
     webhooks,
     auth,
-    readme,
-    changelog,
     cli,
     mcp,
-    quickStart,
-    storage,
-    sdkUsage,
   };
 }

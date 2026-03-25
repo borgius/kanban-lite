@@ -1480,9 +1480,13 @@ Board configuration is stored in `.kanban.json` at your project root. It support
       }
     }
   },
-  "actionWebhookUrl": "https://example.com/kanban-actions"
+  "actionWebhookUrl": "https://example.com/kanban-actions",
+  "customHeadHtml": "<script src='https://cdn.example.com/analytics.js'></script>",
+  "customHeadHtmlFile": "head-extras.html"
 }
 ```
+
+`customHeadHtml` injects raw HTML into the standalone board's `<head>` element — useful for analytics snippets, custom CSS, or guided-tour scripts. `customHeadHtmlFile` does the same but reads from a file path relative to the workspace root; when both are set, `customHeadHtmlFile` takes precedence.
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 

@@ -80,8 +80,6 @@ export default {
           href: "/docs/plugins/",
           children: [
             { label: "Storage Providers", href: "/docs/storage/" },
-            { label: "Auth & Policies", href: "/docs/auth/" },
-            { label: "Webhook Delivery", href: "/docs/webhooks/" },
           ],
         },
       ],

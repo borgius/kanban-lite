@@ -47,10 +47,33 @@ permalink: /docs/tour/
 </section>
 
 <section class="tour-section">
+  <h2>Card detail view</h2>
+  <div class="tour-split">
+    <div>
+      <p>Click any card to open its detail panel. The right-side drawer shows every field at a glance while the board stays visible behind it.</p>
+      <ul class="tour-feature-list">
+        <li>Status, priority, assignee, due date, and labels</li>
+        <li>File attachments with drag-and-drop upload</li>
+        <li>Tabbed body view: Preview, Edit, Comments, Logs</li>
+        <li>Advanced metadata section for custom key-value pairs</li>
+      </ul>
+    </div>
+    <figure class="tour-screenshot">
+      <img src="/docs/images/card-detail.png" alt="Kanban Lite card detail panel showing metadata, labels, attachments, and tabbed body" loading="lazy" />
+      <figcaption>The card detail drawer with metadata fields, attachments, and tabbed content.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="tour-section">
   <h2>Search &amp; filtering</h2>
   <p>The toolbar search works in exact and fuzzy mode. Type a query, or use structured tokens to narrow by metadata field:</p>
   <pre><code>meta.team: backend</code></pre>
   <p>Filters appear as removable chips. Click a label or a metadata value in the card panel to inject the filter automatically.</p>
+  <figure class="tour-screenshot">
+    <img src="/docs/images/search-view.png" alt="Kanban Lite board filtered by search query showing matching cards" loading="lazy" />
+    <figcaption>Search results shown as a filtered board with removable filter chips.</figcaption>
+  </figure>
   <p><a href="/docs/search/">Full search guide &rarr;</a></p>
 </section>
 
@@ -74,6 +97,39 @@ Users have been requesting this for two sprints.
 - [ ] Manual toggle in settings
 </code></pre>
   <p>Swap to SQLite or MySQL with a single config line when you need concurrent write performance. <a href="/docs/plugins/#card-storage">Storage plugin docs &rarr;</a></p>
+</section>
+
+<section class="tour-section">
+  <h2>Settings panel</h2>
+  <div class="tour-split">
+    <figure class="tour-screenshot">
+      <img src="/docs/images/settings-panel.png" alt="Kanban Lite settings panel with card display toggles, layout options, and zoom controls" loading="lazy" />
+      <figcaption>The settings panel with display, layout, and zoom options.</figcaption>
+    </figure>
+    <div>
+      <p>Open the settings panel to customise the board to your workflow. Changes are saved automatically and apply to all connected clients.</p>
+      <ul class="tour-feature-list">
+        <li>Toggle card badges: priority, assignee, due date, labels, filename</li>
+        <li>Layout: right-side drawer or split editor, drawer width slider</li>
+        <li>Background style and preset themes</li>
+        <li>Board and card-detail zoom (75&ndash;150%)</li>
+        <li>Compact mode for high-density boards</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="tour-section">
+  <h2>Dark mode</h2>
+  <div class="tour-split">
+    <div>
+      <p>Kanban Lite ships with a full dark theme. Toggle it from the toolbar or let it follow your system preference automatically.</p>
+    </div>
+    <figure class="tour-screenshot">
+      <img src="/docs/images/dark-mode.png" alt="Kanban Lite board in dark mode showing all columns and cards" loading="lazy" />
+      <figcaption>The board in dark mode.</figcaption>
+    </figure>
+  </div>
 </section>
 
 <section class="tour-section">

@@ -149,6 +149,44 @@ none       # skip every proposal
   </li>
 </ol>
 
+<h2>Key code</h2>
+<p>
+  The graph is assembled in <code>graph.py</code> using a typed <code>StateGraph</code> with an <code>interrupt()</code> gate
+  for human-in-the-loop approval. Here is the condensed pattern:
+</p>
+<pre><code class="language-python"># graph.py — StateGraph assembly with interrupt gate
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
+
+class BacklogState(TypedDict):
+    tasks: list[dict]
+    proposals: list[dict]
+    approved_proposals: list[dict]
+    applied_results: list[dict]
+
+def human_approval(state: BacklogState) -> dict:
+    """Pause for operator review via interrupt()."""
+    approved_indices: list[int] = interrupt({
+        "message": "Review proposals and reply with indices to apply",
+        "proposals": state["proposals"],
+    })
+    approved = [state["proposals"][i] for i in approved_indices]
+    return {"approved_proposals": approved}
+
+def build_graph() -> StateGraph:
+    builder = StateGraph(BacklogState)
+    builder.add_node("fetch_backlog", fetch_backlog)
+    builder.add_node("propose_updates", propose_updates)
+    builder.add_node("human_approval", human_approval)
+    builder.add_node("apply_updates", apply_updates)
+    builder.set_entry_point("fetch_backlog")
+    builder.add_edge("fetch_backlog", "propose_updates")
+    builder.add_edge("propose_updates", "human_approval")
+    builder.add_edge("human_approval", "apply_updates")
+    builder.add_edge("apply_updates", END)
+    return builder.compile(checkpointer=MemorySaver())</code></pre>
+
 <h2>Key files</h2>
 <table>
   <thead>

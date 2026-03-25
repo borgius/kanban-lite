@@ -267,6 +267,10 @@ export interface KanbanConfig {
    * This field is still supported for backward compatibility but `plugins` takes precedence.
    */
   webhookPlugin?: WebhookCapabilitySelections
+  /** Raw HTML string injected into the standalone board's `<head>` element. Useful for analytics snippets, custom CSS, or guided-tour scripts. Only applies to the standalone server UI. */
+  customHeadHtml?: string
+  /** Path to an HTML file (relative to workspace root) whose content is injected into the standalone board's `<head>` element. Takes precedence over `customHeadHtml`. */
+  customHeadHtmlFile?: string
 }
 
 // Legacy v1 config (for migration)

@@ -4,7 +4,7 @@ import * as path from 'path'
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
-import { configPath } from '../shared/config'
+import { configPath, readConfig } from '../shared/config'
 import type { StandaloneHttpHandler, StandaloneHttpPlugin } from '../sdk'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
@@ -202,6 +202,7 @@ function createRequestContext(
   req: IncomingMessageWithRawBody,
   res: http.ServerResponse,
   resolvedWebviewDir: string,
+  resolvedIndexHtml: string,
 ): StandaloneRequestContext {
   const url = new URL(req.url || '/', `http://${req.headers.host}`)
   const pathname = url.pathname
@@ -217,7 +218,7 @@ function createRequestContext(
     pathname,
     method,
     resolvedWebviewDir,
-    indexHtml,
+    indexHtml: resolvedIndexHtml,
     route: createRouteMatcher(method, pathname, matchRoute),
     isApiRequest: isApiRequestPath(pathname),
     isPageRequest: isPageRequest(method, pathname),
@@ -250,6 +251,19 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   const runtime = createStandaloneRuntime(kanbanDir, webviewDir, fastify.server)
   const { ctx, resolvedWebviewDir } = runtime
+
+  const config = readConfig(ctx.workspaceRoot)
+  let resolvedIndexHtml = indexHtml
+  let customHead = config.customHeadHtml || ''
+  if (config.customHeadHtmlFile) {
+    try {
+      const filePath = path.resolve(ctx.workspaceRoot, config.customHeadHtmlFile)
+      customHead = fs.readFileSync(filePath, 'utf-8')
+    } catch { /* file not found, fall back to customHeadHtml */ }
+  }
+  if (customHead) {
+    resolvedIndexHtml = indexHtml.replace('</head>', `${customHead}\n</head>`)
+  }
   const standaloneHttpPlugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
   const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(standaloneHttpPlugins)
 
@@ -299,7 +313,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       req._rawBody = request.body
     }
 
-    const requestContext = createRequestContext(ctx, req, reply.raw, resolvedWebviewDir)
+    const requestContext = createRequestContext(ctx, req, reply.raw, resolvedWebviewDir, resolvedIndexHtml)
 
     await dispatchRequest(requestContext, middlewareHandlers)
     if (!reply.sent && !reply.raw.writableEnded) {

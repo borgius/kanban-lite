@@ -767,18 +767,19 @@ function App(): React.JSX.Element {
     clearSelection()
   }, [setCards, clearSelection])
 
-  const handleBulkAddLabels = useCallback((labels: string[]): void => {
+  const handleBulkApplyLabels = useCallback((toAdd: string[], toRemove: string[]): void => {
     const ids = Array.from(useStore.getState().selectedCardIds)
     const { cards } = useStore.getState()
     for (const cardId of ids) {
       const card = cards.find(c => c.id === cardId)
       if (!card) continue
-      const merged = Array.from(new Set([...card.labels, ...labels]))
-      vscode.postMessage({ type: 'bulkUpdateCard', cardId, updates: { labels: merged } })
+      const updated = Array.from(new Set([...card.labels, ...toAdd])).filter(l => !toRemove.includes(l))
+      vscode.postMessage({ type: 'bulkUpdateCard', cardId, updates: { labels: updated } })
     }
     setCards(cards.map(c => {
       if (!ids.includes(c.id)) return c
-      return { ...c, labels: Array.from(new Set([...c.labels, ...labels])) }
+      const updated = Array.from(new Set([...c.labels, ...toAdd])).filter(l => !toRemove.includes(l))
+      return { ...c, labels: updated }
     }))
     clearSelection()
   }, [setCards, clearSelection])
@@ -1037,7 +1038,7 @@ function App(): React.JSX.Element {
           onMoveToColumn={handleBulkMoveToColumn}
           onSetPriority={handleBulkSetPriority}
           onSetAssignee={handleBulkSetAssignee}
-          onAddLabels={handleBulkAddLabels}
+          onApplyLabels={handleBulkApplyLabels}
           onDelete={handleBulkDelete}
         />
       )}

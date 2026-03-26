@@ -772,6 +772,13 @@ const handlePostWebhookTest: WebhookStandaloneHandler = async (ctx) => {
   try {
     const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
     const event = typeof body.event === 'string' ? body.event : 'unknown'
+    // Guard against infinite delivery loops: log-related events are emitted by this
+    // handler itself, so re-delivering them would cause a cycle. Acknowledge and skip.
+    const LOG_EVENTS = new Set(['board.log.added', 'board.log.cleared', 'log.added', 'log.cleared'])
+    if (LOG_EVENTS.has(event)) {
+      pluginJsonOk(ctx.res, { received: true, event })
+      return true
+    }
     const ts = typeof body.timestamp === 'string' ? body.timestamp : new Date().toISOString()
     const text = `[webhook-test] Received event: ${event}`
     debugLog(`[kl-webhooks-plugin] /test: writing board log for event=${event}`)

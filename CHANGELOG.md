@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Published npm package README restored**: Added a package-local `packages/kanban-lite/README.md` so npm shows installation and usage docs on the `kanban-lite` package page when publishing from the workspace package directory.
+
+### Changed
+
+- **Published package homepage now points to docs site**: Updated `packages/kanban-lite/package.json` and the npm-facing package README to send users to <https://borgius.github.io/kanban-lite/> for the main docs and quick start.
+
 ### Added
 
 - **Full public `KanbanSDK` in plugin contexts**: CLI, standalone, and MCP plugin seams that expose `sdk` now advertise and pass the full public `KanbanSDK` instance, so plugin code can reuse host-auth-aware SDK methods directly instead of depending on narrowed helper facades.

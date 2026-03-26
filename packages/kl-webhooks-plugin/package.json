@@ -1,6 +1,6 @@
 {
   "name": "kl-webhooks-plugin",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "kanban-lite webhook.delivery plugin – CRUD registry and outbound HTTP delivery with HMAC signing",
   "license": "MIT",
   "type": "commonjs",

@@ -515,8 +515,8 @@ The SDK owns the mutation lifecycle: it awaits before-event listeners before a w
 For advanced SDK consumers, the same package also exports an additive SDK extension bag discoverable through `sdk.getExtension('kl-webhooks-plugin')`. Core `KanbanSDK` webhook methods remain stable compatibility shims over that same provider-backed implementation.
 
 - Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
-- Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array; no migration is required.
-- A workspace that only sets `webhookPlugin` still activates webhook plugin discovery for the provider, standalone routes, CLI command loading, and MCP tool registration.
+- Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array as a compatibility fallback; no migration is required.
+- A workspace that only sets `plugins["webhook.delivery"]` still activates webhook plugin discovery for the provider, standalone routes, CLI command loading, and MCP tool registration.
 - MCP now uses the same active-package discovery model as CLI and standalone. `kl-webhooks-plugin` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` through the plugin seam while preserving their public names, schemas, auth wrapping, and secret redaction behavior.
 - Generated docs such as `docs/webhooks.md` are source-driven; update generator metadata and regenerate them instead of editing the generated markdown by hand.
 
@@ -528,19 +528,21 @@ For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is res
 
 ```json
 {
-  "webhookPlugin": {
+  "plugins": {
     "webhook.delivery": {
-      "provider": "webhooks"
+      "provider": "webhooks",
+      "options": {
+        "webhooks": [
+          {
+            "id": "wh_a1b2c3d4e5f67890",
+            "url": "https://example.com/hook",
+            "events": ["task.created", "task.updated"],
+            "active": true
+          }
+        ]
+      }
     }
-  },
-  "webhooks": [
-    {
-      "id": "wh_a1b2c3d4e5f67890",
-      "url": "https://example.com/hook",
-      "events": ["task.created", "task.updated"],
-      "active": true
-    }
-  ]
+  }
 }
 ```
 
@@ -573,6 +575,13 @@ Webhook management still converges on the same SDK methods, but ownership is now
 | `board.updated` | Board configuration is changed |
 | `board.deleted` | A board is deleted |
 | `board.action` | A board-level action is triggered from the toolbar, CLI, REST API, or MCP |
+| `card.action.triggered` | A card action is triggered |
+| `board.log.added` | A board log entry is appended |
+| `board.log.cleared` | Board log entries are cleared |
+| `log.added` | A card log entry is appended |
+| `log.cleared` | Card log entries are cleared |
+| `storage.migrated` | Card storage is migrated between providers |
+| `form.submitted` | A card form payload is validated, persisted, and submitted |
 
 ### Payload
 
@@ -589,6 +598,7 @@ Webhook management still converges on the same SDK methods, but ownership is now
 - `Content-Type: application/json`
 - `X-Webhook-Event: task.created`
 - `X-Webhook-Signature: sha256=<hmac>` (if a secret is configured)
+- `Authorization: Bearer <token>` (when `KANBAN_LITE_TOKEN` is set in the webhook runtime)
 
 ### Manage via CLI or API
 
@@ -607,6 +617,8 @@ curl -X POST http://localhost:3000/api/webhooks \
 ```
 
 Webhook registrations are stored in `.kanban.json` at the workspace root and persist across server restarts.
+
+Subscriptions support exact event names, `*`, and prefix wildcards ending in `.*` such as `task.*` or `board.log.*`. Only committed SDK after-events are delivered; before-events such as `form.submit` stay internal to the SDK lifecycle.
 
 ## Card Forms
 

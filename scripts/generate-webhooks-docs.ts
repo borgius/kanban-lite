@@ -20,8 +20,6 @@ interface EventMeta {
   event: string
   category: string
   description: string
-  trigger: string
-  payload: string
 }
 
 // ---------------------------------------------------------------------------
@@ -29,314 +27,125 @@ interface EventMeta {
 // ---------------------------------------------------------------------------
 
 const EVENTS: EventMeta[] = [
-  // Task events
   {
     event: 'task.created',
     category: 'Task',
-    description: 'A new task was created.',
-    trigger: 'Creating a task via API, CLI, MCP, or the UI.',
-    payload: `{
-  "event": "task.created",
-  "timestamp": "2026-02-24T12:00:00.000Z",
-  "data": {
-    "id": "fix-login-bug-2026-02-24",
-    "status": "backlog",
-    "priority": "critical",
-    "assignee": "alice",
-    "labels": ["bug", "auth"],
-    "dueDate": null,
-    "comments": [],
-    "attachments": [],
-    "created": "2026-02-24T12:00:00.000Z",
-    "modified": "2026-02-24T12:00:00.000Z"
-  }
-}`,
-  },
-  {
-    event: 'form.submit',
-    category: 'Task',
-    description: 'A card form payload was validated, persisted, and submitted.',
-    trigger: 'Submitting an attached card form via the SDK, REST API, CLI, MCP, or the webview form tab.',
-    payload: `{
-  "event": "form.submit",
-  "timestamp": "2026-03-19T12:10:00.000Z",
-  "data": {
-    "boardId": "default",
-    "card": {
-      "id": "investigate-outage-2026-03-19",
-      "status": "todo",
-      "priority": "high",
-      "formData": {
-        "incident-report": {
-          "severity": "critical",
-          "owner": "alice",
-          "service": "billing"
-        }
-      }
-    },
-    "form": {
-      "id": "incident-report",
-      "label": "incident-report",
-      "fromConfig": true
-    },
-    "data": {
-      "severity": "critical",
-      "owner": "alice",
-      "service": "billing"
-    }
-  }
-}`,
+    description: 'A card was created.',
   },
   {
     event: 'task.updated',
     category: 'Task',
-    description: 'A task was updated (fields changed, not moved).',
-    trigger: 'Updating task content, priority, assignee, labels, or due date.',
-    payload: `{
-  "event": "task.updated",
-  "timestamp": "2026-02-24T12:05:00.000Z",
-  "data": {
-    "id": "fix-login-bug-2026-02-24",
-    "status": "backlog",
-    "priority": "high",
-    "assignee": "bob",
-    "labels": ["bug"],
-    "dueDate": "2026-03-01",
-    "comments": [],
-    "attachments": [],
-    "created": "2026-02-24T12:00:00.000Z",
-    "modified": "2026-02-24T12:05:00.000Z"
-  }
-}`,
+    description: 'A card changed without moving columns.',
   },
   {
     event: 'task.moved',
     category: 'Task',
-    description: 'A task was moved to a different column or transferred between boards.',
-    trigger: 'Moving a task to a new status, or transferring it to another board.',
-    payload: `{
-  "event": "task.moved",
-  "timestamp": "2026-02-24T12:10:00.000Z",
-  "data": {
-    "id": "fix-login-bug-2026-02-24",
-    "status": "in-progress",
-    "previousStatus": "backlog",
-    "priority": "high",
-    "assignee": "bob",
-    "modified": "2026-02-24T12:10:00.000Z"
-  }
-}`,
+    description: 'A card moved columns or boards.',
   },
   {
     event: 'task.deleted',
     category: 'Task',
-    description: 'A task was permanently deleted.',
-    trigger: 'Deleting a task via API, CLI, MCP, or the UI.',
-    payload: `{
-  "event": "task.deleted",
-  "timestamp": "2026-02-24T12:15:00.000Z",
-  "data": {
-    "id": "fix-login-bug-2026-02-24",
-    "status": "in-progress",
-    "priority": "high"
-  }
-}`,
+    description: 'A card was deleted.',
   },
-
-  // Comment events
   {
     event: 'comment.created',
     category: 'Comment',
-    description: 'A comment was added to a task.',
-    trigger: 'Adding a comment to any task.',
-    payload: `{
-  "event": "comment.created",
-  "timestamp": "2026-02-24T12:20:00.000Z",
-  "data": {
-    "id": 1,
-    "author": "alice",
-    "content": "Looks good, needs tests",
-    "date": "2026-02-24T12:20:00.000Z",
-    "cardId": "fix-login-bug-2026-02-24"
-  }
-}`,
+    description: 'A comment was added.',
   },
   {
     event: 'comment.updated',
     category: 'Comment',
     description: 'A comment was edited.',
-    trigger: 'Updating the content of an existing comment.',
-    payload: `{
-  "event": "comment.updated",
-  "timestamp": "2026-02-24T12:25:00.000Z",
-  "data": {
-    "id": 1,
-    "author": "alice",
-    "content": "Updated: Looks great, tests added",
-    "date": "2026-02-24T12:20:00.000Z",
-    "cardId": "fix-login-bug-2026-02-24"
-  }
-}`,
   },
   {
     event: 'comment.deleted',
     category: 'Comment',
-    description: 'A comment was removed from a task.',
-    trigger: 'Deleting a comment from any task.',
-    payload: `{
-  "event": "comment.deleted",
-  "timestamp": "2026-02-24T12:30:00.000Z",
-  "data": {
-    "id": 1,
-    "author": "alice",
-    "content": "Updated: Looks great, tests added",
-    "date": "2026-02-24T12:20:00.000Z",
-    "cardId": "fix-login-bug-2026-02-24"
-  }
-}`,
+    description: 'A comment was removed.',
   },
-
-  // Column events
   {
     event: 'column.created',
     category: 'Column',
-    description: 'A new column was added to a board.',
-    trigger: 'Adding a column via API, CLI, MCP, or settings.',
-    payload: `{
-  "event": "column.created",
-  "timestamp": "2026-02-24T13:00:00.000Z",
-  "data": {
-    "id": "testing",
-    "name": "Testing",
-    "color": "#ff9900"
-  }
-}`,
+    description: 'A board column was added.',
   },
   {
     event: 'column.updated',
     category: 'Column',
-    description: 'A column was renamed or its color changed.',
-    trigger: 'Updating column name or color.',
-    payload: `{
-  "event": "column.updated",
-  "timestamp": "2026-02-24T13:05:00.000Z",
-  "data": {
-    "id": "testing",
-    "name": "QA Testing",
-    "color": "#ff9900"
-  }
-}`,
+    description: 'A board column was renamed or recolored.',
   },
   {
     event: 'column.deleted',
     category: 'Column',
-    description: 'A column was removed from a board.',
-    trigger: 'Deleting an empty column.',
-    payload: `{
-  "event": "column.deleted",
-  "timestamp": "2026-02-24T13:10:00.000Z",
-  "data": {
-    "id": "testing",
-    "name": "QA Testing",
-    "color": "#ff9900"
-  }
-}`,
+    description: 'A board column was removed.',
   },
-
-  // Attachment events
   {
     event: 'attachment.added',
     category: 'Attachment',
-    description: 'A file was attached to a task.',
-    trigger: 'Uploading or adding an attachment to any task.',
-    payload: `{
-  "event": "attachment.added",
-  "timestamp": "2026-02-24T13:15:00.000Z",
-  "data": {
-    "cardId": "fix-login-bug-2026-02-24",
-    "attachment": "screenshot.png"
-  }
-}`,
+    description: 'A card attachment was added.',
   },
   {
     event: 'attachment.removed',
     category: 'Attachment',
-    description: 'A file was removed from a task.',
-    trigger: 'Deleting an attachment from any task.',
-    payload: `{
-  "event": "attachment.removed",
-  "timestamp": "2026-02-24T13:20:00.000Z",
-  "data": {
-    "cardId": "fix-login-bug-2026-02-24",
-    "attachment": "screenshot.png"
-  }
-}`,
+    description: 'A card attachment was removed.',
   },
-
-  // Settings events
   {
     event: 'settings.updated',
     category: 'Settings',
-    description: 'Board display settings were changed.',
-    trigger: 'Updating settings via API, CLI, MCP, or the UI.',
-    payload: `{
-  "event": "settings.updated",
-  "timestamp": "2026-02-24T13:25:00.000Z",
-  "data": {
-    "showPriorityBadges": true,
-    "showAssignee": true,
-    "showDueDate": true,
-    "showLabels": true,
-    "compactMode": true,
-    "showFileName": false,
-    "defaultPriority": "medium",
-    "defaultStatus": "backlog"
-  }
-}`,
+    description: 'Board display settings changed.',
   },
-
-  // Board events
   {
     event: 'board.created',
     category: 'Board',
-    description: 'A new board was created.',
-    trigger: 'Creating a board via API, CLI, or MCP.',
-    payload: `{
-  "event": "board.created",
-  "timestamp": "2026-02-24T14:00:00.000Z",
-  "data": {
-    "id": "bugs",
-    "name": "Bug Tracker",
-    "description": "Track production bugs"
-  }
-}`,
+    description: 'A board was created.',
   },
   {
     event: 'board.updated',
     category: 'Board',
-    description: 'A board configuration was changed.',
-    trigger: 'Updating board name, description, or columns.',
-    payload: `{
-  "event": "board.updated",
-  "timestamp": "2026-02-24T14:05:00.000Z",
-  "data": {
-    "id": "bugs",
-    "name": "Bug Tracker v2"
-  }
-}`,
+    description: 'A board configuration changed.',
   },
   {
     event: 'board.deleted',
     category: 'Board',
     description: 'A board was deleted.',
-    trigger: 'Deleting an empty board via API, CLI, or MCP.',
-    payload: `{
-  "event": "board.deleted",
-  "timestamp": "2026-02-24T14:10:00.000Z",
-  "data": {
-    "id": "bugs"
-  }
-}`,
+  },
+  {
+    event: 'board.action',
+    category: 'Board',
+    description: 'A named board action was triggered.',
+  },
+  {
+    event: 'card.action.triggered',
+    category: 'Card action',
+    description: 'A named card action was triggered.',
+  },
+  {
+    event: 'board.log.added',
+    category: 'Board log',
+    description: 'A board log entry was appended.',
+  },
+  {
+    event: 'board.log.cleared',
+    category: 'Board log',
+    description: 'Board log entries were cleared.',
+  },
+  {
+    event: 'log.added',
+    category: 'Card log',
+    description: 'A card log entry was appended.',
+  },
+  {
+    event: 'log.cleared',
+    category: 'Card log',
+    description: 'Card log entries were cleared.',
+  },
+  {
+    event: 'storage.migrated',
+    category: 'Storage',
+    description: 'Card storage was migrated between providers.',
+  },
+  {
+    event: 'form.submitted',
+    category: 'Form',
+    description: 'A card form payload was validated, persisted, and submitted.',
   },
 ]
 
@@ -349,17 +158,17 @@ function generate(): string {
 
   lines.push('# Webhooks')
   lines.push('')
-  lines.push('Kanban Lite fires webhooks on every mutation — task, comment, column, attachment, settings, and board changes. Webhooks are delivered via HTTP POST to any registered endpoint.')
+  lines.push('Kanban Lite webhook delivery is owned by `kl-webhooks-plugin`. It delivers committed SDK after-events via HTTP POST to any registered endpoint.')
   lines.push('')
   lines.push('## Overview')
   lines.push('')
   lines.push('- Webhooks fire from **all interfaces**: REST API, CLI, MCP server, and the UI (via the standalone server).')
-  lines.push('- Events are emitted by the SDK event bus and delivered by the resolved `webhook.delivery` provider, ensuring consistent behavior regardless of entry point.')
+  lines.push('- `kl-webhooks-plugin` owns runtime delivery, webhook registry CRUD, the standalone `/api/webhooks` routes, the `kl webhooks` CLI family, and webhook MCP tool registration where those plugin seams exist.')
+  lines.push('- Events are emitted by the SDK event bus and delivered by the resolved `webhook.delivery` provider, ensuring the same behavior regardless of entry point.')
   lines.push('- The default runtime provider id is `webhooks`, which resolves to the external `kl-webhooks-plugin` package.')
-  lines.push('- `kl-webhooks-plugin` owns runtime delivery plus the standalone `/api/webhooks` routes, `kl webhooks` CLI commands, and webhook MCP tools where those plugin seams are available.')
   lines.push('- Advanced SDK consumers can use `sdk.getExtension(\'kl-webhooks-plugin\')`; the direct webhook SDK methods remain stable compatibility shims.')
-  lines.push('- MCP uses the same active-package discovery model as CLI and standalone. `kl-webhooks-plugin` registers the public webhook tools via the narrow `mcpPlugin` seam.')
   lines.push('- Webhook registrations are read from `.kanban.json` `plugins["webhook.delivery"].options.webhooks` when configured, and persist across server restarts.')
+  lines.push('- Only committed SDK after-events are delivered; before-events such as `form.submit` are not sent as outbound webhooks.')
   lines.push('- Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).')
   lines.push('- Legacy top-level `.kanban.json` `webhooks` is still supported as a compatibility fallback.')
   lines.push('- A workspace that only configures `plugins["webhook.delivery"]` still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.')
@@ -434,11 +243,12 @@ function generate(): string {
   lines.push('These routes are plugin-owned when `kl-webhooks-plugin` is loaded by the standalone host.')
   lines.push('')
   lines.push('| Method | Endpoint | Description |')
-  lines.push('|--------|----------|-------------|')
+  lines.push('| ------ | -------- | ----------- |')
   lines.push('| `GET` | `/api/webhooks` | List all webhooks |')
   lines.push('| `POST` | `/api/webhooks` | Register a new webhook |')
   lines.push('| `PUT` | `/api/webhooks/:id` | Update a webhook |')
   lines.push('| `DELETE` | `/api/webhooks/:id` | Delete a webhook |')
+  lines.push('| `POST` | `/api/webhooks/test` | Write a received webhook payload to the board log for local end-to-end verification |')
   lines.push('')
   lines.push('### CLI')
   lines.push('')
@@ -464,8 +274,15 @@ function generate(): string {
   lines.push('These tools are plugin-owned when `kl-webhooks-plugin` is loaded by the MCP host through the narrow `mcpPlugin.registerTools(...)` seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`')
   lines.push('')
 
+  lines.push('## Event filters')
+  lines.push('')
+  lines.push('- Exact names such as `task.created` match only that event.')
+  lines.push('- `*` matches every supported after-event.')
+  lines.push('- Prefix wildcards ending in `.*` match that namespace, for example `task.*`, `board.*`, or `board.log.*`.')
+  lines.push('')
+
   // Payload format
-  lines.push('## Payload Format')
+  lines.push('## Payload format')
   lines.push('')
   lines.push('Every webhook delivery sends a JSON POST request with the following structure:')
   lines.push('')
@@ -480,14 +297,15 @@ function generate(): string {
   lines.push('**Headers:**')
   lines.push('')
   lines.push('| Header | Description |')
-  lines.push('|--------|-------------|')
+  lines.push('| ------ | ----------- |')
   lines.push('| `Content-Type` | `application/json` |')
   lines.push('| `X-Webhook-Event` | The event type (e.g., `task.created`) |')
   lines.push('| `X-Webhook-Signature` | HMAC-SHA256 signature (only if a secret is configured) |')
+  lines.push('| `Authorization` | `Bearer <token>` when `KANBAN_LITE_TOKEN` is set in the webhook runtime |')
   lines.push('')
 
   // Signing
-  lines.push('## Signature Verification')
+  lines.push('## Signature verification')
   lines.push('')
   lines.push('If you provide a `secret` when registering a webhook, every delivery includes an `X-Webhook-Signature` header with the format `sha256=<hex-digest>`.')
   lines.push('')
@@ -510,8 +328,9 @@ function generate(): string {
   lines.push('')
 
   // Delivery
-  lines.push('## Delivery Behavior')
+  lines.push('## Delivery behavior')
   lines.push('')
+  lines.push('- Only committed SDK after-events are delivered.')
   lines.push('- Webhooks are delivered **asynchronously** — the SDK operation completes without waiting for delivery.')
   lines.push('- Each delivery has a **10-second timeout**.')
   lines.push('- Failed deliveries are logged to stderr but **do not retry**.')
@@ -521,41 +340,15 @@ function generate(): string {
   lines.push('')
 
   // Event reference
-  lines.push('---')
-  lines.push('')
-  lines.push('## Event Reference')
+  lines.push('## Supported after-events')
   lines.push('')
 
-  // Summary table
   lines.push('| Event | Category | Description |')
-  lines.push('|-------|----------|-------------|')
+  lines.push('| ----- | -------- | ----------- |')
   for (const e of EVENTS) {
     lines.push(`| \`${e.event}\` | ${e.category} | ${e.description} |`)
   }
   lines.push('')
-
-  // Detailed events grouped by category
-  let currentCategory = ''
-  for (const e of EVENTS) {
-    if (e.category !== currentCategory) {
-      currentCategory = e.category
-      lines.push(`### ${currentCategory} Events`)
-      lines.push('')
-    }
-
-    lines.push(`#### \`${e.event}\``)
-    lines.push('')
-    lines.push(e.description)
-    lines.push('')
-    lines.push(`**Trigger:** ${e.trigger}`)
-    lines.push('')
-    lines.push('**Example payload:**')
-    lines.push('')
-    lines.push('```json')
-    lines.push(e.payload)
-    lines.push('```')
-    lines.push('')
-  }
 
   return lines.join('\n')
 }

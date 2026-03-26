@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Webhook plugin-options config parity**: `kl-webhooks-plugin` now reads webhook registrations from `plugins["webhook.delivery"].options.webhooks` when configured (with legacy top-level `webhooks` fallback) and writes updates back into plugin options when the plugin config block exists; webhook docs were updated to match this behavior.
 
+- **Webhook docs now match the plugin contract**: Regenerated `docs/webhooks.md` from slimmer source metadata aligned with `packages/kl-webhooks-plugin/README.md`, corrected the delivered form event name to `form.submitted`, documented prefix wildcard subscriptions and the standalone `/api/webhooks/test` receiver, and added the missing after-events (`card.action.triggered`, board/card log events, and `storage.migrated`).
+
 - **Workspace root no longer owns `kanban-lite` runtime packages**: Moved the monorepo root `dependencies` block into `packages/kanban-lite/package.json` so the workspace controller no longer relies on hoisted app dependencies and `kanban-lite` owns the packages it imports.
 
 - **Published package now declares standalone/MCP runtime dependencies**: Added direct `kanban-lite` package dependencies for externalized runtime modules such as `@fastify/swagger`, `@fastify/swagger-ui`, `@modelcontextprotocol/sdk`, and `zod` so npm installs no longer rely on hoisted workspace/root dependencies.

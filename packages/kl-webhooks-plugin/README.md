@@ -113,6 +113,57 @@ Headers sent with every request:
 | `X-Webhook-Event`       | event name (e.g. `task.created`)               |
 | `X-Webhook-Signature`   | `sha256=<hex-digest>` (only when secret is set)|
 
+If `KANBAN_LITE_TOKEN` is present in the runtime environment, outbound webhook
+requests also include `Authorization: Bearer <token>`.
+
+## Event filters
+
+Webhook subscriptions support three match styles:
+
+- exact event names such as `task.created`
+- `*` to receive every supported after-event
+- prefix wildcards ending in `.*`, such as `task.*`, `board.*`, or `board.log.*`
+
+Only committed SDK after-events are delivered. Before-events such as
+`form.submit`, `card.action.trigger`, or `storage.migrate` are part of the SDK
+integration lifecycle, but they are not sent as outbound webhooks.
+
+## Supported after-events
+
+| Event | Category | Description |
+| ----- | -------- | ----------- |
+| `task.created` | Task | A card was created. |
+| `task.updated` | Task | A card changed without moving columns. |
+| `task.moved` | Task | A card moved columns or boards. |
+| `task.deleted` | Task | A card was deleted. |
+| `comment.created` | Comment | A comment was added. |
+| `comment.updated` | Comment | A comment was edited. |
+| `comment.deleted` | Comment | A comment was removed. |
+| `column.created` | Column | A board column was added. |
+| `column.updated` | Column | A board column was renamed or recolored. |
+| `column.deleted` | Column | A board column was removed. |
+| `attachment.added` | Attachment | A card attachment was added. |
+| `attachment.removed` | Attachment | A card attachment was removed. |
+| `settings.updated` | Settings | Board display settings changed. |
+| `board.created` | Board | A board was created. |
+| `board.updated` | Board | A board configuration changed. |
+| `board.deleted` | Board | A board was deleted. |
+| `board.action` | Board | A named board action was triggered. |
+| `card.action.triggered` | Card action | A named card action was triggered. |
+| `board.log.added` | Board log | A board log entry was appended. |
+| `board.log.cleared` | Board log | Board log entries were cleared. |
+| `log.added` | Card log | A card log entry was appended. |
+| `log.cleared` | Card log | Card log entries were cleared. |
+| `storage.migrated` | Storage | Card storage was migrated between providers. |
+| `form.submitted` | Form | A card form payload was validated, persisted, and submitted. |
+
+## Standalone test receiver
+
+When the standalone host loads this package, it also exposes
+`POST /api/webhooks/test`. Point a webhook at that route to verify end-to-end
+delivery locally; the receiver writes the incoming event to the board log
+instead of forwarding it elsewhere.
+
 ## Build output
 
 The published CommonJS entry point is:

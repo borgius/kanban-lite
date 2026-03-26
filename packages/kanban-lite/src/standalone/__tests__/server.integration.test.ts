@@ -350,6 +350,86 @@ describe('Standalone Server Integration', () => {
       }
     })
 
+    it('passes the resolved public SDK to standalone plugin registration and request contexts', async () => {
+      const cleanup = installTempPackage(
+        'standalone-sdk-context-test-plugin',
+        `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: 'standalone-sdk-context-test-plugin', provides: ['auth.identity'] },
+    async resolveIdentity() {
+      return { subject: 'standalone-sdk-context-test-plugin' }
+    },
+  },
+  standaloneHttpPlugin: {
+    manifest: { id: 'standalone-sdk-context-test-plugin', provides: ['standalone.http'] },
+    registerMiddleware() {
+      return [async (request) => {
+        if (!request.route('GET', '/api/plugin-sdk-context')) return false
+        request.mergeAuthContext({ actorHint: 'middleware-auth-context' })
+        return false
+      }]
+    },
+    registerRoutes(options) {
+      return [async (request) => {
+        if (!request.route('GET', '/api/plugin-sdk-context')) return false
+        const registrationSnapshot = options.sdk ? options.sdk.getConfigSnapshot() : null
+        const requestSnapshot = request.sdk.getConfigSnapshot()
+        const registrationBoard = options.sdk ? options.sdk.getBoard('default') : null
+        const requestBoard = request.sdk.getBoard('default')
+        request.res.statusCode = 200
+        request.res.setHeader('Content-Type', 'application/json')
+        request.res.end(JSON.stringify({
+          ok: true,
+          registrationSdkAvailable: !!options.sdk,
+          registrationPort: registrationSnapshot ? registrationSnapshot.port ?? null : null,
+          registrationBoardName: registrationBoard ? registrationBoard.name : null,
+          requestPort: requestSnapshot.port ?? null,
+          requestBoardName: requestBoard.name,
+          workspaceRootMatches: options.workspaceRoot === request.workspaceRoot,
+          kanbanDirMatches: options.kanbanDir === request.kanbanDir,
+          actorHint: request.getAuthContext().actorHint ?? null,
+        }))
+        return true
+      }]
+    },
+  },
+}
+`,
+      )
+
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = writeWorkspaceConfig(workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: 'standalone-sdk-context-test-plugin' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const res = await httpGet(`http://localhost:${localPort}/api/plugin-sdk-context`)
+        expect(res.status).toBe(200)
+        expect(JSON.parse(res.body)).toEqual({
+          ok: true,
+          registrationSdkAvailable: true,
+          registrationPort: port,
+          registrationBoardName: 'Default',
+          requestPort: port,
+          requestBoardName: 'Default',
+          workspaceRootMatches: true,
+          kanbanDirMatches: true,
+          actorHint: 'middleware-auth-context',
+        })
+      } finally {
+        cleanup()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
+    })
+
     it('starts even when the Swagger UI package logo file is unavailable', async () => {
       vi.resetModules()
 
@@ -2561,7 +2641,7 @@ describe('Standalone Server Integration', () => {
       const kanbanJson = path.join(path.dirname(tempDir), '.kanban.json')
       fs.writeFileSync(kanbanJson, JSON.stringify({
         version: 2,
-        boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } },
+        boards: { default: { name: 'Default', columns: [{ id: 'backlog', name: 'Backlog' }], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } },
         defaultBoard: 'default',
         kanbanDirectory: '.kanban',
         forms: {
@@ -2584,7 +2664,6 @@ describe('Standalone Server Integration', () => {
           }
         }
       }, null, 2), 'utf-8')
-
 
       const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
         content: '# Interpolation Regression Card',

@@ -118,6 +118,7 @@ HTTP server are all built on top of.
         * [.close()](#KanbanSDK+close)
         * [.destroy()](#KanbanSDK+destroy)
         * [.emitEvent()](#KanbanSDK+emitEvent)
+        * [.getConfigSnapshot()](#KanbanSDK+getConfigSnapshot) ⇒
         * [._resolveBoardId()](#KanbanSDK+_resolveBoardId)
         * [._boardDir()](#KanbanSDK+_boardDir)
         * [._isCompletedStatus()](#KanbanSDK+_isCompletedStatus)
@@ -824,6 +825,26 @@ Tear down the SDK, destroying the event bus and all listeners.
 
 * * *
 
+<a name="KanbanSDK+getConfigSnapshot"></a>
+
+#### kanbanSDK.getConfigSnapshot() ⇒
+Returns a cloned read-only snapshot of the current workspace config.
+
+The returned snapshot is created from a fresh config read and deep-cloned
+before being returned, so callers receive an isolated view of the current
+`.kanban.json` state rather than a live mutable runtime object. Mutating the
+returned snapshot does not update persisted config or affect this SDK instance.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A cloned read-only snapshot of the current [KanbanConfig](KanbanConfig).  
+**Example**  
+```ts
+const config = sdk.getConfigSnapshot()
+console.log(config.defaultBoard)
+```
+
+* * *
+
 <a name="KanbanSDK+_resolveBoardId"></a>
 
 #### kanbanSDK.\_resolveBoardId()
@@ -1358,21 +1379,17 @@ console.log(result.data.severity) // 'high'
 <a name="KanbanSDK+triggerAction"></a>
 
 #### kanbanSDK.triggerAction(cardId, action, boardId) ⇒
-Triggers a named action for a card by POSTing to the global `actionWebhookUrl`
-configured in `.kanban.json`.
+Triggers a named action for a card.
 
-The payload sent to the webhook is:
-```json
-{ "action": "retry", "board": "default", "list": "in-progress", "card": { ...sanitizedCard } }
-```
+Validates the card, appends an activity log entry, and emits the
+`card.action.triggered` after-event so registered webhooks receive
+the action payload automatically.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: A promise resolving when the webhook responds with 2xx.  
+**Returns**: A promise that resolves when the action has been processed.  
 **Throws**:
 
-- <code>Error</code> If no `actionWebhookUrl` is configured in `.kanban.json`.
 - <code>Error</code> If the card is not found.
-- <code>Error</code> If the webhook responds with a non-2xx status.
 
 
 | Param | Description |
@@ -2909,12 +2926,64 @@ configPath('/home/user/my-project')
 
 * * *
 
+<a name="loadDotEnv"></a>
+
+### loadDotEnv(dir)
+Loads key–value pairs from a `.env` file in the given directory into
+`process.env`. Existing environment variables are never overwritten so that
+real OS-level values always take precedence over file-based defaults.
+Silently does nothing if the file does not exist.
+
+**Kind**: global function  
+
+| Param | Description |
+| --- | --- |
+| dir | Directory that may contain a `.env` file. |
+
+
+* * *
+
+<a name="resolveConfigEnvVars"></a>
+
+### resolveConfigEnvVars(node, configFileName, nodePath) ⇒
+Recursively resolves `${VAR_NAME}` placeholders in all string values of a
+parsed config object against `process.env`. Mutates the object in place.
+
+Throws a descriptive error when a referenced environment variable is not
+set, including the JSON path to the offending value so the operator can
+locate it quickly. Example error message:
+
+```
+missing ALICE_PASSWORD_HASH in .kanban.json: .plugins."auth.identity".options.users[3].password "${ALICE_PASSWORD_HASH}"
+```
+
+Keys that contain non-identifier characters (e.g. dots) are quoted in the
+path segment, matching the convention used in `.kanban.json` error messages.
+
+**Kind**: global function  
+**Returns**: The processed node (same reference for objects/arrays; new primitive for strings).  
+
+| Param | Description |
+| --- | --- |
+| node | The current node to process (object, array, string, or scalar). |
+| configFileName | Config filename used in error messages (e.g. `'.kanban.json'`). |
+| nodePath | JSON path accumulated so far (empty string at root). |
+
+
+* * *
+
 <a name="readConfig"></a>
 
 ### readConfig(workspaceRoot) ⇒
 Reads the kanban config from disk. If the file is missing or unreadable,
 returns the default config. If the file contains a v1 config, it is
 automatically migrated to v2 format and persisted back to disk.
+
+Any `${VAR_NAME}` placeholders found in string values are resolved against
+`process.env` before the config is returned. If a referenced environment
+variable is not set the process will throw a descriptive error rather than
+silently falling back to defaults, because an unresolved secret is never a
+safe default.
 
 **Kind**: global function  
 **Returns**: The parsed (and possibly migrated) kanban configuration.  

@@ -1,6 +1,6 @@
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types';
 import type { CardDisplaySettings, Priority } from '../shared/types';
-import type { BoardConfig, ResolvedCapabilities, Webhook } from '../shared/config';
+import type { BoardConfig, KanbanConfig, ResolvedCapabilities, Webhook } from '../shared/config';
 import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardUnreadSummary } from './types';
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus';
 import { EventBus } from './eventBus';
@@ -67,6 +67,9 @@ export interface WebhookStatus {
 }
 /** Active card-state provider metadata for diagnostics and host surfaces. */
 export type CardStateRuntimeStatus = CardStateStatus;
+type ReadonlySnapshot<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer U)[] ? readonly ReadonlySnapshot<U>[] : T extends object ? {
+    readonly [K in keyof T]: ReadonlySnapshot<T[K]>;
+} : T;
 /**
  * Optional search and sort inputs for {@link KanbanSDK.listCards}.
  *
@@ -524,6 +527,23 @@ export declare class KanbanSDK {
      * ```
      */
     get workspaceRoot(): string;
+    /**
+     * Returns a cloned read-only snapshot of the current workspace config.
+     *
+     * The returned snapshot is created from a fresh config read and deep-cloned
+     * before being returned, so callers receive an isolated view of the current
+     * `.kanban.json` state rather than a live mutable runtime object. Mutating the
+     * returned snapshot does not update persisted config or affect this SDK instance.
+     *
+     * @returns A cloned read-only snapshot of the current {@link KanbanConfig}.
+     *
+     * @example
+     * ```ts
+     * const config = sdk.getConfigSnapshot()
+     * console.log(config.defaultBoard)
+     * ```
+     */
+    getConfigSnapshot(): ReadonlySnapshot<KanbanConfig>;
     /** @internal */
     _resolveBoardId(boardId?: string): string;
     /** @internal */

@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
 import * as path from 'path'
+import type { KanbanConfig } from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
 // Local type definitions
@@ -24,21 +25,20 @@ export interface Webhook {
   active: boolean
 }
 
-/** Minimal slice of a kanban workspace config needed for webhook persistence. */
-interface KanbanConfig {
-  plugins?: {
-    'webhook.delivery'?: {
-      provider?: string
-      options?: {
-        webhooks?: Webhook[]
-        [key: string]: unknown
-      }
-      [key: string]: unknown
-    }
-    [key: string]: unknown
-  }
-  [key: string]: unknown
+type Awaitable<T> = T | Promise<T>
+
+interface WebhookSdkHost {
+  listWebhooks(): Webhook[]
+  createWebhook(input: { url: string; events: string[]; secret?: string }): Awaitable<Webhook>
+  updateWebhook(
+    id: string,
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+  ): Awaitable<Webhook | null>
+  deleteWebhook(id: string): Awaitable<boolean>
 }
+
+/** Internal helper for partial `.kanban.json` persistence during plugin-owned fallback writes. */
+type PersistedWebhookConfig = Partial<KanbanConfig> & Record<string, unknown>
 
 /**
  * Minimal EventBus duck type.
@@ -85,6 +85,18 @@ export interface WebhookProviderPlugin {
   deleteWebhook(workspaceRoot: string, id: string): boolean
 }
 
+function isDebugLoggingEnabled(): boolean {
+  const value = process.env.KANBAN_LITE_WEBHOOK_DEBUG ?? process.env.KL_WEBHOOK_DEBUG
+  if (!value) return false
+  return !['0', 'false', 'off', 'no'].includes(value.toLowerCase())
+}
+
+function debugLog(...args: unknown[]): void {
+  if (isDebugLoggingEnabled()) {
+    console.log(...args)
+  }
+}
+
 const SDK_AFTER_EVENT_NAMES = new Set<string>([
   'task.created',
   'task.updated',
@@ -121,8 +133,8 @@ const CONFIG_FILENAME = '.kanban.json'
 function readWebhooks(workspaceRoot: string): Webhook[] {
   const filePath = path.join(workspaceRoot, CONFIG_FILENAME)
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as KanbanConfig
-    const webhooks = raw.plugins?.['webhook.delivery']?.options?.webhooks
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as PersistedWebhookConfig
+    const webhooks = raw.webhooks
     return Array.isArray(webhooks) ? webhooks : []
   } catch {
     return []
@@ -131,16 +143,13 @@ function readWebhooks(workspaceRoot: string): Webhook[] {
 
 function writeWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
   const filePath = path.join(workspaceRoot, CONFIG_FILENAME)
-  let config: KanbanConfig = {}
+  let config: PersistedWebhookConfig = {}
   try {
-    config = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as KanbanConfig
+    config = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as PersistedWebhookConfig
   } catch {
     // File absent — start from a blank config object.
   }
-  if (!config.plugins) config.plugins = {}
-  if (!config.plugins['webhook.delivery']) config.plugins['webhook.delivery'] = { provider: 'kl-webhooks-plugin' }
-  if (!config.plugins['webhook.delivery'].options) config.plugins['webhook.delivery'].options = {}
-  config.plugins['webhook.delivery'].options['webhooks'] = webhooks
+  config.webhooks = webhooks
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
@@ -178,7 +187,7 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     headers['X-Webhook-Signature'] = `sha256=${signature}`
   }
 
-  console.log(
+  debugLog(
     `[kl-webhooks-plugin] → POST ${webhook.url} | event=${event} | id=${webhook.id} | secret=${hasSecret ? 'yes' : 'no'} | payloadBytes=${Buffer.byteLength(payload)}`,
   )
 
@@ -193,7 +202,7 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
         timeout: 10000,
       },
       (res) => {
-        console.log(
+        debugLog(
           `[kl-webhooks-plugin] ← ${res.statusCode} ${res.statusMessage ?? ''} | id=${webhook.id} | url=${webhook.url}`,
         )
         res.resume() // drain response body
@@ -231,15 +240,15 @@ function matchesEvent(pattern: string, event: string): boolean {
 
 function fireWebhooks(workspaceRoot: string, event: string, data: unknown): void {
   const webhooks = readWebhooks(workspaceRoot)
-  console.log(`[kl-webhooks-plugin] fireWebhooks: event=${event} | total=${webhooks.length} registered`)
+  debugLog(`[kl-webhooks-plugin] fireWebhooks: event=${event} | total=${webhooks.length} registered`)
   const matching = webhooks.filter(
     (w) => w.active && w.events.some((p) => matchesEvent(p, event)),
   )
   if (matching.length === 0) {
-    console.log(`[kl-webhooks-plugin] no matching webhooks for event=${event} (${webhooks.filter(w => !w.active).length} inactive)`)
+    debugLog(`[kl-webhooks-plugin] no matching webhooks for event=${event} (${webhooks.filter(w => !w.active).length} inactive)`)
     return
   }
-  console.log(`[kl-webhooks-plugin] firing ${matching.length} webhook(s) for event=${event}: ${matching.map(w => w.id).join(', ')}`)
+  debugLog(`[kl-webhooks-plugin] firing ${matching.length} webhook(s) for event=${event}: ${matching.map(w => w.id).join(', ')}`)
 
   const payload = JSON.stringify({
     event,
@@ -318,16 +327,16 @@ export class WebhookListenerPlugin implements SDKEventListenerPlugin {
   private _unsubscribe: (() => void) | null = null
 
   constructor(private readonly _workspaceRoot: string) {
-    console.log(`[kl-webhooks-plugin] WebhookListenerPlugin constructed | workspaceRoot=${_workspaceRoot}`)
+    debugLog(`[kl-webhooks-plugin] WebhookListenerPlugin constructed | workspaceRoot=${_workspaceRoot}`)
   }
 
   register(bus: EventBus): void {
     if (this._unsubscribe) {
-      console.log('[kl-webhooks-plugin] WebhookListenerPlugin already registered, skipping')
+      debugLog('[kl-webhooks-plugin] WebhookListenerPlugin already registered, skipping')
       return
     }
     const webhooks = readWebhooks(this._workspaceRoot)
-    console.log(`[kl-webhooks-plugin] WebhookListenerPlugin.register() | ${webhooks.length} webhook(s) configured: ${webhooks.map(w => `${w.id}(${w.active ? 'active' : 'inactive'}) → ${w.url}`).join(', ') || 'none'}`)
+    debugLog(`[kl-webhooks-plugin] WebhookListenerPlugin.register() | ${webhooks.length} webhook(s) configured: ${webhooks.map(w => `${w.id}(${w.active ? 'active' : 'inactive'}) → ${w.url}`).join(', ') || 'none'}`)
     this._unsubscribe = bus.onAny((event, payload) => {
       if (!SDK_AFTER_EVENT_NAMES.has(event)) return
       fireWebhooks(this._workspaceRoot, event, payload.data)
@@ -401,21 +410,6 @@ export interface WebhookSdkExtensions {
   deleteWebhook(workspaceRoot: string, id: string): boolean
 }
 
-interface WebhookCliSdkExtensionHost {
-  getExtension?<T = unknown>(id: string): T | undefined
-  listWebhooks(): Webhook[]
-  createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
-  updateWebhook(
-    id: string,
-    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
-  ): Promise<Webhook | null>
-  deleteWebhook(id: string): Promise<boolean>
-}
-
-function getWebhookSdkExtensions(sdk?: WebhookCliSdkExtensionHost): WebhookSdkExtensions | undefined {
-  return sdk?.getExtension?.<WebhookSdkExtensions>('kl-webhooks-plugin')
-}
-
 /**
  * SDK extension pack for `kl-webhooks-plugin`.
  *
@@ -451,18 +445,8 @@ interface McpToolResult {
   readonly isError?: boolean
 }
 
-interface McpWebhookSdkHost {
-  listWebhooks(): Webhook[]
-  createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
-  updateWebhook(
-    id: string,
-    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
-  ): Promise<Webhook | null>
-  deleteWebhook(id: string): Promise<boolean>
-}
-
 interface McpToolContext {
-  readonly sdk: McpWebhookSdkHost
+  readonly sdk: WebhookSdkHost
   runWithAuth<T>(fn: () => Promise<T>): Promise<T>
   toErrorResult(err: unknown): McpToolResult
 }
@@ -526,7 +510,7 @@ export const mcpPlugin: McpPluginRegistration = {
         handler: async (args, ctx) => {
           const { url, events, secret } = args as { url: string; events?: string[]; secret?: string }
           try {
-            const webhook = await ctx.runWithAuth(() => ctx.sdk.createWebhook({ url, events: events || ['*'], secret }))
+            const webhook = await ctx.runWithAuth(() => Promise.resolve(ctx.sdk.createWebhook({ url, events: events || ['*'], secret })))
             return { content: [{ type: 'text' as const, text: JSON.stringify(redactWebhook(webhook), null, 2) }] }
           } catch (err) {
             return ctx.toErrorResult(err)
@@ -542,7 +526,7 @@ export const mcpPlugin: McpPluginRegistration = {
         handler: async (args, ctx) => {
           const { webhookId } = args as { webhookId: string }
           try {
-            const removed = await ctx.runWithAuth(() => ctx.sdk.deleteWebhook(webhookId))
+            const removed = await ctx.runWithAuth(() => Promise.resolve(ctx.sdk.deleteWebhook(webhookId)))
             if (!removed) {
               return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
             }
@@ -576,7 +560,7 @@ export const mcpPlugin: McpPluginRegistration = {
           if (secret !== undefined) updates.secret = secret
           if (active !== undefined) updates.active = active
           try {
-            const updated = await ctx.runWithAuth(() => ctx.sdk.updateWebhook(webhookId, updates))
+            const updated = await ctx.runWithAuth(() => Promise.resolve(ctx.sdk.updateWebhook(webhookId, updates)))
             if (!updated) {
               return { content: [{ type: 'text' as const, text: `Webhook not found: ${webhookId}` }], isError: true }
             }
@@ -593,36 +577,6 @@ export const mcpPlugin: McpPluginRegistration = {
 // ---------------------------------------------------------------------------
 // Standalone HTTP plugin – /api/webhooks route ownership
 // ---------------------------------------------------------------------------
-
-/**
- * Minimal duck-typed request context provided by the standalone HTTP seam.
- * Mirrors `StandaloneHttpRequestContext` from kanban-lite core without importing it.
- */
-interface PluginHttpRequestContext {
-  readonly sdk: {
-    listWebhooks(): Webhook[]
-    createWebhook(input: { url: string; events: string[]; secret?: string }): Promise<Webhook>
-    updateWebhook(
-      id: string,
-      updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
-    ): Promise<Webhook | null>
-    deleteWebhook(id: string): Promise<boolean>
-    addBoardLog(
-      text: string,
-      options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-      boardId?: string,
-    ): Promise<unknown>
-    runWithAuth<T>(
-      auth: { token?: string; tokenSource?: string; transport?: string; identity?: { subject: string; roles?: string[] } },
-      fn: () => Promise<T>,
-    ): Promise<T>
-  }
-  readonly req: http.IncomingMessage & { _rawBody?: Buffer }
-  readonly res: http.ServerResponse
-  route(method: string, pattern: string): Record<string, string> | null
-}
-
-type PluginHttpHandler = (ctx: PluginHttpRequestContext) => Promise<boolean>
 
 function pluginJsonOk(res: http.ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
@@ -686,11 +640,35 @@ function authErrMessage(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)) || 'Unauthorized'
 }
 
-const handleGetWebhooks: PluginHttpHandler = async (ctx) => {
+interface WebhookStandaloneContext {
+  readonly sdk: WebhookSdkHost & {
+    addBoardLog(
+      text: string,
+      options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
+      boardId?: string,
+    ): Promise<unknown>
+    runWithAuth<T>(
+      auth: { token?: string; tokenSource?: string; transport?: string; identity?: { subject: string; roles?: string[] } },
+      fn: () => Promise<T>,
+    ): Promise<T>
+  }
+  readonly req: http.IncomingMessage & { _rawBody?: Buffer }
+  readonly res: http.ServerResponse
+  route(method: string, pattern: string): Record<string, string> | null
+}
+
+type WebhookStandaloneHandler = (ctx: WebhookStandaloneContext) => Promise<boolean>
+
+interface WebhookStandalonePlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
+  registerRoutes(): readonly WebhookStandaloneHandler[]
+}
+
+const handleGetWebhooks: WebhookStandaloneHandler = async (ctx) => {
   if (!ctx.route('GET', '/api/webhooks')) return false
   const auth = pluginExtractAuth(ctx.req)
   try {
-    const data = await ctx.sdk.runWithAuth(auth, async () => ctx.sdk.listWebhooks())
+    const data = await ctx.sdk.runWithAuth(auth, () => Promise.resolve(ctx.sdk.listWebhooks()))
     pluginJsonOk(ctx.res, data)
   } catch (err) {
     if (isAuthErrorLike(err)) {
@@ -702,21 +680,21 @@ const handleGetWebhooks: PluginHttpHandler = async (ctx) => {
   return true
 }
 
-const handlePostWebhook: PluginHttpHandler = async (ctx) => {
+const handlePostWebhook: WebhookStandaloneHandler = async (ctx) => {
   if (!ctx.route('POST', '/api/webhooks')) return false
   const auth = pluginExtractAuth(ctx.req)
   try {
-    const body = await pluginReadBody(ctx.req)
+    const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
     if (typeof body.url !== 'string' || !Array.isArray(body.events)) {
       pluginJsonError(ctx.res, 400, 'url and events are required')
       return true
     }
     const data = await ctx.sdk.runWithAuth(auth, () =>
-      ctx.sdk.createWebhook({
+      Promise.resolve(ctx.sdk.createWebhook({
         url: body.url as string,
         events: body.events as string[],
         secret: typeof body.secret === 'string' ? body.secret : undefined,
-      }),
+      })),
     )
     pluginJsonOk(ctx.res, data, 201)
   } catch (err) {
@@ -729,19 +707,19 @@ const handlePostWebhook: PluginHttpHandler = async (ctx) => {
   return true
 }
 
-const handlePutWebhook: PluginHttpHandler = async (ctx) => {
+const handlePutWebhook: WebhookStandaloneHandler = async (ctx) => {
   const params = ctx.route('PUT', '/api/webhooks/:id')
   if (!params) return false
   const { id } = params
   const auth = pluginExtractAuth(ctx.req)
   try {
-    const body = await pluginReadBody(ctx.req)
+    const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
     const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>> = {}
     if (typeof body.url === 'string') updates.url = body.url
     if (Array.isArray(body.events)) updates.events = body.events as string[]
     if (typeof body.secret === 'string') updates.secret = body.secret
     if (typeof body.active === 'boolean') updates.active = body.active
-    const data = await ctx.sdk.runWithAuth(auth, () => ctx.sdk.updateWebhook(id, updates))
+    const data = await ctx.sdk.runWithAuth(auth, () => Promise.resolve(ctx.sdk.updateWebhook(id, updates)))
     if (data === null) {
       pluginJsonError(ctx.res, 404, 'Webhook not found')
     } else {
@@ -757,13 +735,13 @@ const handlePutWebhook: PluginHttpHandler = async (ctx) => {
   return true
 }
 
-const handleDeleteWebhook: PluginHttpHandler = async (ctx) => {
+const handleDeleteWebhook: WebhookStandaloneHandler = async (ctx) => {
   const params = ctx.route('DELETE', '/api/webhooks/:id')
   if (!params) return false
   const { id } = params
   const auth = pluginExtractAuth(ctx.req)
   try {
-    const deleted = await ctx.sdk.runWithAuth(auth, () => ctx.sdk.deleteWebhook(id))
+    const deleted = await ctx.sdk.runWithAuth(auth, () => Promise.resolve(ctx.sdk.deleteWebhook(id)))
     if (!deleted) {
       pluginJsonError(ctx.res, 404, 'Webhook not found')
     } else {
@@ -788,15 +766,15 @@ const handleDeleteWebhook: PluginHttpHandler = async (ctx) => {
  * `http://localhost:<port>/api/webhooks/test` to exercise the full delivery
  * pipeline end-to-end.
  */
-const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
+const handlePostWebhookTest: WebhookStandaloneHandler = async (ctx) => {
   if (!ctx.route('POST', '/api/webhooks/test')) return false
-  console.log('[kl-webhooks-plugin] POST /api/webhooks/test received')
+  debugLog('[kl-webhooks-plugin] POST /api/webhooks/test received')
   try {
-    const body = await pluginReadBody(ctx.req)
+    const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
     const event = typeof body.event === 'string' ? body.event : 'unknown'
     const ts = typeof body.timestamp === 'string' ? body.timestamp : new Date().toISOString()
     const text = `[webhook-test] Received event: ${event}`
-    console.log(`[kl-webhooks-plugin] /test: writing board log for event=${event}`)
+    debugLog(`[kl-webhooks-plugin] /test: writing board log for event=${event}`)
     // Use a pre-resolved system identity so the auth policy allows the call
     // without requiring a real user token (webhooks are server-initiated).
     const systemAuth = {
@@ -810,7 +788,7 @@ const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
         object: body as Record<string, unknown>,
       }),
     )
-    console.log(`[kl-webhooks-plugin] /test: board log written for event=${event}`)
+    debugLog(`[kl-webhooks-plugin] /test: board log written for event=${event}`)
     pluginJsonOk(ctx.res, { received: true, event })
   } catch (err) {
     console.error('[kl-webhooks-plugin] /test: error writing board log:', err instanceof Error ? err.message : err)
@@ -831,15 +809,15 @@ const handlePostWebhookTest: PluginHttpHandler = async (ctx) => {
  *
  * This plugin is the route owner for the standalone `/api/webhooks` surface.
  */
-export const standaloneHttpPlugin = {
+export const standaloneHttpPlugin: WebhookStandalonePlugin = {
   manifest: {
     id: 'webhooks',
     provides: ['standalone.http'] as const,
   },
-  registerRoutes(_options?: unknown): readonly PluginHttpHandler[] {
+  registerRoutes(): readonly WebhookStandaloneHandler[] {
     return [handleGetWebhooks, handlePostWebhookTest, handlePostWebhook, handlePutWebhook, handleDeleteWebhook]
   },
-} as const
+}
 
 // ---------------------------------------------------------------------------
 // CLI plugin – webhook command ownership
@@ -850,6 +828,12 @@ function _bold(s: string): string { return `\x1b[1m${s}\x1b[0m` }
 function _green(s: string): string { return `\x1b[32m${s}\x1b[0m` }
 function _red(s: string): string { return `\x1b[31m${s}\x1b[0m` }
 function _dim(s: string): string { return `\x1b[2m${s}\x1b[0m` }
+
+interface WebhookCliContext {
+  readonly workspaceRoot: string
+  readonly sdk?: WebhookSdkHost
+  readonly runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T>
+}
 
 /**
  * CLI plugin that contributes the `webhooks` top-level command family to the
@@ -877,37 +861,32 @@ export const cliPlugin = {
   async run(
     subArgs: string[],
     flags: Record<string, string | boolean | string[]>,
-    context: { workspaceRoot: string; sdk?: WebhookCliSdkExtensionHost; runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T> },
+    context: WebhookCliContext,
   ): Promise<void> {
     const { workspaceRoot } = context
     const subcommand = subArgs[0] || 'list'
-    const sdkExtensions = getWebhookSdkExtensions(context.sdk)
+    const sdk = context.sdk
+    const runCliMutation = <T>(fn: () => Promise<T>): Promise<T> =>
+      context.runWithCliAuth ? context.runWithCliAuth(fn) : fn()
 
     // Helpers that delegate through SDK auth when the core CLI context is present,
     // falling back to direct local calls for backward compatibility (e.g. unit tests).
     const _list = (): Webhook[] =>
-      sdkExtensions ? sdkExtensions.listWebhooks(workspaceRoot)
-        : context.sdk ? context.sdk.listWebhooks() : listWebhooks(workspaceRoot)
+      sdk ? sdk.listWebhooks() : listWebhooks(workspaceRoot)
     const _create = (input: { url: string; events: string[]; secret?: string }): Promise<Webhook> =>
-      context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => Promise.resolve(
-          sdkExtensions ? sdkExtensions.createWebhook(workspaceRoot, input) : context.sdk!.createWebhook(input),
-        ))
+      sdk
+        ? runCliMutation(() => Promise.resolve(sdk.createWebhook(input)))
         : Promise.resolve(createWebhook(workspaceRoot, input))
     const _delete = (id: string): Promise<boolean> =>
-      context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => Promise.resolve(
-          sdkExtensions ? sdkExtensions.deleteWebhook(workspaceRoot, id) : context.sdk!.deleteWebhook(id),
-        ))
+      sdk
+        ? runCliMutation(() => Promise.resolve(sdk.deleteWebhook(id)))
         : Promise.resolve(deleteWebhook(workspaceRoot, id))
     const _update = (
       id: string,
       updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
     ): Promise<Webhook | null> =>
-      context.sdk && context.runWithCliAuth
-        ? context.runWithCliAuth(() => Promise.resolve(
-          sdkExtensions ? sdkExtensions.updateWebhook(workspaceRoot, id, updates) : context.sdk!.updateWebhook(id, updates),
-        ))
+      sdk
+        ? runCliMutation(() => Promise.resolve(sdk.updateWebhook(id, updates)))
         : Promise.resolve(updateWebhook(workspaceRoot, id, updates))
 
     switch (subcommand) {
@@ -995,4 +974,4 @@ export const cliPlugin = {
         process.exit(1)
     }
   },
-} as const
+}

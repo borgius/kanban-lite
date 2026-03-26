@@ -3,17 +3,18 @@
   "boards": {
     "default": {
       "name": "Default",
-      "metadata": ["location", "company", "position", "jobUrl", "salary"],
+      "metadata": [
+        "location",
+        "company",
+        "position",
+        "jobUrl",
+        "salary"
+      ],
       "columns": [
         {
           "id": "backlog",
           "name": "Backlog",
           "color": "#6b7280"
-        },
-        {
-          "id": "review",
-          "name": "Review",
-          "color": "#8b5cf6"
         },
         {
           "id": "todo",
@@ -24,6 +25,11 @@
           "id": "in-progress",
           "name": "In Progress",
           "color": "#f59e0b"
+        },
+        {
+          "id": "review",
+          "name": "Review",
+          "color": "#8b5cf6"
         },
         {
           "id": "done",
@@ -53,63 +59,73 @@
   "showDeletedColumn": false,
   "boardZoom": 120,
   "cardZoom": 100,
-  "boardBackgroundMode": "plain",
-  "boardBackgroundPreset": "sand",
+  "boardBackgroundMode": "fancy",
+  "boardBackgroundPreset": "aurora",
   "port": 2954,
   "labels": {},
   "panelMode": "drawer",
-  "drawerWidth": 33.42537991199345,
+  "drawerWidth": 48.17348165965124,
   "forms": {
-    "test": {
-      "name": "Test Form",
-      "description": "A test form for demonstration purposes.",
+    "editorial-review": {
+      "name": "Editorial Review",
+      "description": "Capture a human review decision before publishing agent-generated content.",
       "schema": {
         "type": "object",
+        "title": "Editorial Review",
         "properties": {
-          "name": {
+          "reviewStage": {
             "type": "string",
-            "minLength": 3,
-            "description": "Please enter your name"
+            "enum": [
+              "draft-review",
+              "fact-check",
+              "publish-approval"
+            ],
+            "description": "Which stage is this review for?"
           },
-          "vegetarian": {
-            "type": "boolean"
-          },
-          "birthDate": {
+          "decision": {
             "type": "string",
-            "format": "date"
+            "enum": [
+              "needs-revision",
+              "approved",
+              "blocked"
+            ]
           },
-          "nationality": {
+          "reviewer": {
             "type": "string",
-            "enum": ["DE", "IT", "JP", "US", "RU", "Other"]
+            "minLength": 2,
+            "description": "Who is making the decision?"
           },
-          "personalData": {
-            "type": "object",
-            "properties": {
-              "age": {
-                "type": "integer",
-                "description": "Please enter your age."
-              },
-              "height": {
-                "type": "number"
-              },
-              "drivingSkill": {
-                "type": "number",
-                "maximum": 10,
-                "minimum": 1,
-                "default": 7
-              }
-            },
-            "required": ["age", "height"]
+          "voiceScore": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 4,
+            "description": "How well does the draft match the desired tone?"
           },
-          "occupation": {
-            "type": "string"
+          "headlineApproved": {
+            "type": "boolean",
+            "description": "Is the headline ready to publish?"
           },
-          "postalCode": {
+          "nextAction": {
             "type": "string",
-            "maxLength": 5
+            "enum": [
+              "retry-draft",
+              "request-fact-check",
+              "approve-publish"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Summarize the feedback or approval context."
           }
         },
-        "required": ["occupation", "nationality"]
+        "required": [
+          "reviewStage",
+          "decision",
+          "reviewer",
+          "nextAction"
+        ]
       },
       "ui": {
         "type": "VerticalLayout",
@@ -119,64 +135,52 @@
             "elements": [
               {
                 "type": "Control",
-                "scope": "#/properties/name"
+                "scope": "#/properties/reviewStage"
               },
               {
                 "type": "Control",
-                "scope": "#/properties/personalData/properties/age"
+                "scope": "#/properties/decision"
               },
               {
                 "type": "Control",
-                "scope": "#/properties/birthDate"
+                "scope": "#/properties/reviewer"
               }
             ]
-          },
-          {
-            "type": "Label",
-            "text": "Additional Information"
           },
           {
             "type": "HorizontalLayout",
             "elements": [
               {
                 "type": "Control",
-                "scope": "#/properties/personalData/properties/height"
+                "scope": "#/properties/voiceScore"
               },
               {
                 "type": "Control",
-                "scope": "#/properties/nationality"
+                "scope": "#/properties/headlineApproved"
               },
               {
                 "type": "Control",
-                "scope": "#/properties/occupation",
-                "options": {
-                  "suggestion": [
-                    "Accountant",
-                    "Engineer",
-                    "Freelancer",
-                    "Journalism",
-                    "Physician",
-                    "Student",
-                    "Teacher",
-                    "Other"
-                  ]
-                }
+                "scope": "#/properties/nextAction"
               }
             ]
+          },
+          {
+            "type": "Control",
+            "scope": "#/properties/notes",
+            "options": {
+              "multi": true
+            }
           }
         ]
       },
       "data": {
-        "name": "John Doe",
-        "vegetarian": false,
-        "birthDate": "1990-01-01",
-        "nationality": "US",
-        "personalData": {
-          "age": 34,
-          "height": 180,
-          "drivingSkill": 7
-        },
-        "occupation": "Engineer"
+        "reviewStage": "publish-approval",
+        "decision": "approved",
+        "reviewer": "Maya",
+        "voiceScore": 4,
+        "headlineApproved": true,
+        "nextAction": "approve-publish",
+        "notes": "Tone is clear and human. Approved once the final screenshot is added to the article."
       }
     }
   },
@@ -188,7 +192,9 @@
           {
             "id": "wh_test000000000000",
             "url": "http://localhost:2954/api/webhooks/test",
-            "events": ["*"],
+            "events": [
+              "*"
+            ],
             "active": true
           }
         ]
@@ -200,7 +206,7 @@
     "auth.identity": {
       "provider": "kl-auth-plugin",
       "options": {
-        "apiToken": "${KANBAN_LITE_TOKEN}",
+        "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
         "users": [
           {
             "username": "admin",

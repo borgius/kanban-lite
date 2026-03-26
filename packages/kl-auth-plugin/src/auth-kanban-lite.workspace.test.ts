@@ -11,7 +11,8 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cliPlugin, createStandaloneHttpPlugin, type StandaloneHttpPluginRegistrationOptions } from './index'
 
 interface WorkspaceAuthStatus {
   identityProvider: string
@@ -24,8 +25,19 @@ interface WorkspaceAuthDecision {
   allowed: boolean
 }
 
+interface WorkspaceProviderConfig {
+  provider?: string
+  options?: Record<string, unknown>
+}
+
+interface WorkspaceConfigSnapshot {
+  auth?: Record<string, WorkspaceProviderConfig>
+  plugins?: Record<string, WorkspaceProviderConfig>
+}
+
 interface WorkspaceKanbanSdk {
   getAuthStatus(): WorkspaceAuthStatus
+  getConfigSnapshot(): WorkspaceConfigSnapshot
   _authorizeAction(action: string): Promise<WorkspaceAuthDecision>
   close(): void
 }
@@ -57,6 +69,53 @@ function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: WorkspaceKanbanSdkCtor } {
 }
 
 const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
+
+function writeLocalAuthConfig(
+  workspaceDir: string,
+  options: { apiToken: string; users?: Array<{ username: string; password: string; role?: string }> },
+): void {
+  fs.writeFileSync(
+    path.join(workspaceDir, '.kanban.json'),
+    JSON.stringify(
+      {
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'kl-auth-plugin',
+            options: {
+              apiToken: options.apiToken,
+              users: options.users ?? [],
+            },
+          },
+          'auth.policy': { provider: 'kl-auth-plugin' },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  )
+}
+
+function makeStandaloneOptions(
+  workspaceDir: string,
+  kanbanDir: string,
+  overrides: Partial<StandaloneHttpPluginRegistrationOptions> = {},
+): StandaloneHttpPluginRegistrationOptions {
+  return {
+    workspaceRoot: workspaceDir,
+    kanbanDir,
+    capabilities: {
+      'card.storage': { provider: 'builtin' },
+      'attachment.storage': { provider: 'builtin' },
+    },
+    authCapabilities: {
+      'auth.identity': { provider: 'noop' },
+      'auth.policy': { provider: 'noop' },
+    },
+    webhookCapabilities: null,
+    ...overrides,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -111,5 +170,76 @@ describe('kl-auth-plugin: consumption via kanban-lite workspace SDK', () => {
     const decision = await sdk._authorizeAction('card.create')
     expect(decision.allowed).toBe(true)
     sdk.close()
+  })
+
+  it('standalone plugin prefers sdk auth snapshot over narrowed authCapabilities for local-auth reads', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+
+    writeLocalAuthConfig(workspaceDir, {
+      apiToken: 'snapshot-only-token',
+      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'admin' }],
+    })
+
+    const sdk = new KanbanSDK(kanbanDir)
+    try {
+      const plugin = createStandaloneHttpPlugin(
+        makeStandaloneOptions(workspaceDir, kanbanDir, {
+          sdk: sdk as unknown as StandaloneHttpPluginRegistrationOptions['sdk'],
+          authCapabilities: {
+            'auth.identity': { provider: 'noop' },
+            'auth.policy': { provider: 'noop' },
+          },
+        }),
+      )
+
+      expect(plugin.registerMiddleware?.()).toHaveLength(1)
+      expect(plugin.registerRoutes?.()).toHaveLength(3)
+    } finally {
+      sdk.close()
+      if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN
+      else process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt === undefined) delete process.env.KANBAN_TOKEN
+      else process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('cli auth create-user prefers sdk config snapshot reads before direct config writes', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit:${code ?? 0}`)
+    }) as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(
+        cliPlugin.run(
+          ['create-user'],
+          { username: 'alice', password: 'secret' },
+          {
+            workspaceRoot: workspaceDir,
+            sdk: {
+              getConfigSnapshot: () => ({
+                plugins: {
+                  'auth.identity': {
+                    provider: 'kl-auth-plugin',
+                    options: {
+                      users: [{ username: 'alice', password: '$2b$12$existing-hash' }],
+                    },
+                  },
+                },
+              }),
+            } as unknown as WorkspaceKanbanSdk,
+          },
+        ),
+      ).rejects.toThrow('process.exit:1')
+
+      expect(errorSpy).toHaveBeenCalledWith('User "alice" already exists.')
+      expect(fs.existsSync(path.join(workspaceDir, '.kanban.json'))).toBe(false)
+    } finally {
+      errorSpy.mockRestore()
+      exitSpy.mockRestore()
+    }
   })
 })

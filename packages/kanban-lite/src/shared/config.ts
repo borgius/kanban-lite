@@ -482,6 +482,12 @@ function loadDotEnv(dir: string): void {
  * @returns The processed node (same reference for objects/arrays; new primitive for strings).
  */
 function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
+  const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.\[])/.test(nodePath)
+
+  if (isFormDefaultDataPath) {
+    return node
+  }
+
   if (typeof node === 'string') {
     return node.replace(/\$\{([^}]+)\}/g, (_match, varName: string) => {
       const envValue = process.env[varName]

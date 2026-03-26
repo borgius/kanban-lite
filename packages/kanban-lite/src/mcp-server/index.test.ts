@@ -581,6 +581,82 @@ describe('plugin-owned MCP webhook registration', () => {
     }
   })
 
+  it('keeps widened MCP plugin contexts compatible with full public SDK reads', async () => {
+    const tools: Array<{
+      name: string
+      description: string
+      schema: Record<string, unknown>
+      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+    }> = []
+
+    const server = {
+      tool(
+        name: string,
+        description: string,
+        schema: Record<string, unknown>,
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+      ) {
+        tools.push({ name, description, schema, handler })
+      },
+    }
+
+    const probePlugin = {
+      manifest: { id: 'sdk-seam-probe', provides: ['mcp.tools'] as const },
+      registerTools: (ctx: ReturnType<typeof createMcpPluginContext>) => [{
+        name: 'sdk_snapshot_probe',
+        description: 'Regression probe for widened MCP SDK context.',
+        inputSchema: () => ({}),
+        handler: async () => ({
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              hasGetConfigSnapshot: typeof ctx.sdk.getConfigSnapshot === 'function',
+              hasGetBoard: typeof ctx.sdk.getBoard === 'function',
+              hasGetExtension: typeof ctx.sdk.getExtension === 'function',
+              defaultBoard: ctx.sdk.getConfigSnapshot().defaultBoard,
+              defaultBoardName: ctx.sdk.getBoard('default').name,
+              workspaceRoot: ctx.sdk.workspaceRoot,
+            }),
+          }],
+        }),
+      }],
+    }
+
+    const resolveSpy = vi.spyOn(pluginRegistry, 'resolveMcpPlugins').mockReturnValue([
+      mcpPlugin as never,
+      probePlugin as never,
+    ])
+
+    try {
+      const registered = registerPluginMcpTools(
+        server,
+        {},
+        createMcpPluginContext({
+          sdk,
+          workspaceRoot: workspaceDir,
+          kanbanDir,
+          runWithAuth: (fn) => sdk.runWithAuth({ transport: 'mcp' }, fn),
+        }),
+      )
+
+      expect(registered).toContain('sdk_snapshot_probe')
+      const probeTool = tools.find((tool) => tool.name === 'sdk_snapshot_probe')
+      expect(probeTool).toBeDefined()
+
+      const result = await probeTool!.handler({})
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        hasGetConfigSnapshot: true,
+        hasGetBoard: true,
+        hasGetExtension: true,
+        defaultBoard: 'default',
+        defaultBoardName: 'Default',
+        workspaceRoot: workspaceDir,
+      })
+    } finally {
+      resolveSpy.mockRestore()
+    }
+  })
+
   it('rejects duplicate plugin-owned MCP tool registration for webhook tools', () => {
     const duplicatePlugin = {
       manifest: { id: 'duplicate-webhooks-test', provides: ['mcp.tools'] as const },

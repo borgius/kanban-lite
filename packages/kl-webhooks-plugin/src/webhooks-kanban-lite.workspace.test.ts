@@ -19,6 +19,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 interface WorkspaceKanbanSDK {
   getWebhookStatus(): { webhookProvider: string; webhookProviderActive: boolean }
+  listWebhooks(): Array<{ id: string; url: string; events: string[]; active: boolean }>
+  getConfigSnapshot(): {
+    webhooks?: Array<{ id: string; url: string; events: string[]; active: boolean }>
+    plugins?: { 'webhook.delivery'?: { provider?: string } }
+  }
   getExtension<T extends Record<string, unknown>>(id: string): T | undefined
   readonly capabilities?: {
     webhookListener?: { manifest: { id: string } }
@@ -169,9 +174,11 @@ describe('kl-webhooks-plugin: consumption via kanban-lite workspace SDK', () => 
     writeWebhookOnlyConfig(workspaceDir)
     const sdk = new KanbanSDK(kanbanDir)
     const status = sdk.getWebhookStatus()
+    const snapshot = sdk.getConfigSnapshot()
     const standalonePlugins = sdk.capabilities?.standaloneHttpPlugins ?? []
     expect(status.webhookProvider).toBe('webhooks')
     expect(status.webhookProviderActive).toBe(true)
+    expect(snapshot.plugins?.['webhook.delivery']?.provider).toBe('webhooks')
     expect(sdk.capabilities?.webhookListener?.manifest.id).toBe('webhooks')
     expect(standalonePlugins.some((p) => p.manifest.id === 'webhooks')).toBe(true)
     sdk.close()
@@ -193,7 +200,7 @@ describe('kl-webhooks-plugin: consumption via kanban-lite workspace SDK', () => 
     sdk.close()
   })
 
-  it('extension listWebhooks returns same webhooks as direct CRUD operations', async () => {
+  it('public SDK webhook reads expose the same persisted webhooks through listWebhooks and getConfigSnapshot', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify(
@@ -220,9 +227,10 @@ describe('kl-webhooks-plugin: consumption via kanban-lite workspace SDK', () => 
       'utf-8',
     )
     const sdk = new KanbanSDK(kanbanDir)
-    const ext = sdk.getExtension<{ listWebhooks(root: string): Array<{ id: string }> }>('kl-webhooks-plugin')
-    const list = ext?.listWebhooks(workspaceDir) ?? []
+    const list = sdk.listWebhooks()
+    const snapshot = sdk.getConfigSnapshot()
     expect(list.some((w) => w.id === 'wh_ext_test')).toBe(true)
+    expect(snapshot.webhooks?.some((w) => w.id === 'wh_ext_test')).toBe(true)
     sdk.close()
   })
 })

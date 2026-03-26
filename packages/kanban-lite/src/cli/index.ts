@@ -1869,7 +1869,7 @@ async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags, cliPl
   if (sub !== 'status') {
     const authPlugin = findCliPlugin(cliPlugins, 'auth')
     if (authPlugin) {
-      await authPlugin.run(positional, flags, { workspaceRoot })
+      await runCliPlugin(authPlugin, positional, flags, workspaceRoot, sdk)
       return
     }
     console.error(red(`Unknown auth sub-command: ${sub}`))

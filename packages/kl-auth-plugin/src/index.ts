@@ -133,49 +133,6 @@ export interface ProviderRef {
   options?: Record<string, unknown>
 }
 
-export interface StandaloneHttpRequestContext {
-  readonly sdk: { runWithAuth<T>(auth: AuthContext, fn: () => Promise<T>): Promise<T> }
-  readonly workspaceRoot: string
-  readonly kanbanDir: string
-  readonly req: import('node:http').IncomingMessage & { _rawBody?: Buffer }
-  readonly res: import('node:http').ServerResponse
-  readonly url: URL
-  readonly pathname: string
-  readonly method: string
-  readonly resolvedWebviewDir: string
-  readonly indexHtml: string
-  readonly route: (expectedMethod: string, pattern: string) => Record<string, string> | null
-  readonly isApiRequest: boolean
-  readonly isPageRequest: boolean
-  getAuthContext(): AuthContext
-  setAuthContext(auth: AuthContext): AuthContext
-  mergeAuthContext(auth: Partial<AuthContext>): AuthContext
-}
-
-export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => Promise<boolean>
-
-export interface StandaloneHttpPluginRegistrationOptions {
-  readonly workspaceRoot: string
-  readonly kanbanDir: string
-  readonly capabilities: {
-    'card.storage': ProviderRef
-    'attachment.storage': ProviderRef
-  }
-  readonly authCapabilities: {
-    'auth.identity': ProviderRef
-    'auth.policy': ProviderRef
-  }
-  readonly webhookCapabilities: {
-    'webhook.delivery': ProviderRef
-  } | null
-}
-
-export interface StandaloneHttpPlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
-  registerMiddleware?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
-  registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
-}
-
 export interface AuthListenerOverrideContext {
   readonly payload: BeforeEventPayload<Record<string, unknown>>
   readonly identity: AuthIdentity | null
@@ -222,9 +179,145 @@ interface LocalAuthSession {
   expiresAt: number
 }
 
+type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'
+
+interface AuthConfigSnapshot {
+  auth?: Record<string, ProviderRef>
+  plugins?: Record<string, ProviderRef>
+}
+
+interface StandalonePluginSdk {
+  runWithAuth<T>(auth: AuthContext, fn: () => Promise<T>): Promise<T>
+  getConfigSnapshot(): AuthConfigSnapshot
+}
+
+export interface StandaloneHttpRequestContext {
+  readonly sdk: StandalonePluginSdk
+  readonly workspaceRoot: string
+  readonly kanbanDir: string
+  readonly req: import('node:http').IncomingMessage & { _rawBody?: Buffer }
+  readonly res: import('node:http').ServerResponse
+  readonly url: URL
+  readonly pathname: string
+  readonly method: string
+  readonly resolvedWebviewDir: string
+  readonly indexHtml: string
+  readonly route: (expectedMethod: string, pattern: string) => Record<string, string> | null
+  readonly isApiRequest: boolean
+  readonly isPageRequest: boolean
+  getAuthContext(): AuthContext
+  setAuthContext(auth: AuthContext): AuthContext
+  mergeAuthContext(auth: Partial<AuthContext>): AuthContext
+}
+
+export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => Promise<boolean>
+
+export interface StandaloneHttpPluginRegistrationOptions {
+  readonly sdk?: StandalonePluginSdk
+  readonly workspaceRoot: string
+  readonly kanbanDir: string
+  readonly capabilities: {
+    'card.storage': ProviderRef
+    'attachment.storage': ProviderRef
+  }
+  readonly authCapabilities: {
+    'auth.identity': ProviderRef
+    'auth.policy': ProviderRef
+  }
+  readonly webhookCapabilities: {
+    'webhook.delivery': ProviderRef
+  } | null
+}
+
+export interface StandaloneHttpPlugin {
+  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
+  registerMiddleware?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
+  registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
+}
+
+interface CliPluginContext {
+  workspaceRoot: string
+  sdk?: { getConfigSnapshot(): AuthConfigSnapshot }
+  runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T>
+}
+
+interface KanbanCliPlugin {
+  readonly manifest: { readonly id: string }
+  readonly command: string
+  readonly aliases?: readonly string[]
+  run(
+    subArgs: string[],
+    flags: Record<string, string | boolean | string[]>,
+    context: CliPluginContext,
+  ): Promise<void>
+}
+
 const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function cloneProviderSelection(value: unknown): ProviderRef | null {
+  if (!isRecord(value)) return null
+  const provider = value.provider
+  if (typeof provider !== 'string' || provider.length === 0) return null
+  const options = isRecord(value.options) ? { ...value.options } : undefined
+  return options ? { provider, options } : { provider }
+}
+
+function getConfigSection(
+  config: AuthConfigSnapshot | Record<string, unknown> | null | undefined,
+  key: 'auth' | 'plugins',
+): Record<string, unknown> | null {
+  if (!isRecord(config)) return null
+  const section = config[key]
+  return isRecord(section) ? section : null
+}
+
+function getAuthProviderSelection(
+  config: AuthConfigSnapshot | Record<string, unknown> | null | undefined,
+  capability: AuthCapabilityNamespace,
+): ProviderRef | null {
+  const plugins = getConfigSection(config, 'plugins')
+  const auth = getConfigSection(config, 'auth')
+  return cloneProviderSelection(plugins?.[capability])
+    ?? cloneProviderSelection(auth?.[capability])
+}
+
+function resolveAuthCapabilities(
+  options: Pick<StandaloneHttpPluginRegistrationOptions, 'sdk' | 'authCapabilities'>,
+): Record<AuthCapabilityNamespace, ProviderRef> {
+  const configSnapshot = options.sdk?.getConfigSnapshot()
+  if (!configSnapshot) return options.authCapabilities
+  return {
+    'auth.identity': getAuthProviderSelection(configSnapshot, 'auth.identity') ?? { provider: 'noop' },
+    'auth.policy': getAuthProviderSelection(configSnapshot, 'auth.policy') ?? { provider: 'noop' },
+  }
+}
+
+function cloneWritableConfig(
+  context: CliPluginContext,
+): Promise<Record<string, unknown>> {
+  const snapshot = context.sdk?.getConfigSnapshot()
+  if (snapshot) {
+    return Promise.resolve(structuredClone(snapshot) as Record<string, unknown>)
+  }
+
+  const cfgPath = path.join(context.workspaceRoot, '.kanban.json')
+  return fs.promises.readFile(cfgPath, 'utf-8')
+    .then((raw) => JSON.parse(raw) as Record<string, unknown>)
+    .catch(() => ({}))
+}
+
+function getWritableUsers(provider: ProviderRef | null): Array<{ username: string; password: string; role?: string }> {
+  const users = provider?.options?.users
+  return Array.isArray(users)
+    ? structuredClone(users as Array<{ username: string; password: string; role?: string }>)
+    : []
+}
 
 function normalizeToken(token?: string): string | null {
   if (!token) return null
@@ -296,7 +389,7 @@ export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
 }
 
 function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalAuthUser[] {
-  const users = options.authCapabilities['auth.identity'].options?.users
+  const users = resolveAuthCapabilities(options)['auth.identity'].options?.users
   if (!Array.isArray(users)) return []
   return users.flatMap((user) => {
     if (!user || typeof user !== 'object') return []
@@ -310,30 +403,6 @@ function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalA
     if (role === 'user' || role === 'manager' || role === 'admin') entry.role = role
     return [entry]
   })
-}
-
-function ensureWorkspaceApiToken(workspaceRoot: string): string {
-  const existing = getConfiguredApiToken()
-  if (existing) {
-    if (!process.env.KANBAN_LITE_TOKEN) process.env.KANBAN_LITE_TOKEN = existing
-    return existing
-  }
-
-  const token = `kl-${crypto.randomBytes(24).toString('hex')}`
-  const envFilePath = path.join(workspaceRoot, '.env')
-  let currentContent = ''
-  try {
-    currentContent = fs.readFileSync(envFilePath, 'utf-8')
-  } catch {
-    currentContent = ''
-  }
-
-  const nextContent = currentContent.trim().length > 0
-    ? `${currentContent.replace(/\s*$/, '\n')}KANBAN_LITE_TOKEN=${token}\n`
-    : `KANBAN_LITE_TOKEN=${token}\n`
-  fs.writeFileSync(envFilePath, nextContent, 'utf-8')
-  process.env.KANBAN_LITE_TOKEN = token
-  return token
 }
 
 function escapeHtml(value: string): string {
@@ -450,15 +519,17 @@ async function parseLoginBody(req: import('node:http').IncomingMessage & { _rawB
 const LOCAL_AUTH_PROVIDER_IDS = new Set(['local', 'kl-auth-plugin'])
 
 function isLocalAuthEnabled(options: StandaloneHttpPluginRegistrationOptions): boolean {
-  return LOCAL_AUTH_PROVIDER_IDS.has(options.authCapabilities['auth.identity'].provider)
-    || LOCAL_AUTH_PROVIDER_IDS.has(options.authCapabilities['auth.policy'].provider)
+  const authCapabilities = resolveAuthCapabilities(options)
+  return LOCAL_AUTH_PROVIDER_IDS.has(authCapabilities['auth.identity'].provider)
+    || LOCAL_AUTH_PROVIDER_IDS.has(authCapabilities['auth.policy'].provider)
 }
 
 export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistrationOptions): StandaloneHttpPlugin {
+  const authCapabilities = resolveAuthCapabilities(options)
   const localAuthEnabled = isLocalAuthEnabled(options)
   const users = getLocalUsers(options)
   const sessionStore = new Map<string, LocalAuthSession>()
-  const identityOptions = options.authCapabilities['auth.identity'].options
+  const identityOptions = authCapabilities['auth.identity'].options
   const explicitApiToken =
     typeof identityOptions?.apiToken === 'string' && identityOptions.apiToken.length > 0
       ? identityOptions.apiToken
@@ -525,7 +596,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     registerMiddleware(): readonly StandaloneHttpHandler[] {
       if (!localAuthEnabled) return []
       return [
-        async (request) => {
+        async (request: StandaloneHttpRequestContext) => {
           const isPublicAuthRoute = request.pathname === '/auth/login' || request.pathname === '/auth/logout'
           const identity = applyRequestIdentity(request)
           if (identity || isPublicAuthRoute) return false
@@ -548,7 +619,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     registerRoutes(): readonly StandaloneHttpHandler[] {
       if (!localAuthEnabled) return []
       return [
-        async (request) => {
+        async (request: StandaloneHttpRequestContext) => {
           if (!request.route('GET', '/auth/login')) return false
           const identity = applyRequestIdentity(request)
           const returnTo = normalizeReturnTo(request.url.searchParams.get('returnTo'))
@@ -560,7 +631,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
           request.res.end(renderLoginPage(returnTo))
           return true
         },
-        async (request) => {
+        async (request: StandaloneHttpRequestContext) => {
           if (!request.route('POST', '/auth/login')) return false
           const { username, password, returnTo } = await parseLoginBody(request.req)
           const user = users.find((candidate) => candidate.username === username)
@@ -586,7 +657,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
           redirect(request.res, returnTo)
           return true
         },
-        async (request) => {
+        async (request: StandaloneHttpRequestContext) => {
           if (!request.route('POST', '/auth/logout') && !request.route('GET', '/auth/logout')) return false
           const sessionId = parseCookies(request.req.headers.cookie)[LOCAL_AUTH_COOKIE]
           if (sessionId) sessionStore.delete(sessionId)
@@ -1101,13 +1172,13 @@ export const authListenerPluginFactories = {
  * kl auth create-user --username admin --password s3cr3t --role admin
  * ```
  */
-export const cliPlugin = {
+export const cliPlugin: KanbanCliPlugin = {
   manifest: { id: 'kl-auth-plugin' },
   command: 'auth',
   async run(
     subArgs: string[],
     flags: Record<string, string | boolean | string[]>,
-    context: { workspaceRoot: string },
+    context: CliPluginContext,
   ): Promise<void> {
     const sub = subArgs[0]
 
@@ -1125,28 +1196,26 @@ export const cliPlugin = {
       }
 
       const cfgPath = path.join(context.workspaceRoot, '.kanban.json')
-      let cfg: Record<string, unknown> = {}
-      try {
-        cfg = JSON.parse(await fs.promises.readFile(cfgPath, 'utf-8')) as Record<string, unknown>
-      } catch {
-        // no .kanban.json yet — will be created
-      }
+      const cfg = await cloneWritableConfig(context)
 
       const plugins =
         typeof cfg.plugins === 'object' && cfg.plugins !== null
           ? (cfg.plugins as Record<string, unknown>)
           : {}
+      const existingIdentity = getAuthProviderSelection(cfg, 'auth.identity')
       const identity =
         typeof plugins['auth.identity'] === 'object' && plugins['auth.identity'] !== null
           ? (plugins['auth.identity'] as Record<string, unknown>)
-          : { provider: 'kl-auth-plugin' }
+          : { provider: existingIdentity?.provider ?? 'kl-auth-plugin' }
       const options =
         typeof identity.options === 'object' && identity.options !== null
           ? (identity.options as Record<string, unknown>)
-          : {}
-      const users: { username: string; password: string; role?: string }[] = Array.isArray(options.users)
+          : existingIdentity?.options
+            ? structuredClone(existingIdentity.options)
+            : {}
+      const users = Array.isArray(options.users)
         ? (options.users as { username: string; password: string; role?: string }[])
-        : []
+        : getWritableUsers(existingIdentity)
 
       if (users.some(u => u.username === username)) {
         console.error(`User "${username}" already exists.`)

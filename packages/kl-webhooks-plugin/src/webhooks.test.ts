@@ -616,10 +616,10 @@ describe('standaloneHttpPlugin', () => {
     expect(standaloneHttpPlugin.manifest.provides).toContain('standalone.http')
   })
 
-  it('registerRoutes returns an array of 4 handler functions', () => {
+  it('registerRoutes returns an array of 5 handler functions', () => {
     const handlers = standaloneHttpPlugin.registerRoutes()
     expect(Array.isArray(handlers)).toBe(true)
-    expect(handlers).toHaveLength(4)
+    expect(handlers).toHaveLength(5)
     handlers.forEach((h) => expect(typeof h).toBe('function'))
   })
 
@@ -632,6 +632,7 @@ describe('standaloneHttpPlugin', () => {
     createWebhook: ReturnType<typeof vi.fn>
     updateWebhook: ReturnType<typeof vi.fn>
     deleteWebhook: ReturnType<typeof vi.fn>
+    addBoardLog: ReturnType<typeof vi.fn>
     runWithAuth: ReturnType<typeof vi.fn>
   }
 
@@ -691,6 +692,7 @@ describe('standaloneHttpPlugin', () => {
         .fn()
         .mockResolvedValue({ id: 'wh_1', url: 'http://x.com', events: ['*'], active: false }),
       deleteWebhook: vi.fn().mockResolvedValue(true),
+      addBoardLog: vi.fn().mockResolvedValue(undefined),
       runWithAuth: vi.fn().mockImplementation((_auth: unknown, fn: () => Promise<unknown>) => fn()),
       ...sdkOverrides,
     }
@@ -707,7 +709,7 @@ describe('standaloneHttpPlugin', () => {
     }
   }
 
-  const [getHandler, postHandler, putHandler, deleteHandler] =
+  const [getHandler, testHandler, postHandler, putHandler, deleteHandler] =
     standaloneHttpPlugin.registerRoutes() as unknown as Array<
       (ctx: { sdk: SdkMock; req: object; res: ReturnType<typeof makeRes>; route: ReturnType<typeof makeRouteFn> }) => Promise<boolean>
     >
@@ -773,6 +775,26 @@ describe('standaloneHttpPlugin', () => {
     const { plainCtx } = makeCtx('GET', '/api/webhooks')
     const result = await postHandler(plainCtx as never)
     expect(result).toBe(false)
+  })
+
+  it('POST /api/webhooks/test writes a board log entry through the SDK', async () => {
+    const { plainCtx, sdk, res } = makeCtx('POST', '/api/webhooks/test', {
+      event: 'task.created',
+      timestamp: '2026-03-25T00:00:00.000Z',
+      data: { id: 'card-1' },
+    })
+
+    await testHandler(plainCtx as never)
+
+    expect(res.statusCode).toBe(200)
+    expect(sdk.runWithAuth).toHaveBeenCalledOnce()
+    expect(sdk.addBoardLog).toHaveBeenCalledWith(
+      '[webhook-test] Received event: task.created',
+      expect.objectContaining({
+        source: 'webhook-test',
+        timestamp: '2026-03-25T00:00:00.000Z',
+      }),
+    )
   })
 
   it('POST /api/webhooks returns 400 when url or events missing', async () => {
@@ -1211,6 +1233,19 @@ describe('cliPlugin — SDK auth delegation', () => {
 
     expect(runWithCliAuth).toHaveBeenCalledOnce()
     expect(mockSdk.createWebhook).toHaveBeenCalledWith({ url: 'http://example.com/hook', events: ['task.created'], secret: undefined })
+  })
+
+  it('delegates add to context.sdk even when runWithCliAuth is absent', async () => {
+    const wh: Webhook = { id: 'wh_sdk2b', url: 'http://example.com/hook', events: ['*'], active: true }
+    const mockSdk = { createWebhook: vi.fn().mockResolvedValue(wh) } as unknown as Parameters<typeof cliPlugin.run>[2]['sdk'] & {}
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cliPlugin.run(['add'], { url: 'http://example.com/hook' }, {
+      workspaceRoot: '/tmp',
+      sdk: mockSdk,
+    })
+
+    expect(mockSdk.createWebhook).toHaveBeenCalledWith({ url: 'http://example.com/hook', events: ['*'], secret: undefined })
   })
 
   it('propagates AuthError from context.sdk.createWebhook (access denied)', async () => {

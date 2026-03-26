@@ -1017,6 +1017,8 @@ sdk.updateSettings({ ...settings, compactMode: true })
 
 Plugins can also contribute additive SDK methods without patching core. Call `sdk.getExtension(id)` to access a plugin's extension bag when that package is active. Webhooks are the first concrete example: `kl-webhooks-plugin` contributes webhook CRUD through `sdk.getExtension('kl-webhooks-plugin')`, while the direct `sdk.listWebhooks()` / `createWebhook()` / `updateWebhook()` / `deleteWebhook()` methods remain compatibility shims for existing callers.
 
+When a host surface passes `sdk` into a plugin context, that value is now the full public `KanbanSDK` instance rather than a narrowed helper facade. Plugin code can call the same public methods core uses — for example `sdk.getBoard(...)`, `sdk.getExtension(...)`, and `sdk.getConfigSnapshot()` for a cloned read-only view of the current `.kanban.json` state. Prefer SDK methods and snapshot reads wherever an equivalent public API exists; keep direct plugin-owned writes only for flows that still lack a public SDK writer.
+
 ### Event Bus
 
 The SDK exposes a pub/sub event bus for custom subscriptions, and it now owns the full mutation lifecycle.

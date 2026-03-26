@@ -13,7 +13,7 @@ import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
 import { handleBoardRoutes } from './internal/routes/boards'
 import { handleSystemRoutes } from './internal/routes/system'
 import { handleTaskRoutes } from './internal/routes/tasks'
-import { getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
+import { extractAuthContext, getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
 import { attachWebSocketHandlers } from './internal/websocket'
 import { matchRoute, type IncomingMessageWithRawBody } from './httpUtils'
 
@@ -176,6 +176,7 @@ function collectStandaloneHttpHandlers(
 ): StandaloneHttpHandler[] {
   const plugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
   const registrationOptions = {
+    sdk: ctx.sdk,
     workspaceRoot: ctx.workspaceRoot,
     kanbanDir: ctx.absoluteKanbanDir,
     capabilities: ctx.sdk.capabilities?.providers ?? {
@@ -378,7 +379,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     for (const handler of middlewareHandlers) {
       if (await handler(requestContext)) break
     }
-    return getRequestAuthContext(req)
+    return extractAuthContext(req)
   }
 
   attachWebSocketHandlers(ctx, resolveWsAuthContext)

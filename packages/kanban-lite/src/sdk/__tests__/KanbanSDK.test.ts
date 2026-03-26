@@ -155,6 +155,62 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('getConfigSnapshot', () => {
+    it('returns an isolated clone that cannot mutate subsequent SDK reads or persisted config', () => {
+      writeWorkspaceConfig(workspaceDir, {
+        defaultBoard: 'default',
+        kanbanDirectory: '.kanban',
+        boards: {
+          default: {
+            name: 'Default',
+            columns: [{ id: 'backlog', name: 'Backlog' }],
+            nextCardId: 1,
+            defaultStatus: 'backlog',
+            defaultPriority: 'medium',
+          },
+        },
+        plugins: {
+          'auth.identity': {
+            provider: 'kl-auth-plugin',
+            options: {
+              users: [{ username: 'alice', password: '$2b$12$existing-hash' }],
+            },
+          },
+        },
+        webhooks: [
+          { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
+        ],
+      })
+
+      const firstSnapshot = sdk.getConfigSnapshot() as any
+      firstSnapshot.defaultBoard = 'mutated-board'
+      firstSnapshot.boards.default.name = 'Mutated Board'
+      firstSnapshot.webhooks[0].url = 'https://example.com/mutated'
+      firstSnapshot.plugins['auth.identity'].options.users.push({ username: 'mallory', password: 'bad-hash' })
+
+      const secondSnapshot = sdk.getConfigSnapshot() as any
+      const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as any
+
+      expect(secondSnapshot.defaultBoard).toBe('default')
+      expect(secondSnapshot.boards.default.name).toBe('Default')
+      expect(secondSnapshot.webhooks[0].url).toBe('https://example.com/original')
+      expect(secondSnapshot.plugins['auth.identity'].options.users).toEqual([
+        { username: 'alice', password: '$2b$12$existing-hash' },
+      ])
+      expect(sdk.listWebhooks()).toEqual([
+        { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
+      ])
+      expect(persisted.defaultBoard).toBe('default')
+      expect(persisted.boards.default.name).toBe('Default')
+      expect(persisted.webhooks).toEqual([
+        { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
+      ])
+      expect(persisted.plugins['auth.identity'].options.users).toEqual([
+        { username: 'alice', password: '$2b$12$existing-hash' },
+      ])
+    })
+  })
+
   describe('getCardStateStatus', () => {
     it('reports builtin backend status and allows the default actor when auth.identity is noop', () => {
       const status = sdk.getCardStateStatus()
@@ -1080,10 +1136,18 @@ describe('KanbanSDK', () => {
       expect(reloaded?.actions).toBeUndefined()
     })
 
-    it('should throw if no actionWebhookUrl is configured', async () => {
+    it('should append an activity log entry even when no actionWebhookUrl is configured', async () => {
       await sdk.init()
       const card = await sdk.createCard({ content: '# Card', actions: ['retry'] })
-      await expect(sdk.triggerAction(card.id, 'retry')).rejects.toThrow('No action webhook URL configured')
+      await expect(sdk.triggerAction(card.id, 'retry')).resolves.toBeUndefined()
+
+      const logs = await sdk.listLogs(card.id)
+      expect(logs).toHaveLength(1)
+      expect(logs[0]).toMatchObject({
+        source: 'system',
+        text: 'Action triggered: `retry`',
+        object: { action: 'retry' },
+      })
     })
 
     it('should throw if card not found', async () => {
@@ -1094,45 +1158,36 @@ describe('KanbanSDK', () => {
       await expect(sdk.triggerAction('nonexistent', 'retry')).rejects.toThrow('Card not found')
     })
 
-    it('should POST correct payload to actionWebhookUrl on success', async () => {
+    it('should not call fetch directly; webhook delivery is delegated to plugin after-events', async () => {
       await sdk.init()
       const card = await sdk.createCard({ content: '# My Card', actions: ['retry'] })
-
-      const { readConfig, writeConfig } = await import('../../shared/config')
-      const config = readConfig(sdk.workspaceRoot)
-      writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'https://example.com/webhook' })
 
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK' })
       vi.stubGlobal('fetch', mockFetch)
 
       await sdk.triggerAction(card.id, 'retry')
 
-      expect(mockFetch).toHaveBeenCalledOnce()
-      const [url, init] = mockFetch.mock.calls[0]
-      expect(url).toBe('https://example.com/webhook')
-      expect(init.method).toBe('POST')
-      expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
-      const body = JSON.parse(init.body)
-      expect(body.action).toBe('retry')
-      expect(body.board).toBe('default')
-      expect(body.list).toBe(card.status)
-      expect(body.card.id).toBe(card.id)
-      expect(body.card.filePath).toBeUndefined()
+      expect(mockFetch).not.toHaveBeenCalled()
+
+      const logs = await sdk.listLogs(card.id)
+      expect(logs.at(-1)).toMatchObject({
+        text: 'Action triggered: `retry`',
+        object: { action: 'retry' },
+      })
 
       vi.unstubAllGlobals()
     })
 
-    it('should throw on non-2xx webhook response', async () => {
+    it('should stay side-effect free with respect to direct webhook transport failures', async () => {
       await sdk.init()
       const card = await sdk.createCard({ content: '# My Card', actions: ['retry'] })
 
-      const { readConfig, writeConfig } = await import('../../shared/config')
-      const config = readConfig(sdk.workspaceRoot)
-      writeConfig(sdk.workspaceRoot, { ...config, actionWebhookUrl: 'https://example.com/webhook' })
-
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error' }))
 
-      await expect(sdk.triggerAction(card.id, 'retry')).rejects.toThrow('Action webhook responded with 500')
+      await expect(sdk.triggerAction(card.id, 'retry')).resolves.toBeUndefined()
+
+      const logs = await sdk.listLogs(card.id)
+      expect(logs.at(-1)?.text).toBe('Action triggered: `retry`')
 
       vi.unstubAllGlobals()
     })

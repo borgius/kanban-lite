@@ -468,29 +468,11 @@ export declare class CardStateError extends Error {
     constructor(code: CardStateErrorCode, message: string);
 }
 /**
- * Minimal SDK webhook facade supplied to CLI plugins via {@link CliPluginContext}.
- *
- * Structural subset of `KanbanSDK`; plugins should use this surface instead of
- * importing `KanbanSDK` directly so they remain decoupled from core internals.
+ * @deprecated Use {@link KanbanSDK}. CLI plugin hosts now advertise the full
+ * public SDK surface, including `getConfigSnapshot()`, instead of a narrowed
+ * webhook-only facade.
  */
-export interface CliPluginSdk {
-    /**
-     * Returns the SDK extension bag contributed by the plugin with the given id,
-     * when the host is backed by a full `KanbanSDK` instance.
-     *
-     * CLI plugins should prefer this extension path when available and fall back
-     * to compatibility methods only when running against older or mocked SDK facades.
-     */
-    getExtension?<T extends Record<string, unknown> = Record<string, unknown>>(id: string): T | undefined;
-    listWebhooks(): Webhook[];
-    createWebhook(input: {
-        url: string;
-        events: string[];
-        secret?: string;
-    }): Promise<Webhook>;
-    updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null>;
-    deleteWebhook(id: string): Promise<boolean>;
-}
+export type CliPluginSdk = KanbanSDK;
 /**
  * Runtime context supplied to a {@link KanbanCliPlugin} when it is invoked by
  * the `kl` CLI.
@@ -503,10 +485,12 @@ export interface CliPluginContext {
      *
      * Present when the plugin is invoked through the core `kl` CLI.
      * Absent in isolated unit tests or standalone invocations.
-     * Plugins should prefer this over constructing their own SDK so that
-     * SDK-level auth policy is honoured.
+    * Plugins may use the full public {@link KanbanSDK} contract here, including
+    * extension lookup and `getConfigSnapshot()`, instead of relying on older
+    * helper-only SDK facades. Plugins should prefer this over constructing their
+    * own SDK so that SDK-level auth policy is honoured.
      */
-    sdk?: CliPluginSdk;
+    sdk?: KanbanSDK;
     /**
      * Core-owned CLI auth helper.
      *

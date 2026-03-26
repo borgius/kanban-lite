@@ -704,6 +704,22 @@ Webhook migration is the first concrete use of this model.
 - advanced SDK consumers can call `sdk.getExtension('kl-webhooks-plugin')`,
 - and the long-lived `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, and `sdk.deleteWebhook()` methods remain compatibility shims so existing callers do not need to migrate immediately.
 
+The same public-SDK rule now applies to plugin host contexts that expose an `sdk` value.
+
+- CLI plugins receive the resolved public `KanbanSDK` instance when `context.sdk` is present.
+- Standalone HTTP plugin registration and request contexts may expose that same public SDK instance.
+- MCP tool contexts likewise expose the resolved public SDK instance.
+
+That means plugin code can reuse the same public methods core surfaces call — for example `sdk.getBoard(...)`, `sdk.getExtension(...)`, `sdk.runWithAuth(...)` where available on the host seam, and `sdk.getConfigSnapshot()` for config reads — instead of rebuilding helper facades or reading `.kanban.json` directly for equivalent read paths.
+
+`sdk.getConfigSnapshot()` returns a cloned read-only snapshot of the current workspace config. Treat it as inspection-only state: mutating the returned object does not update persisted config or the live SDK instance.
+
+Recommended authoring rule:
+
+- prefer public SDK methods first,
+- then use `sdk.getConfigSnapshot()` for read-only config inspection when no narrower method exists,
+- and keep direct plugin-owned writes only when the public SDK still has no equivalent write API.
+
 This keeps core as the public compatibility seam while letting plugin packages own new capabilities incrementally.
 
 ---

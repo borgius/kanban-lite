@@ -623,6 +623,13 @@ export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => P
  * resolved the active workspace capability selections.
  */
 export interface StandaloneHttpPluginRegistrationOptions {
+  /**
+   * Active SDK instance backing the standalone runtime, when provided by the host.
+   *
+   * Plugin registration code may use the full public {@link KanbanSDK} surface,
+   * including `getConfigSnapshot()`, when this seam is available.
+   */
+  readonly sdk?: KanbanSDK
   /** Absolute workspace root containing `.kanban.json`. */
   readonly workspaceRoot: string
   /** Absolute workspace `.kanban` directory. */

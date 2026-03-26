@@ -53,6 +53,85 @@ function createCliAuthWorkspace(): { workspaceDir: string; configPath: string; c
   }
 }
 
+function createCliWorkspace(config: Record<string, unknown>): { workspaceDir: string; configPath: string; cleanup: () => void } {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-plugin-'))
+  fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
+  const configPath = path.join(workspaceDir, '.kanban.json')
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 2,
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      boards: {
+        default: {
+          name: 'Default',
+          columns: [{ id: 'backlog', name: 'Backlog' }],
+          nextCardId: 1,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium',
+        },
+      },
+      ...config,
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+  return {
+    workspaceDir,
+    configPath,
+    cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
+  }
+}
+
+function installTempCliPlugin(packageName: string, entrySource: string): () => void {
+  const packageDir = path.join(WORKSPACE_ROOT, 'node_modules', packageName)
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name: packageName, main: 'index.js' }, null, 2),
+    'utf-8',
+  )
+  fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  return () => fs.rmSync(packageDir, { recursive: true, force: true })
+}
+
+function createCliSdkProbePackageSource(packageName: string, command: string): string {
+  return [
+    "const fs = require('node:fs')",
+    `const packageName = ${JSON.stringify(packageName)}`,
+    `const command = ${JSON.stringify(command)}`,
+    'module.exports.authIdentityPlugin = {',
+    '  manifest: { id: packageName, provides: [\'auth.identity\'] },',
+    '  async resolveIdentity() { return null },',
+    '}',
+    'module.exports.cliPlugin = {',
+    '  manifest: { id: packageName },',
+    '  command,',
+    '  async run(subArgs, flags, context) {',
+    '    const runWithCliAuthResult = typeof context.runWithCliAuth === \"function\"',
+    '      ? await context.runWithCliAuth(() => Promise.resolve(\"ok\"))',
+    '      : null',
+    '    const payload = {',
+    '      subArgs,',
+    '      hasSdk: !!context.sdk,',
+    '      hasGetConfigSnapshot: typeof context.sdk?.getConfigSnapshot === \"function\",',
+    '      hasGetBoard: typeof context.sdk?.getBoard === "function",',
+    '      hasGetExtension: typeof context.sdk?.getExtension === \"function\",',
+    '      hasWorkspaceRootGetter: typeof context.sdk?.workspaceRoot === \"string\",',
+    '      snapshotDefaultBoard: context.sdk?.getConfigSnapshot?.().defaultBoard ?? null,',
+    '      defaultBoardName: context.sdk?.getBoard?.("default")?.name ?? null,',
+    '      runWithCliAuthResult,',
+    '      workspaceRoot: context.workspaceRoot,',
+    '      flagCount: Object.keys(flags || {}).length,',
+    '    }',
+    '    if (process.env.KANBAN_SDK_PROBE_OUTPUT) {',
+    '      fs.writeFileSync(process.env.KANBAN_SDK_PROBE_OUTPUT, JSON.stringify(payload, null, 2))',
+    '    }',
+    '  },',
+    '}',
+  ].join('\n')
+}
+
 async function createCliCardStateWorkspace(): Promise<{ workspaceDir: string; configPath: string; cardId: string; cleanup: () => void }> {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-card-state-'))
   fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
@@ -730,6 +809,84 @@ describe('Webhook CLI routing — plugin-owned dispatch', () => {
     const result = await runCliCommand(['wh', 'list', '--json', '--config', configPath])
     expect(result.exitCode).toBe(0)
     expect(JSON.parse(result.stdout)).toEqual([])
+  })
+})
+
+describe('CLI plugin context SDK injection regressions', () => {
+  it('passes the full public SDK to standard CLI plugin commands', async () => {
+    const packageName = `kanban-cli-sdk-probe-${Date.now()}-standard`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliSdkProbePackageSource(packageName, 'sdk-probe'),
+    )
+    const { workspaceDir, configPath, cleanup } = createCliWorkspace({
+      auth: {
+        'auth.identity': { provider: packageName },
+      },
+    })
+    const markerPath = path.join(workspaceDir, 'sdk-probe-standard.json')
+
+    try {
+      const result = await runCliCommand(['sdk-probe', '--config', configPath], {
+        KANBAN_SDK_PROBE_OUTPUT: markerPath,
+      })
+
+      expect(result.exitCode).toBe(0)
+      const payload = JSON.parse(fs.readFileSync(markerPath, 'utf-8')) as Record<string, unknown>
+      expect(payload).toMatchObject({
+        subArgs: [],
+        hasSdk: true,
+        hasGetConfigSnapshot: true,
+        hasGetBoard: true,
+        hasGetExtension: true,
+        hasWorkspaceRootGetter: true,
+        snapshotDefaultBoard: 'default',
+        defaultBoardName: 'Default',
+        runWithCliAuthResult: 'ok',
+        workspaceRoot: workspaceDir,
+      })
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
+  })
+
+  it('passes the full public SDK through the auth special-case CLI path', async () => {
+    const packageName = `kanban-cli-sdk-probe-${Date.now()}-auth`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliSdkProbePackageSource(packageName, 'auth'),
+    )
+    const { workspaceDir, configPath, cleanup } = createCliWorkspace({
+      auth: {
+        'auth.identity': { provider: packageName },
+      },
+    })
+    const markerPath = path.join(workspaceDir, 'sdk-probe-auth.json')
+
+    try {
+      const result = await runCliCommand(['auth', 'inspect', '--config', configPath], {
+        KANBAN_SDK_PROBE_OUTPUT: markerPath,
+      })
+
+      expect(result.exitCode).toBe(0)
+      const payload = JSON.parse(fs.readFileSync(markerPath, 'utf-8')) as Record<string, unknown>
+      expect(payload).toMatchObject({
+        subArgs: ['inspect'],
+        hasSdk: true,
+        hasGetConfigSnapshot: true,
+        hasGetBoard: true,
+        hasGetExtension: true,
+        hasWorkspaceRootGetter: true,
+        snapshotDefaultBoard: 'default',
+        defaultBoardName: 'Default',
+        runWithCliAuthResult: 'ok',
+        workspaceRoot: workspaceDir,
+      })
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
   })
 })
 

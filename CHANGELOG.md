@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Full public `KanbanSDK` in plugin contexts**: CLI, standalone, and MCP plugin seams that expose `sdk` now advertise and pass the full public `KanbanSDK` instance, so plugin code can reuse host-auth-aware SDK methods directly instead of depending on narrowed helper facades.
+- **`KanbanSDK.getConfigSnapshot()`**: Added a public SDK method that returns a cloned read-only snapshot of the current workspace config, giving plugins and advanced SDK consumers a safe way to inspect `.kanban.json` state without mutating live runtime objects.
+
 - **`apiToken` option for `kl-auth-plugin` `auth.identity`**: When `auth.identity` is configured with `kl-auth-plugin`, an explicit `options.apiToken` value in `.kanban.json` is now used as the bearer-token secret, taking precedence over the `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variables. When set in standalone mode, the server-start auto-generation pathway is skipped and no `.env` write occurs. A matching `createAuthIdentityPlugin(options)` factory is exported so the SDK plugin loader can create a configured instance with the pinned token at startup.
 - **`basePath` config option for subfolder deployments**: The standalone server now reads `basePath` from `.kanban.json` (e.g. `"basePath": "/kanban"`). When set, all asset URLs, the WebSocket endpoint, and API routes are served under that prefix, enabling reverse-proxy setups where the board lives at a path like `https://example.com/kanban/` rather than the domain root.
 - `customHeadHtml` and `customHeadHtmlFile` configuration options for injecting custom HTML into the standalone board's `<head>` element — useful for analytics, custom CSS, or guided tours
@@ -23,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Self-hosted Chat SDK example stack**: `examples/chat-sdk-vercel-ai` now launches its own local Kanban Lite instance with a dedicated `demo-workspace/.kanban.json`, prints both Kanban/chat URLs from `npm run dev` / `npm run start`, seeds demo cards with attached comments/forms/actions, and exposes a local action-webhook endpoint so card actions work during local development.
 
 ### Changed
+- **Bundled plugin SDK/config read alignment**: `kl-auth-plugin` and `kl-webhooks-plugin` now prefer equivalent public SDK methods and `sdk.getConfigSnapshot()` reads where available, while retaining direct plugin-owned persistence only for flows that still have no public SDK write equivalent.
 - **Card-state docs/source parity**: Updated README, plugin deep-dive docs, SDK JSDoc, and OpenAPI metadata so they consistently describe the built-in file-backed `builtin` backend, the first-party SQLite backend package `kl-sqlite-card-state`, the stable auth-absent default actor contract, configured-identity failures as `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE`, and the distinction between actor-scoped unread/open state versus active-card UI state.
 - **IncidentMind demo framing for CorePilot**: `examples/chat-sdk-vercel-ai` now presents IncidentMind as a fictional incident-operations layer built around free kanban-lite, keeps kanban-lite visibly central as the system of record, and updates chat/UI/README prompt examples to target the existing seeded cards plus stable `incident-report`, `release-checklist`, `notify-slack`, and `deploy` flows without overstating automation.
 

@@ -4,7 +4,7 @@ import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortO
 import type { CardDisplaySettings, Priority } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../shared/config'
-import type { BoardConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
+import type { BoardConfig, KanbanConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
@@ -112,6 +112,15 @@ type MethodInput<TMethod> =
   ServiceMethodArgs<TMethod> extends [infer TFirst, ...unknown[]]
     ? TFirst
     : Record<string, unknown>
+
+type ReadonlySnapshot<T> =
+  T extends (...args: never[]) => unknown
+    ? T
+    : T extends readonly (infer U)[]
+      ? readonly ReadonlySnapshot<U>[]
+      : T extends object
+        ? { readonly [K in keyof T]: ReadonlySnapshot<T[K]> }
+        : T
 
 /**
  * Active webhook provider metadata for diagnostics and host surfaces.
@@ -1156,6 +1165,26 @@ export class KanbanSDK {
    */
   get workspaceRoot(): string {
     return path.dirname(this.kanbanDir)
+  }
+
+  /**
+   * Returns a cloned read-only snapshot of the current workspace config.
+   *
+   * The returned snapshot is created from a fresh config read and deep-cloned
+   * before being returned, so callers receive an isolated view of the current
+   * `.kanban.json` state rather than a live mutable runtime object. Mutating the
+   * returned snapshot does not update persisted config or affect this SDK instance.
+   *
+   * @returns A cloned read-only snapshot of the current {@link KanbanConfig}.
+   *
+   * @example
+   * ```ts
+   * const config = sdk.getConfigSnapshot()
+   * console.log(config.defaultBoard)
+   * ```
+   */
+  getConfigSnapshot(): ReadonlySnapshot<KanbanConfig> {
+    return structuredClone(readConfig(this.workspaceRoot)) as ReadonlySnapshot<KanbanConfig>
   }
 
   // --- Board resolution helpers ---

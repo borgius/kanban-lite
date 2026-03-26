@@ -3,7 +3,11 @@
   "boards": {
     "default": {
       "name": "Default",
+      "title": [
+        "ticketId"
+      ],
       "metadata": [
+        "ticketId",
         "location",
         "company",
         "position",

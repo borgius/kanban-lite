@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Workspace root no longer owns `kanban-lite` runtime packages**: Moved the monorepo root `dependencies` block into `packages/kanban-lite/package.json` so the workspace controller no longer relies on hoisted app dependencies and `kanban-lite` owns the packages it imports.
+
+- **Published package now declares standalone/MCP runtime dependencies**: Added direct `kanban-lite` package dependencies for externalized runtime modules such as `@fastify/swagger`, `@fastify/swagger-ui`, `@modelcontextprotocol/sdk`, and `zod` so npm installs no longer rely on hoisted workspace/root dependencies.
+
 - **Published npm package README restored**: Added a package-local `packages/kanban-lite/README.md` so npm shows installation and usage docs on the `kanban-lite` package page when publishing from the workspace package directory.
 
 ### Changed

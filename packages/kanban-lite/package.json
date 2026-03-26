@@ -1,6 +1,6 @@
 {
   "name": "kanban-lite",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Kanban board manager - VSCode extension, CLI, MCP server, and standalone web app",
   "license": "MIT",
   "repository": {
@@ -131,5 +131,36 @@
     "release": "npm version patch && pnpm run build && pnpm run package && pnpm run publish:all",
     "release:minor": "npm version minor && pnpm run build && pnpm run package && pnpm run publish:all",
     "release:major": "npm version major && pnpm run build && pnpm run package && pnpm run publish:all"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1013.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@jsonforms/core": "^3.5.0",
+    "@jsonforms/react": "^3.5.0",
+    "@jsonforms/vanilla-renderers": "^3.5.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@tanstack/react-router": "^1.166.3",
+    "@tiptap/extension-placeholder": "^3.15.3",
+    "@tiptap/pm": "^3.15.3",
+    "@tiptap/react": "^3.15.3",
+    "@tiptap/starter-kit": "^3.15.3",
+    "chokidar": "^4.0.0",
+    "clsx": "^2.1.1",
+    "eventemitter2": "^6.4.9",
+    "fastify": "^5.8.2",
+    "fractional-indexing": "^3.2.0",
+    "fuse.js": "^7.1.0",
+    "js-yaml": "^4.1.1",
+    "lucide-react": "^0.562.0",
+    "marked": "^17.0.3",
+    "open": "^10.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.2.0",
+    "tiptap-markdown": "^0.9.0",
+    "ws": "^8.18.0",
+    "zod": "^3.25.76",
+    "zustand": "^5.0.10"
   }
 }

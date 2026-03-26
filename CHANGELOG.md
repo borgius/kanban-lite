@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Board-level rendered title prefixes**: Boards may now define `boards.<id>.title` as an ordered metadata-key list in `.kanban.json`. Matching metadata values prefix user-visible card titles consistently across the webview, VS Code sidebar, CLI, and MCP read surfaces without changing stored markdown titles or filenames.
+
 ### Fixed
+
+- **Webhook plugin-options config parity**: `kl-webhooks-plugin` now reads webhook registrations from `plugins["webhook.delivery"].options.webhooks` when configured (with legacy top-level `webhooks` fallback) and writes updates back into plugin options when the plugin config block exists; webhook docs were updated to match this behavior.
 
 - **Workspace root no longer owns `kanban-lite` runtime packages**: Moved the monorepo root `dependencies` block into `packages/kanban-lite/package.json` so the workspace controller no longer relies on hoisted app dependencies and `kanban-lite` owns the packages it imports.
 

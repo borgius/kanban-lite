@@ -1245,7 +1245,7 @@ export class KanbanSDK {
    * Lists all boards defined in the workspace configuration.
    *
    * @returns An array of {@link BoardInfo} objects containing each board's
-   *   `id`, `name`, and optional `description`.
+    *   `id`, `name`, optional `description`, and display-title metadata config.
    *
    * @example
    * ```ts
@@ -1322,7 +1322,7 @@ export class KanbanSDK {
    * Retrieves the full configuration for a specific board.
    *
    * @param boardId - The ID of the board to retrieve.
-   * @returns The {@link BoardConfig} object containing columns, settings, and metadata.
+    * @returns The {@link BoardConfig} object containing columns, settings, metadata, and display-title metadata config.
    * @throws {Error} If the board does not exist.
    *
    * @example
@@ -1348,6 +1348,7 @@ export class KanbanSDK {
    * @param updates.columns - Replacement column definitions.
    * @param updates.defaultStatus - New default status for new cards.
    * @param updates.defaultPriority - New default priority for new cards.
+  * @param updates.title - Ordered metadata keys whose values should prefix rendered card titles.
    * @returns The updated {@link BoardConfig} object.
    * @throws {Error} If the board does not exist.
    *

@@ -236,6 +236,8 @@ export const KANBAN_OPENAPI_SPEC = {
           name: { type: 'string' },
           description: { type: 'string' },
           columns: { type: 'array', items: { $ref: '#/components/schemas/Column' } },
+          metadata: { type: 'array', items: { type: 'string' }, description: 'Board metadata keys pinned in the card detail panel.' },
+          title: { type: 'array', items: { type: 'string' }, description: 'Ordered metadata keys whose rendered values prefix user-visible card titles.' },
           defaultStatus: { type: 'string' },
           defaultPriority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
         },
@@ -322,7 +324,7 @@ export const KANBAN_OPENAPI_SPEC = {
             'application/json': {
               schema: {
                 type: 'object',
-                description: 'Any subset of board config fields: `name`, `description`, `columns`, `defaultStatus`, `defaultPriority`.',
+                description: 'Any subset of board config fields: `name`, `description`, `columns`, `metadata`, `title`, `defaultStatus`, `defaultPriority`.',
               },
             },
           },

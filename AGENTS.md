@@ -11,6 +11,7 @@ All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, co
 
 - `card.state` is a first-class capability/provider namespace.
 - Actor-scoped card state (for example unread/open state) must live outside shared card content/frontmatter.
+- Board-configured card display titles (for example metadata-based prefixes) must use the shared display-title helper; raw markdown title extraction remains the source of truth for storage, filenames, and rename logic.
 - The built-in default backend is file-backed sidecar storage; SQLite support ships as a first-party provider package.
 - Active-card UI state remains separate from `card.state`.
 

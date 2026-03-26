@@ -39,7 +39,7 @@ npm install kl-webhooks-plugin
 
 ## What it does
 
-- Persists the webhook registry in the workspace `.kanban.json` `webhooks` array — the same shape used by kanban-lite core, so no migration is needed
+- Reads webhook registrations from `plugins["webhook.delivery"].options.webhooks` when configured, with fallback to top-level `.kanban.json` `webhooks` for compatibility
 - Filters each SDK event against active webhooks subscribed to that event (or to `*`)
 - Subscribes only to committed SDK after-events, so pending before-events never trigger outbound delivery
 - Owns `/api/webhooks` registration through the standalone plugin seam when loaded by the standalone server
@@ -56,7 +56,7 @@ Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delive
 
 ```json
 {
-  "webhookPlugin": {
+  "plugins": {
     "webhook.delivery": {
       "provider": "webhooks"
     }
@@ -64,25 +64,34 @@ Webhook CRUD remains capability-based on `webhookProviderPlugin`; runtime delive
 }
 ```
 
-Because `webhooks` is the default provider id, the block above is equivalent to omitting `webhookPlugin` from `.kanban.json` entirely once this package is installed.
+Because `webhooks` is the default provider id, the block above is equivalent to omitting `plugins["webhook.delivery"]` from `.kanban.json` entirely once this package is installed.
 
-A workspace that only sets `webhookPlugin` still activates plugin discovery for this package's provider, standalone route contribution, CLI command contribution, and MCP tool contribution.
+A workspace that only sets `plugins["webhook.delivery"]` still activates plugin discovery for this package's provider, standalone route contribution, CLI command contribution, and MCP tool contribution.
 
-Webhooks are registered at runtime via the kanban-lite SDK/API/CLI/MCP and stored in the same config:
+Webhooks are registered at runtime via the kanban-lite SDK/API/CLI/MCP and stored under plugin options:
 
 ```json
 {
-  "webhooks": [
-    {
-      "id": "wh_a1b2c3d4e5f6a7b8",
-      "url": "https://example.com/hook",
-      "events": ["task.created", "task.updated"],
-      "secret": "my-signing-secret",
-      "active": true
+  "plugins": {
+    "webhook.delivery": {
+      "provider": "kl-webhooks-plugin",
+      "options": {
+        "webhooks": [
+          {
+            "id": "wh_a1b2c3d4e5f6a7b8",
+            "url": "https://example.com/hook",
+            "events": ["task.created", "task.updated"],
+            "secret": "my-signing-secret",
+            "active": true
+          }
+        ]
+      }
     }
-  ]
+  }
 }
 ```
+
+For compatibility, legacy top-level `.kanban.json` `webhooks` is still recognized.
 
 ## Delivery payload
 

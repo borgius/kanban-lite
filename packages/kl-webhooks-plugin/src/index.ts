@@ -40,6 +40,15 @@ interface WebhookSdkHost {
 /** Internal helper for partial `.kanban.json` persistence during plugin-owned fallback writes. */
 type PersistedWebhookConfig = Partial<KanbanConfig> & Record<string, unknown>
 
+interface PersistedWebhookPluginConfig {
+  provider?: string
+  options?: Record<string, unknown>
+}
+
+interface PersistedWebhookPlugins {
+  'webhook.delivery'?: PersistedWebhookPluginConfig
+}
+
 /**
  * Minimal EventBus duck type.
  *
@@ -130,10 +139,19 @@ const SDK_AFTER_EVENT_NAMES = new Set<string>([
 
 const CONFIG_FILENAME = '.kanban.json'
 
+function getPluginConfiguredWebhooks(raw: PersistedWebhookConfig): Webhook[] | null {
+  const plugins = raw.plugins as PersistedWebhookPlugins | undefined
+  const webhookPlugin = plugins?.['webhook.delivery']
+  const pluginWebhooks = webhookPlugin?.options?.webhooks
+  return Array.isArray(pluginWebhooks) ? (pluginWebhooks as Webhook[]) : null
+}
+
 function readWebhooks(workspaceRoot: string): Webhook[] {
   const filePath = path.join(workspaceRoot, CONFIG_FILENAME)
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as PersistedWebhookConfig
+    const pluginWebhooks = getPluginConfiguredWebhooks(raw)
+    if (pluginWebhooks) return pluginWebhooks
     const webhooks = raw.webhooks
     return Array.isArray(webhooks) ? webhooks : []
   } catch {
@@ -149,6 +167,17 @@ function writeWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
   } catch {
     // File absent — start from a blank config object.
   }
+
+  const plugins = (config.plugins ?? {}) as PersistedWebhookPlugins
+  const webhookPlugin = plugins['webhook.delivery']
+  if (webhookPlugin && typeof webhookPlugin === 'object') {
+    const options = (webhookPlugin.options ?? {}) as Record<string, unknown>
+    options.webhooks = webhooks
+    webhookPlugin.options = options
+    plugins['webhook.delivery'] = webhookPlugin
+    config.plugins = plugins as Record<string, unknown>
+  }
+
   config.webhooks = webhooks
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }

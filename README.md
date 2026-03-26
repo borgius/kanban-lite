@@ -1453,6 +1453,8 @@ Board configuration is stored in `.kanban.json` at your project root. It support
         "deploy": "Deploy to Production",
         "announce": "Post release update"
       },
+      "metadata": ["customer", "owner"],
+      "title": ["ticket", "customer"],
       "nextCardId": 1,
       "defaultStatus": "backlog",
       "defaultPriority": "medium"
@@ -1494,6 +1496,8 @@ Board configuration is stored in `.kanban.json` at your project root. It support
 `basePath` enables subfolder deployments behind a reverse proxy. Set it to the URL prefix under which the board is served (e.g. `"/kanban"`) so that all asset URLs, the WebSocket endpoint, and API routes are correctly prefixed. Leave unset (or empty) for root-domain deployments.
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
+
+`boards.<id>.title` is an optional ordered string array of metadata keys whose rendered values prefix user-visible card titles without changing stored markdown titles, slugs, or filenames. For example, with `"title": ["ticket", "customer"]`, a card whose markdown title is `# Investigate outage` and metadata is `{ "ticket": "INC-42", "customer": "Acme" }` renders as `INC-42 Acme Investigate outage` across the webview, VS Code sidebar, CLI, and MCP read surfaces.
 
 `boardZoom` and `cardZoom` set the default zoom percentage (75–150) for the board view and card detail panel respectively. They can also be adjusted live in the Settings panel or with `Ctrl/Cmd + =` / `Ctrl/Cmd + -` keyboard shortcuts.
 

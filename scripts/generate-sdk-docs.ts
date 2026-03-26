@@ -40,7 +40,7 @@ You can also import types and utilities:
 
 \`\`\`typescript
 import type { Card, CardStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
-import { parseCardFile, serializeCard, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import { parseCardFile, serializeCard, getTitleFromContent, getDisplayTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 \`\`\`
 

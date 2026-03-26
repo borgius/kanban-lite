@@ -23,6 +23,7 @@ export function listBoards(ctx: SDKContext): BoardInfo[] {
     columns: board.columns,
     actions: board.actions,
     metadata: board.metadata,
+    title: board.title,
     forms: config.forms
   }))
 }
@@ -127,6 +128,7 @@ export function updateBoard(
   if (updates.defaultStatus !== undefined) board.defaultStatus = updates.defaultStatus
   if (updates.defaultPriority !== undefined) board.defaultPriority = updates.defaultPriority
   if (updates.metadata !== undefined) board.metadata = updates.metadata
+  if (updates.title !== undefined) board.title = updates.title
 
   writeConfig(ctx.workspaceRoot, config)
   return board

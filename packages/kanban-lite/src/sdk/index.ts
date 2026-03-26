@@ -8,7 +8,7 @@ export type { KanbanConfig, BoardConfig, CardStateCapabilityNamespace, CardState
 export type { CardDisplaySettings, BoardInfo } from '../shared/types'
 export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCardStateCapabilities } from '../shared/config'
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types'
-export { getTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types'
+export { getTitleFromContent, getDisplayTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types'
 export type {
   AuthIdentity,
   AuthPluginManifest,

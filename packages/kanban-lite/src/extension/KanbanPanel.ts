@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
-import { getTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
+import { getDisplayTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
 import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings, CreateCardPayload, SubmitFormMessage } from '../shared/types'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
@@ -1148,9 +1148,11 @@ export class KanbanPanel {
       return
     }
 
-    // Parse title from the first # heading in content
-    const titleMatch = card.content.match(/^#\s+(.+)$/m)
-    const title = titleMatch ? titleMatch[1].trim() : getTitleFromContent(card.content)
+    const aiRoot = this._getWorkspaceRoot()
+    const aiConfig = aiRoot ? readConfig(aiRoot) : DEFAULT_CONFIG
+    const activeBoardId = this._currentBoardId || aiConfig.defaultBoard
+    const titleFields = aiConfig.boards[activeBoardId]?.title
+    const title = getDisplayTitleFromContent(card.content, card.metadata, titleFields)
 
     const labels = card.labels.length > 0 ? ` [${card.labels.join(', ')}]` : ''
     const description = card.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
@@ -1160,8 +1162,6 @@ export class KanbanPanel {
     const prompt = `Implement this card: "${title}" (${card.priority} priority)${labels}. ${shortDesc} See full details in: ${promptTarget}`
 
     // Use provided agent or fall back to config
-    const aiRoot = this._getWorkspaceRoot()
-    const aiConfig = aiRoot ? readConfig(aiRoot) : DEFAULT_CONFIG
     const selectedAgent = agent || aiConfig.aiAgent || 'claude'
     const selectedPermissionMode = permissionMode || 'default'
 

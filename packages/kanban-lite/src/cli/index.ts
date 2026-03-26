@@ -3,7 +3,7 @@ import * as fs from 'fs/promises'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import type { Card, Priority, CardSortOption } from '../shared/types'
-import { getTitleFromContent } from '../shared/types'
+import { getDisplayTitleFromContent, getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
 import type { CardDisplaySettings } from '../shared/types'
 import { AuthError, CardStateError, CARD_STATE_OPEN_DOMAIN, type AuthContext, type KanbanCliPlugin } from '../sdk/types'
@@ -246,15 +246,19 @@ function printCardStateMutationModel(label: string, payload: {
 
 // --- Formatters ---
 
-function formatCardRow(c: Card): string {
-  const title = getTitleFromContent(c.content)
+function getBoardTitleFieldsForCli(sdk: Pick<KanbanSDK, 'getConfigSnapshot'>, boardId?: string): readonly string[] | undefined {
+  const config = sdk.getConfigSnapshot()
+  const resolvedBoardId = boardId || config.defaultBoard
+  return config.boards[resolvedBoardId]?.title
+}
+
+function formatCardRow(c: Card, title: string = getTitleFromContent(c.content)): string {
   const truncTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
   const assignee = c.assignee || '-'
   return `  ${bold(c.id.slice(0, 30).padEnd(30))}  ${colorStatus(c.status.padEnd(12))}  ${colorPriority(c.priority.padEnd(8))}  ${assignee.padEnd(12)}  ${truncTitle}`
 }
 
-function formatCardDetail(c: Card): string {
-  const title = getTitleFromContent(c.content)
+function formatCardDetail(c: Card, title: string = getTitleFromContent(c.content)): string {
   const lines = [
     `${bold(title)}`,
     '',
@@ -289,6 +293,7 @@ function formatCardDetail(c: Card): string {
 
 export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
+  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
   const searchQuery = typeof flags.search === 'string' ? flags.search : undefined
   const fuzzy = flags.fuzzy === true
 
@@ -357,13 +362,14 @@ export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   console.log(`  ${dim('ID'.padEnd(30))}  ${dim('STATUS'.padEnd(12))}  ${dim('PRIORITY'.padEnd(8))}  ${dim('ASSIGNEE'.padEnd(12))}  ${dim('TITLE')}`)
   console.log(dim('  ' + '-'.repeat(90)))
   for (const c of cards) {
-    console.log(formatCardRow(c))
+    console.log(formatCardRow(c, getDisplayTitleFromContent(c.content, c.metadata, boardTitleFields)))
   }
   console.log(dim(`\n  ${cards.length} card(s)`))
 }
 
 export async function cmdActive(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
+  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
   const card = await sdk.getActiveCard(boardId)
 
   if (flags.json) {
@@ -376,7 +382,7 @@ export async function cmdActive(sdk: KanbanSDK, flags: Flags): Promise<void> {
     return
   }
 
-  console.log(formatCardDetail(card))
+  console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields)))
 }
 
 async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
@@ -387,6 +393,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   }
 
   const boardId = getBoardId(flags)
+  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
   const card = await sdk.getCard(cardId, boardId)
   if (!card) {
     // Try partial match
@@ -396,7 +403,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
       if (flags.json) {
         console.log(JSON.stringify(matches[0], null, 2))
       } else {
-        console.log(formatCardDetail(matches[0]))
+        console.log(formatCardDetail(matches[0], getDisplayTitleFromContent(matches[0].content, matches[0].metadata, boardTitleFields)))
       }
       return
     } else if (matches.length > 1) {
@@ -411,7 +418,7 @@ async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Prom
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
   } else {
-    console.log(formatCardDetail(card))
+    console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields)))
   }
 }
 

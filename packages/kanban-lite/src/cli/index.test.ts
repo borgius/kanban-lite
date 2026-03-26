@@ -269,7 +269,15 @@ describe('CLI list command', () => {
     const sdk = {
       listCards: vi.fn().mockResolvedValue([makeCard()]),
       getLabelsInGroup: vi.fn().mockReturnValue([]),
-    } as unknown as Pick<KanbanSDK, 'listCards' | 'getLabelsInGroup'>
+      getConfigSnapshot: vi.fn().mockReturnValue({
+        defaultBoard: 'default',
+        boards: {
+          default: {
+            title: ['sprint'],
+          },
+        },
+      }),
+    } as unknown as Pick<KanbanSDK, 'listCards' | 'getLabelsInGroup' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdList(sdk as KanbanSDK, {
@@ -287,6 +295,27 @@ describe('CLI list command', () => {
     })
     expect(logSpy).toHaveBeenCalledTimes(1)
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toEqual([makeCard()])
+  })
+
+  it('renders prefixed display titles in human-readable list output', async () => {
+    const sdk = {
+      listCards: vi.fn().mockResolvedValue([makeCard({ metadata: { sprint: 'Q1' }, content: '# Ship release' })]),
+      getLabelsInGroup: vi.fn().mockReturnValue([]),
+      getConfigSnapshot: vi.fn().mockReturnValue({
+        defaultBoard: 'default',
+        boards: {
+          default: {
+            title: ['sprint'],
+          },
+        },
+      }),
+    } as unknown as Pick<KanbanSDK, 'listCards' | 'getLabelsInGroup' | 'getConfigSnapshot'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdList(sdk as KanbanSDK, {})
+
+    const output = logSpy.mock.calls.map(call => call.join(' ')).join('\n')
+    expect(output).toContain('Q1 Ship release')
   })
 
   it('documents the new list search flags in help text', () => {
@@ -314,7 +343,15 @@ describe('CLI active command', () => {
   it('prints the active card as JSON when requested', async () => {
     const sdk = {
       getActiveCard: vi.fn().mockResolvedValue(makeCard({ id: 'active-1' })),
-    } as unknown as Pick<KanbanSDK, 'getActiveCard'>
+      getConfigSnapshot: vi.fn().mockReturnValue({
+        defaultBoard: 'default',
+        boards: {
+          default: {
+            title: ['sprint'],
+          },
+        },
+      }),
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdActive(sdk as KanbanSDK, { json: true })
@@ -326,12 +363,37 @@ describe('CLI active command', () => {
   it('prints a friendly message when no active card exists', async () => {
     const sdk = {
       getActiveCard: vi.fn().mockResolvedValue(null),
-    } as unknown as Pick<KanbanSDK, 'getActiveCard'>
+      getConfigSnapshot: vi.fn().mockReturnValue({
+        defaultBoard: 'default',
+        boards: {
+          default: {},
+        },
+      }),
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdActive(sdk as KanbanSDK, {})
 
     expect(logSpy.mock.calls[0][0]).toContain('No active card')
+  })
+
+  it('renders prefixed display titles in active-card detail output', async () => {
+    const sdk = {
+      getActiveCard: vi.fn().mockResolvedValue(makeCard({ id: 'active-2', content: '# Fix release', metadata: { sprint: 'Q2' } })),
+      getConfigSnapshot: vi.fn().mockReturnValue({
+        defaultBoard: 'default',
+        boards: {
+          default: {
+            title: ['sprint'],
+          },
+        },
+      }),
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdActive(sdk as KanbanSDK, {})
+
+    expect(logSpy.mock.calls[0][0]).toContain('Q2 Fix release')
   })
 })
 

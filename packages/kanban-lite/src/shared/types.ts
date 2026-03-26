@@ -189,6 +189,8 @@ export interface BoardInfo {
   actions?: Record<string, string>
   /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
   metadata?: string[]
+  /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
+  title?: string[]
   /** Reusable named workspace forms available for attachment/resolution on this board. */
   forms?: Record<string, import('./config').FormDefinition>
 }
@@ -214,6 +216,80 @@ export function getTitleFromContent(content: string): string {
   if (match) return match[1].trim()
   const firstLine = content.split('\n').map(l => l.trim()).find(l => l.length > 0)
   return firstLine || 'Untitled'
+}
+
+function getMetadataPathValue(metadata: Record<string, any> | undefined, path: string): unknown {
+  if (!metadata || !path.trim()) return undefined
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined
+    }
+    return (current as Record<string, unknown>)[key]
+  }, metadata)
+}
+
+function stringifyDisplayTitlePrefix(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map(item => stringifyDisplayTitlePrefix(item))
+      .filter((item): item is string => Boolean(item))
+    return parts.length > 0 ? parts.join(', ') : null
+  }
+
+  if (typeof value === 'object') {
+    const json = JSON.stringify(value)
+    return json && json !== '{}' && json !== '[]' ? json : null
+  }
+
+  return null
+}
+
+/**
+ * Returns the user-visible card title for a board by prefixing selected
+ * metadata values ahead of the raw markdown-derived title.
+ *
+ * This helper is display-only. It does **not** modify stored markdown,
+ * filename generation, or rename behavior.
+ *
+ * @param content - Raw markdown card content.
+ * @param metadata - Optional card metadata object.
+ * @param titleFields - Ordered metadata keys whose non-empty rendered values should prefix the title.
+ * @returns The raw markdown title, optionally prefixed by configured metadata values.
+ *
+ * @example
+ * getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42', sprint: 'Q1' }, ['ticket', 'sprint'])
+ * // => 'REL-42 Q1 Ship release'
+ *
+ * @example
+ * getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42' }, ['missing', 'ticket'])
+ * // => 'REL-42 Ship release'
+ */
+export function getDisplayTitleFromContent(
+  content: string,
+  metadata?: Record<string, any>,
+  titleFields?: readonly string[],
+): string {
+  const title = getTitleFromContent(content)
+  if (!titleFields || titleFields.length === 0) {
+    return title
+  }
+
+  const prefixes = titleFields
+    .map(field => stringifyDisplayTitlePrefix(getMetadataPathValue(metadata, field)))
+    .filter((value): value is string => Boolean(value))
+
+  return prefixes.length > 0 ? `${prefixes.join(' ')} ${title}` : title
 }
 
 /**

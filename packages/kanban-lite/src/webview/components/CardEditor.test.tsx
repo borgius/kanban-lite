@@ -24,7 +24,7 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
 
 const storeState = {
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
-  boards: [{ id: 'default', name: 'Default', metadata: ['customer'] }],
+  boards: [{ id: 'default', name: 'Default', metadata: ['customer'], title: ['customer', 'ticket'] }],
   currentBoard: 'default',
   cards: [],
   columns: [{ id: 'backlog', name: 'Backlog', color: '#3b82f6' }],
@@ -57,13 +57,13 @@ function createFrontmatter(overrides: Partial<CardFrontmatter> = {}): CardFrontm
     attachments: ['resume.pdf'],
     created: '2026-03-01T12:00:00.000Z',
     modified: '2026-03-21T12:00:00.000Z',
-    metadata: { customer: 'Acme Co' },
+    metadata: { customer: 'Acme Co', ticket: 'BIZ-77' },
     ...overrides,
   } as CardFrontmatter
 }
 
 describe('CardEditor', () => {
-  it('renders a hero title from markdown content and the redesigned surfaces', () => {
+  it('renders a hero title from markdown content with configured metadata prefixes and the redesigned surfaces', () => {
     const markup = renderToStaticMarkup(
       <CardEditor
         cardId="58"
@@ -89,7 +89,7 @@ describe('CardEditor', () => {
     )
 
     expect(markup).toContain('card-editor-title')
-    expect(markup).toContain('Artificial Intelligence and Business Development')
+    expect(markup).toContain('Acme Co BIZ-77 Artificial Intelligence and Business Development')
     expect(markup).toContain('Attachments')
     expect(markup).toContain('resume.pdf')
     expect(markup).toContain('customer')
@@ -124,6 +124,7 @@ describe('CardEditor', () => {
 
     expect(markup).not.toContain('card-metadata-highlight')
     expect(markup).not.toContain('>customer<')
+    expect(markup).toContain('Artificial Intelligence and Business Development')
   })
 
   it('renders attachments as inline tags', () => {

@@ -102,7 +102,7 @@ Updates an existing board in place. Only provided fields are changed; omitted pr
 
 Required: Yes
 
-Any subset of board config fields: `name`, `description`, `columns`, `defaultStatus`, `defaultPriority`.
+Any subset of board config fields: `name`, `description`, `columns`, `metadata`, `title`, `defaultStatus`, `defaultPriority`.
 
 #### Responses
 

@@ -10,10 +10,10 @@ Kanban Lite fires webhooks on every mutation — task, comment, column, attachme
 - `kl-webhooks-plugin` owns runtime delivery plus the standalone `/api/webhooks` routes, `kl webhooks` CLI commands, and webhook MCP tools where those plugin seams are available.
 - Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`; the direct webhook SDK methods remain stable compatibility shims.
 - MCP uses the same active-package discovery model as CLI and standalone. `kl-webhooks-plugin` registers the public webhook tools via the narrow `mcpPlugin` seam.
-- Webhook registrations are stored in `.kanban.json` and persist across server restarts.
+- Webhook registrations are read from `.kanban.json` `plugins["webhook.delivery"].options.webhooks` when configured, and persist across server restarts.
 - Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).
-- Existing workspaces keep the same `.kanban.json` `webhooks` array; no migration is required.
-- A workspace that only configures `webhookPlugin` still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.
+- Legacy top-level `.kanban.json` `webhooks` is still supported as a compatibility fallback.
+- A workspace that only configures `plugins["webhook.delivery"]` still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.
 - This file is generated from source metadata; do not edit `docs/webhooks.md` by hand.
 
 ## Install and linking
@@ -28,19 +28,30 @@ For local development, a sibling checkout at `../kl-webhooks-plugin` is resolved
 
 ## Configuration
 
-Webhook delivery keeps its own top-level `webhookPlugin` config key. That key is also enough to activate plugin discovery for the webhook package's standalone routes, CLI commands, and MCP tools; the persisted registrations themselves stay in the existing top-level `.kanban.json` `webhooks` array:
+Webhook delivery uses the capability config under `plugins["webhook.delivery"]`. Persisted registrations are read from `plugins["webhook.delivery"].options.webhooks` when present, with fallback to top-level `.kanban.json` `webhooks`:
 
 ```json
 {
-  "webhookPlugin": {
+  "plugins": {
     "webhook.delivery": {
-      "provider": "webhooks"
+      "provider": "kl-webhooks-plugin",
+      "options": {
+        "webhooks": [
+          {
+            "id": "wh_a1b2c3d4e5f67890",
+            "url": "https://example.com/webhook",
+            "events": ["task.created", "task.moved"],
+            "secret": "my-signing-key",
+            "active": true
+          }
+        ]
+      }
     }
   }
 }
 ```
 
-Registered webhooks are stored in your project's `.kanban.json` file:
+Legacy fallback format (still accepted):
 
 ```json
 {

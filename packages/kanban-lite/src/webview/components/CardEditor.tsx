@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, Undo2, FileUp } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
-import { DELETED_STATUS_ID, getTitleFromContent } from '../../shared/types'
+import { DELETED_STATUS_ID, getDisplayTitleFromContent } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
 import { useStore } from '../store'
@@ -776,12 +776,13 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
   const { cardSettings, boards, currentBoard } = useStore()
   const pinnedMetadataKeys = boards.find(b => b.id === currentBoard)?.metadata ?? []
+  const titleMetadataKeys = boards.find(b => b.id === currentBoard)?.title
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
-  const cardTitle = getTitleFromContent(currentContent)
+  const cardTitle = getDisplayTitleFromContent(currentContent, currentFrontmatter.metadata, titleMetadataKeys)
   const metadata = currentFrontmatter.metadata ?? {}
   const pinnedMetadataEntries = useMemo(
     () => pinnedMetadataKeys

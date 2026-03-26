@@ -25,6 +25,8 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
 const storeState = {
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
   labelDefs: {},
+  boards: [{ id: 'default', name: 'Default', title: ['customer', 'ticket'] }],
+  currentBoard: 'default',
   applyLabelFilter: vi.fn(),
 }
 
@@ -109,6 +111,15 @@ describe('CardItem — premium card surface', () => {
     expect(markup).not.toContain('+')
   })
 
+  it('renders labels as clickable filter buttons', () => {
+    const markup = renderToStaticMarkup(
+      <CardItem card={makeCard({ labels: ['ops'] })} onClick={vi.fn()} />,
+    )
+
+    expect(markup).toContain('<button')
+    expect(markup).toContain('Filter cards by label ops')
+  })
+
   it('clamps to 4 labels with +N overflow indicator in normal mode', () => {
     const labels = ['a', 'b', 'c', 'd', 'e', 'f']
     const markup = renderToStaticMarkup(
@@ -131,11 +142,11 @@ describe('CardItem — premium card surface', () => {
     storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS }
   })
 
-  it('renders card title from markdown content', () => {
+  it('renders card title from markdown content with configured metadata prefixes', () => {
     const markup = renderToStaticMarkup(
-      <CardItem card={makeCard({ content: '# My Task Title' })} onClick={vi.fn()} />,
+      <CardItem card={makeCard({ content: '# My Task Title', metadata: { customer: 'Acme', ticket: 'OPS-42' } })} onClick={vi.fn()} />,
     )
-    expect(markup).toContain('My Task Title')
+    expect(markup).toContain('Acme OPS-42 My Task Title')
   })
 
   it('renders description preview when content has body after heading', () => {

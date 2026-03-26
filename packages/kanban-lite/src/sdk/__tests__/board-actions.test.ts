@@ -220,5 +220,34 @@ describe('Board Actions', () => {
         }
       })
     })
+
+    it('includes board title-prefix metadata config in BoardInfo', async () => {
+      writeKanbanJson(workspaceDir, {
+        ...BASE_CONFIG,
+        boards: {
+          default: { ...BASE_CONFIG.boards.default, title: ['ticket', 'sprint'] }
+        }
+      })
+      sdk = new KanbanSDK(kanbanDir)
+
+      const boards = await sdk.listBoards()
+      expect(boards[0].title).toEqual(['ticket', 'sprint'])
+    })
+  })
+
+  describe('updateBoard title-prefix metadata config', () => {
+    it('preserves title metadata fields on update', async () => {
+      const updated = await sdk.updateBoard('default', { title: ['ticket', 'sprint'] })
+
+      expect(updated.title).toEqual(['ticket', 'sprint'])
+      expect(sdk.getBoard('default').title).toEqual(['ticket', 'sprint'])
+    })
+
+    it('keeps title metadata fields through config reloads', async () => {
+      await sdk.updateBoard('default', { title: ['links.jira', 'sprint'] })
+
+      sdk = new KanbanSDK(kanbanDir)
+      expect(sdk.getBoard('default').title).toEqual(['links.jira', 'sprint'])
+    })
   })
 })

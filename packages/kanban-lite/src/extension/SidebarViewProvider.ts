@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
-import { getTitleFromContent } from '../shared/types'
+import { getDisplayTitleFromContent } from '../shared/types'
 import type { CardStatus, Priority, KanbanColumn } from '../shared/types'
 import { readConfig, CONFIG_FILENAME } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
@@ -177,10 +177,14 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const sdk = new KanbanSDK(kanbanDir)
+      const workspaceFolders = vscode.workspace.workspaceFolders
+      const root = workspaceFolders?.[0]?.uri.fsPath
+      const config = root ? readConfig(root) : undefined
+      const defaultBoardTitleFields = config?.boards[config.defaultBoard]?.title
       const cards = await sdk.listCards()
       this._cards = cards.map(c => ({
         id: c.id,
-        title: getTitleFromContent(c.content),
+        title: getDisplayTitleFromContent(c.content, c.metadata, defaultBoardTitleFields),
         status: c.status,
         priority: c.priority,
       }))

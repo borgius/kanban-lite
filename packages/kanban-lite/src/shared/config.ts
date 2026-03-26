@@ -94,6 +94,8 @@ export interface BoardConfig {
   actions?: Record<string, string>
   /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
   metadata?: string[]
+  /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
+  title?: string[]
   /** Column IDs currently minimized (shown as a narrow rail) on this board. */
   minimizedColumnIds?: string[]
 }

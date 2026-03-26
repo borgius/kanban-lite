@@ -12,7 +12,7 @@ import { BulkActionsBar } from './components/BulkActionsBar'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { DrawerResizeHandle } from './components/DrawerResizeHandle'
 import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
-import { DELETED_STATUS_ID, getTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
+import { DELETED_STATUS_ID, getDisplayTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
@@ -79,6 +79,7 @@ function App(): React.JSX.Element {
 
   const {
     columns,
+    boards,
     currentBoard,
     columnVisibilityByBoard,
     workspace,
@@ -138,6 +139,7 @@ function App(): React.JSX.Element {
   const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null)
   const pendingDeletesRef = useRef(pendingDeletes)
+  const currentBoardTitleFields = boards.find(board => board.id === currentBoard)?.title
   useEffect(() => {
     pendingDeletesRef.current = pendingDeletes
   }, [pendingDeletes])
@@ -1083,7 +1085,7 @@ function App(): React.JSX.Element {
       {pendingDeletes.map((entry, i) => (
         <UndoToast
           key={entry.id}
-          message={`Deleted "${getTitleFromContent(entry.card.content)}"`}
+          message={`Deleted "${getDisplayTitleFromContent(entry.card.content, entry.card.metadata, currentBoardTitleFields)}"`}
           onUndo={() => handleUndoDelete(entry.id)}
           onExpire={() => commitDelete(entry.id)}
           duration={5000}

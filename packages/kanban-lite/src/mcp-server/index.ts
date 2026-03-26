@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
-import { DELETED_STATUS_ID, getTitleFromContent, type Priority, type CardSortOption } from '../shared/types'
+import { DELETED_STATUS_ID, getDisplayTitleFromContent, type Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
 import {
   AuthError,
@@ -135,6 +135,22 @@ async function buildMcpCardStateMutationModel(sdk: KanbanSDK, unread: CardUnread
       unread,
       open,
     },
+  }
+}
+
+function getBoardTitleFieldsForMcp(sdk: KanbanSDK, boardId?: string): readonly string[] | undefined {
+  const config = sdk.getConfigSnapshot()
+  const resolvedBoardId = boardId || config.defaultBoard
+  return config.boards[resolvedBoardId]?.title
+}
+
+function decorateMcpCardTitle<T extends { content: string; metadata?: Record<string, unknown> }>(
+  card: T,
+  titleFields?: readonly string[],
+): T & { title: string } {
+  return {
+    ...card,
+    title: getDisplayTitleFromContent(card.content, card.metadata, titleFields),
   }
 }
 
@@ -399,6 +415,7 @@ async function main(): Promise<void> {
       sort: z.enum(['created:asc', 'created:desc', 'modified:asc', 'modified:desc']).optional().describe('Sort order: created:asc, created:desc, modified:asc, or modified:desc. Defaults to board order.'),
     },
     async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, searchQuery, fuzzy, metaFilter, sort }) => {
+      const titleFields = getBoardTitleFieldsForMcp(sdk, boardId)
       let cards = await sdk.listCards(undefined, boardId, {
         metaFilter: metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
         sort: sort || undefined,
@@ -417,7 +434,7 @@ async function main(): Promise<void> {
 
       const summary = cards.map(c => ({
         id: c.id,
-        title: getTitleFromContent(c.content),
+        title: getDisplayTitleFromContent(c.content, c.metadata, titleFields),
         status: c.status,
         priority: c.priority,
         assignee: c.assignee,
@@ -462,10 +479,11 @@ async function main(): Promise<void> {
         }
       }
 
+      const titleFields = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify(card, null, 2),
+          text: JSON.stringify(decorateMcpCardTitle(card, titleFields), null, 2),
         }],
       }
     }
@@ -479,10 +497,11 @@ async function main(): Promise<void> {
     },
     async ({ boardId }) => {
       const card = await sdk.getActiveCard(boardId)
+      const titleFields = card ? getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId) : undefined
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify(card, null, 2),
+          text: JSON.stringify(card ? decorateMcpCardTitle(card, titleFields) : null, null, 2),
         }],
       }
     }

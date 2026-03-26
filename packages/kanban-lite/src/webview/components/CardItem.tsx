@@ -1,5 +1,5 @@
 import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
-import { getTitleFromContent } from '../../shared/types'
+import { getDisplayTitleFromContent } from '../../shared/types'
 import type { Card, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
@@ -56,7 +56,8 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   const cardSettings = useStore(s => s.cardSettings)
   const labelDefs = useStore(s => s.labelDefs)
   const applyLabelFilter = useStore(s => s.applyLabelFilter)
-  const title = getTitleFromContent(card.content)
+  const boardTitleFields = useStore(s => s.boards.find(board => board.id === s.currentBoard)?.title)
+  const title = getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
 

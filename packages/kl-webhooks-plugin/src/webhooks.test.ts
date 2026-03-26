@@ -68,6 +68,24 @@ describe('webhookProviderPlugin CRUD', () => {
     expect(result[0].id).toBe('wh_abc')
   })
 
+  it('listWebhooks prefers plugins["webhook.delivery"].options.webhooks when present', () => {
+    writeConfig(workspaceDir, {
+      webhooks: [{ id: 'wh_top', url: 'http://top.example.com', events: ['*'], active: true }],
+      plugins: {
+        'webhook.delivery': {
+          provider: 'kl-webhooks-plugin',
+          options: {
+            webhooks: [{ id: 'wh_opt', url: 'http://opt.example.com', events: ['task.created'], active: true }],
+          },
+        },
+      },
+    })
+
+    const result = webhookProviderPlugin.listWebhooks(workspaceDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('wh_opt')
+  })
+
   it('createWebhook adds a webhook with generated id and active=true', () => {
     const wh = webhookProviderPlugin.createWebhook(workspaceDir, {
       url: 'http://example.com/hook',
@@ -116,6 +134,31 @@ describe('webhookProviderPlugin CRUD', () => {
     expect(config.defaultBoard).toBe('main')
     expect(config.nextCardId).toBe(42)
     expect((config.webhooks as Webhook[])).toHaveLength(1)
+  })
+
+  it('createWebhook also persists into plugins["webhook.delivery"].options.webhooks when plugin config exists', () => {
+    writeConfig(workspaceDir, {
+      plugins: {
+        'webhook.delivery': {
+          provider: 'kl-webhooks-plugin',
+          options: {},
+        },
+      },
+    })
+
+    const created = webhookProviderPlugin.createWebhook(workspaceDir, {
+      url: 'http://example.com/hook',
+      events: ['*'],
+    })
+
+    const config = readConfig(workspaceDir)
+    const pluginWebhooks = ((config.plugins as Record<string, unknown>)['webhook.delivery'] as Record<string, unknown>)
+      .options as Record<string, unknown>
+    const persisted = pluginWebhooks.webhooks as Webhook[]
+
+    expect(Array.isArray(persisted)).toBe(true)
+    expect(persisted).toHaveLength(1)
+    expect(persisted[0].id).toBe(created.id)
   })
 
   it('updateWebhook updates fields and returns updated webhook', () => {

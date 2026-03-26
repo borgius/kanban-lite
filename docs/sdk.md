@@ -18,7 +18,7 @@ You can also import types and utilities:
 
 ```typescript
 import type { Card, CardStatus, Priority, KanbanColumn, CardDisplaySettings, CreateCardInput } from 'kanban-lite/sdk'
-import { parseCardFile, serializeCard, getTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
+import { parseCardFile, serializeCard, getTitleFromContent, getDisplayTitleFromContent, DEFAULT_COLUMNS } from 'kanban-lite/sdk'
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 ```
 
@@ -903,7 +903,7 @@ Lists all boards defined in the workspace configuration.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: An array of [BoardInfo](BoardInfo) objects containing each board's
-  `id`, `name`, and optional `description`.  
+  `id`, `name`, optional `description`, and display-title metadata config.  
 **Example**  
 ```ts
 const boards = sdk.listBoards()
@@ -983,7 +983,7 @@ await sdk.deleteBoard('old-sprint')
 Retrieves the full configuration for a specific board.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The [BoardConfig](BoardConfig) object containing columns, settings, and metadata.  
+**Returns**: The [BoardConfig](BoardConfig) object containing columns, settings, metadata, and display-title metadata config.  
 **Throws**:
 
 - <code>Error</code> If the board does not exist.
@@ -1025,6 +1025,7 @@ The `nextCardId` counter cannot be modified through this method.
 | updates.columns | Replacement column definitions. |
 | updates.defaultStatus | New default status for new cards. |
 | updates.defaultPriority | New default priority for new cards. |
+| updates.title | Ordered metadata keys whose values should prefix rendered card titles. |
 
 **Example**  
 ```ts
@@ -2758,6 +2759,37 @@ getTitleFromContent('# My Card\nSome body text')
 ```js
 getTitleFromContent('Just a line of text')
 // => 'Just a line of text'
+```
+
+* * *
+
+<a name="getDisplayTitleFromContent"></a>
+
+### getDisplayTitleFromContent(content, metadata, titleFields) ⇒
+Returns the user-visible card title for a board by prefixing selected
+metadata values ahead of the raw markdown-derived title.
+
+This helper is display-only. It does **not** modify stored markdown,
+filename generation, or rename behavior.
+
+**Kind**: global function  
+**Returns**: The raw markdown title, optionally prefixed by configured metadata values.  
+
+| Param | Description |
+| --- | --- |
+| content | Raw markdown card content. |
+| metadata | Optional card metadata object. |
+| titleFields | Ordered metadata keys whose non-empty rendered values should prefix the title. |
+
+**Example**  
+```js
+getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42', sprint: 'Q1' }, ['ticket', 'sprint'])
+// => 'REL-42 Q1 Ship release'
+```
+**Example**  
+```js
+getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42' }, ['missing', 'ticket'])
+// => 'REL-42 Ship release'
 ```
 
 * * *

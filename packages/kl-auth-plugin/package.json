@@ -1,6 +1,6 @@
 {
   "name": "kl-auth-plugin",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "kanban-lite auth.identity/auth.policy plugin – noop and RBAC providers",
   "license": "MIT",
   "type": "commonjs",

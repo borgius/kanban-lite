@@ -1,6 +1,6 @@
 {
   "name": "kl-sqlite-card-state",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "kanban-lite card.state plugin for SQLite-backed actor-scoped card state",
   "license": "MIT",
   "type": "commonjs",

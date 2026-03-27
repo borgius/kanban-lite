@@ -1,6 +1,6 @@
 {
   "name": "kl-mysql-storage",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "kanban-lite card.storage and attachment.storage plugin for MySQL",
   "license": "MIT",
   "type": "commonjs",

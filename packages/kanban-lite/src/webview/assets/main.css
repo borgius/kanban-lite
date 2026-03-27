@@ -803,6 +803,10 @@ body.vscode-high-contrast {
   position: fixed;
   inset: 0;
   z-index: 60;
+  background: transparent;
+  border: none;
+  cursor: default;
+  padding: 0;
 }
 
 .card-floating-menu {

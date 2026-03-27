@@ -424,7 +424,7 @@ function RunActionsDropdown({ actions, onTriggerAction }: RunActionsDropdownProp
           <button
             type="button"
             aria-label="Close actions menu"
-            className="card-floating-dismiss cursor-default"
+            className="card-floating-dismiss"
             onClick={() => setIsOpen(false)}
           />
           <div

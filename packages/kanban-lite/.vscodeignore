@@ -1,0 +1,23 @@
+# Source & config
+src/**
+e2e/**
+tmp/**
+.kanban/**
+tsconfig*.json
+postcss.config.js
+tailwind.config.js
+vite.standalone.config.ts
+vitest*.config.ts
+eslint.config.mjs
+
+# Build intermediates (keep only dist/)
+dist/sdk/sdk/**
+
+# Node modules
+node_modules/**
+
+# Test & coverage artifacts
+coverage/**
+**/*.test.ts
+**/*.spec.ts
+**/__tests__/**

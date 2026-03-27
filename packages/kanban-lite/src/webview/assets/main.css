@@ -419,6 +419,7 @@ body.vscode-high-contrast {
   padding: clamp(12px, 1.4vw, 16px);
   border-radius: 14px;
   background: var(--card-view-hero-bg);
+  z-index: 10;
 }
 
 .card-editor-hero-copy {

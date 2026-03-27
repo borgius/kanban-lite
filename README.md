@@ -97,6 +97,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Labels**: Tag cards with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
+- **Streaming comments**: AI agents can stream a comment live — a blinking-cursor indicator and `streaming` badge are shown to all connected viewers while text is being written; the comment is persisted once the stream completes (see [REST API](#comments) and [`sdk.streamComment`](#sdkstreamcomment))
 - **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context
 - **Reusable and inline forms**: Attach named workspace forms from `.kanban.json` or define card-local inline forms directly on the card
@@ -190,6 +191,8 @@ kl attach remove implement-search screenshot.png        # Remove attachment
 kl comment implement-search                             # List comments
 kl comment add implement-search --author alice \
   --body "Looks good, needs tests"                      # Add a comment
+kl comment stream implement-search --author agent       # Stream comment from stdin
+echo "Analysis complete" | kl comment stream 42 --author ci  # Pipe output as comment
 kl comment edit implement-search c1 --body "Updated"    # Edit a comment
 kl comment remove implement-search c1                   # Remove a comment
 
@@ -391,6 +394,7 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 |--------|----------|-------------|
 | `GET` | `/api/tasks/:id/comments` | List comments on a task |
 | `POST` | `/api/tasks/:id/comments` | Add a comment (`{ author, content }`) |
+| `POST` | `/api/tasks/:id/comments/stream` | **Stream a comment live** — request body is plain-text stream; query param `?author=<name>` required. Chunks are broadcast in real-time to connected viewers via WebSocket. |
 | `PUT` | `/api/tasks/:id/comments/:commentId` | Update a comment (`{ content }`) |
 | `DELETE` | `/api/tasks/:id/comments/:commentId` | Delete a comment |
 
@@ -929,6 +933,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `remove_attachment` | Remove an attachment reference from a card |
 | `list_comments` | List comments on a card |
 | `add_comment` | Add a comment to a card |
+| `stream_comment` | Stream a comment to a card (content is delivered through the streaming path so connected viewers see it live) |
 | `update_comment` | Edit a comment's content |
 | `delete_comment` | Remove a comment from a card |
 | `list_logs` | List log entries on a card |

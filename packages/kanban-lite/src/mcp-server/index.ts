@@ -1093,6 +1093,58 @@ async function main(): Promise<void> {
   )
 
   server.tool(
+    'stream_comment',
+    'Add a comment to a kanban card from a streaming text source. Provide the full content string; it will be written via the streaming path so connected webview clients see it arrive incrementally.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      author: z.string().describe('Comment author name'),
+      content: z.string().describe('Full comment text (supports markdown). The content is streamed word-by-word to connected viewers.'),
+    },
+    async ({ boardId, cardId, author, content }) => {
+      let resolvedId = cardId
+      const card = await sdk.getCard(cardId, boardId)
+      if (!card) {
+        const all = await sdk.listCards(undefined, boardId)
+        const matches = all.filter(c => c.id.includes(cardId))
+        if (matches.length === 1) {
+          resolvedId = matches[0].id
+        } else if (matches.length > 1) {
+          return {
+            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
+            isError: true,
+          }
+        } else {
+          return {
+            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
+            isError: true,
+          }
+        }
+      }
+
+      // Wrap the full content string as an async iterable so it exercises the
+      // same SDK streaming code path that a real token stream would use.
+      async function* singleChunk(): AsyncIterable<string> { yield content }
+
+      try {
+        const updated = await runWithMcpAuth(() => sdk.streamComment(resolvedId, author, singleChunk(), { boardId }))
+        const added = updated.comments?.[updated.comments.length - 1]
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(added, null, 2),
+          }],
+        }
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: String(err) }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  server.tool(
     'update_comment',
     'Update the content of a comment on a kanban card.',
     {

@@ -918,7 +918,7 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
   const subcommand = positional[0] || 'list'
   const boardId = getBoardId(flags)
 
-  if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'edit' && subcommand !== 'remove' && subcommand !== 'rm') {
+  if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'edit' && subcommand !== 'remove' && subcommand !== 'rm' && subcommand !== 'stream') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
     const resolvedId = await resolveCardId(sdk, subcommand, boardId)
     const comments = await sdk.listComments(resolvedId, boardId)
@@ -1024,6 +1024,37 @@ async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Flags): P
       const resolvedId = await resolveCardId(sdk, cardId, boardId)
       await sdk.deleteComment(resolvedId, commentId, boardId)
       console.log(green(`Deleted comment ${commentId}`))
+      break
+    }
+    case 'stream': {
+      // Reads text from stdin and streams it as a comment in real-time.
+      // Useful for piping LLM output: `llm-cli generate | kl comment stream <card-id> --author agent`
+      if (!cardId) {
+        console.error(red('Usage: kl comment stream <card-id> --author <name>'))
+        process.exit(1)
+      }
+      const author = typeof flags.author === 'string' ? flags.author : ''
+      if (!author) {
+        console.error(red('Error: --author is required'))
+        process.exit(1)
+      }
+      const resolvedId = await resolveCardId(sdk, cardId, boardId)
+      async function* stdinStream(): AsyncIterable<string> {
+        process.stdin.setEncoding('utf8')
+        for await (const chunk of process.stdin) {
+          if (!flags.json) process.stderr.write('.')
+          yield chunk as string
+        }
+      }
+      if (!flags.json) process.stderr.write('Streaming comment')
+      const card = await sdk.streamComment(resolvedId, author, stdinStream(), { boardId })
+      if (!flags.json) process.stderr.write('\n')
+      const added = card.comments?.[card.comments.length - 1]
+      if (flags.json) {
+        console.log(JSON.stringify(added, null, 2))
+      } else {
+        console.log(green(`Streamed comment ${added?.id ?? '?'} to card ${resolvedId}`))
+      }
       break
     }
   }
@@ -1585,6 +1616,7 @@ ${bold('Attachment Commands:')}
 ${bold('Comment Commands:')}
   comment <id>                List comments on a card
   comment add <id>            Add a comment (--author, --body)
+  comment stream <id>         Stream a comment from stdin (--author)
   comment edit <id> <cid>     Edit a comment (--body)
   comment remove <id> <cid>   Remove a comment
 

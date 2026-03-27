@@ -112,3 +112,43 @@ export async function broadcastLogsUpdatedToEditingClients(ctx: StandaloneContex
     client.send(json)
   }
 }
+
+/**
+ * Broadcasts a `commentStreamStart` event to ALL connected WebSocket clients.
+ * Called once when a streaming comment session begins, before any chunks arrive.
+ */
+export function broadcastCommentStreamStart(
+  ctx: StandaloneContext,
+  cardId: string,
+  commentId: string,
+  author: string,
+  created: string
+): void {
+  broadcast(ctx, { type: 'commentStreamStart', cardId, commentId, author, created })
+}
+
+/**
+ * Broadcasts a `commentChunk` event to ALL connected WebSocket clients.
+ * Called for every text chunk received during a streaming comment session.
+ */
+export function broadcastCommentChunk(
+  ctx: StandaloneContext,
+  cardId: string,
+  commentId: string,
+  chunk: string
+): void {
+  broadcast(ctx, { type: 'commentChunk', cardId, commentId, chunk })
+}
+
+/**
+ * Broadcasts a `commentStreamDone` event to ALL connected WebSocket clients.
+ * Called once after the stream has been fully consumed and persisted.
+ */
+export function broadcastCommentStreamDone(
+  ctx: StandaloneContext,
+  cardId: string,
+  commentId: string
+): void {
+  broadcast(ctx, { type: 'commentStreamDone', cardId, commentId })
+}
+

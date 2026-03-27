@@ -467,6 +467,37 @@ function App(): React.JSX.Element {
           setBoardLogs(message.logs)
           break
         }
+        case 'commentStreamStart': {
+          // An agent has started streaming a comment — add a streaming placeholder
+          setEditingCard(prev => {
+            if (!prev || prev.id !== message.cardId) return prev
+            const placeholder = { id: message.commentId, author: message.author, created: message.created, content: '', streaming: true }
+            return { ...prev, comments: [...(prev.comments || []), placeholder] }
+          })
+          break
+        }
+        case 'commentChunk': {
+          // Append an incoming text chunk to the streaming comment
+          setEditingCard(prev => {
+            if (!prev || prev.id !== message.cardId) return prev
+            const comments = (prev.comments || []).map(c =>
+              c.id === message.commentId ? { ...c, content: c.content + message.chunk } : c
+            )
+            return { ...prev, comments }
+          })
+          break
+        }
+        case 'commentStreamDone': {
+          // Mark the streaming comment as complete (strip the streaming flag)
+          setEditingCard(prev => {
+            if (!prev || prev.id !== message.cardId) return prev
+            const comments = (prev.comments || []).map(c =>
+              c.id === message.commentId ? { ...c, streaming: false } : c
+            )
+            return { ...prev, comments }
+          })
+          break
+        }
       }
     }
 

@@ -1096,6 +1096,47 @@ body.vscode-high-contrast {
   align-items: flex-start;
 }
 
+/* Streaming comment — subtle animated border to indicate live content */
+.card-comment-streaming .card-comment-bubble {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  opacity: 0.92;
+}
+
+.card-comment-streaming-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vscode-focusBorder, #007fd4);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  opacity: 0.85;
+}
+
+/* Blinking cursor appended at the end of a streaming comment body */
+.card-comment-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  vertical-align: text-bottom;
+  background: currentColor;
+  margin-left: 1px;
+  animation: comment-blink 1s step-end infinite;
+}
+
+@keyframes comment-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.card-comment-content-wrap {
+  display: inline;
+}
+
+
 .card-comment-avatar {
   display: inline-flex;
   align-items: center;

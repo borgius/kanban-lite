@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Board-level rendered title prefixes**: Boards may now define `boards.<id>.title` as an ordered metadata-key list in `.kanban.json`. Matching metadata values prefix user-visible card titles consistently across the webview, VS Code sidebar, CLI, and MCP read surfaces without changing stored markdown titles or filenames.
+- **Streaming comments** — AI agents and automation tools can now create comments and stream their content live to connected viewers.
+  - New `sdk.streamComment(cardId, author, asyncIterable, options?)` method accepts any `AsyncIterable<string>` (e.g. an AI SDK `textStream` or `fullStream`) and persists the comment once the stream is exhausted.
+  - New REST endpoint `POST /api/tasks/:id/comments/stream?author=<name>` accepts a streaming request body (`Content-Type: text/plain`, chunked-transfer). On-the-fly text chunks are broadcast to all connected WebSocket clients as `commentStreamStart` / `commentChunk` / `commentStreamDone` events.
+  - New CLI subcommand `kl comment stream <card-id> --author <name>` reads from stdin and streams it as a comment — useful for piping LLM output: `llm generate | kl comment stream 42 --author ci-agent`.
+  - New MCP tool `stream_comment` (same parameters as `add_comment`) that routes content through the streaming SDK path.
+  - Webview shows a live blinking-cursor indicator and a `streaming` badge on comments currently being written by an agent; edit/delete actions are hidden until the stream completes.
+  - `Comment` interface gains an optional `streaming?: boolean` field that is set on in-flight WS messages but is **not** persisted to storage.
+  - Three new `ExtensionMessage` variants: `commentStreamStart`, `commentChunk`, `commentStreamDone`.
+
+ Boards may now define `boards.<id>.title` as an ordered metadata-key list in `.kanban.json`. Matching metadata values prefix user-visible card titles consistently across the webview, VS Code sidebar, CLI, and MCP read surfaces without changing stored markdown titles or filenames.
 
 ### Fixed
 

@@ -3,7 +3,7 @@ import type { Card, CreateCardPayload, Priority } from '../../../shared/types'
 import type { CardStateCursor } from '../../../sdk/plugins'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { authErrorToHttpStatus, extractAuthContext, getCardStateErrorLike } from '../../authUtils'
-import { broadcast, broadcastCardContentToEditingClients, broadcastLogsUpdatedToEditingClients, buildInitMessage, loadCards } from '../../broadcastService'
+import { broadcast, broadcastCardContentToEditingClients, broadcastCommentStreamStart, broadcastCommentChunk, broadcastCommentStreamDone, broadcastLogsUpdatedToEditingClients, buildInitMessage, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
 import {
   doAddAttachment,
@@ -394,6 +394,50 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       } else {
         jsonError(res, 400, String(err))
       }
+    }
+    return true
+  }
+
+  params = route('POST', '/api/tasks/:id/comments/stream')
+  if (params) {
+    const { id } = params
+    const author = (url.searchParams.get('author') ?? (req.headers['x-comment-author'] as string | undefined) ?? '').trim()
+    if (!author) {
+      jsonError(res, 400, 'author query param is required')
+      return true
+    }
+    let commentId: string | undefined
+    try {
+      // Convert the Node.js IncomingMessage readable into an AsyncIterable<string>
+      async function* requestTextStream(): AsyncIterable<string> {
+        const decoder = new TextDecoder('utf-8')
+        for await (const chunk of req as unknown as AsyncIterable<Buffer>) {
+          yield decoder.decode(chunk as Buffer, { stream: true })
+        }
+      }
+      const card = await runWithRequestAuth(() =>
+        ctx.sdk.streamComment(id, author, requestTextStream(), {
+          boardId: url.searchParams.get('boardId') ?? undefined,
+          onStart: (cid, commentAuthor, created) => {
+            commentId = cid
+            broadcastCommentStreamStart(ctx, id, cid, commentAuthor, created)
+          },
+          onChunk: (cid, chunk) => {
+            broadcastCommentChunk(ctx, id, cid, chunk)
+          },
+        })
+      )
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      await loadCards(ctx)
+      broadcast(ctx, buildInitMessage(ctx))
+      if (commentId) broadcastCommentStreamDone(ctx, id, commentId)
+      const comment = card.comments?.find(c => c.id === commentId)
+      jsonOk(res, comment ?? null, 201)
+    } catch (err) {
+      handleKnownError(err)
     }
     return true
   }

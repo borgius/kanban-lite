@@ -2224,7 +2224,57 @@ export class KanbanSDK {
     return card
   }
 
-  // --- Log management ---
+  /**
+   * Creates a comment on a card from a streaming text source, persisting it
+   * once the stream is exhausted.
+   *
+   * This method is the streaming counterpart to {@link addComment}. It is
+   * intended for use by AI agents that generate comment text incrementally
+   * (e.g. an LLM `textStream`). The caller may supply `onStart` and `onChunk`
+   * callbacks to fan live progress out to connected WebSocket viewers without
+   * requiring intermediate disk writes.
+   *
+   * @param cardId - The ID of the card to comment on.
+   * @param author - Display name of the streaming author.
+   * @param stream - An `AsyncIterable<string>` that yields text chunks.
+   * @param options.boardId - Optional board ID override.
+   * @param options.onStart - Called once before iteration with the allocated
+   *   comment ID, author, and ISO timestamp.
+   * @param options.onChunk - Called after each chunk with the comment ID and
+   *   the raw chunk string.
+   * @returns A promise resolving to the updated {@link Card} once the stream
+   *   has been fully consumed and the comment has been persisted.
+   * @throws {Error} If the card is not found.
+   * @throws {Error} If `author` is empty.
+   *
+   * @example
+   * ```ts
+   * // Stream an AI SDK textStream as a comment
+   * const { textStream } = await streamText({ model, prompt })
+   * const card = await sdk.streamComment('42', 'ai-agent', textStream, {
+   *   onStart: (id, author, created) => broadcast({ type: 'commentStreamStart', cardId: '42', commentId: id, author, created }),
+   *   onChunk: (id, chunk) => broadcast({ type: 'commentChunk', cardId: '42', commentId: id, chunk }),
+   * })
+   * ```
+   */
+  async streamComment(
+    cardId: string,
+    author: string,
+    stream: AsyncIterable<string>,
+    options?: {
+      boardId?: string
+      onStart?: (commentId: string, author: string, created: string) => void
+      onChunk?: (commentId: string, chunk: string) => void
+    }
+  ): Promise<Card> {
+    const { boardId, onStart, onChunk } = options ?? {}
+    const card = await Comments.streamComment(this, { cardId, author, boardId, stream, onStart, onChunk })
+    const newComment = card.comments?.[card.comments.length - 1]
+    if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId }, undefined, card.boardId ?? this._resolveBoardId(boardId))
+    return card
+  }
+
+
 
   /**
    * Returns the absolute path to the log file for a card.

@@ -46,7 +46,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
           {comments.map(comment => (
             <div
               key={comment.id}
-              className="card-comment-item"
+              className={`card-comment-item${comment.streaming ? ' card-comment-streaming' : ''}`}
             >
               <span className="card-comment-avatar">
                 {comment.author.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)}
@@ -54,25 +54,30 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
               <div className="card-comment-bubble">
                 <div className="card-comment-meta">
                   <span className="card-comment-author">{comment.author}</span>
+                  {comment.streaming && (
+                    <span className="card-comment-streaming-badge" title="Being written by an agent…">streaming</span>
+                  )}
                   <span className="card-comment-time">{timeAgo(comment.created)}</span>
-                  <div className="card-comment-actions">
-                    <button
-                      onClick={() => setEditingId(comment.id)}
-                      className="p-1 rounded-full transition-colors vscode-hover-bg"
-                      style={{ color: 'var(--vscode-descriptionForeground)' }}
-                      title="Edit"
-                    >
-                      <Pencil size={11} />
-                    </button>
-                    <button
-                      onClick={() => onDeleteComment(comment.id)}
-                      className="p-1 rounded-full transition-colors hover:text-red-500"
-                      style={{ color: 'var(--vscode-descriptionForeground)' }}
-                      title="Delete"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
+                  {!comment.streaming && (
+                    <div className="card-comment-actions">
+                      <button
+                        onClick={() => setEditingId(comment.id)}
+                        className="p-1 rounded-full transition-colors vscode-hover-bg"
+                        style={{ color: 'var(--vscode-descriptionForeground)' }}
+                        title="Edit"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        onClick={() => onDeleteComment(comment.id)}
+                        className="p-1 rounded-full transition-colors hover:text-red-500"
+                        style={{ color: 'var(--vscode-descriptionForeground)' }}
+                        title="Delete"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {editingId === comment.id ? (
@@ -88,7 +93,10 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
                     />
                   </div>
                 ) : (
-                  <CommentBody content={comment.content} />
+                  <div className="card-comment-content-wrap">
+                    <CommentBody content={comment.content} />
+                    {comment.streaming && <span className="card-comment-cursor" aria-hidden="true" />}
+                  </div>
                 )}
               </div>
             </div>

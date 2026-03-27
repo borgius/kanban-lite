@@ -112,6 +112,12 @@ export interface Comment {
   created: string
   /** Markdown body of the comment. */
   content: string
+  /**
+   * When `true`, the comment is currently being streamed by an agent and has
+   * not yet been fully written. The content field contains whatever has
+   * accumulated so far. This field is stripped before persisting to storage.
+   */
+  streaming?: boolean
 }
 
 /**
@@ -759,6 +765,9 @@ export type ExtensionMessage =
   | { type: 'submitFormResult'; callbackKey: string; result?: SubmitFormTransportResult; error?: string }
   | { type: 'logsUpdated'; cardId: string; logs: import('./types').LogEntry[] }
   | { type: 'boardLogsUpdated'; boardId: string; logs: import('./types').LogEntry[] }
+  | { type: 'commentStreamStart'; cardId: string; commentId: string; author: string; created: string }
+  | { type: 'commentChunk'; cardId: string; commentId: string; chunk: string }
+  | { type: 'commentStreamDone'; cardId: string; commentId: string }
 
 export type WebviewMessage =
   | { type: 'ready' }

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CrewAI tool adapter** (`kl-crewai-tools`): New Python package at `packages/kl-crewai-tools` wrapping kanban-lite REST API operations as CrewAI `BaseTool` subclasses (9 tools: list/get/create/update/move/delete cards, list columns, get/add comments). Includes a `KanbanLiteToolkit` helper with `read_only` mode for reporting agents. Enables specialized agents (PM, Dev, QA) to each manage their own board lane.
+
 - **CLI `--token` override**: `kl` now accepts `--token <value>` as a per-invocation auth override, ahead of `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN`, and reports the source as `flag` in `kl auth status` diagnostics.
 
 - **Streaming comments** — AI agents and automation tools can now create comments and stream their content live to connected viewers.

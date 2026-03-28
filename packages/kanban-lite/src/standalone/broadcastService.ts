@@ -1,6 +1,8 @@
 import { WebSocket } from 'ws'
 import type { Card, LogEntry } from '../shared/types'
 import { readConfig } from '../shared/config'
+import type { AuthContext } from '../sdk/types'
+import { decorateCardsForWebview } from '../extension/cardStateUi'
 import type { StandaloneContext } from './context'
 import { buildCardFrontmatter } from './cardHelpers'
 
@@ -12,6 +14,14 @@ export async function loadCards(ctx: StandaloneContext): Promise<void> {
 }
 
 export function broadcast(ctx: StandaloneContext, message: unknown): void {
+  const type = (message as { type?: unknown } | null)?.type
+  if (type === 'init' || type === 'cardsUpdated') {
+    void broadcastPerClient(ctx, type).catch((err) => {
+      console.error(`Failed to broadcast ${type}:`, err)
+    })
+    return
+  }
+
   const json = JSON.stringify(message)
   for (const client of ctx.wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
@@ -24,8 +34,16 @@ export function setClientEditingCard(ctx: StandaloneContext, ws: WebSocket, card
   ctx.clientEditingCardIds.set(ws, cardId)
 }
 
+export function setClientAuthContext(ctx: StandaloneContext, ws: WebSocket, authContext: AuthContext): void {
+  ctx.clientAuthContexts.set(ws, authContext)
+}
+
 export function clearClientEditingCard(ctx: StandaloneContext, ws: WebSocket): void {
   ctx.clientEditingCardIds.delete(ws)
+}
+
+export function clearClientAuthContext(ctx: StandaloneContext, ws: WebSocket): void {
+  ctx.clientAuthContexts.delete(ws)
 }
 
 export function isClientEditingCard(ctx: StandaloneContext, ws: WebSocket, cardId: string): boolean {
@@ -53,14 +71,21 @@ function buildCardContentMessage(card: Card, logs: LogEntry[]): unknown {
   }
 }
 
-export function buildInitMessage(ctx: StandaloneContext): unknown {
+async function buildDecoratedCards(ctx: StandaloneContext, authContext?: AuthContext): Promise<Card[]> {
+  const runWithAuth = authContext
+    ? <T,>(fn: () => Promise<T>) => ctx.sdk.runWithAuth(authContext, fn)
+    : async <T,>(fn: () => Promise<T>) => fn()
+
+  return decorateCardsForWebview(ctx.sdk, runWithAuth, ctx.cards, ctx.currentBoardId)
+}
+
+function buildBaseInitMessage(ctx: StandaloneContext): Record<string, unknown> {
   const config = readConfig(ctx.workspaceRoot)
   const settings = ctx.sdk.getSettings()
   settings.showBuildWithAI = false
   settings.markdownEditorMode = false
   return {
     type: 'init',
-    cards: ctx.cards,
     columns: ctx.sdk.listColumns(ctx.currentBoardId),
     settings,
     boards: ctx.sdk.listBoards(),
@@ -74,6 +99,43 @@ export function buildInitMessage(ctx: StandaloneContext): unknown {
     labels: ctx.sdk.getLabels(),
     minimizedColumnIds: ctx.sdk.getMinimizedColumns(ctx.currentBoardId)
   }
+}
+
+async function buildClientInitMessage(ctx: StandaloneContext, authContext?: AuthContext): Promise<unknown> {
+  return {
+    ...buildBaseInitMessage(ctx),
+    cards: await buildDecoratedCards(ctx, authContext),
+  }
+}
+
+async function buildClientCardsUpdatedMessage(ctx: StandaloneContext, authContext?: AuthContext): Promise<unknown> {
+  return {
+    type: 'cardsUpdated',
+    cards: await buildDecoratedCards(ctx, authContext),
+  }
+}
+
+async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsUpdated'): Promise<void> {
+  for (const client of ctx.wss.clients) {
+    if (client.readyState !== WebSocket.OPEN) continue
+    const authContext = ctx.clientAuthContexts.get(client)
+    const payload = type === 'init'
+      ? await buildClientInitMessage(ctx, authContext)
+      : await buildClientCardsUpdatedMessage(ctx, authContext)
+    client.send(JSON.stringify(payload))
+  }
+}
+
+export function buildInitMessage(ctx: StandaloneContext): unknown {
+  return {
+    ...buildBaseInitMessage(ctx),
+    cards: ctx.cards,
+  }
+}
+
+export async function sendInitMessage(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
+  const authContext = ctx.clientAuthContexts.get(ws)
+  ws.send(JSON.stringify(await buildClientInitMessage(ctx, authContext)))
 }
 
 export async function sendCardContent(ctx: StandaloneContext, ws: WebSocket, card: Card): Promise<void> {

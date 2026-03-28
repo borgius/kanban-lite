@@ -4,7 +4,6 @@ import * as os from 'os'
 import * as path from 'path'
 import chokidar from 'chokidar'
 import { parseCardFile, serializeCard } from '../../sdk/parser'
-import { sanitizeCard } from '../../sdk/types'
 import { broadcast, broadcastCardContentToEditingClients, getClientsEditingCard } from '../broadcastService'
 import type { StandaloneContext } from '../context'
 import { cleanupTempFile, setupWatcher } from '../watcherSetup'
@@ -94,7 +93,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
           }, ctx.currentBoardId)
           const cardIndex = ctx.cards.findIndex(card => card.id === currentCardId)
           if (cardIndex !== -1) ctx.cards[cardIndex] = updated
-          broadcast(ctx, { type: 'cardsUpdated', cards: ctx.cards.map(sanitizeCard) })
+          broadcast(ctx, { type: 'cardsUpdated' })
           if (getClientsEditingCard(ctx, currentCardId).length > 0) {
             await broadcastCardContentToEditingClients(ctx, updated)
           }

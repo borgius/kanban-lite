@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws'
 import { type Card, type CardFrontmatter, type CardDisplaySettings, type SubmitFormMessage } from '../shared/types'
-import { type AuthContext } from '../sdk/types'
+import { CardStateError, type AuthContext } from '../sdk/types'
 import { readConfig } from '../shared/config'
 import type { StandaloneContext } from './context'
 import {
@@ -9,6 +9,7 @@ import {
   broadcastLogsUpdatedToEditingClients,
   buildInitMessage,
   sendCardContent,
+  sendInitMessage,
   loadCards,
   setClientEditingCard,
 } from './broadcastService'
@@ -44,7 +45,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       ctx.migrating = true
       try {
         await loadCards(ctx)
-        ws.send(JSON.stringify(buildInitMessage(ctx)))
+        await sendInitMessage(ctx, ws)
       } finally {
         ctx.migrating = false
       }
@@ -89,15 +90,24 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const cardId = msg.cardId as string
       const card = ctx.cards.find(f => f.id === cardId)
       if (!card) break
+      const boardId = card.boardId ?? ctx.currentBoardId
 
       // Clean up any temp file from a previously-opened card
       if (ctx.tempFileCardId && ctx.tempFileCardId !== cardId) {
         cleanupTempFile(ctx)
       }
 
+      try {
+        await runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
+      } catch (err) {
+        if (!(err instanceof CardStateError)) {
+          throw err
+        }
+      }
+
       ctx.currentEditingCardId = cardId
       setClientEditingCard(ctx, ws, cardId)
-      await ctx.sdk.setActiveCard(cardId, ctx.currentBoardId)
+      await ctx.sdk.setActiveCard(cardId, boardId)
       await sendCardContent(ctx, ws, card)
       break
     }

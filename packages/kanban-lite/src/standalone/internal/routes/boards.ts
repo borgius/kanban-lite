@@ -15,6 +15,8 @@ import {
   sendNoContent,
 } from '../common'
 
+const REST_CARD_READ_OPTIONS = { rethrowCardStateErrors: true } as const
+
 export async function handleBoardRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk, workspaceRoot } = ctx
@@ -220,7 +222,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         params.boardId,
         getListCardsOptions(url.searchParams),
       )
-      jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx))
+      jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
     } catch (err) {
       handleKnownError(err)
     }
@@ -231,7 +233,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const card = await sdk.getActiveCard(params.boardId)
-      jsonOk(res, card ? await buildCardReadModel(card, ctx) : null)
+      jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
     }
@@ -275,7 +277,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
-        jsonOk(res, await buildCardReadModel(card, ctx))
+        jsonOk(res, await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
       }
     } catch (err) {
       handleKnownError(err)
@@ -286,13 +288,14 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('POST', '/api/boards/:boardId/tasks/:id/open')
   if (params) {
     try {
-      const card = await sdk.getCard(params.id, params.boardId)
+      const { boardId, id } = params
+      const card = await sdk.getCard(id, boardId)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, params.boardId))
-      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, boardId))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
     }
@@ -302,15 +305,16 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('POST', '/api/boards/:boardId/tasks/:id/read')
   if (params) {
     try {
-      const card = await sdk.getCard(params.id, params.boardId)
+      const { boardId, id } = params
+      const card = await sdk.getCard(id, boardId)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
       }
       const body = await readBody(req)
       const readThrough = body.readThrough as CardStateCursor | undefined
-      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, params.boardId, readThrough))
-      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, boardId, readThrough))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
     }

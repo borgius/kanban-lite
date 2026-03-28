@@ -2,7 +2,7 @@ import * as http from 'http'
 import { extractAuthContext, getAuthErrorLike } from '../authUtils'
 import type { AuthContext } from '../../sdk/types'
 import type { StandaloneContext } from '../context'
-import { clearClientEditingCard, setClientEditingCard } from '../broadcastService'
+import { clearClientAuthContext, clearClientEditingCard, setClientAuthContext, setClientEditingCard } from '../broadcastService'
 import { handleMessage } from '../messageHandlers'
 
 export function attachWebSocketHandlers(
@@ -16,6 +16,7 @@ export function attachWebSocketHandlers(
     } catch {
       authContext = extractAuthContext(req)
     }
+    setClientAuthContext(ctx, ws, authContext)
     setClientEditingCard(ctx, ws, null)
     ws.on('message', (data) => {
       let message: unknown
@@ -35,6 +36,7 @@ export function attachWebSocketHandlers(
       })
     })
     ws.on('close', () => {
+      clearClientAuthContext(ctx, ws)
       clearClientEditingCard(ctx, ws)
     })
   })

@@ -1,30 +1,39 @@
 import * as http from 'http'
 import * as os from 'os'
 import * as path from 'path'
-import type { Card } from '../../shared/types'
+import type { Card, CardStateErrorTransport, CardStateReadModelTransport, CardStateStatusTransport } from '../../shared/types'
 import { CARD_STATE_OPEN_DOMAIN } from '../../sdk/types'
 import type { StandaloneHttpRequestContext } from '../../sdk'
 import type { CardOpenStateValue, CardUnreadSummary } from '../../sdk/types'
 import { sanitizeCard } from '../../sdk/types'
 import type { CardStateRecord } from '../../sdk/plugins'
 import type { StandaloneContext } from '../context'
+import { getCardStateErrorLike } from '../authUtils'
 import type { MIME_TYPES } from '../httpUtils'
 
 export interface StandaloneRequestContext extends StandaloneHttpRequestContext {
   ctx: StandaloneContext
 }
 
+export type StandaloneCardStateAuthRunner = <T>(fn: () => Promise<T>) => Promise<T>
+
 export type StandaloneRouteHandler = (request: StandaloneRequestContext) => Promise<boolean>
 
 export type StandaloneSanitizedCard = ReturnType<typeof sanitizeCard>
 
-export interface StandaloneCardStateReadModel {
-  unread: CardUnreadSummary
+export interface StandaloneCardStateReadModel extends CardStateReadModelTransport {
+  unread: CardUnreadSummary | null
   open: CardStateRecord<CardOpenStateValue> | null
+  status: CardStateStatusTransport
+  error?: CardStateErrorTransport
 }
 
 export type StandaloneCardReadModel = StandaloneSanitizedCard & {
   cardState: StandaloneCardStateReadModel
+}
+
+export interface BuildCardReadModelOptions {
+  rethrowCardStateErrors?: boolean
 }
 
 export interface StandaloneCardStateMutationModel {
@@ -34,6 +43,16 @@ export interface StandaloneCardStateMutationModel {
 
 export function createRouteMatcher(method: string, pathname: string, matchRoute: (expectedMethod: string, actualMethod: string, pathname: string, pattern: string) => Record<string, string> | null) {
   return (expectedMethod: string, pattern: string): Record<string, string> | null => matchRoute(expectedMethod, method, pathname, pattern)
+}
+
+function toCardStateStatus(ctx: StandaloneContext): CardStateStatusTransport {
+  const status = ctx.sdk.getCardStateStatus()
+  return {
+    backend: status.backend,
+    availability: status.availability,
+    configured: !status.defaultActorAvailable,
+    ...(status.errorCode ? { errorCode: status.errorCode } : {}),
+  }
 }
 
 export function applyCommonCardFilters(cards: Card[], searchParams: URLSearchParams, ctx: StandaloneContext): ReturnType<typeof sanitizeCard>[] {
@@ -69,20 +88,53 @@ export async function buildCardStateReadModel(
   cardId: string,
   boardId?: string,
   unreadSummary?: CardUnreadSummary,
+  runWithAuth?: StandaloneCardStateAuthRunner,
+  options?: BuildCardReadModelOptions,
 ): Promise<StandaloneCardStateReadModel> {
-  const unread = unreadSummary ?? await ctx.sdk.getUnreadSummary(cardId, boardId)
-  const open = await ctx.sdk.getCardState(cardId, boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
-  return { unread, open }
+  const run = runWithAuth ?? (async <T,>(fn: () => Promise<T>) => fn())
+  const status = toCardStateStatus(ctx)
+
+  try {
+    const unread = unreadSummary ?? await run(() => ctx.sdk.getUnreadSummary(cardId, boardId))
+    const open = await run(() => ctx.sdk.getCardState(cardId, boardId, CARD_STATE_OPEN_DOMAIN) as Promise<CardStateRecord<CardOpenStateValue> | null>)
+    return { unread, open, status }
+  } catch (error) {
+    const mappedError = getCardStateErrorLike(error)
+    if (!mappedError) {
+      throw error
+    }
+
+    if (options?.rethrowCardStateErrors) {
+      throw mappedError
+    }
+
+    return {
+      unread: null,
+      open: null,
+      status: {
+        ...status,
+        availability: mappedError.availability,
+        errorCode: mappedError.code,
+      },
+      error: {
+        code: mappedError.code,
+        availability: mappedError.availability,
+        message: mappedError.message,
+      },
+    }
+  }
 }
 
 export async function buildCardReadModel(
   card: Card | StandaloneSanitizedCard,
   ctx: StandaloneContext,
+  runWithAuth?: StandaloneCardStateAuthRunner,
+  options?: BuildCardReadModelOptions,
 ): Promise<StandaloneCardReadModel> {
   const sanitized = 'filePath' in card ? sanitizeCard(card) : card
   return {
     ...sanitized,
-    cardState: await buildCardStateReadModel(ctx, sanitized.id, sanitized.boardId),
+    cardState: await buildCardStateReadModel(ctx, sanitized.id, sanitized.boardId, undefined, runWithAuth, options),
   }
 }
 
@@ -90,18 +142,21 @@ export async function buildCardReadModels(
   cards: Card[],
   searchParams: URLSearchParams,
   ctx: StandaloneContext,
+  runWithAuth?: StandaloneCardStateAuthRunner,
+  options?: BuildCardReadModelOptions,
 ): Promise<StandaloneCardReadModel[]> {
   const filtered = applyCommonCardFilters(cards, searchParams, ctx)
-  return Promise.all(filtered.map(card => buildCardReadModel(card, ctx)))
+  return Promise.all(filtered.map(card => buildCardReadModel(card, ctx, runWithAuth, options)))
 }
 
 export async function buildCardStateMutationModel(
   ctx: StandaloneContext,
   unread: CardUnreadSummary,
+  runWithAuth?: StandaloneCardStateAuthRunner,
 ): Promise<StandaloneCardStateMutationModel> {
   return {
     unread,
-    cardState: await buildCardStateReadModel(ctx, unread.cardId, unread.boardId, unread),
+    cardState: await buildCardStateReadModel(ctx, unread.cardId, unread.boardId, unread, runWithAuth),
   }
 }
 

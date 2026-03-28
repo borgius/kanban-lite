@@ -31,6 +31,8 @@ import {
   type StandaloneRequestContext,
 } from '../common'
 
+const REST_CARD_READ_OPTIONS = { rethrowCardStateErrors: true } as const
+
 export async function handleTaskRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
   const { sdk } = ctx
@@ -52,7 +54,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   if (params) {
     try {
       const taskCards = await sdk.listCards(undefined, undefined, getListCardsOptions(url.searchParams))
-      jsonOk(res, await buildCardReadModels(taskCards, url.searchParams, ctx))
+      jsonOk(res, await buildCardReadModels(taskCards, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
     } catch (err) {
       handleKnownError(err)
     }
@@ -63,7 +65,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   if (params) {
     try {
       const card = await sdk.getActiveCard()
-      jsonOk(res, card ? await buildCardReadModel(card, ctx) : null)
+      jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
     }
@@ -106,7 +108,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
-        jsonOk(res, await buildCardReadModel(card, ctx))
+        jsonOk(res, await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
       }
     } catch (err) {
       handleKnownError(err)
@@ -123,7 +125,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         return true
       }
       const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, card.boardId))
-      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
     }
@@ -141,7 +143,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       const body = await readBody(req)
       const readThrough = body.readThrough as CardStateCursor | undefined
       const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, card.boardId, readThrough))
-      jsonOk(res, await buildCardStateMutationModel(ctx, unread))
+      jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
     }

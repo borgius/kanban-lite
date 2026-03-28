@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CLI mutation auth parity**: CLI mutating commands now consistently run through the shared auth wrapper, so authenticated actions such as `kl comment add ...` honor the resolved CLI token instead of failing with a false `Authentication required` error.
+- **Standalone browser `card.state` unread/open parity**: Standalone WebSocket/REST card snapshots now preserve actor-scoped `cardState` in both plugin-backed and built-in fallback modes, and opening a card in the browser clears unread state through the shared explicit open flow.
 
 - **Webhook plugin-options config parity**: `kl-webhooks-plugin` now reads webhook registrations from `plugins["webhook.delivery"].options.webhooks` when configured (with legacy top-level `webhooks` fallback) and writes updates back into plugin options when the plugin config block exists; webhook docs were updated to match this behavior.
 

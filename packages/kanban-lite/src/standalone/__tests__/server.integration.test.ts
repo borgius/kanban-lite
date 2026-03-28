@@ -10,6 +10,16 @@ import { startServer } from '../server'
 import { KanbanSDK } from '../../sdk/KanbanSDK'
 import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
 
+type CardStateReadPayload = {
+  unread?: Record<string, unknown> | null
+  open?: Record<string, unknown> | null
+}
+
+type StandaloneInitCardPayload = Record<string, unknown> & {
+  id?: string
+  cardState?: CardStateReadPayload
+}
+
 // Helper: create a temp directory for cards
 function createTempDir(): string {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-workspace-'))
@@ -434,7 +444,7 @@ describe('Standalone Server Integration', () => {
       vi.resetModules()
 
       const actualFs = await vi.importActual<typeof import('fs')>('fs')
-      const swaggerUiMock = vi.fn(async () => {})
+      const swaggerUiMock = vi.fn(async (_instance?: unknown, _options?: Record<string, unknown>) => {})
 
       vi.doMock('fs', () => ({
         ...actualFs,
@@ -669,6 +679,127 @@ describe('Standalone Server Integration', () => {
         undefined,
       )
       runWithAuthSpy.mockRestore()
+    })
+
+    it('scopes websocket init rebroadcasts per actor and clears unread only for the opened actor', async () => {
+      const cleanup = installTempPackage(
+        'standalone-card-state-websocket-auth-scope-test',
+        `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: 'standalone-card-state-websocket-auth-scope-test', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      if (!context || !context.token) return null
+      const token = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
+      return { subject: 'user-' + token, roles: ['user'] }
+    },
+  },
+}
+`,
+      )
+
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = writeWorkspaceConfig(workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: 'standalone-card-state-websocket-auth-scope-test' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const createRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Multi Actor WebSocket Card State',
+          status: 'todo',
+        })
+        expect(createRes.status).toBe(201)
+        const cardId = JSON.parse(createRes.body).data.id as string
+
+        const wsAlice = await connectWs(localPort, { Authorization: 'Bearer alice' })
+        const wsBob = await connectWs(localPort, { Authorization: 'Bearer bob' })
+
+        try {
+          const aliceInit = await sendAndReceive(wsAlice, { type: 'ready' }, 'init')
+          const bobInit = await sendAndReceive(wsBob, { type: 'ready' }, 'init')
+          const aliceInitialCard = (aliceInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+          const bobInitialCard = (bobInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+          expect(aliceInitialCard?.cardState?.unread).toMatchObject({
+            actorId: 'user-alice',
+            cardId,
+            unread: false,
+          })
+          expect(bobInitialCard?.cardState?.unread).toMatchObject({
+            actorId: 'user-bob',
+            cardId,
+            unread: false,
+          })
+
+          const aliceUpdatePromise = waitForMessage(wsAlice, 'init', 5000)
+          const bobUpdatePromise = waitForMessage(wsBob, 'init', 5000)
+          const logRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${cardId}/logs`, {
+            text: 'Unread activity rebroadcast to websocket actors',
+          })
+          expect(logRes.status).toBe(201)
+
+          const aliceUpdate = await aliceUpdatePromise
+          const bobUpdate = await bobUpdatePromise
+          const aliceUpdatedCard = (aliceUpdate.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+          const bobUpdatedCard = (bobUpdate.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+          expect(aliceUpdatedCard?.cardState?.unread).toMatchObject({
+            actorId: 'user-alice',
+            cardId,
+            unread: true,
+          })
+          expect(bobUpdatedCard?.cardState?.unread).toMatchObject({
+            actorId: 'user-bob',
+            cardId,
+            unread: true,
+          })
+
+          const openResponse = await sendAndReceive(wsAlice, { type: 'openCard', cardId }, 'cardContent')
+          expect(openResponse.cardId).toBe(cardId)
+
+          const aliceDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+            Authorization: 'Bearer alice',
+          })
+          expect(aliceDetailRes.status).toBe(200)
+          expect(JSON.parse(aliceDetailRes.body).data.cardState).toMatchObject({
+            unread: {
+              actorId: 'user-alice',
+              cardId,
+              unread: false,
+            },
+            open: {
+              actorId: 'user-alice',
+              cardId,
+              domain: 'open',
+            },
+          })
+
+          const bobDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+            Authorization: 'Bearer bob',
+          })
+          expect(bobDetailRes.status).toBe(200)
+          expect(JSON.parse(bobDetailRes.body).data.cardState).toMatchObject({
+            unread: {
+              actorId: 'user-bob',
+              cardId,
+              unread: true,
+            },
+            open: null,
+          })
+        } finally {
+          wsAlice.close()
+          wsBob.close()
+          await sleep(50)
+        }
+      } finally {
+        cleanup()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
     })
   })
 
@@ -2255,6 +2386,64 @@ describe('Standalone Server Integration', () => {
       expect(JSON.parse(activeAfterOpenRes.body).data).toBeNull()
     })
 
+    it('websocket init rebroadcasts builtin fallback card-state and openCard clears unread for the default actor', async () => {
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Builtin WebSocket Card State',
+        status: 'todo',
+      })
+      expect(createRes.status).toBe(201)
+      const cardId = JSON.parse(createRes.body).data.id as string
+
+      const statusRes = await httpGet(`http://localhost:${port}/api/card-state/status`)
+      expect(statusRes.status).toBe(200)
+      const defaultActorId = JSON.parse(statusRes.body).data.defaultActor.id as string
+
+      ws = await connectWs(port)
+      const init = await sendAndReceive(ws, { type: 'ready' }, 'init')
+      const initialCard = (init.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+      expect(initialCard?.cardState?.unread).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        unread: false,
+      })
+
+      const updatePromise = waitForMessage(ws, 'init', 5000)
+      const logRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/logs`, {
+        text: 'Unread activity over builtin websocket session',
+      })
+      expect(logRes.status).toBe(201)
+
+      const updatedInit = await updatePromise
+      const updatedCard = (updatedInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+      expect(updatedCard?.cardState?.unread).toMatchObject({
+        actorId: defaultActorId,
+        boardId: 'default',
+        cardId,
+        unread: true,
+      })
+
+      const openResponse = await sendAndReceive(ws, { type: 'openCard', cardId }, 'cardContent')
+      expect(openResponse.cardId).toBe(cardId)
+
+      const detailRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      expect(detailRes.status).toBe(200)
+      expect(JSON.parse(detailRes.body).data.cardState).toMatchObject({
+        unread: {
+          actorId: defaultActorId,
+          boardId: 'default',
+          cardId,
+          unread: false,
+        },
+        open: {
+          actorId: defaultActorId,
+          boardId: 'default',
+          cardId,
+          domain: 'open',
+        },
+      })
+    })
+
     it('GET /api/card-state/status should expose the active card-state provider status', async () => {
       ws = await connectWs(port)
       await sendAndReceive(ws, { type: 'ready' }, 'init')
@@ -2395,6 +2584,101 @@ describe('Standalone Server Integration', () => {
         unavailableSpy.mockRestore()
       } finally {
         authCleanup()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
+    })
+
+    it('threads bearer auth into REST task card-state reads per actor', async () => {
+      const cleanup = installTempPackage(
+        'standalone-card-state-rest-auth-scope-test',
+        `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: 'standalone-card-state-rest-auth-scope-test', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      if (!context || !context.token) return null
+      const token = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
+      return { subject: 'user-' + token, roles: ['user'] }
+    },
+  },
+}
+`,
+      )
+
+      const workspaceRoot = path.dirname(tempDir)
+      const resolvedConfigPath = writeWorkspaceConfig(workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: 'standalone-card-state-rest-auth-scope-test' },
+          'auth.policy': { provider: 'noop' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const createRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Multi Actor REST Card State',
+          status: 'todo',
+        })
+        expect(createRes.status).toBe(201)
+        const cardId = JSON.parse(createRes.body).data.id as string
+
+        const logRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${cardId}/logs`, {
+          text: 'Unread activity for multiple actors',
+        })
+        expect(logRes.status).toBe(201)
+
+        const aliceDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+          Authorization: 'Bearer alice',
+        })
+        expect(aliceDetailRes.status).toBe(200)
+        expect(JSON.parse(aliceDetailRes.body).data.cardState.unread).toMatchObject({
+          actorId: 'user-alice',
+          cardId,
+          unread: true,
+        })
+
+        const bobDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+          Authorization: 'Bearer bob',
+        })
+        expect(bobDetailRes.status).toBe(200)
+        expect(JSON.parse(bobDetailRes.body).data.cardState.unread).toMatchObject({
+          actorId: 'user-bob',
+          cardId,
+          unread: true,
+        })
+
+        const aliceReadRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${cardId}/read`, {}, {
+          Authorization: 'Bearer alice',
+        })
+        expect(aliceReadRes.status).toBe(200)
+        expect(JSON.parse(aliceReadRes.body).data.cardState.unread).toMatchObject({
+          actorId: 'user-alice',
+          cardId,
+          unread: false,
+        })
+
+        const aliceAfterReadRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+          Authorization: 'Bearer alice',
+        })
+        expect(JSON.parse(aliceAfterReadRes.body).data.cardState.unread).toMatchObject({
+          actorId: 'user-alice',
+          cardId,
+          unread: false,
+        })
+
+        const bobAfterAliceReadRes = await httpGet(`http://localhost:${localPort}/api/tasks/${cardId}`, {
+          Authorization: 'Bearer bob',
+        })
+        expect(JSON.parse(bobAfterAliceReadRes.body).data.cardState.unread).toMatchObject({
+          actorId: 'user-bob',
+          cardId,
+          unread: true,
+        })
+      } finally {
+        cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
       }
     })
@@ -3268,6 +3552,135 @@ describe('Standalone Server Integration', () => {
         Cookie: cookieHeader,
       })
       expect(cookieRes.status).toBe(200)
+    })
+
+    it('threads cookie-session auth into REST task card-state read models', async () => {
+      const loginRes = await httpRequest(
+        'POST',
+        `http://localhost:${localAuthPort}/auth/login`,
+        'username=alice&password=secret123&returnTo=%2F',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+      )
+      expect(loginRes.status).toBe(302)
+      const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
+        ? loginRes.headers['set-cookie'][0]
+        : loginRes.headers['set-cookie']
+      expect(typeof setCookieHeader).toBe('string')
+      const cookieHeader = String(setCookieHeader).split(';')[0]
+
+      const createRes = await httpRequest('POST', `http://localhost:${localAuthPort}/api/tasks`, {
+        content: '# Cookie REST Card State',
+        status: 'todo',
+      }, {
+        Cookie: cookieHeader,
+      })
+      expect(createRes.status).toBe(201)
+      const cardId = JSON.parse(createRes.body).data.id as string
+
+      const logRes = await httpRequest('POST', `http://localhost:${localAuthPort}/api/tasks/${cardId}/logs`, {
+        text: 'Unread activity from cookie session',
+      }, {
+        Cookie: cookieHeader,
+      })
+      expect(logRes.status).toBe(201)
+
+      const listRes = await httpGet(`http://localhost:${localAuthPort}/api/tasks`, {
+        Cookie: cookieHeader,
+      })
+      expect(listRes.status).toBe(200)
+      const listJson = JSON.parse(listRes.body)
+      const listedCard = listJson.data.find((card: Record<string, unknown>) => card.id === cardId)
+      expect(listedCard.cardState.unread).toMatchObject({
+        actorId: 'alice',
+        cardId,
+        unread: true,
+      })
+
+      const detailRes = await httpGet(`http://localhost:${localAuthPort}/api/tasks/${cardId}`, {
+        Cookie: cookieHeader,
+      })
+      expect(detailRes.status).toBe(200)
+      const detailJson = JSON.parse(detailRes.body)
+      expect(detailJson.data.cardState.unread).toMatchObject({
+        actorId: 'alice',
+        cardId,
+        unread: true,
+      })
+      expect(detailJson.data.cardState.open).toBeNull()
+    })
+
+    it('threads cookie-session auth into websocket init broadcasts and explicit open clearing', async () => {
+      const loginRes = await httpRequest(
+        'POST',
+        `http://localhost:${localAuthPort}/auth/login`,
+        'username=alice&password=secret123&returnTo=%2F',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+      )
+      expect(loginRes.status).toBe(302)
+      const setCookieHeader = Array.isArray(loginRes.headers['set-cookie'])
+        ? loginRes.headers['set-cookie'][0]
+        : loginRes.headers['set-cookie']
+      expect(typeof setCookieHeader).toBe('string')
+      const cookieHeader = String(setCookieHeader).split(';')[0]
+
+      const createRes = await httpRequest('POST', `http://localhost:${localAuthPort}/api/tasks`, {
+        content: '# Cookie WebSocket Card State',
+        status: 'todo',
+      }, {
+        Cookie: cookieHeader,
+      })
+      expect(createRes.status).toBe(201)
+      const cardId = JSON.parse(createRes.body).data.id as string
+
+      const localWs = await connectWs(localAuthPort, { Cookie: cookieHeader })
+
+      try {
+        const init = await sendAndReceive(localWs, { type: 'ready' }, 'init')
+        const initialCard = (init.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+        expect(initialCard?.cardState?.unread).toMatchObject({
+          actorId: 'alice',
+          cardId,
+          unread: false,
+        })
+
+        const updatePromise = waitForMessage(localWs, 'init', 5000)
+        const logRes = await httpRequest('POST', `http://localhost:${localAuthPort}/api/tasks/${cardId}/logs`, {
+          text: 'Unread activity over websocket session',
+        }, {
+          Cookie: cookieHeader,
+        })
+        expect(logRes.status).toBe(201)
+
+        const updatedInit = await updatePromise
+        const updatedCard = (updatedInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+        expect(updatedCard?.cardState?.unread).toMatchObject({
+          actorId: 'alice',
+          cardId,
+          unread: true,
+        })
+
+        const openResponse = await sendAndReceive(localWs, { type: 'openCard', cardId }, 'cardContent')
+        expect(openResponse.cardId).toBe(cardId)
+
+        const detailRes = await httpGet(`http://localhost:${localAuthPort}/api/tasks/${cardId}`, {
+          Cookie: cookieHeader,
+        })
+        expect(detailRes.status).toBe(200)
+        const detailJson = JSON.parse(detailRes.body)
+        expect(detailJson.data.cardState.unread).toMatchObject({
+          actorId: 'alice',
+          cardId,
+          unread: false,
+        })
+        expect(detailJson.data.cardState.open).toMatchObject({
+          actorId: 'alice',
+          cardId,
+          domain: 'open',
+        })
+      } finally {
+        localWs.close()
+        await sleep(50)
+      }
     })
   })
 

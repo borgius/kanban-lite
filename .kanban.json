@@ -189,6 +189,12 @@
     }
   },
   "plugins": {
+		"card.state": {
+			"provider": "sqlite",
+			"options": {
+				"sqlitePath": ".kanban/card-state.db"
+			}
+		},
     "webhook.delivery": {
       "provider": "kl-webhooks-plugin",
       "options": {

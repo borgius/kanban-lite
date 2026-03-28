@@ -1,5 +1,6 @@
 import type { Card } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
+import type { AuthContext } from '../sdk/types'
 import type { WebSocket, WebSocketServer } from 'ws'
 import type chokidar from 'chokidar'
 
@@ -14,6 +15,7 @@ export interface StandaloneContext {
   suppressWatcherEventsUntil: number
   currentEditingCardId: string | null
   clientEditingCardIds: Map<WebSocket, string | null>
+  clientAuthContexts: Map<WebSocket, AuthContext>
   lastWrittenContent: string
   currentBoardId: string | undefined
   tempFilePath: string | undefined

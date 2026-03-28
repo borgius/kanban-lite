@@ -15,11 +15,11 @@ export function getIndexHtml(basePath = ''): string {
   <link rel="icon" type="image/svg+xml" href="${basePath}/favicon.svg">
   <link href="${basePath}/style.css" rel="stylesheet">
   <title>Kanban Board</title>
-  <script>window.__KB_BASE__ = ${JSON.stringify(basePath)}<\/script>
+  <script>window.__KB_BASE__ = ${JSON.stringify(basePath)}</script>
 </head>
 <body>
   <div id="root"></div>
-  <script type="module" src="${basePath}/index.js"><\/script>
+  <script type="module" src="${basePath}/index.js"></script>
 </body>
 </html>`
 }
@@ -81,6 +81,7 @@ export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, 
     suppressWatcherEventsUntil: 0,
     currentEditingCardId: null,
     clientEditingCardIds: new Map(),
+    clientAuthContexts: new Map(),
     lastWrittenContent: '',
     currentBoardId: undefined,
     tempFilePath: undefined,

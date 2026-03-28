@@ -871,6 +871,39 @@ In practice, that means SDK mode can observe pre-commit events such as `card.cre
 
 See [`packages/n8n-nodes-kanban-lite/README.md`](packages/n8n-nodes-kanban-lite/README.md) for installation steps, credential setup, action coverage, and trigger examples.
 
+## LangChain / LangGraph Integration
+
+Kanban Lite ships a first-party LangChain adapter at `packages/kl-langchain-tools`, published as [`kl-langchain-tools`](https://www.npmjs.com/package/kl-langchain-tools). It exposes all kanban-lite features as **39 LangChain `StructuredTool` instances** — including streaming comments, labels, actions, logs, and attachments.
+
+```sh
+npm install kl-langchain-tools @langchain/core
+# optional – for LangGraph state/nodes:
+npm install @langchain/langgraph
+```
+
+### Quick Start
+
+```ts
+import { KanbanSDK } from 'kanban-lite/sdk'
+import { createKanbanToolkit } from 'kl-langchain-tools'
+
+const sdk = new KanbanSDK('/path/to/.kanban')
+await sdk.init()
+
+const tools = createKanbanToolkit(sdk)
+// Pass `tools` to any LangChain agent or LangGraph ToolNode
+```
+
+### LangGraph Support
+
+Optional LangGraph helpers (`getKanbanBoardState`, `createRefreshBoardNode`, `createKanbanToolNode`) provide a board-state annotation and pre-built graph nodes for stateful agent workflows.
+
+### Streaming Comments
+
+The `streamCommentDirect` helper enables true chunk-by-chunk comment streaming from an `AsyncIterable<string>` (e.g. an LLM textStream), with `onStart` / `onChunk` callbacks for live WebSocket broadcast.
+
+See [`packages/kl-langchain-tools/README.md`](packages/kl-langchain-tools/README.md) for detailed usage, selective tool loading, streaming examples, and LangGraph integration guide.
+
 ## MCP Server
 
 Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).

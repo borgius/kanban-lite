@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { KanbanClient } from './client'
 import { createKanbanTools } from './tools'
 import type { KanbanCard, KanbanComment, KanbanColumn, KanbanBoardInfo } from './types'
@@ -369,5 +369,4 @@ describe('package exports', () => {
   })
 })
 
-// Need to import afterEach at the top level
-import { afterEach } from 'vitest'
+

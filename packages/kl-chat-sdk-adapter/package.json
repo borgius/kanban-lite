@@ -42,14 +42,6 @@
     "ai": ">=4.0.0",
     "zod": ">=3.22.0"
   },
-  "peerDependenciesMeta": {
-    "ai": {
-      "optional": false
-    },
-    "zod": {
-      "optional": false
-    }
-  },
   "keywords": [
     "kanban-lite",
     "kanban",

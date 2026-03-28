@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `createKanbanToolkit(sdk, options?)` — single-call factory with category filters.
   - Optional LangGraph integration: `getKanbanBoardState()` annotation, `createRefreshBoardNode()`, `createKanbanToolNode()`.
 
+- **Vercel AI Chat SDK adapter package** (`kl-chat-sdk-adapter`): New reusable npm package that provides pre-built Vercel AI SDK `tool()` definitions and a configurable REST client for kanban-lite. Includes 13 tools covering cards CRUD, comments (including streaming), labels, actions, forms, columns, and board info. Drop `createKanbanTools()` into any `streamText()` route to get full kanban-lite integration.
+
 - **CLI `--token` override**: `kl` now accepts `--token <value>` as a per-invocation auth override, ahead of `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN`, and reports the source as `flag` in `kl auth status` diagnostics.
 
 - **Streaming comments** — AI agents and automation tools can now create comments and stream their content live to connected viewers.

@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import { StructuredTool } from '@langchain/core/tools'
 import type { KanbanSDK } from './types'
-
-// ---------------------------------------------------------------------------
-// Card tools
-// ---------------------------------------------------------------------------
+import { extractTitle } from './helpers'
 
 export class ListCardsTool extends StructuredTool {
   name = 'kanban_list_cards'
@@ -21,7 +18,7 @@ export class ListCardsTool extends StructuredTool {
     const cards = await this.sdk.listCards(input.sortBy as any, input.boardId)
     const filtered = input.status ? cards.filter(c => c.status === input.status) : cards
     return JSON.stringify(filtered.map(c => ({
-      id: c.id, title: c.content?.split('\n')[0]?.replace(/^#\s*/, '') ?? '', status: c.status,
+      id: c.id, title: extractTitle(c.content), status: c.status,
       priority: c.priority, assignee: c.assignee, labels: c.labels, dueDate: c.dueDate,
       commentCount: c.comments?.length ?? 0, created: c.created, modified: c.modified,
     })))
@@ -147,7 +144,7 @@ export class GetCardsByStatusTool extends StructuredTool {
   async _call(input: z.infer<typeof this.schema>): Promise<string> {
     const cards = await this.sdk.getCardsByStatus(input.status, input.boardId)
     return JSON.stringify(cards.map(c => ({
-      id: c.id, title: c.content?.split('\n')[0]?.replace(/^#\s*/, '') ?? '', status: c.status,
+      id: c.id, title: extractTitle(c.content), status: c.status,
       priority: c.priority, assignee: c.assignee, labels: c.labels,
     })))
   }

@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import { StructuredTool } from '@langchain/core/tools'
 import type { KanbanSDK } from './types'
-
-// ---------------------------------------------------------------------------
-// Label tools
-// ---------------------------------------------------------------------------
+import { extractTitle } from './helpers'
 
 export class GetLabelsTool extends StructuredTool {
   name = 'kanban_get_labels'
@@ -112,7 +109,7 @@ export class FilterCardsByLabelGroupTool extends StructuredTool {
   async _call(input: z.infer<typeof this.schema>): Promise<string> {
     const cards = await this.sdk.filterCardsByLabelGroup(input.group, input.boardId)
     return JSON.stringify(cards.map(c => ({
-      id: c.id, title: c.content?.split('\n')[0]?.replace(/^#\s*/, '') ?? '', labels: c.labels,
+      id: c.id, title: extractTitle(c.content), labels: c.labels,
     })))
   }
 }

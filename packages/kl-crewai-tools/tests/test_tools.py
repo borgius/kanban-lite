@@ -81,7 +81,7 @@ class TestKanbanLiteClient:
             responses.POST,
             f"{BASE}/api/tasks",
             json={"ok": True, "data": card},
-            status=200,
+            status=201,
         )
         result = self.client.create_card("# New Card\n\nDescription")
         assert result == card
@@ -104,13 +104,15 @@ class TestKanbanLiteClient:
 
     @responses.activate
     def test_move_card(self) -> None:
+        moved_card = {"id": "abc", "title": "Task 1", "status": "done"}
         responses.add(
             responses.PATCH,
             f"{BASE}/api/tasks/abc/move",
-            json={"ok": True, "data": None},
+            json={"ok": True, "data": moved_card},
             status=200,
         )
-        self.client.move_card("abc", "done", position=0)
+        result = self.client.move_card("abc", "done", position=0)
+        assert result == moved_card
         body = json.loads(responses.calls[0].request.body)
         assert body["status"] == "done"
         assert body["position"] == 0
@@ -157,7 +159,7 @@ class TestKanbanLiteClient:
             responses.POST,
             f"{BASE}/api/tasks/abc/comments",
             json={"ok": True, "data": comment},
-            status=200,
+            status=201,
         )
         result = self.client.add_comment("abc", "new comment")
         assert result == comment
@@ -182,6 +184,28 @@ class TestKanbanLiteClient:
         client = KanbanLiteClient(base_url=BASE)
         headers = client._headers()
         assert "Authorization" not in headers
+
+    @responses.activate
+    def test_4xx_error_with_message(self) -> None:
+        responses.add(
+            responses.GET,
+            f"{BASE}/api/tasks/nonexistent",
+            json={"ok": False, "error": "Card not found"},
+            status=404,
+        )
+        with pytest.raises(KanbanLiteError, match="Card not found"):
+            self.client.get_card("nonexistent")
+
+    @responses.activate
+    def test_4xx_error_without_message(self) -> None:
+        responses.add(
+            responses.GET,
+            f"{BASE}/api/tasks/bad",
+            json={"ok": False},
+            status=400,
+        )
+        with pytest.raises(KanbanLiteError, match="API error 400"):
+            self.client.get_card("bad")
 
 
 # ------------------------------------------------------------------ #
@@ -223,7 +247,7 @@ class TestTools:
             responses.POST,
             f"{BASE}/api/tasks",
             json={"ok": True, "data": {"id": "new1"}},
-            status=200,
+            status=201,
         )
         tool = CreateCardTool(client=self.client)
         result = tool._run(content="# New\n\nbody")
@@ -295,7 +319,7 @@ class TestTools:
             responses.POST,
             f"{BASE}/api/tasks/abc/comments",
             json={"ok": True, "data": {"id": "c2"}},
-            status=200,
+            status=201,
         )
         tool = AddCommentTool(client=self.client)
         result = tool._run(card_id="abc", content="hello")

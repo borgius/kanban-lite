@@ -88,6 +88,16 @@ export interface KanbanCard {
   completedAt?: string | null
   body?: string
   content?: string
+  /** Concurrency control field. */
+  version?: number
+  /** Explicit board reference on card object. */
+  boardId?: string
+  /** File attachments associated with the card. */
+  attachments?: string[]
+  /** Sort order within a column. */
+  order?: number
+  /** State machine status beyond column position. */
+  cardState?: string
 }
 
 /** Options for card creation. */

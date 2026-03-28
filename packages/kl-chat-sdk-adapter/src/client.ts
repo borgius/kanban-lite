@@ -43,23 +43,12 @@ function normalizeCard(
 ): KanbanCard {
   const { title, body } = parseCardContent(card.content, card.id)
   return {
+    ...card,
     id: card.id,
     title,
     status: card.status,
     priority: card.priority,
-    ...(card.assignee !== undefined ? { assignee: card.assignee } : {}),
-    ...(card.dueDate !== undefined ? { dueDate: card.dueDate } : {}),
-    ...(card.labels ? { labels: card.labels } : {}),
-    ...(card.metadata ? { metadata: card.metadata } : {}),
-    ...(card.actions ? { actions: card.actions } : {}),
-    ...(card.forms ? { forms: card.forms } : {}),
-    ...(card.formData ? { formData: card.formData } : {}),
-    ...(card.comments ? { comments: card.comments } : {}),
-    ...(card.created ? { created: card.created } : {}),
-    ...(card.modified ? { modified: card.modified } : {}),
-    ...(card.completedAt !== undefined ? { completedAt: card.completedAt } : {}),
     ...(body ? { body } : {}),
-    ...(card.content ? { content: card.content } : {}),
   }
 }
 

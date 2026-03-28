@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "crewai>=0.80.0",
+    "pydantic>=2,<3",
     "requests>=2.31.0",
 ]
 

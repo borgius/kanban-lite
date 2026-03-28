@@ -116,7 +116,7 @@ export function createKanbanTools(
         status: z
           .string()
           .optional()
-          .describe('Initial column, e.g. "backlog", "in-progress". Defaults to the board default.'),
+          .describe('Initial column, e.g. "backlog", "in-progress". Defaults to backlog if omitted.'),
         labels: z
           .array(z.string())
           .optional()
@@ -236,12 +236,12 @@ export function createKanbanTools(
           .enum(['critical', 'high', 'medium', 'low'])
           .optional()
           .describe('New priority level'),
-        assignee: z.string().optional().describe('New assignee name'),
+        assignee: z.string().nullable().optional().describe('New assignee name (set to null to clear)'),
         labels: z
           .array(z.string())
           .optional()
           .describe('Replace card labels'),
-        dueDate: z.string().optional().describe('New due date (ISO 8601)'),
+        dueDate: z.string().nullable().optional().describe('New due date (ISO 8601, set to null to clear)'),
       }),
       execute: async ({ cardId, priority, assignee, labels, dueDate }) => {
         try {

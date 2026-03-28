@@ -7,7 +7,6 @@ the full CRUD surface.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -66,10 +65,14 @@ class KanbanLiteClient:
             timeout=self.timeout,
             **kwargs,
         )
-        resp.raise_for_status()
-        payload = resp.json()
-        if not payload.get("ok"):
-            raise KanbanLiteError(payload.get("error", "Unknown API error"))
+        try:
+            payload = resp.json()
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            resp.raise_for_status()
+            raise KanbanLiteError(f"Unexpected non-JSON response ({resp.status_code})")
+        if not resp.ok or not payload.get("ok"):
+            msg = payload.get("error", f"API error {resp.status_code}")
+            raise KanbanLiteError(msg)
         return payload.get("data")
 
     # ------------------------------------------------------------------ #

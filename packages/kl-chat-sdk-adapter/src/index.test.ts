@@ -159,9 +159,10 @@ describe('KanbanClient', () => {
   describe('addComment', () => {
     it('posts a comment', async () => {
       const client = new KanbanClient({ baseUrl: 'http://test:3000' })
-      globalThis.fetch = mockFetchJson(sampleComment)
+      const aliceComment: KanbanComment = { ...sampleComment, author: 'alice' }
+      globalThis.fetch = mockFetchJson(aliceComment)
       const comment = await client.addComment('1-test', 'alice', 'Great work!')
-      expect(comment.author).toBe('agent')
+      expect(comment.author).toBe('alice')
       const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)
       expect(body.author).toBe('alice')
       expect(body.content).toBe('Great work!')

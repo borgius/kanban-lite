@@ -161,7 +161,7 @@ curl -H "Authorization: Bearer kl-<your-token>" \
   http://localhost:2954/api/boards
 ```
 
-MCP and CLI calls running inside the same shell automatically pick up `KANBAN_LITE_TOKEN` from the environment — no extra configuration needed.
+MCP calls running inside the same shell automatically pick up `KANBAN_LITE_TOKEN` from the environment. CLI calls do the same, or you can pass `--token <value>` for a one-off invocation.
 
 ### What is still open-access
 
@@ -1171,9 +1171,15 @@ Source file:
 
 Behavior:
 
-- reads `process.env.KANBAN_TOKEN`
+- reads `--token <value>` first, then falls back to `process.env.KANBAN_LITE_TOKEN` and `process.env.KANBAN_TOKEN`
 - wraps mutators in `sdk.runWithAuth(resolveCliAuthContext(), fn)`
-- if present, produces:
+- if `--token` is present, produces:
+
+```ts
+{ token, tokenSource: 'flag', transport: 'cli' }
+```
+
+- otherwise, when an env token is present, produces:
 
 ```ts
 { token, tokenSource: 'env', transport: 'cli' }

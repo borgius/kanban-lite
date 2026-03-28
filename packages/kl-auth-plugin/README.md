@@ -54,7 +54,7 @@ This preserves Kanban Lite's open-access behavior.
 
 ### `local`
 
-- `auth.identity` → trusts host-validated standalone session identity, or the shared `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` API token
+- `auth.identity` → trusts host-validated standalone session identity, or the shared CLI / MCP API token supplied via `--token` (CLI only), `KANBAN_LITE_TOKEN`, or `KANBAN_TOKEN`
 - `auth.policy` → allows any authenticated identity and denies anonymous callers
 - `standalone.http` → serves `/auth/login`, handles login/logout, redirects unauthenticated standalone browser requests, and accepts cookie auth for standalone API calls
 

@@ -132,6 +132,28 @@ function createCliSdkProbePackageSource(packageName: string, command: string): s
   ].join('\n')
 }
 
+function createCliTokenAuthPackageSource(packageName: string, expectedToken: string): string {
+  return [
+    `const packageName = ${JSON.stringify(packageName)}`,
+    `const expectedToken = ${JSON.stringify(expectedToken)}`,
+    'module.exports.authIdentityPlugin = {',
+    '  manifest: { id: packageName, provides: [\'auth.identity\'] },',
+    '  async resolveIdentity(context) {',
+    '    if (!context || context.token !== expectedToken) return null',
+    '    return { subject: \"cli-token-user\", roles: [\"admin\"] }',
+    '  },',
+    '}',
+    'module.exports.authPolicyPlugin = {',
+    '  manifest: { id: packageName, provides: [\'auth.policy\'] },',
+    '  async checkPolicy(identity) {',
+    '    return identity',
+    '      ? { allowed: true, actor: identity.subject }',
+    '      : { allowed: false, reason: \"auth.identity.missing\" }',
+    '  },',
+    '}',
+  ].join('\n')
+}
+
 async function createCliCardStateWorkspace(): Promise<{ workspaceDir: string; configPath: string; cardId: string; cleanup: () => void }> {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-card-state-'))
   fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
@@ -170,6 +192,31 @@ async function createCliCardStateWorkspace(): Promise<{ workspaceDir: string; co
     configPath,
     cardId: card.id,
     cleanup: () => fs.rmSync(workspaceDir, { recursive: true, force: true }),
+  }
+}
+
+async function createCliProtectedWorkspaceWithCard(
+  authConfig: Record<string, unknown>,
+): Promise<{ workspaceDir: string; configPath: string; cardId: string; cleanup: () => void }> {
+  const workspace = createCliWorkspace({})
+  const sdk = new KanbanSDK(path.join(workspace.workspaceDir, '.kanban'))
+  await sdk.init()
+  const card = await sdk.createCard({ content: '# Protected card', status: 'backlog' })
+  sdk.close()
+
+  const currentConfig = JSON.parse(fs.readFileSync(workspace.configPath, 'utf-8')) as Record<string, unknown>
+  fs.writeFileSync(
+    workspace.configPath,
+    JSON.stringify({
+      ...currentConfig,
+      auth: authConfig,
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+
+  return {
+    ...workspace,
+    cardId: card.id,
   }
 }
 
@@ -328,6 +375,7 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--fuzzy')
     expect(helpText).toContain('--meta key=value')
     expect(helpText).toContain('--config <path>')
+    expect(helpText).toContain('--token <value>')
     expect(helpText).toContain('form submit <id> <form>')
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")
@@ -410,7 +458,8 @@ describe('CLI form-aware card commands', () => {
     })
     const sdk = {
       createCard: vi.fn().mockResolvedValue(card),
-    } as unknown as Pick<KanbanSDK, 'createCard'>
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'createCard' | 'runWithAuth'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdAdd(sdk as KanbanSDK, {
@@ -444,7 +493,8 @@ describe('CLI form-aware card commands', () => {
         forms: [{ schema: { type: 'object', title: 'Checklist' } }],
         formData: { checklist: { approved: true } },
       })),
-    } as unknown as Pick<KanbanSDK, 'getCard' | 'updateCard'>
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'updateCard' | 'runWithAuth'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdEdit(sdk as KanbanSDK, ['card-edit'], {
@@ -476,7 +526,8 @@ describe('CLI form-aware card commands', () => {
         },
         data: { severity: 'high' },
       }),
-    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm' | 'runWithAuth'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
@@ -517,7 +568,8 @@ describe('CLI form-aware card commands', () => {
         },
         data: { severity: 'critical' },
       }),
-    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm' | 'runWithAuth'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     try {
@@ -562,7 +614,8 @@ describe('CLI form-aware card commands', () => {
     const sdk = {
       getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-submit' })),
       submitForm: vi.fn().mockRejectedValue(new Error('Invalid form submission for bug-report')),
-    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm'>
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'submitForm' | 'runWithAuth'>
 
     await expect(cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
       data: JSON.stringify({ severity: 'nope' }),
@@ -668,12 +721,138 @@ describe('CLI denial UX regression', () => {
 
       expect(result.exitCode).toBe(1)
       expect(stripAnsi(result.stdout)).toBe('')
-      expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_LITE_TOKEN environment variable.')
+      expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_LITE_TOKEN or pass --token <value>.')
     } finally {
       cleanup()
     }
   })
 
+})
+
+describe('CLI token input regressions', () => {
+  it('passes the environment token through comment mutations', async () => {
+    const expectedToken = 'kl-env-comment-token'
+    const packageName = `kanban-cli-token-auth-${Date.now()}-env`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliTokenAuthPackageSource(packageName, expectedToken),
+    )
+    const { cardId, configPath, cleanup } = await createCliProtectedWorkspaceWithCard({
+      'auth.identity': { provider: packageName },
+      'auth.policy': { provider: packageName },
+    })
+
+    try {
+      const result = await runCliCommand([
+        'comment',
+        'add',
+        cardId,
+        '--author',
+        'user',
+        '--body',
+        'comment via env',
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: expectedToken,
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(stripAnsi(result.stderr)).toBe('')
+      expect(stripAnsi(result.stdout)).toContain('Added comment')
+
+      const showResult = await runCliCommand([
+        'show',
+        cardId,
+        '--json',
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: expectedToken,
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(showResult.exitCode).toBe(0)
+      expect(JSON.parse(showResult.stdout)).toMatchObject({
+        comments: [expect.objectContaining({ author: 'user', content: 'comment via env' })],
+      })
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
+  })
+
+  it('accepts --token for authenticated CLI mutations when env vars are absent', async () => {
+    const expectedToken = 'kl-flag-comment-token'
+    const packageName = `kanban-cli-token-auth-${Date.now()}-flag`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliTokenAuthPackageSource(packageName, expectedToken),
+    )
+    const { cardId, configPath, cleanup } = await createCliProtectedWorkspaceWithCard({
+      'auth.identity': { provider: packageName },
+      'auth.policy': { provider: packageName },
+    })
+
+    try {
+      const status = await runCliCommand([
+        'auth',
+        'status',
+        '--token',
+        expectedToken,
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: undefined,
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(status.exitCode).toBe(0)
+      expect(stripAnsi(status.stdout)).toContain('Token present:     yes')
+      expect(stripAnsi(status.stdout)).toContain('Token source:      flag')
+
+      const result = await runCliCommand([
+        'comment',
+        'add',
+        cardId,
+        '--author',
+        'user',
+        '--body',
+        'comment via flag',
+        '--token',
+        expectedToken,
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: undefined,
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(stripAnsi(result.stderr)).toBe('')
+      expect(stripAnsi(result.stdout)).toContain('Added comment')
+
+      const showResult = await runCliCommand([
+        'show',
+        cardId,
+        '--json',
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: undefined,
+        KANBAN_TOKEN: undefined,
+      })
+
+      expect(showResult.exitCode).toBe(0)
+      expect(JSON.parse(showResult.stdout)).toMatchObject({
+        comments: [expect.objectContaining({ author: 'user', content: 'comment via flag' })],
+      })
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
+  })
 })
 
 describe('CLI card-state commands', () => {

@@ -1392,7 +1392,8 @@ Kanban Lite also ships a first-party **local workspace auth** provider pair (`lo
 
 - **Standalone UI**: unauthenticated browser requests redirect to a plugin-served `/auth/login` page.
 - **Standalone API**: every `/api/*` request requires either `Authorization: Bearer <token>` or an authenticated standalone session cookie.
-- **CLI / MCP**: use the shared workspace token from `KANBAN_LITE_TOKEN` (with `KANBAN_TOKEN` still accepted as a compatibility alias).
+- **CLI**: use `--token <value>` for a one-off invocation, or the shared workspace token from `KANBAN_LITE_TOKEN` (`KANBAN_TOKEN` is still accepted as a compatibility alias).
+- **MCP**: use the shared workspace token from `KANBAN_LITE_TOKEN` (`KANBAN_TOKEN` is still accepted as a compatibility alias).
 - **Workspace token bootstrap**: when the standalone auth plugin starts and `KANBAN_LITE_TOKEN` is missing, it generates a `kl-...` token and saves it to `<workspaceRoot>/.env`.
 
 Enable it in `.kanban.json` with bcrypt-hashed passwords:
@@ -1433,7 +1434,7 @@ The `local` policy supports RBAC roles. When a user has a `role` (`user`, `manag
 ### Host token sources
 
 - **Standalone REST API**: `Authorization: Bearer <token>` request header, or authenticated standalone cookie session
-- **CLI**: `KANBAN_LITE_TOKEN` environment variable (`KANBAN_TOKEN` still accepted as an alias)
+- **CLI**: `--token <value>` for one-off calls, or `KANBAN_LITE_TOKEN` environment variable (`KANBAN_TOKEN` still accepted as an alias)
 - **MCP**: `KANBAN_LITE_TOKEN` environment variable (`KANBAN_TOKEN` still accepted as an alias)
 - **VS Code extension host**: secure `SecretStorage` (`Kanban Lite: Set Auth Token` / `Clear Auth Token` commands)
 

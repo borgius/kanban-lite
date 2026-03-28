@@ -49,7 +49,7 @@ kl add --title "My first task" --priority high
 
 Start with the stable docs hub at <code>/docs/examples/</code> for the shipped walkthroughs, then jump into the matching runnable apps:
 
-- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows)
+- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows); reusable adapter package: [`kl-chat-sdk-adapter`](packages/kl-chat-sdk-adapter/README.md)
 - LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
 - Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
 
@@ -871,6 +871,66 @@ In practice, that means SDK mode can observe pre-commit events such as `card.cre
 
 See [`packages/n8n-nodes-kanban-lite/README.md`](packages/n8n-nodes-kanban-lite/README.md) for installation steps, credential setup, action coverage, and trigger examples.
 
+## CrewAI Integration
+
+Kanban Lite ships a first-party Python package at `packages/kl-crewai-tools`, published as [`kl-crewai-tools`](https://pypi.org/project/kl-crewai-tools/). It wraps kanban-lite REST API operations as CrewAI `BaseTool` subclasses so specialized agents (PM, Dev, QA) can each manage their own board lane.
+
+```bash
+pip install kl-crewai-tools
+```
+
+```python
+from crewai import Agent
+from kl_crewai_tools import KanbanLiteClient, KanbanLiteToolkit
+
+client = KanbanLiteClient("http://localhost:3000")
+toolkit = KanbanLiteToolkit(client=client)
+
+pm_agent = Agent(
+    role="Project Manager",
+    goal="Keep the board organized",
+    backstory="You are a seasoned PM.",
+    tools=toolkit.get_tools(),
+)
+```
+
+9 tools are available: `list_cards`, `get_card`, `create_card`, `update_card`, `move_card`, `delete_card`, `list_columns`, `get_comments`, `add_comment`. Use `toolkit.get_tools(read_only=True)` for report-only agents.
+
+See [`packages/kl-crewai-tools/README.md`](packages/kl-crewai-tools/README.md) for full setup, multi-agent examples, and authentication configuration.
+
+## LangChain / LangGraph Integration
+
+Kanban Lite ships a first-party LangChain adapter at `packages/kl-langchain-tools`, published as [`kl-langchain-tools`](https://www.npmjs.com/package/kl-langchain-tools). It exposes all kanban-lite features as **39 LangChain `StructuredTool` instances** — including streaming comments, labels, actions, logs, and attachments.
+
+```sh
+npm install kl-langchain-tools @langchain/core
+# optional – for LangGraph state/nodes:
+npm install @langchain/langgraph
+```
+
+### Quick Start
+
+```ts
+import { KanbanSDK } from 'kanban-lite/sdk'
+import { createKanbanToolkit } from 'kl-langchain-tools'
+
+const sdk = new KanbanSDK('/path/to/.kanban')
+await sdk.init()
+
+const tools = createKanbanToolkit(sdk)
+// Pass `tools` to any LangChain agent or LangGraph ToolNode
+```
+
+### LangGraph Support
+
+Optional LangGraph helpers (`getKanbanBoardState`, `createRefreshBoardNode`, `createKanbanToolNode`) provide a board-state annotation and pre-built graph nodes for stateful agent workflows.
+
+### Streaming Comments
+
+The `streamCommentDirect` helper enables true chunk-by-chunk comment streaming from an `AsyncIterable<string>` (e.g. an LLM textStream), with `onStart` / `onChunk` callbacks for live WebSocket broadcast.
+
+See [`packages/kl-langchain-tools/README.md`](packages/kl-langchain-tools/README.md) for detailed usage, selective tool loading, streaming examples, and LangGraph integration guide.
+
 ## MCP Server
 
 Expose your kanban board to AI agents (Claude, Cursor, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -1524,6 +1584,7 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 `forms` defines reusable JSON Schema/JSON Forms descriptors that any card can attach by name. Card-local inline forms still live on the card frontmatter under `forms`, while submitted values persist per card under `formData`.
 
 ## AI Agent Integration
+- **Vercel AI Chat SDK adapter** (`kl-chat-sdk-adapter`): Reusable npm package providing pre-built `tool()` definitions and a REST client for kanban-lite — covers cards CRUD, streaming comments, labels, actions, forms, columns, and boards. See [`packages/kl-chat-sdk-adapter/`](packages/kl-chat-sdk-adapter/README.md).
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
 - **Codex**: Suggest, Auto-edit, and Full Auto modes
 - **OpenCode**: Agent integration support

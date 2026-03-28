@@ -287,7 +287,7 @@ class MoveCardTool(BaseTool):
         target_column: str,
         position: int | None = None,
     ) -> str:
-        result = self.client.move_card(card_id, target_column, position=position)
+        self.client.move_card(card_id, target_column, position=position)
         return f"Card {card_id} moved to {target_column}"
 
 

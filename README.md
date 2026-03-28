@@ -871,6 +871,33 @@ In practice, that means SDK mode can observe pre-commit events such as `card.cre
 
 See [`packages/n8n-nodes-kanban-lite/README.md`](packages/n8n-nodes-kanban-lite/README.md) for installation steps, credential setup, action coverage, and trigger examples.
 
+## CrewAI Integration
+
+Kanban Lite ships a first-party Python package at `packages/kl-crewai-tools`, published as [`kl-crewai-tools`](https://pypi.org/project/kl-crewai-tools/). It wraps kanban-lite REST API operations as CrewAI `BaseTool` subclasses so specialized agents (PM, Dev, QA) can each manage their own board lane.
+
+```bash
+pip install kl-crewai-tools
+```
+
+```python
+from crewai import Agent
+from kl_crewai_tools import KanbanLiteClient, KanbanLiteToolkit
+
+client = KanbanLiteClient("http://localhost:3000")
+toolkit = KanbanLiteToolkit(client=client)
+
+pm_agent = Agent(
+    role="Project Manager",
+    goal="Keep the board organized",
+    backstory="You are a seasoned PM.",
+    tools=toolkit.get_tools(),
+)
+```
+
+9 tools are available: `list_cards`, `get_card`, `create_card`, `update_card`, `move_card`, `delete_card`, `list_columns`, `get_comments`, `add_comment`. Use `toolkit.get_tools(read_only=True)` for report-only agents.
+
+See [`packages/kl-crewai-tools/README.md`](packages/kl-crewai-tools/README.md) for full setup, multi-agent examples, and authentication configuration.
+
 ## LangChain / LangGraph Integration
 
 Kanban Lite ships a first-party LangChain adapter at `packages/kl-langchain-tools`, published as [`kl-langchain-tools`](https://www.npmjs.com/package/kl-langchain-tools). It exposes all kanban-lite features as **39 LangChain `StructuredTool` instances** — including streaming comments, labels, actions, logs, and attachments.

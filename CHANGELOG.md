@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CrewAI tool adapter** (`kl-crewai-tools`): New Python package at `packages/kl-crewai-tools` wrapping kanban-lite REST API operations as CrewAI `BaseTool` subclasses (9 tools: list/get/create/update/move/delete cards, list columns, get/add comments). Includes a `KanbanLiteToolkit` helper with `read_only` mode for reporting agents. Enables specialized agents (PM, Dev, QA) to each manage their own board lane.
+
 - **LangChain / LangGraph adapter** (`kl-langchain-tools`) — new package at `packages/kl-langchain-tools` exposing all kanban-lite features as 39 LangChain `StructuredTool` instances.
   - Card tools: list, get, create, update, move, delete, filter by status, trigger actions.
   - Comment tools: list, add, update, delete, streaming comments (`kanban_stream_comment` + `streamCommentDirect` helper).

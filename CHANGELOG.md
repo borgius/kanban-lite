@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LangChain / LangGraph adapter** (`kl-langchain-tools`) — new package at `packages/kl-langchain-tools` exposing all kanban-lite features as 39 LangChain `StructuredTool` instances.
+  - Card tools: list, get, create, update, move, delete, filter by status, trigger actions.
+  - Comment tools: list, add, update, delete, streaming comments (`kanban_stream_comment` + `streamCommentDirect` helper).
+  - Column tools: list, add, update, remove, reorder.
+  - Label tools: get, set, delete, rename, unique assignees/labels, filter by label group.
+  - Board tools: list, get, create, delete, update, get actions.
+  - Log tools: list, add, clear (card-level and board-level).
+  - Attachment tools: list, add, remove.
+  - `createKanbanToolkit(sdk, options?)` — single-call factory with category filters.
+  - Optional LangGraph integration: `getKanbanBoardState()` annotation, `createRefreshBoardNode()`, `createKanbanToolNode()`.
+
 - **Vercel AI Chat SDK adapter package** (`kl-chat-sdk-adapter`): New reusable npm package that provides pre-built Vercel AI SDK `tool()` definitions and a configurable REST client for kanban-lite. Includes 13 tools covering cards CRUD, comments (including streaming), labels, actions, forms, columns, and board info. Drop `createKanbanTools()` into any `streamText()` route to get full kanban-lite integration.
 
 - **CLI `--token` override**: `kl` now accepts `--token <value>` as a per-invocation auth override, ahead of `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN`, and reports the source as `flag` in `kl auth status` diagnostics.

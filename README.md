@@ -49,7 +49,7 @@ kl add --title "My first task" --priority high
 
 Start with the stable docs hub at <code>/docs/examples/</code> for the shipped walkthroughs, then jump into the matching runnable apps:
 
-- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows)
+- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows); reusable adapter package: [`kl-chat-sdk-adapter`](packages/kl-chat-sdk-adapter/README.md)
 - LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
 - Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
 
@@ -1524,6 +1524,7 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 `forms` defines reusable JSON Schema/JSON Forms descriptors that any card can attach by name. Card-local inline forms still live on the card frontmatter under `forms`, while submitted values persist per card under `formData`.
 
 ## AI Agent Integration
+- **Vercel AI Chat SDK adapter** (`kl-chat-sdk-adapter`): Reusable npm package providing pre-built `tool()` definitions and a REST client for kanban-lite — covers cards CRUD, streaming comments, labels, actions, forms, columns, and boards. See [`packages/kl-chat-sdk-adapter/`](packages/kl-chat-sdk-adapter/README.md).
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
 - **Codex**: Suggest, Auto-edit, and Full Auto modes
 - **OpenCode**: Agent integration support

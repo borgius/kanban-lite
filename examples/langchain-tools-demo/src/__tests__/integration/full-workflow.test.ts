@@ -11,8 +11,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
-// SDK and adapter imports
-// Use relative source path since kanban-lite may not be built (same pattern as chat-sdk-vercel-ai example)
+// Use source path (kanban-lite may not be built)
 import { KanbanSDK } from '../../../../../packages/kanban-lite/src/sdk/index'
 import {
   createKanbanToolkit,

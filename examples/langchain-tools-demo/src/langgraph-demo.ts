@@ -11,7 +11,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-// Use relative source path since kanban-lite may not be built
+// Use source path (kanban-lite may not be built)
 import { KanbanSDK } from '../../packages/kanban-lite/src/sdk/index'
 import {
   createKanbanToolkit,

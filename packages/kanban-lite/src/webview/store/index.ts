@@ -674,9 +674,13 @@ export const useStore = create<KanbanState>((set, get) => ({
           }
         }
 
-        // Label filter (multiselect)
+        // Label filter (multiselect) — 'unread' is a virtual label backed by card state
         if (labelFilter.length > 0) {
-          if (!f.labels.some(l => labelFilter.includes(l))) return false
+          const realLabels = labelFilter.filter(l => l !== 'unread')
+          const wantsUnread = labelFilter.includes('unread')
+          const matchesReal = realLabels.length > 0 && f.labels.some(l => realLabels.includes(l))
+          const matchesUnread = wantsUnread && !!f.cardState?.unread?.unread
+          if (!matchesReal && !matchesUnread) return false
         }
 
         // Due date filter

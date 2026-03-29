@@ -255,6 +255,33 @@ interface KanbanCliPlugin {
 const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const AUTH_SESSIONS_FILE = '.auth-sessions.json'
+
+function loadSessionsFromFile(filePath: string): Map<string, LocalAuthSession> {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const now = Date.now()
+    const store = new Map<string, LocalAuthSession>()
+    for (const [id, session] of Object.entries(parsed)) {
+      if (!isRecord(session)) continue
+      const { username, expiresAt } = session as { username?: unknown; expiresAt?: unknown }
+      if (typeof username !== 'string' || typeof expiresAt !== 'number') continue
+      if (expiresAt > now) store.set(id, { username, expiresAt })
+    }
+    return store
+  } catch {
+    return new Map()
+  }
+}
+
+function persistSessionsToFile(filePath: string, store: Map<string, LocalAuthSession>): void {
+  const data: Record<string, LocalAuthSession> = {}
+  for (const [id, session] of store) {
+    data[id] = session
+  }
+  fs.promises.writeFile(filePath, JSON.stringify(data), 'utf-8').catch(() => undefined)
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -528,7 +555,8 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
   const authCapabilities = resolveAuthCapabilities(options)
   const localAuthEnabled = isLocalAuthEnabled(options)
   const users = getLocalUsers(options)
-  const sessionStore = new Map<string, LocalAuthSession>()
+  const sessionFilePath = path.join(options.kanbanDir, AUTH_SESSIONS_FILE)
+  const sessionStore = loadSessionsFromFile(sessionFilePath)
   const identityOptions = authCapabilities['auth.identity'].options
   const explicitApiToken =
     typeof identityOptions?.apiToken === 'string' && identityOptions.apiToken.length > 0
@@ -553,6 +581,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     if (!session) return null
     if (session.expiresAt <= Date.now()) {
       sessionStore.delete(sessionId)
+      persistSessionsToFile(sessionFilePath, sessionStore)
       return null
     }
     const user = users.find((u) => u.username === session.username)
@@ -648,6 +677,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
             username: user.username,
             expiresAt: Date.now() + LOCAL_AUTH_SESSION_TTL_MS,
           })
+          persistSessionsToFile(sessionFilePath, sessionStore)
           setCookie(request.res, LOCAL_AUTH_COOKIE, sessionId, [
             'Path=/',
             'HttpOnly',
@@ -660,7 +690,10 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
         async (request: StandaloneHttpRequestContext) => {
           if (!request.route('POST', '/auth/logout') && !request.route('GET', '/auth/logout')) return false
           const sessionId = parseCookies(request.req.headers.cookie)[LOCAL_AUTH_COOKIE]
-          if (sessionId) sessionStore.delete(sessionId)
+          if (sessionId) {
+            sessionStore.delete(sessionId)
+            persistSessionsToFile(sessionFilePath, sessionStore)
+          }
           clearCookie(request.res, LOCAL_AUTH_COOKIE)
           redirect(request.res, '/auth/login')
           return true

@@ -117,7 +117,10 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const labels = useMemo(() => {
     const s = new Set<string>()
     cards.forEach(c => c.labels.forEach(l => s.add(l)))
-    return Array.from(s).sort()
+    const sorted = Array.from(s).sort()
+    // Prepend the virtual 'unread' label when any card has unread state
+    const hasUnread = cards.some(c => c.cardState?.unread?.unread)
+    return hasUnread ? ['unread', ...sorted] : sorted
   }, [cards])
 
   const parsedSearch = useMemo(() => parseSearchQuery(searchQuery), [searchQuery])

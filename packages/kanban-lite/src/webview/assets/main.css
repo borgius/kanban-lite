@@ -1547,7 +1547,7 @@ body.vscode-high-contrast {
   padding: 10px 11px 9px;
   min-height: 5rem;
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
@@ -1607,6 +1607,32 @@ body.vscode-high-contrast {
   --kb-card-selected-border: #22c55e;
   --kb-card-selected-bg: rgba(34, 197, 94, 0.08);
   --kb-card-selected-ring: rgba(34, 197, 94, 0.3);
+}
+
+/* ─── Unread count badge (top-right corner) ─────────────────────────── */
+.kb-card-unread-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.kb-card-unread-badge:empty {
+  min-width: 10px;
+  height: 10px;
+  padding: 0;
 }
 
 /* ─── Card description markdown preview ─────────────────────────────── */

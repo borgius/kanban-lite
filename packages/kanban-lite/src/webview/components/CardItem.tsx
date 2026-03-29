@@ -98,6 +98,16 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   }
 
   const completedText = card.status === 'done' ? formatCompletedAt(card.completedAt) : null
+  const isUnread = !!card.cardState?.unread?.unread
+  const unreadCount = (() => {
+    if (!isUnread) return 0
+    const readThrough = card.cardState?.unread?.readThrough?.cursor
+    if (!readThrough || !card.comments?.length) return card.comments?.length || 0
+    // Count comments newer than the readThrough cursor timestamp
+    const readTime = card.cardState?.unread?.readThrough?.updatedAt
+    if (!readTime) return card.comments.length
+    return card.comments.filter(c => new Date(c.created) > new Date(readTime)).length
+  })()
   const cardStateBadge = (() => {
     if (card.cardState?.error?.availability === 'identity-unavailable') {
       return {
@@ -115,22 +125,6 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
       }
     }
 
-    if (card.cardState?.unread?.unread) {
-      return {
-        label: 'Unread',
-        className: 'kb-card-state-badge kb-card-state-badge--unread bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
-        title: 'Unread activity is waiting on this card',
-      }
-    }
-
-    if (card.cardState?.open) {
-      return {
-        label: 'Opened',
-        className: 'kb-card-state-badge kb-card-state-badge--opened bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-        title: `Last opened ${new Date(card.cardState.open.value.openedAt).toLocaleString()}`,
-      }
-    }
-
     return null
   })()
 
@@ -144,6 +138,15 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
         isDragging ? 'shadow-lg opacity-90' : '',
       ].filter(Boolean).join(' ')}
     >
+      {/* Unread badge — top-right corner */}
+      {isUnread && (
+        <span
+          className="kb-card-unread-badge"
+          title={`${unreadCount || ''} unread event${unreadCount !== 1 ? 's' : ''}`}
+        >
+          {unreadCount > 0 ? unreadCount : ''}
+        </span>
+      )}
       {/* Title & Content */}
       <div className="flex-1">
         {/* File Name + Priority badge row (when fileName enabled) */}
@@ -175,7 +178,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
               {cardStateBadge.label}
             </span>
           )}
-          {cardSettings.showPriorityBadges && !(cardSettings.showFileName && fileName) && (
+          {!cardStateBadge && cardSettings.showPriorityBadges && !(cardSettings.showFileName && fileName) && (
             <span
               className={`text-xs font-medium px-1.5 py-0.5 rounded shrink-0 ${priorityColors[card.priority]}`}
             >
@@ -192,8 +195,13 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
         )}
 
         {/* Labels */}
-        {cardSettings.showLabels && card.labels.length > 0 && (
+        {cardSettings.showLabels && (card.labels.length > 0 || isUnread) && (
           <div className="flex flex-wrap gap-1 mb-2">
+            {isUnread && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-semibold">
+                unread
+              </span>
+            )}
             {(cardSettings.compactMode ? card.labels.slice(0, 2) : card.labels.slice(0, 4)).map((label) => {
               const def = labelDefs[label]
               return (

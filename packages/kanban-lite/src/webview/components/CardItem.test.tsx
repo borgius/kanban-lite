@@ -156,10 +156,13 @@ describe('CardItem — premium card surface', () => {
     expect(markup).toContain('Some details here')
   })
 
-  it('renders an unread badge when passive card-state metadata says the card is unread', () => {
+  it('renders an unread circle badge and unread label when the card is unread', () => {
     const markup = renderToStaticMarkup(
       <CardItem
         card={makeCard({
+          comments: [
+            { id: 'c1', author: 'bob', created: '2026-03-25T10:00:00.000Z', content: 'hello' },
+          ],
           cardState: {
             unread: {
               actorId: 'default-user',
@@ -181,11 +184,12 @@ describe('CardItem — premium card surface', () => {
       />,
     )
 
-    expect(markup).toContain('kb-card-state-badge--unread')
-    expect(markup).toContain('Unread')
+    expect(markup).toContain('kb-card-unread-badge')
+    expect(markup).toContain('>unread<')
+    expect(markup).not.toContain('kb-card-state-badge--unread')
   })
 
-  it('renders an opened badge when the unread state is clear but an open record exists', () => {
+  it('does not render unread badge or opened badge when the card has been read', () => {
     const markup = renderToStaticMarkup(
       <CardItem
         card={makeCard({
@@ -220,8 +224,9 @@ describe('CardItem — premium card surface', () => {
       />,
     )
 
-    expect(markup).toContain('kb-card-state-badge--opened')
-    expect(markup).toContain('Opened')
+    expect(markup).not.toContain('kb-card-unread-badge')
+    expect(markup).not.toContain('kb-card-state-badge--opened')
+    expect(markup).not.toContain('>unread<')
   })
 
   it('renders a sign-in badge when card-state identity resolution is unavailable', () => {

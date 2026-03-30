@@ -1388,8 +1388,8 @@ export const cliPlugin: KanbanCliPlugin = {
 export const pluginManifest = {
   id: 'kl-plugin-auth',
   capabilities: {
-    'auth.identity': ['local', 'noop', 'rbac', 'kl-plugin-auth'] as const,
-    'auth.policy': ['local', 'noop', 'rbac', 'kl-plugin-auth'] as const,
+    'auth.identity': ['rbac', 'kl-plugin-auth'] as const,
+    'auth.policy': ['rbac', 'kl-plugin-auth'] as const,
   },
   integrations: ['standalone.http', 'cli', 'event.listener'] as const,
 } as const

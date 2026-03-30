@@ -8,7 +8,7 @@ export type CapabilityNamespace = 'card.storage' | 'attachment.storage'
 
 /** Provider selection for a capability namespace. */
 export interface ProviderRef {
-  /** Provider id (for built-ins this is e.g. `'markdown'`, `'sqlite'`, `'mysql'`, `'localfs'`). */
+  /** Provider id (for built-ins this is e.g. `'localfs'`, `'sqlite'`, `'mysql'`). */
   provider: string
   /** Provider-specific configuration passed through to the plugin implementation. */
   options?: Record<string, unknown>
@@ -264,7 +264,7 @@ export interface KanbanConfig {
   }
   /**
     * Legacy card-storage selector kept for backward compatibility.
-    * - `'markdown'` (default) — cards stored as individual `.md` files
+    * - `'markdown'` (legacy alias for the default `localfs` provider) — cards stored as individual `.md` files
     * - `'sqlite'` — cards/comments stored in a SQLite database file
     *
     * Prefer {@link plugins} for new configuration. When both forms are present,
@@ -281,11 +281,10 @@ export interface KanbanConfig {
    */
   sqlitePath?: string
   /**
-   * Optional capability-based storage provider selections.
+    * Optional capability-based storage provider selections.
    * When present, these override legacy `storageEngine` / `sqlitePath` for the
-    * matching namespaces while preserving backward-compatible defaults for any
-    * omitted namespaces (`markdown` for `card.storage`, `localfs` for
-    * `attachment.storage`).
+   * matching namespaces while preserving backward-compatible defaults for any
+   * omitted namespaces (`localfs` for `card.storage` and `attachment.storage`).
      *
      * Built-in attachment providers `sqlite` and `mysql` are additive opt-ins.
      * They require the matching `card.storage` provider and do not change the
@@ -858,18 +857,28 @@ export function normalizeAuthCapabilities(
 /**
  * Normalizes card-state capability selections into a complete runtime capability map.
  *
- * `card.state` is first-class and defaults to the built-in provider contract when
- * omitted from `.kanban.json`.
+ * `card.state` is first-class and defaults to the built-in `localfs` provider
+ * when omitted from `.kanban.json`.
  *
  * The input object is never mutated.
  */
 export function normalizeCardStateCapabilities(
   config: Pick<KanbanConfig, 'plugins'>,
 ): ResolvedCardStateCapabilities {
+  const configured = config.plugins?.['card.state']
+  if (configured) {
+    return {
+      'card.state': configured.provider === 'builtin'
+        ? {
+            provider: 'localfs',
+            ...(configured.options !== undefined ? { options: { ...configured.options } } : {}),
+          }
+        : cloneProviderRef(configured),
+    }
+  }
+
   return {
-    'card.state': config.plugins?.['card.state']
-      ? cloneProviderRef(config.plugins['card.state'])
-      : { provider: 'builtin' },
+    'card.state': { provider: 'localfs' },
   }
 }
 
@@ -880,7 +889,7 @@ export function normalizeCardStateCapabilities(
  * Precedence:
  * 1. Explicit `plugins[namespace]`
  * 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
- * 3. Backward-compatible defaults (`markdown` + `localfs`)
+ * 3. Backward-compatible defaults (`localfs` + `localfs`)
  *
  * Explicit built-in `attachment.storage` providers such as `sqlite` and
  * `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
@@ -896,12 +905,23 @@ export function normalizeStorageCapabilities(
         provider: 'sqlite',
         options: { sqlitePath: config.sqlitePath ?? '.kanban/kanban.db' },
       }
-    : { provider: 'markdown' }
+    : { provider: 'localfs' }
+
+  const configuredCardStorage = config.plugins?.['card.storage']
+    ? cloneProviderRef(config.plugins['card.storage'])
+    : null
+
+  const normalizedCardStorage = configuredCardStorage
+    ? {
+        provider: configuredCardStorage.provider === 'markdown'
+          ? 'localfs'
+          : configuredCardStorage.provider,
+        ...(configuredCardStorage.options !== undefined ? { options: { ...configuredCardStorage.options } } : {}),
+      }
+    : legacyCardProvider
 
   return {
-    'card.storage': config.plugins?.['card.storage']
-      ? cloneProviderRef(config.plugins['card.storage'])
-      : legacyCardProvider,
+    'card.storage': normalizedCardStorage,
     'attachment.storage': config.plugins?.['attachment.storage']
       ? cloneProviderRef(config.plugins['attachment.storage'])
       : { provider: 'localfs' },

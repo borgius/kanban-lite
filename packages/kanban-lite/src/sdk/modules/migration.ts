@@ -122,13 +122,13 @@ export async function migrateToMarkdown(ctx: SDKContext): Promise<number> {
   if (ctx._storage.type === 'markdown') {
     throw new Error('Storage engine is already markdown')
   }
-  const { count, targetEngine } = await migrateToProvider(ctx, { provider: 'markdown' })
+  const { count, targetEngine } = await migrateToProvider(ctx, { provider: 'localfs' })
 
   const from = ctx.capabilities?.providers['card.storage'].provider ?? ctx._storage.type
   const config = readConfig(ctx.workspaceRoot)
   targetEngine.close()
 
-  const cleanedConfig = removeIncompatibleBuiltInAttachmentPlugin(removeCardStoragePlugin(config), 'markdown')
+  const cleanedConfig = removeIncompatibleBuiltInAttachmentPlugin(removeCardStoragePlugin(config), 'localfs')
   const { storageEngine: _se, sqlitePath: _sp, ...restConfig } = cleanedConfig as typeof config & { storageEngine?: string; sqlitePath?: string }
   writeConfig(ctx.workspaceRoot, restConfig as typeof config)
   return count

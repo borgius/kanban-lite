@@ -135,29 +135,32 @@ describe('resolveCapabilityBag', () => {
     expect(bag.cardStorage.type).toBe('sqlite')
   })
 
-  it('providers field reflects the input capabilities', () => {
+  it('providers field reflects canonicalized capabilities', () => {
     const caps = {
       'card.storage': { provider: 'markdown' },
       'attachment.storage': { provider: 'localfs' },
     } as const
     const bag = resolveCapabilityBag(caps, kanbanDir)
-    expect(bag.providers).toBe(caps)
+    expect(bag.providers).toEqual({
+      'card.storage': { provider: 'localfs' },
+      'attachment.storage': { provider: 'localfs' },
+    })
   })
 
-  it('resolves a builtin card.state provider with shared module context by default', () => {
+  it('resolves a localfs card.state provider with shared module context by default', () => {
     const bag = resolveCapabilityBag(
       { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
       kanbanDir,
     )
 
     expect(bag.cardState.manifest).toEqual({
-      id: 'builtin',
+      id: 'localfs',
       provides: ['card.state'],
     })
     expect(bag.cardStateContext).toEqual({
       workspaceRoot: workspaceDir,
       kanbanDir,
-      provider: 'builtin',
+      provider: 'localfs',
       backend: 'builtin',
     })
   })
@@ -485,8 +488,14 @@ describe('PROVIDER_ALIASES', () => {
     expect(PROVIDER_ALIASES.get('localfs')).toBeUndefined()
   })
 
-  it('contains exactly the two expected short alias ids', () => {
-    expect([...PROVIDER_ALIASES.keys()].sort()).toEqual(['mysql', 'sqlite'])
+  it('contains the expected short alias ids', () => {
+    expect([...PROVIDER_ALIASES.keys()].sort()).toEqual([
+      'mongodb',
+      'mysql',
+      'postgresql',
+      'redis',
+      'sqlite',
+    ])
   })
 })
 
@@ -495,8 +504,8 @@ describe('PROVIDER_ALIASES', () => {
 // ---------------------------------------------------------------------------
 
 describe('CARD_STATE_PROVIDER_ALIASES', () => {
-  it('maps sqlite to kl-plugin-card-state-sqlite', () => {
-    expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-card-state-sqlite')
+  it('maps sqlite to kl-plugin-storage-sqlite', () => {
+    expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-storage-sqlite')
   })
 
   it('has no alias for unknown card.state provider ids', () => {
@@ -504,8 +513,14 @@ describe('CARD_STATE_PROVIDER_ALIASES', () => {
     expect(CARD_STATE_PROVIDER_ALIASES.get('builtin')).toBeUndefined()
   })
 
-  it('contains exactly the expected short alias id', () => {
-    expect([...CARD_STATE_PROVIDER_ALIASES.keys()]).toEqual(['sqlite'])
+  it('contains the expected short alias ids', () => {
+    expect([...CARD_STATE_PROVIDER_ALIASES.keys()]).toEqual([
+      'sqlite',
+      'mysql',
+      'postgresql',
+      'mongodb',
+      'redis',
+    ])
   })
 })
 
@@ -640,7 +655,7 @@ describe('KanbanSDK capability resolution', () => {
   it('exposes capabilities getter with resolved bag', () => {
     const sdk = new KanbanSDK(kanbanDir)
     expect(sdk.capabilities).not.toBeNull()
-    expect(sdk.capabilities?.providers['card.storage'].provider).toBe('markdown')
+    expect(sdk.capabilities?.providers['card.storage'].provider).toBe('localfs')
     sdk.close()
   })
 
@@ -706,13 +721,13 @@ describe('KanbanSDK plugin settings inventory', () => {
         capability: 'card.storage',
         selected: {
           capability: 'card.storage',
-          providerId: 'markdown',
+          providerId: 'localfs',
           source: 'default',
         },
       })
       expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
-        providerId: 'markdown',
-        packageName: 'markdown',
+        providerId: 'localfs',
+        packageName: 'localfs',
         discoverySource: 'builtin',
         isSelected: true,
       }))
@@ -746,6 +761,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const cleanup = installTempPackage(
       'temp-inventory-attachment-plugin',
       `module.exports = {
+  pluginManifest: {
+    id: 'temp-inventory-attachment-plugin',
+    capabilities: { 'attachment.storage': ['temp-inventory-attachment-plugin'] },
+  },
   attachmentStoragePlugin: {
     manifest: { id: 'temp-inventory-attachment-plugin', provides: ['attachment.storage'] },
     async copyAttachment() {},
@@ -874,18 +893,18 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = sdk.selectPluginSettingsProvider('card.storage', 'markdown')
+      const selected = sdk.selectPluginSettingsProvider('card.storage', 'localfs')
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
 
       expect(selected.selected).toEqual({
         capability: 'card.storage',
-        providerId: 'markdown',
+        providerId: 'localfs',
         source: 'config',
       })
       expect(persistedConfig.plugins).toMatchObject({
-        'card.storage': { provider: 'markdown' },
+        'card.storage': { provider: 'localfs' },
         'attachment.storage': { provider: 'localfs' },
       })
       expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
@@ -894,11 +913,11 @@ describe('KanbanSDK plugin settings inventory', () => {
       const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
       expect(cardStorage?.selected).toEqual({
         capability: 'card.storage',
-        providerId: 'markdown',
+        providerId: 'localfs',
         source: 'config',
       })
       expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
-        providerId: 'markdown',
+        providerId: 'localfs',
         isSelected: true,
       }))
       expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
@@ -1323,7 +1342,7 @@ describe('ResolvedCapabilityBag file/watch capabilities', () => {
     expect(sdk.getStorageStatus()).toEqual({
       storageEngine: 'markdown',
       providers: {
-        'card.storage': { provider: 'markdown' },
+        'card.storage': { provider: 'localfs' },
         'attachment.storage': { provider: 'localfs' },
       },
       isFileBacked: true,
@@ -2193,7 +2212,7 @@ describe('collectActiveExternalPackageNames', () => {
     const result = collectActiveExternalPackageNames({
       plugins: { 'card.state': { provider: 'sqlite' } },
     })
-    expect(result).toContain('kl-plugin-card-state-sqlite')
+    expect(result).toContain('kl-plugin-storage-sqlite')
   })
 
   it('includes kl-plugin-webhook when webhookPlugin key is explicitly configured', () => {

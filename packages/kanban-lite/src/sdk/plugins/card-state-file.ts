@@ -116,7 +116,7 @@ function getDomainUpdatedAt(updatedAt?: string): string {
 
 export function createFileBackedCardStateProvider(context: CardStateModuleContext): CardStateProvider {
   return {
-    manifest: { id: 'builtin', provides: ['card.state'] },
+    manifest: { id: 'localfs', provides: ['card.state'] },
     async getCardState(input: CardStateKey): Promise<CardStateRecord | null> {
       const stored = await readStoredDocument(context, input)
       if (!stored) return null

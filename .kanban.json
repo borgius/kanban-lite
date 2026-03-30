@@ -190,28 +190,13 @@
   },
   "plugins": {
     "card.state": {
-      "provider": "sqlite",
-      "options": {
-        "sqlitePath": ".kanban/card-state.db"
-      }
+      "provider": "builtin"
     },
     "webhook.delivery": {
-      "provider": "kl-plugin-webhook",
-      "options": {
-        "webhooks": [
-          {
-            "id": "wh_test000000000000",
-            "url": "http://localhost:2954/api/webhooks/test",
-            "events": [
-              "*"
-            ],
-            "active": true
-          }
-        ]
-      }
+      "provider": "webhooks"
     },
     "attachment.storage": {
-      "provider": "kl-plugin-attachment-s3"
+      "provider": "localfs"
     },
     "auth.identity": {
       "provider": "kl-plugin-auth",

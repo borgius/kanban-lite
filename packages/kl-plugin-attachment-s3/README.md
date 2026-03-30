@@ -66,7 +66,7 @@ export AWS_REGION=us-east-1
 }
 ```
 
-Keep your default `card.storage` provider (e.g. `"markdown"`) as-is; this plugin only handles attachment storage.
+Keep your default `card.storage` provider (e.g. `"localfs"`; legacy `"markdown"` is normalized) as-is; this plugin only handles attachment storage.
 
 When running locally from this monorepo, that usually means selecting the provider in your workspace `.kanban.json` and making sure the host environment can resolve the package from the installed path above.
 

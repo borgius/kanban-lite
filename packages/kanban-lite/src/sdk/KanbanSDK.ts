@@ -524,7 +524,7 @@ function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions):
       options: { sqlitePath: options.sqlitePath ?? config.sqlitePath ?? '.kanban/kanban.db' },
     }
   } else if (options?.storageEngine === 'markdown') {
-    capabilities['card.storage'] = { provider: 'markdown' }
+    capabilities['card.storage'] = { provider: 'localfs' }
   }
 
   if (options?.capabilities?.['card.storage']) {

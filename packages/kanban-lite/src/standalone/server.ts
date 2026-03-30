@@ -180,7 +180,7 @@ function collectStandaloneHttpHandlers(
     workspaceRoot: ctx.workspaceRoot,
     kanbanDir: ctx.absoluteKanbanDir,
     capabilities: ctx.sdk.capabilities?.providers ?? {
-      'card.storage': { provider: 'markdown' },
+      'card.storage': { provider: 'localfs' },
       'attachment.storage': { provider: 'localfs' },
     },
     authCapabilities: ctx.sdk.capabilities?.authProviders ?? {

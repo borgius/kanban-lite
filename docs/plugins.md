@@ -365,7 +365,7 @@ The normalization rules are explicit and stable:
 1. `plugins[namespace]`
 2. legacy `storageEngine` / `sqlitePath` for `card.storage`
 3. defaults:
-   - `card.storage` → `markdown`
+  - `card.storage` → `localfs`
    - `attachment.storage` → `localfs`
 
 So if you have both forms present:
@@ -374,12 +374,12 @@ So if you have both forms present:
 {
   "storageEngine": "sqlite",
   "plugins": {
-    "card.storage": { "provider": "markdown" }
+    "card.storage": { "provider": "localfs" }
   }
 }
 ```
 
-then `card.storage` resolves to `markdown`.
+then `card.storage` resolves to `localfs`.
 
 ### What normalization returns
 
@@ -398,7 +398,7 @@ Even if you omit one namespace in config, the normalized map always includes bot
 
 ## Core and compatibility providers
 
-## `markdown`
+## `localfs` (legacy `markdown` alias)
 
 Namespace: `card.storage`
 
@@ -558,7 +558,7 @@ There is no need to install or configure a separate `card.state` package.
 
 Behavior:
 
-- When `card.storage` is `markdown` (default), the built-in file-backed backend persists actor-scoped unread/open state in workspace sidecar files,
+- When `card.storage` is `localfs` (default), the built-in file-backed backend persists actor-scoped unread/open state in workspace sidecar files,
 - When `card.storage` is an external plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package via its `createCardStateProvider` export,
 - If the storage package does not export card-state support, the built-in file-backed backend is used as a fallback,
 - persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
@@ -1826,7 +1826,7 @@ If you are building a plugin today, follow these rules:
 
 | Namespace | Provider | File-backed | Watch glob | Notes |
 |---|---|---:|---|---|
-| `card.storage` | `markdown` | yes | `boards/**/*.md` | Default card provider |
+| `card.storage` | `localfs` | yes | `boards/**/*.md` | Default card provider (markdown engine) |
 | `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-plugin-storage-sqlite` |
 | `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-plugin-storage-mysql` |
 | `card.state` | _(auto)_ | — | `null` | Auto-derived from active `card.storage` plugin; falls back to built-in file-backed provider |

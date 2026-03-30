@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { JsonForms } from '@jsonforms/react'
 import { createAjv, type UISchemaElement } from '@jsonforms/core'
 import { vanillaCells, vanillaRenderers } from '@jsonforms/vanilla-renderers'
-import { X, ChevronDown, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react'
+import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
 import type { PluginCapabilityNamespace } from '../../shared/config'
 import type {
   BoardBackgroundMode,
@@ -538,7 +538,6 @@ function PluginOptionsSection({
 }) {
   const plugins = useMemo(() => derivePluginList(pluginSettings), [pluginSettings])
   const [activePluginKey, setActivePluginKey] = useState<string | null>(null)
-  const [expandedCapability, setExpandedCapability] = useState<PluginCapabilityNamespace | null>(null)
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
   const [leftPanelPct, setLeftPanelPct] = useState(35)
@@ -568,17 +567,23 @@ function PluginOptionsSection({
     [plugins, activePluginKey, showInstall],
   )
 
-  const activeCapabilityEntry = useMemo(() => {
-    if (!activePlugin || !expandedCapability) return null
-    return activePlugin.capabilities.find(c => c.capability === expandedCapability) ?? null
-  }, [activePlugin, expandedCapability])
+  // Auto-load provider details when a plugin is selected
+  useEffect(() => {
+    if (!activePlugin) return
+    const capWithSchema = activePlugin.capabilities.find(c => c.optionsSchema)
+    if (capWithSchema) {
+      onReadPluginSettingsProvider?.(capWithSchema.capability, capWithSchema.providerId)
+    }
+  }, [activePlugin?.key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeProviderDetails = useMemo(() => {
-    if (!activeCapabilityEntry || !pluginSettingsProvider) return null
-    if (pluginSettingsProvider.capability !== expandedCapability) return null
-    if (pluginSettingsProvider.providerId !== activeCapabilityEntry.providerId) return null
+    if (!activePlugin || !pluginSettingsProvider) return null
+    const match = activePlugin.capabilities.find(
+      c => c.capability === pluginSettingsProvider.capability && c.providerId === pluginSettingsProvider.providerId,
+    )
+    if (!match) return null
     return pluginSettingsProvider
-  }, [activeCapabilityEntry, expandedCapability, pluginSettingsProvider])
+  }, [activePlugin, pluginSettingsProvider])
 
   const providerOptionsSchema = useMemo(() => {
     if (!activeProviderDetails?.optionsSchema) return null
@@ -647,7 +652,7 @@ function PluginOptionsSection({
                     : { background: 'transparent' }),
                   ...(idx > 0 ? { borderTop: '1px solid var(--vscode-panel-border)' } : {}),
                 }}
-                onClick={() => { setActivePluginKey(plugin.key); setShowInstall(false); setExpandedCapability(null) }}
+                onClick={() => { setActivePluginKey(plugin.key); setShowInstall(false) }}
                 onMouseEnter={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'transparent' }}
               >
@@ -745,35 +750,17 @@ function PluginOptionsSection({
                   Capabilities
                 </div>
                 {activePlugin.capabilities.map(cap => {
-                  const isExpanded = expandedCapability === cap.capability
                   return (
                     <div
-                      key={cap.capability}
+                      key={`${cap.capability}:${cap.providerId}`}
                       className="rounded-lg border"
                       style={{
                         borderColor: 'var(--vscode-panel-border)',
-                        background: isExpanded ? 'var(--vscode-editor-background, transparent)' : 'transparent',
                       }}
                     >
                       <div
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                        onClick={() => {
-                          if (isExpanded) {
-                            setExpandedCapability(null)
-                          } else {
-                            setExpandedCapability(cap.capability)
-                            onReadPluginSettingsProvider?.(cap.capability, cap.providerId)
-                          }
-                        }}
+                        className="flex items-center gap-2 px-3 py-2"
                       >
-                        <ChevronRight
-                          size={13}
-                          className="shrink-0 transition-transform"
-                          style={{
-                            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                            color: 'var(--vscode-descriptionForeground)',
-                          }}
-                        />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
                             {cap.capability}
@@ -803,35 +790,26 @@ function PluginOptionsSection({
                           {cap.isSelected ? 'Active' : 'Activate'}
                         </button>
                       </div>
-
-                      {/* Expanded capability options */}
-                      {isExpanded && (
-                        <div className="px-3 pb-3" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
-                          {!activeProviderDetails ? (
-                            <div className="text-xs py-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                              Loading provider options…
-                            </div>
-                          ) : !providerOptionsSchema || !providerUiSchema ? (
-                            <div className="text-xs py-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                              This provider does not expose schema-driven options.
-                            </div>
-                          ) : (
-                            <div className="pt-2">
-                              <PluginProviderOptionsEditor
-                                key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
-                                provider={activeProviderDetails}
-                                schema={providerOptionsSchema}
-                                uiSchema={providerUiSchema}
-                                onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
               </div>
+
+              {/* Plugin options (loaded at plugin level) */}
+              {activeProviderDetails && providerOptionsSchema && providerUiSchema && (
+                <div className="px-4 py-3" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
+                  <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    Options
+                  </div>
+                  <PluginProviderOptionsEditor
+                    key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
+                    provider={activeProviderDetails}
+                    schema={providerOptionsSchema}
+                    uiSchema={providerUiSchema}
+                    onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             /* Install form */

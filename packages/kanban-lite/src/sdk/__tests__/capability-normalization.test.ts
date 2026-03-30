@@ -18,14 +18,14 @@ function makeConfig(overrides: Partial<KanbanConfig> = {}): KanbanConfig {
 
 describe('normalizeStorageCapabilities', () => {
   describe('card.storage', () => {
-    it('defaults to markdown when no storage fields are set', () => {
+    it('defaults to localfs when no storage fields are set', () => {
       const result = normalizeStorageCapabilities(makeConfig())
-      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+      expect(result['card.storage']).toEqual({ provider: 'localfs' })
     })
 
-    it('maps storageEngine="markdown" to markdown provider', () => {
+    it('maps storageEngine="markdown" to localfs provider', () => {
       const result = normalizeStorageCapabilities(makeConfig({ storageEngine: 'markdown' }))
-      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+      expect(result['card.storage']).toEqual({ provider: 'localfs' })
     })
 
     it('maps storageEngine="sqlite" to sqlite provider with default sqlitePath', () => {
@@ -54,7 +54,7 @@ describe('normalizeStorageCapabilities', () => {
           plugins: { 'card.storage': { provider: 'markdown' } },
         })
       )
-      expect(result['card.storage']).toEqual({ provider: 'markdown' })
+      expect(result['card.storage']).toEqual({ provider: 'localfs' })
     })
 
     it('plugins["card.storage"] with custom options is passed through', () => {
@@ -233,9 +233,9 @@ describe('normalizeWebhookCapabilities', () => {
 })
 
 describe('normalizeCardStateCapabilities', () => {
-  it('defaults card.state to the built-in provider when config is absent', () => {
+  it('defaults card.state to localfs provider when config is absent', () => {
     const result = normalizeCardStateCapabilities(makeConfig())
-    expect(result['card.state']).toEqual({ provider: 'builtin' })
+    expect(result['card.state']).toEqual({ provider: 'localfs' })
   })
 
   it('passes through an explicit card.state provider with options', () => {
@@ -266,7 +266,7 @@ describe('normalizeCardStateCapabilities', () => {
 
   it('accepts a plain object with only plugins field', () => {
     const result = normalizeCardStateCapabilities({})
-    expect(result['card.state']).toEqual({ provider: 'builtin' })
+    expect(result['card.state']).toEqual({ provider: 'localfs' })
   })
 })
 

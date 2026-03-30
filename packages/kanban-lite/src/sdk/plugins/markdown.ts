@@ -213,7 +213,7 @@ export function createMarkdownAttachmentPlugin(engine: MarkdownStorageEngine): A
  * @internal
  */
 export const MARKDOWN_PLUGIN = {
-  manifest: { id: 'markdown', provides: ['card.storage'] as const },
+  manifest: { id: 'localfs', provides: ['card.storage'] as const },
   createEngine(kanbanDir: string): StorageEngine {
     return new MarkdownStorageEngine(kanbanDir)
   },

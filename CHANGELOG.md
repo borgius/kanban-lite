@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.
 - **`CARD_STATE_PROVIDER_ALIASES`** now points to storage packages instead of dedicated card-state packages.
+- **Canonical local file provider IDs**: `card.storage` and default `card.state` now use `localfs` as the canonical provider id in runtime capabilities, plugin-settings inventory, and status surfaces. Legacy ids (`card.storage: "markdown"`, `card.state: "builtin"`) are normalized for compatibility and no longer treated as separate installable providers.
 
 ### Added
 

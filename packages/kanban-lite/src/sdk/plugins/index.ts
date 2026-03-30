@@ -99,7 +99,7 @@ export const WORKSPACE_ROOT: string | null = findWorkspaceRoot(
   ),
 )
 
-const BUILTIN_CARD_STATE_PROVIDER_IDS = new Set(['builtin'])
+const BUILTIN_CARD_STATE_PROVIDER_IDS = new Set(['localfs'])
 
 // ---------------------------------------------------------------------------
 // Auth plugin contracts and built-in noop implementations
@@ -920,7 +920,7 @@ function isValidPluginPackageManifest(value: unknown): value is KLPluginPackageM
 
 /** Registry of built-in card.storage plugins keyed by provider id. */
 const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
-  ['markdown', MARKDOWN_PLUGIN],
+  ['localfs', MARKDOWN_PLUGIN],
 ])
 
 /**
@@ -1135,7 +1135,7 @@ export class PluginSettingsStoreError extends Error {
   }
 }
 
-const BUILTIN_AUTH_PROVIDER_IDS: ReadonlySet<string> = new Set(['noop', 'rbac'])
+const BUILTIN_AUTH_PROVIDER_IDS: ReadonlySet<string> = new Set(['noop'])
 
 const DISCOVERY_SOURCE_PRIORITY: Record<PluginSettingsDiscoverySource, number> = {
   builtin: 5,
@@ -1354,6 +1354,19 @@ function getDiscoveredPluginSettingsProvider(
   const provider = inventory.get(capability)?.get(providerId)
   if (provider) return provider
 
+  // Alias fallback: resolve provider aliases (e.g. "local" → kl-plugin-auth)
+  const aliasedPackage = resolveExternalPackageName(capability, providerId)
+  if (aliasedPackage !== providerId) {
+    const byCapability = inventory.get(capability)
+    if (byCapability) {
+      for (const candidate of byCapability.values()) {
+        if (candidate.packageName === aliasedPackage) {
+          return { ...candidate, providerId }
+        }
+      }
+    }
+  }
+
   throw new PluginSettingsStoreError(
     'plugin-settings-provider-not-found',
     'The requested plugin provider is not available for this capability.',
@@ -1526,8 +1539,8 @@ function registerBuiltinPluginProviders(
 ): void {
   addDiscoveredProvider(inventory, {
     capability: 'card.storage',
-    providerId: MARKDOWN_PLUGIN.manifest.id,
-    packageName: MARKDOWN_PLUGIN.manifest.id,
+    providerId: 'localfs',
+    packageName: 'localfs',
     discoverySource: 'builtin',
   })
   addDiscoveredProvider(inventory, {
@@ -1538,8 +1551,8 @@ function registerBuiltinPluginProviders(
   })
   addDiscoveredProvider(inventory, {
     capability: 'card.state',
-    providerId: 'builtin',
-    packageName: 'builtin',
+    providerId: 'localfs',
+    packageName: 'localfs',
     discoverySource: 'builtin',
   })
   addDiscoveredProvider(inventory, {
@@ -1549,21 +1562,9 @@ function registerBuiltinPluginProviders(
     discoverySource: 'builtin',
   })
   addDiscoveredProvider(inventory, {
-    capability: 'auth.identity',
-    providerId: 'rbac',
-    packageName: 'rbac',
-    discoverySource: 'builtin',
-  })
-  addDiscoveredProvider(inventory, {
     capability: 'auth.policy',
     providerId: 'noop',
     packageName: 'noop',
-    discoverySource: 'builtin',
-  })
-  addDiscoveredProvider(inventory, {
-    capability: 'auth.policy',
-    providerId: 'rbac',
-    packageName: 'rbac',
     discoverySource: 'builtin',
   })
 }
@@ -1687,16 +1688,22 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
 }
 
 function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, providerId: string): boolean {
+  const normalizedProviderId = (() => {
+    if (capability === 'card.storage' && providerId === 'markdown') return 'localfs'
+    if (capability === 'card.state' && providerId === 'builtin') return 'localfs'
+    return providerId
+  })()
+
   switch (capability) {
     case 'card.storage':
-      return BUILTIN_CARD_PLUGINS.has(providerId)
+      return BUILTIN_CARD_PLUGINS.has(normalizedProviderId)
     case 'attachment.storage':
-      return BUILTIN_ATTACHMENT_IDS.has(providerId)
+      return BUILTIN_ATTACHMENT_IDS.has(normalizedProviderId)
     case 'card.state':
-      return BUILTIN_CARD_STATE_PROVIDER_IDS.has(providerId)
+      return BUILTIN_CARD_STATE_PROVIDER_IDS.has(normalizedProviderId)
     case 'auth.identity':
     case 'auth.policy':
-      return BUILTIN_AUTH_PROVIDER_IDS.has(providerId)
+      return BUILTIN_AUTH_PROVIDER_IDS.has(normalizedProviderId)
     case 'webhook.delivery':
       return false
   }
@@ -1954,7 +1961,24 @@ export function readPluginSettingsProvider(
 ): PluginSettingsProviderReadModel | null {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
-  const provider = inventory.get(capability)?.get(providerId)
+  let provider = inventory.get(capability)?.get(providerId) ?? null
+
+  // Alias fallback: resolve provider aliases (e.g. "local" → kl-plugin-auth)
+  if (!provider) {
+    const aliasedPackage = resolveExternalPackageName(capability, providerId)
+    if (aliasedPackage !== providerId) {
+      const byCapability = inventory.get(capability)
+      if (byCapability) {
+        for (const candidate of byCapability.values()) {
+          if (candidate.packageName === aliasedPackage) {
+            provider = { ...candidate, providerId }
+            break
+          }
+        }
+      }
+    }
+  }
+
   if (!provider) return null
 
   const selected = getCapabilitySelectedState(config, capability)
@@ -2529,10 +2553,10 @@ function resolveCardStateProvider(
 
 /**
  * Auto-derives card-state from the active storage plugin when no explicit
- * `card.state` provider is configured (or the configured provider is `builtin`).
+ * `card.state` provider is configured (or the configured provider is `localfs`).
  *
  * Resolution order:
- * 1. If an explicit non-builtin card-state provider is configured, use it.
+ * 1. If an explicit non-localfs card-state provider is configured, use it.
  * 2. If the storage provider is external, try loading `createCardStateProvider`
  *    from the storage package.
  * 3. Fall back to the built-in file-backed card-state provider.
@@ -2542,13 +2566,13 @@ function resolveCardStateProviderFromStorage(
   explicitCardStateRef: ProviderRef | undefined,
   kanbanDir: string,
 ): { provider: CardStateProvider; context: CardStateModuleContext } {
-  // 1. Explicit non-builtin card-state provider configured — honour it.
+  // 1. Explicit non-localfs card-state provider configured — honour it.
   if (explicitCardStateRef && !BUILTIN_CARD_STATE_PROVIDER_IDS.has(explicitCardStateRef.provider)) {
     return resolveCardStateProvider(explicitCardStateRef, kanbanDir)
   }
 
   // 2. External storage — try loading card-state from the same package.
-  if (storageRef.provider !== 'markdown') {
+  if (storageRef.provider !== 'localfs') {
     const storagePackageName = PROVIDER_ALIASES.get(storageRef.provider) ?? storageRef.provider
     const context: CardStateModuleContext = {
       workspaceRoot: path.dirname(kanbanDir),
@@ -2569,7 +2593,7 @@ function resolveCardStateProviderFromStorage(
   }
 
   // 3. Fall back to built-in file-backed provider.
-  const builtinRef: ProviderRef = { provider: 'builtin' }
+  const builtinRef: ProviderRef = { provider: 'localfs' }
   const builtinContext = createCardStateModuleContext(builtinRef, kanbanDir)
   return { provider: createFileBackedCardStateProvider(builtinContext), context: builtinContext }
 }
@@ -2882,7 +2906,9 @@ export function collectActiveExternalPackageNames(config: {
   }
 
   // Card and attachment storage providers from normalized plugins key.
-  const cardProvider = config.plugins?.['card.storage']?.provider
+  const cardProvider = config.plugins?.['card.storage']?.provider === 'markdown'
+    ? 'localfs'
+    : config.plugins?.['card.storage']?.provider
   if (cardProvider && !BUILTIN_CARD_PLUGINS.has(cardProvider)) {
     add(PROVIDER_ALIASES.get(cardProvider) ?? cardProvider)
   }
@@ -2892,7 +2918,9 @@ export function collectActiveExternalPackageNames(config: {
     add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
   }
 
-  const cardStateProvider = config.plugins?.['card.state']?.provider
+  const cardStateProvider = config.plugins?.['card.state']?.provider === 'builtin'
+    ? 'localfs'
+    : config.plugins?.['card.state']?.provider
   if (cardStateProvider && !BUILTIN_CARD_STATE_PROVIDER_IDS.has(cardStateProvider)) {
     add(CARD_STATE_PROVIDER_ALIASES.get(cardStateProvider) ?? cardStateProvider)
   }
@@ -2994,12 +3022,24 @@ export function resolveCapabilityBag(
   webhookCapabilities?: ResolvedWebhookCapabilities,
   cardStateCapabilities?: ResolvedCardStateCapabilities,
 ): ResolvedCapabilityBag {
-  const cardRef = capabilities['card.storage']
+  const normalizedCapabilities: ResolvedCapabilities = {
+    ...capabilities,
+    'card.storage': capabilities['card.storage'].provider === 'markdown'
+      ? {
+          provider: 'localfs',
+          ...(capabilities['card.storage'].options !== undefined
+            ? { options: capabilities['card.storage'].options }
+            : {}),
+        }
+      : capabilities['card.storage'],
+  }
+
+  const cardRef = normalizedCapabilities['card.storage']
   const cardPlugin = resolveCardPlugin(cardRef)
   const cardEngine = cardPlugin.createEngine(kanbanDir, cardRef.options)
   const nodeCapabilities = cardPlugin.nodeCapabilities
 
-  const attachRef = capabilities['attachment.storage']
+  const attachRef = normalizedCapabilities['attachment.storage']
   let attachPlugin: AttachmentStoragePlugin
 
   if (attachRef.provider === 'localfs') {
@@ -3027,11 +3067,19 @@ export function resolveCapabilityBag(
   }
 
   // Card-state is auto-derived from the storage plugin when not explicitly
-  // configured (or configured as 'builtin').  When the active card.storage
+  // configured (or configured as 'localfs').  When the active card.storage
   // provider is external, we attempt to load createCardStateProvider from the
   // same storage package.  Falls back to the built-in file-backed provider
   // when the storage package does not export card-state support.
-  const explicitCardState = cardStateCapabilities?.['card.state']
+  const explicitCardState = (() => {
+    const configured = cardStateCapabilities?.['card.state']
+    if (!configured) return undefined
+    if (configured.provider !== 'builtin') return configured
+    return {
+      provider: 'localfs',
+      ...(configured.options !== undefined ? { options: configured.options } : {}),
+    }
+  })()
   const resolvedCardStateProvider = resolveCardStateProviderFromStorage(
     cardRef,
     explicitCardState,
@@ -3046,17 +3094,17 @@ export function resolveCapabilityBag(
   const standaloneHttpPlugins = resolveStandaloneHttpPlugins({
     workspaceRoot,
     kanbanDir,
-    capabilities,
+    capabilities: normalizedCapabilities,
     authCapabilities: resolvedAuth,
     webhookCapabilities: webhookCapabilities ?? null,
   })
 
-  const sdkExtensions = resolveSDKExtensions(capabilities, resolvedAuth, webhookCapabilities ?? null)
+  const sdkExtensions = resolveSDKExtensions(normalizedCapabilities, resolvedAuth, webhookCapabilities ?? null)
 
   return {
     cardStorage: cardEngine,
     attachmentStorage: attachPlugin,
-    providers: capabilities,
+    providers: normalizedCapabilities,
     isFileBacked: nodeCapabilities?.isFileBacked ?? cardEngine.type === 'markdown',
     getLocalCardPath(card: Card): string | null {
       if (nodeCapabilities) return nodeCapabilities.getLocalCardPath(card)

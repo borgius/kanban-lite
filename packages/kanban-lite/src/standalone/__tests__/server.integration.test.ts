@@ -722,16 +722,16 @@ describe('Standalone Server Integration', () => {
         const wsBob = await connectWs(localPort, { Authorization: 'Bearer bob' })
 
         try {
-          const aliceInit = await sendAndReceive(wsAlice, { type: 'ready' }, 'init')
-          const bobInit = await sendAndReceive(wsBob, { type: 'ready' }, 'init')
-          const aliceInitialCard = (aliceInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
-          const bobInitialCard = (bobInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
-          expect(aliceInitialCard?.cardState?.unread).toMatchObject({
+          await sendAndReceive(wsAlice, { type: 'ready' }, 'init')
+          await sendAndReceive(wsBob, { type: 'ready' }, 'init')
+          const aliceInitialStates = await sendAndReceive(wsAlice, { type: 'getCardStates', cardIds: [cardId] }, 'cardStates')
+          const bobInitialStates = await sendAndReceive(wsBob, { type: 'getCardStates', cardIds: [cardId] }, 'cardStates')
+          expect((aliceInitialStates.states as Record<string, CardStateReadPayload>)[cardId]?.unread).toMatchObject({
             actorId: 'user-alice',
             cardId,
             unread: false,
           })
-          expect(bobInitialCard?.cardState?.unread).toMatchObject({
+          expect((bobInitialStates.states as Record<string, CardStateReadPayload>)[cardId]?.unread).toMatchObject({
             actorId: 'user-bob',
             cardId,
             unread: false,
@@ -2598,9 +2598,9 @@ describe('Standalone Server Integration', () => {
       const defaultActorId = JSON.parse(statusRes.body).data.defaultActor.id as string
 
       ws = await connectWs(port)
-      const init = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      const initialCard = (init.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
-      expect(initialCard?.cardState?.unread).toMatchObject({
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      const initialStates = await sendAndReceive(ws, { type: 'getCardStates', cardIds: [cardId] }, 'cardStates')
+      expect((initialStates.states as Record<string, CardStateReadPayload>)[cardId]?.unread).toMatchObject({
         actorId: defaultActorId,
         boardId: 'default',
         cardId,
@@ -4100,9 +4100,9 @@ describe('Standalone Server Integration', () => {
       const localWs = await connectWs(localAuthPort, { Cookie: cookieHeader })
 
       try {
-        const init = await sendAndReceive(localWs, { type: 'ready' }, 'init')
-        const initialCard = (init.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
-        expect(initialCard?.cardState?.unread).toMatchObject({
+        await sendAndReceive(localWs, { type: 'ready' }, 'init')
+        const initialStates = await sendAndReceive(localWs, { type: 'getCardStates', cardIds: [cardId] }, 'cardStates')
+        expect((initialStates.states as Record<string, CardStateReadPayload>)[cardId]?.unread).toMatchObject({
           actorId: 'alice',
           cardId,
           unread: false,

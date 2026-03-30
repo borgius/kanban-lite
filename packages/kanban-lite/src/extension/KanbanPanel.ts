@@ -206,6 +206,10 @@ export class KanbanPanel {
             await this._postSettingsBridgePayload()
             break
           }
+          case 'loadPluginSettings': {
+            await this._postLoadPluginSettingsResult()
+            break
+          }
           case 'readPluginSettings': {
             await this._postPluginSettingsReadResult(message.capability, message.providerId)
             break
@@ -729,19 +733,26 @@ export class KanbanPanel {
   private async _postSettingsBridgePayload(): Promise<void> {
     const sdk = this._getSDK()
     const settings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
+    this._panel.webview.postMessage({
+      type: 'showSettings',
+      settings,
+      pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+    })
+  }
 
+  private async _postLoadPluginSettingsResult(): Promise<void> {
+    const sdk = this._getSDK()
     try {
-      const pluginSettings = this._getPluginSettingsPayload(sdk)
-      this._panel.webview.postMessage({ type: 'showSettings', settings, pluginSettings })
-    } catch (error) {
-      this._panel.webview.postMessage({
-        type: 'showSettings',
-        settings,
-        pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
-      })
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
+        pluginSettings: this._getPluginSettingsPayload(sdk),
+      })
+    } catch (error) {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action: 'read',
+        pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
         error: this._toPluginSettingsErrorPayload('read', error),
       })
     }

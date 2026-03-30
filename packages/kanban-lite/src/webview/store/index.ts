@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment } from '../../shared/types'
+import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
@@ -275,6 +275,7 @@ interface KanbanState {
   addCard: (card: Card) => void
   updateCard: (id: string, updates: Partial<Card>) => void
   removeCard: (id: string) => void
+  mergeCardStates: (states: Record<string, CardStateReadModelTransport>) => void
   getCardsByStatus: (status: string) => Card[]
   getFilteredCardsByStatus: (status: string) => Card[]
   getUniqueAssignees: () => string[]
@@ -636,6 +637,11 @@ export const useStore = create<KanbanState>((set, get) => ({
   removeCard: (id) =>
     set((state) => ({
       cards: state.cards.filter((f) => f.id !== id)
+    })),
+
+  mergeCardStates: (states) =>
+    set((state) => ({
+      cards: state.cards.map((c) => (states[c.id] !== undefined ? { ...c, cardState: states[c.id] } : c))
     })),
 
   getCardsByStatus: (status) => {

@@ -134,8 +134,30 @@ export function buildInitMessage(ctx: StandaloneContext): unknown {
 }
 
 export async function sendInitMessage(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
-  const authContext = ctx.clientAuthContexts.get(ws)
-  ws.send(JSON.stringify(await buildClientInitMessage(ctx, authContext)))
+  ws.send(JSON.stringify(buildInitMessage(ctx)))
+}
+
+export async function sendCardStates(
+  ctx: StandaloneContext,
+  ws: WebSocket,
+  cardIds: string[],
+  authContext?: AuthContext,
+): Promise<void> {
+  const ids = new Set(cardIds)
+  const targetCards = ctx.cards.filter(c => ids.has(c.id))
+  if (targetCards.length === 0) {
+    ws.send(JSON.stringify({ type: 'cardStates', states: {} }))
+    return
+  }
+  const runWithAuth = authContext
+    ? <T,>(fn: () => Promise<T>) => ctx.sdk.runWithAuth(authContext, fn)
+    : async <T,>(fn: () => Promise<T>) => fn()
+  const decorated = await decorateCardsForWebview(ctx.sdk, runWithAuth, targetCards, ctx.currentBoardId)
+  const states: Record<string, unknown> = {}
+  for (const card of decorated) {
+    if (card.cardState !== undefined) states[card.id] = card.cardState
+  }
+  ws.send(JSON.stringify({ type: 'cardStates', states }))
 }
 
 export async function sendCardContent(ctx: StandaloneContext, ws: WebSocket, card: Card): Promise<void> {

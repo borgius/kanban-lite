@@ -90,6 +90,7 @@ interface SettingsPanelProps {
   onSetLabel?: (name: string, definition: LabelDefinition) => void
   onRenameLabel?: (oldName: string, newName: string) => void
   onDeleteLabel?: (name: string) => void
+  onPluginOptionsTabActivated?: () => void
   initialTab?: SettingsTab
 }
 
@@ -110,6 +111,7 @@ export function SettingsPanel({
   onSetLabel,
   onRenameLabel,
   onDeleteLabel,
+  onPluginOptionsTabActivated,
   initialTab,
 }: SettingsPanelProps) {
   if (!isOpen) return null
@@ -130,6 +132,7 @@ export function SettingsPanel({
       onSetLabel={onSetLabel}
       onRenameLabel={onRenameLabel}
       onDeleteLabel={onDeleteLabel}
+      onPluginOptionsTabActivated={onPluginOptionsTabActivated}
       initialTab={initialTab}
     />
   )
@@ -1288,11 +1291,19 @@ function SettingsPanelContent({
   onSetLabel,
   onRenameLabel,
   onDeleteLabel,
+  onPluginOptionsTabActivated,
   initialTab,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  useEffect(() => {
+    if ((initialTab ?? 'general') === 'pluginOptions') {
+      onPluginOptionsTabActivated?.()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const columns = useStore(s => s.columns)
   const effectiveDrawerWidth = useStore(s => s.effectiveDrawerWidth)
   const setDrawerWidthPreview = useStore(s => s.setDrawerWidthPreview)
@@ -1376,7 +1387,12 @@ function SettingsPanelContent({
             <button
               key={tab}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab)
+                if (tab === 'pluginOptions') {
+                  onPluginOptionsTabActivated?.()
+                }
+              }}
               className="px-4 py-2.5 text-xs font-medium transition-colors relative"
               style={{
                 color: activeTab === tab

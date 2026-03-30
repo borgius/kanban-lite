@@ -114,6 +114,7 @@ function App(): React.JSX.Element {
     clearDrawerWidthPreview,
     setSettingsOpen,
     setLabelDefs,
+    mergeCardStates,
     selectCardRange,
     selectAllInColumn,
     clearSelection,
@@ -437,6 +438,15 @@ function App(): React.JSX.Element {
           }
           if (message.labels) setLabelDefs(message.labels)
           setIsColumnVisibilityPersistenceReady(true)
+          {
+            const { currentBoard: _board, columnVisibilityByBoard: _vis } = useStore.getState()
+            const _visibility = _vis[_board] ?? { hiddenColumnIds: [], minimizedColumnIds: [] }
+            const _hiddenOrMinimized = new Set([..._visibility.hiddenColumnIds, ..._visibility.minimizedColumnIds])
+            const _visibleIds = nextCards.filter(c => !_hiddenOrMinimized.has(c.status)).map(c => c.id)
+            if (_visibleIds.length > 0) {
+              vscode.postMessage({ type: 'getCardStates', cardIds: _visibleIds })
+            }
+          }
           break
           }
         case 'connectionStatus':
@@ -445,6 +455,9 @@ function App(): React.JSX.Element {
         case 'cardsUpdated':
           setCards(message.cards)
           syncEditingCardFromCards(message.cards)
+          break
+        case 'cardStates':
+          mergeCardStates(message.states as Record<string, import('../shared/types').CardStateReadModelTransport>)
           break
         case 'triggerCreateDialog':
           setCreateCardStatus('backlog')
@@ -1149,6 +1162,9 @@ function App(): React.JSX.Element {
         onInstallPluginSettingsPackage={(packageName, scope) => {
           setPluginSettingsError(null)
           vscode.postMessage({ type: 'installPluginSettingsPackage', packageName, scope })
+        }}
+        onPluginOptionsTabActivated={() => {
+          vscode.postMessage({ type: 'loadPluginSettings' })
         }}
         onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
         onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}

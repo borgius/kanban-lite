@@ -917,6 +917,7 @@ export type ExtensionMessage =
   | { type: 'commentStreamStart'; cardId: string; commentId: string; author: string; created: string }
   | { type: 'commentChunk'; cardId: string; commentId: string; chunk: string }
   | { type: 'commentStreamDone'; cardId: string; commentId: string }
+  | { type: 'cardStates'; states: Record<string, CardStateReadModelTransport> }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -932,6 +933,7 @@ export type WebviewMessage =
   | { type: 'openAttachment'; cardId: string; attachment: string }
   | { type: 'removeAttachment'; cardId: string; attachment: string }
   | { type: 'openSettings' }
+  | { type: 'loadPluginSettings' }
   | { type: 'readPluginSettings'; capability: PluginCapabilityNamespace; providerId: string }
   | { type: 'selectPluginSettingsProvider'; capability: PluginCapabilityNamespace; providerId: string }
   | { type: 'updatePluginSettingsOptions'; capability: PluginCapabilityNamespace; providerId: string; options: Record<string, unknown> }
@@ -963,3 +965,4 @@ export type WebviewMessage =
   | { type: 'addBoardLog'; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
   | { type: 'clearBoardLogs' }
   | { type: 'getBoardLogs' }
+  | { type: 'getCardStates'; cardIds: string[] }

@@ -22,6 +22,7 @@ import {
   broadcastLogsUpdatedToEditingClients,
   buildInitMessage,
   sendCardContent,
+  sendCardStates,
   sendInitMessage,
   loadCards,
   setClientEditingCard,
@@ -605,5 +606,11 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     case 'addAttachment':
     case 'openAttachment':
       break
+
+    case 'getCardStates': {
+      const cardIds = Array.isArray(msg.cardIds) ? (msg.cardIds as string[]) : []
+      await sendCardStates(ctx, ws, cardIds, authContext)
+      break
+    }
   }
 }

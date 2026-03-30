@@ -568,6 +568,9 @@ export type ExtensionMessage = {
     type: 'boardLogsUpdated';
     boardId: string;
     logs: import('./types').LogEntry[];
+} | {
+    type: 'cardStates';
+    states: Record<string, unknown>;
 };
 export type WebviewMessage = {
     type: 'ready';
@@ -716,4 +719,7 @@ export type WebviewMessage = {
     type: 'clearBoardLogs';
 } | {
     type: 'getBoardLogs';
+} | {
+    type: 'getCardStates';
+    cardIds: string[];
 };

@@ -46,6 +46,17 @@ function createSdkStub() {
       unread: true,
     })),
     getCardState: vi.fn(async () => null),
+    getCardStateReadModelForCard: vi.fn(async (card: { id: string; boardId?: string }, boardId?: string) => ({
+      unread: {
+        actorId: 'default-user',
+        cardId: card.id,
+        boardId: card.boardId ?? boardId ?? 'default',
+        latestActivity: { cursor: `card:${card.boardId ?? boardId ?? 'default'}:${card.id}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
+        readThrough: null,
+        unread: true,
+      },
+      open: null,
+    })),
     markCardOpened: vi.fn(async (cardId: string, boardId?: string) => ({
       actorId: 'default-user',
       cardId,
@@ -80,8 +91,12 @@ describe('extension card-state UI adapter', () => {
       backend: 'builtin',
       configured: false,
     })
-    expect(sdk.getUnreadSummary).toHaveBeenCalledWith('card-default', 'default')
-    expect(sdk.getCardState).toHaveBeenCalledWith('card-default', 'default', 'open')
+    expect(sdk.getCardStateReadModelForCard).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'card-default' }),
+      'default',
+    )
+    expect(sdk.getUnreadSummary).not.toHaveBeenCalled()
+    expect(sdk.getCardState).not.toHaveBeenCalled()
     expect(sdk.markCardOpened).not.toHaveBeenCalled()
   })
 
@@ -97,7 +112,7 @@ describe('extension card-state UI adapter', () => {
       defaultActorAvailable: false,
       errorCode: ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
     })
-    sdk.getUnreadSummary.mockRejectedValue(new CardStateError(ERR_CARD_STATE_IDENTITY_UNAVAILABLE, 'Sign in required for card state'))
+    sdk.getCardStateReadModelForCard.mockRejectedValue(new CardStateError(ERR_CARD_STATE_IDENTITY_UNAVAILABLE, 'Sign in required for card state'))
     const runWithAuth: CardStateAuthRunner = async <T,>(fn: () => Promise<T>) => fn()
 
     const cardState = await buildCardStateReadModelForCard(sdk, runWithAuth, makeCard({ id: 'card-auth' }), 'default')
@@ -114,6 +129,7 @@ describe('extension card-state UI adapter', () => {
       availability: 'identity-unavailable',
       message: 'Sign in required for card state',
     })
+    expect(sdk.getUnreadSummary).not.toHaveBeenCalled()
     expect(sdk.getCardState).not.toHaveBeenCalled()
   })
 

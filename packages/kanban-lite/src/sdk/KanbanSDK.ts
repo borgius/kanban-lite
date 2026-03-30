@@ -1116,6 +1116,20 @@ export class KanbanSDK {
     }
   }
 
+  /**
+   * Derives a card-state target directly from a pre-loaded Card without a listCards round-trip.
+   * @internal
+   */
+  private _resolveCardStateTargetDirect(
+    card: Pick<Card, 'id' | 'boardId'>,
+    fallbackBoardId?: string,
+  ): { cardId: string; boardId: string } {
+    return {
+      cardId: card.id,
+      boardId: card.boardId || this._resolveBoardId(fallbackBoardId),
+    }
+  }
+
   /** @internal */
   private async _resolveCardStateActorId(): Promise<string> {
     const capabilities = this._requireCardStateCapabilities()
@@ -1181,6 +1195,47 @@ export class KanbanSDK {
       cardId: target.cardId,
       domain,
     })
+  }
+
+  /**
+   * Batch-efficient read model for a pre-loaded card used during board init and broadcast.
+   *
+   * Unlike calling {@link getUnreadSummary} and {@link getCardState} separately, this method:
+   * - Resolves the actor identity exactly once.
+   * - Derives the board/card target from the supplied Card without an extra listCards round-trip.
+   * - Runs log, unread-cursor, and open-state I/O concurrently.
+   *
+   * Use this when the caller already holds the full Card object (e.g. inside
+   * `decorateCardsForWebview`) to avoid the N² file-scan that the individual
+   * methods incur when called in a loop over all cards.
+   *
+   * @param card - The pre-loaded Card object.
+   * @param fallbackBoardId - Board ID to use when `card.boardId` is not set.
+   * @returns Unread summary and open-domain card-state record for the current actor.
+   */
+  async getCardStateReadModelForCard(
+    card: Card,
+    fallbackBoardId?: string,
+  ): Promise<{ unread: CardUnreadSummary; open: CardStateRecord<CardOpenStateValue> | null }> {
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+    const target = this._resolveCardStateTargetDirect(card, fallbackBoardId)
+    const key = { actorId, boardId: target.boardId, cardId: target.cardId }
+
+    const [logs, readThrough, open] = await Promise.all([
+      Logs.listLogsForCard(this, card),
+      capabilities.cardState.getUnreadCursor(key),
+      capabilities.cardState.getCardState({ ...key, domain: CARD_STATE_OPEN_DOMAIN }) as Promise<CardStateRecord<CardOpenStateValue> | null>,
+    ])
+
+    let latestActivity: CardStateCursor | null = null
+    for (let index = logs.length - 1; index >= 0; index -= 1) {
+      const cursor = getUnreadActivityCursor(logs[index], index)
+      if (cursor) { latestActivity = cursor; break }
+    }
+
+    const unread = this._createUnreadSummary(actorId, target, latestActivity, readThrough)
+    return { unread, open: open as CardStateRecord<CardOpenStateValue> | null }
   }
 
   /**

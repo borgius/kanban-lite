@@ -1,10 +1,8 @@
 import type { Card, CardStateErrorTransport, CardStateReadModelTransport, CardStateStatusTransport } from '../shared/types'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
-import type { CardStateRecord } from '../sdk/plugins'
-import { CARD_STATE_OPEN_DOMAIN, CardStateError } from '../sdk/types'
-import type { CardOpenStateValue } from '../sdk/types'
+import { CardStateError } from '../sdk/types'
 
-type CardStateAwareSDK = Pick<KanbanSDK, 'getCardStateStatus' | 'getUnreadSummary' | 'getCardState' | 'markCardOpened' | 'setActiveCard'>
+type CardStateAwareSDK = Pick<KanbanSDK, 'getCardStateStatus' | 'getUnreadSummary' | 'getCardState' | 'markCardOpened' | 'setActiveCard' | 'getCardStateReadModelForCard'>
 export type CardStateAuthRunner = <T>(fn: () => Promise<T>) => Promise<T>
 
 function toCardStateStatus(status: ReturnType<CardStateAwareSDK['getCardStateStatus']>): CardStateStatusTransport {
@@ -31,15 +29,16 @@ function toCardStateError(error: unknown): CardStateErrorTransport | null {
 export async function buildCardStateReadModelForCard(
   sdk: CardStateAwareSDK,
   runWithAuth: CardStateAuthRunner,
-  card: Pick<Card, 'id' | 'boardId'>,
+  card: Card,
   fallbackBoardId?: string,
 ): Promise<CardStateReadModelTransport> {
   const status = toCardStateStatus(sdk.getCardStateStatus())
   const boardId = card.boardId ?? fallbackBoardId
 
   try {
-    const unread = await runWithAuth(() => sdk.getUnreadSummary(card.id, boardId))
-    const open = await runWithAuth(() => sdk.getCardState(card.id, boardId, CARD_STATE_OPEN_DOMAIN) as Promise<CardStateRecord<CardOpenStateValue> | null>)
+    const { unread, open } = await runWithAuth(() =>
+      sdk.getCardStateReadModelForCard(card, boardId),
+    )
 
     return {
       unread,

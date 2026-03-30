@@ -182,6 +182,22 @@ export async function listLogs(ctx: SDKContext, { cardId, boardId }: { cardId: s
 }
 
 /**
+ * Lists all log entries for a pre-loaded card without an extra getCard round-trip.
+ *
+ * Use this in batch operations where the caller already holds the Card object to
+ * avoid the redundant listCards scan that the regular listLogs performs internally.
+ */
+export async function listLogsForCard(ctx: SDKContext, card: Card): Promise<LogEntry[]> {
+  const content = await readLogText(ctx, card)
+  const entries: LogEntry[] = []
+  for (const line of content.split('\n')) {
+    const entry = parseLogLine(line)
+    if (entry) entries.push(entry)
+  }
+  return entries
+}
+
+/**
  * Adds a log entry to a card.
  */
 export async function addLog(

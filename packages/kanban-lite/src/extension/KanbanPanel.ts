@@ -661,15 +661,15 @@ export class KanbanPanel {
     return sdk.runWithAuth(await this._getAuthContext(), fn)
   }
 
-  private _getPluginSettingsPayload(sdk: KanbanSDK | null): PluginSettingsPayload {
+  private async _getPluginSettingsPayload(sdk: KanbanSDK | null): Promise<PluginSettingsPayload> {
     if (!sdk) {
       return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
     }
-    return sdk.listPluginSettings()
+    return await sdk.listPluginSettings()
   }
 
   private _toPluginSettingsProviderTransport(
-    provider: ReturnType<KanbanSDK['getPluginSettings']>,
+    provider: Awaited<ReturnType<KanbanSDK['getPluginSettings']>>,
   ): PluginSettingsProviderTransport | null {
     return provider ? { ...provider } : null
   }
@@ -746,7 +746,7 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
-        pluginSettings: this._getPluginSettingsPayload(sdk),
+        pluginSettings: await this._getPluginSettingsPayload(sdk),
       })
     } catch (error) {
       this._postPluginSettingsResult({
@@ -768,7 +768,7 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
-        pluginSettings: this._getPluginSettingsPayload(null),
+        pluginSettings: await this._getPluginSettingsPayload(null),
         provider: null,
       })
       return
@@ -778,8 +778,8 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
-        pluginSettings: this._getPluginSettingsPayload(sdk),
-        provider: this._toPluginSettingsProviderTransport(sdk.getPluginSettings(capability, providerId)),
+        pluginSettings: await this._getPluginSettingsPayload(sdk),
+        provider: this._toPluginSettingsProviderTransport(await sdk.getPluginSettings(capability, providerId)),
       })
     } catch (error) {
       this._postPluginSettingsResult({
@@ -795,7 +795,7 @@ export class KanbanPanel {
     capability: PluginCapabilityNamespace | undefined,
     providerId: string | undefined,
     run: (sdk: KanbanSDK) => Promise<{
-      provider?: ReturnType<KanbanSDK['getPluginSettings']>
+      provider?: Awaited<ReturnType<KanbanSDK['getPluginSettings']>>
       install?: Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
     }>,
   ): Promise<void> {
@@ -804,7 +804,7 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action,
-        pluginSettings: this._getPluginSettingsPayload(null),
+        pluginSettings: await this._getPluginSettingsPayload(null),
         error: this._toPluginSettingsErrorPayload(action, null, capability, providerId),
       })
       return
@@ -815,7 +815,7 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action,
-        pluginSettings: this._getPluginSettingsPayload(sdk),
+        pluginSettings: await this._getPluginSettingsPayload(sdk),
         provider: this._toPluginSettingsProviderTransport(result.provider ?? null),
         install: result.install ? this._toPluginSettingsInstallTransportResult(result.install) : undefined,
       })

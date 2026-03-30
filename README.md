@@ -1216,7 +1216,7 @@ Kanban Lite now exposes one shared plugin-settings workflow across the Settings 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
 - **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
-- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout.
+- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
 - **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
@@ -1617,12 +1617,12 @@ Enable it in `.kanban.json` with bcrypt-hashed passwords:
     "auth.identity": {
       "provider": "kl-plugin-auth",
       "options": {
+        "roles": ["user", "manager", "admin"],
         "users": [
           {
             "username": "alice",
             "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
-            "role": "user",
-            "groups": ["ops"]
+            "role": "user"
           }
         ]
       }
@@ -1636,12 +1636,12 @@ Use the CLI to add users without manually computing bcrypt hashes:
 
 ```sh
 kl auth create-user --username alice --password s3cr3t
-kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
+kl auth create-user --username admin --password s3cr3t --role reviewer
 ```
 
-This command hashes the password and appends the user entry to `plugins["auth.identity"].options.users` in `.kanban.json`.
+This command hashes the password, appends the user entry to `plugins["auth.identity"].options.users`, seeds the default `user` / `manager` / `admin` role catalog when missing, and appends any new custom role to `plugins["auth.identity"].options.roles`.
 
-The `local` policy supports RBAC roles plus optional identity groups. When a user has a `role` (`user`, `manager`, or `admin`) and no custom permission matrix is configured, only the actions permitted for that role are allowed. Users without a `role` field are allowed to perform any action. Anonymous callers are denied with `auth.identity.missing`.
+The shared settings UI now exposes that `roles[]` catalog directly beside `users[]`, seeds it with `user`, `manager`, and `admin` by default, and uses it as the live enum source for `users[].role`. The `local` policy itself remains permissive for any authenticated identity unless you configure an explicit `auth.policy.options.permissions[]` matrix. Anonymous callers are still denied with `auth.identity.missing`.
 
 To override the default role behavior, add a custom permission matrix on `auth.policy`:
 

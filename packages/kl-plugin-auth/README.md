@@ -39,8 +39,12 @@ npm install kl-plugin-auth
 
 Current schema-backed fields:
 
-- `auth.identity`: `apiToken`, `users[].username`, `users[].password`, `users[].role`, `users[].groups[]`
+- `auth.identity`: `apiToken`, `roles[]`, `users[].username`, `users[].password`, `users[].role`
 - `auth.policy`: `permissions[]`
+
+The shared Plugin Options editor seeds `roles[]` with the default catalog `user`, `manager`, `admin` when the field is missing, still lets users add or delete extra entries like a normal array, and turns each `users[].role` field into a picker sourced from that live role catalog instead of a hard-coded enum.
+
+When an SDK runtime is available, the `auth.policy.permissions[].actions[]` picker is also resolved from `sdk.listAvailableEvents({ type: 'before' })`, so policy rows stay aligned with the current before-event catalog instead of relying on a stale hard-coded action list.
 
 Secret metadata is declared for:
 
@@ -138,12 +142,12 @@ Legacy role-map `options.matrix` objects remain supported at runtime for existin
     "auth.identity": {
       "provider": "local",
       "options": {
+        "roles": ["operator", "reviewer", "admin"],
         "users": [
           {
             "username": "alice",
             "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
-            "role": "user",
-            "groups": ["ops"]
+            "role": "operator"
           }
         ]
       }
@@ -157,10 +161,10 @@ Use the `kl` CLI to add users without computing hashes manually:
 
 ```sh
 kl auth create-user --username alice --password s3cr3t
-kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
+kl auth create-user --username admin --password s3cr3t --role reviewer
 ```
 
-The command bcrypt-hashes the password and appends the user to `plugins["auth.identity"].options.users` in `.kanban.json`.
+The command bcrypt-hashes the password, appends the user to `plugins["auth.identity"].options.users`, seeds the default `user` / `manager` / `admin` role catalog when missing, and adds the requested role to `plugins["auth.identity"].options.roles` when needed.
 
 ### Explicit API token
 

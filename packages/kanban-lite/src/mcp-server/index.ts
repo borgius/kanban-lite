@@ -269,7 +269,7 @@ export function registerPluginSettingsMcpTools(
     {},
     async () => {
       try {
-        const payload: McpPluginSettingsListModel = options.sdk.listPluginSettings()
+        const payload: McpPluginSettingsListModel = await options.sdk.listPluginSettings()
         return createMcpJsonResult(payload)
       } catch (err) {
         return createMcpErrorResult(err)
@@ -286,9 +286,9 @@ export function registerPluginSettingsMcpTools(
     },
     async ({ capability, providerId }) => {
       try {
-        const payload = await options.runWithAuth(() => Promise.resolve(
+        const payload = await options.runWithAuth(() =>
           options.sdk.selectPluginSettingsProvider(String(capability) as never, String(providerId)),
-        ))
+        )
         return createMcpJsonResult(payload)
       } catch (err) {
         return createMcpErrorResult(err)
@@ -306,13 +306,13 @@ export function registerPluginSettingsMcpTools(
     },
     async ({ capability, providerId, options: nextOptions }) => {
       try {
-        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() => Promise.resolve(
+        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() =>
           options.sdk.updatePluginSettingsOptions(
             String(capability) as never,
             String(providerId),
             nextOptions as Record<string, unknown>,
           ),
-        ))
+        )
         return createMcpJsonResult(payload)
       } catch (err) {
         return createMcpErrorResult(err)

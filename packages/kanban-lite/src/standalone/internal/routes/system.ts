@@ -255,7 +255,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('GET', '/api/plugin-settings')
   if (params) {
     try {
-      jsonOk(res, sdk.listPluginSettings())
+      jsonOk(res, await sdk.listPluginSettings())
     } catch (err) {
       handlePluginSettingsRouteError(res, err)
     }
@@ -265,7 +265,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('GET', '/api/plugin-settings/:capability/:providerId')
   if (params) {
     try {
-      const provider = sdk.getPluginSettings(params.capability as never, params.providerId)
+      const provider = await sdk.getPluginSettings(params.capability as never, params.providerId)
       if (!provider) {
         jsonError(res, 404, 'Plugin provider not found')
       } else {
@@ -281,9 +281,9 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   if (params) {
     const { capability, providerId } = params
     try {
-      const provider = await runWithRequestAuth(() => Promise.resolve(
+      const provider = await runWithRequestAuth(() =>
         sdk.selectPluginSettingsProvider(capability as never, providerId),
-      ))
+      )
       jsonOk(res, provider)
     } catch (err) {
       handlePluginSettingsRouteError(res, err)
@@ -302,9 +302,9 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
         return true
       }
 
-      const provider = await runWithRequestAuth(() => Promise.resolve(
+      const provider = await runWithRequestAuth(() =>
         sdk.updatePluginSettingsOptions(capability as never, providerId, nextOptions),
-      ))
+      )
       jsonOk(res, provider)
     } catch (err) {
       handlePluginSettingsRouteError(res, err)

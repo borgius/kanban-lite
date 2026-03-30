@@ -72,7 +72,7 @@ const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
 
 function writeLocalAuthConfig(
   workspaceDir: string,
-  options: { apiToken: string; users?: Array<{ username: string; password: string; role?: string; groups?: string[] }> },
+  options: { apiToken: string; roles?: string[]; users?: Array<{ username: string; password: string; role?: string }> },
 ): void {
   fs.writeFileSync(
     path.join(workspaceDir, '.kanban.json'),
@@ -84,6 +84,7 @@ function writeLocalAuthConfig(
             provider: 'kl-plugin-auth',
             options: {
               apiToken: options.apiToken,
+              roles: options.roles ?? ['user', 'manager', 'admin'],
               users: options.users ?? [],
             },
           },
@@ -243,14 +244,13 @@ describe('kl-plugin-auth: consumption via kanban-lite workspace SDK', () => {
     }
   })
 
-  it('cli auth create-user persists optional groups alongside role', async () => {
+  it('cli auth create-user persists an optional role and seeds the default role catalog before appending new roles', async () => {
     await cliPlugin.run(
       ['create-user'],
       {
         username: 'alice',
         password: 'secret',
-        role: 'admin',
-        groups: 'ops,release',
+        role: 'auditor',
       },
       { workspaceRoot: workspaceDir },
     )
@@ -259,17 +259,19 @@ describe('kl-plugin-auth: consumption via kanban-lite workspace SDK', () => {
       plugins?: {
         'auth.identity'?: {
           options?: {
-            users?: Array<{ username: string; role?: string; groups?: string[]; password?: string }>
+            roles?: string[]
+            users?: Array<{ username: string; role?: string; password?: string }>
           }
         }
       }
     }
 
+    expect(saved.plugins?.['auth.identity']?.options?.roles).toEqual(['user', 'manager', 'admin', 'auditor'])
+
     expect(saved.plugins?.['auth.identity']?.options?.users).toEqual([
       expect.objectContaining({
         username: 'alice',
-        role: 'admin',
-        groups: ['ops', 'release'],
+        role: 'auditor',
       }),
     ])
     expect(saved.plugins?.['auth.identity']?.options?.users?.[0]?.password).toMatch(/^\$2[aby]\$/)

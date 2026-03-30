@@ -1,6 +1,37 @@
-import { JsonSchema } from '@jsonforms/core/lib/models/jsonSchema'
 import type { PluginCapabilityNamespace } from './config'
-import { UISchemaElement } from '@jsonforms/core/lib/models/uischema'
+import type { KanbanSDK } from '../sdk/KanbanSDK'
+
+/**
+ * Authoring-time resolver for dynamic plugin-settings schema values.
+ *
+ * The shared plugin-settings loader invokes these functions before transport,
+ * so the Settings UI and other host surfaces still receive plain structured
+ * JSON Forms metadata.
+ */
+export type PluginSettingsSchemaValueResolver<T = unknown> = (
+  sdk: KanbanSDK,
+  optionsSchema: PluginSettingsOptionsSchemaMetadata,
+) => T | Promise<T>
+
+/** Authoring-time sync/async value wrapper allowed inside plugin-settings metadata. */
+export type PluginSettingsResolvable<T> = T | PluginSettingsSchemaValueResolver<T> | Promise<T>
+
+/** Recursive structured value supported by dynamic plugin-settings schema metadata during authoring. */
+export type PluginSettingsDynamicMetadataValue = PluginSettingsResolvable<
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | PluginSettingsDynamicMetadataValue[]
+  | { [key: string]: PluginSettingsDynamicMetadataValue }
+>
+
+/** Plugin-settings JSON Schema type that allows nested sync/async resolvers during authoring. */
+export type PluginSettingsJsonSchema = { [key: string]: PluginSettingsDynamicMetadataValue }
+
+/** Plugin-settings JSON Forms UI schema type that allows nested sync/async resolvers during authoring. */
+export type PluginSettingsUiSchemaElement = { [key: string]: PluginSettingsDynamicMetadataValue }
 
 // Kanban types
 
@@ -719,10 +750,17 @@ export interface PluginSettingsSecretFieldMetadata {
   redaction: PluginSettingsRedactionPolicy
 }
 
-/** Transport-safe provider options schema plus secret-field annotations. */
+/**
+ * Provider options schema metadata used by plugin authors and shared transports.
+ *
+ * Authoring-time `schema` / `uiSchema` values may include nested sync/async
+ * resolvers. The shared plugin-settings loader resolves them into plain JSON
+ * Forms metadata before surfacing provider options through SDK/UI/API/CLI/MCP
+ * transports.
+ */
 export interface PluginSettingsOptionsSchemaMetadata {
-  schema: JsonSchema
-  uiSchema?: UISchemaElement
+  schema: PluginSettingsJsonSchema
+  uiSchema?: PluginSettingsUiSchemaElement
   secrets: PluginSettingsSecretFieldMetadata[]
 }
 

@@ -218,6 +218,12 @@
             "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
             "role": "user"
           }
+        ],
+        "roles": [
+          "user",
+          "manager",
+          "admin",
+          "rrrr"
         ]
       }
     },

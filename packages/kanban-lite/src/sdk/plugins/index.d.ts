@@ -19,6 +19,16 @@ import type { StorageEngine } from './types';
  */
 export declare const WORKSPACE_ROOT: string | null;
 /**
+ * Runtime resolver for a dynamic plugin-settings schema value.
+ */
+export type PluginSettingsOptionsSchemaValueResolver<T = unknown> = (sdk: KanbanSDK, optionsSchema: PluginSettingsOptionsSchemaMetadata) => T | Promise<T>;
+/**
+ * Top-level `optionsSchema()` return value supported by the shared resolver.
+ */
+export type PluginSettingsOptionsSchemaInput = PluginSettingsOptionsSchemaMetadata | Promise<PluginSettingsOptionsSchemaMetadata> | PluginSettingsOptionsSchemaValueResolver<PluginSettingsOptionsSchemaMetadata>;
+/** Shared factory signature for plugin package `optionsSchema()` hooks. */
+export type PluginSettingsOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSettingsOptionsSchemaInput;
+/**
  * Resolved identity returned by {@link AuthIdentityPlugin.resolveIdentity}.
  */
 export interface AuthIdentity {
@@ -51,7 +61,7 @@ export interface AuthIdentityPlugin {
      * When provided, hosts may surface this in configuration UIs and redact any
      * secret fields according to the accompanying metadata.
      */
-    optionsSchema?(): PluginSettingsOptionsSchemaMetadata;
+    optionsSchema?: PluginSettingsOptionsSchemaFactory;
     /**
      * Resolves an auth context to a caller identity, or `null` for
      * anonymous / invalid tokens.
@@ -74,7 +84,7 @@ export interface AuthPolicyPlugin {
      * When provided, hosts may surface this in configuration UIs and redact any
      * secret fields according to the accompanying metadata.
      */
-    optionsSchema?(): PluginSettingsOptionsSchemaMetadata;
+    optionsSchema?: PluginSettingsOptionsSchemaFactory;
     /**
      * Returns an {@link AuthDecision} indicating whether `identity` is
      * authorized to perform `action` in the given `context`.
@@ -567,6 +577,11 @@ export interface ResolvedCapabilityBag {
      */
     readonly authListener: SDKEventListenerPlugin;
 }
+/**
+ * Resolves transport-safe plugin-settings metadata from a static object or a
+ * dynamic sync/async schema factory.
+ */
+export declare function resolvePluginSettingsOptionsSchema(value: unknown, sdk: KanbanSDK): Promise<PluginSettingsOptionsSchemaMetadata | undefined>;
 /**
  * Returns `true` only when the auth configuration permits the stable default
  * single-user card-state actor.

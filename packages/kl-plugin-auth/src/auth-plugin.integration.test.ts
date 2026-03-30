@@ -6,7 +6,12 @@
  * before-event pipeline. They do NOT mock the auth logic — every assertion
  * exercises the actual plugin functions.
  */
-import { DEFAULT_PLUGIN_SETTINGS_REDACTION, type BeforeEventPayload } from '../../kanban-lite/src/sdk'
+import {
+  DEFAULT_PLUGIN_SETTINGS_REDACTION,
+  resolvePluginSettingsOptionsSchema,
+  type BeforeEventPayload,
+  type KanbanSDK,
+} from '../../kanban-lite/src/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import {
   LOCAL_IDENTITY_PLUGIN,
@@ -195,6 +200,13 @@ describe('kl-plugin-auth: local providers', () => {
     })
 
     await expect(LOCAL_POLICY_PLUGIN.checkPolicy({ subject: 'alice' }, 'card.create', { transport: 'http' })).resolves.toMatchObject({
+      allowed: true,
+      actor: 'alice',
+    })
+  })
+
+  it('LOCAL_POLICY_PLUGIN keeps local auth permissive even when identities carry custom roles', async () => {
+    await expect(LOCAL_POLICY_PLUGIN.checkPolicy({ subject: 'alice', roles: ['auditor'] }, 'board.delete', { transport: 'http' })).resolves.toMatchObject({
       allowed: true,
       actor: 'alice',
     })
@@ -615,12 +627,32 @@ describe('createAuthIdentityPlugin: apiToken option', () => {
 })
 
 describe('kl-plugin-auth: schema-driven options parity', () => {
-  it('package exports and configurable factories share the same schema contract for shared plugin settings flows', () => {
-    expect(authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.()).toEqual(
-      createAuthIdentityPlugin().optionsSchema?.(),
+  it('package exports and configurable factories resolve the same schema contract for shared plugin settings flows', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({
+        plugins: {
+          'auth.identity': {
+            options: { roles: ['auditor', 'reviewer'] },
+          },
+        },
+      })),
+      listAvailableEvents: vi.fn(async () => [
+        { event: 'settings.update', phase: 'before' },
+        { event: 'card.create', phase: 'before' },
+        { event: 'task.created', phase: 'after' },
+      ]),
+    } as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
+
+    const exportedIdentitySchema = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const createdIdentitySchema = await createAuthIdentityPlugin().optionsSchema?.(sdk)
+    const exportedPolicySchema = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const createdPolicySchema = await createAuthPolicyPlugin().optionsSchema?.(sdk)
+
+    await expect(resolvePluginSettingsOptionsSchema(exportedIdentitySchema!, sdk)).resolves.toEqual(
+      await resolvePluginSettingsOptionsSchema(createdIdentitySchema!, sdk),
     )
-    expect(authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.()).toEqual(
-      createAuthPolicyPlugin().optionsSchema?.(),
+    await expect(resolvePluginSettingsOptionsSchema(exportedPolicySchema!, sdk)).resolves.toEqual(
+      await resolvePluginSettingsOptionsSchema(createdPolicySchema!, sdk),
     )
   })
 
@@ -633,6 +665,11 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       additionalProperties: false,
       properties: {
         apiToken: { type: 'string' },
+        roles: {
+          type: 'array',
+          default: ['user', 'manager', 'admin'],
+          items: { type: 'string' },
+        },
         users: {
           type: 'array',
           items: {
@@ -641,10 +678,9 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
             properties: {
               username: { type: 'string' },
               password: { type: 'string' },
-              role: { enum: ['user', 'manager', 'admin'] },
-              groups: {
-                type: 'array',
-                items: { type: 'string' },
+              role: {
+                type: 'string',
+                enum: expect.any(Function),
               },
             },
           },
@@ -662,6 +698,20 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
               type: 'Control',
               scope: '#/properties/apiToken',
               label: 'API token',
+            },
+          ],
+        },
+        {
+          type: 'Group',
+          label: 'Role catalog',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/roles',
+              label: 'Roles',
+              options: {
+                showSortButtons: true,
+              },
             },
           ],
         },
@@ -693,6 +743,43 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       { path: 'apiToken', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
       { path: 'users.*.password', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
     ])
+  })
+
+  it('auth.identity providers resolve role enums from the saved role catalog', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({
+        plugins: {
+          'auth.identity': {
+            options: { roles: ['auditor', 'reviewer'] },
+          },
+        },
+      })),
+    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+
+    const schemaInput = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const userItems = (((schema?.schema.properties as Record<string, unknown>).users as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>
+
+    expect((userItems.role as Record<string, unknown>)).toMatchObject({
+      type: 'string',
+      enum: ['auditor', 'reviewer'],
+    })
+  })
+
+  it('auth.identity providers fall back to the default role catalog when saved config has no roles yet', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({ plugins: {} })),
+    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+
+    const schemaInput = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const userItems = (((schema?.schema.properties as Record<string, unknown>).users as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>
+
+    expect((userItems.role as Record<string, unknown>).enum).toEqual(['user', 'manager', 'admin'])
   })
 
   it('auth.policy providers expose editable permission-matrix schema metadata and no secrets', () => {
@@ -768,10 +855,35 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     expect(schema?.secrets).toEqual([])
   })
 
+  it('auth.policy providers resolve allowed action enums from the SDK event inventory', async () => {
+    const sdk = {
+      listAvailableEvents: vi.fn(async () => [
+          { event: 'settings.update', phase: 'before' },
+          { event: 'card.create', phase: 'before' },
+          { event: 'task.created', phase: 'after' },
+          { event: 'card.create', phase: 'before' },
+        ]),
+    } as Pick<KanbanSDK, 'listAvailableEvents'> as KanbanSDK
+
+    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const actionsItems = (((schema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>
+
+    expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
+      type: 'string',
+      enum: ['settings.update', 'card.create', 'task.created'],
+      minLength: 1,
+    })
+    expect(sdk.listAvailableEvents).toHaveBeenCalledTimes(1)
+  })
+
   it('schema-shaped auth.identity options remain backward-compatible with real provider behavior', async () => {
     const plugin = createAuthIdentityPlugin({
       apiToken: 'schema-token',
-      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'admin', groups: ['ops'] }],
+      roles: ['auditor'],
+      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'auditor' }],
     })
 
     expect(plugin.optionsSchema?.().schema).toMatchObject({

@@ -709,11 +709,11 @@ describe('KanbanSDK plugin settings inventory', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('groups discovered providers by capability with builtin and workspace sources', () => {
+  it('groups discovered providers by capability with builtin and workspace sources', async () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const inventory = sdk.listPluginSettings()
+      const inventory = await sdk.listPluginSettings()
       const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
       const webhookDelivery = inventory.capabilities.find((entry) => entry.capability === 'webhook.delivery')
 
@@ -757,7 +757,73 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('discovers dependency-installed providers from local node_modules', () => {
+  it('resolves async nested plugin settings schema values before surfacing discovered providers', async () => {
+    const cleanup = installTempPackage(
+      'temp-dynamic-auth-plugin',
+      `module.exports = {
+  pluginManifest: {
+    id: 'temp-dynamic-auth-plugin',
+    capabilities: { 'auth.policy': ['temp-dynamic-auth-plugin'] },
+  },
+  authPolicyPlugins: {
+    'temp-dynamic-auth-plugin': {
+      manifest: { id: 'temp-dynamic-auth-plugin', provides: ['auth.policy'] },
+      async checkPolicy() { return { allowed: true } },
+      optionsSchema: async () => ({
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            permissions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  actions: {
+                    type: 'array',
+                    items: {
+                      type: 'string',
+                      enum: async (innerSdk) => innerSdk.listAvailableEvents({ type: 'before' }).map((entry) => entry.event),
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        secrets: [],
+      }),
+    },
+  },
+}
+`,
+    )
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const inventory = await sdk.listPluginSettings()
+      const authPolicy = inventory.capabilities.find((entry) => entry.capability === 'auth.policy')
+      const provider = authPolicy?.providers.find((entry) => entry.providerId === 'temp-dynamic-auth-plugin')
+      const actionItems = ((((provider?.optionsSchema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>).actions as Record<string, unknown>
+
+      expect(provider).toMatchObject({
+        packageName: 'temp-dynamic-auth-plugin',
+        discoverySource: 'dependency',
+      })
+      expect(actionItems.items).toMatchObject({
+        type: 'string',
+      })
+      expect(((actionItems.items as Record<string, unknown>).enum as string[])).toContain('card.create')
+      expect(((actionItems.items as Record<string, unknown>).enum as string[])).toContain('settings.update')
+      expect(((actionItems.items as Record<string, unknown>).enum as string[])).not.toContain('task.created')
+
+      sdk.close()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('discovers dependency-installed providers from local node_modules', async () => {
     const cleanup = installTempPackage(
       'temp-inventory-attachment-plugin',
       `module.exports = {
@@ -776,7 +842,7 @@ describe('KanbanSDK plugin settings inventory', () => {
 
     try {
       const sdk = new KanbanSDK(kanbanDir)
-      const inventory = sdk.listPluginSettings()
+      const inventory = await sdk.listPluginSettings()
       const attachmentStorage = inventory.capabilities.find((entry) => entry.capability === 'attachment.storage')
 
       expect(attachmentStorage?.providers).toContainEqual(expect.objectContaining({
@@ -792,7 +858,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('derives selected provider state from legacy config normalization', () => {
+  it('derives selected provider state from legacy config normalization', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({ version: 2, storageEngine: 'sqlite', sqlitePath: '.kanban/custom.db' }),
@@ -802,7 +868,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const inventory = sdk.listPluginSettings()
+      const inventory = await sdk.listPluginSettings()
       const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
 
       expect(cardStorage).toMatchObject({
@@ -824,7 +890,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('returns redacted option snapshots for the selected provider read model', () => {
+  it('returns redacted option snapshots for the selected provider read model', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({
@@ -846,8 +912,8 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const inventory = sdk.listPluginSettings()
-      const provider = sdk.getPluginSettings('auth.identity', 'local')
+      const inventory = await sdk.listPluginSettings()
+      const provider = await sdk.getPluginSettings('auth.identity', 'local')
       const authIdentity = inventory.capabilities.find((entry) => entry.capability === 'auth.identity')
 
       expect(authIdentity?.selected).toEqual({
@@ -877,7 +943,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('persists canonical provider selection for one capability without disturbing others', () => {
+  it('persists canonical provider selection for one capability without disturbing others', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({
@@ -893,7 +959,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = sdk.selectPluginSettingsProvider('card.storage', 'localfs')
+      const selected = await sdk.selectPluginSettingsProvider('card.storage', 'localfs')
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
@@ -909,7 +975,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       })
       expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
 
-      const inventory = sdk.listPluginSettings()
+      const inventory = await sdk.listPluginSettings()
       const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
       expect(cardStorage?.selected).toEqual({
         capability: 'card.storage',
@@ -929,7 +995,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('can explicitly disable webhook delivery while preserving stored webhook options', () => {
+  it('can explicitly disable webhook delivery while preserving stored webhook options', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({
@@ -956,7 +1022,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = sdk.selectPluginSettingsProvider('webhook.delivery', 'none')
+      const selected = await sdk.selectPluginSettingsProvider('webhook.delivery', 'none')
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
@@ -976,7 +1042,7 @@ describe('KanbanSDK plugin settings inventory', () => {
         },
       })
 
-      const inventory = sdk.listPluginSettings()
+      const inventory = await sdk.listPluginSettings()
       const webhookDelivery = inventory.capabilities.find((entry) => entry.capability === 'webhook.delivery')
 
       expect(webhookDelivery?.selected).toEqual({
@@ -990,7 +1056,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('keeps masked secrets on round-trip updates while replacing explicit secret edits', () => {
+  it('keeps masked secrets on round-trip updates while replacing explicit secret edits', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       JSON.stringify({
@@ -1012,7 +1078,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const updated = sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+      const updated = await sdk.updatePluginSettingsOptions('auth.identity', 'local', {
         apiToken: '••••••',
         users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
       })
@@ -1021,7 +1087,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       ) as {
         plugins?: Record<string, { provider: string; options?: { apiToken?: string; users?: Array<{ password: string; role?: string }> } }>
       }
-      const readback = sdk.getPluginSettings('auth.identity', 'local')
+      const readback = await sdk.getPluginSettings('auth.identity', 'local')
 
       expect(updated.selected).toEqual({
         capability: 'auth.identity',
@@ -1050,7 +1116,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('throws redacted payloads for invalid config reads', () => {
+  it('throws redacted payloads for invalid config reads', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
@@ -1060,10 +1126,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      expect(() => sdk.getPluginSettings('auth.identity', 'local')).toThrow(PluginSettingsOperationError)
+      await expect(sdk.getPluginSettings('auth.identity', 'local')).rejects.toBeInstanceOf(PluginSettingsOperationError)
 
       try {
-        sdk.getPluginSettings('auth.identity', 'local')
+        await sdk.getPluginSettings('auth.identity', 'local')
       } catch (error) {
         expect(error).toBeInstanceOf(PluginSettingsOperationError)
         const payload = (error as PluginSettingsOperationError).payload
@@ -1079,7 +1145,7 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('throws redacted payloads for invalid config lists', () => {
+  it('throws redacted payloads for invalid config lists', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
       '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
@@ -1089,10 +1155,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      expect(() => sdk.listPluginSettings()).toThrow(PluginSettingsOperationError)
+      await expect(sdk.listPluginSettings()).rejects.toBeInstanceOf(PluginSettingsOperationError)
 
       try {
-        sdk.listPluginSettings()
+        await sdk.listPluginSettings()
       } catch (error) {
         expect(error).toBeInstanceOf(PluginSettingsOperationError)
         const payload = (error as PluginSettingsOperationError).payload
@@ -1106,17 +1172,17 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
-  it('throws redacted payloads for config save failures', () => {
+  it('throws redacted payloads for config save failures', async () => {
     const configFile = path.join(workspaceDir, '.kanban.json')
     fs.writeFileSync(configFile, JSON.stringify({ version: 2 }), 'utf-8')
     fs.chmodSync(configFile, 0o444)
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      expect(() => sdk.selectPluginSettingsProvider('auth.identity', 'local')).toThrow(PluginSettingsOperationError)
+      await expect(sdk.selectPluginSettingsProvider('auth.identity', 'local')).rejects.toBeInstanceOf(PluginSettingsOperationError)
 
       try {
-        sdk.selectPluginSettingsProvider('auth.identity', 'local')
+        await sdk.selectPluginSettingsProvider('auth.identity', 'local')
       } catch (error) {
         expect(error).toBeInstanceOf(PluginSettingsOperationError)
         const payload = (error as PluginSettingsOperationError).payload

@@ -10,9 +10,9 @@ export type { BoardInfo, CardDisplaySettings, LabelDefinition, PluginSettingsCap
 export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCardStateCapabilities } from '../shared/config';
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types';
 export { getTitleFromContent, getDisplayTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types';
-export type { AuthIdentity, AuthPluginManifest, AuthIdentityPlugin, AuthPolicyPlugin, WebhookProviderPlugin, CardStateCursor, CardStateKey, CardStateModuleContext, CardStateProvider, CardStateProviderManifest, CardStateReadThroughInput, CardStateRecord, CardStateUnreadKey, CardStateValue, CardStateWriteInput, PluginManifest, CardStoragePlugin, AttachmentStoragePlugin, McpToolContext, McpToolResult, McpSchemaFactory, McpToolDefinition, McpPluginRegistration, ResolvedCapabilityBag, } from './plugins/index';
+export type { AuthIdentity, AuthPluginManifest, AuthIdentityPlugin, AuthPolicyPlugin, WebhookProviderPlugin, CardStateCursor, CardStateKey, CardStateModuleContext, CardStateProvider, CardStateProviderManifest, CardStateReadThroughInput, CardStateRecord, CardStateUnreadKey, CardStateValue, CardStateWriteInput, PluginManifest, CardStoragePlugin, AttachmentStoragePlugin, McpToolContext, McpToolResult, McpSchemaFactory, McpToolDefinition, McpPluginRegistration, PluginSettingsOptionsSchemaFactory, PluginSettingsOptionsSchemaInput, PluginSettingsOptionsSchemaValueResolver, ResolvedCapabilityBag, } from './plugins/index';
 export type { StandaloneHttpPlugin, StandaloneHttpHandler, StandaloneHttpRequestContext, StandaloneHttpPluginRegistrationOptions, } from './plugins/index';
-export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, canUseDefaultCardStateActor } from './plugins/index';
+export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, canUseDefaultCardStateActor, resolvePluginSettingsOptionsSchema } from './plugins/index';
 export type { AuthStatus, CardStateRuntimeStatus, PluginSettingsInstallCommand, PluginSettingsInstallResult, PluginSettingsValidationErrorCode, StorageStatus, WebhookStatus, } from './KanbanSDK';
 export { EventBus } from './eventBus';
 export type { EventBusOptions, EventBusAnyListener, EventBusWaitOptions } from './eventBus';

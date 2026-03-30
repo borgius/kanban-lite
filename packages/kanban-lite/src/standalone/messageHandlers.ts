@@ -51,12 +51,12 @@ import {
 } from './mutationService'
 import { cleanupTempFile } from './watcherSetup'
 
-function getPluginSettingsPayload(ctx: StandaloneContext): PluginSettingsPayload {
-  return ctx.sdk.listPluginSettings()
+async function getPluginSettingsPayload(ctx: StandaloneContext): Promise<PluginSettingsPayload> {
+  return await ctx.sdk.listPluginSettings()
 }
 
 function toPluginSettingsProviderTransport(
-  provider: ReturnType<StandaloneContext['sdk']['getPluginSettings']>,
+  provider: Awaited<ReturnType<StandaloneContext['sdk']['getPluginSettings']>>,
 ): PluginSettingsProviderTransport | null {
   return provider ? { ...provider } : null
 }
@@ -117,7 +117,7 @@ function sendPluginSettingsResult(ws: WebSocket, result: PluginSettingsResultMes
   ws.send(JSON.stringify(result))
 }
 
-function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket): void {
+async function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
   const settings = ctx.sdk.getSettings()
   settings.showBuildWithAI = false
   settings.markdownEditorMode = false
@@ -126,7 +126,7 @@ function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket): void 
     ws.send(JSON.stringify({
       type: 'showSettings',
       settings,
-      pluginSettings: getPluginSettingsPayload(ctx),
+      pluginSettings: await getPluginSettingsPayload(ctx),
     }))
   } catch (error) {
     ws.send(JSON.stringify({
@@ -267,7 +267,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       break
 
     case 'openSettings': {
-      sendSettingsBridgePayload(ctx, ws)
+      await sendSettingsBridgePayload(ctx, ws)
       break
     }
 
@@ -276,7 +276,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
-          pluginSettings: getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsPayload(ctx),
         })
       } catch (error) {
         sendPluginSettingsResult(ws, {
@@ -296,8 +296,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
-          pluginSettings: getPluginSettingsPayload(ctx),
-          provider: toPluginSettingsProviderTransport(ctx.sdk.getPluginSettings(capability, providerId)),
+          pluginSettings: await getPluginSettingsPayload(ctx),
+          provider: toPluginSettingsProviderTransport(await ctx.sdk.getPluginSettings(capability, providerId)),
         })
       } catch (error) {
         sendPluginSettingsResult(ws, {
@@ -313,13 +313,13 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const capability = msg.capability as PluginCapabilityNamespace
       const providerId = msg.providerId as string
       try {
-        const provider = await runWithScopedAuth(() => Promise.resolve(
+        const provider = await runWithScopedAuth(() =>
           ctx.sdk.selectPluginSettingsProvider(capability, providerId),
-        ))
+        )
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'select',
-          pluginSettings: getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsPayload(ctx),
           provider: toPluginSettingsProviderTransport(provider),
         })
       } catch (error) {
@@ -336,13 +336,13 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const capability = msg.capability as PluginCapabilityNamespace
       const providerId = msg.providerId as string
       try {
-        const provider = await runWithScopedAuth(() => Promise.resolve(
+        const provider = await runWithScopedAuth(() =>
           ctx.sdk.updatePluginSettingsOptions(capability, providerId, (msg.options ?? {}) as Record<string, unknown>),
-        ))
+        )
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'updateOptions',
-          pluginSettings: getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsPayload(ctx),
           provider: toPluginSettingsProviderTransport(provider),
         })
       } catch (error) {
@@ -364,7 +364,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'install',
-          pluginSettings: getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsPayload(ctx),
           install: toPluginSettingsInstallTransportResult(install),
         })
       } catch (error) {

@@ -959,9 +959,9 @@ export class KanbanSDK {
    *
    * @returns A capability-grouped plugin settings inventory payload.
    */
-  listPluginSettings(): PluginSettingsPayload {
+  async listPluginSettings(): Promise<PluginSettingsPayload> {
     try {
-      return discoverPluginSettingsInventory(this.workspaceRoot, DEFAULT_PLUGIN_SETTINGS_REDACTION)
+      return await discoverPluginSettingsInventory(this.workspaceRoot, DEFAULT_PLUGIN_SETTINGS_REDACTION, this)
     } catch (error) {
       throw toPluginSettingsOperationError({
         error,
@@ -982,12 +982,18 @@ export class KanbanSDK {
    * @param providerId - Provider identifier within that capability.
    * @returns The redacted provider read model, or `null` when the provider is not discovered.
    */
-  getPluginSettings(
+  async getPluginSettings(
     capability: PluginCapabilityNamespace,
     providerId: string,
-  ): PluginSettingsProviderReadModel | null {
+  ): Promise<PluginSettingsProviderReadModel | null> {
     try {
-      return readPluginSettingsProvider(this.workspaceRoot, capability, providerId, DEFAULT_PLUGIN_SETTINGS_REDACTION)
+      return await readPluginSettingsProvider(
+        this.workspaceRoot,
+        capability,
+        providerId,
+        DEFAULT_PLUGIN_SETTINGS_REDACTION,
+        this,
+      )
     } catch (error) {
       throw toPluginSettingsOperationError({
         error,
@@ -1013,16 +1019,17 @@ export class KanbanSDK {
    * @returns The redacted provider read model after persistence succeeds, or `null`
    *   when the capability was explicitly disabled.
    */
-  selectPluginSettingsProvider(
+  async selectPluginSettingsProvider(
     capability: PluginCapabilityNamespace,
     providerId: string,
-  ): PluginSettingsProviderReadModel | null {
+  ): Promise<PluginSettingsProviderReadModel | null> {
     try {
-      return persistPluginSettingsProviderSelection(
+      return await persistPluginSettingsProviderSelection(
         this.workspaceRoot,
         capability,
         providerId,
         DEFAULT_PLUGIN_SETTINGS_REDACTION,
+        this,
       )
     } catch (error) {
       throw toPluginSettingsOperationError({
@@ -1048,18 +1055,19 @@ export class KanbanSDK {
    * @param options - Provider options payload to persist.
    * @returns The redacted provider read model after persistence succeeds.
    */
-  updatePluginSettingsOptions(
+  async updatePluginSettingsOptions(
     capability: PluginCapabilityNamespace,
     providerId: string,
     options: Record<string, unknown>,
-  ): PluginSettingsProviderReadModel {
+  ): Promise<PluginSettingsProviderReadModel> {
     try {
-      return persistPluginSettingsProviderOptions(
+      return await persistPluginSettingsProviderOptions(
         this.workspaceRoot,
         capability,
         providerId,
         options,
         DEFAULT_PLUGIN_SETTINGS_REDACTION,
+        this,
       )
     } catch (error) {
       throw toPluginSettingsOperationError({

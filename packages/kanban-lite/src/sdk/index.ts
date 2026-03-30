@@ -49,6 +49,7 @@ export type {
   PluginSettingsErrorPayload,
   PluginSettingsInstallRequest,
   PluginSettingsInstallScope,
+  PluginSettingsJsonSchema,
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsPayload,
   PluginSettingsProviderRow,
@@ -56,9 +57,12 @@ export type {
   PluginSettingsRedactedValues,
   PluginSettingsRedactionPolicy,
   PluginSettingsRedactionTarget,
+  PluginSettingsResolvable,
   PluginSettingsSecretFieldMetadata,
+  PluginSettingsSchemaValueResolver,
   PluginSettingsSelectedState,
   PluginSettingsSelectionSource,
+  PluginSettingsUiSchemaElement,
 } from '../shared/types'
 export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCardStateCapabilities } from '../shared/config'
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types'
@@ -89,6 +93,9 @@ export type {
   McpSchemaFactory,
   McpToolDefinition,
   McpPluginRegistration,
+  PluginSettingsOptionsSchemaFactory,
+  PluginSettingsOptionsSchemaInput,
+  PluginSettingsOptionsSchemaValueResolver,
   ResolvedCapabilityBag,
 } from './plugins/index'
 export type {
@@ -97,7 +104,12 @@ export type {
   StandaloneHttpRequestContext,
   StandaloneHttpPluginRegistrationOptions,
 } from './plugins/index'
-export { NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, canUseDefaultCardStateActor } from './plugins/index'
+export {
+  NOOP_IDENTITY_PLUGIN,
+  NOOP_POLICY_PLUGIN,
+  canUseDefaultCardStateActor,
+  resolvePluginSettingsOptionsSchema,
+} from './plugins/index'
 export type {
   AuthStatus,
   CardStateRuntimeStatus,

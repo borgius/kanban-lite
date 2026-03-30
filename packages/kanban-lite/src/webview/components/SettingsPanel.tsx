@@ -295,6 +295,52 @@ function clonePluginOptionsRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? structuredClone(value) as Record<string, unknown> : {}
 }
 
+function clonePluginSchemaDefaultValue<T>(value: T): T {
+  return structuredClone(value)
+}
+
+function applyPluginSchemaDefaultsToData(schemaNode: unknown, dataNode: unknown): unknown {
+  if (!isRecord(schemaNode)) return dataNode
+
+  if (dataNode === undefined && Object.prototype.hasOwnProperty.call(schemaNode, 'default')) {
+    return clonePluginSchemaDefaultValue(schemaNode.default)
+  }
+
+  if (Array.isArray(dataNode)) {
+    if (isRecord(schemaNode.items)) {
+      return dataNode.map((item) => applyPluginSchemaDefaultsToData(schemaNode.items, item))
+    }
+
+    const tupleItems = schemaNode.items
+    if (Array.isArray(tupleItems)) {
+      return dataNode.map((item, index) => applyPluginSchemaDefaultsToData(tupleItems[index], item))
+    }
+
+    return dataNode
+  }
+
+  if (!isRecord(dataNode)) return dataNode
+
+  if (isRecord(schemaNode.properties)) {
+    for (const [key, childSchema] of Object.entries(schemaNode.properties)) {
+      const nextValue = applyPluginSchemaDefaultsToData(childSchema, dataNode[key])
+      if (nextValue !== undefined) {
+        dataNode[key] = nextValue
+      }
+    }
+  }
+
+  return dataNode
+}
+
+export function applyPluginSchemaDefaults(
+  schema: Record<string, unknown>,
+  data: unknown,
+): Record<string, unknown> {
+  const nextData = clonePluginOptionsRecord(data)
+  return applyPluginSchemaDefaultsToData(schema, nextData) as Record<string, unknown>
+}
+
 function escapeJsonPointerSegment(value: string): string {
   return value.replace(/~/g, '~0').replace(/\//g, '~1')
 }
@@ -540,11 +586,12 @@ function PluginProviderOptionsEditor({
   uiSchema: UISchemaElement
   onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
 }) {
-  const [optionData, setOptionData] = useState<Record<string, unknown>>(() => clonePluginOptionsRecord(provider.options?.values))
-  const [optionErrors, setOptionErrors] = useState<PluginOptionsValidationError[]>(() => validatePluginOptions(
-    schema,
-    clonePluginOptionsRecord(provider.options?.values),
-  ))
+  const [optionData, setOptionData] = useState<Record<string, unknown>>(() => applyPluginSchemaDefaults(schema, provider.options?.values))
+  const [optionErrors, setOptionErrors] = useState<PluginOptionsValidationError[]>([])
+
+  useEffect(() => {
+    setOptionErrors(validatePluginOptions(schema, optionData))
+  }, [schema, optionData])
 
   return (
     <div className="space-y-4">
@@ -579,9 +626,11 @@ function PluginProviderOptionsEditor({
           cells={vanillaCells}
           ajv={pluginOptionsAjv}
           onChange={({ data, errors }) => {
-            const nextData = clonePluginOptionsRecord(data)
+            const nextData = applyPluginSchemaDefaults(schema, data)
             setOptionData(nextData)
-            setOptionErrors(Array.isArray(errors) ? (errors as PluginOptionsValidationError[]) : [])
+            if (Array.isArray(errors) && errors.length > 0) {
+              setOptionErrors(errors as PluginOptionsValidationError[])
+            }
           }}
         />
       </div>
@@ -970,14 +1019,16 @@ function PluginOptionsSection({
                       )
                       .map((capability) => {
                         const providerDetails = getProviderDetails(capability.capability, capability.providerId)
-                        const providerOptionsSchema = providerDetails?.optionsSchema
+                        const providerOptionsMetadata = providerDetails?.optionsSchema
+                        const providerSchema = providerOptionsMetadata?.schema
+                        const providerOptionsSchema = providerSchema && isRecord(providerSchema)
                           ? applyPluginSecretSchemaHints(
-                              providerDetails.optionsSchema.schema,
-                              providerDetails.optionsSchema.secrets,
+                              providerSchema,
+                              providerOptionsMetadata.secrets,
                             )
                           : null
-                        const providerUiSchema = providerDetails?.optionsSchema
-                          ? (providerDetails.optionsSchema.uiSchema ?? createPluginOptionsUiSchema(providerDetails.optionsSchema.schema)) as UISchemaElement
+                        const providerUiSchema = providerOptionsMetadata && providerSchema && isRecord(providerSchema)
+                          ? (providerOptionsMetadata.uiSchema ?? createPluginOptionsUiSchema(providerSchema)) as UISchemaElement
                           : null
 
                         return (

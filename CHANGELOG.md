@@ -9,17 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Async plugin option-schema resolution helper**: Plugin settings discovery now resolves sync/async `optionsSchema()` metadata before it reaches SDK/UI/API/CLI/MCP consumers, and plugin authors can use the shared SDK helper to populate schema or UI values from runtime data such as the live available-event catalog.
+
 - **Auth plugin provider-option UI schemas**: `kl-plugin-auth` now ships explicit JSON Forms `uiSchema` metadata for `auth.identity` and `auth.policy`, giving the shared Plugin Options workflow grouped sections, inline array detail editors, and a small conditional rule for permission-action editing instead of the generic fallback layout.
 
 - **Available event discovery across SDK/API/CLI/MCP**: `KanbanSDK` now exposes `listAvailableEvents({ type?, mask? })` so callers can inspect built-in before/after events with optional wildcard filtering. SDK extension plugins may declare extra discoverable events through `sdkExtensionPlugin.events`, and the same catalog is now exposed through `kl events`, standalone `GET /api/events`, and the MCP `list_available_events` tool.
 
-- **Auth groups and editable permission matrix options**: `kl-plugin-auth` now lets local users carry `groups`, exposes those groups on resolved auth identities, adds a shared-plugin-settings-friendly `auth.policy.options.permissions[]` editor for role/group action rules, keeps legacy `options.matrix` role maps working at runtime, and extends `kl auth create-user` with optional `--groups` input.
+- **Dynamic auth role catalogs and editable permission matrices**: `kl-plugin-auth` now lets local auth configs maintain a reusable `roles[]` catalog that defaults to `user`, `manager`, and `admin`, drives the shared Plugin Options role picker, still allows adding or deleting extra roles as a normal array, drops local-user group editing from `auth.identity`, preserves arbitrary role strings at runtime, keeps `auth.policy.options.permissions[]` available for custom role/group action rules, and teaches `kl auth create-user --role <role>` to auto-register new roles in that catalog.
 
 - **Modern React lint guardrails for contributors and agents**: Added stricter React/TSX ESLint rules for self-closing JSX, boolean props, useless fragments, stable key guidance, and nested-component warnings, plus workspace instruction files that tell agents to keep React changes lint-clean instead of papering over rules with inline disables.
 
 - **Standard plugin package manifest** (`pluginManifest` export): Every first-party plugin package now exports a `pluginManifest` constant declaring its capabilities and integration surfaces. The engine uses this manifest for fast, reliable discovery instead of exhaustive duck-typing. New types `KLPluginPackageManifest` and `PluginIntegrationNamespace` are exported from `kanban-lite/sdk`. All first-party plugin packages (`kl-plugin-auth`, `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, `kl-plugin-attachment-s3`, `kl-plugin-webhook`) include the manifest. Third-party plugins without `pluginManifest` still work via the legacy probing fallback.
 
 ### Changed
+
+- **`kl-plugin-auth` action pickers now use the live before-event catalog**: When an SDK instance is available, the shared Plugin Options form resolves `auth.policy.permissions[].actions[]` from `sdk.listAvailableEvents({ type: 'before' })`, so custom permission rules follow the current runtime event surface instead of a stale hard-coded list.
+
+- **Plugin option-schema authoring types now allow nested async schema values**: `PluginSettingsOptionsSchemaMetadata.schema` / `uiSchema` now accept nested sync/async resolvers in the public SDK typings, so plugin packages can declare runtime-derived enums/defaults without unsafe casts while transports still receive fully resolved plain JSON Forms metadata.
 
 - **Plugin authoring contracts now come from the SDK**: First-party plugin packages now import shared provider, auth, CLI, standalone, MCP, card-state, and plugin-settings metadata types from `kanban-lite/sdk` instead of re-declaring local structural copies. The SDK export surface now includes the additional plugin authoring types needed for that workflow.
 - **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.
@@ -28,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
 
 ### Fixed
+
+- **Plugin settings table-array buttons**: Styled the JSON Forms table-based array add/delete controls in the Settings panel so primitive list editors such as the auth role catalog no longer render unthemed browser-default buttons.
 
 - **Plugin settings SDK type narrowing**: Tightened the local record guard and options-schema normalization in `packages/kanban-lite/src/sdk/plugins/index.ts` so plugin-settings metadata compiles cleanly under stricter TypeScript checks without treating validated records as `unknown`.
 
@@ -150,8 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat SDK example card workflow wording and reliability**: The chat route and UI now use card-centric tool naming, stronger tool-use instructions, a deterministic temperature setting, and more robust kanban API error handling so the example behaves more consistently under live integration tests.
 
 ### Added
-- **Role-based access control for local auth users**: Each user entry in `plugins["auth.identity"].options.users` now accepts an optional `role` field (`user`, `manager`, or `admin`). When present, the `kl-plugin-auth` local policy enforces the RBAC role matrix for that user — only permitted actions are allowed. Users without a `role` field retain the previous behaviour (any authenticated identity is allowed).
-- **`--role` flag for `kl auth create-user`**: The CLI command now accepts `--role user|manager|admin` to embed the role into the new user entry written to `.kanban.json`.
+- **Optional dynamic roles for local auth users**: Each user entry in `plugins["auth.identity"].options.users` may now carry any string `role`, backed by a shared `plugins["auth.identity"].options.roles` catalog that powers the settings picker. Local auth remains allow-authenticated by default; explicit `auth.policy.options.permissions[]` rules can enforce custom role-based permissions when needed.
+- **Flexible `--role` flag for `kl auth create-user`**: The CLI command now accepts `--role <role>` for any role name, embeds it in the new user entry, and appends it to the local role catalog in `.kanban.json` when missing.
 - **Session identity carries user roles**: After login, the session-backed `AuthIdentity` now includes the user's configured role in its `roles` array so that policy checks see the correct role on every request.
 
 ### Added

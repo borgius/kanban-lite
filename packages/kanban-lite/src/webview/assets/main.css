@@ -2322,6 +2322,171 @@ input:focus-visible {
   margin-bottom: 0.375rem;
 }
 
+.card-jsonforms .array-control-layout.control > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.card-jsonforms .array-control-layout.control > header label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.card-jsonforms .array-control-layout.control > .children > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 0.75rem;
+}
+
+.card-jsonforms .array-control-layout.control > .children > div:first-child {
+  margin-top: 0.25rem;
+}
+
+.card-jsonforms .array-control-layout.control > .children .horizontal-layout {
+  gap: 0.75rem;
+}
+
+.card-jsonforms .array-control-layout.control > .children .horizontal-layout > * {
+  min-width: 0;
+}
+
+.card-jsonforms .array-control-layout.control > .children .child-controls {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  margin: 0 0 0.375rem;
+}
+
+.card-jsonforms .array-control-layout.control > .children .button-up,
+.card-jsonforms .array-control-layout.control > .children .button-down {
+  display: none;
+}
+
+.card-jsonforms .button-add,
+.card-jsonforms .button-delete {
+  appearance: none;
+  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  border-radius: 0.375rem;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background, transparent));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.card-jsonforms .button-add {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.card-jsonforms .button-delete {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  position: relative;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+}
+
+.card-jsonforms .button-delete::before {
+  content: '×';
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--vscode-descriptionForeground);
+}
+
+.card-jsonforms .button-add:hover:not(:disabled),
+.card-jsonforms .button-delete:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  border-color: var(--vscode-focusBorder, var(--vscode-button-background));
+}
+
+.card-jsonforms .button-delete:hover:not(:disabled)::before {
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.card-jsonforms .button-add:disabled,
+.card-jsonforms .button-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card-jsonforms .button-add:focus-visible,
+.card-jsonforms .button-delete:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--vscode-button-background));
+  outline-offset: 1px;
+}
+
+.card-jsonforms .array-table-layout > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.card-jsonforms .array-table-layout > header label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.card-jsonforms .array-table-layout > header button,
+.card-jsonforms .array-table-layout tbody td:last-child button {
+  appearance: none;
+  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  border-radius: 0.375rem;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background, transparent));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.card-jsonforms .array-table-layout > header button {
+  padding: 0.375rem 0.625rem;
+  white-space: nowrap;
+}
+
+.card-jsonforms .array-table-layout tbody td:last-child button {
+  padding: 0.25rem 0.5rem;
+}
+
+.card-jsonforms .array-table-layout > header button:hover:not(:disabled),
+.card-jsonforms .array-table-layout tbody td:last-child button:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  border-color: var(--vscode-focusBorder, var(--vscode-button-background));
+}
+
+.card-jsonforms .array-table-layout tbody td:last-child button:hover:not(:disabled) {
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.card-jsonforms .array-table-layout > header button:disabled,
+.card-jsonforms .array-table-layout tbody td:last-child button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card-jsonforms .array-table-layout > header button:focus-visible,
+.card-jsonforms .array-table-layout tbody td:last-child button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--vscode-button-background));
+  outline-offset: 1px;
+}
+
 /* ── Categorization tabs ── */
 .card-jsonforms .categorization-master {
   display: flex;

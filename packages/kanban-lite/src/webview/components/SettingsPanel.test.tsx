@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type {
@@ -43,6 +44,12 @@ const AUTH_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
     additionalProperties: false,
     properties: {
       apiToken: { type: 'string', title: 'API token' },
+      roles: {
+        type: 'array',
+        title: 'Roles',
+           default: ['user', 'manager', 'admin'],
+        items: { type: 'string', title: 'Role' },
+      },
       users: {
         type: 'array',
         title: 'Local users',
@@ -51,10 +58,63 @@ const AUTH_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
           properties: {
             username: { type: 'string', title: 'Username' },
             password: { type: 'string', title: 'Password hash' },
+            role: { type: 'string', title: 'Role', enum: ['user', 'manager', 'admin'] },
           },
         },
       },
     },
+  },
+  uiSchema: {
+    type: 'VerticalLayout',
+    elements: [
+      {
+        type: 'Group',
+        label: 'API access',
+        elements: [
+          {
+            type: 'Control',
+            scope: '#/properties/apiToken',
+            label: 'API token',
+          },
+        ],
+      },
+      {
+        type: 'Group',
+        label: 'Role catalog',
+        elements: [
+          {
+            type: 'Control',
+            scope: '#/properties/roles',
+            label: 'Roles',
+            options: {
+              showSortButtons: true,
+            },
+          },
+        ],
+      },
+      {
+        type: 'Group',
+        label: 'Standalone local users',
+        elements: [
+          {
+            type: 'Control',
+            scope: '#/properties/users',
+            label: 'Local users',
+            options: {
+              elementLabelProp: 'username',
+              detail: {
+                type: 'HorizontalLayout',
+                elements: [
+                  { type: 'Control', scope: '#/properties/username', label: 'Username' },
+                  { type: 'Control', scope: '#/properties/password', label: 'Password hash' },
+                  { type: 'Control', scope: '#/properties/role', label: 'Role' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ],
   },
   secrets: [
     { path: 'apiToken', redaction: { maskedValue: '••••••', writeOnly: true, targets: ['read', 'list', 'error'] } },
@@ -257,7 +317,8 @@ const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   options: {
     values: {
       apiToken: '••••••',
-      users: [{ username: 'alice', password: '••••••' }],
+      roles: ['user', 'manager', 'admin'],
+      users: [{ username: 'alice', password: '••••••', role: 'admin' }],
     },
     redactedPaths: ['apiToken', 'users.0.password'],
     redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
@@ -305,6 +366,7 @@ vi.mock('../store', () => ({
 
 import {
   SettingsPanel,
+  applyPluginSchemaDefaults,
   applyPluginSecretSchemaHints,
 } from './SettingsPanel'
 
@@ -388,10 +450,18 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(authMarkup).toContain('Provider: local')
     expect(authMarkup).toContain('Options')
     expect(authMarkup).toContain('API token')
+    expect(authMarkup).toContain('Roles')
     expect(authMarkup).toContain('Local users')
     expect(authMarkup).toContain('Save options')
     expect(authMarkup).toContain('Stored secret values reopen masked')
     expect(authMarkup).toContain('card-jsonforms')
+    expect(authMarkup).toContain('array-table-layout')
+    expect(authMarkup).toContain('Add to Roles')
+    expect(authMarkup).toContain('button-add')
+    expect(authMarkup).toContain('button-up')
+    expect(authMarkup).toContain('button-down')
+    expect(authMarkup).toContain('button-delete')
+    expect(authMarkup).toContain('Delete')
 
     const storageMarkup = renderToStaticMarkup(
       <SettingsPanel
@@ -411,6 +481,13 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(storageMarkup).toContain('Options')
     expect(storageMarkup).toContain('Database path')
     expect(storageMarkup).not.toContain('Stored secret values reopen masked')
+  })
+
+  it('styles table-array add and delete controls for primitive lists', () => {
+    const css = readFileSync(new URL('../assets/main.css', import.meta.url), 'utf8')
+
+    expect(css).toContain('.card-jsonforms .array-table-layout > header button')
+    expect(css).toContain('.card-jsonforms .array-table-layout tbody td:last-child button')
   })
 
   it('groups plugin capabilities by namespace and keeps options outside the capability cards', () => {
@@ -457,6 +534,15 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(properties.apiToken.format).toBe('password')
     expect(String(properties.apiToken.description)).toContain('Stored secret values reopen masked')
     expect(userItems.password.format).toBe('password')
+  })
+
+  it('applies default role catalogs when provider options omit them', () => {
+    const data = applyPluginSchemaDefaults(AUTH_OPTIONS_SCHEMA.schema, {
+      users: [{ username: 'alice', password: '••••••', role: 'admin' }],
+    })
+
+    expect(data.roles).toEqual(['user', 'manager', 'admin'])
+    expect(data.users).toEqual([{ username: 'alice', password: '••••••', role: 'admin' }])
   })
 
   it('renders sanitized install feedback without dumping raw command details', () => {

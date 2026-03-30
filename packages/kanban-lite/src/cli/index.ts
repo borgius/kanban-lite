@@ -2107,7 +2107,7 @@ export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], fl
     switch (sub) {
       case 'list': {
         assertNoUnexpectedPluginSettingsFlags(flags, [], 'plugin-settings list')
-        const inventory = sdk.listPluginSettings()
+        const inventory = await sdk.listPluginSettings()
         if (flags.json) {
           console.log(JSON.stringify(inventory, null, 2))
         } else {
@@ -2124,7 +2124,7 @@ export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], fl
           process.exit(1)
         }
 
-        const provider = sdk.getPluginSettings(capability as never, providerId)
+        const provider = await sdk.getPluginSettings(capability as never, providerId)
         if (!provider) exitPluginSettingsProviderNotFound(capability, providerId, flags)
 
         if (flags.json) {
@@ -2143,9 +2143,9 @@ export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], fl
           process.exit(1)
         }
 
-        const provider = await runWithCliAuth(sdk, flags, () => Promise.resolve(
+        const provider = await runWithCliAuth(sdk, flags, () =>
           sdk.selectPluginSettingsProvider(capability as never, providerId),
-        ))
+        )
         if (flags.json) {
           console.log(JSON.stringify(provider, null, 2))
         } else {
@@ -2173,9 +2173,9 @@ export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], fl
         }
 
         const nextOptions = await parseJsonObjectFlag(flags.options, 'options')
-        const provider = await runWithCliAuth(sdk, flags, () => Promise.resolve(
+        const provider = await runWithCliAuth(sdk, flags, () =>
           sdk.updatePluginSettingsOptions(capability as never, providerId, nextOptions),
-        ))
+        )
         if (flags.json) {
           console.log(JSON.stringify(provider, null, 2))
         } else {

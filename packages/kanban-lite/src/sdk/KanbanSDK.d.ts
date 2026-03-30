@@ -344,7 +344,7 @@ export declare class KanbanSDK {
      *
      * @returns A capability-grouped plugin settings inventory payload.
      */
-    listPluginSettings(): PluginSettingsPayload;
+    listPluginSettings(): Promise<PluginSettingsPayload>;
     /**
      * Returns the redacted plugin settings read model for one provider.
      *
@@ -356,7 +356,7 @@ export declare class KanbanSDK {
      * @param providerId - Provider identifier within that capability.
      * @returns The redacted provider read model, or `null` when the provider is not discovered.
      */
-    getPluginSettings(capability: PluginCapabilityNamespace, providerId: string): PluginSettingsProviderReadModel | null;
+    getPluginSettings(capability: PluginCapabilityNamespace, providerId: string): Promise<PluginSettingsProviderReadModel | null>;
     /**
      * Persists the canonical selected provider for one capability inside `.kanban.json`.
      *
@@ -371,7 +371,7 @@ export declare class KanbanSDK {
      * @returns The redacted provider read model after persistence succeeds, or `null`
      *   when the capability was explicitly disabled.
      */
-    selectPluginSettingsProvider(capability: PluginCapabilityNamespace, providerId: string): PluginSettingsProviderReadModel | null;
+    selectPluginSettingsProvider(capability: PluginCapabilityNamespace, providerId: string): Promise<PluginSettingsProviderReadModel | null>;
     /**
      * Persists provider options under the canonical capability-selection model.
      *
@@ -385,7 +385,7 @@ export declare class KanbanSDK {
      * @param options - Provider options payload to persist.
      * @returns The redacted provider read model after persistence succeeds.
      */
-    updatePluginSettingsOptions(capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>): PluginSettingsProviderReadModel;
+    updatePluginSettingsOptions(capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>): Promise<PluginSettingsProviderReadModel>;
     /**
      * Installs a supported external plugin package through guarded `npm install` execution.
      *

@@ -140,7 +140,7 @@ export interface AuthIdentityPlugin {
    * When provided, hosts may surface this in configuration UIs and redact any
    * secret fields according to the accompanying metadata.
    */
-  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
+  optionsSchema?: PluginSettingsOptionsSchemaFactory
   /**
    * Resolves an auth context to a caller identity, or `null` for
    * anonymous / invalid tokens.
@@ -164,7 +164,7 @@ export interface AuthPolicyPlugin {
    * When provided, hosts may surface this in configuration UIs and redact any
    * secret fields according to the accompanying metadata.
    */
-  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
+  optionsSchema?: PluginSettingsOptionsSchemaFactory
   /**
    * Returns an {@link AuthDecision} indicating whether `identity` is
    * authorized to perform `action` in the given `context`.
@@ -1140,6 +1140,34 @@ interface DiscoveredPluginProvider {
   optionsSchema?: PluginSettingsOptionsSchemaMetadata
 }
 
+/**
+ * Runtime resolver for a dynamic plugin-settings schema value.
+ *
+ * Plugin authors may use this for any value nested inside `schema` or
+ * `uiSchema` when the final value depends on the active SDK runtime.
+ * Hosts resolve these functions before sending schema metadata across
+ * transports so JSON Forms always receives plain JSON-compatible values.
+ */
+export type PluginSettingsOptionsSchemaValueResolver<T = unknown> = (
+  sdk: KanbanSDK,
+  optionsSchema: PluginSettingsOptionsSchemaMetadata,
+) => T | Promise<T>
+
+/**
+ * Top-level `optionsSchema()` return value supported by the shared resolver.
+ *
+ * The returned metadata itself may contain nested sync/async resolver
+ * functions; those are recursively resolved by
+ * {@link resolvePluginSettingsOptionsSchema}.
+ */
+export type PluginSettingsOptionsSchemaInput =
+  | PluginSettingsOptionsSchemaMetadata
+  | Promise<PluginSettingsOptionsSchemaMetadata>
+  | PluginSettingsOptionsSchemaValueResolver<PluginSettingsOptionsSchemaMetadata>
+
+/** Shared factory signature for plugin package `optionsSchema()` hooks. */
+export type PluginSettingsOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSettingsOptionsSchemaInput
+
 type PluginSettingsConfigSnapshot = Pick<
   KanbanConfig,
   'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
@@ -1200,6 +1228,65 @@ function normalizePluginSettingsOptionsSchema(value: unknown): PluginSettingsOpt
     ...(uiSchema ? { uiSchema } : {}),
     secrets,
   }
+}
+
+async function resolvePluginSettingsOptionsSchemaNode(
+  value: unknown,
+  sdk: KanbanSDK,
+  optionsSchema: PluginSettingsOptionsSchemaMetadata,
+): Promise<unknown> {
+  let current = await Promise.resolve(value)
+
+  while (typeof current === 'function') {
+    current = await (current as PluginSettingsOptionsSchemaValueResolver)(sdk, optionsSchema)
+  }
+
+  if (Array.isArray(current)) {
+    const next: unknown[] = []
+    for (const entry of current) {
+      next.push(await resolvePluginSettingsOptionsSchemaNode(entry, sdk, optionsSchema))
+    }
+    return next
+  }
+
+  if (!isRecord(current)) {
+    return current
+  }
+
+  const next: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(current)) {
+    next[key] = await resolvePluginSettingsOptionsSchemaNode(entry, sdk, optionsSchema)
+  }
+  return next
+}
+
+/**
+ * Resolves transport-safe plugin-settings metadata from a static object or a
+ * dynamic sync/async schema factory.
+ *
+ * Any nested resolver function found inside `schema`, `uiSchema`, or other
+ * metadata fields is awaited before normalization, ensuring downstream host
+ * transports and JSON Forms consumers receive plain structured-clone-safe
+ * values only.
+ */
+export async function resolvePluginSettingsOptionsSchema(
+  value: unknown,
+  sdk: KanbanSDK,
+): Promise<PluginSettingsOptionsSchemaMetadata | undefined> {
+  const root = {} as PluginSettingsOptionsSchemaMetadata & Record<string, unknown>
+  let current = await Promise.resolve(value)
+
+  while (typeof current === 'function') {
+    current = await (current as PluginSettingsOptionsSchemaValueResolver)(sdk, root)
+  }
+
+  if (!isRecord(current)) return undefined
+
+  for (const [key, entry] of Object.entries(current)) {
+    root[key] = await resolvePluginSettingsOptionsSchemaNode(entry, sdk, root)
+  }
+
+  return normalizePluginSettingsOptionsSchema(root)
 }
 
 function cloneProviderRef(ref: ProviderRef): ProviderRef {
@@ -1521,27 +1608,28 @@ function isValidCardStateProviderCandidate(provider: unknown): provider is CardS
     && candidate.manifest.provides.includes('card.state')
 }
 
-function getProviderOptionsSchemaCandidate(
+async function getProviderOptionsSchemaCandidate(
   mod: Record<string, unknown>,
   providerId: string,
   directCandidate: unknown,
-): PluginSettingsOptionsSchemaMetadata | undefined {
+  sdk: KanbanSDK,
+): Promise<PluginSettingsOptionsSchemaMetadata | undefined> {
   if (isRecord(directCandidate) && typeof directCandidate.optionsSchema === 'function') {
-    return normalizePluginSettingsOptionsSchema(directCandidate.optionsSchema())
+    return resolvePluginSettingsOptionsSchema(directCandidate.optionsSchema(sdk), sdk)
   }
 
   const mappedOptionsSchemas = mod.optionsSchemas
   if (isRecord(mappedOptionsSchemas)) {
     const mappedValue = mappedOptionsSchemas[providerId]
     if (typeof mappedValue === 'function') {
-      return normalizePluginSettingsOptionsSchema(mappedValue())
+      return resolvePluginSettingsOptionsSchema(mappedValue(sdk), sdk)
     }
-    const normalized = normalizePluginSettingsOptionsSchema(mappedValue)
+    const normalized = await resolvePluginSettingsOptionsSchema(mappedValue, sdk)
     if (normalized) return normalized
   }
 
   if (typeof mod.optionsSchema === 'function') {
-    return normalizePluginSettingsOptionsSchema(mod.optionsSchema())
+    return resolvePluginSettingsOptionsSchema(mod.optionsSchema(sdk), sdk)
   }
 
   return undefined
@@ -1597,7 +1685,11 @@ function registerBuiltinPluginProviders(
   })
 }
 
-function inspectExternalPluginModule(request: string, resolved: ResolvedExternalModule): DiscoveredPluginProvider[] {
+async function inspectExternalPluginModule(
+  request: string,
+  resolved: ResolvedExternalModule,
+  sdk: KanbanSDK,
+): Promise<DiscoveredPluginProvider[]> {
   const mod = resolved.module as Record<string, unknown>
   const discovered: DiscoveredPluginProvider[] = []
   const add = (provider: DiscoveredPluginProvider): void => {
@@ -1622,7 +1714,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
             if (plugin) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, plugin),
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, plugin, sdk),
               })
             }
             break
@@ -1634,7 +1726,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
             if (plugin) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, plugin),
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, plugin, sdk),
               })
             }
             break
@@ -1645,7 +1737,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
               if (isValidAuthIdentityPlugin(candidate, providerId)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
                 })
               }
             }
@@ -1657,7 +1749,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
               if (isValidAuthPolicyPlugin(candidate, providerId)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
                 })
               }
             }
@@ -1669,7 +1761,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
               const provider = directWebhookPlugin as WebhookProviderPlugin
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, provider),
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, provider, sdk),
               })
             }
             break
@@ -1680,7 +1772,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
               if (isValidCardStateProvider(candidate, providerId)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
                 })
                 break
               }
@@ -1688,7 +1780,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
             if (isValidCardStateProviderCandidate(mod.cardStateProvider)) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, mod.cardStateProvider),
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, mod.cardStateProvider, sdk),
               })
             } else if (typeof mod.createCardStateProvider === 'function') {
               const candidate = (mod.createCardStateProvider as (context: CardStateModuleContext) => unknown)({
@@ -1700,7 +1792,7 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
               if (isValidCardStateProviderCandidate(candidate)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
                 })
               }
             }
@@ -1801,10 +1893,11 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
   return [...requests]
 }
 
-function buildPluginSettingsInventoryCatalog(
+async function buildPluginSettingsInventoryCatalog(
   workspaceRoot: string,
   config: PluginSettingsConfigSnapshot,
-): Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>> {
+  sdk: KanbanSDK,
+): Promise<Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>> {
   const inventory = new Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>()
   registerBuiltinPluginProviders(inventory)
 
@@ -1812,7 +1905,7 @@ function buildPluginSettingsInventoryCatalog(
     const resolved = tryResolveExternalModuleWithSource(request)
     if (!resolved) continue
 
-    for (const provider of inspectExternalPluginModule(request, resolved)) {
+    for (const provider of await inspectExternalPluginModule(request, resolved, sdk)) {
       addDiscoveredProvider(inventory, provider)
     }
   }
@@ -1974,12 +2067,13 @@ function createRedactedProviderOptions(
   }
 }
 
-export function discoverPluginSettingsInventory(
+export async function discoverPluginSettingsInventory(
   workspaceRoot: string,
   redaction: PluginSettingsRedactionPolicy,
-): PluginSettingsPayload {
+  sdk: KanbanSDK,
+): Promise<PluginSettingsPayload> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
 
   const capabilities: PluginSettingsCapabilityRow[] = PLUGIN_CAPABILITY_NAMESPACES.map((capability) => {
     const selected = getCapabilitySelectedState(config, capability)
@@ -2000,14 +2094,15 @@ export function discoverPluginSettingsInventory(
   return { capabilities, redaction }
 }
 
-export function readPluginSettingsProvider(
+export async function readPluginSettingsProvider(
   workspaceRoot: string,
   capability: PluginCapabilityNamespace,
   providerId: string,
   redaction: PluginSettingsRedactionPolicy,
-): PluginSettingsProviderReadModel | null {
+  sdk: KanbanSDK,
+): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   let provider = inventory.get(capability)?.get(providerId) ?? null
 
   // Alias fallback: resolve provider aliases (e.g. "local" → kl-plugin-auth)
@@ -2045,12 +2140,13 @@ export function readPluginSettingsProvider(
   }
 }
 
-export function persistPluginSettingsProviderSelection(
+export async function persistPluginSettingsProviderSelection(
   workspaceRoot: string,
   capability: PluginCapabilityNamespace,
   providerId: string,
   redaction: PluginSettingsRedactionPolicy,
-): PluginSettingsProviderReadModel | null {
+  sdk: KanbanSDK,
+): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   const configuredRef = config.plugins?.[capability]
     ? cloneProviderRef(config.plugins[capability])
@@ -2064,7 +2160,7 @@ export function persistPluginSettingsProviderSelection(
     return null
   }
 
-  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
@@ -2080,7 +2176,7 @@ export function persistPluginSettingsProviderSelection(
   getMutablePluginsRecord(config)[capability] = nextRef
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(
@@ -2090,15 +2186,16 @@ export function persistPluginSettingsProviderSelection(
   )
 }
 
-export function persistPluginSettingsProviderOptions(
+export async function persistPluginSettingsProviderOptions(
   workspaceRoot: string,
   capability: PluginCapabilityNamespace,
   providerId: string,
   options: unknown,
   redaction: PluginSettingsRedactionPolicy,
-): PluginSettingsProviderReadModel {
+  sdk: KanbanSDK,
+): Promise<PluginSettingsProviderReadModel> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
   const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
   const selectedRef = getSelectedProviderRef(config, capability)
@@ -2114,7 +2211,7 @@ export function persistPluginSettingsProviderOptions(
   }
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(

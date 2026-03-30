@@ -15,6 +15,7 @@ import type {
   CliPluginContext,
   EventBus,
   KanbanCliPlugin,
+  KanbanSDK,
   KanbanConfig,
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsRedactionPolicy,
@@ -69,6 +70,8 @@ export interface AuthListenerPluginOptions {
   ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
 }
 
+type AuthPluginOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSettingsOptionsSchemaMetadata
+
 export const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'noop', provides: ['auth.identity'] },
   async resolveIdentity(_context: AuthContext): Promise<AuthIdentity | null> {
@@ -86,8 +89,7 @@ export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
 interface LocalAuthUser {
   username: string
   password: string
-  role?: RbacRole
-  groups?: string[]
+  role?: string
 }
 
 type PermissionMatrixSubjectType = 'role' | 'group'
@@ -109,10 +111,15 @@ const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const AUTH_SESSIONS_FILE = '.auth-sessions.json'
+const DEFAULT_LOCAL_AUTH_ROLES = ['user', 'manager', 'admin'] as const
 const AUTH_PLUGIN_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
   maskedValue: '••••••',
   writeOnly: true,
   targets: ['read', 'list', 'error'],
+}
+
+function getDefaultLocalAuthRoles(): string[] {
+  return [...DEFAULT_LOCAL_AUTH_ROLES]
 }
 
 function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
@@ -125,6 +132,17 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
           type: 'string',
           title: 'API token',
           description: 'Optional explicit bearer token. When omitted, the provider falls back to KANBAN_LITE_TOKEN or KANBAN_TOKEN.',
+        },
+        roles: {
+          type: 'array',
+          title: 'Roles',
+          description: 'Reusable role catalog for local users. Defaults to user, manager, and admin, and you can add or remove more entries.',
+          default: getDefaultLocalAuthRoles(),
+          items: {
+            type: 'string',
+            minLength: 1,
+            title: 'Role',
+          },
         },
         users: {
           type: 'array',
@@ -149,15 +167,12 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
               role: {
                 type: 'string',
                 title: 'Role',
-                enum: ['user', 'manager', 'admin'],
-              },
-              groups: {
-                type: 'array',
-                title: 'Groups',
-                description: 'Optional group memberships attached to the user identity.',
-                items: {
-                  type: 'string',
-                  minLength: 1,
+                description: 'Optional role assigned to the user. After saving the role catalog above, reopen or refresh the provider options to use the updated picker values.',
+                enum: async (sdk: KanbanSDK) => {
+                  const roles = normalizeStringList(
+                    sdk.getConfigSnapshot()?.plugins?.['auth.identity']?.options?.roles,
+                  )
+                  return roles ?? getDefaultLocalAuthRoles()
                 },
               },
             },
@@ -176,6 +191,20 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
               type: 'Control',
               scope: '#/properties/apiToken',
               label: 'API token',
+            },
+          ],
+        },
+        {
+          type: 'Group',
+          label: 'Role catalog',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/roles',
+              label: 'Roles',
+              options: {
+                showSortButtons: true,
+              },
             },
           ],
         },
@@ -252,6 +281,11 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                 title: 'Allowed actions',
                 items: {
                   type: 'string',
+                  enum: async (sdk: KanbanSDK) => {
+                    const events = await sdk?.listAvailableEvents()
+                    const uniqueActions = new Set<string>(events?.flatMap((event) => event.event) ?? [])
+                    return [...uniqueActions]
+                  },
                   minLength: 1,
                 },
               },
@@ -316,6 +350,14 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
     },
     secrets: [],
   }
+}
+
+const createResolvedAuthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = (sdk?: KanbanSDK) => {
+  if (!sdk) {
+    return createAuthPolicyOptionsSchema()
+  }
+
+  return createAuthPolicyOptionsSchema()
 }
 
 function loadSessionsFromFile(filePath: string): Map<string, LocalAuthSession> {
@@ -400,11 +442,15 @@ function cloneWritableConfig(
     .catch(() => ({}))
 }
 
-function getWritableUsers(provider: ProviderRef | null): Array<{ username: string; password: string; role?: string; groups?: string[] }> {
+function getWritableUsers(provider: ProviderRef | null): Array<{ username: string; password: string; role?: string }> {
   const users = provider?.options?.users
   return Array.isArray(users)
-    ? structuredClone(users as Array<{ username: string; password: string; role?: string; groups?: string[] }>)
+    ? structuredClone(users as Array<{ username: string; password: string; role?: string }>)
     : []
+}
+
+function getWritableRoles(provider: ProviderRef | null): string[] {
+  return normalizeStringList(provider?.options?.roles) ?? getDefaultLocalAuthRoles()
 }
 
 function normalizeToken(token?: string): string | null {
@@ -441,6 +487,12 @@ function normalizeStringList(value: unknown): string[] | undefined {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
   return entries.length > 0 ? [...new Set(entries)] : undefined
+}
+
+function normalizeOptionalRole(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : undefined
 }
 
 function parsePermissionMatrixEntries(value: unknown): PermissionMatrixEntry[] {
@@ -522,22 +574,13 @@ export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 
 export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'local', provides: ['auth.policy'] },
-  optionsSchema: createAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedAuthPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
     }
-    const roles = identity.roles ?? []
-    if (roles.length === 0) {
-      return { allowed: true, actor: identity.subject }
-    }
-    for (const role of roles) {
-      const permitted = RBAC_ROLE_MATRIX[role as RbacRole]
-      if (permitted?.has(action)) {
-        return { allowed: true, actor: identity.subject }
-      }
-    }
-    return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+    void action
+    return { allowed: true, actor: identity.subject }
   },
 }
 
@@ -548,14 +591,12 @@ function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalA
     if (!user || typeof user !== 'object') return []
     const username = (user as { username?: unknown }).username
     const password = (user as { password?: unknown }).password
-    const role = (user as { role?: unknown }).role
-    const groups = normalizeStringList((user as { groups?: unknown }).groups)
+    const role = normalizeOptionalRole((user as { role?: unknown }).role)
     if (typeof username !== 'string' || username.length === 0 || typeof password !== 'string' || password.length === 0) {
       return []
     }
     const entry: LocalAuthUser = { username, password }
-    if (role === 'user' || role === 'manager' || role === 'admin') entry.role = role
-    if (groups) entry.groups = groups
+    if (role) entry.role = role
     return [entry]
   })
 }
@@ -714,8 +755,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     }
     const user = users.find((u) => u.username === session.username)
     const identity: AuthIdentity = { subject: session.username }
-    if (user?.role) identity.roles = [user.role]
-    if (Array.isArray(user?.groups) && user.groups.length > 0) identity.groups = [...user.groups]
+    if (typeof user?.role === 'string' && user.role.length > 0) identity.roles = [user.role]
     return identity
   }
 
@@ -913,7 +953,7 @@ export const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>> = {
 
 export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'rbac', provides: ['auth.policy'] },
-  optionsSchema: createAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedAuthPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
@@ -994,7 +1034,7 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>, prov
  */
 const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'kl-plugin-auth', provides: ['auth.policy'] },
-  optionsSchema: createAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedAuthPolicyOptionsSchema,
   checkPolicy: LOCAL_POLICY_PLUGIN.checkPolicy,
 }
 
@@ -1030,7 +1070,7 @@ export function createAuthPolicyPlugin(options?: Record<string, unknown>, provid
 
   return {
     manifest: { id: providerId, provides: ['auth.policy'] },
-    optionsSchema: createAuthPolicyOptionsSchema,
+    optionsSchema: createResolvedAuthPolicyOptionsSchema,
     async checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision> {
       if (permissionEntries.length === 0) {
         return defaultCheckPolicy(identity, action, context)
@@ -1328,7 +1368,7 @@ export const authListenerPluginFactories = {
  * @example
  * ```sh
  * kl auth create-user --username alice --password s3cr3t
- * kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
+ * kl auth create-user --username admin --password s3cr3t --role admin
  * ```
  */
 export const cliPlugin: KanbanCliPlugin = {
@@ -1344,20 +1384,9 @@ export const cliPlugin: KanbanCliPlugin = {
     if (sub === 'create-user') {
       const username = flags.username as string | undefined
       const password = flags.password as string | undefined
-      const role = flags.role as string | undefined
-      const groups = normalizeStringList(
-        Array.isArray(flags.groups)
-          ? flags.groups.flatMap((value) => String(value).split(','))
-          : typeof flags.groups === 'string'
-            ? flags.groups.split(',')
-            : undefined,
-      )
+      const role = normalizeOptionalRole(flags.role)
       if (!username || !password) {
-        console.error('Usage: kl auth create-user --username <name> --password <pass> [--role user|manager|admin] [--groups group-a,group-b]')
-        process.exit(1)
-      }
-      if (role !== undefined && role !== 'user' && role !== 'manager' && role !== 'admin') {
-        console.error('--role must be one of: user, manager, admin')
+        console.error('Usage: kl auth create-user --username <name> --password <pass> [--role <role>]')
         process.exit(1)
       }
 
@@ -1379,8 +1408,9 @@ export const cliPlugin: KanbanCliPlugin = {
           : existingIdentity?.options
             ? structuredClone(existingIdentity.options)
             : {}
+      const roles = getWritableRoles(existingIdentity)
       const users = Array.isArray(options.users)
-        ? (options.users as { username: string; password: string; role?: string; groups?: string[] }[])
+        ? (options.users as { username: string; password: string; role?: string }[])
         : getWritableUsers(existingIdentity)
 
       if (users.some(u => u.username === username)) {
@@ -1389,10 +1419,15 @@ export const cliPlugin: KanbanCliPlugin = {
       }
 
       const hashed = await hash(password, 12)
-      const newUser: { username: string; password: string; role?: string; groups?: string[] } = { username, password: hashed }
+      const newUser: { username: string; password: string; role?: string } = { username, password: hashed }
       if (role) newUser.role = role
-      if (groups) newUser.groups = groups
       users.push(newUser)
+      if (role && !roles.includes(role)) {
+        roles.push(role)
+      }
+      if (roles.length > 0) {
+        options.roles = roles
+      }
       options.users = users
       identity.options = options
       plugins['auth.identity'] = identity
@@ -1420,17 +1455,17 @@ export const pluginManifest = {
 } as const
 
 /** Options schemas keyed by provider id for plugin-settings discovery. */
-export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+export const optionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
   'kl-plugin-auth': createAuthIdentityOptionsSchema,
   local: createAuthIdentityOptionsSchema,
   rbac: createAuthIdentityOptionsSchema,
 }
 
 /** Policy options schemas keyed by provider id for plugin-settings discovery. */
-export const policyOptionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
-  'kl-plugin-auth': createAuthPolicyOptionsSchema,
-  local: createAuthPolicyOptionsSchema,
-  rbac: createAuthPolicyOptionsSchema,
+export const policyOptionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
+  'kl-plugin-auth': createResolvedAuthPolicyOptionsSchema,
+  local: createResolvedAuthPolicyOptionsSchema,
+  rbac: createResolvedAuthPolicyOptionsSchema,
 }
 
 const authPluginPackage = {

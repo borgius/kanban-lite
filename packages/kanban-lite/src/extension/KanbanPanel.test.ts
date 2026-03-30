@@ -201,8 +201,8 @@ function createSdkStub() {
       showLabels: false,
       markdownEditorMode: true,
     })),
-    listPluginSettings: vi.fn(() => pluginSettingsPayload),
-    getPluginSettings: vi.fn(() => providerTransport),
+    listPluginSettings: vi.fn(async () => pluginSettingsPayload),
+    getPluginSettings: vi.fn(async () => providerTransport),
     selectPluginSettingsProvider: vi.fn(async () => providerTransport),
     updatePluginSettingsOptions: vi.fn(async () => providerTransport),
     installPluginSettingsPackage: vi.fn(async () => installTransport),
@@ -237,17 +237,20 @@ afterEach(() => {
 })
 
 describe('KanbanPanel plugin-settings bridge', () => {
-  it('includes shared plugin settings alongside display settings when opening settings', async () => {
+  it('seeds the settings modal with an empty plugin-settings payload before async plugin loading', async () => {
     const { harness, sdk } = createSubject()
 
     await harness.dispatch({ type: 'openSettings' })
 
     expect(sdk.getSettings).toHaveBeenCalledTimes(1)
-    expect(sdk.listPluginSettings).toHaveBeenCalledTimes(1)
+    expect(sdk.listPluginSettings).not.toHaveBeenCalled()
     expect(harness.postMessage).toHaveBeenCalledWith({
       type: 'showSettings',
       settings: sdk.getSettings.mock.results[0]?.value,
-      pluginSettings: pluginSettingsPayload,
+      pluginSettings: {
+        capabilities: [],
+        redaction,
+      },
     } satisfies ShowSettingsMessage)
   })
 

@@ -142,7 +142,13 @@ Providers may expose an `optionsSchema()` hook. When present, the loader normali
 
 The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Selected providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row.
 
+The shared plugin-settings loader resolves provider metadata before transport. `optionsSchema()` may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside `schema` / `uiSchema` fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.
+
 For anything more complex than a few flat scalar fields — especially arrays, nested objects, or sections that benefit from inline detail editors — providers should ship an explicit `uiSchema` instead of relying on the generated one-control-per-property fallback. Prefer JSON Forms `Group` / `VerticalLayout` / `HorizontalLayout`, array `options.detail`, `elementLabelProp`, and targeted `rule` conditions so the shared settings UI gets stable labels and predictable editing behavior.
+
+When a field such as `enum`, `default`, or a JSON Forms `rule` depends on runtime data, providers should prefer nested sync/async resolvers in `schema` / `uiSchema` values instead of UI-only schema extensions. The shared loader resolves those functions before transport, so hosts still receive plain JSON-compatible metadata.
+
+JSON Schema `default` values are also applied when the shared settings editor opens provider options that omit a field, so providers can seed editable arrays such as auth role catalogs without hard-coding that behavior in the UI layer.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -272,13 +278,13 @@ Example:
     "auth.identity": {
       "provider": "local",
       "options": {
+        "roles": ["operator", "reviewer", "admin"],
         "apiToken": "stored-secret",
         "users": [
           {
             "username": "alice",
             "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
-            "role": "admin",
-            "groups": ["ops"]
+            "role": "admin"
           }
         ]
       }

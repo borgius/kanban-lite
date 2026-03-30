@@ -794,13 +794,15 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
           type: 'array',
           items: {
             type: 'object',
-            required: ['subjectType', 'subject', 'actions'],
+            required: ['subject', 'actions'],
             properties: {
-              subjectType: { enum: ['role', 'group'] },
-              subject: { type: 'string' },
+              subjectType: { enum: ['role', 'group'], default: 'role' },
+              subject: { type: 'string', enum: expect.any(Function) },
               actions: {
                 type: 'array',
-                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                items: { type: 'string', enum: expect.any(Function) },
               },
             },
           },
@@ -824,12 +826,11 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                 detail: {
                   type: 'VerticalLayout',
                   elements: [
-                    { type: 'Control', scope: '#/properties/subjectType', label: 'Subject type', options: { format: 'radio' } },
-                    { type: 'Control', scope: '#/properties/subject', label: 'Subject' },
+                    { type: 'Control', scope: '#/properties/subject', label: 'Role' },
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed actions',
+                      label: 'Allowed before-events',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -852,10 +853,38 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
         },
       ],
     })
+    const permissionDetail = (((schema?.uiSchema as { elements?: Array<{ elements?: Array<{ options?: { detail?: { elements?: Array<{ scope?: string }> } } }> }> })?.elements?.[0]?.elements?.[0]?.options?.detail?.elements) ?? [])
+    expect(permissionDetail.map((element) => element.scope)).toEqual([
+      '#/properties/subject',
+      '#/properties/actions',
+    ])
     expect(schema?.secrets).toEqual([])
   })
 
-  it('auth.policy providers resolve allowed action enums from the SDK event inventory', async () => {
+  it('auth.policy providers resolve role enums from the saved role catalog', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({
+        plugins: {
+          'auth.identity': {
+            options: { roles: ['auditor', 'reviewer'] },
+          },
+        },
+      })),
+    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+
+    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const permissionItems = (((schema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>
+
+    expect((permissionItems.subject as Record<string, unknown>)).toMatchObject({
+      type: 'string',
+      enum: ['auditor', 'reviewer'],
+    })
+  })
+
+  it('auth.policy providers resolve before-event enums from the SDK event inventory', async () => {
     const sdk = {
       listAvailableEvents: vi.fn(async () => [
           { event: 'settings.update', phase: 'before' },
@@ -873,10 +902,12 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
 
     expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
       type: 'string',
-      enum: ['settings.update', 'card.create', 'task.created'],
+      title: 'Before-event',
+      enum: ['card.create', 'settings.update'],
       minLength: 1,
     })
     expect(sdk.listAvailableEvents).toHaveBeenCalledTimes(1)
+    expect(sdk.listAvailableEvents).toHaveBeenCalledWith({ type: 'before' })
   })
 
   it('schema-shaped auth.identity options remain backward-compatible with real provider behavior', async () => {
@@ -898,11 +929,11 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
   })
 
-  it('schema-shaped auth.policy options allow permission rules for roles and groups', async () => {
+  it('schema-shaped auth.policy options allow role rules and keep legacy group entries working', async () => {
     const plugin = createAuthPolicyPlugin({
       permissions: [
         { subjectType: 'group', subject: 'auditors', actions: ['board.log.add'] },
-        { subjectType: 'role', subject: 'admin', actions: ['settings.update'] },
+        { subject: 'admin', actions: ['settings.update'] },
       ],
     })
 

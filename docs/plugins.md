@@ -140,7 +140,9 @@ Providers may expose an `optionsSchema()` hook. When present, the loader normali
 - optional `uiSchema` — JSON Forms UI hints
 - `secrets` — secret-field metadata used for masking and write-only behavior
 
-The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Selected providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row.
+The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Schema-backed providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row, even when that provider is not currently selected.
+
+Saving options for an inactive provider does not change enablement. Instead, the shared contract caches those values under `pluginOptions[capability][providerId]` in `.kanban.json`. When that provider is selected later, the cached options are restored into the canonical `plugins[capability]` entry automatically.
 
 The shared plugin-settings loader resolves provider metadata before transport. `optionsSchema()` may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside `schema` / `uiSchema` fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.
 
@@ -258,7 +260,7 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. Each row targets either a `role` or a `group` and lists the allowed actions for that subject. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
+Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog and lists the allowed before-events for that role. Existing legacy `options.matrix` role maps and manually-authored `subjectType: "group"` rows are still honored at runtime for backward compatibility.
 
 > **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
@@ -268,7 +270,9 @@ Both `local` and `rbac` policy providers now support an editable `options.permis
 
 The canonical config lives in `.kanban.json`.
 
-For plugin settings flows, the canonical persistence model is one selected provider per capability under `plugins[capability]`. That same config entry may also carry the provider's persisted `options` payload.
+For plugin settings flows, the canonical persistence model is one selected provider per capability under `plugins[capability]`. That same config entry may also carry the selected provider's persisted `options` payload.
+
+Inactive providers may also have cached options stored separately under `pluginOptions[capability][providerId]` so hosts can reopen and save schema-driven forms without changing the selected provider.
 
 Example:
 
@@ -287,6 +291,13 @@ Example:
             "role": "admin"
           }
         ]
+      }
+    }
+  },
+  "pluginOptions": {
+    "auth.identity": {
+      "rbac": {
+        "roles": ["operator", "reviewer", "admin"]
       }
     }
   }

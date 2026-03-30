@@ -1170,7 +1170,7 @@ export type PluginSettingsOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSett
 
 type PluginSettingsConfigSnapshot = Pick<
   KanbanConfig,
-  'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
+  'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
 >
 
 export class PluginSettingsStoreError extends Error {
@@ -1378,6 +1378,79 @@ function getMutablePluginsRecord(config: KanbanConfig): PluginCapabilitySelectio
 
   config.plugins = nextPlugins
   return nextPlugins
+}
+
+function getMutablePluginOptionsRecord(config: KanbanConfig): NonNullable<KanbanConfig['pluginOptions']> {
+  const existing = isRecord(config.pluginOptions) ? config.pluginOptions : {}
+  const nextOptions: NonNullable<KanbanConfig['pluginOptions']> = {}
+
+  for (const [capability, providers] of Object.entries(existing)) {
+    if (!isRecord(providers)) continue
+
+    const nextProviders: Record<string, Record<string, unknown>> = {}
+    for (const [providerId, options] of Object.entries(providers)) {
+      if (isRecord(options)) {
+        nextProviders[providerId] = structuredClone(options)
+      }
+    }
+
+    if (Object.keys(nextProviders).length > 0) {
+      nextOptions[capability as PluginCapabilityNamespace] = nextProviders
+    }
+  }
+
+  config.pluginOptions = nextOptions
+  return nextOptions
+}
+
+function getCachedPluginProviderOptions(
+  config: PluginSettingsConfigSnapshot,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+): Record<string, unknown> | undefined {
+  const providers = config.pluginOptions?.[capability]
+  if (!isRecord(providers)) return undefined
+
+  const options = providers[providerId]
+  return isRecord(options) ? structuredClone(options) : undefined
+}
+
+function setCachedPluginProviderOptions(
+  config: KanbanConfig,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+  options: Record<string, unknown> | undefined,
+): void {
+  const pluginOptions = getMutablePluginOptionsRecord(config)
+  const nextProviders = isRecord(pluginOptions[capability])
+    ? { ...pluginOptions[capability] }
+    : {}
+
+  if (options === undefined) {
+    delete nextProviders[providerId]
+  } else {
+    nextProviders[providerId] = structuredClone(options)
+  }
+
+  if (Object.keys(nextProviders).length === 0) {
+    delete pluginOptions[capability]
+    return
+  }
+
+  pluginOptions[capability] = nextProviders
+}
+
+function getPersistedPluginProviderOptions(
+  config: PluginSettingsConfigSnapshot,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+): Record<string, unknown> | undefined {
+  const selectedRef = getSelectedProviderRef(config, capability)
+  if (selectedRef?.provider === providerId && isRecord(selectedRef.options)) {
+    return structuredClone(selectedRef.options)
+  }
+
+  return getCachedPluginProviderOptions(config, capability, providerId)
 }
 
 function tokenizePluginSettingsPath(value: string): string[] {
@@ -2124,10 +2197,11 @@ export async function readPluginSettingsProvider(
   if (!provider) return null
 
   const selected = getCapabilitySelectedState(config, capability)
-  const selectedRef = getSelectedProviderRef(config, capability)
-  const options = selected.providerId === providerId
-    ? createRedactedProviderOptions(selectedRef?.options, provider.optionsSchema, redaction)
-    : null
+  const options = createRedactedProviderOptions(
+    getPersistedPluginProviderOptions(config, capability, providerId),
+    provider.optionsSchema,
+    redaction,
+  )
 
   return {
     capability,
@@ -2164,14 +2238,23 @@ export async function persistPluginSettingsProviderSelection(
   getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
-  const nextRef = selectedRef?.provider === providerId
-    ? cloneProviderRef(selectedRef)
-    : {
-        provider: providerId,
-        ...(configuredRef?.provider === 'none' && configuredRef.options !== undefined
-          ? { options: structuredClone(configuredRef.options) }
-          : {}),
-      }
+  if (selectedRef?.provider && isRecord(selectedRef.options)) {
+    setCachedPluginProviderOptions(config, capability, selectedRef.provider, selectedRef.options)
+  }
+
+  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, providerId)
+  const selectedTargetOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
+    ? structuredClone(selectedRef.options)
+    : undefined
+  const nextOptions = selectedTargetOptions
+    ?? cachedTargetOptions
+    ?? (configuredRef?.provider === 'none' && isRecord(configuredRef.options)
+      ? structuredClone(configuredRef.options)
+      : undefined)
+  const nextRef = {
+    provider: providerId,
+    ...(nextOptions !== undefined ? { options: nextOptions } : {}),
+  }
 
   getMutablePluginsRecord(config)[capability] = nextRef
   writePluginSettingsConfigDocument(workspaceRoot, config)
@@ -2199,15 +2282,18 @@ export async function persistPluginSettingsProviderOptions(
   const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
   const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
   const selectedRef = getSelectedProviderRef(config, capability)
-  const currentOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
-    ? selectedRef.options
-    : undefined
+  const currentOptions = getPersistedPluginProviderOptions(config, capability, providerId)
   const secretPaths = provider.optionsSchema?.secrets.map((secret) => secret.path) ?? []
   const mergedOptions = mergeProviderOptionsUpdate(currentOptions, nextOptions, '', secretPaths, redaction)
+  const persistedOptions = isRecord(mergedOptions) ? mergedOptions : {}
 
-  getMutablePluginsRecord(config)[capability] = {
-    provider: providerId,
-    options: isRecord(mergedOptions) ? mergedOptions : {},
+  setCachedPluginProviderOptions(config, capability, providerId, persistedOptions)
+
+  if (selectedRef?.provider === providerId) {
+    getMutablePluginsRecord(config)[capability] = {
+      provider: providerId,
+      options: persistedOptions,
+    }
   }
   writePluginSettingsConfigDocument(workspaceRoot, config)
 

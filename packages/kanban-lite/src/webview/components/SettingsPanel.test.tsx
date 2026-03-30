@@ -345,6 +345,20 @@ const CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   },
 }
 
+const INACTIVE_CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
+  capability: 'card.storage',
+  providerId: 'sqlite',
+  packageName: 'kl-plugin-storage-sqlite',
+  discoverySource: 'workspace',
+  selected: {
+    capability: 'card.storage',
+    providerId: 'markdown',
+    source: 'default',
+  },
+  optionsSchema: CARD_STORAGE_OPTIONS_SCHEMA,
+  options: null,
+}
+
 const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
   packageName: 'kl-plugin-auth',
   scope: 'workspace',
@@ -481,6 +495,27 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(storageMarkup).toContain('Options')
     expect(storageMarkup).toContain('Database path')
     expect(storageMarkup).not.toContain('Stored secret values reopen masked')
+  })
+
+  it('renders schema-driven provider options even when the provider is not currently enabled', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={PLUGIN_SETTINGS_FIXTURE}
+        pluginSettingsProvider={INACTIVE_CARD_STORAGE_PROVIDER_FIXTURE}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('kl-plugin-storage-sqlite')
+    expect(markup).toContain('card.storage')
+    expect(markup).toContain('Provider: sqlite · Off')
+    expect(markup).toContain('Database path')
+    expect(markup).toContain('Save to persist these options and switch this capability to the provider.')
   })
 
   it('styles table-array add and delete controls for primitive lists', () => {

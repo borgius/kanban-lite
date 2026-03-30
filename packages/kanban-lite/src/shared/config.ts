@@ -67,6 +67,9 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
 /** Partial plugin capability selections keyed by the full plugin settings namespace set. */
 export type PluginCapabilitySelections = Partial<Record<PluginCapabilityNamespace, ProviderRef>>
 
+/** Persisted provider options keyed by capability and provider id for inactive plugin settings forms. */
+export type PluginOptionsStore = Partial<Record<PluginCapabilityNamespace, Record<string, Record<string, unknown>>>>
+
 /** Integration surfaces a plugin package may contribute beyond capability providers. */
 export type PluginIntegrationNamespace =
   | 'standalone.http'
@@ -297,6 +300,14 @@ export interface KanbanConfig {
    */
   plugins?: PluginCapabilitySelections
   /**
+   * Cached provider-specific plugin options keyed by capability and provider id.
+   *
+   * This store lets hosts reopen schema-driven forms and persist edits even when
+   * a provider is not currently selected for its capability. Runtime enablement
+   * still comes only from `plugins[capability].provider`.
+   */
+  pluginOptions?: PluginOptionsStore
+  /**
    * Legacy auth provider selections.
    * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
    * `plugins` key using the package name as provider id. This field is still
@@ -463,7 +474,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   // Preserve modern fields that may exist even in legacy configs
   // (e.g. webhooks manually added before upgrading, or partially-upgraded configs)
   const modernPassthroughKeys = [
-    'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'auth',
+    'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'pluginOptions', 'auth',
     'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
     'boardBackgroundMode', 'boardBackgroundPreset',
     'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'port'

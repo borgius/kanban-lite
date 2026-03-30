@@ -1047,8 +1047,12 @@ export class KanbanSDK {
    *
    * Secret fields remain write-only: callers may submit the shared masked value
    * placeholder to keep an existing stored secret unchanged, while any non-masked
-   * replacement overwrites that secret. Persisting options also canonicalizes the
-   * selected provider under `plugins[capability]`.
+    * replacement overwrites that secret. When the target provider is already
+    * selected, the canonical `plugins[capability]` entry is updated in place.
+    * When the provider is currently inactive, the options are cached under the
+    * shared plugin-options store so hosts can save and reopen schema-driven forms
+    * without changing enablement; selecting that provider later restores the
+    * cached options into `plugins[capability]`.
    *
    * @param capability - Capability namespace to update.
    * @param providerId - Provider identifier whose options are being updated.

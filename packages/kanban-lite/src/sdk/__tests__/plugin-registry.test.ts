@@ -973,6 +973,13 @@ describe('KanbanSDK plugin settings inventory', () => {
         'card.storage': { provider: 'localfs' },
         'attachment.storage': { provider: 'localfs' },
       })
+      expect(persistedConfig).toMatchObject({
+        pluginOptions: {
+          'card.storage': {
+            sqlite: { sqlitePath: '.kanban/custom.db' },
+          },
+        },
+      })
       expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
 
       const inventory = await sdk.listPluginSettings()
@@ -990,6 +997,103 @@ describe('KanbanSDK plugin settings inventory', () => {
         providerId: 'sqlite',
         isSelected: false,
       }))
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('persists options for an inactive provider without changing the selected provider', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'card.storage': { provider: 'localfs' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const updated = await sdk.updatePluginSettingsOptions('card.storage', 'sqlite', {
+        sqlitePath: '.kanban/disabled.db',
+      })
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+        pluginOptions?: Record<string, Record<string, Record<string, unknown>>>
+      }
+      const readback = await sdk.getPluginSettings('card.storage', 'sqlite')
+
+      expect(updated.selected).toEqual({
+        capability: 'card.storage',
+        providerId: 'localfs',
+        source: 'config',
+      })
+      expect(updated.options?.values).toEqual({ sqlitePath: '.kanban/disabled.db' })
+      expect(persistedConfig.plugins?.['card.storage']).toEqual({ provider: 'localfs' })
+      expect(persistedConfig.pluginOptions?.['card.storage']?.sqlite).toEqual({
+        sqlitePath: '.kanban/disabled.db',
+      })
+      expect(readback).toMatchObject({
+        capability: 'card.storage',
+        providerId: 'sqlite',
+        selected: {
+          capability: 'card.storage',
+          providerId: 'localfs',
+          source: 'config',
+        },
+        options: {
+          values: { sqlitePath: '.kanban/disabled.db' },
+        },
+      })
+      expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('restores cached provider options when a previously disabled provider is selected again', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'card.storage': { provider: 'localfs' },
+        },
+        pluginOptions: {
+          'card.storage': {
+            sqlite: { sqlitePath: '.kanban/cached.db' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const selected = await sdk.selectPluginSettingsProvider('card.storage', 'sqlite')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+
+      expect(selected.selected).toEqual({
+        capability: 'card.storage',
+        providerId: 'sqlite',
+        source: 'config',
+      })
+      expect(selected.options?.values).toEqual({ sqlitePath: '.kanban/cached.db' })
+      expect(persistedConfig.plugins?.['card.storage']).toEqual({
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/cached.db' },
+      })
+      expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
     } finally {
       sdk.close()
     }

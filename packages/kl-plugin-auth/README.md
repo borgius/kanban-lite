@@ -35,6 +35,7 @@ npm install kl-plugin-auth
 - Select the auth provider id per capability (`local`, `rbac`, `noop`, or the compatibility alias `kl-plugin-auth`).
 - The selected provider id is persisted in `.kanban.json` at `plugins["auth.identity"].provider` / `plugins["auth.policy"].provider`; there is no separate auth-enabled boolean.
 - Both the exported package providers and the configurable factory helpers expose `optionsSchema()` metadata so the shared workflow can render schema-driven forms.
+- Those schema-driven auth forms stay editable even while a provider is toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored automatically when that provider is selected again.
 - Those auth option forms now ship explicit JSON Forms `uiSchema` layouts, including grouped sections plus inline array-item detail editors for local users and permission rules.
 
 Current schema-backed fields:
@@ -44,7 +45,7 @@ Current schema-backed fields:
 
 The shared Plugin Options editor seeds `roles[]` with the default catalog `user`, `manager`, `admin` when the field is missing, still lets users add or delete extra entries like a normal array, and turns each `users[].role` field into a picker sourced from that live role catalog instead of a hard-coded enum.
 
-When an SDK runtime is available, the `auth.policy.permissions[].actions[]` picker is also resolved from `sdk.listAvailableEvents({ type: 'before' })`, so policy rows stay aligned with the current before-event catalog instead of relying on a stale hard-coded action list.
+The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog, and `actions[]` is rendered as a before-event picker resolved from `sdk.listAvailableEvents({ type: 'before' })` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog.
 
 Secret metadata is declared for:
 
@@ -105,7 +106,7 @@ Auth capabilities are declared in the `plugins` key alongside storage providers.
 
 ### Custom permission matrix
 
-Provide `options.permissions` on `auth.policy` to override the default behaviour per role or group. Each row targets either a role or a group and lists the actions that subject may perform. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
+Provide `options.permissions` on `auth.policy` to override the default behaviour per role. In the shared Plugin Options UI, each row picks one role from `auth.identity.options.roles` and lists the before-events that role may perform. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
 
 ```json
 {
@@ -116,14 +117,8 @@ Provide `options.permissions` on `auth.policy` to override the default behaviour
       "options": {
         "permissions": [
           {
-            "subjectType": "role",
             "subject": "admin",
             "actions": ["settings.update", "board.delete"]
-          },
-          {
-            "subjectType": "group",
-            "subject": "auditors",
-            "actions": ["board.log.add"]
           }
         ]
       }
@@ -132,7 +127,7 @@ Provide `options.permissions` on `auth.policy` to override the default behaviour
 }
 ```
 
-Legacy role-map `options.matrix` objects remain supported at runtime for existing workspaces, but the shared Plugin Options UI now edits the row-based `permissions` format.
+Legacy role-map `options.matrix` objects remain supported at runtime for existing workspaces. Manually-authored legacy `subjectType: "group"` entries are also still honored at runtime for backward compatibility, but the shared Plugin Options UI now edits the simpler role-based `permissions` format.
 
 ### Local standalone login + API token
 

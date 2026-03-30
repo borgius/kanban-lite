@@ -588,6 +588,7 @@ function PluginProviderOptionsEditor({
 }) {
   const [optionData, setOptionData] = useState<Record<string, unknown>>(() => applyPluginSchemaDefaults(schema, provider.options?.values))
   const [optionErrors, setOptionErrors] = useState<PluginOptionsValidationError[]>([])
+  const isSelectedProvider = provider.selected.providerId === provider.providerId
 
   useEffect(() => {
     setOptionErrors(validatePluginOptions(schema, optionData))
@@ -639,7 +640,9 @@ function PluginProviderOptionsEditor({
         <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
           {optionErrors.length > 0
             ? `Fix ${optionErrors.length} validation issue${optionErrors.length === 1 ? '' : 's'} before saving.`
-            : 'Save to persist the provider selection and its redacted option payload.'}
+            : isSelectedProvider
+              ? 'Save to persist this provider and its redacted option payload.'
+              : 'Save to persist these options and switch this capability to the provider.'}
         </div>
         <button
           type="button"
@@ -734,6 +737,10 @@ function PluginOptionsSection({
     () => getPluginCapabilityDisplayEntries(activePlugin),
     [activePlugin],
   )
+  const editablePluginCapabilities = useMemo(
+    () => activePluginCapabilities.filter((capability) => isPluginOptionsSchemaUiEditable(capability.optionsSchema)),
+    [activePluginCapabilities],
+  )
 
   const getProviderDetails = useCallback((capability: PluginCapabilityNamespace, providerId: string) => {
     if (pluginSettingsProvider?.capability === capability && pluginSettingsProvider.providerId === providerId) {
@@ -760,8 +767,8 @@ function PluginOptionsSection({
   useEffect(() => {
     if (!activePlugin) return
 
-    for (const capability of activePluginCapabilities) {
-      if (!capability.isSelected || !isPluginOptionsSchemaUiEditable(capability.optionsSchema) || !onReadPluginSettingsProvider) {
+    for (const capability of editablePluginCapabilities) {
+      if (!onReadPluginSettingsProvider) {
         continue
       }
 
@@ -773,7 +780,7 @@ function PluginOptionsSection({
       requestedProviderKeysRef.current.add(key)
       onReadPluginSettingsProvider(capability.capability, capability.providerId)
     }
-  }, [activePlugin, activePluginCapabilities, getProviderDetails, onReadPluginSettingsProvider])
+  }, [activePlugin, editablePluginCapabilities, getProviderDetails, onReadPluginSettingsProvider])
 
   useEffect(() => {
     if (!pendingToggle) return
@@ -1005,19 +1012,13 @@ function PluginOptionsSection({
                   )
                 })}
 
-                {activePluginCapabilities.some(
-                  (capability) => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
-                ) && (
+                {editablePluginCapabilities.length > 0 && (
                   <div className="pt-2 space-y-3">
                     <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
                       Options
                     </div>
 
-                    {activePluginCapabilities
-                      .filter(
-                        (capability) => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
-                      )
-                      .map((capability) => {
+                    {editablePluginCapabilities.map((capability) => {
                         const providerDetails = getProviderDetails(capability.capability, capability.providerId)
                         const providerOptionsMetadata = providerDetails?.optionsSchema
                         const providerSchema = providerOptionsMetadata?.schema
@@ -1042,7 +1043,7 @@ function PluginOptionsSection({
                                 {capability.capability}
                               </div>
                               <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                                Provider: {capability.providerId}
+                                Provider: {capability.providerId} · {capability.isSelected ? 'On' : 'Off'}
                               </div>
                             </div>
 

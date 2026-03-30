@@ -122,6 +122,29 @@ function getDefaultLocalAuthRoles(): string[] {
   return [...DEFAULT_LOCAL_AUTH_ROLES]
 }
 
+function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
+  const configSnapshot = typeof sdk?.getConfigSnapshot === 'function'
+    ? sdk.getConfigSnapshot()
+    : undefined
+  const roles = normalizeStringList(
+    configSnapshot?.plugins?.['auth.identity']?.options?.roles,
+  )
+  return roles ?? getDefaultLocalAuthRoles()
+}
+
+async function getAvailableAuthPolicyBeforeEvents(sdk?: KanbanSDK): Promise<string[]> {
+  const events = typeof sdk?.listAvailableEvents === 'function'
+    ? await sdk.listAvailableEvents({ type: 'before' })
+    : undefined
+  const configuredEvents = events
+    ?.filter((event) => event.phase === 'before')
+    .map((event) => event.event)
+  const names = configuredEvents && configuredEvents.length > 0
+    ? configuredEvents
+    : [...SDK_BEFORE_EVENT_NAMES]
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right))
+}
+
 function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   return {
     schema: {
@@ -168,12 +191,7 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
                 type: 'string',
                 title: 'Role',
                 description: 'Optional role assigned to the user. After saving the role catalog above, reopen or refresh the provider options to use the updated picker values.',
-                enum: async (sdk: KanbanSDK) => {
-                  const roles = normalizeStringList(
-                    sdk.getConfigSnapshot()?.plugins?.['auth.identity']?.options?.roles,
-                  )
-                  return roles ?? getDefaultLocalAuthRoles()
-                },
+                enum: async (sdk: KanbanSDK) => getConfiguredAuthRoles(sdk),
               },
             },
           },
@@ -260,33 +278,34 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
         permissions: {
           type: 'array',
           title: 'Permission matrix',
-          description: 'Optional per-role or per-group action rules. When omitted, the provider uses its default policy behavior.',
+          description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the before-events it may run. When omitted, the provider uses its default policy behavior.',
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['subjectType', 'subject', 'actions'],
+            required: ['subject', 'actions'],
             properties: {
               subjectType: {
                 type: 'string',
                 title: 'Subject type',
                 enum: ['role', 'group'],
+                default: 'role',
               },
               subject: {
                 type: 'string',
-                title: 'Subject',
+                title: 'Role',
                 minLength: 1,
+                description: 'Role to authorize. Values come from auth.identity options.roles when available.',
+                enum: async (sdk: KanbanSDK) => getConfiguredAuthRoles(sdk),
               },
               actions: {
                 type: 'array',
-                title: 'Allowed actions',
+                title: 'Events',
+                minItems: 1,
+                uniqueItems: true,
                 items: {
                   type: 'string',
-                  enum: async (sdk: KanbanSDK) => {
-                    const events = await sdk?.listAvailableEvents()
-                    const uniqueActions = new Set<string>(events?.flatMap((event) => event.event) ?? [])
-                    console.debug('Resolved available actions for auth.policy configuration:', uniqueActions)
-                    return [...uniqueActions]
-                  },
+                  title: 'Before-event',
+                  enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyBeforeEvents(sdk),
                   minLength: 1,
                 },
               },
@@ -314,19 +333,13 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                   elements: [
                     {
                       type: 'Control',
-                      scope: '#/properties/subjectType',
-                      label: 'Subject type',
-                      options: { format: 'radio' },
-                    },
-                    {
-                      type: 'Control',
                       scope: '#/properties/subject',
-                      label: 'Subject',
+                      label: 'Role',
                     },
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed actions',
+                      label: 'Allowed before-events',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -500,10 +513,12 @@ function parsePermissionMatrixEntries(value: unknown): PermissionMatrixEntry[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return []
-    const subjectType = (entry as { subjectType?: unknown }).subjectType
+    const rawSubjectType = (entry as { subjectType?: unknown }).subjectType
     const subject = (entry as { subject?: unknown }).subject
     const actions = normalizeStringList((entry as { actions?: unknown }).actions)
-    if ((subjectType !== 'role' && subjectType !== 'group') || typeof subject !== 'string') return []
+    if (rawSubjectType !== undefined && rawSubjectType !== 'role' && rawSubjectType !== 'group') return []
+    if (typeof subject !== 'string') return []
+    const subjectType: PermissionMatrixSubjectType = rawSubjectType === 'group' ? 'group' : 'role'
     const normalizedSubject = subject.trim()
     if (normalizedSubject.length === 0 || !actions || actions.length === 0) return []
     return [{ subjectType, subject: normalizedSubject, actions }]
@@ -1043,8 +1058,10 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  * Factory for a configurable auth policy plugin for `local`, `rbac`, and `kl-plugin-auth` providers.
  *
  * When `options.permissions` is provided it **overrides** the provider's default
- * policy behavior with an explicit per-role or per-group action matrix. Legacy
- * `options.matrix` role maps remain supported for backward compatibility.
+ * policy behavior with an explicit permission matrix. The shared settings UI now
+ * writes role-based rows and uses the live before-event catalog, while legacy
+ * manual `subjectType: "group"` entries and `options.matrix` role maps remain
+ * supported for backward compatibility.
  *
  * When no explicit matrix is provided, `rbac` falls back to the fixed SDK role
  * matrix while `local` / `kl-plugin-auth` fall back to the existing
@@ -1056,8 +1073,8 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  *   "provider": "kl-plugin-auth",
  *   "options": {
  *     "permissions": [
- *       { "subjectType": "role", "subject": "user", "actions": ["form.submit", "comment.create"] },
- *       { "subjectType": "group", "subject": "ops", "actions": ["board.log.add"] }
+ *       { "subject": "user", "actions": ["form.submit", "comment.create"] },
+ *       { "subject": "admin", "actions": ["board.log.add", "settings.update"] }
  *     ]
  *   }
  * }

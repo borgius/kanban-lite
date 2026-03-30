@@ -284,6 +284,7 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                   enum: async (sdk: KanbanSDK) => {
                     const events = await sdk?.listAvailableEvents()
                     const uniqueActions = new Set<string>(events?.flatMap((event) => event.event) ?? [])
+                    console.debug('Resolved available actions for auth.policy configuration:', uniqueActions)
                     return [...uniqueActions]
                   },
                   minLength: 1,

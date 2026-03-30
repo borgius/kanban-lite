@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **First-party plugin package builds now run on shared Vite library config**: All `kl-plugin-*` packages now build CommonJS output and `.d.ts` declarations through one `vite build` entrypoint backed by a shared workspace config, replacing the old split `esbuild` + `tsc --emitDeclarationOnly` flow.
+
 - **`kl-plugin-auth` action pickers now use the live before-event catalog**: When an SDK instance is available, the shared Plugin Options form resolves `auth.policy.permissions[].actions[]` from `sdk.listAvailableEvents({ type: 'before' })`, so custom permission rules follow the current runtime event surface instead of a stale hard-coded list.
 
 - **Plugin option-schema authoring types now allow nested async schema values**: `PluginSettingsOptionsSchemaMetadata.schema` / `uiSchema` now accept nested sync/async resolvers in the public SDK typings, so plugin packages can declare runtime-derived enums/defaults without unsafe casts while transports still receive fully resolved plain JSON Forms metadata.

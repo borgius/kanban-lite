@@ -21,7 +21,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:mongodb && tsc --declaration --emitDeclarationOnly",
+    "build": "KANBAN_PLUGIN_PACKAGE_DIR=$PWD pnpm --dir ../.. exec vite build --config scripts/vite.plugin-package.config.mts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -45,7 +45,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "esbuild": "^0.19.0",
     "mongodb": "^6.12.0",
     "typescript": "^5.3.0",
     "vitest": "^4.0.18"

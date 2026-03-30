@@ -107,7 +107,6 @@
     "mcp": "tsx src/mcp-server/index.ts",
     "standalone": "pnpm run build:standalone && node dist/standalone.js",
     "standalone:e2e:serve": "pnpm run build:standalone && node dist/standalone.js --dir ../../tmp/e2e/workspace/.kanban --port 4173 --no-browser",
-    "watch": "concurrently \"pnpm run watch:extension\" \"pnpm run watch:standalone-webview\"",
     "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node --watch",
     "watch:standalone-webview": "vite build --config vite.standalone.config.mts --watch",
     "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --external:@fastify/swagger --external:@fastify/swagger-ui --banner:js=\"#!/usr/bin/env node\" --watch",

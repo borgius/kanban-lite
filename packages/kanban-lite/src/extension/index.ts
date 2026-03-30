@@ -74,7 +74,10 @@ async function createCardFromPrompts(context: vscode.ExtensionContext): Promise<
   const sdk = new KanbanSDK(kanbanDir)
 
   const content = `# ${title}${description ? '\n\n' + description : ''}`
-  const card = await sdk.createCard({ content, status, priority }, await resolveExtensionAuthContext(context))
+  const card = await sdk.runWithAuth(
+    await resolveExtensionAuthContext(context),
+    () => sdk.createCard({ content, status, priority }),
+  )
 
   const localCardPath = sdk.getLocalCardPath(card)
   if (localCardPath) {

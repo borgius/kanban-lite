@@ -6,7 +6,7 @@
  * before-event pipeline. They do NOT mock the auth logic — every assertion
  * exercises the actual plugin functions.
  */
-import type { BeforeEventPayload } from '../../kanban-lite/src/sdk'
+import { DEFAULT_PLUGIN_SETTINGS_REDACTION, type BeforeEventPayload } from '../../kanban-lite/src/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import {
   LOCAL_IDENTITY_PLUGIN,
@@ -22,6 +22,7 @@ import {
   authIdentityPlugins,
   authPolicyPlugins,
   createAuthIdentityPlugin,
+  createAuthPolicyPlugin,
   createAuthListenerPlugin,
   createNoopAuthListenerPlugin,
   createRbacAuthListenerPlugin,
@@ -345,9 +346,9 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
     bus.on('auth.allowed', onAllowed)
 
     plugin.register(bus)
-    const merged = await bus.emitAsync('card.create', makeBeforePayload())
+    const overrides = await bus.emitAsync('card.create', makeBeforePayload())
 
-    expect(merged).toEqual({ title: 'Test card' })
+    expect(overrides).toEqual([])
     expect(onAllowed).toHaveBeenCalledTimes(1)
 
     plugin.unregister()
@@ -376,9 +377,9 @@ describe('kl-auth-plugin: listener-only auth runtime helpers', () => {
     )
 
     plugin.register(bus)
-    const merged = await bus.emitAsync('card.create', makeBeforePayload())
+    const overrides = await bus.emitAsync('card.create', makeBeforePayload())
 
-    expect(merged).toEqual({ title: 'Test card', approvedBy: 'alice' })
+    expect(overrides).toEqual([{ approvedBy: 'alice' }])
   })
 
   it('rbac listener throws AuthError with auth.identity.missing for anonymous protected actions', async () => {
@@ -609,5 +610,108 @@ describe('createAuthIdentityPlugin: apiToken option', () => {
       if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN
       else process.env.KANBAN_LITE_TOKEN = savedToken
     }
+  })
+})
+
+describe('kl-auth-plugin: schema-driven options parity', () => {
+  it('package exports and configurable factories share the same schema contract for shared plugin settings flows', () => {
+    expect(authIdentityPlugins['kl-auth-plugin']?.optionsSchema?.()).toEqual(
+      createAuthIdentityPlugin().optionsSchema?.(),
+    )
+    expect(authPolicyPlugins['kl-auth-plugin']?.optionsSchema?.()).toEqual(
+      createAuthPolicyPlugin().optionsSchema?.(),
+    )
+  })
+
+  it('auth.identity providers expose shared options schema metadata with secret annotations', () => {
+    const schema = authIdentityPlugins['kl-auth-plugin']?.optionsSchema?.()
+
+    expect(schema).toBeDefined()
+    expect(schema?.schema).toMatchObject({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        apiToken: { type: 'string' },
+        users: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['username', 'password'],
+            properties: {
+              username: { type: 'string' },
+              password: { type: 'string' },
+              role: { enum: ['user', 'manager', 'admin'] },
+            },
+          },
+        },
+      },
+    })
+    expect(schema?.secrets).toEqual([
+      { path: 'apiToken', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
+      { path: 'users.*.password', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
+    ])
+  })
+
+  it('auth.policy providers expose schema metadata compatible with matrix overrides and no secrets', () => {
+    const schema = authPolicyPlugins['kl-auth-plugin']?.optionsSchema?.()
+
+    expect(schema).toBeDefined()
+    expect(schema?.schema).toMatchObject({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        matrix: {
+          type: 'object',
+          additionalProperties: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+      },
+    })
+    expect(schema?.secrets).toEqual([])
+  })
+
+  it('schema-shaped auth.identity options remain backward-compatible with real provider behavior', async () => {
+    const plugin = createAuthIdentityPlugin({
+      apiToken: 'schema-token',
+      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'admin' }],
+    })
+
+    expect(plugin.optionsSchema?.().schema).toMatchObject({
+      properties: {
+        apiToken: { type: 'string' },
+        users: { type: 'array' },
+      },
+    })
+
+    await expect(plugin.resolveIdentity({ token: 'schema-token', transport: 'http' })).resolves.toEqual({
+      subject: 'api-token',
+    })
+  })
+
+  it('schema-shaped auth.policy options remain backward-compatible with real provider behavior', async () => {
+    const plugin = createAuthPolicyPlugin({
+      matrix: {
+        auditor: ['board.log.add'],
+        admin: ['settings.update'],
+      },
+    })
+
+    expect(plugin.optionsSchema?.().schema).toMatchObject({
+      properties: {
+        matrix: { type: 'object' },
+      },
+    })
+
+    await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['admin'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
+      allowed: true,
+      actor: 'Ada',
+    })
+    await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['auditor'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
+      allowed: false,
+      reason: 'auth.policy.denied',
+      actor: 'Ada',
+    })
   })
 })

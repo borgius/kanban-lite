@@ -2,17 +2,34 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
-import { getDisplayTitleFromContent, CARD_FORMAT_VERSION } from '../shared/types'
-import type { Card, Priority, KanbanColumn, CardFrontmatter, CardDisplaySettings, CreateCardPayload, SubmitFormMessage } from '../shared/types'
+import { getDisplayTitleFromContent, CARD_FORMAT_VERSION, createEmptyPluginSettingsPayload } from '../shared/types'
+import type {
+  Card,
+  KanbanColumn,
+  CardFrontmatter,
+  CardDisplaySettings,
+  CreateCardPayload,
+  PluginSettingsInstallTransportResult,
+  PluginSettingsPayload,
+  PluginSettingsProviderTransport,
+  PluginSettingsResultMessage,
+  PluginSettingsTransportAction,
+  SubmitFormMessage,
+} from '../shared/types'
 import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
-import { KanbanSDK } from '../sdk/KanbanSDK'
+import type { PluginCapabilityNamespace } from '../shared/config'
+import { KanbanSDK, DEFAULT_PLUGIN_SETTINGS_REDACTION, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import type { AuthContext } from '../sdk/types'
 import { getExtensionAuthStatus, resolveExtensionAuthContext } from './auth'
 import { decorateCardsForWebview, formatCardStateWarning, performExplicitCardOpen } from './cardStateUi'
 
 
 type CreateCardData = CreateCardPayload
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 export class KanbanPanel {
   public static readonly viewType = 'kanban-lite.panel'
@@ -186,9 +203,36 @@ export class KanbanPanel {
             break
           }
           case 'openSettings': {
-            const sdk = this._getSDK()
-            const openSettings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
-            this._panel.webview.postMessage({ type: 'showSettings', settings: openSettings })
+            await this._postSettingsBridgePayload()
+            break
+          }
+          case 'readPluginSettings': {
+            await this._postPluginSettingsReadResult(message.capability, message.providerId)
+            break
+          }
+          case 'selectPluginSettingsProvider': {
+            await this._postPluginSettingsMutationResult('select', message.capability, message.providerId, async (sdk) => ({
+              provider: await this._runWithAuth(sdk, async () => sdk.selectPluginSettingsProvider(message.capability, message.providerId)),
+            }))
+            break
+          }
+          case 'updatePluginSettingsOptions': {
+            await this._postPluginSettingsMutationResult('updateOptions', message.capability, message.providerId, async (sdk) => ({
+              provider: await this._runWithAuth(sdk, async () => sdk.updatePluginSettingsOptions(
+                message.capability,
+                message.providerId,
+                message.options,
+              )),
+            }))
+            break
+          }
+          case 'installPluginSettingsPackage': {
+            await this._postPluginSettingsMutationResult('install', undefined, undefined, async (sdk) => ({
+              install: await this._runWithAuth(sdk, () => sdk.installPluginSettingsPackage({
+                packageName: message.packageName,
+                scope: message.scope,
+              })),
+            }))
             break
           }
           case 'focusMenuBar':
@@ -305,17 +349,19 @@ export class KanbanPanel {
             break
           case 'transferCard': {
             const sdk = this._getSDK()
-            if (!sdk || !this._currentBoardId) break
+            if (!sdk || !this._currentBoardId || !message.toBoard) break
+            const fromBoard = this._currentBoardId
+            const toBoard = message.toBoard
             this._migrating = true
             try {
               await this._runWithAuth(sdk, () => sdk.transferCard(
                 message.cardId,
-                this._currentBoardId,
-                message.toBoard,
+                fromBoard,
+                toBoard,
                 message.targetStatus,
               ))
               // Switch to the destination board and re-open the card there
-              this._currentBoardId = message.toBoard
+              this._currentBoardId = toBoard
               await this._loadCards()
               this._sendCardsToWebview()
               this.openCard(message.cardId)
@@ -334,7 +380,7 @@ export class KanbanPanel {
           case 'createBoard': {
             if (!this._sdk) break
             try {
-              const createdBoard = await this._sdk.createBoard('', message.name, undefined, await this._getAuthContext())
+              const createdBoard = await this._runWithAuth(this._sdk, () => this._sdk!.createBoard('', message.name))
               this._currentBoardId = createdBoard.id
               await this._loadCards()
               this._sendCardsToWebview()
@@ -396,7 +442,7 @@ export class KanbanPanel {
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await triggerSdk.triggerBoardAction(boardId, actionKey, await this._getAuthContext())
+              await this._runWithAuth(triggerSdk, () => triggerSdk.triggerBoardAction(boardId, actionKey))
               this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey })
             } catch (err) {
               this._panel.webview.postMessage({ type: 'boardActionResult', callbackKey, error: String(err) })
@@ -408,12 +454,12 @@ export class KanbanPanel {
             const submitSdk = this._getSDK()
             if (!submitSdk) break
             try {
-              const result = await submitSdk.submitForm({
+              const result = await this._runWithAuth(submitSdk, () => submitSdk.submitForm({
                 cardId,
                 formId,
                 data: (message as SubmitFormMessage).data,
                 boardId: boardId ?? this._currentBoardId,
-              }, await this._getAuthContext())
+              }))
               await this._loadCards()
               this._sendCardsToWebview()
               if (this._currentEditingCardId === cardId) {
@@ -611,6 +657,166 @@ export class KanbanPanel {
     return sdk.runWithAuth(await this._getAuthContext(), fn)
   }
 
+  private _getPluginSettingsPayload(sdk: KanbanSDK | null): PluginSettingsPayload {
+    if (!sdk) {
+      return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
+    }
+    return sdk.listPluginSettings()
+  }
+
+  private _toPluginSettingsProviderTransport(
+    provider: ReturnType<KanbanSDK['getPluginSettings']>,
+  ): PluginSettingsProviderTransport | null {
+    return provider ? { ...provider } : null
+  }
+
+  private _toPluginSettingsInstallTransportResult(
+    result: Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>,
+  ): PluginSettingsInstallTransportResult {
+    return {
+      packageName: result.packageName,
+      scope: result.scope,
+      command: result.command,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      message: result.message,
+      redaction: result.redaction,
+    }
+  }
+
+  private _toPluginSettingsErrorPayload(
+    action: PluginSettingsTransportAction,
+    error: unknown,
+    capability?: PluginCapabilityNamespace,
+    providerId?: string,
+  ) {
+    if (error instanceof PluginSettingsOperationError) {
+      return error.payload
+    }
+
+    const fallback = {
+      read: {
+        code: 'plugin-settings-read-failed',
+        message: 'Unable to read plugin settings.',
+      },
+      select: {
+        code: 'plugin-settings-select-failed',
+        message: 'Unable to persist the selected plugin provider.',
+      },
+      updateOptions: {
+        code: 'plugin-settings-update-failed',
+        message: 'Unable to persist plugin options.',
+      },
+      install: {
+        code: 'plugin-settings-install-failed',
+        message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+      },
+    } satisfies Record<PluginSettingsTransportAction, { code: string; message: string }>
+
+    return createPluginSettingsErrorPayload({
+      code: fallback[action].code,
+      message: fallback[action].message,
+      capability,
+      providerId,
+      redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION,
+    })
+  }
+
+  private _postPluginSettingsResult(message: PluginSettingsResultMessage): void {
+    this._panel.webview.postMessage(message)
+  }
+
+  private async _postSettingsBridgePayload(): Promise<void> {
+    const sdk = this._getSDK()
+    const settings = sdk ? sdk.getSettings() : configToSettings(DEFAULT_CONFIG)
+
+    try {
+      const pluginSettings = this._getPluginSettingsPayload(sdk)
+      this._panel.webview.postMessage({ type: 'showSettings', settings, pluginSettings })
+    } catch (error) {
+      this._panel.webview.postMessage({
+        type: 'showSettings',
+        settings,
+        pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+      })
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action: 'read',
+        error: this._toPluginSettingsErrorPayload('read', error),
+      })
+    }
+  }
+
+  private async _postPluginSettingsReadResult(
+    capability: PluginCapabilityNamespace,
+    providerId: string,
+  ): Promise<void> {
+    const sdk = this._getSDK()
+
+    if (!sdk) {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action: 'read',
+        pluginSettings: this._getPluginSettingsPayload(null),
+        provider: null,
+      })
+      return
+    }
+
+    try {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action: 'read',
+        pluginSettings: this._getPluginSettingsPayload(sdk),
+        provider: this._toPluginSettingsProviderTransport(sdk.getPluginSettings(capability, providerId)),
+      })
+    } catch (error) {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action: 'read',
+        error: this._toPluginSettingsErrorPayload('read', error, capability, providerId),
+      })
+    }
+  }
+
+  private async _postPluginSettingsMutationResult(
+    action: Exclude<PluginSettingsTransportAction, 'read'>,
+    capability: PluginCapabilityNamespace | undefined,
+    providerId: string | undefined,
+    run: (sdk: KanbanSDK) => Promise<{
+      provider?: ReturnType<KanbanSDK['getPluginSettings']>
+      install?: Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
+    }>,
+  ): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action,
+        pluginSettings: this._getPluginSettingsPayload(null),
+        error: this._toPluginSettingsErrorPayload(action, null, capability, providerId),
+      })
+      return
+    }
+
+    try {
+      const result = await run(sdk)
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action,
+        pluginSettings: this._getPluginSettingsPayload(sdk),
+        provider: this._toPluginSettingsProviderTransport(result.provider ?? null),
+        install: result.install ? this._toPluginSettingsInstallTransportResult(result.install) : undefined,
+      })
+    } catch (error) {
+      this._postPluginSettingsResult({
+        type: 'pluginSettingsResult',
+        action,
+        error: this._toPluginSettingsErrorPayload(action, error, capability, providerId),
+      })
+    }
+  }
+
   private async _loadCards(): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) {
@@ -675,7 +881,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const card = await sdk.createCard({
+      const card = await this._runWithAuth(sdk, () => sdk.createCard({
         content: data.content,
         status: data.status,
         priority: data.priority,
@@ -686,8 +892,8 @@ export class KanbanPanel {
         actions: data.actions,
         forms: data.forms,
         formData: data.formData,
-        boardId: this._currentBoardId
-      }, await this._getAuthContext())
+        boardId: this._currentBoardId,
+      }))
       this._cards.push(card)
       this._sendCardsToWebview()
     } finally {
@@ -701,7 +907,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -715,7 +921,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.deleteCard(cardId, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.deleteCard(cardId, this._currentBoardId))
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -728,7 +934,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await sdk.permanentlyDeleteCard(cardId, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.permanentlyDeleteCard(cardId, this._currentBoardId))
       this._cards = this._cards.filter(f => f.id !== cardId)
       this._sendCardsToWebview()
     } catch (err) {
@@ -755,7 +961,7 @@ export class KanbanPanel {
 
     try {
       const settings = sdk.getSettings()
-      await sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId))
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -769,7 +975,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(cardId, updates, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.updateCard(cardId, updates, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -829,15 +1035,15 @@ export class KanbanPanel {
           if (!parsed) return
           this._migrating = true
           try {
-            const updated = await sdk.updateCard(cardId, {
+            const updated = await this._runWithAuth(sdk, () => sdk.updateCard(cardId, {
               content: parsed.content,
               status: parsed.status,
               priority: parsed.priority,
               assignee: parsed.assignee,
               dueDate: parsed.dueDate,
               labels: parsed.labels,
-              metadata: parsed.metadata
-            }, this._currentBoardId, await this._getAuthContext())
+              metadata: parsed.metadata,
+            }, this._currentBoardId))
             const idx = this._cards.findIndex(f => f.id === cardId)
             if (idx !== -1) this._cards[idx] = updated
             this._sendCardsToWebview()
@@ -902,7 +1108,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateCard(cardId, {
+      const updated = await this._runWithAuth(sdk, () => sdk.updateCard(cardId, {
         content,
         status: frontmatter.status,
         priority: frontmatter.priority,
@@ -914,7 +1120,7 @@ export class KanbanPanel {
         actions: frontmatter.actions,
         forms: frontmatter.forms,
         formData: frontmatter.formData,
-      }, this._currentBoardId, await this._getAuthContext())
+      }, this._currentBoardId))
       this._lastWrittenContent = serializeCard(updated)
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -940,7 +1146,7 @@ export class KanbanPanel {
     try {
       let updated = card
       for (const uri of uris) {
-        updated = await sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId, await this._getAuthContext())
+        updated = await this._runWithAuth(sdk, () => sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId))
       }
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -992,7 +1198,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.removeAttachment(cardId, attachment, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.removeAttachment(cardId, attachment, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1011,7 +1217,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.addComment(cardId, author, content, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.addComment(cardId, author, content, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1030,7 +1236,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.updateComment(cardId, commentId, content, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.updateComment(cardId, commentId, content, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1049,7 +1255,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await sdk.deleteComment(cardId, commentId, this._currentBoardId, await this._getAuthContext())
+      const updated = await this._runWithAuth(sdk, () => sdk.deleteComment(cardId, commentId, this._currentBoardId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1072,14 +1278,14 @@ export class KanbanPanel {
     }
   }
 
-  private async _addLog(cardId: string, text: string, source?: string, object?: Record<string, any>, timestamp?: string): Promise<void> {
+  private async _addLog(cardId: string, text: string, source?: string, object?: Record<string, unknown>, timestamp?: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId))
       await this._sendLogs(cardId)
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to add log: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to add log: ${getErrorMessage(err)}`)
     }
   }
 
@@ -1087,10 +1293,10 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.clearLogs(cardId, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.clearLogs(cardId, this._currentBoardId))
       await this._sendLogs(cardId)
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to clear logs: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to clear logs: ${getErrorMessage(err)}`)
     }
   }
 
@@ -1103,14 +1309,14 @@ export class KanbanPanel {
     })
   }
 
-  private async _addBoardLog(text: string, source?: string, object?: Record<string, any>, timestamp?: string): Promise<void> {
+  private async _addBoardLog(text: string, source?: string, object?: Record<string, unknown>, timestamp?: string): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.addBoardLog(text, { source, object, timestamp }, this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.addBoardLog(text, { source, object, timestamp }, this._currentBoardId))
       await this._sendBoardLogs()
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to add board log: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to add board log: ${getErrorMessage(err)}`)
     }
   }
 
@@ -1118,10 +1324,10 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.clearBoardLogs(this._currentBoardId, await this._getAuthContext())
+      await this._runWithAuth(sdk, () => sdk.clearBoardLogs(this._currentBoardId))
       await this._sendBoardLogs()
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to clear board logs: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to clear board logs: ${getErrorMessage(err)}`)
     }
   }
 
@@ -1210,9 +1416,9 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await sdk.updateSettings(settings, await this._getAuthContext())
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to save settings: ${err.message}`)
+      await this._runWithAuth(sdk, () => sdk.updateSettings(settings))
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to save settings: ${getErrorMessage(err)}`)
     }
     this._sendCardsToWebview()
   }
@@ -1305,8 +1511,8 @@ export class KanbanPanel {
     try {
       await this._runWithAuth(sdk, () => sdk.addColumn({ id: '', name: column.name, color: column.color }, this._currentBoardId))
       this._sendCardsToWebview()
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to add column: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to add column: ${getErrorMessage(err)}`)
     }
   }
 
@@ -1316,8 +1522,8 @@ export class KanbanPanel {
     try {
       await this._runWithAuth(sdk, () => sdk.updateColumn(columnId, updates, this._currentBoardId))
       this._sendCardsToWebview()
-    } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to update column: ${err.message}`)
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to update column: ${getErrorMessage(err)}`)
     }
   }
 

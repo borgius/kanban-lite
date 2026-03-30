@@ -1,10 +1,22 @@
+import * as childProcess from 'node:child_process'
 import * as path from 'path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
-import type { CardDisplaySettings, Priority } from '../shared/types'
+import type {
+  CardDisplaySettings,
+  PluginSettingsErrorPayload,
+  PluginSettingsInstallRequest,
+  PluginSettingsPayload,
+  PluginSettingsProviderRow,
+  PluginSettingsReadPayload,
+  PluginSettingsInstallScope,
+  PluginSettingsRedactionPolicy,
+  PluginSettingsRedactionTarget,
+  Priority,
+} from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../shared/config'
-import type { BoardConfig, KanbanConfig, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
@@ -12,7 +24,16 @@ import { EventBus } from './eventBus'
 import { AuthError, CardStateError, sanitizeCard, CARD_STATE_DEFAULT_ACTOR_MODE, CARD_STATE_OPEN_DOMAIN, CARD_STATE_UNREAD_DOMAIN, DEFAULT_CARD_STATE_ACTOR, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from './types'
 import type { StorageEngine } from './plugins/types'
 import { resolveKanbanDir } from './fileUtils'
-import { canUseDefaultCardStateActor, createBuiltinAuthListenerPlugin, resolveCapabilityBag } from './plugins'
+import {
+  canUseDefaultCardStateActor,
+  createBuiltinAuthListenerPlugin,
+  discoverPluginSettingsInventory,
+  persistPluginSettingsProviderOptions,
+  persistPluginSettingsProviderSelection,
+  PluginSettingsStoreError,
+  readPluginSettingsProvider,
+  resolveCapabilityBag,
+} from './plugins'
 import type { CardStateCursor, CardStateRecord, ResolvedCapabilityBag } from './plugins'
 import { loadWorkspaceEnv } from '../shared/env'
 import * as Boards from './modules/boards'
@@ -122,6 +143,250 @@ type ReadonlySnapshot<T> =
         ? { readonly [K in keyof T]: ReadonlySnapshot<T[K]> }
         : T
 
+/** Shared plugin secret redaction targets that every surface must honor. */
+export const PLUGIN_SETTINGS_REDACTION_TARGETS = ['read', 'list', 'error'] as const satisfies readonly PluginSettingsRedactionTarget[]
+
+/** Default write-only secret masking policy for plugin settings contracts. */
+export const DEFAULT_PLUGIN_SETTINGS_REDACTION: PluginSettingsRedactionPolicy = {
+  maskedValue: '••••••',
+  writeOnly: true,
+  targets: PLUGIN_SETTINGS_REDACTION_TARGETS,
+}
+
+/** Supported install scopes for in-product plugin installation requests. */
+export const PLUGIN_SETTINGS_INSTALL_SCOPES = ['workspace', 'global'] as const satisfies readonly PluginSettingsInstallScope[]
+
+/** Exact package-name matcher for install requests accepted by the plugin settings contract. */
+export const EXACT_PLUGIN_SETTINGS_PACKAGE_NAME_PATTERN = /^kl-[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** Stable validation error codes for plugin settings contract violations. */
+export type PluginSettingsValidationErrorCode =
+  | 'invalid-plugin-install-package-name'
+  | 'invalid-plugin-install-scope'
+
+/** Error thrown when plugin settings SDK operations fail with a redacted payload. */
+export class PluginSettingsOperationError extends Error {
+  readonly payload: PluginSettingsErrorPayload
+
+  constructor(payload: PluginSettingsErrorPayload) {
+    super(payload.message)
+    this.name = 'PluginSettingsOperationError'
+    this.payload = payload
+  }
+}
+
+/** Error thrown when a plugin settings contract validation boundary rejects input. */
+export class PluginSettingsValidationError extends Error {
+  readonly code: PluginSettingsValidationErrorCode
+
+  constructor(code: PluginSettingsValidationErrorCode, message: string) {
+    super(message)
+    this.name = 'PluginSettingsValidationError'
+    this.code = code
+  }
+}
+
+/** Fixed argv install command emitted by the SDK-owned plugin installer. */
+export interface PluginSettingsInstallCommand {
+  command: 'npm'
+  args: string[]
+  cwd: string
+  shell: false
+}
+
+/** Structured success payload returned by guarded plugin install requests. */
+export interface PluginSettingsInstallResult {
+  packageName: string
+  scope: PluginSettingsInstallScope
+  command: PluginSettingsInstallCommand
+  stdout: string
+  stderr: string
+  message: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+interface PluginSettingsInstallExecutionResult {
+  exitCode: number | null
+  signal: NodeJS.Signals | null
+  stdout: string
+  stderr: string
+}
+
+const PLUGIN_SETTINGS_INSTALL_SUCCESS_MESSAGE = 'Installed plugin package with lifecycle scripts disabled.'
+const PLUGIN_SETTINGS_INSTALL_FAILURE_MESSAGE = 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.'
+
+function createPluginSettingsInstallCommand(
+  request: PluginSettingsInstallRequest,
+  workspaceRoot: string,
+): PluginSettingsInstallCommand {
+  return {
+    command: 'npm',
+    args: request.scope === 'global'
+      ? ['install', '--global', '--ignore-scripts', request.packageName]
+      : ['install', '--ignore-scripts', request.packageName],
+    cwd: workspaceRoot,
+    shell: false,
+  }
+}
+
+function createPluginSettingsManualInstallCommand(
+  request: PluginSettingsInstallRequest,
+  workspaceRoot: string,
+): PluginSettingsInstallCommand {
+  return {
+    command: 'npm',
+    args: request.scope === 'global'
+      ? ['install', '--global', request.packageName]
+      : ['install', request.packageName],
+    cwd: workspaceRoot,
+    shell: false,
+  }
+}
+
+function redactPluginSettingsInstallOutput(value: string): string {
+  let redacted = value.replace(/\r\n/g, '\n')
+
+  redacted = redacted.replace(
+    /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^/\s:@]+):([^@\s/]+)@/g,
+    '$1[REDACTED]:[REDACTED]@',
+  )
+  redacted = redacted.replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, '$1[REDACTED]')
+  redacted = redacted.replace(/(authorization\s*:\s*basic\s+)[^\s]+/gi, '$1[REDACTED]')
+  redacted = redacted.replace(
+    /((_authToken|npm[_-]?auth[_-]?token|token|password|passwd|secret)\s*[=:]\s*)("?)[^"\s]+(\3)/gi,
+    '$1$3[REDACTED]$4',
+  )
+
+  return redacted.trim()
+}
+
+function runPluginSettingsInstallCommand(
+  command: PluginSettingsInstallCommand,
+): Promise<PluginSettingsInstallExecutionResult> {
+  return new Promise((resolve, reject) => {
+    const child = childProcess.spawn(command.command, command.args, {
+      cwd: command.cwd,
+      shell: command.shell,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString()
+    })
+
+    child.once('error', reject)
+    child.once('close', (exitCode, signal) => {
+      resolve({ exitCode, signal, stdout, stderr })
+    })
+  })
+}
+
+/** Returns `true` when `value` is a supported plugin install scope. */
+export function isPluginSettingsInstallScope(value: unknown): value is PluginSettingsInstallScope {
+  return typeof value === 'string' && (PLUGIN_SETTINGS_INSTALL_SCOPES as readonly string[]).includes(value)
+}
+
+/** Returns `true` when `value` is an exact unscoped `kl-*` npm package name. */
+export function isExactPluginSettingsPackageName(value: unknown): value is string {
+  return typeof value === 'string' && EXACT_PLUGIN_SETTINGS_PACKAGE_NAME_PATTERN.test(value)
+}
+
+/**
+ * Validates the SDK install request contract for plugin settings flows.
+ *
+ * Only exact unscoped `kl-*` package names are accepted. Version specifiers,
+ * paths, URLs, shell fragments, whitespace-delimited arguments, and other
+ * npm wrapper syntax are rejected at this boundary before any subprocess work
+ * is attempted.
+ */
+export function validatePluginSettingsInstallRequest(input: {
+  packageName: unknown
+  scope: unknown
+}): PluginSettingsInstallRequest {
+  if (!isPluginSettingsInstallScope(input.scope)) {
+    throw new PluginSettingsValidationError(
+      'invalid-plugin-install-scope',
+      'Plugin install requests must declare an explicit install scope of "workspace" or "global".',
+    )
+  }
+
+  if (!isExactPluginSettingsPackageName(input.packageName)) {
+    throw new PluginSettingsValidationError(
+      'invalid-plugin-install-package-name',
+      'Plugin install requests must use an exact unscoped kl-* package name with no version specifier, flag, URL, path, whitespace, or shell fragment.',
+    )
+  }
+
+  return {
+    packageName: input.packageName,
+    scope: input.scope,
+  }
+}
+
+/** Applies the shared plugin secret redaction policy to surfaced error payloads. */
+export function createPluginSettingsErrorPayload(input: {
+  code: string
+  message: string
+  capability?: PluginCapabilityNamespace
+  providerId?: string
+  details?: Record<string, unknown>
+  redaction?: PluginSettingsRedactionPolicy
+}): PluginSettingsErrorPayload {
+  return {
+    code: input.code,
+    message: input.message,
+    capability: input.capability,
+    providerId: input.providerId,
+    details: input.details,
+    redaction: input.redaction ?? DEFAULT_PLUGIN_SETTINGS_REDACTION,
+  }
+}
+
+function toPluginSettingsOperationError(input: {
+  error: unknown
+  fallbackCode: string
+  fallbackMessage: string
+  capability?: PluginCapabilityNamespace
+  providerId?: string
+}): PluginSettingsOperationError {
+  if (input.error instanceof PluginSettingsOperationError) {
+    return input.error
+  }
+
+  if (input.error instanceof PluginSettingsStoreError) {
+    return new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+      code: input.error.code,
+      message: input.error.message,
+      capability: input.capability,
+      providerId: input.providerId,
+      details: input.error.details,
+    }))
+  }
+
+  if (input.error instanceof PluginSettingsValidationError) {
+    return new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+      code: input.error.code,
+      message: input.error.message,
+      capability: input.capability,
+      providerId: input.providerId,
+    }))
+  }
+
+  return new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+    code: input.fallbackCode,
+    message: input.fallbackMessage,
+    capability: input.capability,
+    providerId: input.providerId,
+  }))
+}
+
 /**
  * Active webhook provider metadata for diagnostics and host surfaces.
  *
@@ -144,6 +409,11 @@ export interface WebhookStatus {
 
 /** Active card-state provider metadata for diagnostics and host surfaces. */
 export type CardStateRuntimeStatus = CardStateStatus
+
+type PluginSettingsProviderReadModel = PluginSettingsReadPayload & Pick<
+  PluginSettingsProviderRow,
+  'packageName' | 'discoverySource' | 'optionsSchema'
+>
 
 /**
  * Optional search and sort inputs for {@link KanbanSDK.listCards}.
@@ -302,6 +572,7 @@ export class KanbanSDK {
   private _onEvent?: SDKEventHandler
   private readonly _eventBus: EventBus
   private _webhookPlugin: SDKEventListenerPlugin | null = null
+  private _pluginInstallRunner = runPluginSettingsInstallCommand
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
   /** @internal Async-scoped auth carrier. Installed per request scope via {@link runWithAuth}. */
@@ -357,6 +628,7 @@ export class KanbanSDK {
     this.kanbanDir = kanbanDir ?? resolveKanbanDir()
     loadWorkspaceEnv(path.dirname(this.kanbanDir))
     this._onEvent = options?.onEvent
+    this._pluginInstallRunner = options?.pluginInstallRunner ?? runPluginSettingsInstallCommand
 
     // Initialize the pub/sub event bus
     this._eventBus = new EventBus()
@@ -562,6 +834,209 @@ export class KanbanSDK {
     return {
       webhookProvider,
       webhookProviderActive: this._capabilities?.webhookProvider != null,
+    }
+  }
+
+  /**
+   * Lists the capability-grouped plugin provider inventory for the workspace.
+   *
+   * Discovery reuses the canonical runtime loader order so the returned rows
+   * reflect providers that the SDK can actually resolve at runtime. Selected
+   * state is derived from `.kanban.json`, and the payload carries the shared
+   * plugin-settings redaction policy for downstream UI/API/CLI/MCP reuse.
+   *
+   * @returns A capability-grouped plugin settings inventory payload.
+   */
+  listPluginSettings(): PluginSettingsPayload {
+    try {
+      return discoverPluginSettingsInventory(this.workspaceRoot, DEFAULT_PLUGIN_SETTINGS_REDACTION)
+    } catch (error) {
+      throw toPluginSettingsOperationError({
+        error,
+        fallbackCode: 'plugin-settings-read-failed',
+        fallbackMessage: 'Unable to list plugin settings.',
+      })
+    }
+  }
+
+  /**
+   * Returns the redacted plugin settings read model for one provider.
+   *
+   * The read model includes the provider's discovery source, current selected
+   * state for the capability, any discovered options schema metadata, and a
+   * redacted snapshot of persisted options when this provider is selected.
+   *
+   * @param capability - The capability namespace to inspect.
+   * @param providerId - Provider identifier within that capability.
+   * @returns The redacted provider read model, or `null` when the provider is not discovered.
+   */
+  getPluginSettings(
+    capability: PluginCapabilityNamespace,
+    providerId: string,
+  ): PluginSettingsProviderReadModel | null {
+    try {
+      return readPluginSettingsProvider(this.workspaceRoot, capability, providerId, DEFAULT_PLUGIN_SETTINGS_REDACTION)
+    } catch (error) {
+      throw toPluginSettingsOperationError({
+        error,
+        fallbackCode: 'plugin-settings-read-failed',
+        fallbackMessage: 'Unable to read plugin settings.',
+        capability,
+        providerId,
+      })
+    }
+  }
+
+  /**
+   * Persists the canonical selected provider for one capability inside `.kanban.json`.
+   *
+   * Selection is modeled only by the provider ref stored under `plugins[capability]`.
+   * Re-selecting the same provider preserves any existing persisted options while
+   * switching to a different provider replaces the previous single-provider entry.
+   *
+   * @param capability - Capability namespace to update.
+   * @param providerId - Provider identifier to select.
+   * @returns The redacted provider read model after persistence succeeds.
+   */
+  selectPluginSettingsProvider(
+    capability: PluginCapabilityNamespace,
+    providerId: string,
+  ): PluginSettingsProviderReadModel {
+    try {
+      return persistPluginSettingsProviderSelection(
+        this.workspaceRoot,
+        capability,
+        providerId,
+        DEFAULT_PLUGIN_SETTINGS_REDACTION,
+      )
+    } catch (error) {
+      throw toPluginSettingsOperationError({
+        error,
+        fallbackCode: 'plugin-settings-select-failed',
+        fallbackMessage: 'Unable to persist the selected plugin provider.',
+        capability,
+        providerId,
+      })
+    }
+  }
+
+  /**
+   * Persists provider options under the canonical capability-selection model.
+   *
+   * Secret fields remain write-only: callers may submit the shared masked value
+   * placeholder to keep an existing stored secret unchanged, while any non-masked
+   * replacement overwrites that secret. Persisting options also canonicalizes the
+   * selected provider under `plugins[capability]`.
+   *
+   * @param capability - Capability namespace to update.
+   * @param providerId - Provider identifier whose options are being updated.
+   * @param options - Provider options payload to persist.
+   * @returns The redacted provider read model after persistence succeeds.
+   */
+  updatePluginSettingsOptions(
+    capability: PluginCapabilityNamespace,
+    providerId: string,
+    options: Record<string, unknown>,
+  ): PluginSettingsProviderReadModel {
+    try {
+      return persistPluginSettingsProviderOptions(
+        this.workspaceRoot,
+        capability,
+        providerId,
+        options,
+        DEFAULT_PLUGIN_SETTINGS_REDACTION,
+      )
+    } catch (error) {
+      throw toPluginSettingsOperationError({
+        error,
+        fallbackCode: 'plugin-settings-update-failed',
+        fallbackMessage: 'Unable to persist plugin options.',
+        capability,
+        providerId,
+      })
+    }
+  }
+
+  /**
+   * Installs a supported external plugin package through guarded `npm install` execution.
+   *
+   * The SDK validates the request before launching a subprocess, accepts only exact
+   * unscoped `kl-*` package names, always disables lifecycle scripts for in-product
+   * installs, and redacts stdout/stderr before surfacing either the success payload
+   * or a structured failure payload.
+   *
+   * @param input - Candidate package name and install scope to validate and install.
+   * @returns Structured redacted success payload describing the executed npm command.
+   * @throws {PluginSettingsOperationError} When validation fails or npm exits unsuccessfully.
+   */
+  async installPluginSettingsPackage(input: {
+    packageName: unknown
+    scope: unknown
+  }): Promise<PluginSettingsInstallResult> {
+    let request: PluginSettingsInstallRequest
+
+    try {
+      request = validatePluginSettingsInstallRequest(input)
+    } catch (error) {
+      throw toPluginSettingsOperationError({
+        error,
+        fallbackCode: 'plugin-settings-install-failed',
+        fallbackMessage: PLUGIN_SETTINGS_INSTALL_FAILURE_MESSAGE,
+      })
+    }
+
+    const command = createPluginSettingsInstallCommand(request, this.workspaceRoot)
+    const manualInstall = createPluginSettingsManualInstallCommand(request, this.workspaceRoot)
+
+    try {
+      const execution = await this._pluginInstallRunner(command)
+      const stdout = redactPluginSettingsInstallOutput(execution.stdout)
+      const stderr = redactPluginSettingsInstallOutput(execution.stderr)
+
+      if (execution.exitCode !== 0) {
+        throw new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+          code: 'plugin-settings-install-failed',
+          message: PLUGIN_SETTINGS_INSTALL_FAILURE_MESSAGE,
+          details: {
+            packageName: request.packageName,
+            scope: request.scope,
+            exitCode: execution.exitCode,
+            signal: execution.signal ?? undefined,
+            command,
+            manualInstall,
+            stdout,
+            stderr,
+          },
+        }))
+      }
+
+      return {
+        packageName: request.packageName,
+        scope: request.scope,
+        command,
+        stdout,
+        stderr,
+        message: PLUGIN_SETTINGS_INSTALL_SUCCESS_MESSAGE,
+        redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION,
+      }
+    } catch (error) {
+      if (error instanceof PluginSettingsOperationError) {
+        throw error
+      }
+
+      throw new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+        code: 'plugin-settings-install-failed',
+        message: PLUGIN_SETTINGS_INSTALL_FAILURE_MESSAGE,
+        details: {
+          packageName: request.packageName,
+          scope: request.scope,
+          command,
+          manualInstall,
+          error: error instanceof Error
+            ? redactPluginSettingsInstallOutput(error.message)
+            : 'Unknown install error.',
+        },
+      }))
     }
   }
 

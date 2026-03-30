@@ -86,6 +86,83 @@ The new extension model adds two more narrow seams on top of that same active-pa
 
 ---
 
+## Plugin settings workflow
+
+The runtime model in this document now has a matching public management surface called **plugin settings**.
+
+That workflow is exposed consistently through:
+
+- the Settings panel's **Plugin Options** tab,
+- the CLI's top-level `plugin-settings` command,
+- the REST API's `/api/plugin-settings` routes,
+- and the MCP tools `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`.
+
+All four surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, and guarded install behavior.
+
+### Capability-grouped inventory and selected-provider semantics
+
+Plugin settings inventory is grouped by full capability namespace rather than by flat package name.
+
+Today that means the UI/API/CLI/MCP inventory can show providers for capabilities such as:
+
+- `card.storage`
+- `attachment.storage`
+- `card.state`
+- `auth.identity`
+- `auth.policy`
+- `webhook.delivery`
+
+Each provider row includes:
+
+- `providerId`
+- `packageName`
+- `discoverySource`
+- whether it is currently selected for that capability
+- optional schema metadata from `optionsSchema()`
+
+Enablement is represented only by provider selection. The canonical persisted form is the provider reference under `plugins[capability]` in `.kanban.json`; there is no second enabled/disabled boolean. Legacy config aliases still normalize into the same selected-provider view, but plugin-settings mutations write the canonical `plugins[capability]` entry.
+
+Discovery sources surfaced to users are:
+
+- `builtin`
+- `workspace`
+- `dependency`
+- `global`
+- `sibling`
+
+Those labels come directly from the resolver, so they describe why a provider is available in the current runtime rather than guessing from package names.
+
+### `optionsSchema()` and schema-driven configuration
+
+Providers may expose an `optionsSchema()` hook. When present, the loader normalizes it into transport-safe schema metadata containing:
+
+- `schema` — the JSON Schema used for editing
+- optional `uiSchema` — JSON Forms UI hints
+- `secrets` — secret-field metadata used for masking and write-only behavior
+
+The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms.
+
+If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
+
+### Redacted read/list behavior
+
+Plugin settings read/list flows are safe to surface directly because redaction happens in the SDK contract, not only in the UI.
+
+- Inventory/list responses expose capability rows, selected-provider state, package names, discovery sources, and optional schema metadata.
+- Provider read/update responses use the shared redacted read model.
+- Persisted secrets are never re-read in plain text.
+
+Secret fields declared through `optionsSchema().secrets` reopen as masked write-only placeholders (`••••••`). The public behavior is:
+
+- read/list/detail surfaces show the masked placeholder instead of the stored secret,
+- leaving that masked value unchanged during an update preserves the current stored secret,
+- entering a new value replaces the stored secret,
+- and surfaced errors reuse the same redaction policy instead of echoing raw option payloads.
+
+This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely.
+
+---
+
 ## Capability namespaces
 
 ### `card.storage`
@@ -179,6 +256,26 @@ The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, 
 ## Config model
 
 The canonical config lives in `.kanban.json`.
+
+For plugin settings flows, the canonical persistence model is one selected provider per capability under `plugins[capability]`. That same config entry may also carry the provider's persisted `options` payload.
+
+Example:
+
+```json
+{
+  "plugins": {
+    "auth.identity": {
+      "provider": "local",
+      "options": {
+        "apiToken": "stored-secret",
+        "users": []
+      }
+    }
+  }
+}
+```
+
+The plugin-settings model does not add a second `enabled` boolean. Switching providers means changing the selected provider reference for that capability.
 
 Webhook delivery uses its own top-level config section:
 
@@ -666,6 +763,15 @@ The resolver checks these locations in order and uses the first match:
 4. Sibling directory `../{name}` — legacy non-monorepo checkout layout
 
 If the package is not found in any of these locations, the resolver throws an actionable install hint.
+
+These same locations also explain the plugin-settings install scopes:
+
+- **`workspace` install** runs `npm install --ignore-scripts <package>` in the current workspace root. Use this for standalone servers, extension-hosted workspaces, or repo-local development where the runtime resolves packages from the workspace.
+- **`global` install** runs `npm install --global --ignore-scripts <package>`. Use this primarily for globally installed CLI or MCP runtimes that resolve providers from global `node_modules`.
+
+The in-product installer is intentionally narrow. It accepts only exact unscoped `kl-*` package names and rejects version specifiers, scoped names, URLs, paths, whitespace-delimited extra arguments, and shell fragments before any subprocess is launched. The SDK constructs fixed `npm` argv arrays with `shell: false`, always disables lifecycle scripts, and redacts surfaced stdout/stderr.
+
+If a package depends on lifecycle scripts or a custom install flow, install it manually outside the in-product workflow.
 
 ### Export shapes supported today
 

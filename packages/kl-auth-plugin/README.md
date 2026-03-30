@@ -13,6 +13,8 @@ The package currently ships three provider ids:
 - `noop`
 - `rbac`
 
+It also exports the package-name provider id `kl-auth-plugin` as a compatibility alias. The shared Plugin Options flow typically presents and persists the explicit provider ids above while showing `kl-auth-plugin` as the supplying package.
+
 ## Install
 
 ```bash
@@ -24,6 +26,27 @@ npm install kl-auth-plugin
 - `auth.identity`
 - `auth.policy`
 - `standalone.http` (optional, auto-loaded from active auth packages by the standalone server)
+
+## Shared Plugin Options workflow and `optionsSchema()`
+
+`kl-auth-plugin` participates in Kanban Lite's shared **Plugin Options** workflow used by the settings UI and the matching REST/CLI/MCP plugin-management surfaces.
+
+- Install/discover the package as `kl-auth-plugin`.
+- Select the auth provider id per capability (`local`, `rbac`, `noop`, or the compatibility alias `kl-auth-plugin`).
+- The selected provider id is persisted in `.kanban.json` at `plugins["auth.identity"].provider` / `plugins["auth.policy"].provider`; there is no separate auth-enabled boolean.
+- Both the exported package providers and the configurable factory helpers expose `optionsSchema()` metadata so the shared workflow can render schema-driven forms.
+
+Current schema-backed fields:
+
+- `auth.identity`: `apiToken`, `users[].username`, `users[].password`, `users[].role`
+- `auth.policy`: `matrix`
+
+Secret metadata is declared for:
+
+- `apiToken`
+- `users.*.password`
+
+Those fields are treated as write-only masked secrets in shared read/list/error flows. Stored values reopen as `••••••`; leaving the mask unchanged keeps the stored value, while typing a new value replaces it. The shared workflow never redisplays the raw stored secret/hash.
 
 ## Listener runtime helpers
 
@@ -62,15 +85,15 @@ When `local` starts inside the standalone server and `KANBAN_LITE_TOKEN` is miss
 
 ## `.kanban.json` examples
 
-Auth capabilities are declared in the `plugins` key alongside storage providers. Use the npm package name `kl-auth-plugin` as the provider value.
+Auth capabilities are declared in the `plugins` key alongside storage providers. Install the npm package `kl-auth-plugin`, then select one of the provider ids it exports (`local`, `rbac`, `noop`, or the compatibility alias `kl-auth-plugin`).
 
 ### RBAC
 
 ```json
 {
   "plugins": {
-    "auth.identity": { "provider": "kl-auth-plugin" },
-    "auth.policy": { "provider": "kl-auth-plugin" }
+    "auth.identity": { "provider": "rbac" },
+    "auth.policy": { "provider": "rbac" }
   }
 }
 ```
@@ -82,9 +105,9 @@ Provide `options.matrix` on `auth.policy` to override the default behaviour per 
 ```json
 {
   "plugins": {
-    "auth.identity": { "provider": "kl-auth-plugin" },
+    "auth.identity": { "provider": "rbac" },
     "auth.policy": {
-      "provider": "kl-auth-plugin",
+      "provider": "rbac",
       "options": {
         "matrix": {
           "user":    ["form.submit", "comment.create", "comment.update", "comment.delete", "attachment.add", "attachment.remove", "card.action.trigger", "log.add"],
@@ -103,7 +126,7 @@ Provide `options.matrix` on `auth.policy` to override the default behaviour per 
 {
   "plugins": {
     "auth.identity": {
-      "provider": "kl-auth-plugin",
+      "provider": "local",
       "options": {
         "users": [
           {
@@ -114,7 +137,7 @@ Provide `options.matrix` on `auth.policy` to override the default behaviour per 
         ]
       }
     },
-    "auth.policy": { "provider": "kl-auth-plugin" }
+    "auth.policy": { "provider": "local" }
   }
 }
 ```
@@ -136,17 +159,17 @@ By default, when the `local` standalone provider starts and `KANBAN_LITE_TOKEN` 
 {
   "plugins": {
     "auth.identity": {
-      "provider": "kl-auth-plugin",
+      "provider": "local",
       "options": {
         "apiToken": "my-secret-token"
       }
     },
-    "auth.policy": { "provider": "kl-auth-plugin" }
+    "auth.policy": { "provider": "local" }
   }
 }
 ```
 
-The `apiToken` option takes precedence over the `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variables for bearer-token authentication. When it is set the standalone server will not auto-generate or write a `.env` token.
+The `apiToken` option takes precedence over the `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` environment variables for bearer-token authentication. When it is set the standalone server will not auto-generate or write a `.env` token. In shared Plugin Options readbacks this field is masked as `••••••`; leaving that mask untouched keeps the existing stored token, while entering a new value replaces it.
 
 ## Local development / monorepo workflow
 

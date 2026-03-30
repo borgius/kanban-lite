@@ -1374,6 +1374,121 @@ Required: Yes
 | `200` | Updated settings. |
 | `400` | Error. |
 
+## Plugins
+
+Plugin discovery, selection, options, and guarded installation
+
+### GET `/api/plugin-settings`
+
+**List plugin providers**
+
+Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Capability-grouped plugin inventory. |
+| `500` | Unable to list plugin settings. |
+
+### GET `/api/plugin-settings/{capability}/{providerId}`
+
+**Read plugin settings**
+
+Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Redacted provider read model. |
+| `404` | Provider not found for the requested capability. |
+| `500` | Unable to read plugin settings. |
+
+### PUT `/api/plugin-settings/{capability}/{providerId}/select`
+
+**Select plugin provider**
+
+Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated redacted provider read model after selection. |
+| `403` | Forbidden. |
+| `404` | Provider not found for the requested capability. |
+| `500` | Unable to persist the selected provider. |
+
+### PUT `/api/plugin-settings/{capability}/{providerId}/options`
+
+**Update plugin options**
+
+Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `options` | object | No | Provider options payload to persist under the selected capability/provider pair. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated redacted provider read model after persisting options. |
+| `400` | Invalid options payload. |
+| `403` | Forbidden. |
+| `404` | Provider not found for the requested capability. |
+| `500` | Unable to persist plugin options. |
+
+### POST `/api/plugin-settings/install`
+
+**Install plugin package**
+
+Runs the guarded in-product installer for exact unscoped `kl-*` package names only. Responses surface redacted diagnostics and never expose raw installer stdout/stderr.
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `packageName` | string | Yes | Exact unscoped `kl-*` package name. |
+| `scope` | `workspace` \\| `global` | Yes | Install destination. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Redacted install result. |
+| `400` | Rejected input or redacted install failure. |
+| `403` | Forbidden. |
+| `500` | Unexpected installer error. |
+
 ## Labels
 
 Label definitions and cascading renames

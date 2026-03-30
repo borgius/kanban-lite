@@ -7,7 +7,7 @@ import { createRequire } from 'module'
 import { WebSocket } from 'ws'
 import { vi } from 'vitest'
 import { startServer } from '../server'
-import { KanbanSDK } from '../../sdk/KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../../sdk/KanbanSDK'
 import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
 
 type CardStateReadPayload = {
@@ -469,8 +469,8 @@ describe('Standalone Server Integration', () => {
         expect(swaggerUiMock).toHaveBeenCalledTimes(1)
         expect(swaggerUiMock.mock.calls[0]?.[1]).toMatchObject({
           routePrefix: '/api/docs',
-          logo: null,
         })
+        expect(swaggerUiMock.mock.calls[0]?.[1]).not.toHaveProperty('logo')
 
         const res = await httpGet(`http://localhost:${localPort}/`)
         expect(res.status).toBe(200)
@@ -1845,6 +1845,205 @@ describe('Standalone Server Integration', () => {
       expect(settings.showPriorityBadges).toBe(true)
       expect(settings.showBuildWithAI).toBe(false)
       expect(settings.markdownEditorMode).toBe(false)
+      expect(response.pluginSettings).toMatchObject({
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+        capabilities: expect.any(Array),
+      })
+    })
+
+    it('routes plugin-settings websocket actions with redacted shared result shapes', async () => {
+      writeWorkspaceConfig(path.dirname(tempDir), {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'ws-local-token',
+              users: [{ username: 'alice', password: 'ws-super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+        },
+      })
+
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const settingsResponse = await sendAndReceive(ws, { type: 'openSettings' }, 'showSettings')
+      expect(settingsResponse.pluginSettings).toMatchObject({
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+        capabilities: expect.arrayContaining([
+          expect.objectContaining({
+            capability: 'auth.identity',
+            selected: expect.objectContaining({ providerId: 'local' }),
+          }),
+        ]),
+      })
+      expect(JSON.stringify(settingsResponse)).not.toContain('ws-local-token')
+      expect(JSON.stringify(settingsResponse)).not.toContain('ws-super-secret-password')
+
+      const readResponse = await sendAndReceiveMatching(
+        ws,
+        { type: 'readPluginSettings', capability: 'auth.identity', providerId: 'local' },
+        'pluginSettingsResult',
+        (parsed) => parsed.action === 'read',
+      )
+      expect(readResponse.pluginSettings).toMatchObject({
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+      })
+      expect(readResponse.provider).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        selected: {
+          capability: 'auth.identity',
+          providerId: 'local',
+          source: 'legacy',
+        },
+        options: {
+          values: {
+            apiToken: '••••••',
+            users: [{ username: 'alice', password: '••••••', role: 'admin' }],
+          },
+        },
+      })
+      expect(JSON.stringify(readResponse)).not.toContain('ws-local-token')
+      expect(JSON.stringify(readResponse)).not.toContain('ws-super-secret-password')
+
+      const selectResponse = await sendAndReceiveMatching(
+        ws,
+        { type: 'selectPluginSettingsProvider', capability: 'card.storage', providerId: 'markdown' },
+        'pluginSettingsResult',
+        (parsed) => parsed.action === 'select',
+      )
+      expect(selectResponse.provider).toMatchObject({
+        capability: 'card.storage',
+        providerId: 'markdown',
+        selected: {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          source: 'config',
+        },
+      })
+      expect(selectResponse.pluginSettings).toMatchObject({
+        capabilities: expect.arrayContaining([
+          expect.objectContaining({
+            capability: 'card.storage',
+            selected: expect.objectContaining({ providerId: 'markdown' }),
+          }),
+        ]),
+      })
+
+      const updateResponse = await sendAndReceiveMatching(
+        ws,
+        {
+          type: 'updatePluginSettingsOptions',
+          capability: 'auth.identity',
+          providerId: 'local',
+          options: {
+            apiToken: '••••••',
+            users: [{ username: 'alice', password: '$2b$12$ws-new-hash', role: 'manager' }],
+          },
+        },
+        'pluginSettingsResult',
+        (parsed) => parsed.action === 'updateOptions',
+      )
+      expect(updateResponse.provider).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        options: {
+          values: {
+            apiToken: '••••••',
+            users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+          },
+        },
+      })
+      expect(JSON.stringify(updateResponse)).not.toContain('ws-local-token')
+      expect(JSON.stringify(updateResponse)).not.toContain('$2b$12$ws-new-hash')
+
+      const persistedConfig = JSON.parse(fs.readFileSync(path.join(path.dirname(tempDir), '.kanban.json'), 'utf-8')) as {
+        plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+      expect(persistedConfig.plugins).toMatchObject({
+        'card.storage': { provider: 'markdown' },
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'ws-local-token',
+            users: [{ username: 'alice', password: '$2b$12$ws-new-hash', role: 'manager' }],
+          },
+        },
+      })
+
+      const installSpy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockResolvedValue({
+        packageName: 'kl-auth-plugin',
+        scope: 'workspace',
+        command: {
+          command: 'npm',
+          args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+          cwd: path.dirname(tempDir),
+          shell: false,
+        },
+        stdout: 'Authorization: Bearer [REDACTED]',
+        stderr: 'password=[REDACTED]',
+        message: 'Installed plugin package with lifecycle scripts disabled.',
+        redaction: {
+          maskedValue: '••••••',
+          writeOnly: true,
+          targets: ['read', 'list', 'error'],
+        },
+      })
+
+      const installResponse = await sendAndReceiveMatching(
+        ws,
+        { type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' },
+        'pluginSettingsResult',
+        (parsed) => parsed.action === 'install' && parsed.error === undefined,
+      )
+      expect(installResponse.install).toMatchObject({
+        packageName: 'kl-auth-plugin',
+        scope: 'workspace',
+        stdout: 'Authorization: Bearer [REDACTED]',
+        stderr: 'password=[REDACTED]',
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+      })
+      expect(JSON.stringify(installResponse)).not.toContain('super-secret-password')
+      installSpy.mockRestore()
+    })
+
+    it('returns sanitized plugin-settings websocket install errors instead of leaking raw diagnostics', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const installSpy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockRejectedValue(
+        new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+          code: 'plugin-settings-install-failed',
+          message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+          details: {
+            packageName: 'kl-auth-plugin',
+            scope: 'workspace',
+            stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
+          },
+        })),
+      )
+
+      const response = await sendAndReceiveMatching(
+        ws,
+        { type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' },
+        'pluginSettingsResult',
+        (parsed) => parsed.action === 'install' && parsed.error !== undefined,
+      )
+
+      expect(response.error).toMatchObject({
+        code: 'plugin-settings-install-failed',
+        details: expect.objectContaining({
+          stderr: expect.stringContaining('[REDACTED]'),
+        }),
+      })
+      expect(JSON.stringify(response)).not.toContain('npm_super_secret_token')
+      expect(JSON.stringify(response)).not.toContain('super-secret-password')
+      installSpy.mockRestore()
     })
 
     it('should persist settings to .kanban-settings.json', async () => {
@@ -3356,6 +3555,269 @@ describe('Standalone Server Integration', () => {
     })
   })
 
+  describe('REST API — Plugin Settings', () => {
+    it('GET /api/plugin-settings and GET /api/plugin-settings/:capability/:providerId return redacted provider state', async () => {
+      writeWorkspaceConfig(path.dirname(tempDir), {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'inventory-local-token',
+              users: [{ username: 'alice', password: 'super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      })
+
+      const listRes = await httpGet(`http://localhost:${port}/api/plugin-settings`)
+      expect(listRes.status).toBe(200)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.ok).toBe(true)
+      expect(listJson.data.redaction.maskedValue).toBe('••••••')
+      expect(listJson.data.capabilities).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          capability: 'auth.identity',
+          selected: expect.objectContaining({ providerId: 'local' }),
+          providers: expect.arrayContaining([
+            expect.objectContaining({
+              providerId: 'local',
+              packageName: 'kl-auth-plugin',
+              isSelected: true,
+            }),
+          ]),
+        }),
+      ]))
+      expect(listRes.body).not.toContain('inventory-local-token')
+      expect(listRes.body).not.toContain('super-secret-password')
+
+      const readRes = await httpGet(`http://localhost:${port}/api/plugin-settings/auth.identity/local`)
+      expect(readRes.status).toBe(200)
+      const readJson = JSON.parse(readRes.body)
+      expect(readJson.ok).toBe(true)
+      expect(readJson.data).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        selected: {
+          capability: 'auth.identity',
+          providerId: 'local',
+          source: 'legacy',
+        },
+      })
+      expect(readJson.data.options.values).toMatchObject({
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '••••••', role: 'admin' }],
+      })
+      expect(readJson.data.options.redactedPaths).toEqual(expect.arrayContaining(['apiToken', 'users[0].password']))
+      expect(readRes.body).not.toContain('inventory-local-token')
+      expect(readRes.body).not.toContain('super-secret-password')
+    })
+
+    it('PUT select and PUT options persist canonical plugin state with redacted REST readbacks', async () => {
+      writeWorkspaceConfig(path.dirname(tempDir), {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'existing-token',
+              users: [{ username: 'alice', password: '$2b$12$old-hash', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+          'attachment.storage': { provider: 'localfs' },
+        },
+      })
+
+      const selectRes = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/card.storage/markdown/select`)
+      expect(selectRes.status).toBe(200)
+      const selectJson = JSON.parse(selectRes.body)
+      expect(selectJson.ok).toBe(true)
+      expect(selectJson.data.selected).toEqual({
+        capability: 'card.storage',
+        providerId: 'markdown',
+        source: 'config',
+      })
+
+      const optionsRes = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/auth.identity/local/options`, {
+        options: {
+          apiToken: '••••••',
+          users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+        },
+      })
+      expect(optionsRes.status).toBe(200)
+      const optionsJson = JSON.parse(optionsRes.body)
+      expect(optionsJson.ok).toBe(true)
+      expect(optionsJson.data.selected).toEqual({
+        capability: 'auth.identity',
+        providerId: 'local',
+        source: 'config',
+      })
+      expect(optionsJson.data.options.values).toMatchObject({
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+      })
+      expect(optionsJson.data.options.redactedPaths).toEqual(expect.arrayContaining(['apiToken', 'users[0].password']))
+      expect(optionsRes.body).not.toContain('existing-token')
+      expect(optionsRes.body).not.toContain('$2b$12$new-hash')
+
+      const listRes = await httpGet(`http://localhost:${port}/api/plugin-settings`)
+      expect(listRes.status).toBe(200)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.ok).toBe(true)
+      expect(listJson.data.capabilities).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          capability: 'card.storage',
+          selected: expect.objectContaining({ providerId: 'markdown', source: 'config' }),
+          providers: expect.arrayContaining([
+            expect.objectContaining({ providerId: 'markdown', isSelected: true }),
+            expect.objectContaining({ providerId: 'sqlite', isSelected: false }),
+          ]),
+        }),
+      ]))
+
+      const readRes = await httpGet(`http://localhost:${port}/api/plugin-settings/auth.identity/local`)
+      expect(readRes.status).toBe(200)
+      const readJson = JSON.parse(readRes.body)
+      expect(readJson.ok).toBe(true)
+      expect(readJson.data.options.values).toMatchObject({
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+      })
+      expect(readRes.body).not.toContain('existing-token')
+      expect(readRes.body).not.toContain('$2b$12$new-hash')
+
+      const persistedConfig = JSON.parse(fs.readFileSync(path.join(path.dirname(tempDir), '.kanban.json'), 'utf-8')) as {
+        plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+      expect(persistedConfig.plugins).toMatchObject({
+        'card.storage': { provider: 'markdown' },
+        'attachment.storage': { provider: 'localfs' },
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'existing-token',
+            users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+          },
+        },
+      })
+      expect(persistedConfig.plugins['card.storage']).not.toHaveProperty('enabled')
+    })
+
+    it('PUT /api/plugin-settings/:capability/:providerId/select maps AuthError to HTTP 403', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'selectPluginSettingsProvider').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined),
+      )
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/auth.identity/local/select`)
+      expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+
+    it('PUT /api/plugin-settings/:capability/:providerId/options maps AuthError to HTTP 403', async () => {
+      const { AuthError } = await import('../../sdk/types')
+      const spy = vi.spyOn(KanbanSDK.prototype, 'updatePluginSettingsOptions').mockRejectedValue(
+        new AuthError('auth.policy.denied', 'Action "settings.update" denied', undefined),
+      )
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/auth.identity/local/options`, {
+        options: { apiToken: '••••••' },
+      })
+      expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+
+    it('GET /api/plugin-settings and GET /api/plugin-settings/:capability/:providerId redact config-load errors', async () => {
+      fs.writeFileSync(
+        path.join(path.dirname(tempDir), '.kanban.json'),
+        '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"rest-super-secret-token"}}}',
+        'utf-8',
+      )
+
+      const listRes = await httpGet(`http://localhost:${port}/api/plugin-settings`)
+      expect(listRes.status).toBe(500)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.ok).toBe(false)
+      expect(listJson.data).toMatchObject({
+        code: 'plugin-settings-config-load-failed',
+      })
+      expect(listRes.body).not.toContain('rest-super-secret-token')
+
+      const readRes = await httpGet(`http://localhost:${port}/api/plugin-settings/auth.identity/local`)
+      expect(readRes.status).toBe(500)
+      const readJson = JSON.parse(readRes.body)
+      expect(readJson.ok).toBe(false)
+      expect(readJson.data).toMatchObject({
+        code: 'plugin-settings-config-load-failed',
+        capability: 'auth.identity',
+        providerId: 'local',
+      })
+      expect(readRes.body).not.toContain('rest-super-secret-token')
+    })
+
+    it.each([
+      { label: 'specifier', invalidPackageName: 'kl-auth-plugin@latest' },
+      { label: 'flag fragment', invalidPackageName: 'kl-auth-plugin --save-dev' },
+      { label: 'path', invalidPackageName: '../kl-auth-plugin' },
+      { label: 'url', invalidPackageName: 'https://example.com/kl-auth-plugin.tgz' },
+      { label: 'shell fragment', invalidPackageName: 'kl-auth-plugin; rm -rf /' },
+    ])('POST /api/plugin-settings/install rejects invalid package names for %s without echoing the input', async ({ invalidPackageName }) => {
+      const res = await httpRequest('POST', `http://localhost:${port}/api/plugin-settings/install`, {
+        packageName: invalidPackageName,
+        scope: 'workspace',
+      })
+
+      expect(res.status).toBe(400)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('exact unscoped kl-* package name')
+      expect(json.data).toMatchObject({
+        code: 'invalid-plugin-install-package-name',
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+      })
+      expect(res.body).not.toContain(invalidPackageName)
+    })
+
+    it('POST /api/plugin-settings/install returns sanitized installer diagnostics', async () => {
+      const spy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockRejectedValue(
+        new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+          code: 'plugin-settings-install-failed',
+          message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+          details: {
+            packageName: 'kl-auth-plugin',
+            scope: 'workspace',
+            exitCode: 1,
+            stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
+          },
+        })),
+      )
+
+      const res = await httpRequest('POST', `http://localhost:${port}/api/plugin-settings/install`, {
+        packageName: 'kl-auth-plugin',
+        scope: 'workspace',
+      })
+
+      expect(res.status).toBe(400)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('install the package manually')
+      expect(json.data).toMatchObject({
+        code: 'plugin-settings-install-failed',
+        details: expect.objectContaining({
+          exitCode: 1,
+          stderr: expect.stringContaining('[REDACTED]'),
+        }),
+      })
+      const serialized = JSON.stringify(json)
+      expect(serialized).not.toContain('npm_super_secret_token')
+      expect(serialized).not.toContain('super-secret-password')
+      spy.mockRestore()
+    })
+  })
+
   // ── REST API: Webhooks ──
 
   describe('REST API — Webhooks', () => {
@@ -3521,13 +3983,16 @@ describe('Standalone Server Integration', () => {
       expect(loginRes.body).toContain('Sign in')
     })
 
-    it('requires auth for API requests, creates a workspace token, and accepts cookie sessions', async () => {
+    it('requires auth for API requests and accepts bearer or cookie sessions', async () => {
       const unauthorizedRes = await httpGet(`http://localhost:${localAuthPort}/api/health`)
       expect(unauthorizedRes.status).toBe(401)
       expect(JSON.parse(unauthorizedRes.body)).toMatchObject({ error: 'Authentication required' })
 
-      const envContent = fs.readFileSync(path.join(localAuthWorkspaceRoot, '.env'), 'utf-8')
+      const envPath = path.join(localAuthWorkspaceRoot, '.env')
+      const envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : ''
       const token = envContent.match(/^KANBAN_LITE_TOKEN=(.+)$/m)?.[1]
+        ?? process.env.KANBAN_LITE_TOKEN
+        ?? process.env.KANBAN_TOKEN
       expect(token).toMatch(/^kl-/)
 
       const bearerRes = await httpGet(`http://localhost:${localAuthPort}/api/health`, {

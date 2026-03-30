@@ -1,5 +1,5 @@
 import type { Card, CardFormAttachment, CardFormDataMap, Priority, ResolvedFormDescriptor } from '../shared/types'
-import type { CapabilitySelections, Webhook } from '../shared/config'
+import type { CapabilitySelections } from '../shared/config'
 import type { KanbanSDK } from './KanbanSDK'
 import type { StorageEngine, StorageEngineType } from './plugins/types'
 import type { CardStateCursor } from './plugins'
@@ -330,6 +330,18 @@ export interface SDKOptions {
    * Any omitted namespace falls back to `.kanban.json` and legacy defaults.
    */
   capabilities?: CapabilitySelections
+  /** @internal Testing seam for guarded plugin install subprocess execution. */
+  pluginInstallRunner?: (command: {
+    command: 'npm'
+    args: string[]
+    cwd: string
+    shell: false
+  }) => Promise<{
+    exitCode: number | null
+    signal: NodeJS.Signals | null
+    stdout: string
+    stderr: string
+  }>
 }
 
 export interface SubmitFormInput {

@@ -1,5 +1,18 @@
 import { WebSocket } from 'ws'
-import { type Card, type CardFrontmatter, type CardDisplaySettings, type SubmitFormMessage } from '../shared/types'
+import {
+  createEmptyPluginSettingsPayload,
+  type Card,
+  type CardDisplaySettings,
+  type CardFrontmatter,
+  type PluginSettingsInstallTransportResult,
+  type PluginSettingsPayload,
+  type PluginSettingsProviderTransport,
+  type PluginSettingsResultMessage,
+  type PluginSettingsTransportAction,
+  type SubmitFormMessage,
+} from '../shared/types'
+import type { PluginCapabilityNamespace } from '../shared/config'
+import { DEFAULT_PLUGIN_SETTINGS_REDACTION, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { CardStateError, type AuthContext } from '../sdk/types'
 import { readConfig } from '../shared/config'
 import type { StandaloneContext } from './context'
@@ -36,6 +49,97 @@ import {
   type CreateCardData,
 } from './mutationService'
 import { cleanupTempFile } from './watcherSetup'
+
+function getPluginSettingsPayload(ctx: StandaloneContext): PluginSettingsPayload {
+  return ctx.sdk.listPluginSettings()
+}
+
+function toPluginSettingsProviderTransport(
+  provider: ReturnType<StandaloneContext['sdk']['getPluginSettings']>,
+): PluginSettingsProviderTransport | null {
+  return provider ? { ...provider } : null
+}
+
+function toPluginSettingsInstallTransportResult(
+  result: Awaited<ReturnType<StandaloneContext['sdk']['installPluginSettingsPackage']>>,
+): PluginSettingsInstallTransportResult {
+  return {
+    packageName: result.packageName,
+    scope: result.scope,
+    command: result.command,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    message: result.message,
+    redaction: result.redaction,
+  }
+}
+
+function toPluginSettingsErrorPayload(
+  action: PluginSettingsTransportAction,
+  error: unknown,
+  capability?: PluginCapabilityNamespace,
+  providerId?: string,
+) {
+  if (error instanceof PluginSettingsOperationError) {
+    return error.payload
+  }
+
+  const fallback = {
+    read: {
+      code: 'plugin-settings-read-failed',
+      message: 'Unable to read plugin settings.',
+    },
+    select: {
+      code: 'plugin-settings-select-failed',
+      message: 'Unable to persist the selected plugin provider.',
+    },
+    updateOptions: {
+      code: 'plugin-settings-update-failed',
+      message: 'Unable to persist plugin options.',
+    },
+    install: {
+      code: 'plugin-settings-install-failed',
+      message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+    },
+  } satisfies Record<PluginSettingsTransportAction, { code: string; message: string }>
+
+  return createPluginSettingsErrorPayload({
+    code: fallback[action].code,
+    message: fallback[action].message,
+    capability,
+    providerId,
+    redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION,
+  })
+}
+
+function sendPluginSettingsResult(ws: WebSocket, result: PluginSettingsResultMessage): void {
+  ws.send(JSON.stringify(result))
+}
+
+function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket): void {
+  const settings = ctx.sdk.getSettings()
+  settings.showBuildWithAI = false
+  settings.markdownEditorMode = false
+
+  try {
+    ws.send(JSON.stringify({
+      type: 'showSettings',
+      settings,
+      pluginSettings: getPluginSettingsPayload(ctx),
+    }))
+  } catch (error) {
+    ws.send(JSON.stringify({
+      type: 'showSettings',
+      settings,
+      pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+    }))
+    sendPluginSettingsResult(ws, {
+      type: 'pluginSettingsResult',
+      action: 'read',
+      error: toPluginSettingsErrorPayload('read', error),
+    })
+  }
+}
 
 export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, message: unknown, authContext: AuthContext): Promise<void> {
   const msg = message as Record<string, unknown>
@@ -160,10 +264,95 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       break
 
     case 'openSettings': {
-      const settings = ctx.sdk.getSettings()
-      settings.showBuildWithAI = false
-      settings.markdownEditorMode = false
-      ws.send(JSON.stringify({ type: 'showSettings', settings }))
+      sendSettingsBridgePayload(ctx, ws)
+      break
+    }
+
+    case 'readPluginSettings': {
+      const capability = msg.capability as PluginCapabilityNamespace
+      const providerId = msg.providerId as string
+      try {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'read',
+          pluginSettings: getPluginSettingsPayload(ctx),
+          provider: toPluginSettingsProviderTransport(ctx.sdk.getPluginSettings(capability, providerId)),
+        })
+      } catch (error) {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'read',
+          error: toPluginSettingsErrorPayload('read', error, capability, providerId),
+        })
+      }
+      break
+    }
+
+    case 'selectPluginSettingsProvider': {
+      const capability = msg.capability as PluginCapabilityNamespace
+      const providerId = msg.providerId as string
+      try {
+        const provider = await runWithScopedAuth(() => Promise.resolve(
+          ctx.sdk.selectPluginSettingsProvider(capability, providerId),
+        ))
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'select',
+          pluginSettings: getPluginSettingsPayload(ctx),
+          provider: toPluginSettingsProviderTransport(provider),
+        })
+      } catch (error) {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'select',
+          error: toPluginSettingsErrorPayload('select', error, capability, providerId),
+        })
+      }
+      break
+    }
+
+    case 'updatePluginSettingsOptions': {
+      const capability = msg.capability as PluginCapabilityNamespace
+      const providerId = msg.providerId as string
+      try {
+        const provider = await runWithScopedAuth(() => Promise.resolve(
+          ctx.sdk.updatePluginSettingsOptions(capability, providerId, (msg.options ?? {}) as Record<string, unknown>),
+        ))
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'updateOptions',
+          pluginSettings: getPluginSettingsPayload(ctx),
+          provider: toPluginSettingsProviderTransport(provider),
+        })
+      } catch (error) {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'updateOptions',
+          error: toPluginSettingsErrorPayload('updateOptions', error, capability, providerId),
+        })
+      }
+      break
+    }
+
+    case 'installPluginSettingsPackage': {
+      try {
+        const install = await runWithScopedAuth(() => ctx.sdk.installPluginSettingsPackage({
+          packageName: msg.packageName,
+          scope: msg.scope,
+        }))
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'install',
+          pluginSettings: getPluginSettingsPayload(ctx),
+          install: toPluginSettingsInstallTransportResult(install),
+        })
+      } catch (error) {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'install',
+          error: toPluginSettingsErrorPayload('install', error),
+        })
+      }
       break
     }
 

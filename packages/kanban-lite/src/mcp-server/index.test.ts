@@ -10,8 +10,8 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMcpPluginContext, registerCardStateMcpTools, registerPluginMcpTools } from './index'
-import { KanbanSDK } from '../sdk/KanbanSDK'
+import { createMcpPluginContext, registerCardStateMcpTools, registerPluginMcpTools, registerPluginSettingsMcpTools } from './index'
+import { createPluginSettingsErrorPayload, KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
 import * as pluginRegistry from '../sdk/plugins'
 import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../sdk/plugins'
 import { AuthError, ERR_CARD_STATE_IDENTITY_UNAVAILABLE } from '../sdk/types'
@@ -163,6 +163,33 @@ function captureCardStateTools(targetSdk: KanbanSDK) {
   return { registered, tools }
 }
 
+function capturePluginSettingsTools(targetSdk: KanbanSDK) {
+  const tools: Array<{
+    name: string
+    description: string
+    schema: Record<string, unknown>
+    handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+  }> = []
+
+  const server = {
+    tool(
+      name: string,
+      description: string,
+      schema: Record<string, unknown>,
+      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+    ) {
+      tools.push({ name, description, schema, handler })
+    },
+  }
+
+  const registered = registerPluginSettingsMcpTools(server, {
+    sdk: targetSdk,
+    runWithAuth: (fn) => targetSdk.runWithAuth({ transport: 'mcp' }, fn),
+  })
+
+  return { registered, tools }
+}
+
 describe('MCP auth denial mapping: denied admin action produces stable isError response', () => {
   let workspaceDir: string
   let kanbanDir: string
@@ -189,7 +216,7 @@ describe('MCP auth denial mapping: denied admin action produces stable isError r
     }
 
     const result = await mcpHandler(() =>
-      sdk.createBoard('new-board', 'New Board', undefined, mcpAuthCtx),
+      sdk.runWithAuth(mcpAuthCtx, () => sdk.createBoard('new-board', 'New Board')),
     )
 
     expect(result.isError).toBe(true)
@@ -201,7 +228,7 @@ describe('MCP auth denial mapping: denied admin action produces stable isError r
 
   it('denied delete_board produces isError: true with stable message', async () => {
     const result = await mcpHandler(() =>
-      sdk.deleteBoard('default', { transport: 'mcp' }),
+      sdk.runWithAuth({ transport: 'mcp' }, () => sdk.deleteBoard('default')),
     )
 
     expect(result.isError).toBe(true)
@@ -350,7 +377,8 @@ describe('MCP webhook secret redaction: secret never appears in tool responses',
    *   return JSON.stringify(webhooks.map(redactWebhook), null, 2)
    */
   function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
-    const { secret: _s, ...safe } = w
+    const { secret, ...safe } = w
+    void secret
     return safe as Omit<T, 'secret'>
   }
 
@@ -439,10 +467,10 @@ describe('MCP list_webhooks auth-wrapping: consistent error propagation', () => 
       webhookProvider: {
         manifest: { id: 'throwing-webhook-provider', provides: ['webhook.delivery'] },
         listWebhooks(_root: string): Webhook[] {
-          throw new AuthError('webhook.list denied by provider', 'webhook.list')
+          throw new AuthError('auth.policy.denied', 'webhook.list denied by provider')
         },
         createWebhook(_root: string, _input: { url: string; events: string[]; secret?: string }): Webhook {
-          throw new AuthError('webhook.create denied by provider', 'webhook.create')
+          throw new AuthError('auth.policy.denied', 'webhook.create denied by provider')
         },
         updateWebhook(): Webhook | null { return null },
         deleteWebhook(): boolean { return false },
@@ -691,6 +719,161 @@ describe('plugin-owned MCP webhook registration', () => {
     } finally {
       resolveSpy.mockRestore()
     }
+  })
+})
+
+describe('MCP plugin-settings parity tools', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-plugin-settings-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify({
+      plugins: {
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'mcp-super-secret-token',
+            users: [{ username: 'alice', password: 'mcp-super-secret-password', role: 'admin' }],
+          },
+        },
+        'auth.policy': { provider: 'noop' },
+      },
+    }, null, 2))
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    vi.restoreAllMocks()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('registers plugin-settings MCP tools with stable parity names and schema fields', () => {
+    const { registered, tools } = capturePluginSettingsTools(sdk)
+
+    expect(registered).toEqual([
+      'list_plugin_settings',
+      'select_plugin_settings_provider',
+      'update_plugin_settings_options',
+      'install_plugin_settings_package',
+    ])
+    expect(tools.map((tool) => tool.name)).toEqual(registered)
+    expect(Object.keys(tools.find((tool) => tool.name === 'list_plugin_settings')?.schema ?? {})).toEqual([])
+    expect(Object.keys(tools.find((tool) => tool.name === 'select_plugin_settings_provider')?.schema ?? {})).toEqual(['capability', 'providerId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'update_plugin_settings_options')?.schema ?? {})).toEqual(['capability', 'providerId', 'options'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'install_plugin_settings_package')?.schema ?? {})).toEqual(['packageName', 'scope'])
+  })
+
+  it('returns redacted plugin-settings payloads for list and update flows', async () => {
+    const { tools } = capturePluginSettingsTools(sdk)
+    const listTool = tools.find((tool) => tool.name === 'list_plugin_settings')
+    const updateTool = tools.find((tool) => tool.name === 'update_plugin_settings_options')
+
+    expect(listTool).toBeDefined()
+    expect(updateTool).toBeDefined()
+
+    const listResult = await listTool!.handler({})
+    expect(listResult.isError).toBeUndefined()
+    expect(listResult.content[0].text).not.toContain('mcp-super-secret-token')
+    expect(listResult.content[0].text).not.toContain('mcp-super-secret-password')
+
+    const updateResult = await updateTool!.handler({
+      capability: 'auth.identity',
+      providerId: 'local',
+      options: {
+        apiToken: 'updated-mcp-secret',
+        users: [{ username: 'alice', password: '$2b$12$updated-hash', role: 'manager' }],
+      },
+    })
+
+    expect(updateResult.isError).toBeUndefined()
+    expect(JSON.parse(updateResult.content[0].text)).toMatchObject({
+      capability: 'auth.identity',
+      providerId: 'local',
+      selected: {
+        capability: 'auth.identity',
+        providerId: 'local',
+        source: 'config',
+      },
+      options: {
+        values: {
+          apiToken: '••••••',
+          users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+        },
+        redactedPaths: expect.arrayContaining(['apiToken', 'users[0].password']),
+      },
+    })
+    expect(updateResult.content[0].text).not.toContain('updated-mcp-secret')
+    expect(updateResult.content[0].text).not.toContain('$2b$12$updated-hash')
+  })
+
+  it('returns structured redacted install errors instead of raw exception strings', async () => {
+    const { tools } = capturePluginSettingsTools(sdk)
+    const installTool = tools.find((tool) => tool.name === 'install_plugin_settings_package')
+
+    expect(installTool).toBeDefined()
+
+    vi.spyOn(sdk, 'installPluginSettingsPackage').mockRejectedValue(
+      new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+        code: 'plugin-settings-install-failed',
+        message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+        details: {
+          packageName: 'kl-auth-plugin',
+          scope: 'workspace',
+          exitCode: 1,
+          stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
+        },
+      })),
+    )
+
+    const result = await installTool!.handler({
+      packageName: 'kl-auth-plugin',
+      scope: 'workspace',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      code: 'plugin-settings-install-failed',
+      message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+      details: {
+        packageName: 'kl-auth-plugin',
+        scope: 'workspace',
+        exitCode: 1,
+        stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
+      },
+      redaction: {
+        maskedValue: '••••••',
+        writeOnly: true,
+      },
+    })
+    expect(result.content[0].text).not.toContain('npm_super_secret_token')
+    expect(result.content[0].text).not.toContain('super-secret-password')
+  })
+
+  it('rejects invalid plugin install package names through the shared SDK guardrail', async () => {
+    const { tools } = capturePluginSettingsTools(sdk)
+    const installTool = tools.find((tool) => tool.name === 'install_plugin_settings_package')
+
+    expect(installTool).toBeDefined()
+
+    const result = await installTool!.handler({
+      packageName: 'kl-auth-plugin --save-dev',
+      scope: 'workspace',
+    })
+
+    expect(result.isError).toBe(true)
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
+      code: 'invalid-plugin-install-package-name',
+      message: 'Plugin install requests must use an exact unscoped kl-* package name with no version specifier, flag, URL, path, whitespace, or shell fragment.',
+      redaction: {
+        maskedValue: '••••••',
+        writeOnly: true,
+      },
+    })
   })
 })
 

@@ -11,7 +11,19 @@ import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { DrawerResizeHandle } from './components/DrawerResizeHandle'
-import type { Comment, Card, KanbanColumn, Priority, ExtensionMessage, CardFrontmatter, CardDisplaySettings, LogEntry } from '../shared/types'
+import type {
+  Comment,
+  Card,
+  KanbanColumn,
+  Priority,
+  ExtensionMessage,
+  CardFrontmatter,
+  CardDisplaySettings,
+  LogEntry,
+  PluginSettingsInstallTransportResult,
+  PluginSettingsPayload,
+  PluginSettingsProviderTransport,
+} from '../shared/types'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
 import { LogsSection } from './components/LogsSection'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
@@ -21,6 +33,15 @@ import type { ColumnVisibilityByBoard } from './store'
 import { sanitizeColumnVisibilityByBoard } from './store'
 
 const vscode = getVsCodeApi()
+
+const EMPTY_PLUGIN_SETTINGS: PluginSettingsPayload = {
+  capabilities: [],
+  redaction: {
+    maskedValue: '••••••',
+    writeOnly: true,
+    targets: ['read', 'list', 'error'],
+  },
+}
 
 function readPersistedColumnVisibilityByBoard(state: unknown): ColumnVisibilityByBoard {
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
@@ -43,10 +64,6 @@ function readPersistedColumnVisibilityByBoard(state: unknown): ColumnVisibilityB
       return [[boardId, { hiddenColumnIds, minimizedColumnIds }] as const]
     })
   )
-}
-
-function hasBoardVisibilityState(columnVisibilityByBoard: ColumnVisibilityByBoard, boardId: string): boolean {
-  return Object.prototype.hasOwnProperty.call(columnVisibilityByBoard, boardId)
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -97,7 +114,6 @@ function App(): React.JSX.Element {
     clearDrawerWidthPreview,
     setSettingsOpen,
     setLabelDefs,
-    toggleSelectCard,
     selectCardRange,
     selectAllInColumn,
     clearSelection,
@@ -122,6 +138,7 @@ function App(): React.JSX.Element {
     logs: LogEntry[]
     contentVersion: number
   } | null>(null)
+  const editingCardIdRef = useRef<string | null>(null)
 
   // Board logs panel state
   const [boardLogsOpen, setBoardLogsOpen] = useState(false)
@@ -132,12 +149,18 @@ function App(): React.JSX.Element {
 
   // Keep store in sync so URLSync (router) can read/update the active card
   useEffect(() => {
-    setActiveCardId(editingCard?.id ?? null)
+    const activeCardId = editingCard?.id ?? null
+    editingCardIdRef.current = activeCardId
+    setActiveCardId(activeCardId)
   }, [editingCard?.id, setActiveCardId])
 
   // Undo delete stack
   const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(null)
+  const [pluginSettings, setPluginSettings] = useState<PluginSettingsPayload>(EMPTY_PLUGIN_SETTINGS)
+  const [pluginSettingsProvider, setPluginSettingsProvider] = useState<PluginSettingsProviderTransport | null>(null)
+  const [pluginSettingsInstall, setPluginSettingsInstall] = useState<PluginSettingsInstallTransportResult | null>(null)
+  const [pluginSettingsError, setPluginSettingsError] = useState<string | null>(null)
   const pendingDeletesRef = useRef(pendingDeletes)
   const currentBoardTitleFields = boards.find(board => board.id === currentBoard)?.title
   useEffect(() => {
@@ -187,15 +210,14 @@ function App(): React.JSX.Element {
     setCards(cards.map(f => f.id === cardId ? { ...f, status: DELETED_STATUS_ID } : f))
 
     // Close editor if this card is open
-    if (editingCard?.id === cardId) {
+    if (editingCardIdRef.current === cardId) {
       setEditingCard(null)
-      setActiveCardId(null)
     }
 
     // Push onto the undo stack
     const id = String(nextIdRef.current++)
     setPendingDeletes(prev => [...prev, { id, card, originalStatus }])
-  }, [editingCard, setCards])
+  }, [setCards])
 
   const commitDelete = useCallback((entryId: string) => {
     const entry = pendingDeletesRef.current.find(d => d.id === entryId)
@@ -433,7 +455,25 @@ function App(): React.JSX.Element {
           break
         case 'showSettings':
           setCardSettings(message.settings)
+          setPluginSettings(message.pluginSettings)
+          setPluginSettingsProvider(null)
+          setPluginSettingsInstall(null)
+          setPluginSettingsError(null)
           setSettingsOpen(true)
+          break
+        case 'pluginSettingsResult':
+          if (message.pluginSettings) {
+            setPluginSettings(message.pluginSettings)
+          }
+          if (message.provider !== undefined) {
+            setPluginSettingsProvider(message.provider ?? null)
+          }
+          if (message.install !== undefined) {
+            setPluginSettingsInstall(message.install)
+          } else if (message.action === 'install') {
+            setPluginSettingsInstall(null)
+          }
+          setPluginSettingsError(message.error?.message ?? null)
           break
         case 'cardContent': {
           const { cardSettings } = useStore.getState()
@@ -507,7 +547,7 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'ready' })
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, syncEditingCardFromCards])
+  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
 
   useEffect(() => {
     if (!isColumnVisibilityPersistenceReady) {
@@ -1088,8 +1128,28 @@ function App(): React.JSX.Element {
         isOpen={settingsOpen}
         settings={cardSettings}
         workspace={workspace}
+        pluginSettings={pluginSettings}
+        pluginSettingsProvider={pluginSettingsProvider}
+        pluginSettingsInstall={pluginSettingsInstall}
+        pluginSettingsError={pluginSettingsError}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onReadPluginSettingsProvider={(capability, providerId) => {
+          setPluginSettingsError(null)
+          vscode.postMessage({ type: 'readPluginSettings', capability, providerId })
+        }}
+        onSelectPluginSettingsProvider={(capability, providerId) => {
+          setPluginSettingsError(null)
+          vscode.postMessage({ type: 'selectPluginSettingsProvider', capability, providerId })
+        }}
+        onUpdatePluginSettingsOptions={(capability, providerId, options) => {
+          setPluginSettingsError(null)
+          vscode.postMessage({ type: 'updatePluginSettingsOptions', capability, providerId, options })
+        }}
+        onInstallPluginSettingsPackage={(packageName, scope) => {
+          setPluginSettingsError(null)
+          vscode.postMessage({ type: 'installPluginSettingsPackage', packageName, scope })
+        }}
         onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
         onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
         onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}

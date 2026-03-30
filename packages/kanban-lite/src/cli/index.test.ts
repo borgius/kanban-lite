@@ -6,18 +6,19 @@ import type { ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
-import { KanbanSDK } from '../sdk/KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
-import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, parseArgs, showHelp } from './index'
+import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdPluginSettings, parseArgs, showHelp } from './index'
 
 const execFileAsync = promisify(execFile)
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../../..')
 const PACKAGE_ROOT = path.resolve(__dirname, '../..')
 const TSX_CLI_PATH = path.join(WORKSPACE_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 const CLI_ENTRYPOINT = path.join(__dirname, 'index.ts')
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
 function stripAnsi(value: string): string {
-  return value.replace(/\x1b\[[0-9;]*m/g, '')
+  return value.replace(ANSI_ESCAPE_PATTERN, '')
 }
 
 function createCliAuthWorkspace(): { workspaceDir: string; configPath: string; cleanup: () => void } {
@@ -108,16 +109,16 @@ function createCliSdkProbePackageSource(packageName: string, command: string): s
     '  manifest: { id: packageName },',
     '  command,',
     '  async run(subArgs, flags, context) {',
-    '    const runWithCliAuthResult = typeof context.runWithCliAuth === \"function\"',
-    '      ? await context.runWithCliAuth(() => Promise.resolve(\"ok\"))',
+    '    const runWithCliAuthResult = typeof context.runWithCliAuth === "function"',
+    '      ? await context.runWithCliAuth(() => Promise.resolve("ok"))',
     '      : null',
     '    const payload = {',
     '      subArgs,',
     '      hasSdk: !!context.sdk,',
-    '      hasGetConfigSnapshot: typeof context.sdk?.getConfigSnapshot === \"function\",',
+    '      hasGetConfigSnapshot: typeof context.sdk?.getConfigSnapshot === "function",',
     '      hasGetBoard: typeof context.sdk?.getBoard === "function",',
-    '      hasGetExtension: typeof context.sdk?.getExtension === \"function\",',
-    '      hasWorkspaceRootGetter: typeof context.sdk?.workspaceRoot === \"string\",',
+    '      hasGetExtension: typeof context.sdk?.getExtension === "function",',
+    '      hasWorkspaceRootGetter: typeof context.sdk?.workspaceRoot === "string",',
     '      snapshotDefaultBoard: context.sdk?.getConfigSnapshot?.().defaultBoard ?? null,',
     '      defaultBoardName: context.sdk?.getBoard?.("default")?.name ?? null,',
     '      runWithCliAuthResult,',
@@ -140,7 +141,7 @@ function createCliTokenAuthPackageSource(packageName: string, expectedToken: str
     '  manifest: { id: packageName, provides: [\'auth.identity\'] },',
     '  async resolveIdentity(context) {',
     '    if (!context || context.token !== expectedToken) return null',
-    '    return { subject: \"cli-token-user\", roles: [\"admin\"] }',
+    '    return { subject: "cli-token-user", roles: ["admin"] }',
     '  },',
     '}',
     'module.exports.authPolicyPlugin = {',
@@ -148,7 +149,7 @@ function createCliTokenAuthPackageSource(packageName: string, expectedToken: str
     '  async checkPolicy(identity) {',
     '    return identity',
     '      ? { allowed: true, actor: identity.subject }',
-    '      : { allowed: false, reason: \"auth.identity.missing\" }',
+    '      : { allowed: false, reason: "auth.identity.missing" }',
     '  },',
     '}',
   ].join('\n')
@@ -376,6 +377,11 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--meta key=value')
     expect(helpText).toContain('--config <path>')
     expect(helpText).toContain('--token <value>')
+    expect(helpText).toContain('plugin-settings list')
+    expect(helpText).toContain('plugin-settings show <capability> <provider>')
+    expect(helpText).toContain('plugin-settings select <capability> <provider>')
+    expect(helpText).toContain('plugin-settings update-options <capability> <provider>')
+    expect(helpText).toContain('plugin-settings install <packageName> --scope <workspace|global>')
     expect(helpText).toContain('form submit <id> <form>')
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")
@@ -1128,6 +1134,241 @@ describe('CLI plugin context SDK injection regressions', () => {
       cleanup()
       cleanupPlugin()
     }
+  })
+})
+
+describe('CLI plugin-settings commands', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps list/show output redacted in both JSON and human-readable flows', async () => {
+    const { configPath, cleanup } = createCliWorkspace({
+      auth: {
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'inventory-local-token',
+            users: [{ username: 'alice', password: 'super-secret-password', role: 'admin' }],
+          },
+        },
+        'auth.policy': { provider: 'local' },
+      },
+    })
+
+    try {
+      const listResult = await runCliCommand(['plugin-settings', 'list', '--json', '--config', configPath])
+      expect(listResult.exitCode).toBe(0)
+      const listJson = JSON.parse(listResult.stdout)
+      expect(listJson).toMatchObject({
+        redaction: expect.objectContaining({ maskedValue: '••••••' }),
+        capabilities: expect.arrayContaining([
+          expect.objectContaining({
+            capability: 'auth.identity',
+            selected: expect.objectContaining({ providerId: 'local' }),
+            providers: expect.arrayContaining([
+              expect.objectContaining({
+                providerId: 'local',
+                packageName: 'kl-auth-plugin',
+                isSelected: true,
+              }),
+            ]),
+          }),
+        ]),
+      })
+      expect(listResult.stdout).not.toContain('inventory-local-token')
+      expect(listResult.stdout).not.toContain('super-secret-password')
+
+      const listHumanResult = await runCliCommand(['plugin-settings', 'list', '--config', configPath])
+      expect(listHumanResult.exitCode).toBe(0)
+      expect(stripAnsi(listHumanResult.stdout)).toContain('auth.identity')
+      expect(stripAnsi(listHumanResult.stdout)).toContain('local')
+      expect(listHumanResult.stdout).not.toContain('inventory-local-token')
+      expect(listHumanResult.stdout).not.toContain('super-secret-password')
+
+      const showJsonResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--json', '--config', configPath])
+      expect(showJsonResult.exitCode).toBe(0)
+      expect(JSON.parse(showJsonResult.stdout)).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        selected: expect.objectContaining({ providerId: 'local' }),
+        options: {
+          values: {
+            apiToken: '••••••',
+            users: [{ username: 'alice', password: '••••••', role: 'admin' }],
+          },
+          redactedPaths: expect.arrayContaining(['apiToken', 'users[0].password']),
+        },
+      })
+      expect(showJsonResult.stdout).not.toContain('inventory-local-token')
+      expect(showJsonResult.stdout).not.toContain('super-secret-password')
+
+      const showHumanResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--config', configPath])
+      expect(showHumanResult.exitCode).toBe(0)
+      expect(stripAnsi(showHumanResult.stdout)).toContain('Capability:')
+      expect(stripAnsi(showHumanResult.stdout)).toContain('••••••')
+      expect(showHumanResult.stdout).not.toContain('inventory-local-token')
+      expect(showHumanResult.stdout).not.toContain('super-secret-password')
+    } finally {
+      cleanup()
+    }
+  }, 20_000)
+
+  it('persists provider selection and provider options via the SDK-backed flow', async () => {
+    const { configPath, cleanup } = createCliWorkspace({
+      plugins: {
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+        'attachment.storage': { provider: 'localfs' },
+      },
+      auth: {
+        'auth.identity': { provider: 'noop' },
+        'auth.policy': { provider: 'noop' },
+      },
+    })
+
+    try {
+      const selectResult = await runCliCommand([
+        'plugin-settings',
+        'select',
+        'card.storage',
+        'markdown',
+        '--json',
+        '--config',
+        configPath,
+      ])
+
+      expect(selectResult.exitCode).toBe(0)
+      expect(JSON.parse(selectResult.stdout)).toMatchObject({
+        capability: 'card.storage',
+        providerId: 'markdown',
+        selected: {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          source: 'config',
+        },
+      })
+
+      const updateResult = await runCliCommand([
+        'plugin-settings',
+        'update-options',
+        'auth.identity',
+        'local',
+        '--options',
+        JSON.stringify({
+          apiToken: 'updated-local-token',
+          users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+        }),
+        '--json',
+        '--config',
+        configPath,
+      ])
+
+      expect(updateResult.exitCode).toBe(0)
+      expect(JSON.parse(updateResult.stdout)).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        selected: {
+          capability: 'auth.identity',
+          providerId: 'local',
+          source: 'config',
+        },
+        options: {
+          values: {
+            apiToken: '••••••',
+            users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+          },
+        },
+      })
+
+      const persistedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+        plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+      expect(persistedConfig.plugins['card.storage']).toEqual({ provider: 'markdown' })
+      expect(persistedConfig.plugins['attachment.storage']).toEqual({ provider: 'localfs' })
+      expect(persistedConfig.plugins['auth.identity']).toMatchObject({
+        provider: 'local',
+        options: {
+          apiToken: 'updated-local-token',
+          users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+        },
+      })
+    } finally {
+      cleanup()
+    }
+  }, 20_000)
+
+  it('rejects raw npm flags for guarded plugin installs before delegating to the SDK installer', async () => {
+    const sdk = {
+      installPluginSettingsPackage: vi.fn(),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'installPluginSettingsPackage' | 'runWithAuth'>
+    const exitSpy = mockProcessExit()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-auth-plugin'], {
+      scope: 'workspace',
+      'save-dev': true,
+    })).rejects.toThrow('process.exit:1')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('plugin-settings install accepts only --scope'))
+    expect(sdk.installPluginSettingsPackage).not.toHaveBeenCalled()
+  })
+
+  it('surfaces sanitized install failures instead of raw subprocess diagnostics', async () => {
+    const sdk = {
+      installPluginSettingsPackage: vi.fn().mockRejectedValue(
+        new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+          code: 'plugin-settings-install-failed',
+          message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
+          details: {
+            packageName: 'kl-auth-plugin',
+            scope: 'workspace',
+            exitCode: 1,
+            stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
+            manualInstall: {
+              command: 'npm',
+              args: ['install', 'kl-auth-plugin'],
+              cwd: '/tmp/demo',
+              shell: false,
+            },
+          },
+        })),
+      ),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'installPluginSettingsPackage' | 'runWithAuth'>
+    const exitSpy = mockProcessExit()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-auth-plugin'], {
+      scope: 'workspace',
+      json: true,
+    })).rejects.toThrow('process.exit:1')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    const serializedError = errorSpy.mock.calls.map(call => call.join(' ')).join('\n')
+    expect(serializedError).toContain('[REDACTED]')
+    expect(serializedError).toContain('install the package manually')
+    expect(serializedError).not.toContain('npm_super_secret_token')
+    expect(serializedError).not.toContain('super-secret-password')
+  })
+
+  it.each(['get', 'read', 'options', 'update'])('rejects undocumented plugin-settings alias verb "%s"', async alias => {
+    const exitSpy = mockProcessExit()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(cmdPluginSettings({} as KanbanSDK, [alias], {})).rejects.toThrow('process.exit:1')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(errorSpy).toHaveBeenLastCalledWith('Usage: kl plugin-settings <list|show|select|update-options|install>')
+  })
+
+  it.each(['plugin', 'plugins'])('rejects removed top-level plugin-settings alias "%s"', async alias => {
+    const result = await runCliCommand([alias, 'list'])
+
+    expect(result.exitCode).toBe(1)
+    expect(stripAnsi(result.stderr)).toContain(`Unknown command: ${alias}`)
+    expect(stripAnsi(result.stdout)).toContain('plugin-settings list')
   })
 })
 

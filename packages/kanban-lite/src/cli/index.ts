@@ -1,6 +1,6 @@
 import * as path from 'path'
 import * as fs from 'fs/promises'
-import { KanbanSDK } from '../sdk/KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getDisplayTitleFromContent, getTitleFromContent } from '../shared/types'
@@ -247,6 +247,117 @@ function printCardStateMutationModel(label: string, payload: {
     boardId: payload.unread.boardId,
     cardState: payload.cardState,
   })
+}
+
+type PluginSettingsListModel = ReturnType<KanbanSDK['listPluginSettings']>
+type PluginSettingsReadModel = NonNullable<ReturnType<KanbanSDK['getPluginSettings']>>
+type PluginSettingsInstallModel = Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
+
+const PLUGIN_SETTINGS_GLOBAL_FLAG_NAMES = ['config', 'dir', 'json', 'token'] as const
+
+function formatPluginSettingsCommand(command: { command: string; args: string[] }): string {
+  return [command.command, ...command.args].join(' ')
+}
+
+function assertNoUnexpectedPluginSettingsFlags(flags: Flags, allowedSubcommandFlags: readonly string[], commandLabel: string): void {
+  const allowedFlags = new Set<string>([...PLUGIN_SETTINGS_GLOBAL_FLAG_NAMES, ...allowedSubcommandFlags])
+  const unexpectedFlags = Object.keys(flags).filter(flag => !allowedFlags.has(flag))
+  if (unexpectedFlags.length === 0) return
+
+  const subcommandFlagUsage = allowedSubcommandFlags.length > 0
+    ? ` only ${allowedSubcommandFlags.map(flag => `--${flag}`).join(', ')} plus`
+    : ''
+  console.error(red(`Error: ${commandLabel} accepts${subcommandFlagUsage} global CLI flags (--config, --dir, --json, --token).`))
+  process.exit(1)
+}
+
+function printPluginSettingsList(payload: PluginSettingsListModel): void {
+  for (const capability of payload.capabilities) {
+    console.log(bold(capability.capability))
+    console.log(`  Selected provider: ${capability.selected.providerId ?? 'none'} (${capability.selected.source})`)
+    if (capability.providers.length === 0) {
+      console.log('  Providers: none discovered')
+      continue
+    }
+
+    for (const provider of capability.providers) {
+      console.log(`  - ${provider.providerId}${provider.isSelected ? ' [selected]' : ''} (${provider.packageName}, ${provider.discoverySource})`)
+    }
+  }
+}
+
+function printPluginSettingsReadModel(payload: PluginSettingsReadModel): void {
+  console.log(`Capability:        ${bold(payload.capability)}`)
+  console.log(`Provider:          ${bold(payload.providerId)}`)
+  console.log(`Package:           ${payload.packageName}`)
+  console.log(`Discovery source:  ${payload.discoverySource}`)
+  console.log(`Selected provider: ${payload.selected.providerId ?? 'none'} (${payload.selected.source})`)
+  if (payload.optionsSchema?.secrets?.length) {
+    console.log(`Secret fields:     ${payload.optionsSchema.secrets.map(secret => secret.path).join(', ')}`)
+  }
+  if (payload.options) {
+    console.log('Options:')
+    console.log(JSON.stringify(payload.options.values, null, 2))
+  } else {
+    console.log('Options:           none')
+  }
+}
+
+function printPluginSettingsInstallResult(result: PluginSettingsInstallModel): void {
+  console.log(green(result.message))
+  console.log(`Package:           ${bold(result.packageName)}`)
+  console.log(`Scope:             ${result.scope}`)
+  console.log(`Command:           ${formatPluginSettingsCommand(result.command)}`)
+  if (result.stdout) {
+    console.log('Sanitized stdout:')
+    console.log(result.stdout)
+  }
+  if (result.stderr) {
+    console.log('Sanitized stderr:')
+    console.log(result.stderr)
+  }
+}
+
+function handlePluginSettingsError(error: PluginSettingsOperationError, flags: Flags): never {
+  if (flags.json) {
+    console.error(JSON.stringify(error.payload, null, 2))
+    process.exit(1)
+  }
+
+  console.error(red(`Error: ${error.payload.message}`))
+  if (error.payload.capability) console.error(`Capability:        ${error.payload.capability}`)
+  if (error.payload.providerId) console.error(`Provider:          ${error.payload.providerId}`)
+
+  const details = error.payload.details
+  if (details) {
+    if (typeof details.packageName === 'string') console.error(`Package:           ${details.packageName}`)
+    if (typeof details.scope === 'string') console.error(`Scope:             ${details.scope}`)
+    if (typeof details.exitCode === 'number') console.error(`Exit code:         ${details.exitCode}`)
+
+    const manualInstall = details.manualInstall as { command?: string; args?: string[] } | undefined
+    if (manualInstall?.command && Array.isArray(manualInstall.args)) {
+      console.error(`Manual install:    ${formatPluginSettingsCommand({ command: manualInstall.command, args: manualInstall.args })}`)
+    }
+
+    if (typeof details.stderr === 'string' && details.stderr.trim().length > 0) {
+      console.error('Sanitized stderr:')
+      console.error(details.stderr)
+    } else if (typeof details.stdout === 'string' && details.stdout.trim().length > 0) {
+      console.error('Sanitized stdout:')
+      console.error(details.stdout)
+    }
+  }
+
+  process.exit(1)
+}
+
+function exitPluginSettingsProviderNotFound(capability: string, providerId: string, flags: Flags): never {
+  handlePluginSettingsError(new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+    code: 'plugin-settings-provider-not-found',
+    message: 'Plugin provider not found',
+    capability: capability as never,
+    providerId,
+  })), flags)
 }
 
 // --- Formatters ---
@@ -1654,6 +1765,15 @@ ${bold('Settings Commands:')}
   settings                    Show current settings
   settings update             Update settings (--<key> <value>)
 
+${bold('Plugin Settings Commands:')}
+  plugin-settings list                               List plugin providers
+  plugin-settings show <capability> <provider>      Read plugin settings
+  plugin-settings select <capability> <provider>    Select plugin provider
+  plugin-settings update-options <capability> <provider>
+                                                    Update plugin options (--options <json|@file>)
+  plugin-settings install <packageName> --scope <workspace|global>
+                                                    Install a supported plugin package
+
 ${bold('Server:')}
   serve                       Start standalone web server with REST API
   mcp                         Start MCP server over stdio (for AI integrations)
@@ -1936,6 +2056,115 @@ async function cmdAuth(sdk: KanbanSDK, positional: string[], flags: Flags, cliPl
   console.log(`Transport:         ${status.transport}`)
 }
 
+export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const sub = positional[0] || 'list'
+
+  try {
+    switch (sub) {
+      case 'list': {
+        assertNoUnexpectedPluginSettingsFlags(flags, [], 'plugin-settings list')
+        const inventory = sdk.listPluginSettings()
+        if (flags.json) {
+          console.log(JSON.stringify(inventory, null, 2))
+        } else {
+          printPluginSettingsList(inventory)
+        }
+        return
+      }
+      case 'show': {
+        assertNoUnexpectedPluginSettingsFlags(flags, [], 'plugin-settings show')
+        const capability = positional[1]
+        const providerId = positional[2]
+        if (!capability || !providerId || positional[3]) {
+          console.error(red('Usage: kl plugin-settings show <capability> <provider>'))
+          process.exit(1)
+        }
+
+        const provider = sdk.getPluginSettings(capability as never, providerId)
+        if (!provider) exitPluginSettingsProviderNotFound(capability, providerId, flags)
+
+        if (flags.json) {
+          console.log(JSON.stringify(provider, null, 2))
+        } else {
+          printPluginSettingsReadModel(provider)
+        }
+        return
+      }
+      case 'select': {
+        assertNoUnexpectedPluginSettingsFlags(flags, [], 'plugin-settings select')
+        const capability = positional[1]
+        const providerId = positional[2]
+        if (!capability || !providerId || positional[3]) {
+          console.error(red('Usage: kl plugin-settings select <capability> <provider>'))
+          process.exit(1)
+        }
+
+        const provider = await runWithCliAuth(sdk, flags, () => Promise.resolve(
+          sdk.selectPluginSettingsProvider(capability as never, providerId),
+        ))
+        if (flags.json) {
+          console.log(JSON.stringify(provider, null, 2))
+        } else {
+          console.log(green('Selected plugin provider.'))
+          printPluginSettingsReadModel(provider)
+        }
+        return
+      }
+      case 'update-options': {
+        assertNoUnexpectedPluginSettingsFlags(flags, ['options'], 'plugin-settings update-options')
+        const capability = positional[1]
+        const providerId = positional[2]
+        if (!capability || !providerId || positional[3]) {
+          console.error(red('Usage: kl plugin-settings update-options <capability> <provider> --options <json|@file>'))
+          process.exit(1)
+        }
+        if (typeof flags.options !== 'string') {
+          console.error(red('Error: --options is required and must be a JSON object or @path to a JSON file'))
+          process.exit(1)
+        }
+
+        const nextOptions = await parseJsonObjectFlag(flags.options, 'options')
+        const provider = await runWithCliAuth(sdk, flags, () => Promise.resolve(
+          sdk.updatePluginSettingsOptions(capability as never, providerId, nextOptions),
+        ))
+        if (flags.json) {
+          console.log(JSON.stringify(provider, null, 2))
+        } else {
+          console.log(green('Updated plugin options.'))
+          printPluginSettingsReadModel(provider)
+        }
+        return
+      }
+      case 'install': {
+        assertNoUnexpectedPluginSettingsFlags(flags, ['scope'], 'plugin-settings install')
+        const packageName = positional[1]
+        if (!packageName || positional[2]) {
+          console.error(red('Usage: kl plugin-settings install <packageName> --scope <workspace|global>'))
+          process.exit(1)
+        }
+
+        const result = await runWithCliAuth(sdk, flags, () => sdk.installPluginSettingsPackage({
+          packageName,
+          scope: flags.scope,
+        }))
+        if (flags.json) {
+          console.log(JSON.stringify(result, null, 2))
+        } else {
+          printPluginSettingsInstallResult(result)
+        }
+        return
+      }
+      default:
+        console.error(red(`Unknown plugin-settings sub-command: ${sub}`))
+        console.error('Usage: kl plugin-settings <list|show|select|update-options|install>')
+        process.exit(1)
+    }
+  } catch (error) {
+    if (error instanceof PluginSettingsOperationError) handlePluginSettingsError(error, flags)
+    throw error
+  }
+}
+
 // --- Main ---
 
 async function main(): Promise<void> {
@@ -2084,6 +2313,9 @@ async function main(): Promise<void> {
       break
     case 'auth':
       await cmdAuth(sdk, positional, flags, cliPlugins, workspaceRoot)
+      break
+    case 'plugin-settings':
+      await cmdPluginSettings(sdk, positional, flags)
       break
     default: {
       const fallback = findCliPlugin(cliPlugins, command)

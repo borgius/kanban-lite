@@ -2,7 +2,6 @@
 
 A VSCode extension + standalone server + CLI + MCP server for managing kanban boards stored as markdown files (default) or SQLite.
 
-
 ## Feature Parity
 
 All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, columns CRUD, settings get/update, webhooks CRUD, workspace info. When adding new functionality, add it to all three.
@@ -15,6 +14,10 @@ All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, co
 - Board-configured card display titles (for example metadata-based prefixes) must use the shared display-title helper; raw markdown title extraction remains the source of truth for storage, filenames, and rename logic.
 - The built-in default backend is file-backed sidecar storage; SQLite support ships as a first-party provider package.
 - Active-card UI state remains separate from `card.state`.
+- Plugin-settings enablement must map to the selected `plugins[capability].provider`; do not add a separate enabled boolean.
+- In-product plugin installs accept only exact unscoped `kl-*` package names; reject scopes, specifiers, flags, URLs, paths, and extra args.
+- Plugin-settings reads/lists/errors/install output must reuse the shared redaction policy across SDK, API, CLI, MCP, and UI surfaces.
+- JSON Forms provider-option UIs should reuse the shared `.card-jsonforms` wrapper/styling hook instead of introducing a second theme.
 
 ## Implementation Order
 
@@ -35,7 +38,7 @@ Never implement a feature directly in an interface layer without the SDK method 
 - **CHANGELOG.md:** Always add an entry to `CHANGELOG.md` for every new feature, behaviour change, or bug fix. Place it under an `## [Unreleased]` section at the top (or the current in-progress version block). Follow the existing format: `### Added`, `### Changed`, `### Fixed` subsections with concise bullet points.
 - **Related docs must stay in sync:** When you change plugin contracts, provider behavior, authoring workflow, or integration expectations, update all related docs in the same task. At minimum, check `README.md`, `CHANGELOG.md`, `docs/plugins.md`, and any related skill/template docs such as `.agents/skills/kanban-storage-plugin-author/**`. If an external provider package in this workspace is affected, update that package README/docs too.
 
-## Agent execution rules (cost control):
+## Agent execution rules (cost control)
 
 1. Do NOT scan or summarize the entire repository.
 2. Only open and modify the specific file(s) listed in the task plan.

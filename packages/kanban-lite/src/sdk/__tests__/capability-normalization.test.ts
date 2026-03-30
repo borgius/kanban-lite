@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../../shared/config'
+import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, PLUGIN_CAPABILITY_NAMESPACES } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 import { collectActiveExternalPackageNames } from '../plugins'
+import {
+  createPluginSettingsErrorPayload,
+  DEFAULT_PLUGIN_SETTINGS_REDACTION,
+  PLUGIN_SETTINGS_INSTALL_SCOPES,
+  PluginSettingsValidationError,
+  validatePluginSettingsInstallRequest,
+} from '../KanbanSDK'
 
 /** Minimal valid config scaffold for tests. */
 function makeConfig(overrides: Partial<KanbanConfig> = {}): KanbanConfig {
@@ -393,6 +400,85 @@ describe('collectActiveExternalPackageNames', () => {
       const result = collectActiveExternalPackageNames({})
       expect(Array.isArray(result)).toBe(true)
       expect(result.length).toBeGreaterThan(0)
+    })
+  })
+})
+
+describe('plugin settings contract helpers', () => {
+  it('exposes the full plugin capability namespace set in a stable order', () => {
+    expect(PLUGIN_CAPABILITY_NAMESPACES).toEqual([
+      'card.storage',
+      'attachment.storage',
+      'card.state',
+      'auth.identity',
+      'auth.policy',
+      'webhook.delivery',
+    ])
+  })
+
+  it('declares one shared redaction policy for read, list, and error surfaces', () => {
+    expect(DEFAULT_PLUGIN_SETTINGS_REDACTION).toEqual({
+      maskedValue: '••••••',
+      writeOnly: true,
+      targets: ['read', 'list', 'error'],
+    })
+  })
+
+  it('limits install requests to explicit workspace/global scope values', () => {
+    expect(PLUGIN_SETTINGS_INSTALL_SCOPES).toEqual(['workspace', 'global'])
+  })
+
+  it('accepts exact kl-* install requests without rewriting the input', () => {
+    expect(validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'workspace' })).toEqual({
+      packageName: 'kl-auth-plugin',
+      scope: 'workspace',
+    })
+  })
+
+  it.each([
+    'kl-auth-plugin@latest',
+    'npm install kl-auth-plugin',
+    '../kl-auth-plugin',
+    'https://example.com/kl-auth-plugin.tgz',
+    'kl-auth-plugin --ignore-scripts',
+    'kl-auth-plugin kl-webhooks-plugin',
+    ' kl-auth-plugin',
+    'kl-auth-plugin ',
+    'kl-auth-plugin\n--global',
+    'kl-auth-plugin; rm -rf /',
+    '@scope/kl-auth-plugin',
+  ])('rejects non-exact package input %s at the validation boundary', (packageName) => {
+    expect(() => validatePluginSettingsInstallRequest({ packageName, scope: 'workspace' })).toThrowError(PluginSettingsValidationError)
+
+    try {
+      validatePluginSettingsInstallRequest({ packageName, scope: 'workspace' })
+    } catch (error) {
+      expect(error).toBeInstanceOf(PluginSettingsValidationError)
+      expect((error as PluginSettingsValidationError).code).toBe('invalid-plugin-install-package-name')
+    }
+  })
+
+  it('rejects unsupported install scopes', () => {
+    expect(() => validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'user' })).toThrowError(PluginSettingsValidationError)
+
+    try {
+      validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'user' })
+    } catch (error) {
+      expect(error).toBeInstanceOf(PluginSettingsValidationError)
+      expect((error as PluginSettingsValidationError).code).toBe('invalid-plugin-install-scope')
+    }
+  })
+
+  it('applies the shared redaction policy to surfaced plugin-settings errors', () => {
+    expect(createPluginSettingsErrorPayload({
+      code: 'plugin-settings-read-failed',
+      message: 'Unable to read plugin settings.',
+      details: { stderr: 'redacted output' },
+    })).toEqual({
+      code: 'plugin-settings-read-failed',
+      message: 'Unable to read plugin settings.',
+      details: { stderr: 'redacted output' },
+      redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION,
     })
   })
 })

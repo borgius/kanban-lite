@@ -1,10 +1,48 @@
 import { useState, useEffect, useMemo } from 'react'
+import { JsonForms } from '@jsonforms/react'
+import { createAjv, type UISchemaElement } from '@jsonforms/core'
+import { vanillaCells, vanillaRenderers } from '@jsonforms/vanilla-renderers'
 import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
-import type { BoardBackgroundMode, BoardBackgroundPreset, CardDisplaySettings, Priority, CardStatus, WorkspaceInfo, LabelDefinition } from '../../shared/types'
+import type { PluginCapabilityNamespace } from '../../shared/config'
+import type {
+  BoardBackgroundMode,
+  BoardBackgroundPreset,
+  CardDisplaySettings,
+  Priority,
+  CardStatus,
+  WorkspaceInfo,
+  LabelDefinition,
+  PluginSettingsDiscoverySource,
+  PluginSettingsInstallScope,
+  PluginSettingsInstallTransportResult,
+  PluginSettingsPayload,
+  PluginSettingsProviderTransport,
+  PluginSettingsSecretFieldMetadata,
+} from '../../shared/types'
 import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
+
+const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
+const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
+
+const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string> = {
+  builtin: 'Built-in',
+  workspace: 'Workspace',
+  dependency: 'Dependency',
+  global: 'Global',
+  sibling: 'Sibling',
+}
+
+type SettingsTab = 'general' | 'defaults' | 'labels' | 'pluginOptions'
+
+const settingsTabLabels: Record<SettingsTab, string> = {
+  general: 'General',
+  defaults: 'Defaults',
+  labels: 'Labels',
+  pluginOptions: 'Plugin Options',
+}
 
 const priorityConfig: { value: Priority; label: string; dot: string }[] = [
   { value: 'critical', label: 'Critical', dot: 'bg-red-500' },
@@ -39,16 +77,62 @@ interface SettingsPanelProps {
   isOpen: boolean
   settings: CardDisplaySettings
   workspace?: WorkspaceInfo | null
+  pluginSettings?: PluginSettingsPayload | null
+  pluginSettingsProvider?: PluginSettingsProviderTransport | null
+  pluginSettingsInstall?: PluginSettingsInstallTransportResult | null
+  pluginSettingsError?: string | null
   onClose: () => void
   onSave: (settings: CardDisplaySettings) => void
+  onReadPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
+  onSelectPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
+  onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
+  onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
   onSetLabel?: (name: string, definition: LabelDefinition) => void
   onRenameLabel?: (oldName: string, newName: string) => void
   onDeleteLabel?: (name: string) => void
+  initialTab?: SettingsTab
 }
 
-export function SettingsPanel({ isOpen, settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: SettingsPanelProps) {
+export function SettingsPanel({
+  isOpen,
+  settings,
+  workspace,
+  pluginSettings,
+  pluginSettingsProvider,
+  pluginSettingsInstall,
+  pluginSettingsError,
+  onClose,
+  onSave,
+  onReadPluginSettingsProvider,
+  onSelectPluginSettingsProvider,
+  onUpdatePluginSettingsOptions,
+  onInstallPluginSettingsPackage,
+  onSetLabel,
+  onRenameLabel,
+  onDeleteLabel,
+  initialTab,
+}: SettingsPanelProps) {
   if (!isOpen) return null
-  return <SettingsPanelContent settings={settings} workspace={workspace} onClose={onClose} onSave={onSave} onSetLabel={onSetLabel} onRenameLabel={onRenameLabel} onDeleteLabel={onDeleteLabel} />
+  return (
+    <SettingsPanelContent
+      settings={settings}
+      workspace={workspace}
+      pluginSettings={pluginSettings}
+      pluginSettingsProvider={pluginSettingsProvider}
+      pluginSettingsInstall={pluginSettingsInstall}
+      pluginSettingsError={pluginSettingsError}
+      onClose={onClose}
+      onSave={onSave}
+      onReadPluginSettingsProvider={onReadPluginSettingsProvider}
+      onSelectPluginSettingsProvider={onSelectPluginSettingsProvider}
+      onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+      onInstallPluginSettingsPackage={onInstallPluginSettingsPackage}
+      onSetLabel={onSetLabel}
+      onRenameLabel={onRenameLabel}
+      onDeleteLabel={onDeleteLabel}
+      initialTab={initialTab}
+    />
+  )
 }
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -123,6 +207,623 @@ function SettingsInfo({ label, value }: { label: string; value: string }) {
         title={value}
       >
         {value}
+      </div>
+    </div>
+  )
+}
+
+type PluginProviderFocusState = {
+  capability: PluginCapabilityNamespace
+  providerId: string
+}
+
+type PluginOptionsValidationError = {
+  instancePath?: string
+  message?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function clonePluginOptionsRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? structuredClone(value) as Record<string, unknown> : {}
+}
+
+function escapeJsonPointerSegment(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1')
+}
+
+export function createPluginOptionsUiSchema(schema: Record<string, unknown>): UISchemaElement {
+  const properties = isRecord(schema.properties) ? Object.keys(schema.properties) : []
+
+  return {
+    type: 'VerticalLayout',
+    elements: properties.map((property) => ({
+      type: 'Control',
+      scope: `#/properties/${escapeJsonPointerSegment(property)}`,
+    })),
+  }
+}
+
+function tokenizePluginSecretPath(value: string): string[] {
+  return value.split('.').map(segment => segment.trim()).filter(Boolean)
+}
+
+function matchesPluginSecretPath(pattern: string, path: string[]): boolean {
+  const patternSegments = tokenizePluginSecretPath(pattern)
+  return patternSegments.length === path.length
+    && patternSegments.every((segment, index) => segment === '*' || segment === path[index])
+}
+
+function applyPluginSecretSchemaHintsToNode(
+  node: unknown,
+  path: string[],
+  secretPaths: readonly string[],
+): void {
+  if (!isRecord(node)) return
+
+  if (secretPaths.some((secretPath) => matchesPluginSecretPath(secretPath, path))) {
+    node.format = 'password'
+    if (typeof node.description === 'string' && node.description.trim().length > 0) {
+      if (!node.description.includes(pluginSecretFieldHint)) {
+        node.description = `${node.description} ${pluginSecretFieldHint}`.trim()
+      }
+    } else {
+      node.description = pluginSecretFieldHint
+    }
+  }
+
+  if (isRecord(node.properties)) {
+    for (const [key, child] of Object.entries(node.properties)) {
+      applyPluginSecretSchemaHintsToNode(child, [...path, key], secretPaths)
+    }
+  }
+
+  if (isRecord(node.items)) {
+    applyPluginSecretSchemaHintsToNode(node.items, [...path, '*'], secretPaths)
+  } else if (Array.isArray(node.items)) {
+    node.items.forEach((child, index) => {
+      applyPluginSecretSchemaHintsToNode(child, [...path, String(index)], secretPaths)
+    })
+  }
+}
+
+export function applyPluginSecretSchemaHints(
+  schema: Record<string, unknown>,
+  secrets: readonly PluginSettingsSecretFieldMetadata[],
+): Record<string, unknown> {
+  const nextSchema = structuredClone(schema) as Record<string, unknown>
+  applyPluginSecretSchemaHintsToNode(nextSchema, [], secrets.map(secret => secret.path))
+  return nextSchema
+}
+
+function validatePluginOptions(
+  schema: Record<string, unknown>,
+  data: Record<string, unknown>,
+): PluginOptionsValidationError[] {
+  const validate = pluginOptionsAjv.compile(schema)
+  const valid = validate(data)
+  return valid ? [] : ((validate.errors ?? []) as PluginOptionsValidationError[])
+}
+
+function getCapabilityEntry(
+  pluginSettings: PluginSettingsPayload | null | undefined,
+  capability: PluginCapabilityNamespace,
+) {
+  return pluginSettings?.capabilities.find((entry) => entry.capability === capability) ?? null
+}
+
+function getProviderRow(
+  pluginSettings: PluginSettingsPayload | null | undefined,
+  selection: PluginProviderFocusState | null,
+) {
+  if (!selection) return null
+  return getCapabilityEntry(pluginSettings, selection.capability)?.providers.find(
+    provider => provider.providerId === selection.providerId,
+  ) ?? null
+}
+
+function PluginSettingsBadge({
+  children,
+  tone = 'default',
+}: {
+  children: React.ReactNode
+  tone?: 'default' | 'selected'
+}) {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      style={tone === 'selected'
+        ? {
+            background: 'var(--vscode-button-background)',
+            color: 'var(--vscode-button-foreground)',
+          }
+        : {
+            background: 'var(--vscode-badge-background)',
+            color: 'var(--vscode-badge-foreground)',
+          }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function PluginProviderRow({
+  capability,
+  provider,
+  isActive,
+  onOpen,
+  onSelect,
+}: {
+  capability: PluginCapabilityNamespace
+  provider: NonNullable<PluginSettingsPayload['capabilities'][number]>['providers'][number]
+  isActive: boolean
+  onOpen?: (capability: PluginCapabilityNamespace, providerId: string) => void
+  onSelect?: (capability: PluginCapabilityNamespace, providerId: string) => void
+}) {
+  return (
+    <div
+      className="rounded-lg border px-3 py-3"
+      style={isActive
+        ? {
+            borderColor: 'var(--vscode-focusBorder, var(--vscode-button-background))',
+            background: 'var(--vscode-list-hoverBackground)',
+          }
+        : provider.isSelected
+        ? {
+            borderColor: 'var(--vscode-button-background)',
+            background: 'var(--vscode-list-activeSelectionBackground)',
+          }
+        : {
+            borderColor: 'var(--vscode-panel-border)',
+            background: 'transparent',
+          }}
+      data-plugin-provider={provider.providerId}
+      data-active={isActive ? 'true' : 'false'}
+      data-selected={provider.isSelected ? 'true' : 'false'}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
+              {provider.providerId}
+            </span>
+            <PluginSettingsBadge>{pluginDiscoverySourceLabels[provider.discoverySource]}</PluginSettingsBadge>
+            {provider.isSelected && <PluginSettingsBadge tone="selected">Selected</PluginSettingsBadge>}
+          </div>
+          <div className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            Package: {provider.packageName}
+          </div>
+          <div className="mt-1 text-[11px] font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            {capability}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2">
+          <button
+            type="button"
+            disabled={!onOpen}
+            onClick={() => onOpen?.(capability, provider.providerId)}
+            className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
+            style={{
+              background: isActive
+                ? 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))'
+                : 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+              color: 'var(--vscode-foreground)',
+              border: '1px solid var(--vscode-panel-border)',
+            }}
+          >
+            {isActive ? 'Editing' : 'Open'}
+          </button>
+          <button
+            type="button"
+            disabled={provider.isSelected || !onSelect}
+            onClick={() => onSelect?.(capability, provider.providerId)}
+            className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
+            style={provider.isSelected
+              ? {
+                  background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
+                  color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
+                }
+              : {
+                  background: 'var(--vscode-button-background)',
+                  color: 'var(--vscode-button-foreground)',
+                }}
+          >
+            {provider.isSelected ? 'Selected' : 'Select'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function createPluginProviderOptionsEditorKey(provider: PluginSettingsProviderTransport): string {
+  return JSON.stringify({
+    capability: provider.capability,
+    providerId: provider.providerId,
+    schema: provider.optionsSchema?.schema ?? null,
+    uiSchema: provider.optionsSchema?.uiSchema ?? null,
+    options: provider.options?.values ?? null,
+  })
+}
+
+function PluginProviderOptionsEditor({
+  provider,
+  schema,
+  uiSchema,
+  onUpdatePluginSettingsOptions,
+}: {
+  provider: PluginSettingsProviderTransport
+  schema: Record<string, unknown>
+  uiSchema: UISchemaElement
+  onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
+}) {
+  const [optionData, setOptionData] = useState<Record<string, unknown>>(() => clonePluginOptionsRecord(provider.options?.values))
+  const [optionErrors, setOptionErrors] = useState<PluginOptionsValidationError[]>(() => validatePluginOptions(
+    schema,
+    clonePluginOptionsRecord(provider.options?.values),
+  ))
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <div className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
+          {provider.providerId}
+        </div>
+        <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+          Package: {provider.packageName}
+        </div>
+      </div>
+
+      {(provider.optionsSchema?.secrets?.length ?? 0) > 0 && (
+        <div
+          className="rounded-lg px-3 py-3 text-xs"
+          style={{
+            background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+            color: 'var(--vscode-descriptionForeground)',
+            border: '1px solid var(--vscode-panel-border)',
+          }}
+        >
+          {pluginSecretFieldHint}
+        </div>
+      )}
+
+      <div className="card-jsonforms">
+        <JsonForms
+          schema={schema}
+          uischema={uiSchema}
+          data={optionData}
+          renderers={vanillaRenderers}
+          cells={vanillaCells}
+          ajv={pluginOptionsAjv}
+          onChange={({ data, errors }) => {
+            const nextData = clonePluginOptionsRecord(data)
+            setOptionData(nextData)
+            setOptionErrors(Array.isArray(errors) ? (errors as PluginOptionsValidationError[]) : [])
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+          {optionErrors.length > 0
+            ? `Fix ${optionErrors.length} validation issue${optionErrors.length === 1 ? '' : 's'} before saving.`
+            : 'Save to persist the provider selection and its redacted option payload.'}
+        </div>
+        <button
+          type="button"
+          disabled={!onUpdatePluginSettingsOptions || optionErrors.length > 0}
+          onClick={() => onUpdatePluginSettingsOptions?.(
+            provider.capability,
+            provider.providerId,
+            optionData,
+          )}
+          className="rounded-md px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-60"
+          style={{
+            background: 'var(--vscode-button-background)',
+            color: 'var(--vscode-button-foreground)',
+          }}
+        >
+          Save options
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PluginOptionsSection({
+  pluginSettings,
+  pluginSettingsProvider,
+  pluginSettingsInstall,
+  pluginSettingsError,
+  onReadPluginSettingsProvider,
+  onSelectPluginSettingsProvider,
+  onUpdatePluginSettingsOptions,
+  onInstallPluginSettingsPackage,
+}: {
+  pluginSettings?: PluginSettingsPayload | null
+  pluginSettingsProvider?: PluginSettingsProviderTransport | null
+  pluginSettingsInstall?: PluginSettingsInstallTransportResult | null
+  pluginSettingsError?: string | null
+  onReadPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
+  onSelectPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
+  onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
+  onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
+}) {
+  const capabilities = pluginSettings?.capabilities ?? []
+  const [activeProvider, setActiveProvider] = useState<PluginProviderFocusState | null>(() => pluginSettingsProvider
+    ? {
+        capability: pluginSettingsProvider.capability,
+        providerId: pluginSettingsProvider.providerId,
+      }
+    : null)
+  const [installPackageName, setInstallPackageName] = useState('')
+  const [installGlobally, setInstallGlobally] = useState(false)
+
+  const resolvedActiveProvider = useMemo(() => {
+    if (!activeProvider) return null
+    return getProviderRow(pluginSettings, activeProvider) ? activeProvider : null
+  }, [pluginSettings, activeProvider])
+
+  const activeProviderRow = useMemo(
+    () => getProviderRow(pluginSettings, resolvedActiveProvider),
+    [pluginSettings, resolvedActiveProvider],
+  )
+
+  const activeProviderDetails = useMemo(() => {
+    if (!resolvedActiveProvider || !pluginSettingsProvider) return null
+    if (pluginSettingsProvider.capability !== resolvedActiveProvider.capability) return null
+    if (pluginSettingsProvider.providerId !== resolvedActiveProvider.providerId) return null
+    return pluginSettingsProvider
+  }, [resolvedActiveProvider, pluginSettingsProvider])
+
+  const providerOptionsSchema = useMemo(() => {
+    if (!activeProviderDetails?.optionsSchema) return null
+    return applyPluginSecretSchemaHints(
+      activeProviderDetails.optionsSchema.schema,
+      activeProviderDetails.optionsSchema.secrets,
+    )
+  }, [activeProviderDetails])
+
+  const providerUiSchema = useMemo(() => {
+    if (!activeProviderDetails?.optionsSchema) return null
+    return (activeProviderDetails.optionsSchema.uiSchema ?? createPluginOptionsUiSchema(activeProviderDetails.optionsSchema.schema)) as UISchemaElement
+  }, [activeProviderDetails])
+
+  const installTips = useMemo(() => {
+    const tips = [
+      'Use an exact npm package name like kl-auth-plugin or another kl-* provider package.',
+      'In-product installs always disable lifecycle scripts. Install manually if the package requires them.',
+    ]
+
+    if (pluginSettingsError?.toLowerCase().includes('exact')) {
+      tips.unshift('Version specifiers, scoped packages, paths, URLs, whitespace, and extra flags are rejected by the SDK-backed installer.')
+    }
+
+    return tips
+  }, [pluginSettingsError])
+
+  return (
+    <div className="space-y-4 px-4 py-4">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+          Plugin providers
+        </h3>
+        <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+          Select one provider per capability, open a provider to edit its schema-driven options, or install a new package through the safe SDK-backed flow.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="space-y-4">
+          {capabilities.length === 0 ? (
+            <div
+              className="rounded-lg px-3 py-3 text-sm"
+              style={{
+                background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+                color: 'var(--vscode-descriptionForeground)',
+                border: '1px solid var(--vscode-panel-border)',
+              }}
+            >
+              No plugin providers discovered yet.
+            </div>
+          ) : capabilities.map((entry) => (
+            <div
+              key={entry.capability}
+              className="rounded-xl border"
+              style={{
+                borderColor: 'var(--vscode-panel-border)',
+                background: 'var(--vscode-editorWidget-background, transparent)',
+              }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                    {entry.capability}
+                  </div>
+                  <div className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    Selected provider: {entry.selected.providerId ?? 'none'} ({entry.selected.source})
+                  </div>
+                </div>
+                <PluginSettingsBadge tone={entry.selected.providerId ? 'selected' : 'default'}>
+                  {entry.providers.length} provider{entry.providers.length === 1 ? '' : 's'}
+                </PluginSettingsBadge>
+              </div>
+
+              <div className="space-y-2 p-3">
+                {entry.providers.length === 0 ? (
+                  <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    No providers discovered for this capability.
+                  </div>
+                ) : entry.providers.map((provider) => (
+                  <PluginProviderRow
+                    key={`${entry.capability}:${provider.providerId}`}
+                    capability={entry.capability}
+                    provider={provider}
+                    isActive={resolvedActiveProvider?.capability === entry.capability && resolvedActiveProvider.providerId === provider.providerId}
+                    onOpen={(capability, providerId) => {
+                      setActiveProvider({ capability, providerId })
+                      onReadPluginSettingsProvider?.(capability, providerId)
+                    }}
+                    onSelect={onSelectPluginSettingsProvider}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          className="rounded-xl border"
+          style={{
+            borderColor: 'var(--vscode-panel-border)',
+            background: 'var(--vscode-editorWidget-background, transparent)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
+            <div>
+              <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                {resolvedActiveProvider ? 'Provider options' : 'Install plugin package'}
+              </h4>
+              <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                {resolvedActiveProvider
+                  ? 'This editor is driven directly from the provider schema and redacted option payload.'
+                  : 'No provider is open on the left, so the safe installer is ready here.'}
+              </p>
+            </div>
+            {resolvedActiveProvider && (
+              <button
+                type="button"
+                onClick={() => setActiveProvider(null)}
+                className="rounded-md px-3 py-1.5 text-xs font-medium"
+                style={{
+                  border: '1px solid var(--vscode-panel-border)',
+                  color: 'var(--vscode-foreground)',
+                }}
+              >
+                Install instead
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            {pluginSettingsError && (
+              <div
+                className="rounded-lg px-3 py-2 text-xs"
+                style={{
+                  background: 'var(--vscode-inputValidation-errorBackground, rgba(190, 73, 73, 0.15))',
+                  color: 'var(--vscode-errorForeground, #f14c4c)',
+                  border: '1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c))',
+                }}
+              >
+                {pluginSettingsError}
+              </div>
+            )}
+
+            {!resolvedActiveProvider ? (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const packageName = installPackageName.trim()
+                  if (!packageName) return
+                  onInstallPluginSettingsPackage?.(packageName, installGlobally ? 'global' : 'workspace')
+                }}
+              >
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    Package name
+                  </label>
+                  <input
+                    type="text"
+                    value={installPackageName}
+                    onChange={(event) => setInstallPackageName(event.target.value)}
+                    placeholder="kl-auth-plugin"
+                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    style={{
+                      borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+                      background: 'var(--vscode-input-background)',
+                      color: 'var(--vscode-input-foreground)',
+                    }}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--vscode-foreground)' }}>
+                  <input
+                    type="checkbox"
+                    checked={installGlobally}
+                    onChange={(event) => setInstallGlobally(event.target.checked)}
+                  />
+                  Global install
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={!onInstallPluginSettingsPackage || installPackageName.trim().length === 0}
+                  className="rounded-md px-3 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-60"
+                  style={{
+                    background: 'var(--vscode-button-background)',
+                    color: 'var(--vscode-button-foreground)',
+                  }}
+                >
+                  Install safely
+                </button>
+
+                {pluginSettingsInstall && (
+                  <div
+                    className="rounded-lg px-3 py-2 text-xs"
+                    style={{
+                      background: 'var(--vscode-inputOption-activeBackground, rgba(51, 153, 255, 0.12))',
+                      color: 'var(--vscode-foreground)',
+                      border: '1px solid var(--vscode-panel-border)',
+                    }}
+                  >
+                    {pluginSettingsInstall.message}
+                  </div>
+                )}
+
+                <div
+                  className="rounded-lg px-3 py-3 text-xs"
+                  style={{
+                    background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+                    color: 'var(--vscode-descriptionForeground)',
+                    border: '1px solid var(--vscode-panel-border)',
+                  }}
+                >
+                  <div className="font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                    npm naming tip
+                  </div>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {installTips.map((tip) => (
+                      <li key={tip}>{tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              </form>
+            ) : !activeProviderRow ? (
+              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                This provider is no longer available. Choose another provider on the left or install a package.
+              </div>
+            ) : !activeProviderDetails ? (
+              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                Loading redacted provider options…
+              </div>
+            ) : !providerOptionsSchema || !providerUiSchema ? (
+              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                This provider does not expose schema-driven options.
+              </div>
+            ) : (
+              <PluginProviderOptionsEditor
+                key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
+                provider={activeProviderDetails}
+                schema={providerOptionsSchema}
+                uiSchema={providerUiSchema}
+                onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+              />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -571,9 +1272,26 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
   )
 }
 
-function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel, onRenameLabel, onDeleteLabel }: Omit<SettingsPanelProps, 'isOpen'>) {
+function SettingsPanelContent({
+  settings,
+  workspace,
+  pluginSettings,
+  pluginSettingsProvider,
+  pluginSettingsInstall,
+  pluginSettingsError,
+  onClose,
+  onSave,
+  onReadPluginSettingsProvider,
+  onSelectPluginSettingsProvider,
+  onUpdatePluginSettingsOptions,
+  onInstallPluginSettingsPackage,
+  onSetLabel,
+  onRenameLabel,
+  onDeleteLabel,
+  initialTab,
+}: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
-  const [activeTab, setActiveTab] = useState<'general' | 'defaults' | 'labels'>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const columns = useStore(s => s.columns)
   const effectiveDrawerWidth = useStore(s => s.effectiveDrawerWidth)
@@ -654,7 +1372,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
           className="flex"
           style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
         >
-          {(['general', 'defaults', 'labels'] as const).map(tab => (
+          {(['general', 'defaults', 'labels', 'pluginOptions'] as const).map(tab => (
             <button
               key={tab}
               type="button"
@@ -667,7 +1385,7 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                 background: 'transparent',
               }}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {settingsTabLabels[tab]}
               {activeTab === tab && (
                 <span
                   className="absolute bottom-0 left-0 right-0 h-0.5"
@@ -844,6 +1562,19 @@ function SettingsPanelContent({ settings, workspace, onClose, onSave, onSetLabel
                 onDeleteLabel={onDeleteLabel}
               />
             </SettingsSection>
+          )}
+
+          {activeTab === 'pluginOptions' && (
+            <PluginOptionsSection
+              pluginSettings={pluginSettings}
+              pluginSettingsProvider={pluginSettingsProvider}
+              pluginSettingsInstall={pluginSettingsInstall}
+              pluginSettingsError={pluginSettingsError}
+              onReadPluginSettingsProvider={onReadPluginSettingsProvider}
+              onSelectPluginSettingsProvider={onSelectPluginSettingsProvider}
+              onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+              onInstallPluginSettingsPackage={onInstallPluginSettingsPackage}
+            />
           )}
         </div>
 

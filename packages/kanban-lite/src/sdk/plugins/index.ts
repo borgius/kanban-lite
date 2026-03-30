@@ -1,10 +1,44 @@
+import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { ZodRawShape, ZodTypeAny } from 'zod'
-import type { Card } from '../../shared/types'
-import type { Webhook, CardStateCapabilityNamespace } from '../../shared/config'
-import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config'
+import type {
+  Card,
+  PluginSettingsCapabilityRow,
+  PluginSettingsDiscoverySource,
+  PluginSettingsOptionsSchemaMetadata,
+  PluginSettingsPayload,
+  PluginSettingsProviderRow,
+  PluginSettingsReadPayload,
+  PluginSettingsRedactedValues,
+  PluginSettingsRedactionPolicy,
+  PluginSettingsSecretFieldMetadata,
+  PluginSettingsSelectedState,
+} from '../../shared/types'
+import {
+  DEFAULT_CONFIG,
+  PLUGIN_CAPABILITY_NAMESPACES,
+  configPath,
+  normalizeAuthCapabilities,
+  normalizeCardStateCapabilities,
+  normalizeStorageCapabilities,
+  normalizeWebhookCapabilities,
+} from '../../shared/config'
+import type {
+  Webhook,
+  CardStateCapabilityNamespace,
+  KanbanConfig,
+  PluginCapabilityNamespace,
+  PluginCapabilitySelections,
+  ResolvedCapabilities,
+  CapabilityNamespace,
+  ProviderRef,
+  AuthCapabilityNamespace,
+  ResolvedAuthCapabilities,
+  ResolvedWebhookCapabilities,
+  ResolvedCardStateCapabilities,
+} from '../../shared/config'
 import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types'
 import { AuthError } from '../types'
 import type { KanbanSDK } from '../KanbanSDK'
@@ -979,27 +1013,6 @@ function isMissingRequestedModule(request: string, err: unknown): err is NodeJS.
     )
 }
 
-function tryLoadSiblingPackage(request: string): unknown {
-  const siblingPackagePath = path.resolve(process.cwd(), '..', request)
-  return runtimeRequire(siblingPackagePath)
-}
-
-/**
- * Tries to load an external plugin from the workspace-local `packages/`
- * directory (monorepo layout).  Requires {@link WORKSPACE_ROOT} to be
- * discovered; throws `MODULE_NOT_FOUND` when the path does not exist so the
- * caller can distinguish "not present in monorepo" from other errors.
- *
- * @internal
- */
-function tryLoadWorkspacePackage(request: string): unknown {
-  if (!WORKSPACE_ROOT) {
-    throw Object.assign(new Error(`Cannot find module '${request}'`), { code: 'MODULE_NOT_FOUND' })
-  }
-  const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
-  return runtimeRequire(workspacePackagePath)
-}
-
 /**
  * Tries to load an external plugin from the global npm node_modules directory.
  * The global prefix is derived from the Node.js binary path ({@link process.execPath}).
@@ -1054,6 +1067,995 @@ export function loadExternalModule(request: string): unknown {
     }
     throw siblingErr
   }
+}
+
+type ExternalPluginDiscoverySource = Exclude<PluginSettingsDiscoverySource, 'builtin'>
+
+type PluginSettingsProviderReadModel = PluginSettingsReadPayload & Pick<
+  PluginSettingsProviderRow,
+  'packageName' | 'discoverySource' | 'optionsSchema'
+>
+
+interface ResolvedExternalModule {
+  module: unknown
+  source: ExternalPluginDiscoverySource
+}
+
+interface DiscoveredPluginProvider {
+  capability: PluginCapabilityNamespace
+  providerId: string
+  packageName: string
+  discoverySource: PluginSettingsDiscoverySource
+  optionsSchema?: PluginSettingsOptionsSchemaMetadata
+}
+
+type PluginSettingsConfigSnapshot = Pick<
+  KanbanConfig,
+  'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
+>
+
+export class PluginSettingsStoreError extends Error {
+  readonly code: string
+  readonly details?: Record<string, unknown>
+
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(message)
+    this.name = 'PluginSettingsStoreError'
+    this.code = code
+    this.details = details
+  }
+}
+
+const BUILTIN_AUTH_PROVIDER_IDS: ReadonlySet<string> = new Set(['noop', 'rbac'])
+
+const DISCOVERY_SOURCE_PRIORITY: Record<PluginSettingsDiscoverySource, number> = {
+  builtin: 5,
+  workspace: 4,
+  dependency: 3,
+  global: 2,
+  sibling: 1,
+}
+
+const PLUGIN_SETTINGS_SECRET_KEY_PATTERN = /(secret|token|password|passphrase|private[-_]?key|client[-_]?secret|secret[-_]?key|session[-_]?token|api[-_]?key)/i
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isValidPluginSettingsSecretFieldMetadata(value: unknown): value is PluginSettingsSecretFieldMetadata {
+  return isRecord(value)
+    && typeof value.path === 'string'
+    && value.path.length > 0
+    && isRecord(value.redaction)
+    && typeof value.redaction.maskedValue === 'string'
+    && value.redaction.writeOnly === true
+    && Array.isArray(value.redaction.targets)
+}
+
+function normalizePluginSettingsOptionsSchema(value: unknown): PluginSettingsOptionsSchemaMetadata | undefined {
+  if (!isRecord(value) || !isRecord(value.schema)) return undefined
+  const uiSchema = isRecord(value.uiSchema) ? value.uiSchema : undefined
+  const secrets = Array.isArray(value.secrets)
+    ? value.secrets.filter(isValidPluginSettingsSecretFieldMetadata)
+    : []
+  return {
+    schema: structuredClone(value.schema),
+    ...(uiSchema ? { uiSchema: structuredClone(uiSchema) } : {}),
+    secrets,
+  }
+}
+
+function cloneProviderRef(ref: ProviderRef): ProviderRef {
+  return ref.options !== undefined
+    ? { provider: ref.provider, options: structuredClone(ref.options) }
+    : { provider: ref.provider }
+}
+
+function readPluginSettingsConfigDocument(workspaceRoot: string): KanbanConfig {
+  const filePath = configPath(workspaceRoot)
+
+  let rawText: string
+  try {
+    rawText = fs.readFileSync(filePath, 'utf-8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+      return structuredClone(DEFAULT_CONFIG)
+    }
+
+    throw new PluginSettingsStoreError(
+      'plugin-settings-config-load-failed',
+      'Unable to read plugin settings from .kanban.json.',
+      { configPath: filePath },
+    )
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawText)
+  } catch {
+    throw new PluginSettingsStoreError(
+      'plugin-settings-config-load-failed',
+      'Unable to parse plugin settings from .kanban.json.',
+      { configPath: filePath },
+    )
+  }
+
+  if (!isRecord(parsed)) {
+    throw new PluginSettingsStoreError(
+      'plugin-settings-config-load-failed',
+      'Unable to parse plugin settings from .kanban.json.',
+      { configPath: filePath },
+    )
+  }
+
+  return parsed as unknown as KanbanConfig
+}
+
+function writePluginSettingsConfigDocument(workspaceRoot: string, config: KanbanConfig): void {
+  const filePath = configPath(workspaceRoot)
+
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+  } catch {
+    throw new PluginSettingsStoreError(
+      'plugin-settings-config-save-failed',
+      'Unable to save plugin settings to .kanban.json.',
+      { configPath: filePath },
+    )
+  }
+}
+
+function ensurePluginSettingsOptionsRecord(
+  options: unknown,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+): Record<string, unknown> {
+  if (isRecord(options)) return structuredClone(options)
+
+  throw new PluginSettingsStoreError(
+    'plugin-settings-options-invalid',
+    'Plugin option updates must be an object payload.',
+    { capability, providerId },
+  )
+}
+
+function getMutablePluginsRecord(config: KanbanConfig): PluginCapabilitySelections {
+  const existing = isRecord(config.plugins) ? config.plugins : {}
+  const nextPlugins: PluginCapabilitySelections = {}
+
+  for (const [key, value] of Object.entries(existing)) {
+    if (isRecord(value) && typeof value.provider === 'string') {
+      nextPlugins[key as PluginCapabilityNamespace] = {
+        provider: value.provider,
+        ...(isRecord(value.options) ? { options: structuredClone(value.options) } : {}),
+      }
+    }
+  }
+
+  config.plugins = nextPlugins
+  return nextPlugins
+}
+
+function tokenizePluginSettingsPath(value: string): string[] {
+  const tokens: string[] = []
+  const pattern = /([^.[\]]+)|\[(\d+)\]/g
+
+  for (const match of value.matchAll(pattern)) {
+    tokens.push(match[1] ?? match[2])
+  }
+
+  return tokens
+}
+
+function matchesSecretPathPattern(pattern: string, currentPath: string): boolean {
+  const patternTokens = tokenizePluginSettingsPath(pattern)
+  const currentTokens = tokenizePluginSettingsPath(currentPath)
+
+  if (patternTokens.length !== currentTokens.length) return false
+
+  return patternTokens.every((token, index) => token === '*' || token === currentTokens[index])
+}
+
+function isSecretPath(patterns: readonly string[], currentPath: string): boolean {
+  return patterns.some((pattern) => matchesSecretPathPattern(pattern, currentPath))
+}
+
+function getLastPluginSettingsPathToken(currentPath: string): string | null {
+  const tokens = tokenizePluginSettingsPath(currentPath)
+  return tokens.length > 0 ? tokens[tokens.length - 1] : null
+}
+
+function mergeProviderOptionsUpdate(
+  currentValue: unknown,
+  nextValue: unknown,
+  currentPath: string,
+  secretPaths: readonly string[],
+  redaction: PluginSettingsRedactionPolicy,
+): unknown {
+  const currentToken = currentPath ? getLastPluginSettingsPathToken(currentPath) : null
+  if (currentPath && (isSecretPath(secretPaths, currentPath) || (currentToken !== null && isSecretKeyName(currentToken)))) {
+    if (nextValue === undefined || nextValue === redaction.maskedValue) {
+      return currentValue === undefined ? undefined : structuredClone(currentValue)
+    }
+    return structuredClone(nextValue)
+  }
+
+  if (Array.isArray(nextValue)) {
+    const currentArray = Array.isArray(currentValue) ? currentValue : []
+    return nextValue.map((entry, index) => mergeProviderOptionsUpdate(
+      currentArray[index],
+      entry,
+      `${currentPath}[${index}]`,
+      secretPaths,
+      redaction,
+    ))
+  }
+
+  if (!isRecord(nextValue)) {
+    return structuredClone(nextValue)
+  }
+
+  const currentRecord = isRecord(currentValue) ? currentValue : {}
+  const merged: Record<string, unknown> = {}
+
+  for (const [key, entry] of Object.entries(currentRecord)) {
+    merged[key] = structuredClone(entry)
+  }
+
+  for (const [key, entry] of Object.entries(nextValue)) {
+    const childPath = currentPath ? `${currentPath}.${key}` : key
+    const mergedValue = mergeProviderOptionsUpdate(currentRecord[key], entry, childPath, secretPaths, redaction)
+
+    if (mergedValue === undefined) {
+      delete merged[key]
+      continue
+    }
+
+    merged[key] = mergedValue
+  }
+
+  return merged
+}
+
+function getDiscoveredPluginSettingsProvider(
+  inventory: Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+): DiscoveredPluginProvider {
+  const provider = inventory.get(capability)?.get(providerId)
+  if (provider) return provider
+
+  throw new PluginSettingsStoreError(
+    'plugin-settings-provider-not-found',
+    'The requested plugin provider is not available for this capability.',
+    { capability, providerId },
+  )
+}
+
+function collectNodeModulePackageRequests(nodeModulesDir: string): string[] {
+  if (!fs.existsSync(nodeModulesDir)) return []
+
+  const requests = new Set<string>()
+  for (const entry of fs.readdirSync(nodeModulesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+
+    if (entry.name.startsWith('@')) {
+      const scopeDir = path.join(nodeModulesDir, entry.name)
+      for (const scopedEntry of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+        if (scopedEntry.isDirectory()) {
+          requests.add(`${entry.name}/${scopedEntry.name}`)
+        }
+      }
+      continue
+    }
+
+    requests.add(entry.name)
+  }
+
+  return [...requests]
+}
+
+function collectWorkspacePackageRequests(): string[] {
+  if (!WORKSPACE_ROOT) return []
+  const packagesDir = path.join(WORKSPACE_ROOT, 'packages')
+  if (!fs.existsSync(packagesDir)) return []
+
+  return fs.readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+}
+
+function collectSiblingPackageRequests(): string[] {
+  const parentDir = path.resolve(process.cwd(), '..')
+  if (!fs.existsSync(parentDir)) return []
+  const currentDirName = path.basename(process.cwd())
+
+  return fs.readdirSync(parentDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== currentDirName)
+    .filter((entry) => fs.existsSync(path.join(parentDir, entry.name, 'package.json')))
+    .map((entry) => entry.name)
+}
+
+function getGlobalNodeModulesDir(): string {
+  const npmPrefix = path.resolve(process.execPath, '..', '..')
+  return process.platform === 'win32'
+    ? path.join(npmPrefix, 'node_modules')
+    : path.join(npmPrefix, 'lib', 'node_modules')
+}
+
+function resolveExternalModuleWithSource(request: string): ResolvedExternalModule {
+  if (WORKSPACE_ROOT) {
+    const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
+    try {
+      return { module: runtimeRequire(workspacePackagePath), source: 'workspace' }
+    } catch (workspaceErr: unknown) {
+      if (!isMissingRequestedModule(workspacePackagePath, workspaceErr)) throw workspaceErr
+    }
+  }
+
+  try {
+    return { module: runtimeRequire(request), source: 'dependency' }
+  } catch (err: unknown) {
+    if (!isMissingRequestedModule(request, err)) throw err
+  }
+
+  try {
+    return { module: tryLoadGlobalPackage(request), source: 'global' }
+  } catch (err: unknown) {
+    if (!isMissingRequestedModule(request, err)) throw err
+  }
+
+  const siblingPackagePath = path.resolve(process.cwd(), '..', request)
+  try {
+    return { module: runtimeRequire(siblingPackagePath), source: 'sibling' }
+  } catch (siblingErr: unknown) {
+    if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
+      throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
+    }
+    throw siblingErr
+  }
+}
+
+function tryResolveExternalModuleWithSource(request: string): ResolvedExternalModule | null {
+  try {
+    return resolveExternalModuleWithSource(request)
+  } catch {
+    return null
+  }
+}
+
+function isValidCardStoragePluginCandidate(plugin: unknown): plugin is CardStoragePlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as CardStoragePlugin
+  return typeof candidate.createEngine === 'function'
+    && isValidPluginManifest(candidate.manifest, 'card.storage')
+}
+
+function isValidAttachmentStoragePluginCandidate(plugin: unknown): plugin is AttachmentStoragePlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as AttachmentStoragePlugin
+  return typeof candidate.copyAttachment === 'function'
+    && (typeof candidate.getCardDir === 'function' || typeof candidate.materializeAttachment === 'function')
+    && isValidPluginManifest(candidate.manifest, 'attachment.storage')
+}
+
+function isValidAuthIdentityPluginCandidate(plugin: unknown): plugin is AuthIdentityPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as AuthIdentityPlugin
+  return typeof candidate.resolveIdentity === 'function'
+    && typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && candidate.manifest.provides.includes('auth.identity')
+}
+
+function isValidAuthPolicyPluginCandidate(plugin: unknown): plugin is AuthPolicyPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as AuthPolicyPlugin
+  return typeof candidate.checkPolicy === 'function'
+    && typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && candidate.manifest.provides.includes('auth.policy')
+}
+
+function isValidCardStateProviderCandidate(provider: unknown): provider is CardStateProvider {
+  if (!provider || typeof provider !== 'object') return false
+  const candidate = provider as CardStateProvider
+  return typeof candidate.getCardState === 'function'
+    && typeof candidate.setCardState === 'function'
+    && typeof candidate.getUnreadCursor === 'function'
+    && typeof candidate.markUnreadReadThrough === 'function'
+    && typeof candidate.manifest?.id === 'string'
+    && Array.isArray(candidate.manifest?.provides)
+    && candidate.manifest.provides.includes('card.state')
+}
+
+function getProviderOptionsSchemaCandidate(
+  mod: Record<string, unknown>,
+  providerId: string,
+  directCandidate: unknown,
+): PluginSettingsOptionsSchemaMetadata | undefined {
+  if (isRecord(directCandidate) && typeof directCandidate.optionsSchema === 'function') {
+    return normalizePluginSettingsOptionsSchema(directCandidate.optionsSchema())
+  }
+
+  const mappedOptionsSchemas = mod.optionsSchemas
+  if (isRecord(mappedOptionsSchemas)) {
+    const mappedValue = mappedOptionsSchemas[providerId]
+    if (typeof mappedValue === 'function') {
+      return normalizePluginSettingsOptionsSchema(mappedValue())
+    }
+    const normalized = normalizePluginSettingsOptionsSchema(mappedValue)
+    if (normalized) return normalized
+  }
+
+  if (typeof mod.optionsSchema === 'function') {
+    return normalizePluginSettingsOptionsSchema(mod.optionsSchema())
+  }
+
+  return undefined
+}
+
+function addDiscoveredProvider(
+  inventory: Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>,
+  provider: DiscoveredPluginProvider,
+): void {
+  const byCapability = inventory.get(provider.capability) ?? new Map<string, DiscoveredPluginProvider>()
+  inventory.set(provider.capability, byCapability)
+
+  const existing = byCapability.get(provider.providerId)
+  if (existing && DISCOVERY_SOURCE_PRIORITY[existing.discoverySource] >= DISCOVERY_SOURCE_PRIORITY[provider.discoverySource]) {
+    return
+  }
+
+  byCapability.set(provider.providerId, provider)
+}
+
+function registerBuiltinPluginProviders(
+  inventory: Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>,
+): void {
+  addDiscoveredProvider(inventory, {
+    capability: 'card.storage',
+    providerId: MARKDOWN_PLUGIN.manifest.id,
+    packageName: MARKDOWN_PLUGIN.manifest.id,
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'attachment.storage',
+    providerId: 'localfs',
+    packageName: 'localfs',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'card.state',
+    providerId: 'builtin',
+    packageName: 'builtin',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'auth.identity',
+    providerId: 'noop',
+    packageName: 'noop',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'auth.identity',
+    providerId: 'rbac',
+    packageName: 'rbac',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'auth.policy',
+    providerId: 'noop',
+    packageName: 'noop',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
+    capability: 'auth.policy',
+    providerId: 'rbac',
+    packageName: 'rbac',
+    discoverySource: 'builtin',
+  })
+}
+
+function inspectExternalPluginModule(request: string, resolved: ResolvedExternalModule): DiscoveredPluginProvider[] {
+  const mod = resolved.module as Record<string, unknown>
+  const discovered: DiscoveredPluginProvider[] = []
+  const add = (provider: DiscoveredPluginProvider): void => {
+    discovered.push(provider)
+  }
+
+  const cardStoragePlugin = isValidCardStoragePluginCandidate(mod.cardStoragePlugin)
+    ? mod.cardStoragePlugin
+    : isValidCardStoragePluginCandidate(mod.default)
+      ? mod.default
+      : null
+  if (cardStoragePlugin) {
+    add({
+      capability: 'card.storage',
+      providerId: cardStoragePlugin.manifest.id,
+      packageName: request,
+      discoverySource: resolved.source,
+      optionsSchema: getProviderOptionsSchemaCandidate(mod, cardStoragePlugin.manifest.id, cardStoragePlugin),
+    })
+  }
+
+  const attachmentStoragePlugin = isValidAttachmentStoragePluginCandidate(mod.attachmentStoragePlugin)
+    ? mod.attachmentStoragePlugin
+    : isValidAttachmentStoragePluginCandidate(mod.default)
+      ? mod.default
+      : null
+  if (attachmentStoragePlugin) {
+    add({
+      capability: 'attachment.storage',
+      providerId: attachmentStoragePlugin.manifest.id,
+      packageName: request,
+      discoverySource: resolved.source,
+      optionsSchema: getProviderOptionsSchemaCandidate(mod, attachmentStoragePlugin.manifest.id, attachmentStoragePlugin),
+    })
+  }
+
+  if (isRecord(mod.authIdentityPlugins)) {
+    for (const [providerId, candidate] of Object.entries(mod.authIdentityPlugins)) {
+      if (!isValidAuthIdentityPlugin(candidate, providerId)) continue
+      add({
+        capability: 'auth.identity',
+        providerId,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+      })
+    }
+  }
+
+  if (typeof mod.createAuthIdentityPlugin === 'function') {
+    const candidate = (mod.createAuthIdentityPlugin as (options?: Record<string, unknown>) => unknown)()
+    if (isValidAuthIdentityPluginCandidate(candidate)) {
+      add({
+        capability: 'auth.identity',
+        providerId: candidate.manifest.id,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
+      })
+    }
+  }
+
+  if (isRecord(mod.authPolicyPlugins)) {
+    for (const [providerId, candidate] of Object.entries(mod.authPolicyPlugins)) {
+      if (!isValidAuthPolicyPlugin(candidate, providerId)) continue
+      add({
+        capability: 'auth.policy',
+        providerId,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+      })
+    }
+  }
+
+  if (typeof mod.createAuthPolicyPlugin === 'function') {
+    const candidate = (mod.createAuthPolicyPlugin as (options?: Record<string, unknown>) => unknown)()
+    if (isValidAuthPolicyPluginCandidate(candidate)) {
+      add({
+        capability: 'auth.policy',
+        providerId: candidate.manifest.id,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
+      })
+    }
+  }
+
+  const directWebhookPlugin = isRecord(mod.webhookProviderPlugin) ? mod.webhookProviderPlugin : mod.default
+  if (directWebhookPlugin && isValidWebhookProviderManifest((directWebhookPlugin as WebhookProviderPlugin).manifest)) {
+    const provider = directWebhookPlugin as WebhookProviderPlugin
+    add({
+      capability: 'webhook.delivery',
+      providerId: provider.manifest.id,
+      packageName: request,
+      discoverySource: resolved.source,
+      optionsSchema: getProviderOptionsSchemaCandidate(mod, provider.manifest.id, provider),
+    })
+  }
+
+  if (isRecord(mod.cardStateProviders)) {
+    for (const [providerId, candidate] of Object.entries(mod.cardStateProviders)) {
+      if (!isValidCardStateProvider(candidate, providerId)) continue
+      add({
+        capability: 'card.state',
+        providerId,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+      })
+    }
+  }
+
+  if (isValidCardStateProviderCandidate(mod.cardStateProvider)) {
+    add({
+      capability: 'card.state',
+      providerId: mod.cardStateProvider.manifest.id,
+      packageName: request,
+      discoverySource: resolved.source,
+      optionsSchema: getProviderOptionsSchemaCandidate(mod, mod.cardStateProvider.manifest.id, mod.cardStateProvider),
+    })
+  } else if (isValidCardStateProviderCandidate(mod.default)) {
+    add({
+      capability: 'card.state',
+      providerId: mod.default.manifest.id,
+      packageName: request,
+      discoverySource: resolved.source,
+      optionsSchema: getProviderOptionsSchemaCandidate(mod, mod.default.manifest.id, mod.default),
+    })
+  } else if (typeof mod.createCardStateProvider === 'function') {
+    const candidate = (mod.createCardStateProvider as (context: CardStateModuleContext) => unknown)({
+      workspaceRoot: process.cwd(),
+      kanbanDir: path.join(process.cwd(), '.kanban'),
+      provider: request,
+      backend: 'external',
+    })
+    if (isValidCardStateProviderCandidate(candidate)) {
+      add({
+        capability: 'card.state',
+        providerId: candidate.manifest.id,
+        packageName: request,
+        discoverySource: resolved.source,
+        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
+      })
+    }
+  }
+
+  return discovered
+}
+
+function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, providerId: string): boolean {
+  switch (capability) {
+    case 'card.storage':
+      return BUILTIN_CARD_PLUGINS.has(providerId)
+    case 'attachment.storage':
+      return BUILTIN_ATTACHMENT_IDS.has(providerId)
+    case 'card.state':
+      return BUILTIN_CARD_STATE_PROVIDER_IDS.has(providerId)
+    case 'auth.identity':
+    case 'auth.policy':
+      return BUILTIN_AUTH_PROVIDER_IDS.has(providerId)
+    case 'webhook.delivery':
+      return false
+  }
+}
+
+function resolveExternalPackageName(capability: PluginCapabilityNamespace, providerId: string): string {
+  switch (capability) {
+    case 'card.storage':
+    case 'attachment.storage':
+      return PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'card.state':
+      return CARD_STATE_PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'auth.identity':
+    case 'auth.policy':
+      return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'webhook.delivery':
+      return WEBHOOK_PROVIDER_ALIASES.get(providerId) ?? providerId
+  }
+}
+
+function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapshot): string[] {
+  const requests = new Set<string>()
+  const add = (request: string | undefined): void => {
+    if (request) requests.add(request)
+  }
+
+  for (const request of collectWorkspacePackageRequests()) add(request)
+  for (const request of collectNodeModulePackageRequests(path.join(process.cwd(), 'node_modules'))) add(request)
+  if (WORKSPACE_ROOT && WORKSPACE_ROOT !== process.cwd()) {
+    for (const request of collectNodeModulePackageRequests(path.join(WORKSPACE_ROOT, 'node_modules'))) add(request)
+  }
+  for (const request of collectNodeModulePackageRequests(getGlobalNodeModulesDir())) add(request)
+  for (const request of collectSiblingPackageRequests()) add(request)
+
+  for (const request of PROVIDER_ALIASES.values()) add(request)
+  for (const request of CARD_STATE_PROVIDER_ALIASES.values()) add(request)
+  for (const request of AUTH_PROVIDER_ALIASES.values()) add(request)
+  for (const request of WEBHOOK_PROVIDER_ALIASES.values()) add(request)
+
+  for (const capability of PLUGIN_CAPABILITY_NAMESPACES) {
+    const providerRef = config.plugins?.[capability]
+    if (providerRef && !isBuiltinProviderForCapability(capability, providerRef.provider)) {
+      add(resolveExternalPackageName(capability, providerRef.provider))
+    }
+  }
+
+  if (config.storageEngine !== undefined) {
+    add(resolveExternalPackageName('card.storage', normalizeStorageCapabilities(config)['card.storage'].provider))
+  }
+  if (config.auth?.['auth.identity']) {
+    add(resolveExternalPackageName('auth.identity', config.auth['auth.identity'].provider))
+  }
+  if (config.auth?.['auth.policy']) {
+    add(resolveExternalPackageName('auth.policy', config.auth['auth.policy'].provider))
+  }
+  if (config.webhookPlugin?.['webhook.delivery']) {
+    add(resolveExternalPackageName('webhook.delivery', config.webhookPlugin['webhook.delivery'].provider))
+  }
+
+  return [...requests]
+}
+
+function buildPluginSettingsInventoryCatalog(
+  workspaceRoot: string,
+  config: PluginSettingsConfigSnapshot,
+): Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>> {
+  const inventory = new Map<PluginCapabilityNamespace, Map<string, DiscoveredPluginProvider>>()
+  registerBuiltinPluginProviders(inventory)
+
+  for (const request of collectPluginSettingsPackageRequests(config)) {
+    const resolved = tryResolveExternalModuleWithSource(request)
+    if (!resolved) continue
+
+    for (const provider of inspectExternalPluginModule(request, resolved)) {
+      addDiscoveredProvider(inventory, provider)
+    }
+  }
+
+  return inventory
+}
+
+function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capability: PluginCapabilityNamespace): PluginSettingsSelectedState {
+  switch (capability) {
+    case 'card.storage': {
+      const selected = normalizeStorageCapabilities(config)['card.storage']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['card.storage']
+          ? 'config'
+          : config.storageEngine !== undefined
+            ? 'legacy'
+            : 'default',
+      }
+    }
+    case 'attachment.storage': {
+      const selected = normalizeStorageCapabilities(config)['attachment.storage']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['attachment.storage'] ? 'config' : 'default',
+      }
+    }
+    case 'card.state': {
+      const selected = normalizeCardStateCapabilities(config)['card.state']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['card.state'] ? 'config' : 'default',
+      }
+    }
+    case 'auth.identity': {
+      const selected = normalizeAuthCapabilities(config)['auth.identity']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['auth.identity']
+          ? 'config'
+          : config.auth?.['auth.identity']
+            ? 'legacy'
+            : 'default',
+      }
+    }
+    case 'auth.policy': {
+      const selected = normalizeAuthCapabilities(config)['auth.policy']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['auth.policy']
+          ? 'config'
+          : config.auth?.['auth.policy']
+            ? 'legacy'
+            : 'default',
+      }
+    }
+    case 'webhook.delivery': {
+      const selected = normalizeWebhookCapabilities(config)['webhook.delivery']
+      return {
+        capability,
+        providerId: selected.provider,
+        source: config.plugins?.['webhook.delivery']
+          ? 'config'
+          : config.webhookPlugin?.['webhook.delivery']
+            ? 'legacy'
+            : 'default',
+      }
+    }
+  }
+}
+
+function getSelectedProviderRef(config: PluginSettingsConfigSnapshot, capability: PluginCapabilityNamespace): ProviderRef | null {
+  switch (capability) {
+    case 'card.storage':
+      return normalizeStorageCapabilities(config)['card.storage']
+    case 'attachment.storage':
+      return normalizeStorageCapabilities(config)['attachment.storage']
+    case 'card.state':
+      return normalizeCardStateCapabilities(config)['card.state']
+    case 'auth.identity':
+      return normalizeAuthCapabilities(config)['auth.identity']
+    case 'auth.policy':
+      return normalizeAuthCapabilities(config)['auth.policy']
+    case 'webhook.delivery':
+      return normalizeWebhookCapabilities(config)['webhook.delivery']
+  }
+}
+
+function isSecretKeyName(key: string): boolean {
+  return PLUGIN_SETTINGS_SECRET_KEY_PATTERN.test(key)
+}
+
+function redactProviderOptionsValue(
+  value: unknown,
+  currentPath: string,
+  secretPaths: readonly string[],
+  redactedPaths: string[],
+  redaction: PluginSettingsRedactionPolicy,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry, index) => redactProviderOptionsValue(
+      entry,
+      `${currentPath}[${index}]`,
+      secretPaths,
+      redactedPaths,
+      redaction,
+    ))
+  }
+
+  if (!isRecord(value)) return value
+
+  const next: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    const childPath = currentPath ? `${currentPath}.${key}` : key
+    if (isSecretPath(secretPaths, childPath) || isSecretKeyName(key)) {
+      next[key] = redaction.maskedValue
+      redactedPaths.push(childPath)
+      continue
+    }
+
+    next[key] = redactProviderOptionsValue(entry, childPath, secretPaths, redactedPaths, redaction)
+  }
+
+  return next
+}
+
+function createRedactedProviderOptions(
+  options: Record<string, unknown> | undefined,
+  optionsSchema: PluginSettingsOptionsSchemaMetadata | undefined,
+  redaction: PluginSettingsRedactionPolicy,
+): PluginSettingsRedactedValues | null {
+  if (options === undefined) return null
+
+  const redactedPaths: string[] = []
+  const secretPaths = optionsSchema?.secrets.map((secret) => secret.path) ?? []
+  const values = redactProviderOptionsValue(structuredClone(options), '', secretPaths, redactedPaths, redaction)
+
+  return {
+    values: isRecord(values) ? values : {},
+    redactedPaths,
+    redaction,
+  }
+}
+
+export function discoverPluginSettingsInventory(
+  workspaceRoot: string,
+  redaction: PluginSettingsRedactionPolicy,
+): PluginSettingsPayload {
+  const config = readPluginSettingsConfigDocument(workspaceRoot)
+  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+
+  const capabilities: PluginSettingsCapabilityRow[] = PLUGIN_CAPABILITY_NAMESPACES.map((capability) => {
+    const selected = getCapabilitySelectedState(config, capability)
+    const providers = [...(inventory.get(capability)?.values() ?? [])]
+      .sort((left, right) => left.providerId.localeCompare(right.providerId))
+      .map<PluginSettingsProviderRow>((provider) => ({
+        capability,
+        providerId: provider.providerId,
+        packageName: provider.packageName,
+        discoverySource: provider.discoverySource,
+        isSelected: provider.providerId === selected.providerId,
+        ...(provider.optionsSchema ? { optionsSchema: provider.optionsSchema } : {}),
+      }))
+
+    return { capability, selected, providers }
+  })
+
+  return { capabilities, redaction }
+}
+
+export function readPluginSettingsProvider(
+  workspaceRoot: string,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+  redaction: PluginSettingsRedactionPolicy,
+): PluginSettingsProviderReadModel | null {
+  const config = readPluginSettingsConfigDocument(workspaceRoot)
+  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const provider = inventory.get(capability)?.get(providerId)
+  if (!provider) return null
+
+  const selected = getCapabilitySelectedState(config, capability)
+  const selectedRef = getSelectedProviderRef(config, capability)
+  const options = selected.providerId === providerId
+    ? createRedactedProviderOptions(selectedRef?.options, provider.optionsSchema, redaction)
+    : null
+
+  return {
+    capability,
+    providerId,
+    packageName: provider.packageName,
+    discoverySource: provider.discoverySource,
+    ...(provider.optionsSchema ? { optionsSchema: provider.optionsSchema } : {}),
+    selected,
+    options,
+  }
+}
+
+export function persistPluginSettingsProviderSelection(
+  workspaceRoot: string,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+  redaction: PluginSettingsRedactionPolicy,
+): PluginSettingsProviderReadModel {
+  const config = readPluginSettingsConfigDocument(workspaceRoot)
+  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+
+  const selectedRef = getSelectedProviderRef(config, capability)
+  const nextRef = selectedRef?.provider === providerId
+    ? cloneProviderRef(selectedRef)
+    : { provider: providerId }
+
+  getMutablePluginsRecord(config)[capability] = nextRef
+  writePluginSettingsConfigDocument(workspaceRoot, config)
+
+  const nextProvider = readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction)
+  if (nextProvider) return nextProvider
+
+  throw new PluginSettingsStoreError(
+    'plugin-settings-provider-not-found',
+    'The requested plugin provider is not available for this capability.',
+    { capability, providerId },
+  )
+}
+
+export function persistPluginSettingsProviderOptions(
+  workspaceRoot: string,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+  options: unknown,
+  redaction: PluginSettingsRedactionPolicy,
+): PluginSettingsProviderReadModel {
+  const config = readPluginSettingsConfigDocument(workspaceRoot)
+  const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+  const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
+  const selectedRef = getSelectedProviderRef(config, capability)
+  const currentOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
+    ? selectedRef.options
+    : undefined
+  const secretPaths = provider.optionsSchema?.secrets.map((secret) => secret.path) ?? []
+  const mergedOptions = mergeProviderOptionsUpdate(currentOptions, nextOptions, '', secretPaths, redaction)
+
+  getMutablePluginsRecord(config)[capability] = {
+    provider: providerId,
+    options: isRecord(mergedOptions) ? mergedOptions : {},
+  }
+  writePluginSettingsConfigDocument(workspaceRoot, config)
+
+  const nextProvider = readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction)
+  if (nextProvider) return nextProvider
+
+  throw new PluginSettingsStoreError(
+    'plugin-settings-provider-not-found',
+    'The requested plugin provider is not available for this capability.',
+    { capability, providerId },
+  )
 }
 
 function isValidAuthIdentityPlugin(plugin: unknown, providerId: string): plugin is AuthIdentityPlugin {

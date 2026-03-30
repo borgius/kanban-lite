@@ -1,7 +1,26 @@
+import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+
+// In dev mode, spawn the standalone server from TS source via tsx (no build needed)
+function standaloneServerPlugin(configFile: string, port = 2954): Plugin {
+  let child: ChildProcess | null = null
+  return {
+    name: 'standalone-server',
+    apply: 'serve',
+    configureServer(server) {
+      child = spawn(
+        'tsx',
+        ['src/standalone/index.ts', '--port', String(port), '--no-browser', '--config', configFile],
+        { stdio: 'inherit', cwd: resolve(__dirname), env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=8192' } }
+      )
+      server.httpServer?.on('close', () => child?.kill())
+      process.on('exit', () => child?.kill())
+    }
+  }
+}
 
 // In dev mode, serve standalone.html for all non-asset requests (SPA routing)
 function standaloneHtmlPlugin(): Plugin {
@@ -25,8 +44,10 @@ function standaloneHtmlPlugin(): Plugin {
   }
 }
 
+const configFile = process.env.KANBAN_CONFIG ?? resolve(__dirname, '../../.kanban.json')
+
 export default defineConfig({
-  plugins: [react(), standaloneHtmlPlugin()],
+  plugins: [react(), standaloneServerPlugin(configFile, 2954), standaloneHtmlPlugin()],
   root: resolve(__dirname, 'src/webview'),
   server: {
     port: 3000,

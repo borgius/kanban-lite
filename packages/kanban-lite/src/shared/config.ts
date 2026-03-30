@@ -47,6 +47,26 @@ export type WebhookCapabilitySelections = Partial<Record<WebhookCapabilityNamesp
 /** Fully normalized webhook capability selections used at runtime. */
 export type ResolvedWebhookCapabilities = Record<WebhookCapabilityNamespace, ProviderRef>
 
+/** Capability namespaces surfaced by the plugin settings inventory and selection flows. */
+export type PluginCapabilityNamespace =
+  | CapabilityNamespace
+  | CardStateCapabilityNamespace
+  | AuthCapabilityNamespace
+  | WebhookCapabilityNamespace
+
+/** Stable ordered capability list reused by plugin settings hosts and tests. */
+export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] = [
+  'card.storage',
+  'attachment.storage',
+  'card.state',
+  'auth.identity',
+  'auth.policy',
+  'webhook.delivery',
+]
+
+/** Partial plugin capability selections keyed by the full plugin settings namespace set. */
+export type PluginCapabilitySelections = Partial<Record<PluginCapabilityNamespace, ProviderRef>>
+
 /**
  * A registered webhook endpoint that receives event notifications.
  *
@@ -249,7 +269,7 @@ export interface KanbanConfig {
      * `"provider": "kl-auth-plugin"`). When present they take precedence over
      * any value in the legacy {@link auth} key.
    */
-  plugins?: CapabilitySelections & CardStateCapabilitySelections & AuthCapabilitySelections & WebhookCapabilitySelections
+  plugins?: PluginCapabilitySelections
   /**
    * Legacy auth provider selections.
    * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the

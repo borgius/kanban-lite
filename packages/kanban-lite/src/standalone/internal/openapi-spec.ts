@@ -65,6 +65,22 @@ const labelNameParam = {
   description: 'Label name (URL-encoded)',
 }
 
+const pluginCapabilityParam = {
+  name: 'capability',
+  in: 'path' as const,
+  required: true as const,
+  schema: { type: 'string' as const },
+  description: 'Plugin capability namespace (for example `auth.identity` or `card.storage`).',
+}
+
+const pluginProviderIdParam = {
+  name: 'providerId',
+  in: 'path' as const,
+  required: true as const,
+  schema: { type: 'string' as const },
+  description: 'Plugin provider identifier within the selected capability.',
+}
+
 const listTasksQueryParams = [
   { name: 'q', in: 'query' as const, schema: { type: 'string' as const }, description: 'Free-text search. May include inline `meta.field: value` tokens.' },
   { name: 'fuzzy', in: 'query' as const, schema: { type: 'boolean' as const }, description: 'Enable fuzzy matching for free-text search and metadata tokens.' },
@@ -156,6 +172,7 @@ export const KANBAN_OPENAPI_SPEC = {
     { name: 'Attachments', description: 'File attachments on tasks' },
     { name: 'Logs', description: 'Append-only log entries on tasks and boards' },
     { name: 'Settings', description: 'Workspace display settings' },
+    { name: 'Plugins', description: 'Plugin discovery, selection, options, and guarded installation' },
     { name: 'Labels', description: 'Label definitions and cascading renames' },
     { name: 'Workspace', description: 'Workspace metadata, storage, and auth status' },
   ],
@@ -1080,6 +1097,100 @@ export const KANBAN_OPENAPI_SPEC = {
           },
         },
         responses: { 200: { description: 'Updated settings.' }, 400: { description: 'Error.' } },
+      },
+    },
+    '/api/plugin-settings': {
+      get: {
+        tags: ['Plugins'],
+        summary: 'List plugin providers',
+        description: 'Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload.',
+        responses: { 200: { description: 'Capability-grouped plugin inventory.' }, 500: { description: 'Unable to list plugin settings.' } },
+      },
+    },
+    '/api/plugin-settings/{capability}/{providerId}': {
+      get: {
+        tags: ['Plugins'],
+        summary: 'Read plugin settings',
+        description: 'Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders.',
+        parameters: [pluginCapabilityParam, pluginProviderIdParam],
+        responses: {
+          200: { description: 'Redacted provider read model.' },
+          404: { description: 'Provider not found for the requested capability.' },
+          500: { description: 'Unable to read plugin settings.' },
+        },
+      },
+    },
+    '/api/plugin-settings/{capability}/{providerId}/select': {
+      put: {
+        tags: ['Plugins'],
+        summary: 'Select plugin provider',
+        description: 'Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation.',
+        parameters: [pluginCapabilityParam, pluginProviderIdParam],
+        responses: {
+          200: { description: 'Updated redacted provider read model after selection.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Provider not found for the requested capability.' },
+          500: { description: 'Unable to persist the selected provider.' },
+        },
+      },
+    },
+    '/api/plugin-settings/{capability}/{providerId}/options': {
+      put: {
+        tags: ['Plugins'],
+        summary: 'Update plugin options',
+        description: 'Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets.',
+        parameters: [pluginCapabilityParam, pluginProviderIdParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object' as const,
+                properties: {
+                  options: {
+                    type: 'object' as const,
+                    description: 'Provider options payload to persist under the selected capability/provider pair.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Updated redacted provider read model after persisting options.' },
+          400: { description: 'Invalid options payload.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Provider not found for the requested capability.' },
+          500: { description: 'Unable to persist plugin options.' },
+        },
+      },
+    },
+    '/api/plugin-settings/install': {
+      post: {
+        tags: ['Plugins'],
+        summary: 'Install plugin package',
+        description: 'Runs the guarded in-product installer for exact unscoped `kl-*` package names only. Responses surface redacted diagnostics and never expose raw installer stdout/stderr.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object' as const,
+                required: ['packageName', 'scope'],
+                properties: {
+                  packageName: { type: 'string' as const, description: 'Exact unscoped `kl-*` package name.' },
+                  scope: { type: 'string' as const, enum: ['workspace', 'global'] as const, description: 'Install destination.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Redacted install result.' },
+          400: { description: 'Rejected input or redacted install failure.' },
+          403: { description: 'Forbidden.' },
+          500: { description: 'Unexpected installer error.' },
+        },
       },
     },
     // ------------------------------------------------------------------

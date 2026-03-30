@@ -55,6 +55,24 @@ await sdk.deleteCard(card.id)
 
 ## KanbanSDK Class
 
+<a name="PluginSettingsOperationError"></a>
+
+### PluginSettingsOperationError
+Error thrown when plugin settings SDK operations fail with a redacted payload.
+
+**Kind**: global class  
+
+* * *
+
+<a name="PluginSettingsValidationError"></a>
+
+### PluginSettingsValidationError
+Error thrown when a plugin settings contract validation boundary rejects input.
+
+**Kind**: global class  
+
+* * *
+
 <a name="KanbanSDK"></a>
 
 ### KanbanSDK
@@ -94,6 +112,11 @@ HTTP server are all built on top of.
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
         * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
+        * [.listPluginSettings()](#KanbanSDK+listPluginSettings) ⇒
+        * [.getPluginSettings(capability, providerId)](#KanbanSDK+getPluginSettings) ⇒
+        * [.selectPluginSettingsProvider(capability, providerId)](#KanbanSDK+selectPluginSettingsProvider) ⇒
+        * [.updatePluginSettingsOptions(capability, providerId, options)](#KanbanSDK+updatePluginSettingsOptions) ⇒
+        * [.installPluginSettingsPackage(input)](#KanbanSDK+installPluginSettingsPackage) ⇒
         * [.getCardStateStatus()](#KanbanSDK+getCardStateStatus)
         * [.getExtension(id)](#KanbanSDK+getExtension) ⇒
         * [._requireCardStateCapabilities()](#KanbanSDK+_requireCardStateCapabilities)
@@ -162,6 +185,7 @@ HTTP server are all built on top of.
         * [.addComment(cardId, author, content, boardId)](#KanbanSDK+addComment) ⇒
         * [.updateComment(cardId, commentId, content, boardId)](#KanbanSDK+updateComment) ⇒
         * [.deleteComment(cardId, commentId, boardId)](#KanbanSDK+deleteComment) ⇒
+        * [.streamComment(cardId, author, stream)](#KanbanSDK+streamComment) ⇒
         * [.getLogFilePath(cardId, boardId)](#KanbanSDK+getLogFilePath) ⇒
         * [.listLogs(cardId, boardId)](#KanbanSDK+listLogs) ⇒
         * [.addLog(cardId, text, options, boardId)](#KanbanSDK+addLog) ⇒
@@ -436,6 +460,107 @@ const status = sdk.getWebhookStatus()
 console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
 console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
 ```
+
+* * *
+
+<a name="KanbanSDK+listPluginSettings"></a>
+
+#### kanbanSDK.listPluginSettings() ⇒
+Lists the capability-grouped plugin provider inventory for the workspace.
+
+Discovery reuses the canonical runtime loader order so the returned rows
+reflect providers that the SDK can actually resolve at runtime. Selected
+state is derived from `.kanban.json`, and the payload carries the shared
+plugin-settings redaction policy for downstream UI/API/CLI/MCP reuse.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A capability-grouped plugin settings inventory payload.  
+
+* * *
+
+<a name="KanbanSDK+getPluginSettings"></a>
+
+#### kanbanSDK.getPluginSettings(capability, providerId) ⇒
+Returns the redacted plugin settings read model for one provider.
+
+The read model includes the provider's discovery source, current selected
+state for the capability, any discovered options schema metadata, and a
+redacted snapshot of persisted options when this provider is selected.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The redacted provider read model, or `null` when the provider is not discovered.  
+
+| Param | Description |
+| --- | --- |
+| capability | The capability namespace to inspect. |
+| providerId | Provider identifier within that capability. |
+
+
+* * *
+
+<a name="KanbanSDK+selectPluginSettingsProvider"></a>
+
+#### kanbanSDK.selectPluginSettingsProvider(capability, providerId) ⇒
+Persists the canonical selected provider for one capability inside `.kanban.json`.
+
+Selection is modeled only by the provider ref stored under `plugins[capability]`.
+Re-selecting the same provider preserves any existing persisted options while
+switching to a different provider replaces the previous single-provider entry.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The redacted provider read model after persistence succeeds.  
+
+| Param | Description |
+| --- | --- |
+| capability | Capability namespace to update. |
+| providerId | Provider identifier to select. |
+
+
+* * *
+
+<a name="KanbanSDK+updatePluginSettingsOptions"></a>
+
+#### kanbanSDK.updatePluginSettingsOptions(capability, providerId, options) ⇒
+Persists provider options under the canonical capability-selection model.
+
+Secret fields remain write-only: callers may submit the shared masked value
+placeholder to keep an existing stored secret unchanged, while any non-masked
+replacement overwrites that secret. Persisting options also canonicalizes the
+selected provider under `plugins[capability]`.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The redacted provider read model after persistence succeeds.  
+
+| Param | Description |
+| --- | --- |
+| capability | Capability namespace to update. |
+| providerId | Provider identifier whose options are being updated. |
+| options | Provider options payload to persist. |
+
+
+* * *
+
+<a name="KanbanSDK+installPluginSettingsPackage"></a>
+
+#### kanbanSDK.installPluginSettingsPackage(input) ⇒
+Installs a supported external plugin package through guarded `npm install` execution.
+
+The SDK validates the request before launching a subprocess, accepts only exact
+unscoped `kl-*` package names, always disables lifecycle scripts for in-product
+installs, and redacts stdout/stderr before surfacing either the success payload
+or a structured failure payload.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: Structured redacted success payload describing the executed npm command.  
+**Throws**:
+
+- [<code>PluginSettingsOperationError</code>](#PluginSettingsOperationError) When validation fails or npm exits unsuccessfully.
+
+
+| Param | Description |
+| --- | --- |
+| input | Candidate package name and install scope to validate and install. |
+
 
 * * *
 
@@ -1908,6 +2033,48 @@ const card = await sdk.deleteComment('42', 'c2')
 
 * * *
 
+<a name="KanbanSDK+streamComment"></a>
+
+#### kanbanSDK.streamComment(cardId, author, stream) ⇒
+Creates a comment on a card from a streaming text source, persisting it
+once the stream is exhausted.
+
+This method is the streaming counterpart to [addComment](addComment). It is
+intended for use by AI agents that generate comment text incrementally
+(e.g. an LLM `textStream`). The caller may supply `onStart` and `onChunk`
+callbacks to fan live progress out to connected WebSocket viewers without
+requiring intermediate disk writes.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A promise resolving to the updated [Card](Card) once the stream
+  has been fully consumed and the comment has been persisted.  
+**Throws**:
+
+- <code>Error</code> If the card is not found.
+- <code>Error</code> If `author` is empty.
+
+
+| Param | Description |
+| --- | --- |
+| cardId | The ID of the card to comment on. |
+| author | Display name of the streaming author. |
+| stream | An `AsyncIterable<string>` that yields text chunks. |
+| options.boardId | Optional board ID override. |
+| options.onStart | Called once before iteration with the allocated   comment ID, author, and ISO timestamp. |
+| options.onChunk | Called after each chunk with the comment ID and   the raw chunk string. |
+
+**Example**  
+```ts
+// Stream an AI SDK textStream as a comment
+const { textStream } = await streamText({ model, prompt })
+const card = await sdk.streamComment('42', 'ai-agent', textStream, {
+  onStart: (id, author, created) => broadcast({ type: 'commentStreamStart', cardId: '42', commentId: id, author, created }),
+  onChunk: (id, chunk) => broadcast({ type: 'commentChunk', cardId: '42', commentId: id, chunk }),
+})
+```
+
+* * *
+
 <a name="KanbanSDK+getLogFilePath"></a>
 
 #### kanbanSDK.getLogFilePath(cardId, boardId) ⇒
@@ -2611,6 +2778,42 @@ Recursively deep-merges `source` into a shallow copy of `target`.
 
 * * *
 
+<a name="PLUGIN_SETTINGS_REDACTION_TARGETS"></a>
+
+### PLUGIN\_SETTINGS\_REDACTION\_TARGETS
+Shared plugin secret redaction targets that every surface must honor.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="DEFAULT_PLUGIN_SETTINGS_REDACTION"></a>
+
+### DEFAULT\_PLUGIN\_SETTINGS\_REDACTION
+Default write-only secret masking policy for plugin settings contracts.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="PLUGIN_SETTINGS_INSTALL_SCOPES"></a>
+
+### PLUGIN\_SETTINGS\_INSTALL\_SCOPES
+Supported install scopes for in-product plugin installation requests.
+
+**Kind**: global variable  
+
+* * *
+
+<a name="EXACT_PLUGIN_SETTINGS_PACKAGE_NAME_PATTERN"></a>
+
+### EXACT\_PLUGIN\_SETTINGS\_PACKAGE\_NAME\_PATTERN
+Exact package-name matcher for install requests accepted by the plugin settings contract.
+
+**Kind**: global variable  
+
+* * *
+
 <a name="_isPlainObject"></a>
 
 ### \_isPlainObject()
@@ -2621,6 +2824,47 @@ class instances, primitives, and `null`. Used by `KanbanSDK._deepMerge`.
 
 **Kind**: global function  
 **Internal**:   
+
+* * *
+
+<a name="isPluginSettingsInstallScope"></a>
+
+### isPluginSettingsInstallScope()
+Returns `true` when `value` is a supported plugin install scope.
+
+**Kind**: global function  
+
+* * *
+
+<a name="isExactPluginSettingsPackageName"></a>
+
+### isExactPluginSettingsPackageName()
+Returns `true` when `value` is an exact unscoped `kl-*` npm package name.
+
+**Kind**: global function  
+
+* * *
+
+<a name="validatePluginSettingsInstallRequest"></a>
+
+### validatePluginSettingsInstallRequest()
+Validates the SDK install request contract for plugin settings flows.
+
+Only exact unscoped `kl-*` package names are accepted. Version specifiers,
+paths, URLs, shell fragments, whitespace-delimited arguments, and other
+npm wrapper syntax are rejected at this boundary before any subprocess work
+is attempted.
+
+**Kind**: global function  
+
+* * *
+
+<a name="createPluginSettingsErrorPayload"></a>
+
+### createPluginSettingsErrorPayload()
+Applies the shared plugin secret redaction policy to surfaced error payloads.
+
+**Kind**: global function  
 
 * * *
 
@@ -2893,6 +3137,15 @@ extractNumericId('no-number')
 
 * * *
 
+<a name="createEmptyPluginSettingsPayload"></a>
+
+### createEmptyPluginSettingsPayload()
+Empty plugin-settings payload used when a host has no active SDK context.
+
+**Kind**: global function  
+
+* * *
+
 <a name="sanitizeCard"></a>
 
 ### sanitizeCard(card) ⇒
@@ -2917,6 +3170,15 @@ const safe = sanitizeCard(card)
 
 
 ## Configuration
+
+<a name="PLUGIN_CAPABILITY_NAMESPACES"></a>
+
+### PLUGIN\_CAPABILITY\_NAMESPACES
+Stable ordered capability list reused by plugin settings hosts and tests.
+
+**Kind**: global variable  
+
+* * *
 
 <a name="DEFAULT_CONFIG"></a>
 
@@ -3733,19 +3995,6 @@ Any non-noop `auth.identity` provider disables the fallback, even if the
 provider later resolves no caller for a specific request.
 
 **Kind**: global function  
-
-* * *
-
-<a name="tryLoadWorkspacePackage"></a>
-
-### tryLoadWorkspacePackage()
-Tries to load an external plugin from the workspace-local `packages/`
-directory (monorepo layout).  Requires [WORKSPACE_ROOT](#WORKSPACE_ROOT) to be
-discovered; throws `MODULE_NOT_FOUND` when the path does not exist so the
-caller can distinguish "not present in monorepo" from other errors.
-
-**Kind**: global function  
-**Internal**:   
 
 * * *
 

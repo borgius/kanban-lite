@@ -3,6 +3,29 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { compare, hash } from 'bcryptjs'
 
+/** Local copy of the shared plugin-settings redaction target contract for package-level schema metadata. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract for package-level schema metadata. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
 export type AuthErrorCategory =
   | 'auth.identity.missing'
   | 'auth.identity.invalid'
@@ -120,11 +143,19 @@ export interface AuthPluginManifest {
 
 export interface AuthIdentityPlugin {
   readonly manifest: AuthPluginManifest
+  /**
+   * Optional schema metadata for shared plugin-options configuration flows.
+   */
+  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
   resolveIdentity(context: AuthContext): Promise<AuthIdentity | null>
 }
 
 export interface AuthPolicyPlugin {
   readonly manifest: AuthPluginManifest
+  /**
+   * Optional schema metadata for shared plugin-options configuration flows.
+   */
+  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
   checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision>
 }
 
@@ -256,6 +287,80 @@ const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const AUTH_SESSIONS_FILE = '.auth-sessions.json'
+const AUTH_PLUGIN_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
+  maskedValue: '••••••',
+  writeOnly: true,
+  targets: ['read', 'list', 'error'],
+}
+
+function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        apiToken: {
+          type: 'string',
+          title: 'API token',
+          description: 'Optional explicit bearer token. When omitted, the provider falls back to KANBAN_LITE_TOKEN or KANBAN_TOKEN.',
+        },
+        users: {
+          type: 'array',
+          title: 'Local users',
+          description: 'Optional standalone login users. Password values remain bcrypt hashes in storage.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['username', 'password'],
+            properties: {
+              username: {
+                type: 'string',
+                minLength: 1,
+                title: 'Username',
+              },
+              password: {
+                type: 'string',
+                minLength: 1,
+                title: 'Password hash',
+                description: 'Bcrypt password hash used for standalone local login.',
+              },
+              role: {
+                type: 'string',
+                title: 'Role',
+                enum: ['user', 'manager', 'admin'],
+              },
+            },
+          },
+        },
+      },
+    },
+    secrets: [
+      { path: 'apiToken', redaction: AUTH_PLUGIN_SECRET_REDACTION },
+      { path: 'users.*.password', redaction: AUTH_PLUGIN_SECRET_REDACTION },
+    ],
+  }
+}
+
+function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        matrix: {
+          type: 'object',
+          title: 'Role matrix',
+          description: 'Optional per-role action overrides. When omitted, the default local allow-authenticated policy is used.',
+          additionalProperties: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+      },
+    },
+    secrets: [],
+  }
+}
 
 function loadSessionsFromFile(filePath: string): Map<string, LocalAuthSession> {
   try {
@@ -799,6 +904,7 @@ export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
  */
 const KL_AUTH_DEFAULT_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'kl-auth-plugin', provides: ['auth.identity'] },
+  optionsSchema: createAuthIdentityOptionsSchema,
   resolveIdentity: LOCAL_IDENTITY_PLUGIN.resolveIdentity,
 }
 
@@ -830,6 +936,7 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>): Aut
 
   return {
     manifest: { id: 'kl-auth-plugin', provides: ['auth.identity'] },
+    optionsSchema: createAuthIdentityOptionsSchema,
     async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
       if (context.identity) return cloneIdentity(context.identity)
 
@@ -855,6 +962,7 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>): Aut
  */
 const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'kl-auth-plugin', provides: ['auth.policy'] },
+  optionsSchema: createAuthPolicyOptionsSchema,
   checkPolicy: LOCAL_POLICY_PLUGIN.checkPolicy,
 }
 
@@ -898,6 +1006,7 @@ export function createAuthPolicyPlugin(options?: Record<string, unknown>): AuthP
 
   return {
     manifest: { id: 'kl-auth-plugin', provides: ['auth.policy'] },
+    optionsSchema: createAuthPolicyOptionsSchema,
     async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
       if (!identity) {
         return { allowed: false, reason: 'auth.identity.missing' }

@@ -10,7 +10,7 @@ import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { MarkdownStorageEngine } from '../plugins/markdown'
-import { KanbanSDK } from '../KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError } from '../KanbanSDK'
 import { normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
 import { AuthError, DEFAULT_CARD_STATE_ACTOR, CARD_STATE_DEFAULT_ACTOR_MODE, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
@@ -677,6 +677,561 @@ describe('KanbanSDK capability resolution', () => {
 })
 
 // ---------------------------------------------------------------------------
+// KanbanSDK plugin settings inventory (T2)
+// ---------------------------------------------------------------------------
+
+describe('KanbanSDK plugin settings inventory', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('groups discovered providers by capability with builtin and workspace sources', () => {
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = sdk.listPluginSettings()
+      const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
+      const webhookDelivery = inventory.capabilities.find((entry) => entry.capability === 'webhook.delivery')
+
+      expect(cardStorage).toMatchObject({
+        capability: 'card.storage',
+        selected: {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          source: 'default',
+        },
+      })
+      expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'markdown',
+        packageName: 'markdown',
+        discoverySource: 'builtin',
+        isSelected: true,
+      }))
+      expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'sqlite',
+        packageName: 'kl-sqlite-storage',
+        discoverySource: 'workspace',
+        isSelected: false,
+      }))
+
+      expect(webhookDelivery).toMatchObject({
+        capability: 'webhook.delivery',
+        selected: {
+          capability: 'webhook.delivery',
+          providerId: 'webhooks',
+          source: 'default',
+        },
+      })
+      expect(webhookDelivery?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'webhooks',
+        packageName: 'kl-webhooks-plugin',
+        discoverySource: 'workspace',
+        isSelected: true,
+      }))
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('discovers dependency-installed providers from local node_modules', () => {
+    const cleanup = installTempPackage(
+      'temp-inventory-attachment-plugin',
+      `module.exports = {
+  attachmentStoragePlugin: {
+    manifest: { id: 'temp-inventory-attachment-plugin', provides: ['attachment.storage'] },
+    async copyAttachment() {},
+    getCardDir() { return null },
+  },
+}
+`,
+    )
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const inventory = sdk.listPluginSettings()
+      const attachmentStorage = inventory.capabilities.find((entry) => entry.capability === 'attachment.storage')
+
+      expect(attachmentStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'temp-inventory-attachment-plugin',
+        packageName: 'temp-inventory-attachment-plugin',
+        discoverySource: 'dependency',
+        isSelected: false,
+      }))
+
+      sdk.close()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('derives selected provider state from legacy config normalization', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({ version: 2, storageEngine: 'sqlite', sqlitePath: '.kanban/custom.db' }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = sdk.listPluginSettings()
+      const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
+
+      expect(cardStorage).toMatchObject({
+        capability: 'card.storage',
+        selected: {
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          source: 'legacy',
+        },
+      })
+      expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'sqlite',
+        packageName: 'kl-sqlite-storage',
+        discoverySource: 'workspace',
+        isSelected: true,
+      }))
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('returns redacted option snapshots for the selected provider read model', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'inventory-local-token',
+              users: [{ username: 'alice', password: 'super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = sdk.listPluginSettings()
+      const provider = sdk.getPluginSettings('auth.identity', 'local')
+      const authIdentity = inventory.capabilities.find((entry) => entry.capability === 'auth.identity')
+
+      expect(authIdentity?.selected).toEqual({
+        capability: 'auth.identity',
+        providerId: 'local',
+        source: 'legacy',
+      })
+      expect(provider).toMatchObject({
+        capability: 'auth.identity',
+        providerId: 'local',
+        packageName: 'kl-auth-plugin',
+        discoverySource: 'workspace',
+        selected: {
+          capability: 'auth.identity',
+          providerId: 'local',
+          source: 'legacy',
+        },
+      })
+      expect(provider?.options).not.toBeNull()
+      expect((provider?.options?.values as { users: Array<{ password: string }> }).users[0].password).toBe('••••••')
+      expect(provider?.options?.redactedPaths).toContain('users[0].password')
+      const serializedInventory = JSON.stringify(inventory)
+      expect(serializedInventory).not.toContain('inventory-local-token')
+      expect(serializedInventory).not.toContain('super-secret-password')
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('persists canonical provider selection for one capability without disturbing others', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+          'attachment.storage': { provider: 'localfs' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const selected = sdk.selectPluginSettingsProvider('card.storage', 'markdown')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
+
+      expect(selected.selected).toEqual({
+        capability: 'card.storage',
+        providerId: 'markdown',
+        source: 'config',
+      })
+      expect(persistedConfig.plugins).toMatchObject({
+        'card.storage': { provider: 'markdown' },
+        'attachment.storage': { provider: 'localfs' },
+      })
+      expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
+
+      const inventory = sdk.listPluginSettings()
+      const cardStorage = inventory.capabilities.find((entry) => entry.capability === 'card.storage')
+      expect(cardStorage?.selected).toEqual({
+        capability: 'card.storage',
+        providerId: 'markdown',
+        source: 'config',
+      })
+      expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'markdown',
+        isSelected: true,
+      }))
+      expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
+        providerId: 'sqlite',
+        isSelected: false,
+      }))
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('keeps masked secrets on round-trip updates while replacing explicit secret edits', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'existing-token',
+              users: [{ username: 'alice', password: '$2b$12$old-hash', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const updated = sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+      })
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: { apiToken?: string; users?: Array<{ password: string; role?: string }> } }>
+      }
+      const readback = sdk.getPluginSettings('auth.identity', 'local')
+
+      expect(updated.selected).toEqual({
+        capability: 'auth.identity',
+        providerId: 'local',
+        source: 'config',
+      })
+      expect(updated.options?.values).toMatchObject({
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+      })
+      expect(updated.options?.redactedPaths).toEqual(expect.arrayContaining(['apiToken', 'users[0].password']))
+      expect(persistedConfig.plugins?.['auth.identity']).toEqual({
+        provider: 'local',
+        options: {
+          apiToken: 'existing-token',
+          users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
+        },
+      })
+      expect(readback?.selected.source).toBe('config')
+      expect(readback?.options?.values).toMatchObject({
+        apiToken: '••••••',
+        users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+      })
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('throws redacted payloads for invalid config reads', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      expect(() => sdk.getPluginSettings('auth.identity', 'local')).toThrow(PluginSettingsOperationError)
+
+      try {
+        sdk.getPluginSettings('auth.identity', 'local')
+      } catch (error) {
+        expect(error).toBeInstanceOf(PluginSettingsOperationError)
+        const payload = (error as PluginSettingsOperationError).payload
+        expect(payload).toMatchObject({
+          code: 'plugin-settings-config-load-failed',
+          capability: 'auth.identity',
+          providerId: 'local',
+        })
+        expect(JSON.stringify(payload)).not.toContain('super-secret-token')
+      }
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('throws redacted payloads for invalid config lists', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      expect(() => sdk.listPluginSettings()).toThrow(PluginSettingsOperationError)
+
+      try {
+        sdk.listPluginSettings()
+      } catch (error) {
+        expect(error).toBeInstanceOf(PluginSettingsOperationError)
+        const payload = (error as PluginSettingsOperationError).payload
+        expect(payload).toMatchObject({
+          code: 'plugin-settings-config-load-failed',
+        })
+        expect(JSON.stringify(payload)).not.toContain('super-secret-token')
+      }
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('throws redacted payloads for config save failures', () => {
+    const configFile = path.join(workspaceDir, '.kanban.json')
+    fs.writeFileSync(configFile, JSON.stringify({ version: 2 }), 'utf-8')
+    fs.chmodSync(configFile, 0o444)
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      expect(() => sdk.selectPluginSettingsProvider('auth.identity', 'local')).toThrow(PluginSettingsOperationError)
+
+      try {
+        sdk.selectPluginSettingsProvider('auth.identity', 'local')
+      } catch (error) {
+        expect(error).toBeInstanceOf(PluginSettingsOperationError)
+        const payload = (error as PluginSettingsOperationError).payload
+        expect(payload).toMatchObject({
+          code: 'plugin-settings-config-save-failed',
+          capability: 'auth.identity',
+          providerId: 'local',
+        })
+        expect(JSON.stringify(payload)).not.toContain('apiToken')
+      }
+    } finally {
+      fs.chmodSync(configFile, 0o644)
+      sdk.close()
+    }
+  })
+
+  it.each([
+    {
+      scope: 'workspace' as const,
+      expectedArgs: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+    },
+    {
+      scope: 'global' as const,
+      expectedArgs: ['install', '--global', '--ignore-scripts', 'kl-auth-plugin'],
+    },
+  ])('installs exact plugin packages with fixed npm argv and lifecycle scripts disabled for %s scope', async ({ scope, expectedArgs }) => {
+    const installCalls: Array<{
+      command: string
+      args: string[]
+      cwd: string
+      shell: boolean
+    }> = []
+    const sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: async (command) => {
+      installCalls.push(command)
+      return {
+        exitCode: 0,
+        signal: null,
+        stdout: 'added 1 package\n',
+        stderr: '',
+      }
+    } })
+
+    try {
+      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope })
+
+      expect(result).toMatchObject({
+        packageName: 'kl-auth-plugin',
+        scope,
+        message: 'Installed plugin package with lifecycle scripts disabled.',
+        stdout: 'added 1 package',
+        stderr: '',
+        redaction: expect.objectContaining({
+          maskedValue: '••••••',
+        }),
+      })
+      expect(result.command).toEqual({
+        command: 'npm',
+        args: expectedArgs,
+        cwd: workspaceDir,
+        shell: false,
+      })
+      expect(installCalls).toEqual([{
+        command: 'npm',
+        args: expectedArgs,
+        cwd: workspaceDir,
+        shell: false,
+      }])
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('redacts credential-bearing stdout and stderr from successful install payloads', async () => {
+    const sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: async () => ({
+      exitCode: 0,
+      signal: null,
+      stdout: 'Authorization: Bearer npm_super_secret_token\npassword=super-secret-password\n',
+      stderr: 'downloading https://demo-user:demo-pass@example.com/kl-auth-plugin.tgz\n',
+    }) })
+
+    try {
+      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' })
+
+      expect(result.stdout).toContain('[REDACTED]')
+      expect(result.stderr).toContain('[REDACTED]')
+      const serializedResult = JSON.stringify(result)
+      expect(serializedResult).not.toContain('npm_super_secret_token')
+      expect(serializedResult).not.toContain('super-secret-password')
+      expect(serializedResult).not.toContain('demo-user:demo-pass')
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it.each([
+    { label: 'version specifier', packageName: 'kl-auth-plugin@latest' },
+    { label: 'scoped package', packageName: '@scope/kl-auth-plugin' },
+    { label: 'relative path', packageName: '../kl-auth-plugin' },
+    { label: 'file specifier', packageName: 'file:../kl-auth-plugin' },
+    { label: 'tarball URL', packageName: 'https://example.com/kl-auth-plugin.tgz' },
+    { label: 'flag fragment', packageName: 'kl-auth-plugin --save-dev' },
+    { label: 'shell fragment', packageName: 'kl-auth-plugin; rm -rf /' },
+    { label: 'leading whitespace', packageName: ' kl-auth-plugin' },
+    { label: 'newline fragment', packageName: 'kl-auth-plugin\n--global' },
+  ])('rejects invalid install package input ($label) before spawning npm', async ({ packageName }) => {
+    const installCalls: Array<unknown> = []
+    const sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: async (command) => {
+      installCalls.push(command)
+      return {
+        exitCode: 0,
+        signal: null,
+        stdout: '',
+        stderr: '',
+      }
+    } })
+
+    try {
+      await expect(
+        sdk.installPluginSettingsPackage({ packageName, scope: 'workspace' } as never),
+      ).rejects.toBeInstanceOf(PluginSettingsOperationError)
+
+      try {
+        await sdk.installPluginSettingsPackage({ packageName, scope: 'workspace' } as never)
+      } catch (error) {
+        expect(error).toBeInstanceOf(PluginSettingsOperationError)
+        expect((error as PluginSettingsOperationError).payload.code).toBe('invalid-plugin-install-package-name')
+      }
+
+      expect(installCalls).toEqual([])
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('redacts credential-bearing stderr details from failed install payloads', async () => {
+    const sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: async () => ({
+      exitCode: 1,
+      signal: null,
+      stdout: '',
+      stderr: [
+        'npm ERR! code E401',
+        'Authorization: Bearer npm_super_secret_token',
+        '//registry.npmjs.org/:_authToken=npm_inline_secret',
+        'password=super-secret-password',
+        'download failed at https://demo-user:demo-pass@example.com/kl-auth-plugin.tgz',
+      ].join('\n'),
+    }) })
+
+    try {
+      await expect(
+        sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' }),
+      ).rejects.toBeInstanceOf(PluginSettingsOperationError)
+
+      try {
+        await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' })
+      } catch (error) {
+        expect(error).toBeInstanceOf(PluginSettingsOperationError)
+        const payload = (error as PluginSettingsOperationError).payload
+
+        expect(payload).toMatchObject({
+          code: 'plugin-settings-install-failed',
+          message: expect.stringContaining('install the package manually'),
+        })
+        expect(payload.details).toMatchObject({
+          packageName: 'kl-auth-plugin',
+          scope: 'workspace',
+          exitCode: 1,
+          command: {
+            command: 'npm',
+            args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+            cwd: workspaceDir,
+            shell: false,
+          },
+          manualInstall: {
+            command: 'npm',
+            args: ['install', 'kl-auth-plugin'],
+            cwd: workspaceDir,
+            shell: false,
+          },
+        })
+
+        const serializedPayload = JSON.stringify(payload)
+        expect(serializedPayload).not.toContain('npm_super_secret_token')
+        expect(serializedPayload).not.toContain('npm_inline_secret')
+        expect(serializedPayload).not.toContain('super-secret-password')
+        expect(serializedPayload).not.toContain('demo-user:demo-pass')
+        expect(serializedPayload).toContain('[REDACTED]')
+      }
+    } finally {
+      sdk.close()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // ResolvedCapabilityBag – file/watch capability helpers
 // ---------------------------------------------------------------------------
 
@@ -1001,7 +1556,13 @@ describe('KanbanSDK auth wiring', () => {
       { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
       kanbanDir,
       {
-        'auth.identity': { provider: 'local', options: { users: [{ username: 'alice', password: '$2b$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }] } },
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'standalone-http-token',
+            users: [{ username: 'alice', password: '$2b$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }],
+          },
+        },
         'auth.policy': { provider: 'local' },
       },
     )
@@ -1163,11 +1724,11 @@ describe('KanbanSDK._authorizeAction', () => {
       { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
     )
     // Patch bag's authPolicy with our deny-all override
-    ;(bag as any).authPolicy = denyAllPolicy
+    Object.assign(bag, { authPolicy: denyAllPolicy })
 
     const sdk = new KanbanSDK(kanbanDir)
     // Replace the internal capability bag to inject the deny-all policy
-    ;(sdk as any)._capabilities = bag
+    Object.assign(sdk, { _capabilities: bag })
 
     await expect(sdk._authorizeAction('card.create')).rejects.toBeInstanceOf(AuthError)
   })
@@ -1184,10 +1745,10 @@ describe('KanbanSDK._authorizeAction', () => {
       kanbanDir,
       { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
     )
-    ;(bag as any).authPolicy = denyAllPolicy
+    Object.assign(bag, { authPolicy: denyAllPolicy })
 
     const sdk = new KanbanSDK(kanbanDir)
-    ;(sdk as any)._capabilities = bag
+    Object.assign(sdk, { _capabilities: bag })
 
     try {
       await sdk._authorizeAction('card.delete')

@@ -248,7 +248,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
   const swaggerUiLogo = swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
     ? { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) }
-    : null
+    : undefined
 
   const workspaceRoot = path.dirname(path.resolve(kanbanDir))
   const config = readConfig(workspaceRoot)
@@ -273,11 +273,11 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(standaloneHttpPlugins)
 
   // OpenAPI spec and interactive docs (served before the catch-all so Fastify prefers these routes)
-  fastify.register(swagger, { openapi: standaloneOpenApiSpec as any })
+  fastify.register(swagger, { openapi: standaloneOpenApiSpec as unknown as Record<string, unknown> })
   fastify.register(swaggerUi, {
     routePrefix: `${basePath}/api/docs`,
     uiConfig: { docExpansion: 'list', deepLinking: false },
-    logo: swaggerUiLogo,
+    ...(swaggerUiLogo ? { logo: swaggerUiLogo } : {}),
     ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
   })
 

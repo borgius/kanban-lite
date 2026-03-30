@@ -1,6 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CardDisplaySettings, ExtensionMessage } from '../shared/types'
+import type {
+  BoardInfo,
+  Card,
+  CardDisplaySettings,
+  ExtensionMessage,
+  KanbanColumn,
+  PluginSettingsInstallTransportResult,
+  PluginSettingsPayload,
+  PluginSettingsProviderTransport,
+  WorkspaceInfo,
+} from '../shared/types'
 
 const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   showPriorityBadges: true,
@@ -20,6 +30,128 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   boardBackgroundPreset: 'aurora',
   panelMode: 'drawer',
   drawerWidth: 50,
+}
+
+const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
+  redaction: {
+    maskedValue: '••••••',
+    writeOnly: true,
+    targets: ['read', 'list', 'error'],
+  },
+  capabilities: [
+    {
+      capability: 'card.storage',
+      selected: {
+        capability: 'card.storage',
+        providerId: 'markdown',
+        source: 'default',
+      },
+      providers: [
+        {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          packageName: 'markdown',
+          discoverySource: 'builtin',
+          isSelected: true,
+        },
+        {
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          packageName: 'kl-sqlite-storage',
+          discoverySource: 'workspace',
+          isSelected: false,
+        },
+      ],
+    },
+    {
+      capability: 'auth.identity',
+      selected: {
+        capability: 'auth.identity',
+        providerId: 'local',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'auth.identity',
+          providerId: 'local',
+          packageName: 'kl-auth-plugin',
+          discoverySource: 'dependency',
+          isSelected: true,
+        },
+      ],
+    },
+  ],
+}
+
+const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
+  capability: 'auth.identity',
+  providerId: 'local',
+  packageName: 'kl-auth-plugin',
+  discoverySource: 'dependency',
+  selected: {
+    capability: 'auth.identity',
+    providerId: 'local',
+    source: 'config',
+  },
+  optionsSchema: {
+    schema: {
+      type: 'object',
+      properties: {
+        apiToken: { type: 'string', title: 'API token' },
+      },
+    },
+    secrets: [{ path: 'apiToken', redaction: PLUGIN_SETTINGS_FIXTURE.redaction }],
+  },
+  options: {
+    values: { apiToken: '••••••' },
+    redactedPaths: ['apiToken'],
+    redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+  },
+}
+
+const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
+  packageName: 'kl-auth-plugin',
+  scope: 'global',
+  command: {
+    command: 'npm',
+    args: ['install', '--global', '--ignore-scripts', 'kl-auth-plugin'],
+    cwd: '/tmp/workspace',
+    shell: false,
+  },
+  stdout: '',
+  stderr: '',
+  message: 'Installed plugin package with lifecycle scripts disabled.',
+  redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+}
+
+const PLUGIN_SETTINGS_AFTER_RESELECTION: PluginSettingsPayload = {
+  ...PLUGIN_SETTINGS_FIXTURE,
+  capabilities: [
+    {
+      capability: 'card.storage',
+      selected: {
+        capability: 'card.storage',
+        providerId: 'sqlite',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          packageName: 'markdown',
+          discoverySource: 'builtin',
+          isSelected: false,
+        },
+        {
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          packageName: 'kl-sqlite-storage',
+          discoverySource: 'workspace',
+          isSelected: true,
+        },
+      ],
+    },
+  ],
 }
 
 const hookRuntime = {
@@ -51,10 +183,10 @@ const hookRuntime = {
 }
 
 const storeState = {
-  columns: [],
+  columns: [] as KanbanColumn[],
   currentBoard: 'default',
   columnVisibilityByBoard: {} as Record<string, { hiddenColumnIds: string[]; minimizedColumnIds: string[] }>,
-  workspace: null,
+  workspace: null as WorkspaceInfo | null,
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
   drawerWidthPreview: null as number | null,
   effectiveDrawerWidth: 50,
@@ -98,16 +230,17 @@ const storeState = {
   clearSelection: vi.fn(),
   setActiveCardId: vi.fn(),
   setActiveCardTab: vi.fn(),
-  cards: [] as unknown[],
-  boards: [] as unknown[],
+  cards: [] as Card[],
+  boards: [] as BoardInfo[],
 }
 
-const { postMessageSpy, getStateSpy, setStateSpy, resizePropsRef, cardEditorPropsRef } = vi.hoisted(() => ({
+const { postMessageSpy, getStateSpy, setStateSpy, resizePropsRef, cardEditorPropsRef, settingsPanelSpy } = vi.hoisted(() => ({
   postMessageSpy: vi.fn(),
   getStateSpy: vi.fn<() => unknown>(() => null),
   setStateSpy: vi.fn<(state: unknown) => void>(),
   resizePropsRef: { current: null as null | { panelMode: string; onPreview: (width: number) => void; onCommit: (width: number) => void; onCancel: () => void } },
   cardEditorPropsRef: { current: null as null | Record<string, unknown> },
+  settingsPanelSpy: vi.fn<(props: Record<string, unknown>) => void>(),
 }))
 let messageHandler: ((event: MessageEvent<ExtensionMessage>) => void) | null = null
 
@@ -200,7 +333,12 @@ vi.mock('./components/CardEditor', () => ({
   },
 }))
 vi.mock('./components/Toolbar', () => ({ Toolbar: () => null }))
-vi.mock('./components/SettingsPanel', () => ({ SettingsPanel: () => null }))
+vi.mock('./components/SettingsPanel', () => ({
+  SettingsPanel: (props: Record<string, unknown>) => {
+    settingsPanelSpy(props)
+    return null
+  },
+}))
 vi.mock('./components/ColumnDialog', () => ({ ColumnDialog: () => null }))
 vi.mock('./components/BulkActionsBar', () => ({ BulkActionsBar: () => null }))
 vi.mock('./components/ShortcutHelp', () => ({ ShortcutHelp: () => null }))
@@ -237,6 +375,7 @@ beforeEach(() => {
   messageHandler = null
   resizePropsRef.current = null
   cardEditorPropsRef.current = null
+  settingsPanelSpy.mockClear()
 
   Object.assign(storeState, {
     cards: [],
@@ -385,6 +524,7 @@ describe('App connection notices', () => {
         { id: 'todo', name: 'Todo', color: '#000000' },
         { id: 'doing', name: 'Doing', color: '#111111' },
       ],
+      settings: { ...DEFAULT_CARD_SETTINGS },
       currentBoard: 'boardA',
     } as ExtensionMessage)
 
@@ -429,6 +569,7 @@ describe('App connection notices', () => {
       columns: [
         { id: 'doing', name: 'Doing', color: '#111111' },
       ],
+      settings: { ...DEFAULT_CARD_SETTINGS },
       currentBoard: 'boardB',
     } as ExtensionMessage)
 
@@ -548,6 +689,136 @@ describe('App resize preview and commit timing', () => {
       type: 'saveSettings',
       settings: expect.objectContaining({ drawerWidth: 65 }),
     })
+  })
+})
+
+describe('App plugin settings bridge', () => {
+  it('passes plugin inventory into the settings panel and routes read, select, update, and install actions through the shared bridge', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'showSettings',
+      settings: { ...DEFAULT_CARD_SETTINGS },
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+    })
+
+    renderApp()
+
+    const latestSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(latestSettingsPanelProps).toMatchObject({
+      isOpen: true,
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+      pluginSettingsProvider: null,
+      pluginSettingsInstall: null,
+      pluginSettingsError: null,
+    })
+
+    postMessageSpy.mockClear()
+    ;(latestSettingsPanelProps?.onReadPluginSettingsProvider as ((capability: string, providerId: string) => void) | undefined)?.('auth.identity', 'local')
+
+    expect(postMessageSpy).toHaveBeenNthCalledWith(1, {
+      type: 'readPluginSettings',
+      capability: 'auth.identity',
+      providerId: 'local',
+    })
+
+    ;(latestSettingsPanelProps?.onSelectPluginSettingsProvider as ((capability: string, providerId: string) => void) | undefined)?.('card.storage', 'sqlite')
+
+    expect(postMessageSpy).toHaveBeenNthCalledWith(2, {
+      type: 'selectPluginSettingsProvider',
+      capability: 'card.storage',
+      providerId: 'sqlite',
+    })
+
+    ;(latestSettingsPanelProps?.onUpdatePluginSettingsOptions as ((capability: string, providerId: string, options: Record<string, unknown>) => void) | undefined)?.('auth.identity', 'local', { apiToken: '••••••' })
+
+    expect(postMessageSpy).toHaveBeenNthCalledWith(3, {
+      type: 'updatePluginSettingsOptions',
+      capability: 'auth.identity',
+      providerId: 'local',
+      options: { apiToken: '••••••' },
+    })
+
+    ;(latestSettingsPanelProps?.onInstallPluginSettingsPackage as ((packageName: string, scope: 'workspace' | 'global') => void) | undefined)?.('kl-auth-plugin', 'global')
+
+    expect(postMessageSpy).toHaveBeenNthCalledWith(4, {
+      type: 'installPluginSettingsPackage',
+      packageName: 'kl-auth-plugin',
+      scope: 'global',
+    })
+
+    dispatchMessage({
+      type: 'pluginSettingsResult',
+      action: 'read',
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+      provider: AUTH_PROVIDER_FIXTURE,
+    })
+
+    renderApp()
+
+    const readSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(readSettingsPanelProps).toMatchObject({
+      pluginSettingsProvider: AUTH_PROVIDER_FIXTURE,
+      pluginSettingsInstall: null,
+      pluginSettingsError: null,
+    })
+
+    dispatchMessage({
+      type: 'pluginSettingsResult',
+      action: 'select',
+      pluginSettings: PLUGIN_SETTINGS_AFTER_RESELECTION,
+      provider: AUTH_PROVIDER_FIXTURE,
+    })
+
+    renderApp()
+
+    const nextSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(nextSettingsPanelProps).toMatchObject({
+      pluginSettings: PLUGIN_SETTINGS_AFTER_RESELECTION,
+      pluginSettingsProvider: AUTH_PROVIDER_FIXTURE,
+      pluginSettingsInstall: null,
+      pluginSettingsError: null,
+    })
+
+    dispatchMessage({
+      type: 'pluginSettingsResult',
+      action: 'install',
+      pluginSettings: PLUGIN_SETTINGS_AFTER_RESELECTION,
+      provider: null,
+      install: INSTALL_RESULT_FIXTURE,
+    })
+
+    renderApp()
+
+    const installSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(installSettingsPanelProps).toMatchObject({
+      pluginSettingsInstall: INSTALL_RESULT_FIXTURE,
+      pluginSettingsProvider: null,
+      pluginSettingsError: null,
+    })
+
+    dispatchMessage({
+      type: 'pluginSettingsResult',
+      action: 'install',
+      error: {
+        code: 'invalid-plugin-install-package-name',
+        message: 'Use an exact package name like kl-auth-plugin.',
+        redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      },
+    })
+
+    renderApp()
+
+    const errorSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(errorSettingsPanelProps?.pluginSettingsError).toBe('Use an exact package name like kl-auth-plugin.')
+    expect(errorSettingsPanelProps?.pluginSettingsInstall).toBeNull()
   })
 })
 

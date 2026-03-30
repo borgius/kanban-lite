@@ -70,7 +70,8 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **SQLite `card.state` plugin parity**: Install the first-party `kl-sqlite-card-state` package and set `plugins['card.state'] = { provider: 'sqlite' }` to persist unread/open state in SQLite while keeping the same stable default-actor, actor-scoping, configured-identity failure semantics, and explicit read/open behavior as the built-in file-backed `builtin` backend
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
-- **Tabbed settings panel**: Settings organized into **General**, **Defaults**, and **Labels** tabs
+- **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
+- **Plugin Options tab**: Discover providers by capability, see where each provider was found, select one provider per capability, edit schema-driven options, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
@@ -247,6 +248,14 @@ kl webhooks remove wh_abc123                            # Remove webhook
 kl settings                                             # Show current settings
 kl settings update --compactMode true                   # Update a setting
 
+# Plugin settings
+kl plugin-settings list                                # List capability-grouped providers
+kl plugin-settings show auth.identity local            # Read one provider's redacted state
+kl plugin-settings select auth.identity local          # Select one provider for a capability
+kl plugin-settings update-options auth.identity local \
+  --options '{"apiToken":"••••••"}'                  # Persist provider options (masked secrets keep existing values)
+kl plugin-settings install kl-auth-plugin --scope workspace  # Safe install into the workspace runtime
+
 # Workspace
 kl pwd                                                  # Print workspace root path
 
@@ -369,6 +378,16 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 |--------|----------|-------------|
 | `GET` | `/api/settings` | Get board settings |
 | `PUT` | `/api/settings` | Update board settings |
+
+#### Plugins
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/plugin-settings` | List capability-grouped plugin providers and selected-provider state |
+| `GET` | `/api/plugin-settings/:capability/:providerId` | Read one provider's redacted options/state |
+| `PUT` | `/api/plugin-settings/:capability/:providerId/select` | Persist the selected provider for a capability |
+| `PUT` | `/api/plugin-settings/:capability/:providerId/options` | Persist provider options and return the redacted read model |
+| `POST` | `/api/plugin-settings/install` | Run the guarded installer for exact unscoped `kl-*` package names only |
 
 #### Webhooks
 
@@ -1178,6 +1197,25 @@ Comments are stored as additional YAML documents in the same file, keeping every
 When you switch the `card.storage` provider to `sqlite` or `mysql`, card/comment persistence moves behind that provider while `.kanban.json` remains the source of truth for board config, columns, labels, settings, forms, and webhooks.
 
 Attachments keep their legacy default unless you opt in explicitly: omitted `attachment.storage` still resolves to `localfs`, even when `card.storage` is `sqlite` or `mysql`.
+
+## Plugin Settings
+
+Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
+
+- **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
+- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean.
+- **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
+- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms.
+- **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
+- **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
+
+The same nouns are used everywhere:
+
+- **CLI**: `kl plugin-settings <list|show|select|update-options|install>`
+- **REST API**: `/api/plugin-settings`, `/api/plugin-settings/:capability/:providerId`, `/select`, `/options`, and `/install`
+- **MCP**: `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`
+
+For the deeper runtime model, provider discovery rules, and plugin authoring details, see [docs/plugins.md](docs/plugins.md).
 
 ## Storage Providers
 

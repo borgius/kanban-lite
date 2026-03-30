@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Capability-grouped Plugin Options workflow**: Added the shared plugin-settings experience across the Settings panel, CLI, REST API, and MCP so users can list discovered providers, select one provider per capability, edit schema-driven provider options, and run guarded plugin installs from consistent public surfaces.
 - **CrewAI tool adapter** (`kl-crewai-tools`): New Python package at `packages/kl-crewai-tools` wrapping kanban-lite REST API operations as CrewAI `BaseTool` subclasses (9 tools: list/get/create/update/move/delete cards, list columns, get/add comments). Includes a `KanbanLiteToolkit` helper with `read_only` mode for reporting agents. Enables specialized agents (PM, Dev, QA) to each manage their own board lane.
 
 - **LangChain / LangGraph adapter** (`kl-langchain-tools`) — new package at `packages/kl-langchain-tools` exposing all kanban-lite features as 39 LangChain `StructuredTool` instances.
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Plugin settings secret/install safety**: Persisted secret fields now reopen only as masked write-only placeholders, unchanged masks preserve existing secrets on save, and the in-product installer accepts only exact unscoped `kl-*` package names while redacting surfaced diagnostics.
 - **CLI mutation auth parity**: CLI mutating commands now consistently run through the shared auth wrapper, so authenticated actions such as `kl comment add ...` honor the resolved CLI token instead of failing with a false `Authentication required` error.
 - **Standalone browser `card.state` unread/open parity**: Standalone WebSocket/REST card snapshots now preserve actor-scoped `cardState` in both plugin-backed and built-in fallback modes, and opening a card in the browser clears unread state through the shared explicit open flow.
 
@@ -54,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Plugin enablement and configuration semantics**: Plugin management now consistently treats enablement as selected-provider state under `plugins[capability]`, uses provider-exported `optionsSchema()` metadata for configuration, and reuses the same redacted read model vocabulary across SDK, UI, CLI, REST API, and MCP.
 - **Published package homepage now points to docs site**: Updated `packages/kanban-lite/package.json` and the npm-facing package README to send users to <https://borgius.github.io/kanban-lite/> for the main docs and quick start.
 
 ### Added

@@ -2,7 +2,7 @@ import * as path from 'path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { KanbanSDK } from '../sdk/KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
 import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, type Priority } from '../shared/types'
@@ -75,6 +75,10 @@ interface McpCardStateMutationModel {
   unread: CardUnreadSummary
   cardState: McpCardStateReadModel['cardState']
 }
+
+type McpPluginSettingsListModel = ReturnType<KanbanSDK['listPluginSettings']>
+type McpPluginSettingsReadModel = NonNullable<ReturnType<KanbanSDK['getPluginSettings']>>
+type McpPluginSettingsInstallModel = Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
 
 function createMcpJsonResult(body: unknown): McpToolResult {
   return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
@@ -245,10 +249,107 @@ export function registerCardStateMcpTools(
   return registeredNames
 }
 
+export function registerPluginSettingsMcpTools(
+  server: McpToolRegistrar,
+  options: {
+    sdk: KanbanSDK
+    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+  },
+): string[] {
+  const registeredNames = [
+    'list_plugin_settings',
+    'select_plugin_settings_provider',
+    'update_plugin_settings_options',
+    'install_plugin_settings_package',
+  ]
+
+  server.tool(
+    'list_plugin_settings',
+    'List the capability-grouped plugin provider inventory for this workspace.',
+    {},
+    async () => {
+      try {
+        const payload: McpPluginSettingsListModel = options.sdk.listPluginSettings()
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'select_plugin_settings_provider',
+    'Persist the selected provider for a plugin capability and return the redacted provider read model.',
+    {
+      capability: z.string().describe('Capability namespace to update (for example auth.identity or card.storage).'),
+      providerId: z.string().describe('Provider identifier to select for the capability.'),
+    },
+    async ({ capability, providerId }) => {
+      try {
+        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() => Promise.resolve(
+          options.sdk.selectPluginSettingsProvider(String(capability) as never, String(providerId)),
+        ))
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'update_plugin_settings_options',
+    'Persist provider options for a capability/provider pair and return the redacted provider read model.',
+    {
+      capability: z.string().describe('Capability namespace to update (for example auth.identity or card.storage).'),
+      providerId: z.string().describe('Provider identifier whose options should be updated.'),
+      options: z.record(z.string(), z.unknown()).describe('Provider options payload to persist under the selected capability/provider pair.'),
+    },
+    async ({ capability, providerId, options: nextOptions }) => {
+      try {
+        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() => Promise.resolve(
+          options.sdk.updatePluginSettingsOptions(
+            String(capability) as never,
+            String(providerId),
+            nextOptions as Record<string, unknown>,
+          ),
+        ))
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'install_plugin_settings_package',
+    'Install a supported plugin package with the shared SDK guardrails and return the redacted install result.',
+    {
+      packageName: z.string().describe('Exact unscoped kl-* package name to install.'),
+      scope: z.enum(['workspace', 'global']).describe('Install destination for the supported plugin package.'),
+    },
+    async ({ packageName, scope }) => {
+      try {
+        const payload: McpPluginSettingsInstallModel = await options.runWithAuth(() => options.sdk.installPluginSettingsPackage({
+          packageName,
+          scope,
+        }))
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  return registeredNames
+}
+
 export function createMcpErrorResult(err: unknown): McpToolResult {
   const cardStateResult = createMcpCardStateErrorResult(err)
   if (cardStateResult) {
     return { ...cardStateResult, isError: true }
+  }
+  if (err instanceof PluginSettingsOperationError) {
+    return { ...createMcpJsonResult(err.payload), isError: true }
   }
   if (err instanceof AuthError) {
     return { content: [{ type: 'text' as const, text: err.message }], isError: true }
@@ -1661,6 +1762,11 @@ async function main(): Promise<void> {
       }
     }
   )
+
+  registerPluginSettingsMcpTools(server as unknown as McpToolRegistrar, {
+    sdk,
+    runWithAuth: runWithMcpAuth,
+  })
 
   registerPluginMcpTools(
     server as unknown as McpToolRegistrar,

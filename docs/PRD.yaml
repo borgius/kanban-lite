@@ -1,0 +1,122 @@
+prd_id: 20260329-plugin-options-tab
+version: 0.1.0
+status: final
+
+user_stories:
+  - as_a: workspace maintainer
+    i_want: to manage installed plugin providers from the settings screen
+    so_that: I can understand which providers are available and adjust configuration without hand-editing `.kanban.json` for routine changes
+  - as_a: operator configuring capabilities
+    i_want: to enable or disable providers by capability from a capability-grouped settings tab
+    so_that: I can choose the active provider for each capability with clear feedback about what is selected
+  - as_a: user adding functionality
+    i_want: to install new `kl-*` packages from the settings experience
+    so_that: I can add supported plugins without leaving the product workflow or guessing the next step after install failures
+  - as_a: plugin user
+    i_want: to edit provider options through JSON Forms driven by each provider's `optionsSchema`
+    so_that: provider-specific configuration stays structured, validated, and discoverable
+  - as_a: auth-enabled deployer
+    i_want: to configure `kl-auth-plugin` through provider schemas in the same settings flow
+    so_that: auth setup uses the same plugin-options workflow as other providers instead of a bespoke config path
+  - as_a: product maintainer
+    i_want: the plugin settings feature to include tests plus README and changelog updates required by repo rules
+    so_that: the feature ships with parity coverage and accurate documentation
+
+scope:
+  in_scope:
+    - Discover available plugin providers from workspace resolution, local dependencies, and global installs.
+    - Add a capability-grouped settings UI tab that renders provider rows under each capability.
+    - Represent each provider row with provider identity, install/discovery source, enablement state, and access to provider options when available.
+    - Treat provider enablement as capability selection in `.kanban.json`, where enabled means the provider is the selected provider for that capability.
+    - Enforce single-provider auto-disable behavior so selecting one provider for a single-provider capability deselects the previously selected provider for that capability.
+    - Add a plugin install form for `kl-*` packages with a global install option and actionable npm error tips.
+    - Support provider option editing through per-provider `optionsSchema()` contracts rendered with JSON Forms.
+    - Allow provider schemas to model secrets as editable values that are masked in the UI when displayed.
+    - Refactor first-party `kl-auth-plugin` configuration to expose provider schemas compatible with the same options editing flow.
+    - Add focused tests covering discovery, selection semantics, install behavior, options editing, masking behavior, and auth-plugin schema usage.
+    - Update README, CHANGELOG, and any related plugin/auth docs required by repository rules when the feature is implemented.
+  out_of_scope:
+    - Publishing plugins to npm.
+    - Marketplace-style browsing or marketplace UX.
+    - Uninstalling packages or removing plugins from disk.
+    - Editing env-only secrets outside provider schemas unless those secrets are explicitly modeled in the provider schema.
+    - Broad redesign of non-settings UI surfaces.
+
+acceptance_criteria:
+  - criterion: The settings experience exposes a dedicated plugin/options tab grouped by capability, and each capability section renders provider rows rather than a flat package list.
+    verification: Open the settings UI in a workspace with multiple capabilities and confirm provider entries appear under their capability group with one row per discovered provider.
+  - criterion: Plugin discovery includes providers resolvable from the workspace, local dependencies, and global installs.
+    verification: Set up one provider from each discovery scope and confirm all three appear in the plugin/options tab with discovery-source metadata.
+  - criterion: Provider enablement is stored as the selected provider in `.kanban.json`, not as a separate boolean flag.
+    verification: Select a provider for a capability, inspect the resulting `.kanban.json`, and confirm the saved config identifies that provider as selected for the capability without introducing an independent `enabled` boolean.
+  - criterion: Selecting a provider for a single-provider capability automatically disables the previously selected provider for that same capability.
+    verification: Select provider A for a capability, then select provider B for the same capability and confirm the UI and saved config show only provider B as selected.
+  - criterion: Provider rows clearly show whether a provider is currently selected for its capability.
+    verification: With a mix of selected and unselected providers, confirm each row exposes the correct selected state and that the selected row matches `.kanban.json`.
+  - criterion: The install flow accepts `kl-*` package names, supports an explicit global-install option, and surfaces actionable npm error tips when installation fails.
+    verification: Submit a valid install through the form once with workspace install and once with global install, then trigger a failing install and confirm the UI shows npm-derived guidance instead of a generic failure message.
+  - criterion: Provider option editing is driven by each provider's `optionsSchema()` contract and rendered through JSON Forms rather than hard-coded per-provider inputs.
+    verification: Open options for at least two different providers with different schemas and confirm the rendered forms and saved payloads follow the provider-provided schema definitions.
+  - criterion: Secrets modeled in provider schemas remain editable but are masked in the UI when displayed.
+    verification: Configure a schema-defined secret field, reopen the options view, and confirm the value can be updated while the displayed field remains masked.
+  - criterion: `kl-auth-plugin` configuration participates in the same schema-driven provider options flow as other providers.
+    verification: Configure `kl-auth-plugin` from the plugin/options tab and confirm its options are rendered from schema metadata and saved through the same provider-options path.
+  - criterion: Discovery, selection semantics, install behavior, provider schema rendering, secret masking, and auth-plugin schema behavior are covered by automated tests.
+    verification: Run the targeted automated test suites added for this feature and confirm each behavior category is exercised.
+  - criterion: User-facing documentation and changelog updates required by repository rules are identified as part of the feature contract.
+    verification: Review implementation deliverables and confirm README, CHANGELOG, and any related plugin/auth docs are updated alongside the feature before release.
+
+needs_clarification: []
+
+features:
+  - name: Capability-grouped plugin settings tab
+    overview: Add a settings tab that groups discovered providers by capability and shows provider rows with selection and configuration entry points.
+    status: completed
+  - name: Multi-scope plugin discovery
+    overview: Discover plugin providers from workspace resolution, local dependencies, and global installs for display in settings.
+    status: completed
+  - name: Capability-based provider selection
+    overview: Treat provider enablement as capability selection in `.kanban.json`, including single-provider auto-disable behavior.
+    status: completed
+  - name: In-app `kl-*` package install flow
+    overview: Let users install supported `kl-*` packages from settings with a global-install option and npm error guidance.
+    status: completed
+  - name: Schema-driven provider options
+    overview: Render provider configuration with JSON Forms driven by each provider's `optionsSchema()` contract.
+    status: completed
+  - name: Auth plugin schema parity
+    overview: Refactor `kl-auth-plugin` so its configuration uses the same provider-schema options flow as other providers.
+    status: completed
+  - name: Verification and documentation parity
+    overview: Cover the feature with automated tests and the README/CHANGELOG/doc updates required by repository rules.
+    status: completed
+
+decisions:
+  - decision: The settings UI will present capability/provider rows instead of a flat plugin list.
+    rationale: Capability-first organization matches how providers are actually selected and configured in `.kanban.json`.
+  - decision: Discovery scope includes workspace, local dependency, and global install resolution.
+    rationale: Users need one management surface that reflects the providers they can actually select in real deployments.
+  - decision: Enabled means selected in `.kanban.json`.
+    rationale: A separate enablement boolean would drift from the existing provider-selection model and create ambiguous state.
+  - decision: Single-provider capabilities auto-disable the previously selected provider when a new provider is selected.
+    rationale: The UI should enforce the one-active-provider rule instead of leaving conflicting selections for the user to untangle manually.
+  - decision: Provider options are defined per provider through `optionsSchema()` and rendered with JSON Forms.
+    rationale: Schema-driven configuration scales across first-party and external providers without bespoke UI for every package.
+  - decision: Schema-defined secrets are editable in the settings flow but masked when displayed.
+    rationale: Users must be able to manage secret values from the same workflow without exposing them in plain text during normal editing.
+  - decision: `kl-auth-plugin` will be refactored to participate in the same schema-driven provider-options contract.
+    rationale: Auth configuration should follow the same plugin-management model as other capabilities instead of remaining a special-case path.
+  - decision: The in-product installer only accepts exact unscoped `kl-*` package names and always runs with lifecycle scripts disabled.
+    rationale: The settings flow must stay a constrained provider installer rather than becoming a general-purpose npm command wrapper.
+  - decision: Plugin settings reads, lists, install output, and surfaced errors all reuse one shared redaction policy.
+    rationale: Secret masking must be enforced once at the shared contract layer so every surface inherits the same safety guarantees.
+  - decision: Plugin options forms reuse the shared `.card-jsonforms` wrapper and styling hooks.
+    rationale: Reusing the existing JSON Forms styling contract keeps provider options visually consistent without adding a second form theme.
+
+changes:
+  - version: 0.1.0
+    change: Initial draft PRD for a capability-grouped plugin options tab with multi-scope discovery, schema-driven provider configuration, install flow support, and auth-plugin schema parity.
+  - version: 0.1.0
+    change: Finalized after implementation with capability-grouped provider inventory, selected-provider persistence in `.kanban.json`, schema-driven options editing, and `kl-auth-plugin` parity across SDK, API, CLI, MCP, and settings UI.
+  - version: 0.1.0
+    change: Validation confirmed multi-scope discovery, exact unscoped `kl-*` install guardrails with `--ignore-scripts`, shared redaction across surfaced reads/errors/install output, and reuse of the shared `.card-jsonforms` styling hook.

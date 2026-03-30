@@ -30,6 +30,7 @@
   },
   "scripts": {
     "build": "KANBAN_PLUGIN_PACKAGE_DIR=$PWD pnpm --dir ../.. exec vite build --config scripts/vite.plugin-package.config.mts",
+    "watch": "KANBAN_PLUGIN_PACKAGE_DIR=$PWD pnpm --dir ../.. exec vite build --watch --config scripts/vite.plugin-package.config.mts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

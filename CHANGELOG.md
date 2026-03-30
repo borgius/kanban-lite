@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **First-party plugin package builds now run on shared Vite library config**: All `kl-plugin-*` packages now build CommonJS output and `.d.ts` declarations through one `vite build` entrypoint backed by a shared workspace config, replacing the old split `esbuild` + `tsc --emitDeclarationOnly` flow.
+- **First-party plugin package watch mode now mirrors the shared Vite build**: All `kl-plugin-*` packages now expose a `watch` script that runs the same shared Vite library build in watch mode, so root `watch:workspace` picks them up automatically.
 
 - **`kl-plugin-auth` action pickers now use the live before-event catalog**: When an SDK instance is available, the shared Plugin Options form resolves `auth.policy.permissions[].actions[]` from `sdk.listAvailableEvents({ type: 'before' })`, so custom permission rules follow the current runtime event surface instead of a stale hard-coded list.
 

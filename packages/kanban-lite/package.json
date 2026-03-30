@@ -111,7 +111,7 @@
     "watch:extension": "esbuild src/extension/index.ts --bundle --outfile=dist/extension.js --external:vscode --external:mysql2 --external:mysql2/promise --format=cjs --platform=node --watch",
     "watch:standalone-webview": "vite build --config vite.standalone.config.mts --watch",
     "watch:standalone-server": "esbuild src/standalone/index.ts --bundle --outfile=dist/standalone.js --format=cjs --platform=node --external:mysql2 --external:mysql2/promise --external:@fastify/swagger --external:@fastify/swagger-ui --banner:js=\"#!/usr/bin/env node\" --watch",
-    "dev": "vite dev --config vite.standalone.config.mts",
+    "dev": "vite build --config vite.standalone.config.mts --watch",
     "dev:ext": "pnpm run watch:extension",
     "dev:standalone-server": "node --watch-path=dist/standalone.js dist/standalone.js --port 2954 --no-browser",
     "dev:standalone-vite": "vite dev --config vite.standalone.config.mts",

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Trash2, ChevronDown, Check, ChevronUp } from 'lucide-react'
 import { parseCommentMarkdown } from '../lib/markdownTools'
 import type { LogEntry } from '../../shared/types'
@@ -242,8 +242,14 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
 
   const limitOptions: LogLimit[] = [10, 25, 50, 100, 'all']
 
-  // Persist filter changes
+  // Persist filter changes — skip the initial mount so opening the Logs tab
+  // doesn't fire saveSettings with the already-persisted defaults.
+  const isMountedRef = useRef(false)
   useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true
+      return
+    }
     onLogsFilterChange?.({
       limit,
       order,

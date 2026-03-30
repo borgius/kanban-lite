@@ -131,6 +131,7 @@ function App(): React.JSX.Element {
 
   // Editor state
   const contentVersionRef = useRef(0)
+  const readySentRef = useRef(false)
   const [editingCard, setEditingCard] = useState<{
     id: string
     content: string
@@ -438,15 +439,6 @@ function App(): React.JSX.Element {
           }
           if (message.labels) setLabelDefs(message.labels)
           setIsColumnVisibilityPersistenceReady(true)
-          {
-            const { currentBoard: _board, columnVisibilityByBoard: _vis } = useStore.getState()
-            const _visibility = _vis[_board] ?? { hiddenColumnIds: [], minimizedColumnIds: [] }
-            const _hiddenOrMinimized = new Set([..._visibility.hiddenColumnIds, ..._visibility.minimizedColumnIds])
-            const _visibleIds = nextCards.filter(c => !_hiddenOrMinimized.has(c.status)).map(c => c.id)
-            if (_visibleIds.length > 0) {
-              vscode.postMessage({ type: 'getCardStates', cardIds: _visibleIds })
-            }
-          }
           break
           }
         case 'connectionStatus':
@@ -556,8 +548,11 @@ function App(): React.JSX.Element {
 
     window.addEventListener('message', handleMessage)
 
-    // Tell extension we're ready
-    vscode.postMessage({ type: 'ready' })
+    // Tell extension we're ready — only once on initial mount
+    if (!readySentRef.current) {
+      readySentRef.current = true
+      vscode.postMessage({ type: 'ready' })
+    }
 
     return () => window.removeEventListener('message', handleMessage)
   }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
@@ -624,7 +619,38 @@ function App(): React.JSX.Element {
     }
     // Normal click → single select, clear multi-selection, open editor
     clearSelection()
-    // Request card content for inline editing
+    // Render immediately from cached card data so there's no blank-panel flash
+    if (!cardSettings.markdownEditorMode) {
+      setActiveCardId(card.id)
+      contentVersionRef.current += 1
+      setEditingCard({
+        id: card.id,
+        content: card.content,
+        frontmatter: {
+          version: card.version,
+          id: card.id,
+          boardId: card.boardId,
+          status: card.status,
+          priority: card.priority,
+          assignee: card.assignee,
+          dueDate: card.dueDate,
+          created: card.created,
+          modified: card.modified,
+          completedAt: card.completedAt,
+          labels: card.labels,
+          attachments: card.attachments,
+          order: card.order,
+          metadata: card.metadata,
+          actions: card.actions,
+          forms: card.forms,
+          formData: card.formData,
+        },
+        comments: card.comments || [],
+        logs: [],
+        contentVersion: contentVersionRef.current,
+      })
+    }
+    // Request fresh card content from backend (updates logs, comments, etc.)
     vscode.postMessage({
       type: 'openCard',
       cardId: card.id

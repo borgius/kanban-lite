@@ -1,8 +1,10 @@
+import { useRef, useEffect } from 'react'
 import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
 import { getTitleFromContent } from '../../shared/types'
 import type { Card, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
+import { enqueueCardStateRequest } from '../cardStateQueue'
 
 interface CardItemProps {
   card: Card
@@ -55,6 +57,24 @@ function getPlainTextExcerpt(text: string): string {
 export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
   const cardSettings = useStore(s => s.cardSettings)
   const labelDefs = useStore(s => s.labelDefs)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (card.cardState !== undefined) return
+    const el = rootRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          observer.disconnect()
+          enqueueCardStateRequest(card.id)
+        }
+      },
+      { threshold: 0 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [card.id, card.cardState])
   const title = getTitleFromContent(card.content)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
@@ -130,6 +150,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
 
   return (
     <div
+      ref={rootRef}
       onClick={onClick}
       className={[
         'group kb-card',

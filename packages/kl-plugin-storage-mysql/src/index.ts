@@ -776,3 +776,95 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
     },
   }
 }
+
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-storage-mysql',
+  capabilities: {
+    'card.storage': ['mysql'] as const,
+    'attachment.storage': ['mysql'] as const,
+    'card.state': ['mysql'] as const,
+  },
+} as const
+
+// ---------------------------------------------------------------------------
+// Options schema — plugin-settings discovery
+// ---------------------------------------------------------------------------
+
+/** Local copy of the shared plugin-settings redaction target contract. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
+const MYSQL_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
+  maskedValue: '••••••',
+  writeOnly: true,
+  targets: ['read', 'list', 'error'],
+}
+
+function createMysqlOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['database'],
+      properties: {
+        host: {
+          type: 'string',
+          title: 'Host',
+          description: 'MySQL server hostname.',
+          default: 'localhost',
+        },
+        port: {
+          type: 'number',
+          title: 'Port',
+          description: 'MySQL server port.',
+          default: 3306,
+        },
+        user: {
+          type: 'string',
+          title: 'User',
+          description: 'MySQL user.',
+          default: 'root',
+        },
+        password: {
+          type: 'string',
+          title: 'Password',
+          description: 'MySQL password.',
+        },
+        database: {
+          type: 'string',
+          title: 'Database',
+          description: 'MySQL database schema to use.',
+          minLength: 1,
+        },
+      },
+    },
+    secrets: [
+      { path: 'password', redaction: MYSQL_SECRET_REDACTION },
+    ],
+  }
+}
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  mysql: createMysqlOptionsSchema,
+}

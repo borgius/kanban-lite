@@ -1011,3 +1011,104 @@ export const cliPlugin = {
     }
   },
 }
+
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-webhook',
+  capabilities: {
+    'webhook.delivery': ['webhooks'] as const,
+  },
+  integrations: ['standalone.http', 'cli', 'mcp.tools', 'sdk.extension', 'event.listener'] as const,
+} as const
+
+// ---------------------------------------------------------------------------
+// Options schema — plugin-settings discovery
+// ---------------------------------------------------------------------------
+
+/** Local copy of the shared plugin-settings redaction target contract. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
+const WEBHOOK_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
+  maskedValue: '••••••',
+  writeOnly: true,
+  targets: ['read', 'list', 'error'],
+}
+
+function createWebhookOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        webhooks: {
+          type: 'array',
+          title: 'Webhooks',
+          description: 'Registered webhook endpoints.',
+          items: {
+            type: 'object',
+            required: ['id', 'url', 'events', 'active'],
+            additionalProperties: false,
+            properties: {
+              id: {
+                type: 'string',
+                title: 'ID',
+                description: 'Unique webhook identifier.',
+              },
+              url: {
+                type: 'string',
+                title: 'URL',
+                description: 'HTTP(S) URL that receives POST requests with event payloads.',
+                format: 'uri',
+              },
+              events: {
+                type: 'array',
+                title: 'Events',
+                description: 'Event names to subscribe to, or ["*"] for all events.',
+                items: { type: 'string' },
+              },
+              secret: {
+                type: 'string',
+                title: 'Signing secret',
+                description: 'Optional HMAC-SHA256 signing key for payload verification.',
+              },
+              active: {
+                type: 'boolean',
+                title: 'Active',
+                description: 'Whether this webhook is active.',
+                default: true,
+              },
+            },
+          },
+        },
+      },
+    },
+    secrets: [
+      { path: 'webhooks.*.secret', redaction: WEBHOOK_SECRET_REDACTION },
+    ],
+  }
+}
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  webhooks: createWebhookOptionsSchema,
+}

@@ -21,8 +21,10 @@ export type {
   CardStateCapabilityNamespace,
   CardStateCapabilitySelections,
   KanbanConfig,
+  KLPluginPackageManifest,
   PluginCapabilityNamespace,
   PluginCapabilitySelections,
+  PluginIntegrationNamespace,
   ResolvedCardStateCapabilities,
 } from '../shared/config'
 export { PLUGIN_CAPABILITY_NAMESPACES } from '../shared/config'

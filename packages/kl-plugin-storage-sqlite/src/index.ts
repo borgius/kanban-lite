@@ -1068,3 +1068,63 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
     },
   }
 }
+
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-storage-sqlite',
+  capabilities: {
+    'card.storage': ['sqlite'] as const,
+    'attachment.storage': ['sqlite'] as const,
+    'card.state': ['sqlite'] as const,
+  },
+} as const
+
+// ---------------------------------------------------------------------------
+// Options schema — plugin-settings discovery
+// ---------------------------------------------------------------------------
+
+/** Local copy of the shared plugin-settings redaction target contract. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
+function createSqliteOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        sqlitePath: {
+          type: 'string',
+          title: 'Database path',
+          description: 'Path to the SQLite database file. Relative paths are resolved from the workspace root.',
+          default: '.kanban/kanban.db',
+        },
+      },
+    },
+    secrets: [],
+  }
+}
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  sqlite: createSqliteOptionsSchema,
+}

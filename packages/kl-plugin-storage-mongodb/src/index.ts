@@ -699,3 +699,84 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
     },
   }
 }
+
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-storage-mongodb',
+  capabilities: {
+    'card.storage': ['mongodb'] as const,
+    'attachment.storage': ['mongodb'] as const,
+    'card.state': ['mongodb'] as const,
+  },
+} as const
+
+// ---------------------------------------------------------------------------
+// Options schema — plugin-settings discovery
+// ---------------------------------------------------------------------------
+
+/** Local copy of the shared plugin-settings redaction target contract. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
+const MONGODB_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
+  maskedValue: '••••••',
+  writeOnly: true,
+  targets: ['read', 'list', 'error'],
+}
+
+function createMongodbOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['database'],
+      properties: {
+        uri: {
+          type: 'string',
+          title: 'Connection URI',
+          description: 'MongoDB connection URI.',
+          default: 'mongodb://localhost:27017',
+        },
+        database: {
+          type: 'string',
+          title: 'Database',
+          description: 'MongoDB database name.',
+          minLength: 1,
+        },
+        collectionPrefix: {
+          type: 'string',
+          title: 'Collection prefix',
+          description: 'Prefix for MongoDB collection names.',
+          default: 'kanban',
+        },
+      },
+    },
+    secrets: [
+      { path: 'uri', redaction: MONGODB_SECRET_REDACTION },
+    ],
+  }
+}
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  mongodb: createMongodbOptionsSchema,
+}

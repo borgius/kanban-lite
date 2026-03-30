@@ -15,6 +15,7 @@ import type {
   PluginSettingsDiscoverySource,
   PluginSettingsInstallScope,
   PluginSettingsInstallTransportResult,
+  PluginSettingsOptionsSchemaMetadata,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
   PluginSettingsSecretFieldMetadata,
@@ -346,6 +347,57 @@ function getProviderRow(
   ) ?? null
 }
 
+interface PluginListEntry {
+  key: string
+  label: string
+  discoverySource: PluginSettingsDiscoverySource
+  capabilities: Array<{
+    capability: PluginCapabilityNamespace
+    providerId: string
+    isSelected: boolean
+    optionsSchema?: PluginSettingsOptionsSchemaMetadata
+  }>
+  hasSelectedCapability: boolean
+}
+
+function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefined): PluginListEntry[] {
+  if (!pluginSettings?.capabilities) return []
+
+  const map = new Map<string, PluginListEntry>()
+
+  for (const capEntry of pluginSettings.capabilities) {
+    for (const provider of capEntry.providers) {
+      const key = provider.packageName
+      let entry = map.get(key)
+      if (!entry) {
+        entry = {
+          key,
+          label: provider.packageName,
+          discoverySource: provider.discoverySource,
+          capabilities: [],
+          hasSelectedCapability: false,
+        }
+        map.set(key, entry)
+      }
+      entry.capabilities.push({
+        capability: capEntry.capability,
+        providerId: provider.providerId,
+        isSelected: provider.isSelected,
+        optionsSchema: provider.optionsSchema,
+      })
+      if (provider.isSelected) {
+        entry.hasSelectedCapability = true
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.discoverySource === 'builtin' && b.discoverySource !== 'builtin') return -1
+    if (a.discoverySource !== 'builtin' && b.discoverySource === 'builtin') return 1
+    return a.label.localeCompare(b.label)
+  })
+}
+
 function PluginSettingsBadge({
   children,
   tone = 'default',
@@ -368,46 +420,6 @@ function PluginSettingsBadge({
     >
       {children}
     </span>
-  )
-}
-
-function PluginProviderRow({
-  capability,
-  provider,
-  isActive,
-  onOpen,
-}: {
-  capability: PluginCapabilityNamespace
-  provider: NonNullable<PluginSettingsPayload['capabilities'][number]>['providers'][number]
-  isActive: boolean
-  onOpen?: (capability: PluginCapabilityNamespace, providerId: string) => void
-}) {
-  return (
-    <div
-      className="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer select-none"
-      style={isActive
-        ? {
-            background: 'var(--vscode-list-activeSelectionBackground)',
-            color: 'var(--vscode-list-activeSelectionForeground)',
-          }
-        : {
-            background: 'transparent',
-          }}
-      data-plugin-provider={provider.providerId}
-      data-active={isActive ? 'true' : 'false'}
-      data-selected={provider.isSelected ? 'true' : 'false'}
-      onClick={() => onOpen?.(capability, provider.providerId)}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-    >
-      <span className="text-xs font-medium flex-1 truncate" style={isActive ? undefined : { color: 'var(--vscode-foreground)' }}>
-        {provider.providerId}
-      </span>
-      <div className="flex items-center gap-1 shrink-0">
-        <PluginSettingsBadge>{pluginDiscoverySourceLabels[provider.discoverySource]}</PluginSettingsBadge>
-        {provider.isSelected && <PluginSettingsBadge tone="selected">Selected</PluginSettingsBadge>}
-      </div>
-    </div>
   )
 }
 
@@ -524,18 +536,14 @@ function PluginOptionsSection({
   onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
   onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
 }) {
-  const capabilities = pluginSettings?.capabilities ?? []
-  const [activeProvider, setActiveProvider] = useState<PluginProviderFocusState | null>(() => pluginSettingsProvider
-    ? {
-        capability: pluginSettingsProvider.capability,
-        providerId: pluginSettingsProvider.providerId,
-      }
-    : null)
+  const plugins = useMemo(() => derivePluginList(pluginSettings), [pluginSettings])
+  const [activePluginKey, setActivePluginKey] = useState<string | null>(null)
+  const [expandedCapability, setExpandedCapability] = useState<PluginCapabilityNamespace | null>(null)
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
-  const [foldedCapabilities, setFoldedCapabilities] = useState<Set<string>>(() => new Set())
   const [leftPanelPct, setLeftPanelPct] = useState(35)
   const splitContainerRef = useRef<HTMLDivElement>(null)
+  const [showInstall, setShowInstall] = useState(false)
 
   const handleSplitDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
@@ -555,31 +563,22 @@ function PluginOptionsSection({
     window.addEventListener('pointerup', onUp)
   }, [])
 
-  const toggleCapabilityFold = useCallback((capability: string) => {
-    setFoldedCapabilities(prev => {
-      const next = new Set(prev)
-      if (next.has(capability)) next.delete(capability)
-      else next.add(capability)
-      return next
-    })
-  }, [])
-
-  const resolvedActiveProvider = useMemo(() => {
-    if (!activeProvider) return null
-    return getProviderRow(pluginSettings, activeProvider) ? activeProvider : null
-  }, [pluginSettings, activeProvider])
-
-  const activeProviderRow = useMemo(
-    () => getProviderRow(pluginSettings, resolvedActiveProvider),
-    [pluginSettings, resolvedActiveProvider],
+  const activePlugin = useMemo(
+    () => (showInstall ? null : plugins.find(p => p.key === activePluginKey) ?? null),
+    [plugins, activePluginKey, showInstall],
   )
 
+  const activeCapabilityEntry = useMemo(() => {
+    if (!activePlugin || !expandedCapability) return null
+    return activePlugin.capabilities.find(c => c.capability === expandedCapability) ?? null
+  }, [activePlugin, expandedCapability])
+
   const activeProviderDetails = useMemo(() => {
-    if (!resolvedActiveProvider || !pluginSettingsProvider) return null
-    if (pluginSettingsProvider.capability !== resolvedActiveProvider.capability) return null
-    if (pluginSettingsProvider.providerId !== resolvedActiveProvider.providerId) return null
+    if (!activeCapabilityEntry || !pluginSettingsProvider) return null
+    if (pluginSettingsProvider.capability !== expandedCapability) return null
+    if (pluginSettingsProvider.providerId !== activeCapabilityEntry.providerId) return null
     return pluginSettingsProvider
-  }, [resolvedActiveProvider, pluginSettingsProvider])
+  }, [activeCapabilityEntry, expandedCapability, pluginSettingsProvider])
 
   const providerOptionsSchema = useMemo(() => {
     if (!activeProviderDetails?.optionsSchema) return null
@@ -614,88 +613,82 @@ function PluginOptionsSection({
           Plugin providers
         </h3>
         <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-          Select one provider per capability, open a provider to edit its schema-driven options, or install a new package through the safe SDK-backed flow.
+          Select a plugin to view its capabilities and configure options, or install a new package.
         </p>
       </div>
 
       <div ref={splitContainerRef} className="flex items-stretch gap-0" style={{ minHeight: '300px' }}>
-        {/* Left panel: capability list */}
-        <div className="space-y-3 overflow-y-auto pr-1" style={{ width: `${leftPanelPct}%`, minWidth: 0 }}>
-          {capabilities.length === 0 ? (
-            <div
-              className="rounded-lg px-3 py-3 text-sm"
-              style={{
-                background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
-                color: 'var(--vscode-descriptionForeground)',
-                border: '1px solid var(--vscode-panel-border)',
-              }}
-            >
-              No plugin providers discovered yet.
-            </div>
-          ) : capabilities.map((entry) => {
-            const isFolded = foldedCapabilities.has(entry.capability)
-            return (
+        {/* Left panel: flat plugin list */}
+        <div className="overflow-y-auto pr-1" style={{ width: `${leftPanelPct}%`, minWidth: 0 }}>
+          <div
+            className="rounded-xl border overflow-hidden"
+            style={{
+              borderColor: 'var(--vscode-panel-border)',
+              background: 'var(--vscode-editorWidget-background, transparent)',
+            }}
+          >
+            {plugins.length === 0 ? (
               <div
-                key={entry.capability}
-                className="rounded-xl border"
-                style={{
-                  borderColor: 'var(--vscode-panel-border)',
-                  background: 'var(--vscode-editorWidget-background, transparent)',
-                }}
+                className="px-3 py-3 text-sm"
+                style={{ color: 'var(--vscode-descriptionForeground)' }}
               >
-                {/* Foldable capability header */}
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-                  style={{ borderBottom: isFolded ? 'none' : '1px solid var(--vscode-panel-border)' }}
-                  onClick={() => toggleCapabilityFold(entry.capability)}
-                >
-                  <ChevronRight
-                    size={13}
-                    className="shrink-0 transition-transform"
-                    style={{
-                      transform: isFolded ? 'rotate(0deg)' : 'rotate(90deg)',
-                      color: 'var(--vscode-descriptionForeground)',
-                    }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate" style={{ color: 'var(--vscode-foreground)' }}>
-                      {entry.capability}
-                    </div>
-                    {!isFolded && (
-                      <div className="text-xs mt-0.5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                        Selected provider: {entry.selected.providerId ?? 'none'} ({entry.selected.source})
-                      </div>
-                    )}
-                  </div>
-                  <PluginSettingsBadge tone={entry.selected.providerId ? 'selected' : 'default'}>
-                    {entry.providers.length} provider{entry.providers.length === 1 ? '' : 's'}
-                  </PluginSettingsBadge>
-                </button>
-
-                {!isFolded && (
-                  <div className="space-y-0.5 px-2 py-2">
-                    {entry.providers.length === 0 ? (
-                      <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                        No providers discovered for this capability.
-                      </div>
-                    ) : entry.providers.map((provider) => (
-                      <PluginProviderRow
-                        key={`${entry.capability}:${provider.providerId}`}
-                        capability={entry.capability}
-                        provider={provider}
-                        isActive={resolvedActiveProvider?.capability === entry.capability && resolvedActiveProvider.providerId === provider.providerId}
-                        onOpen={(capability, providerId) => {
-                          setActiveProvider({ capability, providerId })
-                          onReadPluginSettingsProvider?.(capability, providerId)
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                No plugins discovered yet.
               </div>
-            )
-          })}
+            ) : plugins.map((plugin, idx) => (
+              <div
+                key={plugin.key}
+                className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+                style={{
+                  ...(activePluginKey === plugin.key && !showInstall
+                    ? {
+                        background: 'var(--vscode-list-activeSelectionBackground)',
+                        color: 'var(--vscode-list-activeSelectionForeground)',
+                      }
+                    : { background: 'transparent' }),
+                  ...(idx > 0 ? { borderTop: '1px solid var(--vscode-panel-border)' } : {}),
+                }}
+                onClick={() => { setActivePluginKey(plugin.key); setShowInstall(false); setExpandedCapability(null) }}
+                onMouseEnter={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+                onMouseLeave={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'transparent' }}
+              >
+                <span
+                  className="text-sm font-medium flex-1 truncate"
+                  style={activePluginKey === plugin.key && !showInstall ? undefined : { color: 'var(--vscode-foreground)' }}
+                >
+                  {plugin.label}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <PluginSettingsBadge>{pluginDiscoverySourceLabels[plugin.discoverySource]}</PluginSettingsBadge>
+                  {plugin.hasSelectedCapability && <PluginSettingsBadge tone="selected">Active</PluginSettingsBadge>}
+                </div>
+              </div>
+            ))}
+
+            {/* Install package entry */}
+            <div
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+              style={{
+                borderTop: plugins.length > 0 ? '1px solid var(--vscode-panel-border)' : undefined,
+                ...(showInstall
+                  ? {
+                      background: 'var(--vscode-list-activeSelectionBackground)',
+                      color: 'var(--vscode-list-activeSelectionForeground)',
+                    }
+                  : { background: 'transparent' }),
+              }}
+              onClick={() => { setShowInstall(true); setActivePluginKey(null) }}
+              onMouseEnter={e => { if (!showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+              onMouseLeave={e => { if (!showInstall) e.currentTarget.style.background = 'transparent' }}
+            >
+              <Plus size={13} className="shrink-0" style={showInstall ? undefined : { color: 'var(--vscode-descriptionForeground)' }} />
+              <span
+                className="text-sm font-medium flex-1"
+                style={showInstall ? undefined : { color: 'var(--vscode-descriptionForeground)' }}
+              >
+                Install package
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Drag handle */}
@@ -707,7 +700,7 @@ function PluginOptionsSection({
           onMouseLeave={e => { e.currentTarget.style.background = 'var(--vscode-panel-border)' }}
         />
 
-        {/* Right panel: provider options / install */}
+        {/* Right panel */}
         <div
           className="rounded-xl border overflow-hidden flex flex-col"
           style={{
@@ -717,68 +710,136 @@ function PluginOptionsSection({
             background: 'var(--vscode-editorWidget-background, transparent)',
           }}
         >
-          <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
-            <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-                {resolvedActiveProvider ? (activeProviderRow?.providerId ?? 'Provider') : 'Install plugin package'}
-              </h4>
-              {resolvedActiveProvider && activeProviderRow && (
-                <div className="text-xs mt-0.5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                  {activeProviderRow.packageName} &middot; {resolvedActiveProvider.capability}
+          {pluginSettingsError && (
+            <div
+              className="mx-4 mt-4 rounded-lg px-3 py-2 text-xs"
+              style={{
+                background: 'var(--vscode-inputValidation-errorBackground, rgba(190, 73, 73, 0.15))',
+                color: 'var(--vscode-errorForeground, #f14c4c)',
+                border: '1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c))',
+              }}
+            >
+              {pluginSettingsError}
+            </div>
+          )}
+
+          {activePlugin ? (
+            /* Plugin detail view */
+            <div className="flex flex-col flex-1 overflow-y-auto">
+              {/* Plugin header */}
+              <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
+                <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                  {activePlugin.label}
+                </h4>
+                <div className="flex items-center gap-2 mt-1">
+                  <PluginSettingsBadge>{pluginDiscoverySourceLabels[activePlugin.discoverySource]}</PluginSettingsBadge>
+                  <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    {activePlugin.capabilities.length} {activePlugin.capabilities.length === 1 ? 'capability' : 'capabilities'}
+                  </span>
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {resolvedActiveProvider && activeProviderRow && (
-                <button
-                  type="button"
-                  disabled={activeProviderRow.isSelected || !onSelectPluginSettingsProvider}
-                  onClick={() => onSelectPluginSettingsProvider?.(resolvedActiveProvider.capability, resolvedActiveProvider.providerId)}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
-                  style={activeProviderRow.isSelected
-                    ? {
-                        background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
-                        color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
-                      }
-                    : {
-                        background: 'var(--vscode-button-background)',
-                        color: 'var(--vscode-button-foreground)',
-                      }}
-                >
-                  {activeProviderRow.isSelected ? 'Selected' : 'Select'}
-                </button>
-              )}
-              {resolvedActiveProvider && (
-                <button
-                  type="button"
-                  onClick={() => setActiveProvider(null)}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium"
-                  style={{
-                    border: '1px solid var(--vscode-panel-border)',
-                    color: 'var(--vscode-foreground)',
-                  }}
-                >
-                  Install instead
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            {pluginSettingsError && (
-              <div
-                className="rounded-lg px-3 py-2 text-xs"
-                style={{
-                  background: 'var(--vscode-inputValidation-errorBackground, rgba(190, 73, 73, 0.15))',
-                  color: 'var(--vscode-errorForeground, #f14c4c)',
-                  border: '1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c))',
-                }}
-              >
-                {pluginSettingsError}
               </div>
-            )}
 
-            {!resolvedActiveProvider ? (
+              {/* Capabilities list */}
+              <div className="px-4 py-3 space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                  Capabilities
+                </div>
+                {activePlugin.capabilities.map(cap => {
+                  const isExpanded = expandedCapability === cap.capability
+                  return (
+                    <div
+                      key={cap.capability}
+                      className="rounded-lg border"
+                      style={{
+                        borderColor: 'var(--vscode-panel-border)',
+                        background: isExpanded ? 'var(--vscode-editor-background, transparent)' : 'transparent',
+                      }}
+                    >
+                      <div
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                        onClick={() => {
+                          if (isExpanded) {
+                            setExpandedCapability(null)
+                          } else {
+                            setExpandedCapability(cap.capability)
+                            onReadPluginSettingsProvider?.(cap.capability, cap.providerId)
+                          }
+                        }}
+                      >
+                        <ChevronRight
+                          size={13}
+                          className="shrink-0 transition-transform"
+                          style={{
+                            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                            color: 'var(--vscode-descriptionForeground)',
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
+                            {cap.capability}
+                          </div>
+                          <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                            Provider: {cap.providerId}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={cap.isSelected || !onSelectPluginSettingsProvider}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSelectPluginSettingsProvider?.(cap.capability, cap.providerId)
+                          }}
+                          className="rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
+                          style={cap.isSelected
+                            ? {
+                                background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
+                                color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
+                              }
+                            : {
+                                background: 'var(--vscode-button-background)',
+                                color: 'var(--vscode-button-foreground)',
+                              }}
+                        >
+                          {cap.isSelected ? 'Active' : 'Activate'}
+                        </button>
+                      </div>
+
+                      {/* Expanded capability options */}
+                      {isExpanded && (
+                        <div className="px-3 pb-3" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
+                          {!activeProviderDetails ? (
+                            <div className="text-xs py-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                              Loading provider options…
+                            </div>
+                          ) : !providerOptionsSchema || !providerUiSchema ? (
+                            <div className="text-xs py-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                              This provider does not expose schema-driven options.
+                            </div>
+                          ) : (
+                            <div className="pt-2">
+                              <PluginProviderOptionsEditor
+                                key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
+                                provider={activeProviderDetails}
+                                schema={providerOptionsSchema}
+                                uiSchema={providerUiSchema}
+                                onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            /* Install form */
+            <div className="space-y-4 px-4 py-4">
+              <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                Install plugin package
+              </h4>
+
               <form
                 className="space-y-4"
                 onSubmit={(event) => {
@@ -858,28 +919,8 @@ function PluginOptionsSection({
                   </ul>
                 </div>
               </form>
-            ) : !activeProviderRow ? (
-              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                This provider is no longer available. Choose another provider on the left or install a package.
-              </div>
-            ) : !activeProviderDetails ? (
-              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                Loading redacted provider options…
-              </div>
-            ) : !providerOptionsSchema || !providerUiSchema ? (
-              <div className="text-sm" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                This provider does not expose schema-driven options.
-              </div>
-            ) : (
-              <PluginProviderOptionsEditor
-                key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
-                provider={activeProviderDetails}
-                schema={providerOptionsSchema}
-                uiSchema={providerUiSchema}
-                onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
-              />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

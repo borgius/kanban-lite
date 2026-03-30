@@ -29,6 +29,7 @@ import type {
   Webhook,
   CardStateCapabilityNamespace,
   KanbanConfig,
+  KLPluginPackageManifest,
   PluginCapabilityNamespace,
   PluginCapabilitySelections,
   ResolvedCapabilities,
@@ -895,6 +896,25 @@ function isValidPluginManifest(manifest: unknown, namespace: CapabilityNamespace
 }
 
 // ---------------------------------------------------------------------------
+// Package-level plugin manifest validation
+// ---------------------------------------------------------------------------
+
+function isValidPluginPackageManifest(value: unknown): value is KLPluginPackageManifest {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as KLPluginPackageManifest
+  if (typeof candidate.id !== 'string' || candidate.id.length === 0) return false
+  if (!candidate.capabilities || typeof candidate.capabilities !== 'object') return false
+  for (const [, providerIds] of Object.entries(candidate.capabilities)) {
+    if (!Array.isArray(providerIds)) return false
+    if (!providerIds.every((id: unknown) => typeof id === 'string')) return false
+  }
+  if (candidate.integrations !== undefined) {
+    if (!Array.isArray(candidate.integrations)) return false
+  }
+  return true
+}
+
+// ---------------------------------------------------------------------------
 // Built-in card storage plugins
 // ---------------------------------------------------------------------------
 
@@ -1448,24 +1468,6 @@ function isValidAttachmentStoragePluginCandidate(plugin: unknown): plugin is Att
     && isValidPluginManifest(candidate.manifest, 'attachment.storage')
 }
 
-function isValidAuthIdentityPluginCandidate(plugin: unknown): plugin is AuthIdentityPlugin {
-  if (!plugin || typeof plugin !== 'object') return false
-  const candidate = plugin as AuthIdentityPlugin
-  return typeof candidate.resolveIdentity === 'function'
-    && typeof candidate.manifest?.id === 'string'
-    && Array.isArray(candidate.manifest?.provides)
-    && candidate.manifest.provides.includes('auth.identity')
-}
-
-function isValidAuthPolicyPluginCandidate(plugin: unknown): plugin is AuthPolicyPlugin {
-  if (!plugin || typeof plugin !== 'object') return false
-  const candidate = plugin as AuthPolicyPlugin
-  return typeof candidate.checkPolicy === 'function'
-    && typeof candidate.manifest?.id === 'string'
-    && Array.isArray(candidate.manifest?.provides)
-    && candidate.manifest.provides.includes('auth.policy')
-}
-
 function isValidCardStateProviderCandidate(provider: unknown): provider is CardStateProvider {
   if (!provider || typeof provider !== 'object') return false
   const candidate = provider as CardStateProvider
@@ -1573,145 +1575,112 @@ function inspectExternalPluginModule(request: string, resolved: ResolvedExternal
     discovered.push(provider)
   }
 
-  const cardStoragePlugin = isValidCardStoragePluginCandidate(mod.cardStoragePlugin)
-    ? mod.cardStoragePlugin
-    : isValidCardStoragePluginCandidate(mod.default)
-      ? mod.default
-      : null
-  if (cardStoragePlugin) {
-    add({
-      capability: 'card.storage',
-      providerId: cardStoragePlugin.manifest.id,
-      packageName: request,
-      discoverySource: resolved.source,
-      optionsSchema: getProviderOptionsSchemaCandidate(mod, cardStoragePlugin.manifest.id, cardStoragePlugin),
-    })
-  }
-
-  const attachmentStoragePlugin = isValidAttachmentStoragePluginCandidate(mod.attachmentStoragePlugin)
-    ? mod.attachmentStoragePlugin
-    : isValidAttachmentStoragePluginCandidate(mod.default)
-      ? mod.default
-      : null
-  if (attachmentStoragePlugin) {
-    add({
-      capability: 'attachment.storage',
-      providerId: attachmentStoragePlugin.manifest.id,
-      packageName: request,
-      discoverySource: resolved.source,
-      optionsSchema: getProviderOptionsSchemaCandidate(mod, attachmentStoragePlugin.manifest.id, attachmentStoragePlugin),
-    })
-  }
-
-  if (isRecord(mod.authIdentityPlugins)) {
-    for (const [providerId, candidate] of Object.entries(mod.authIdentityPlugins)) {
-      if (!isValidAuthIdentityPlugin(candidate, providerId)) continue
-      add({
-        capability: 'auth.identity',
-        providerId,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
-      })
+  // -----------------------------------------------------------------------
+  // Manifest-first discovery — the pluginManifest export is the source of
+  // truth.  When present we iterate only declared capabilities, validating
+  // the corresponding module exports structurally.
+  // -----------------------------------------------------------------------
+  const manifest = mod.pluginManifest
+  if (isValidPluginPackageManifest(manifest)) {
+    for (const [ns, providerIds] of Object.entries(manifest.capabilities)) {
+      const capability = ns as PluginCapabilityNamespace
+      for (const providerId of providerIds as readonly string[]) {
+        switch (capability) {
+          case 'card.storage': {
+            const plugin = isValidCardStoragePluginCandidate(mod.cardStoragePlugin)
+              ? mod.cardStoragePlugin
+              : isValidCardStoragePluginCandidate(mod.default) ? mod.default : null
+            if (plugin) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, plugin),
+              })
+            }
+            break
+          }
+          case 'attachment.storage': {
+            const plugin = isValidAttachmentStoragePluginCandidate(mod.attachmentStoragePlugin)
+              ? mod.attachmentStoragePlugin
+              : isValidAttachmentStoragePluginCandidate(mod.default) ? mod.default : null
+            if (plugin) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, plugin),
+              })
+            }
+            break
+          }
+          case 'auth.identity': {
+            if (isRecord(mod.authIdentityPlugins)) {
+              const candidate = mod.authIdentityPlugins[providerId]
+              if (isValidAuthIdentityPlugin(candidate, providerId)) {
+                add({
+                  capability, providerId, packageName: request, discoverySource: resolved.source,
+                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                })
+              }
+            }
+            break
+          }
+          case 'auth.policy': {
+            if (isRecord(mod.authPolicyPlugins)) {
+              const candidate = mod.authPolicyPlugins[providerId]
+              if (isValidAuthPolicyPlugin(candidate, providerId)) {
+                add({
+                  capability, providerId, packageName: request, discoverySource: resolved.source,
+                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                })
+              }
+            }
+            break
+          }
+          case 'webhook.delivery': {
+            const directWebhookPlugin = isRecord(mod.webhookProviderPlugin) ? mod.webhookProviderPlugin : mod.default
+            if (directWebhookPlugin && isValidWebhookProviderManifest((directWebhookPlugin as WebhookProviderPlugin).manifest)) {
+              const provider = directWebhookPlugin as WebhookProviderPlugin
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, provider),
+              })
+            }
+            break
+          }
+          case 'card.state': {
+            if (isRecord(mod.cardStateProviders)) {
+              const candidate = mod.cardStateProviders[providerId]
+              if (isValidCardStateProvider(candidate, providerId)) {
+                add({
+                  capability, providerId, packageName: request, discoverySource: resolved.source,
+                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                })
+                break
+              }
+            }
+            if (isValidCardStateProviderCandidate(mod.cardStateProvider)) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, mod.cardStateProvider),
+              })
+            } else if (typeof mod.createCardStateProvider === 'function') {
+              const candidate = (mod.createCardStateProvider as (context: CardStateModuleContext) => unknown)({
+                workspaceRoot: process.cwd(),
+                kanbanDir: path.join(process.cwd(), '.kanban'),
+                provider: request,
+                backend: 'external',
+              })
+              if (isValidCardStateProviderCandidate(candidate)) {
+                add({
+                  capability, providerId, packageName: request, discoverySource: resolved.source,
+                  optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
+                })
+              }
+            }
+            break
+          }
+        }
+      }
     }
-  }
-
-  if (typeof mod.createAuthIdentityPlugin === 'function') {
-    const candidate = (mod.createAuthIdentityPlugin as (options?: Record<string, unknown>) => unknown)()
-    if (isValidAuthIdentityPluginCandidate(candidate)) {
-      add({
-        capability: 'auth.identity',
-        providerId: candidate.manifest.id,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
-      })
-    }
-  }
-
-  if (isRecord(mod.authPolicyPlugins)) {
-    for (const [providerId, candidate] of Object.entries(mod.authPolicyPlugins)) {
-      if (!isValidAuthPolicyPlugin(candidate, providerId)) continue
-      add({
-        capability: 'auth.policy',
-        providerId,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
-      })
-    }
-  }
-
-  if (typeof mod.createAuthPolicyPlugin === 'function') {
-    const candidate = (mod.createAuthPolicyPlugin as (options?: Record<string, unknown>) => unknown)()
-    if (isValidAuthPolicyPluginCandidate(candidate)) {
-      add({
-        capability: 'auth.policy',
-        providerId: candidate.manifest.id,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
-      })
-    }
-  }
-
-  const directWebhookPlugin = isRecord(mod.webhookProviderPlugin) ? mod.webhookProviderPlugin : mod.default
-  if (directWebhookPlugin && isValidWebhookProviderManifest((directWebhookPlugin as WebhookProviderPlugin).manifest)) {
-    const provider = directWebhookPlugin as WebhookProviderPlugin
-    add({
-      capability: 'webhook.delivery',
-      providerId: provider.manifest.id,
-      packageName: request,
-      discoverySource: resolved.source,
-      optionsSchema: getProviderOptionsSchemaCandidate(mod, provider.manifest.id, provider),
-    })
-  }
-
-  if (isRecord(mod.cardStateProviders)) {
-    for (const [providerId, candidate] of Object.entries(mod.cardStateProviders)) {
-      if (!isValidCardStateProvider(candidate, providerId)) continue
-      add({
-        capability: 'card.state',
-        providerId,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, providerId, candidate),
-      })
-    }
-  }
-
-  if (isValidCardStateProviderCandidate(mod.cardStateProvider)) {
-    add({
-      capability: 'card.state',
-      providerId: mod.cardStateProvider.manifest.id,
-      packageName: request,
-      discoverySource: resolved.source,
-      optionsSchema: getProviderOptionsSchemaCandidate(mod, mod.cardStateProvider.manifest.id, mod.cardStateProvider),
-    })
-  } else if (isValidCardStateProviderCandidate(mod.default)) {
-    add({
-      capability: 'card.state',
-      providerId: mod.default.manifest.id,
-      packageName: request,
-      discoverySource: resolved.source,
-      optionsSchema: getProviderOptionsSchemaCandidate(mod, mod.default.manifest.id, mod.default),
-    })
-  } else if (typeof mod.createCardStateProvider === 'function') {
-    const candidate = (mod.createCardStateProvider as (context: CardStateModuleContext) => unknown)({
-      workspaceRoot: process.cwd(),
-      kanbanDir: path.join(process.cwd(), '.kanban'),
-      provider: request,
-      backend: 'external',
-    })
-    if (isValidCardStateProviderCandidate(candidate)) {
-      add({
-        capability: 'card.state',
-        providerId: candidate.manifest.id,
-        packageName: request,
-        discoverySource: resolved.source,
-        optionsSchema: getProviderOptionsSchemaCandidate(mod, candidate.manifest.id, candidate),
-      })
-    }
+    return discovered
   }
 
   return discovered

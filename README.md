@@ -1306,6 +1306,23 @@ The same pattern applies to MySQL:
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
 
+### Plugin package manifest
+
+Every first-party plugin package exports a `pluginManifest` constant that declares its capabilities and optional integration surfaces. The engine uses this manifest for fast discovery:
+
+```ts
+export const pluginManifest = {
+  id: 'kl-plugin-storage-sqlite',
+  capabilities: {
+    'card.storage': ['sqlite'],
+    'attachment.storage': ['sqlite'],
+    'card.state': ['sqlite'],
+  },
+} as const
+```
+
+The `KLPluginPackageManifest` and `PluginIntegrationNamespace` types are exported from `kanban-lite/sdk` for compile-time validation. Third-party plugins without `pluginManifest` still work via legacy probing.
+
 ### Webhook delivery provider
 
 Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting that key is enough to activate webhook package discovery for every supported plugin-owned surface: `webhook.delivery`, standalone `/api/webhooks`, the CLI `webhooks` command, and the MCP webhook tools registered by the package.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Standard plugin package manifest** (`pluginManifest` export): Every first-party plugin package now exports a `pluginManifest` constant declaring its capabilities and integration surfaces. The engine uses this manifest for fast, reliable discovery instead of exhaustive duck-typing. New types `KLPluginPackageManifest` and `PluginIntegrationNamespace` are exported from `kanban-lite/sdk`. All first-party plugin packages (`kl-plugin-auth`, `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, `kl-plugin-attachment-s3`, `kl-plugin-webhook`) include the manifest. Third-party plugins without `pluginManifest` still work via the legacy probing fallback.
+
 ### Changed
 
 - **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.

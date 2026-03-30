@@ -33,6 +33,24 @@ The package should normally export one or both of:
 - `cardStoragePlugin`
 - `attachmentStoragePlugin`
 
+Every package **must** also export a `pluginManifest` constant.  The engine uses
+this manifest for fast, reliable capability discovery:
+
+```ts
+export const pluginManifest = {
+  id: 'kl-plugin-storage-example',
+  capabilities: {
+    'card.storage': ['example'] as const,
+    'attachment.storage': ['example'] as const,
+  },
+} as const
+```
+
+The manifest declares the package id, the capability namespaces it provides, and
+the provider ids for each capability.  Optionally add an `integrations` array
+when the package also contributes `standalone.http`, `cli`, `mcp.tools`,
+`sdk.extension`, or `event.listener` surfaces.
+
 If the attachment provider supports efficient append-heavy workloads (for example card logs), it may also implement the optional hook:
 
 - `appendAttachment(card, attachment, content)`
@@ -100,6 +118,7 @@ Make sure the package will export the exact runtime surface kanban-lite expects.
 
 For a card storage plugin, the important shape is:
 
+- `pluginManifest` — package-level manifest with `capabilities` and optional `integrations`
 - `manifest.id`
 - `manifest.provides` including `card.storage`
 - `createEngine(kanbanDir, options)`
@@ -107,6 +126,7 @@ For a card storage plugin, the important shape is:
 
 For an attachment plugin, the important shape is:
 
+- `pluginManifest` — package-level manifest with `capabilities` and optional `integrations`
 - `manifest.id`
 - `manifest.provides` including `attachment.storage`
 - `copyAttachment(...)`

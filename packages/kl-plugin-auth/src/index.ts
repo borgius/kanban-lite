@@ -1384,7 +1384,29 @@ export const cliPlugin: KanbanCliPlugin = {
   },
 }
 
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-auth',
+  capabilities: {
+    'auth.identity': ['local', 'noop', 'rbac', 'kl-plugin-auth'] as const,
+    'auth.policy': ['local', 'noop', 'rbac', 'kl-plugin-auth'] as const,
+  },
+  integrations: ['standalone.http', 'cli', 'event.listener'] as const,
+} as const
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  'kl-plugin-auth': createAuthIdentityOptionsSchema,
+  local: createAuthIdentityOptionsSchema,
+}
+
+/** Policy options schemas keyed by provider id for plugin-settings discovery. */
+export const policyOptionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  'kl-plugin-auth': createAuthPolicyOptionsSchema,
+}
+
 const authPluginPackage = {
+  pluginManifest,
   authIdentityPlugins,
   authPolicyPlugins,
   createAuthIdentityPlugin,
@@ -1395,6 +1417,8 @@ const authPluginPackage = {
   createNoopAuthListenerPlugin,
   createRbacAuthListenerPlugin,
   authListenerPluginFactories,
+  optionsSchemas,
+  policyOptionsSchemas,
 }
 
 export default authPluginPackage

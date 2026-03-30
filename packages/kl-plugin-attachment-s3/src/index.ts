@@ -295,3 +295,85 @@ export const attachmentStoragePlugin: AttachmentStoragePlugin = {
     return tmpFile
   },
 }
+
+/** Standard package manifest for engine discovery. */
+export const pluginManifest = {
+  id: 'kl-plugin-attachment-s3',
+  capabilities: {
+    'attachment.storage': ['kl-plugin-attachment-s3'] as const,
+  },
+} as const
+
+// ---------------------------------------------------------------------------
+// Options schema — plugin-settings discovery
+// ---------------------------------------------------------------------------
+
+/** Local copy of the shared plugin-settings redaction target contract. */
+type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
+
+/** Local copy of the shared plugin-settings redaction policy contract. */
+interface PluginSettingsRedactionPolicy {
+  maskedValue: string
+  writeOnly: true
+  targets: readonly PluginSettingsRedactionTarget[]
+}
+
+/** Local copy of the shared plugin-settings secret-field metadata contract. */
+interface PluginSettingsSecretFieldMetadata {
+  path: string
+  redaction: PluginSettingsRedactionPolicy
+}
+
+/** Local copy of the shared provider options schema contract exposed by plugin packages. */
+interface PluginSettingsOptionsSchemaMetadata {
+  schema: Record<string, unknown>
+  uiSchema?: Record<string, unknown>
+  secrets: PluginSettingsSecretFieldMetadata[]
+}
+
+function createS3OptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+  return {
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['bucket'],
+      properties: {
+        bucket: {
+          type: 'string',
+          title: 'S3 bucket',
+          description: 'Name of the S3 bucket where attachments are stored.',
+          minLength: 1,
+        },
+        region: {
+          type: 'string',
+          title: 'AWS region',
+          description: 'AWS region for the S3 bucket. Falls back to AWS_REGION, then us-east-1.',
+          default: 'us-east-1',
+        },
+        endpoint: {
+          type: 'string',
+          title: 'Custom endpoint',
+          description: 'Custom S3-compatible endpoint URL (MinIO, LocalStack, etc.).',
+        },
+        prefix: {
+          type: 'string',
+          title: 'Key prefix',
+          description: 'Object key prefix for all stored attachments.',
+          default: '',
+        },
+        forcePathStyle: {
+          type: 'boolean',
+          title: 'Force path-style',
+          description: 'Use path-style addressing (required by MinIO).',
+          default: false,
+        },
+      },
+    },
+    secrets: [],
+  }
+}
+
+/** Options schemas keyed by provider id for plugin-settings discovery. */
+export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
+  'kl-plugin-attachment-s3': createS3OptionsSchema,
+}

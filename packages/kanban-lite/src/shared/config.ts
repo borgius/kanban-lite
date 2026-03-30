@@ -67,6 +67,33 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
 /** Partial plugin capability selections keyed by the full plugin settings namespace set. */
 export type PluginCapabilitySelections = Partial<Record<PluginCapabilityNamespace, ProviderRef>>
 
+/** Integration surfaces a plugin package may contribute beyond capability providers. */
+export type PluginIntegrationNamespace =
+  | 'standalone.http'
+  | 'cli'
+  | 'mcp.tools'
+  | 'sdk.extension'
+  | 'event.listener'
+
+/**
+ * Standard package-level manifest that every first-party plugin exports as
+ * `pluginManifest`.  The engine reads this for fast, reliable capability
+ * discovery instead of duck-typing individual exports.
+ */
+export interface KLPluginPackageManifest {
+  /** Package identifier — typically the npm package name. */
+  readonly id: string
+  /**
+   * Capabilities provided, keyed by namespace.
+   * Value is an array of provider IDs offered for that capability.
+   */
+  readonly capabilities: Partial<Record<PluginCapabilityNamespace, readonly string[]>>
+  /**
+   * Optional integration surfaces this package contributes.
+   */
+  readonly integrations?: readonly PluginIntegrationNamespace[]
+}
+
 /**
  * A registered webhook endpoint that receives event notifications.
  *

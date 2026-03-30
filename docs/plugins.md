@@ -810,6 +810,50 @@ That means log behavior now follows the active `attachment.storage` provider:
 
 ---
 
+## Package-level plugin manifest
+
+Every first-party plugin package exports a `pluginManifest` constant that
+declares all capabilities and integration surfaces the package provides.
+
+The engine reads this manifest first for fast, reliable discovery instead of
+duck-typing individual exports.
+
+### Shape
+
+```ts
+export const pluginManifest = {
+  id: 'kl-plugin-storage-sqlite',
+  capabilities: {
+    'card.storage': ['sqlite'] as const,
+    'attachment.storage': ['sqlite'] as const,
+    'card.state': ['sqlite'] as const,
+  },
+} as const
+```
+
+The fields:
+
+| Field            | Type                                                        | Required | Description |
+|------------------|-------------------------------------------------------------|----------|-------------|
+| `id`             | `string`                                                    | yes      | npm package name |
+| `capabilities`   | `Partial<Record<PluginCapabilityNamespace, string[]>>`      | yes      | Provider IDs offered per capability namespace |
+| `integrations`   | `('standalone.http'\|'cli'\|'mcp.tools'\|'sdk.extension'\|'event.listener')[]` | no | Additional integration surfaces the package contributes |
+
+### Discovery flow
+
+1. The engine checks for `mod.pluginManifest` and validates its structure.
+2. If found, it iterates only declared capabilities and resolves exports accordingly.
+3. Structural validators (`isValidCardStoragePluginCandidate`, etc.) still run on the resolved exports.
+4. If `pluginManifest` is absent, the engine falls back to exhaustive duck-typing probing for third-party compatibility.
+
+### Type
+
+The `KLPluginPackageManifest` interface and `PluginIntegrationNamespace` type are
+exported from `kanban-lite/sdk` for plugin authors who want compile-time
+validation.
+
+---
+
 ## Plugin manifest validation
 
 Validation is intentionally simple.

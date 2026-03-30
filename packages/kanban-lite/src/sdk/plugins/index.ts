@@ -1169,12 +1169,16 @@ const DISCOVERY_SOURCE_PRIORITY: Record<PluginSettingsDiscoverySource, number> =
 
 const PLUGIN_SETTINGS_SECRET_KEY_PATTERN = /(secret|token|password|passphrase|private[-_]?key|client[-_]?secret|secret[-_]?key|session[-_]?token|api[-_]?key)/i
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is UnknownRecord
+function isRecord<T extends object>(value: unknown): value is T & UnknownRecord
+function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isValidPluginSettingsSecretFieldMetadata(value: unknown): value is PluginSettingsSecretFieldMetadata {
-  return isRecord(value)
+  return isRecord<PluginSettingsSecretFieldMetadata>(value)
     && typeof value.path === 'string'
     && value.path.length > 0
     && isRecord(value.redaction)
@@ -1184,14 +1188,16 @@ function isValidPluginSettingsSecretFieldMetadata(value: unknown): value is Plug
 }
 
 function normalizePluginSettingsOptionsSchema(value: unknown): PluginSettingsOptionsSchemaMetadata | undefined {
-  if (!isRecord(value) || !isRecord(value.schema)) return undefined
-  const uiSchema = isRecord(value.uiSchema) ? value.uiSchema : undefined
+  if (!isRecord(value) || !isRecord<PluginSettingsOptionsSchemaMetadata['schema']>(value.schema)) return undefined
+  const uiSchema = isRecord(value.uiSchema)
+    ? structuredClone(value.uiSchema as unknown as PluginSettingsOptionsSchemaMetadata['uiSchema'])
+    : undefined
   const secrets = Array.isArray(value.secrets)
     ? value.secrets.filter(isValidPluginSettingsSecretFieldMetadata)
     : []
   return {
-    schema: structuredClone(value.schema),
-    ...(uiSchema ? { uiSchema: structuredClone(uiSchema) } : {}),
+    schema: structuredClone(value.schema) as PluginSettingsOptionsSchemaMetadata['schema'],
+    ...(uiSchema ? { uiSchema } : {}),
     secrets,
   }
 }

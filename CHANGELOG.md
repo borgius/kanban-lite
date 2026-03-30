@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Canonical local file provider IDs**: `card.storage` and default `card.state` now use `localfs` as the canonical provider id in runtime capabilities, plugin-settings inventory, and status surfaces. Legacy ids (`card.storage: "markdown"`, `card.state: "builtin"`) are normalized for compatibility and no longer treated as separate installable providers.
 - **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
 
+### Fixed
+
+- **Plugin settings SDK type narrowing**: Tightened the local record guard and options-schema normalization in `packages/kanban-lite/src/sdk/plugins/index.ts` so plugin-settings metadata compiles cleanly under stricter TypeScript checks without treating validated records as `unknown`.
+
 ### Added
 
 - **MongoDB storage plugin** (`kl-plugin-storage-mongodb`): New external storage provider package for MongoDB. Cards and comments are persisted in MongoDB collections (`kanban_cards`, `kanban_comments`). Attachments remain on the local filesystem. Requires the `mongodb` driver as a peer dependency. Provider id: `mongodb`.

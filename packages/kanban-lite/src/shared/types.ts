@@ -1,4 +1,6 @@
+import { JsonSchema } from '@jsonforms/core/lib/models/jsonSchema'
 import type { PluginCapabilityNamespace } from './config'
+import { UISchemaElement } from '@jsonforms/core/lib/models/uischema'
 
 // Kanban types
 
@@ -719,8 +721,8 @@ export interface PluginSettingsSecretFieldMetadata {
 
 /** Transport-safe provider options schema plus secret-field annotations. */
 export interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
+  schema: JsonSchema
+  uiSchema?: UISchemaElement
   secrets: PluginSettingsSecretFieldMetadata[]
 }
 

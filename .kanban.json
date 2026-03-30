@@ -190,10 +190,10 @@
   },
   "plugins": {
     "card.state": {
-      "provider": "builtin"
+      "provider": "localfs"
     },
     "webhook.delivery": {
-      "provider": "webhooks"
+      "provider": "noop"
     },
     "attachment.storage": {
       "provider": "localfs"
@@ -225,7 +225,7 @@
       "provider": "kl-plugin-auth"
     },
     "card.storage": {
-      "provider": "sqlite"
+      "provider": "localfs"
     }
   },
   "logsFilter": {

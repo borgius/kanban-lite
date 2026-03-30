@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport } from '../../shared/types'
-import type { SettingsTab } from '../components/SettingsPanel'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
+import type { SettingsTab } from '../settingsTabs'
 
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'

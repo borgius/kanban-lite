@@ -23,6 +23,7 @@ import type {
 import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
+import type { SettingsTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
@@ -34,24 +35,6 @@ const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string>
   dependency: 'Dependency',
   global: 'Global',
   sibling: 'Sibling',
-}
-
-export type SettingsTab = 'general' | 'defaults' | 'labels' | 'pluginOptions'
-
-/** URL-safe slug → internal SettingsTab */
-export const SETTINGS_TAB_FROM_SLUG: Record<string, SettingsTab> = {
-  general: 'general',
-  defaults: 'defaults',
-  labels: 'labels',
-  plugins: 'pluginOptions',
-}
-
-/** Internal SettingsTab → URL-safe slug */
-export const SETTINGS_TAB_TO_SLUG: Record<SettingsTab, string> = {
-  general: 'general',
-  defaults: 'defaults',
-  labels: 'labels',
-  pluginOptions: 'plugins',
 }
 
 const settingsTabLabels: Record<SettingsTab, string> = {

@@ -1,12 +1,9 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { Suspense, lazy, useEffect, useState, useRef, useCallback } from 'react'
 import { generateKeyBetween } from 'fractional-indexing'
 import { useStore } from './store'
 import { KanbanBoard } from './components/KanbanBoard'
-import { CreateCardDialog } from './components/CreateCardDialog'
-import { CardEditor } from './components/CardEditor'
 import { Toolbar } from './components/Toolbar'
 import { UndoToast } from './components/UndoToast'
-import { SettingsPanel } from './components/SettingsPanel'
 import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
 import { ShortcutHelp } from './components/ShortcutHelp'
@@ -25,7 +22,6 @@ import type {
   PluginSettingsProviderTransport,
 } from '../shared/types'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
-import { LogsSection } from './components/LogsSection'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
 import { getVsCodeApi } from './vsCodeApi'
@@ -42,6 +38,22 @@ const EMPTY_PLUGIN_SETTINGS: PluginSettingsPayload = {
     targets: ['read', 'list', 'error'],
   },
 }
+
+const LazyCreateCardDialog = lazy(async () => ({
+  default: (await import('./components/CreateCardDialog')).CreateCardDialog,
+}))
+
+const LazyCardEditor = lazy(async () => ({
+  default: (await import('./components/CardEditor')).CardEditor,
+}))
+
+const LazySettingsPanel = lazy(async () => ({
+  default: (await import('./components/SettingsPanel')).SettingsPanel,
+}))
+
+const LazyLogsSection = lazy(async () => ({
+  default: (await import('./components/LogsSection')).LogsSection,
+}))
 
 function readPersistedColumnVisibilityByBoard(state: unknown): ColumnVisibilityByBoard {
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
@@ -1075,10 +1087,18 @@ function App(): React.JSX.Element {
                   </button>
                 </div>
                 <div className="flex-1 overflow-auto">
-                  <LogsSection
-                    logs={boardLogs}
-                    onClearLogs={handleClearBoardLogs}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full min-h-48 items-center justify-center px-4 text-sm opacity-70" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                        Loading logs…
+                      </div>
+                    }
+                  >
+                    <LazyLogsSection
+                      logs={boardLogs}
+                      onClearLogs={handleClearBoardLogs}
+                    />
+                  </Suspense>
                 </div>
               </div>
             </div>
@@ -1107,38 +1127,46 @@ function App(): React.JSX.Element {
                   onCommit={handleCommitDrawerWidth}
                   onCancel={handleCancelDrawerResize}
                 />
-                <CardEditor
-              cardId={editingCard.id}
-              content={editingCard.content}
-              frontmatter={editingCard.frontmatter}
-              comments={editingCard.comments}
-              contentVersion={editingCard.contentVersion}
-              onSave={handleSaveCard}
-              onClose={handleCloseEditor}
-              onDelete={handleDeleteFromEditor}
-              onPermanentDelete={handlePermanentDeleteCard}
-              onRestore={handleRestoreCard}
-              onOpenFile={handleOpenFile}
-              onOpenMetadataFile={handleOpenMetadataFile}
-              onDownloadCard={handleDownloadCard}
-              onStartWithAI={handleStartWithAI}
-              onAddAttachment={handleAddAttachment}
-              onOpenAttachment={handleOpenAttachment}
-              onRemoveAttachment={handleRemoveAttachment}
-              onAddComment={handleAddComment}
-              onUpdateComment={handleUpdateComment}
-              onDeleteComment={handleDeleteComment}
-              onTransferToBoard={handleTransferToBoard}
-              onTriggerAction={handleTriggerAction}
-              logs={editingCard.logs}
-              onClearLogs={handleClearLogs}
-              logsFilter={cardSettings.logsFilter}
-              onLogsFilterChange={(filter) => {
-                const next = { ...cardSettings, logsFilter: filter }
-                setCardSettings(next)
-                vscode.postMessage({ type: 'saveSettings', settings: next })
-              }}
-            />
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center px-4 text-sm opacity-70" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                      Loading card editor…
+                    </div>
+                  }
+                >
+                  <LazyCardEditor
+                    cardId={editingCard.id}
+                    content={editingCard.content}
+                    frontmatter={editingCard.frontmatter}
+                    comments={editingCard.comments}
+                    contentVersion={editingCard.contentVersion}
+                    onSave={handleSaveCard}
+                    onClose={handleCloseEditor}
+                    onDelete={handleDeleteFromEditor}
+                    onPermanentDelete={handlePermanentDeleteCard}
+                    onRestore={handleRestoreCard}
+                    onOpenFile={handleOpenFile}
+                    onOpenMetadataFile={handleOpenMetadataFile}
+                    onDownloadCard={handleDownloadCard}
+                    onStartWithAI={handleStartWithAI}
+                    onAddAttachment={handleAddAttachment}
+                    onOpenAttachment={handleOpenAttachment}
+                    onRemoveAttachment={handleRemoveAttachment}
+                    onAddComment={handleAddComment}
+                    onUpdateComment={handleUpdateComment}
+                    onDeleteComment={handleDeleteComment}
+                    onTransferToBoard={handleTransferToBoard}
+                    onTriggerAction={handleTriggerAction}
+                    logs={editingCard.logs}
+                    onClearLogs={handleClearLogs}
+                    logsFilter={cardSettings.logsFilter}
+                    onLogsFilterChange={(filter) => {
+                      const next = { ...cardSettings, logsFilter: filter }
+                      setCardSettings(next)
+                      vscode.postMessage({ type: 'saveSettings', settings: next })
+                    }}
+                  />
+                </Suspense>
             </div>
           </div>
           )
@@ -1157,49 +1185,53 @@ function App(): React.JSX.Element {
         />
       )}
 
-      <CreateCardDialog
-        isOpen={createCardOpen}
-        onClose={() => setCreateCardOpen(false)}
-        onCreate={handleCreateCard}
-        initialStatus={createCardStatus}
-        onSaveSettings={handleSaveSettings}
-      />
+      <Suspense fallback={null}>
+        <LazyCreateCardDialog
+          isOpen={createCardOpen}
+          onClose={() => setCreateCardOpen(false)}
+          onCreate={handleCreateCard}
+          initialStatus={createCardStatus}
+          onSaveSettings={handleSaveSettings}
+        />
+      </Suspense>
 
-      <SettingsPanel
-        isOpen={settingsOpen}
-        settings={cardSettings}
-        workspace={workspace}
-        pluginSettings={pluginSettings}
-        pluginSettingsProvider={pluginSettingsProvider}
-        pluginSettingsInstall={pluginSettingsInstall}
-        pluginSettingsError={pluginSettingsError}
-        onClose={() => setSettingsOpen(false)}
-        onSave={handleSaveSettings}
-        onReadPluginSettingsProvider={(capability, providerId) => {
-          setPluginSettingsError(null)
-          vscode.postMessage({ type: 'readPluginSettings', capability, providerId })
-        }}
-        onSelectPluginSettingsProvider={(capability, providerId) => {
-          setPluginSettingsError(null)
-          vscode.postMessage({ type: 'selectPluginSettingsProvider', capability, providerId })
-        }}
-        onUpdatePluginSettingsOptions={(capability, providerId, options) => {
-          setPluginSettingsError(null)
-          vscode.postMessage({ type: 'updatePluginSettingsOptions', capability, providerId, options })
-        }}
-        onInstallPluginSettingsPackage={(packageName, scope) => {
-          setPluginSettingsError(null)
-          vscode.postMessage({ type: 'installPluginSettingsPackage', packageName, scope })
-        }}
-        onPluginOptionsTabActivated={() => {
-          vscode.postMessage({ type: 'loadPluginSettings' })
-        }}
-        onTabChange={setSettingsTab}
-        onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
-        onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
-        onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
-        initialTab={settingsTab}
-      />
+      <Suspense fallback={null}>
+        <LazySettingsPanel
+          isOpen={settingsOpen}
+          settings={cardSettings}
+          workspace={workspace}
+          pluginSettings={pluginSettings}
+          pluginSettingsProvider={pluginSettingsProvider}
+          pluginSettingsInstall={pluginSettingsInstall}
+          pluginSettingsError={pluginSettingsError}
+          onClose={() => setSettingsOpen(false)}
+          onSave={handleSaveSettings}
+          onReadPluginSettingsProvider={(capability, providerId) => {
+            setPluginSettingsError(null)
+            vscode.postMessage({ type: 'readPluginSettings', capability, providerId })
+          }}
+          onSelectPluginSettingsProvider={(capability, providerId) => {
+            setPluginSettingsError(null)
+            vscode.postMessage({ type: 'selectPluginSettingsProvider', capability, providerId })
+          }}
+          onUpdatePluginSettingsOptions={(capability, providerId, options) => {
+            setPluginSettingsError(null)
+            vscode.postMessage({ type: 'updatePluginSettingsOptions', capability, providerId, options })
+          }}
+          onInstallPluginSettingsPackage={(packageName, scope) => {
+            setPluginSettingsError(null)
+            vscode.postMessage({ type: 'installPluginSettingsPackage', packageName, scope })
+          }}
+          onPluginOptionsTabActivated={() => {
+            vscode.postMessage({ type: 'loadPluginSettings' })
+          }}
+          onTabChange={setSettingsTab}
+          onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
+          onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
+          onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
+          initialTab={settingsTab}
+        />
+      </Suspense>
 
       <ColumnDialog
         isOpen={columnDialogOpen}

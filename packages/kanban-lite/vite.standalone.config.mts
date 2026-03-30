@@ -22,6 +22,42 @@ function standaloneServerPlugin(configFile: string, port = 2954): Plugin {
   }
 }
 
+function getStandaloneManualChunk(id: string): string | undefined {
+  const normalizedId = id.replaceAll('\\', '/')
+
+  if (!normalizedId.includes('/node_modules/')) {
+    return undefined
+  }
+
+  if (normalizedId.includes('/node_modules/react/') || normalizedId.includes('/node_modules/react-dom/')) {
+    return 'react-vendor'
+  }
+
+  if (normalizedId.includes('/node_modules/@tanstack/react-router/')) {
+    return 'router-vendor'
+  }
+
+  if (
+    normalizedId.includes('/node_modules/@jsonforms/')
+    || normalizedId.includes('/node_modules/ajv/')
+  ) {
+    return 'jsonforms-vendor'
+  }
+
+  if (
+    normalizedId.includes('/node_modules/marked/')
+    || normalizedId.includes('/node_modules/js-yaml/')
+  ) {
+    return 'content-vendor'
+  }
+
+  if (normalizedId.includes('/node_modules/lucide-react/')) {
+    return 'icons'
+  }
+
+  return undefined
+}
+
 const configFile = process.env.KANBAN_CONFIG ?? resolve(__dirname, '../../.kanban.json')
 
 export default defineConfig({
@@ -38,10 +74,7 @@ export default defineConfig({
         entryFileNames: '[name].js',
         chunkFileNames: '[name]-[hash].js',
         assetFileNames: '[name].[ext]',
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'icons': ['lucide-react']
-        }
+        manualChunks: getStandaloneManualChunk,
       }
     },
     cssCodeSplit: false,

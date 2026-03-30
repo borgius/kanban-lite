@@ -33,7 +33,7 @@ import {
 import App from './App'
 import { useStore, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
 import type { Priority } from '../shared/types'
-import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG } from './components/SettingsPanel'
+import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG } from './settingsTabs'
 import { shouldUseMemoryHistory } from './routerHistory'
 import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
 

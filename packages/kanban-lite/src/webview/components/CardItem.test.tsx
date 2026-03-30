@@ -259,7 +259,7 @@ describe('CardItem — premium card surface', () => {
 
   it('preserves selected-state when isSelected prop changes', () => {
     const selected = renderToStaticMarkup(
-      <CardItem card={makeCard()} onClick={vi.fn()} isSelected={true} />,
+      <CardItem card={makeCard()} onClick={vi.fn()} isSelected />,
     )
     const plain = renderToStaticMarkup(
       <CardItem card={makeCard()} onClick={vi.fn()} isSelected={false} />,

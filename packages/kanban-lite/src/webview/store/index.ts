@@ -555,7 +555,7 @@ export const useStore = create<KanbanState>((set, get) => ({
       effectiveDrawerWidth: state.drawerWidthPreview ?? nextDrawerWidth,
     }
   }),
-  setDrawerWidthPreview: (width) => set((state) => {
+  setDrawerWidthPreview: (width) => set(() => {
     const nextPreview = clampDrawerWidthPercent(width)
     return {
       drawerWidthPreview: nextPreview,
@@ -808,5 +808,5 @@ export const useStore = create<KanbanState>((set, get) => ({
 
   clearSelection: () => set({ selectedCardIds: [], lastClickedCardId: null }),
 
-  setSelectedCardIds: (ids) => set({ selectedCardIds: ids })
+  setSelectedCardIds: (ids) => set(() => ({ selectedCardIds: ids }))
 }))

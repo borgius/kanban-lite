@@ -112,6 +112,7 @@ HTTP server are all built on top of.
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
         * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
+        * [.listAvailableEvents(options)](#KanbanSDK+listAvailableEvents) ⇒
         * [.listPluginSettings()](#KanbanSDK+listPluginSettings) ⇒
         * [.getPluginSettings(capability, providerId)](#KanbanSDK+getPluginSettings) ⇒
         * [.selectPluginSettingsProvider(capability, providerId)](#KanbanSDK+selectPluginSettingsProvider) ⇒
@@ -121,10 +122,12 @@ HTTP server are all built on top of.
         * [.getExtension(id)](#KanbanSDK+getExtension) ⇒
         * [._requireCardStateCapabilities()](#KanbanSDK+_requireCardStateCapabilities)
         * [._resolveCardStateTarget()](#KanbanSDK+_resolveCardStateTarget)
+        * [._resolveCardStateTargetDirect()](#KanbanSDK+_resolveCardStateTargetDirect)
         * [._resolveCardStateActorId()](#KanbanSDK+_resolveCardStateActorId)
         * [._getLatestUnreadActivityCursor()](#KanbanSDK+_getLatestUnreadActivityCursor)
         * [._createUnreadSummary()](#KanbanSDK+_createUnreadSummary)
         * [.getCardState()](#KanbanSDK+getCardState)
+        * [.getCardStateReadModelForCard(card, fallbackBoardId)](#KanbanSDK+getCardStateReadModelForCard) ⇒
         * [.getUnreadSummary()](#KanbanSDK+getUnreadSummary)
         * [.markCardOpened()](#KanbanSDK+markCardOpened)
         * [.markCardRead()](#KanbanSDK+markCardRead)
@@ -463,6 +466,26 @@ console.log(status.webhookProviderActive) // false when kl-plugin-webhook not in
 
 * * *
 
+<a name="KanbanSDK+listAvailableEvents"></a>
+
+#### kanbanSDK.listAvailableEvents(options) ⇒
+Returns the discoverable SDK event catalog for this runtime.
+
+The returned list includes built-in core before/after events plus any
+plugin-declared events exported through active `sdkExtensionPlugin.events`
+bags. `mask` uses the same dotted wildcard semantics as the SDK event bus:
+`*` matches one segment and `**` matches zero or more segments.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A stable, sorted list of discoverable event descriptors.  
+
+| Param | Description |
+| --- | --- |
+| options | Optional phase/type and wildcard-mask filters. |
+
+
+* * *
+
 <a name="KanbanSDK+listPluginSettings"></a>
 
 #### kanbanSDK.listPluginSettings() ⇒
@@ -506,9 +529,12 @@ Persists the canonical selected provider for one capability inside `.kanban.json
 Selection is modeled only by the provider ref stored under `plugins[capability]`.
 Re-selecting the same provider preserves any existing persisted options while
 switching to a different provider replaces the previous single-provider entry.
+Selecting `none` for `webhook.delivery` disables webhook runtime loading while
+preserving any stored webhook options for later re-enable.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: The redacted provider read model after persistence succeeds.  
+**Returns**: The redacted provider read model after persistence succeeds, or `null`
+  when the capability was explicitly disabled.  
 
 | Param | Description |
 | --- | --- |
@@ -619,6 +645,16 @@ const webhooks = webhookExt?.listWebhooks() ?? []
 
 * * *
 
+<a name="KanbanSDK+_resolveCardStateTargetDirect"></a>
+
+#### kanbanSDK.\_resolveCardStateTargetDirect()
+Derives a card-state target directly from a pre-loaded Card without a listCards round-trip.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Internal**:   
+
+* * *
+
 <a name="KanbanSDK+_resolveCardStateActorId"></a>
 
 #### kanbanSDK.\_resolveCardStateActorId()
@@ -653,6 +689,31 @@ This method reads actor-scoped `card.state` only and does not reflect or
 modify active-card UI state.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+getCardStateReadModelForCard"></a>
+
+#### kanbanSDK.getCardStateReadModelForCard(card, fallbackBoardId) ⇒
+Batch-efficient read model for a pre-loaded card used during board init and broadcast.
+
+Unlike calling [getUnreadSummary](getUnreadSummary) and [getCardState](getCardState) separately, this method:
+- Resolves the actor identity exactly once.
+- Derives the board/card target from the supplied Card without an extra listCards round-trip.
+- Runs log, unread-cursor, and open-state I/O concurrently.
+
+Use this when the caller already holds the full Card object (e.g. inside
+`decorateCardsForWebview`) to avoid the N² file-scan that the individual
+methods incur when called in a loop over all cards.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: Unread summary and open-domain card-state record for the current actor.  
+
+| Param | Description |
+| --- | --- |
+| card | The pre-loaded Card object. |
+| fallbackBoardId | Board ID to use when `card.boardId` is not set. |
+
 
 * * *
 
@@ -3483,8 +3544,8 @@ The input object is never mutated.
 ### normalizeCardStateCapabilities()
 Normalizes card-state capability selections into a complete runtime capability map.
 
-`card.state` is first-class and defaults to the built-in provider contract when
-omitted from `.kanban.json`.
+`card.state` is first-class and defaults to the built-in `localfs` provider
+when omitted from `.kanban.json`.
 
 The input object is never mutated.
 
@@ -3501,7 +3562,7 @@ into a complete runtime capability map.
 Precedence:
 1. Explicit `plugins[namespace]`
 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
-3. Backward-compatible defaults (`markdown` + `localfs`)
+3. Backward-compatible defaults (`localfs` + `localfs`)
 
 Explicit built-in `attachment.storage` providers such as `sqlite` and
 `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
@@ -3861,10 +3922,11 @@ here and no built-in implementation is registered, the resolver loads the
 mapped package name and issues install hints that reference it.
 
 Install targets:
-- `sqlite` → `npm install kl-plugin-storage-sqlite`
-- `mysql`  → `npm install kl-plugin-storage-mysql`
+- `sqlite`     → `npm install kl-plugin-storage-sqlite`
+- `mysql`      → `npm install kl-plugin-storage-mysql`
+- `postgresql` → `npm install kl-plugin-storage-postgresql`
 
-Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
+All packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
 with CJS entry `dist/index.cjs`.
 
 **Kind**: global variable  
@@ -3876,7 +3938,8 @@ with CJS entry `dist/index.cjs`.
 ### CARD\_STATE\_PROVIDER\_ALIASES
 Maps short `card.state` provider ids to their installable npm package names.
 
-- `sqlite` → `npm install kl-plugin-card-state-sqlite`
+Card-state is now merged into storage packages. The aliases point to the
+same packages as `PROVIDER_ALIASES`.
 
 External packages must export `createCardStateProvider(context)` or a
 `cardStateProvider`/`default` object with a manifest that provides
@@ -4074,6 +4137,22 @@ the `register` / `unregister` lifecycle and a valid manifest.
 
 **Kind**: global function  
 **Internal**:   
+
+* * *
+
+<a name="resolveCardStateProviderFromStorage"></a>
+
+### resolveCardStateProviderFromStorage()
+Auto-derives card-state from the active storage plugin when no explicit
+`card.state` provider is configured (or the configured provider is `localfs`).
+
+Resolution order:
+1. If an explicit non-localfs card-state provider is configured, use it.
+2. If the storage provider is external, try loading `createCardStateProvider`
+   from the storage package.
+3. Fall back to the built-in file-backed card-state provider.
+
+**Kind**: global function  
 
 * * *
 

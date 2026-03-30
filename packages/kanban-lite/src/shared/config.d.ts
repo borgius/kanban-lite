@@ -3,7 +3,7 @@ import type { KanbanColumn, CardDisplaySettings, Priority, LabelDefinition } fro
 export type CapabilityNamespace = 'card.storage' | 'attachment.storage';
 /** Provider selection for a capability namespace. */
 export interface ProviderRef {
-    /** Provider id (for built-ins this is e.g. `'markdown'`, `'sqlite'`, `'mysql'`, `'localfs'`). */
+    /** Provider id (for built-ins this is e.g. `'localfs'`, `'sqlite'`, `'mysql'`). */
     provider: string;
     /** Provider-specific configuration passed through to the plugin implementation. */
     options?: Record<string, unknown>;
@@ -30,6 +30,32 @@ export type WebhookCapabilityNamespace = 'webhook.delivery';
 export type WebhookCapabilitySelections = Partial<Record<WebhookCapabilityNamespace, ProviderRef>>;
 /** Fully normalized webhook capability selections used at runtime. */
 export type ResolvedWebhookCapabilities = Record<WebhookCapabilityNamespace, ProviderRef>;
+/** Capability namespaces surfaced by the plugin settings inventory and selection flows. */
+export type PluginCapabilityNamespace = CapabilityNamespace | CardStateCapabilityNamespace | AuthCapabilityNamespace | WebhookCapabilityNamespace;
+/** Stable ordered capability list reused by plugin settings hosts and tests. */
+export declare const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[];
+/** Partial plugin capability selections keyed by the full plugin settings namespace set. */
+export type PluginCapabilitySelections = Partial<Record<PluginCapabilityNamespace, ProviderRef>>;
+/** Integration surfaces a plugin package may contribute beyond capability providers. */
+export type PluginIntegrationNamespace = 'standalone.http' | 'cli' | 'mcp.tools' | 'sdk.extension' | 'event.listener';
+/**
+ * Standard package-level manifest that every first-party plugin exports as
+ * `pluginManifest`.  The engine reads this for fast, reliable capability
+ * discovery instead of duck-typing individual exports.
+ */
+export interface KLPluginPackageManifest {
+    /** Package identifier — typically the npm package name. */
+    readonly id: string;
+    /**
+     * Capabilities provided, keyed by namespace.
+     * Value is an array of provider IDs offered for that capability.
+     */
+    readonly capabilities: Partial<Record<PluginCapabilityNamespace, readonly string[]>>;
+    /**
+     * Optional integration surfaces this package contributes.
+     */
+    readonly integrations?: readonly PluginIntegrationNamespace[];
+}
 /**
  * A registered webhook endpoint that receives event notifications.
  *
@@ -76,6 +102,8 @@ export interface BoardConfig {
     actions?: Record<string, string>;
     /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
     metadata?: string[];
+    /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
+    title?: string[];
     /** Column IDs currently minimized (shown as a narrow rail) on this board. */
     minimizedColumnIds?: string[];
 }
@@ -171,7 +199,10 @@ export interface KanbanConfig {
     webhooks?: Webhook[];
     /** Label definitions keyed by label name, with color and optional group. */
     labels?: Record<string, LabelDefinition>;
-    /** Optional URL to POST to when a card action is triggered. */
+    /**
+     * @deprecated Removed in favour of the webhook plugin. Register a webhook
+     * for the `card.action.triggered` event instead.
+     */
     actionWebhookUrl?: string;
     /**
      * Global auto-increment card ID counter shared across all boards.
@@ -196,7 +227,7 @@ export interface KanbanConfig {
     };
     /**
       * Legacy card-storage selector kept for backward compatibility.
-      * - `'markdown'` (default) — cards stored as individual `.md` files
+      * - `'markdown'` (legacy alias for the default `localfs` provider) — cards stored as individual `.md` files
       * - `'sqlite'` — cards/comments stored in a SQLite database file
       *
       * Prefer {@link plugins} for new configuration. When both forms are present,
@@ -213,11 +244,10 @@ export interface KanbanConfig {
      */
     sqlitePath?: string;
     /**
-     * Optional capability-based storage provider selections.
+      * Optional capability-based storage provider selections.
      * When present, these override legacy `storageEngine` / `sqlitePath` for the
-      * matching namespaces while preserving backward-compatible defaults for any
-      * omitted namespaces (`markdown` for `card.storage`, `localfs` for
-      * `attachment.storage`).
+     * matching namespaces while preserving backward-compatible defaults for any
+     * omitted namespaces (`localfs` for `card.storage` and `attachment.storage`).
        *
        * Built-in attachment providers `sqlite` and `mysql` are additive opt-ins.
        * They require the matching `card.storage` provider and do not change the
@@ -228,7 +258,7 @@ export interface KanbanConfig {
        * `"provider": "kl-plugin-auth"`). When present they take precedence over
        * any value in the legacy {@link auth} key.
      */
-    plugins?: CapabilitySelections & CardStateCapabilitySelections & AuthCapabilitySelections & WebhookCapabilitySelections;
+    plugins?: PluginCapabilitySelections;
     /**
      * Legacy auth provider selections.
      * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
@@ -251,6 +281,17 @@ export interface KanbanConfig {
      * This field is still supported for backward compatibility but `plugins` takes precedence.
      */
     webhookPlugin?: WebhookCapabilitySelections;
+    /** Raw HTML string injected into the standalone board's `<head>` element. Useful for analytics snippets, custom CSS, or guided-tour scripts. Only applies to the standalone server UI. */
+    customHeadHtml?: string;
+    /** Path to an HTML file (relative to workspace root) whose content is injected into the standalone board's `<head>` element. Takes precedence over `customHeadHtml`. */
+    customHeadHtmlFile?: string;
+    /**
+     * Optional URL base path prefix for subfolder reverse-proxy deployments
+     * (e.g. `'/kanban'`). Must start with `/` and have no trailing slash.
+     * When set, all asset URLs, the WebSocket endpoint, and API routes are
+     * served under this prefix. Only applies to the standalone server.
+     */
+    basePath?: string;
 }
 /**
  * Default configuration used when no `.kanban.json` file exists or when
@@ -277,6 +318,12 @@ export declare function configPath(workspaceRoot: string): string;
  * Reads the kanban config from disk. If the file is missing or unreadable,
  * returns the default config. If the file contains a v1 config, it is
  * automatically migrated to v2 format and persisted back to disk.
+ *
+ * Any `${VAR_NAME}` placeholders found in string values are resolved against
+ * `process.env` before the config is returned. If a referenced environment
+ * variable is not set the process will throw a descriptive error rather than
+ * silently falling back to defaults, because an unresolved secret is never a
+ * safe default.
  *
  * @param workspaceRoot - Absolute path to the workspace root directory.
  * @returns The parsed (and possibly migrated) kanban configuration.
@@ -398,8 +445,8 @@ export declare function normalizeAuthCapabilities(config: Pick<KanbanConfig, 'au
 /**
  * Normalizes card-state capability selections into a complete runtime capability map.
  *
- * `card.state` is first-class and defaults to the built-in provider contract when
- * omitted from `.kanban.json`.
+ * `card.state` is first-class and defaults to the built-in `localfs` provider
+ * when omitted from `.kanban.json`.
  *
  * The input object is never mutated.
  */
@@ -411,7 +458,7 @@ export declare function normalizeCardStateCapabilities(config: Pick<KanbanConfig
  * Precedence:
  * 1. Explicit `plugins[namespace]`
  * 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
- * 3. Backward-compatible defaults (`markdown` + `localfs`)
+ * 3. Backward-compatible defaults (`localfs` + `localfs`)
  *
  * Explicit built-in `attachment.storage` providers such as `sqlite` and
  * `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches

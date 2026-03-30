@@ -245,6 +245,21 @@ export const KANBAN_OPENAPI_SPEC = {
           errorCode: { type: 'string' },
         },
       },
+      AvailableEventDescriptor: {
+        type: 'object',
+        description: 'One discoverable SDK event, including its phase, origin, and transport metadata.',
+        properties: {
+          event: { type: 'string', description: 'Event name, such as `task.created` or `workflow.completed`.' },
+          phase: { type: 'string', enum: ['before', 'after'] },
+          source: { type: 'string', enum: ['core', 'plugin'], description: 'Whether the event comes from the built-in SDK catalog or an active plugin declaration.' },
+          resource: { type: 'string', description: 'Optional resource/domain grouping label.' },
+          label: { type: 'string', description: 'Optional human-readable event label.' },
+          sdkBefore: { type: 'boolean', description: 'Whether the event is available as an SDK before-event.' },
+          sdkAfter: { type: 'boolean', description: 'Whether the event is available as an SDK after-event.' },
+          apiAfter: { type: 'boolean', description: 'Whether the event is expected to surface through remote after-event transports such as API/webhooks.' },
+          pluginIds: { type: 'array', items: { type: 'string' }, description: 'Plugin package IDs that contributed this event declaration.' },
+        },
+      },
       Board: {
         type: 'object',
         description: 'A kanban board.',
@@ -1287,6 +1302,41 @@ export const KANBAN_OPENAPI_SPEC = {
         summary: 'Get storage status',
         description: 'Returns the active card, attachment, webhook, and `card.state` provider IDs plus host-facing file/watch metadata.',
         responses: { 200: { description: 'Storage status.' } },
+      },
+    },
+    '/api/events': {
+      get: {
+        tags: ['Workspace'],
+        summary: 'List available events',
+        description: 'Returns discoverable SDK events, including built-in before/after events and any plugin-declared additions. Supports filtering by phase and wildcard mask.',
+        parameters: [
+          {
+            name: 'type',
+            in: 'query' as const,
+            schema: { type: 'string' as const, enum: ['before', 'after', 'all'] as const },
+            description: 'Optional event phase filter. Defaults to `all`.',
+          },
+          {
+            name: 'mask',
+            in: 'query' as const,
+            schema: { type: 'string' as const },
+            description: 'Optional EventEmitter2-style wildcard mask such as `task.*` or `comment.**`.',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Available event descriptors.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: { $ref: '#/components/schemas/AvailableEventDescriptor' },
+                },
+              },
+            },
+          },
+          400: { description: 'Invalid type filter.' },
+        },
       },
     },
     '/api/storage/migrate-to-sqlite': {

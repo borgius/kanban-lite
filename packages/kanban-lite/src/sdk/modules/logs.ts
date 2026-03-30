@@ -22,9 +22,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function mergeActivityMetadata(
-  object: Record<string, any> | undefined,
+  object: Record<string, unknown> | undefined,
   activity: PersistedActivityMetadata,
-): Record<string, any> {
+): Record<string, unknown> {
   if (isRecord(object?.activity) && typeof object.activity.type === 'string') {
     return object
   }
@@ -116,7 +116,7 @@ async function appendPersistedLogEntry(
   }: {
     cardId: string
     text: string
-    options?: { source?: string; timestamp?: string; object?: Record<string, any> }
+    options?: { source?: string; timestamp?: string; object?: Record<string, unknown> }
     boardId?: string
   },
 ): Promise<{ card: Card; boardId: string; entry: LogEntry }> {
@@ -205,7 +205,7 @@ export async function addLog(
   { cardId, text, options, boardId }: {
     cardId: string
     text: string
-    options?: { source?: string; timestamp?: string; object?: Record<string, any> }
+    options?: { source?: string; timestamp?: string; object?: Record<string, unknown> }
     boardId?: string
   }
 ): Promise<LogEntry> {

@@ -34,14 +34,20 @@ export function BoardSwitcher({ boards, currentBoard, starredBoards, onSelect, o
   }, [])
 
   useEffect(() => {
-    setActiveIndex(0)
-  }, [query])
-
-  useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, filtered.length - 1)); return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); return }
+      if (e.key === 'ArrowDown') {
+        if (filtered.length === 0) return
+        e.preventDefault()
+        setActiveIndex(i => Math.min(i + 1, filtered.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        if (filtered.length === 0) return
+        e.preventDefault()
+        setActiveIndex(i => Math.max(i - 1, 0))
+        return
+      }
       if (e.key === 'Enter' && filtered[activeIndex]) {
         onSelect(filtered[activeIndex].id)
         onClose()
@@ -66,7 +72,10 @@ export function BoardSwitcher({ boards, currentBoard, starredBoards, onSelect, o
               ref={inputRef}
               type="text"
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={e => {
+                setQuery(e.target.value)
+                setActiveIndex(0)
+              }}
               placeholder="Search boards..."
               className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-50 dark:bg-zinc-700 rounded-md border border-zinc-200 dark:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
             />

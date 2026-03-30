@@ -18,7 +18,7 @@ import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../shared/config'
 import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
 import { AuthError, CardStateError, sanitizeCard, CARD_STATE_DEFAULT_ACTOR_MODE, CARD_STATE_OPEN_DOMAIN, CARD_STATE_UNREAD_DOMAIN, DEFAULT_CARD_STATE_ACTOR, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from './types'
@@ -36,6 +36,7 @@ import {
 } from './plugins'
 import type { CardStateCursor, CardStateRecord, ResolvedCapabilityBag } from './plugins'
 import { loadWorkspaceEnv } from '../shared/env'
+import { KANBAN_EVENT_CATALOG } from './integrationCatalog'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
 import * as Labels from './modules/labels'
@@ -45,6 +46,48 @@ import * as Logs from './modules/logs'
 import * as Columns from './modules/columns'
 import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
+
+function normalizeAvailableEventType(type: SDKAvailableEventsOptions['type']): 'before' | 'after' | 'all' {
+  if (type === undefined) return 'all'
+  if (type === 'before' || type === 'after' || type === 'all') return type
+  throw new Error(`Invalid event type filter: ${String(type)}. Expected "before", "after", or "all".`)
+}
+
+function matchesEventMask(event: string, mask?: string): boolean {
+  if (!mask) return true
+  const normalizedMask = mask.trim()
+  if (!normalizedMask) return true
+
+  const eventSegments = event.split('.')
+  const maskSegments = normalizedMask.split('.')
+
+  const match = (eventIndex: number, maskIndex: number): boolean => {
+    if (maskIndex === maskSegments.length) return eventIndex === eventSegments.length
+
+    const token = maskSegments[maskIndex]
+    if (token === '**') {
+      if (maskIndex === maskSegments.length - 1) return true
+      for (let nextEventIndex = eventIndex; nextEventIndex <= eventSegments.length; nextEventIndex += 1) {
+        if (match(nextEventIndex, maskIndex + 1)) return true
+      }
+      return false
+    }
+
+    if (eventIndex >= eventSegments.length) return false
+    if (token !== '*' && token !== eventSegments[eventIndex]) return false
+    return match(eventIndex + 1, maskIndex + 1)
+  }
+
+  return match(0, 0)
+}
+
+function compareAvailableEvents(left: SDKAvailableEventDescriptor, right: SDKAvailableEventDescriptor): number {
+  if (left.phase !== right.phase) return left.phase === 'before' ? -1 : 1
+  const eventCompare = left.event.localeCompare(right.event)
+  if (eventCompare !== 0) return eventCompare
+  if (left.source !== right.source) return left.source === 'core' ? -1 : 1
+  return (left.pluginIds?.[0] ?? '').localeCompare(right.pluginIds?.[0] ?? '')
+}
 
 /**
  * Returns `true` when `value` is a plain-object merge candidate.
@@ -838,6 +881,75 @@ export class KanbanSDK {
   }
 
   /**
+   * Returns the discoverable SDK event catalog for this runtime.
+   *
+   * The returned list includes built-in core before/after events plus any
+   * plugin-declared events exported through active `sdkExtensionPlugin.events`
+   * bags. `mask` uses the same dotted wildcard semantics as the SDK event bus:
+   * `*` matches one segment and `**` matches zero or more segments.
+   *
+   * @param options - Optional phase/type and wildcard-mask filters.
+   * @returns A stable, sorted list of discoverable event descriptors.
+   */
+  listAvailableEvents(options: SDKAvailableEventsOptions = {}): SDKAvailableEventDescriptor[] {
+    const type = normalizeAvailableEventType(options.type)
+    const descriptors = new Map<string, SDKAvailableEventDescriptor>()
+
+    for (const descriptor of KANBAN_EVENT_CATALOG) {
+      const phase = descriptor.sdkBefore ? 'before' : 'after'
+      if (type !== 'all' && phase !== type) continue
+      if (!matchesEventMask(descriptor.event, options.mask)) continue
+
+      descriptors.set(`${phase}:${descriptor.event}`, {
+        event: descriptor.event,
+        phase,
+        source: 'core',
+        resource: descriptor.resource,
+        label: descriptor.label,
+        sdkBefore: descriptor.sdkBefore,
+        sdkAfter: descriptor.sdkAfter,
+        apiAfter: descriptor.apiAfter,
+      })
+    }
+
+    for (const extension of this._capabilities?.sdkExtensions ?? []) {
+      for (const pluginEvent of extension.events) {
+        if (type !== 'all' && pluginEvent.phase !== type) continue
+        if (!matchesEventMask(pluginEvent.event, options.mask)) continue
+
+        const key = `${pluginEvent.phase}:${pluginEvent.event}`
+        const existing = descriptors.get(key)
+        const pluginIds = Array.from(new Set([...(existing?.pluginIds ?? []), extension.id]))
+
+        if (!existing) {
+          descriptors.set(key, {
+            event: pluginEvent.event,
+            phase: pluginEvent.phase,
+            source: 'plugin',
+            resource: pluginEvent.resource,
+            label: pluginEvent.label,
+            sdkBefore: pluginEvent.phase === 'before',
+            sdkAfter: pluginEvent.phase === 'after',
+            apiAfter: pluginEvent.phase === 'after' ? pluginEvent.apiAfter ?? false : false,
+            pluginIds,
+          })
+          continue
+        }
+
+        descriptors.set(key, {
+          ...existing,
+          resource: existing.resource ?? pluginEvent.resource,
+          label: existing.label ?? pluginEvent.label,
+          apiAfter: existing.apiAfter || (pluginEvent.phase === 'after' ? pluginEvent.apiAfter ?? false : false),
+          pluginIds,
+        })
+      }
+    }
+
+    return [...descriptors.values()].sort(compareAvailableEvents)
+  }
+
+  /**
    * Lists the capability-grouped plugin provider inventory for the workspace.
    *
    * Discovery reuses the canonical runtime loader order so the returned rows
@@ -893,15 +1005,18 @@ export class KanbanSDK {
    * Selection is modeled only by the provider ref stored under `plugins[capability]`.
    * Re-selecting the same provider preserves any existing persisted options while
    * switching to a different provider replaces the previous single-provider entry.
+   * Selecting `none` for `webhook.delivery` disables webhook runtime loading while
+   * preserving any stored webhook options for later re-enable.
    *
    * @param capability - Capability namespace to update.
    * @param providerId - Provider identifier to select.
-   * @returns The redacted provider read model after persistence succeeds.
+   * @returns The redacted provider read model after persistence succeeds, or `null`
+   *   when the capability was explicitly disabled.
    */
   selectPluginSettingsProvider(
     capability: PluginCapabilityNamespace,
     providerId: string,
-  ): PluginSettingsProviderReadModel {
+  ): PluginSettingsProviderReadModel | null {
     try {
       return persistPluginSettingsProviderSelection(
         this.workspaceRoot,

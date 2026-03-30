@@ -71,7 +71,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
-- **Plugin Options tab**: Discover providers by capability, see where each provider was found, select one provider per capability, edit schema-driven options, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
+- **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
@@ -252,11 +252,14 @@ kl settings update --compactMode true                   # Update a setting
 kl plugin-settings list                                # List capability-grouped providers
 kl plugin-settings show auth.identity local            # Read one provider's redacted state
 kl plugin-settings select auth.identity local          # Select one provider for a capability
+kl plugin-settings select webhook.delivery none        # Explicitly disable webhook runtime delivery
 kl plugin-settings update-options auth.identity local \
   --options '{"apiToken":"••••••"}'                  # Persist provider options (masked secrets keep existing values)
 kl plugin-settings install kl-plugin-auth --scope workspace  # Safe install into the workspace runtime
 
 # Workspace
+kl events                                               # List built-in and plugin-declared events
+kl events --type before --mask "task.*"                # Filter by phase + wildcard mask
 kl pwd                                                  # Print workspace root path
 
 # Storage providers
@@ -403,6 +406,7 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/workspace` | Get workspace root path plus active storage, auth, and webhook provider metadata |
+| `GET` | `/api/events` | List built-in and plugin-declared events (`?type=before|after|all&mask=task.*`) |
 | `GET` | `/api/storage` | Get current card, attachment, and webhook provider status |
 | `POST` | `/api/storage/migrate-to-sqlite` | Migrate cards to SQLite (`{ sqlitePath? }`) |
 | `POST` | `/api/storage/migrate-to-markdown` | Migrate cards back to markdown files |
@@ -1025,6 +1029,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_column` | Add a new column to the board |
 | `update_column` | Update a column's name or color |
 | `remove_column` | Remove a column (must be empty) |
+| `list_available_events` | List built-in and plugin-declared SDK events with optional phase/mask filters |
 | `get_settings` | Get board display settings |
 | `update_settings` | Update board display settings |
 | `list_webhooks` | List registered webhooks |
@@ -1088,6 +1093,10 @@ await sdk.submitForm({
 // Trigger an action (POSTs to the actionWebhookUrl in .kanban.json)
 await sdk.triggerAction(deployCard.id, 'notify-slack')
 
+// Discover built-in and plugin-declared events
+const allEvents = sdk.listAvailableEvents()
+const taskBeforeEvents = sdk.listAvailableEvents({ type: 'before', mask: 'task.*' })
+
 // Add/replace actions on an existing card
 await sdk.updateCard(deployCard.id, { actions: ['retry', 'rollback', 'notify-slack', 'promote'] })
 
@@ -1112,6 +1121,8 @@ sdk.updateSettings({ ...settings, compactMode: true })
 ```
 
 Plugins can also contribute additive SDK methods without patching core. Call `sdk.getExtension(id)` to access a plugin's extension bag when that package is active. Webhooks are the first concrete example: `kl-plugin-webhook` contributes webhook CRUD through `sdk.getExtension('kl-plugin-webhook')`, while the direct `sdk.listWebhooks()` / `createWebhook()` / `updateWebhook()` / `deleteWebhook()` methods remain compatibility shims for existing callers.
+
+Plugins may also declare discoverable event names through their `sdkExtensionPlugin.events` catalog. `sdk.listAvailableEvents()` merges those declarations with the built-in before/after event catalog and supports the same dotted wildcard masks used by the shared event bus.
 
 When a host surface passes `sdk` into a plugin context, that value is now the full public `KanbanSDK` instance rather than a narrowed helper facade. Plugin code can call the same public methods core uses — for example `sdk.getBoard(...)`, `sdk.getExtension(...)`, and `sdk.getConfigSnapshot()` for a cloned read-only view of the current `.kanban.json` state. Prefer SDK methods and snapshot reads wherever an equivalent public API exists; keep direct plugin-owned writes only for flows that still lack a public SDK writer.
 
@@ -1203,9 +1214,9 @@ Attachments keep their legacy default unless you opt in explicitly: omitted `att
 Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
-- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean.
+- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
-- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms.
+- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms.
 - **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
@@ -1322,7 +1333,7 @@ export const pluginManifest = {
 } as const
 ```
 
-The `KLPluginPackageManifest` and `PluginIntegrationNamespace` types are exported from `kanban-lite/sdk` for compile-time validation. Third-party plugins without `pluginManifest` still work via legacy probing.
+The `KLPluginPackageManifest` and `PluginIntegrationNamespace` types are exported from `kanban-lite/sdk` for compile-time validation. Plugin packages should also import shared runtime contracts (for example `CardStoragePlugin`, `AttachmentStoragePlugin`, `WebhookProviderPlugin`, `StandaloneHttpPlugin`, `KanbanCliPlugin`, and plugin-settings schema metadata types) from `kanban-lite/sdk` instead of re-declaring local structural copies. Third-party plugins without `pluginManifest` still work via legacy probing.
 
 ### Webhook delivery provider
 
@@ -1610,7 +1621,8 @@ Enable it in `.kanban.json` with bcrypt-hashed passwords:
           {
             "username": "alice",
             "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
-            "role": "user"
+            "role": "user",
+            "groups": ["ops"]
           }
         ]
       }
@@ -1624,12 +1636,40 @@ Use the CLI to add users without manually computing bcrypt hashes:
 
 ```sh
 kl auth create-user --username alice --password s3cr3t
-kl auth create-user --username admin --password s3cr3t --role admin
+kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
 ```
 
 This command hashes the password and appends the user entry to `plugins["auth.identity"].options.users` in `.kanban.json`.
 
-The `local` policy supports RBAC roles. When a user has a `role` (`user`, `manager`, or `admin`), only the actions permitted for that role are allowed. Users without a `role` field are allowed to perform any action. Anonymous callers are denied with `auth.identity.missing`.
+The `local` policy supports RBAC roles plus optional identity groups. When a user has a `role` (`user`, `manager`, or `admin`) and no custom permission matrix is configured, only the actions permitted for that role are allowed. Users without a `role` field are allowed to perform any action. Anonymous callers are denied with `auth.identity.missing`.
+
+To override the default role behavior, add a custom permission matrix on `auth.policy`:
+
+```json
+{
+  "plugins": {
+    "auth.policy": {
+      "provider": "local",
+      "options": {
+        "permissions": [
+          {
+            "subjectType": "role",
+            "subject": "admin",
+            "actions": ["settings.update", "board.delete"]
+          },
+          {
+            "subjectType": "group",
+            "subject": "auditors",
+            "actions": ["board.log.add"]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Legacy `options.matrix` role maps remain supported for backward compatibility, but the shared Plugin Options UI now edits the row-based `permissions` format.
 
 
 

@@ -51,4 +51,11 @@ Never implement a feature directly in an interface layer without the SDK method 
 9. Keep reasoning concise and implementation focused.
 10. If a task can be implemented by editing constants or inserting small functions, do that instead of restructuring the file.
 
+## React / TSX lint contract
+
+- When editing React or TSX, write code that passes `eslint.config.mjs` without adding new inline `eslint-disable` comments.
+- Prefer complete hook dependency arrays, self-closing empty JSX, omitted `={true}` boolean props, stable keys, and no useless fragments.
+- Avoid nested component definitions unless they are intentionally local and short-lived.
+- After React or TSX edits, run the relevant lint target and fix the violations introduced by your change.
+
 Goal: complete the tasks with the smallest possible code changes and minimal token usage.

@@ -5,34 +5,13 @@ import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, type GetObjectCommandOutput } from '@aws-sdk/client-s3'
+import type {
+  AttachmentStoragePlugin,
+  Card,
+  PluginSettingsOptionsSchemaMetadata,
+} from 'kanban-lite/sdk'
 
-// ---------------------------------------------------------------------------
-// Local structural interfaces — avoids deep imports from kanban-lite internals.
-// Validated by runtime shape checks in the kanban-lite plugin loader.
-// ---------------------------------------------------------------------------
-
-/** Minimal Card shape required by the attachment plugin contract. */
-export interface Card {
-  id: string
-  boardId?: string
-  status: string
-  filePath?: string
-  attachments?: string[]
-  [key: string]: unknown
-}
-
-interface PluginManifest {
-  readonly id: string
-  readonly provides: readonly ('card.storage' | 'attachment.storage')[]
-}
-
-interface AttachmentStoragePlugin {
-  readonly manifest: PluginManifest
-  copyAttachment(sourcePath: string, card: Card): Promise<void>
-  appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
-  getCardDir?(card: Card): string | null
-  materializeAttachment?(card: Card, attachment: string): Promise<string | null>
-}
+export type { AttachmentStoragePlugin, Card } from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -307,29 +286,6 @@ export const pluginManifest = {
 // ---------------------------------------------------------------------------
 // Options schema — plugin-settings discovery
 // ---------------------------------------------------------------------------
-
-/** Local copy of the shared plugin-settings redaction target contract. */
-type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
-
-/** Local copy of the shared plugin-settings redaction policy contract. */
-interface PluginSettingsRedactionPolicy {
-  maskedValue: string
-  writeOnly: true
-  targets: readonly PluginSettingsRedactionTarget[]
-}
-
-/** Local copy of the shared plugin-settings secret-field metadata contract. */
-interface PluginSettingsSecretFieldMetadata {
-  path: string
-  redaction: PluginSettingsRedactionPolicy
-}
-
-/** Local copy of the shared provider options schema contract exposed by plugin packages. */
-interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
-  secrets: PluginSettingsSecretFieldMetadata[]
-}
 
 function createS3OptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   return {

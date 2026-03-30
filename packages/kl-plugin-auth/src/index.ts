@@ -2,167 +2,58 @@ import * as crypto from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { compare, hash } from 'bcryptjs'
+import type {
+  AuthCapabilityNamespace,
+  AuthContext,
+  AuthDecision,
+  AuthErrorCategory,
+  AuthIdentity,
+  AuthIdentityPlugin,
+  AuthPolicyPlugin,
+  BeforeEventListenerResponse,
+  BeforeEventPayload,
+  CliPluginContext,
+  EventBus,
+  KanbanCliPlugin,
+  KanbanConfig,
+  PluginSettingsOptionsSchemaMetadata,
+  PluginSettingsRedactionPolicy,
+  ProviderRef,
+  RbacPrincipalEntry,
+  RbacRole,
+  SDKBeforeEventType,
+  SDKEvent,
+  SDKEventListener,
+  SDKEventListenerPlugin,
+  StandaloneHttpHandler,
+  StandaloneHttpPlugin,
+  StandaloneHttpPluginRegistrationOptions,
+  StandaloneHttpRequestContext,
+} from 'kanban-lite/sdk'
 
-/** Local copy of the shared plugin-settings redaction target contract for package-level schema metadata. */
-type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
-
-/** Local copy of the shared plugin-settings redaction policy contract for package-level schema metadata. */
-interface PluginSettingsRedactionPolicy {
-  maskedValue: string
-  writeOnly: true
-  targets: readonly PluginSettingsRedactionTarget[]
-}
-
-/** Local copy of the shared plugin-settings secret-field metadata contract. */
-interface PluginSettingsSecretFieldMetadata {
-  path: string
-  redaction: PluginSettingsRedactionPolicy
-}
-
-/** Local copy of the shared provider options schema contract exposed by plugin packages. */
-interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
-  secrets: PluginSettingsSecretFieldMetadata[]
-}
-
-export type AuthErrorCategory =
-  | 'auth.identity.missing'
-  | 'auth.identity.invalid'
-  | 'auth.identity.expired'
-  | 'auth.policy.denied'
-  | 'auth.policy.unknown'
-  | 'auth.provider.error'
-
-export interface AuthContext {
-  token?: string
-  tokenSource?: string
-  transport?: string
-  identity?: AuthIdentity
-  actorHint?: string
-  boardId?: string
-  cardId?: string
-  fromBoardId?: string
-  toBoardId?: string
-  columnId?: string
-  labelName?: string
-  commentId?: string
-  attachment?: string
-  actionKey?: string
-  formId?: string
-}
-
-export interface AuthDecision {
-  allowed: boolean
-  reason?: AuthErrorCategory
-  actor?: string
-  metadata?: Record<string, unknown>
-}
-
-export type SDKBeforeEventType =
-  | 'card.create'
-  | 'card.update'
-  | 'card.move'
-  | 'card.delete'
-  | 'card.transfer'
-  | 'card.action.trigger'
-  | 'card.purgeDeleted'
-  | 'comment.create'
-  | 'comment.update'
-  | 'comment.delete'
-  | 'column.create'
-  | 'column.update'
-  | 'column.delete'
-  | 'column.reorder'
-  | 'column.setMinimized'
-  | 'column.cleanup'
-  | 'attachment.add'
-  | 'attachment.remove'
-  | 'settings.update'
-  | 'board.create'
-  | 'board.update'
-  | 'board.delete'
-  | 'board.action.config.add'
-  | 'board.action.config.remove'
-  | 'board.action.trigger'
-  | 'board.setDefault'
-  | 'log.add'
-  | 'log.clear'
-  | 'board.log.add'
-  | 'board.log.clear'
-  | 'storage.migrate'
-  | 'label.set'
-  | 'label.rename'
-  | 'label.delete'
-  | 'webhook.create'
-  | 'webhook.update'
-  | 'webhook.delete'
-  | 'form.submit'
-
-export interface BeforeEventPayload<TInput = Record<string, unknown>> {
-  readonly event: SDKBeforeEventType
-  readonly input: TInput
-  readonly actor?: string
-  readonly boardId?: string
-  readonly timestamp: string
-}
-
-export type BeforeEventListenerResponse = Record<string, unknown> | void
-
-export interface SDKEvent {
-  readonly type: string
-  readonly data: unknown
-  readonly timestamp: string
-  readonly actor?: string
-  readonly boardId?: string
-  readonly meta?: Record<string, unknown>
-}
-
-export type SDKEventListener = (payload: SDKEvent | BeforeEventPayload<Record<string, unknown>>) => unknown
-
-export interface EventBus {
-  on(event: string, listener: SDKEventListener): () => void
-  emit(event: string, payload: SDKEvent): void
-}
-
-export interface SDKEventListenerPlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
-  register(bus: EventBus): void
-  unregister(): void
-}
-
-export interface AuthIdentity {
-  subject: string
-  roles?: string[]
-}
-
-export interface AuthPluginManifest {
-  readonly id: string
-  readonly provides: readonly ('auth.identity' | 'auth.policy')[]
-}
-
-export interface AuthIdentityPlugin {
-  readonly manifest: AuthPluginManifest
-  /**
-   * Optional schema metadata for shared plugin-options configuration flows.
-   */
-  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
-  resolveIdentity(context: AuthContext): Promise<AuthIdentity | null>
-}
-
-export interface AuthPolicyPlugin {
-  readonly manifest: AuthPluginManifest
-  /**
-   * Optional schema metadata for shared plugin-options configuration flows.
-   */
-  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
-  checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision>
-}
-
-export interface ProviderRef {
-  provider: string
-  options?: Record<string, unknown>
-}
+export type {
+  AuthContext,
+  AuthDecision,
+  AuthErrorCategory,
+  AuthIdentity,
+  AuthIdentityPlugin,
+  AuthPluginManifest,
+  AuthPolicyPlugin,
+  BeforeEventListenerResponse,
+  BeforeEventPayload,
+  CliPluginContext,
+  KanbanCliPlugin,
+  PluginSettingsOptionsSchemaMetadata,
+  ProviderRef,
+  RbacPrincipalEntry,
+  RbacRole,
+  SDKBeforeEventType,
+  SDKEvent,
+  SDKEventListener,
+  SDKEventListenerPlugin,
+  StandaloneHttpPlugin,
+  StandaloneHttpPluginRegistrationOptions,
+} from 'kanban-lite/sdk'
 
 export interface AuthListenerOverrideContext {
   readonly payload: BeforeEventPayload<Record<string, unknown>>
@@ -177,13 +68,6 @@ export interface AuthListenerPluginOptions {
     context: AuthListenerOverrideContext,
   ) => BeforeEventListenerResponse | Promise<BeforeEventListenerResponse>
 }
-
-export interface RbacPrincipalEntry {
-  subject: string
-  roles: string[]
-}
-
-export type RbacRole = 'user' | 'manager' | 'admin'
 
 export const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'noop', provides: ['auth.identity'] },
@@ -203,6 +87,15 @@ interface LocalAuthUser {
   username: string
   password: string
   role?: RbacRole
+  groups?: string[]
+}
+
+type PermissionMatrixSubjectType = 'role' | 'group'
+
+interface PermissionMatrixEntry {
+  subjectType: PermissionMatrixSubjectType
+  subject: string
+  actions: string[]
 }
 
 interface LocalAuthSession {
@@ -210,78 +103,7 @@ interface LocalAuthSession {
   expiresAt: number
 }
 
-type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'
-
-interface AuthConfigSnapshot {
-  auth?: Record<string, ProviderRef>
-  plugins?: Record<string, ProviderRef>
-}
-
-interface StandalonePluginSdk {
-  runWithAuth<T>(auth: AuthContext, fn: () => Promise<T>): Promise<T>
-  getConfigSnapshot(): AuthConfigSnapshot
-}
-
-export interface StandaloneHttpRequestContext {
-  readonly sdk: StandalonePluginSdk
-  readonly workspaceRoot: string
-  readonly kanbanDir: string
-  readonly req: import('node:http').IncomingMessage & { _rawBody?: Buffer }
-  readonly res: import('node:http').ServerResponse
-  readonly url: URL
-  readonly pathname: string
-  readonly method: string
-  readonly resolvedWebviewDir: string
-  readonly indexHtml: string
-  readonly route: (expectedMethod: string, pattern: string) => Record<string, string> | null
-  readonly isApiRequest: boolean
-  readonly isPageRequest: boolean
-  getAuthContext(): AuthContext
-  setAuthContext(auth: AuthContext): AuthContext
-  mergeAuthContext(auth: Partial<AuthContext>): AuthContext
-}
-
-export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => Promise<boolean>
-
-export interface StandaloneHttpPluginRegistrationOptions {
-  readonly sdk?: StandalonePluginSdk
-  readonly workspaceRoot: string
-  readonly kanbanDir: string
-  readonly capabilities: {
-    'card.storage': ProviderRef
-    'attachment.storage': ProviderRef
-  }
-  readonly authCapabilities: {
-    'auth.identity': ProviderRef
-    'auth.policy': ProviderRef
-  }
-  readonly webhookCapabilities: {
-    'webhook.delivery': ProviderRef
-  } | null
-}
-
-export interface StandaloneHttpPlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
-  registerMiddleware?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
-  registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
-}
-
-interface CliPluginContext {
-  workspaceRoot: string
-  sdk?: { getConfigSnapshot(): AuthConfigSnapshot }
-  runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T>
-}
-
-interface KanbanCliPlugin {
-  readonly manifest: { readonly id: string }
-  readonly command: string
-  readonly aliases?: readonly string[]
-  run(
-    subArgs: string[],
-    flags: Record<string, string | boolean | string[]>,
-    context: CliPluginContext,
-  ): Promise<void>
-}
+type AuthConfigSnapshot = Pick<KanbanConfig, 'auth' | 'plugins'>
 
 const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
@@ -329,6 +151,15 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
                 title: 'Role',
                 enum: ['user', 'manager', 'admin'],
               },
+              groups: {
+                type: 'array',
+                title: 'Groups',
+                description: 'Optional group memberships attached to the user identity.',
+                items: {
+                  type: 'string',
+                  minLength: 1,
+                },
+              },
             },
           },
         },
@@ -347,13 +178,34 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
       type: 'object',
       additionalProperties: false,
       properties: {
-        matrix: {
-          type: 'object',
-          title: 'Role matrix',
-          description: 'Optional per-role action overrides. When omitted, the default local allow-authenticated policy is used.',
-          additionalProperties: {
-            type: 'array',
-            items: { type: 'string' },
+        permissions: {
+          type: 'array',
+          title: 'Permission matrix',
+          description: 'Optional per-role or per-group action rules. When omitted, the provider uses its default policy behavior.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['subjectType', 'subject', 'actions'],
+            properties: {
+              subjectType: {
+                type: 'string',
+                title: 'Subject type',
+                enum: ['role', 'group'],
+              },
+              subject: {
+                type: 'string',
+                title: 'Subject',
+                minLength: 1,
+              },
+              actions: {
+                type: 'array',
+                title: 'Allowed actions',
+                items: {
+                  type: 'string',
+                  minLength: 1,
+                },
+              },
+            },
           },
         },
       },
@@ -444,10 +296,10 @@ function cloneWritableConfig(
     .catch(() => ({}))
 }
 
-function getWritableUsers(provider: ProviderRef | null): Array<{ username: string; password: string; role?: string }> {
+function getWritableUsers(provider: ProviderRef | null): Array<{ username: string; password: string; role?: string; groups?: string[] }> {
   const users = provider?.options?.users
   return Array.isArray(users)
-    ? structuredClone(users as Array<{ username: string; password: string; role?: string }>)
+    ? structuredClone(users as Array<{ username: string; password: string; role?: string; groups?: string[] }>)
     : []
 }
 
@@ -474,7 +326,70 @@ function cloneIdentity(identity: AuthIdentity): AuthIdentity {
   return {
     subject: identity.subject,
     ...(Array.isArray(identity.roles) ? { roles: [...identity.roles] } : {}),
+    ...(Array.isArray(identity.groups) ? { groups: [...identity.groups] } : {}),
   }
+}
+
+function normalizeStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const entries = value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+  return entries.length > 0 ? [...new Set(entries)] : undefined
+}
+
+function parsePermissionMatrixEntries(value: unknown): PermissionMatrixEntry[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const subjectType = (entry as { subjectType?: unknown }).subjectType
+    const subject = (entry as { subject?: unknown }).subject
+    const actions = normalizeStringList((entry as { actions?: unknown }).actions)
+    if ((subjectType !== 'role' && subjectType !== 'group') || typeof subject !== 'string') return []
+    const normalizedSubject = subject.trim()
+    if (normalizedSubject.length === 0 || !actions || actions.length === 0) return []
+    return [{ subjectType, subject: normalizedSubject, actions }]
+  })
+}
+
+function parseLegacyPermissionMatrix(value: unknown): PermissionMatrixEntry[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value as Record<string, unknown>).flatMap(([role, actions]) => {
+    const normalizedRole = role.trim()
+    const normalizedActions = normalizeStringList(actions)
+    if (normalizedRole.length === 0 || !normalizedActions || normalizedActions.length === 0) return []
+    return [{ subjectType: 'role', subject: normalizedRole, actions: normalizedActions }]
+  })
+}
+
+function resolvePermissionMatrixEntries(options?: Record<string, unknown>): PermissionMatrixEntry[] {
+  const configuredEntries = parsePermissionMatrixEntries(options?.permissions)
+  if (configuredEntries.length > 0) return configuredEntries
+  return parseLegacyPermissionMatrix(options?.matrix)
+}
+
+function checkPermissionMatrixPolicy(
+  identity: AuthIdentity | null,
+  action: string,
+  entries: readonly PermissionMatrixEntry[],
+): AuthDecision {
+  if (!identity) {
+    return { allowed: false, reason: 'auth.identity.missing' }
+  }
+
+  const roles = new Set(identity.roles ?? [])
+  const groups = new Set(identity.groups ?? [])
+  for (const entry of entries) {
+    const matchesSubject = entry.subjectType === 'role'
+      ? roles.has(entry.subject)
+      : groups.has(entry.subject)
+    if (matchesSubject && entry.actions.includes(action)) {
+      return { allowed: true, actor: identity.subject }
+    }
+  }
+
+  return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
 }
 
 function resolveLocalIdentity(context: AuthContext): AuthIdentity | null {
@@ -495,6 +410,7 @@ function resolveLocalIdentity(context: AuthContext): AuthIdentity | null {
 
 export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   manifest: { id: 'local', provides: ['auth.identity'] },
+  optionsSchema: createAuthIdentityOptionsSchema,
   async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
     return resolveLocalIdentity(context)
   },
@@ -502,6 +418,7 @@ export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 
 export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'local', provides: ['auth.policy'] },
+  optionsSchema: createAuthPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
@@ -528,11 +445,13 @@ function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalA
     const username = (user as { username?: unknown }).username
     const password = (user as { password?: unknown }).password
     const role = (user as { role?: unknown }).role
+    const groups = normalizeStringList((user as { groups?: unknown }).groups)
     if (typeof username !== 'string' || username.length === 0 || typeof password !== 'string' || password.length === 0) {
       return []
     }
     const entry: LocalAuthUser = { username, password }
     if (role === 'user' || role === 'manager' || role === 'admin') entry.role = role
+    if (groups) entry.groups = groups
     return [entry]
   })
 }
@@ -692,6 +611,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     const user = users.find((u) => u.username === session.username)
     const identity: AuthIdentity = { subject: session.username }
     if (user?.role) identity.roles = [user.role]
+    if (Array.isArray(user?.groups) && user.groups.length > 0) identity.groups = [...user.groups]
     return identity
   }
 
@@ -818,12 +738,19 @@ export function createRbacIdentityPlugin(
       const raw = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
       const entry = principals.get(raw)
       if (!entry) return null
-      return { subject: entry.subject, roles: [...entry.roles] }
+      return {
+        subject: entry.subject,
+        roles: [...entry.roles],
+        ...(Array.isArray(entry.groups) ? { groups: [...entry.groups] } : {}),
+      }
     },
   }
 }
 
-export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = createRbacIdentityPlugin(new Map())
+export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
+  ...createRbacIdentityPlugin(new Map()),
+  optionsSchema: createAuthIdentityOptionsSchema,
+}
 
 export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
   'form.submit',
@@ -882,6 +809,7 @@ export const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>> = {
 
 export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'rbac', provides: ['auth.policy'] },
+  optionsSchema: createAuthPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
@@ -928,14 +856,14 @@ const KL_AUTH_DEFAULT_IDENTITY_PLUGIN: AuthIdentityPlugin = {
  * }
  * ```
  */
-export function createAuthIdentityPlugin(options?: Record<string, unknown>): AuthIdentityPlugin {
+export function createAuthIdentityPlugin(options?: Record<string, unknown>, providerId = 'kl-plugin-auth'): AuthIdentityPlugin {
   const explicitToken =
     typeof options?.apiToken === 'string' && options.apiToken.length > 0
       ? options.apiToken
       : null
 
   return {
-    manifest: { id: 'kl-plugin-auth', provides: ['auth.identity'] },
+    manifest: { id: providerId, provides: ['auth.identity'] },
     optionsSchema: createAuthIdentityOptionsSchema,
     async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
       if (context.identity) return cloneIdentity(context.identity)
@@ -967,58 +895,43 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
 }
 
 /**
- * Factory for a configurable RBAC policy plugin for the `kl-plugin-auth` provider.
+ * Factory for a configurable auth policy plugin for `local`, `rbac`, and `kl-plugin-auth` providers.
  *
- * When `options.matrix` is provided it **overrides** the default RBAC role matrix.
- * Each key is a role name and its value is the list of allowed action strings for
- * that role.  Roles are evaluated independently — there is no implicit inheritance;
- * define every action you want each role to be able to perform.
+ * When `options.permissions` is provided it **overrides** the provider's default
+ * policy behavior with an explicit per-role or per-group action matrix. Legacy
+ * `options.matrix` role maps remain supported for backward compatibility.
  *
- * When `options.matrix` is absent the factory returns the default policy plugin,
- * which allows any authenticated identity (equivalent to the `local` policy).
+ * When no explicit matrix is provided, `rbac` falls back to the fixed SDK role
+ * matrix while `local` / `kl-plugin-auth` fall back to the existing
+ * allow-authenticated local policy.
  *
  * @example
  * ```json
  * "auth.policy": {
  *   "provider": "kl-plugin-auth",
  *   "options": {
- *     "matrix": {
- *       "user":    ["form.submit", "comment.create", "card.action.trigger"],
- *       "manager": ["card.create", "card.update", "card.move", "card.delete"],
- *       "admin":   ["settings.update", "webhook.create", "column.create"]
- *     }
+ *     "permissions": [
+ *       { "subjectType": "role", "subject": "user", "actions": ["form.submit", "comment.create"] },
+ *       { "subjectType": "group", "subject": "ops", "actions": ["board.log.add"] }
+ *     ]
  *   }
  * }
  * ```
  */
-export function createAuthPolicyPlugin(options?: Record<string, unknown>): AuthPolicyPlugin {
-  const matrixConfig = options?.matrix
-  if (!matrixConfig || typeof matrixConfig !== 'object' || Array.isArray(matrixConfig)) {
-    return KL_AUTH_DEFAULT_POLICY_PLUGIN
-  }
-
-  const resolvedMatrix: Record<string, ReadonlySet<string>> = {}
-  for (const [role, actions] of Object.entries(matrixConfig as Record<string, unknown>)) {
-    if (Array.isArray(actions)) {
-      resolvedMatrix[role] = new Set(actions.filter((a): a is string => typeof a === 'string'))
-    }
-  }
+export function createAuthPolicyPlugin(options?: Record<string, unknown>, providerId = 'kl-plugin-auth'): AuthPolicyPlugin {
+  const permissionEntries = resolvePermissionMatrixEntries(options)
+  const defaultCheckPolicy = providerId === 'rbac'
+    ? RBAC_POLICY_PLUGIN.checkPolicy
+    : LOCAL_POLICY_PLUGIN.checkPolicy
 
   return {
-    manifest: { id: 'kl-plugin-auth', provides: ['auth.policy'] },
+    manifest: { id: providerId, provides: ['auth.policy'] },
     optionsSchema: createAuthPolicyOptionsSchema,
-    async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
-      if (!identity) {
-        return { allowed: false, reason: 'auth.identity.missing' }
+    async checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision> {
+      if (permissionEntries.length === 0) {
+        return defaultCheckPolicy(identity, action, context)
       }
-      const roles = identity.roles ?? []
-      for (const role of roles) {
-        const permitted = resolvedMatrix[role]
-        if (permitted?.has(action)) {
-          return { allowed: true, actor: identity.subject }
-        }
-      }
-      return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+      return checkPermissionMatrixPolicy(identity, action, permissionEntries)
     },
   }
 }
@@ -1311,7 +1224,7 @@ export const authListenerPluginFactories = {
  * @example
  * ```sh
  * kl auth create-user --username alice --password s3cr3t
- * kl auth create-user --username admin --password s3cr3t --role admin
+ * kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
  * ```
  */
 export const cliPlugin: KanbanCliPlugin = {
@@ -1328,8 +1241,15 @@ export const cliPlugin: KanbanCliPlugin = {
       const username = flags.username as string | undefined
       const password = flags.password as string | undefined
       const role = flags.role as string | undefined
+      const groups = normalizeStringList(
+        Array.isArray(flags.groups)
+          ? flags.groups.flatMap((value) => String(value).split(','))
+          : typeof flags.groups === 'string'
+            ? flags.groups.split(',')
+            : undefined,
+      )
       if (!username || !password) {
-        console.error('Usage: kl auth create-user --username <name> --password <pass> [--role user|manager|admin]')
+        console.error('Usage: kl auth create-user --username <name> --password <pass> [--role user|manager|admin] [--groups group-a,group-b]')
         process.exit(1)
       }
       if (role !== undefined && role !== 'user' && role !== 'manager' && role !== 'admin') {
@@ -1356,7 +1276,7 @@ export const cliPlugin: KanbanCliPlugin = {
             ? structuredClone(existingIdentity.options)
             : {}
       const users = Array.isArray(options.users)
-        ? (options.users as { username: string; password: string; role?: string }[])
+        ? (options.users as { username: string; password: string; role?: string; groups?: string[] }[])
         : getWritableUsers(existingIdentity)
 
       if (users.some(u => u.username === username)) {
@@ -1365,8 +1285,9 @@ export const cliPlugin: KanbanCliPlugin = {
       }
 
       const hashed = await hash(password, 12)
-      const newUser: { username: string; password: string; role?: string } = { username, password: hashed }
+      const newUser: { username: string; password: string; role?: string; groups?: string[] } = { username, password: hashed }
       if (role) newUser.role = role
+      if (groups) newUser.groups = groups
       users.push(newUser)
       options.users = users
       identity.options = options
@@ -1388,8 +1309,8 @@ export const cliPlugin: KanbanCliPlugin = {
 export const pluginManifest = {
   id: 'kl-plugin-auth',
   capabilities: {
-    'auth.identity': ['rbac', 'kl-plugin-auth'] as const,
-    'auth.policy': ['rbac', 'kl-plugin-auth'] as const,
+    'auth.identity': ['local', 'rbac', 'kl-plugin-auth'] as const,
+    'auth.policy': ['local', 'rbac', 'kl-plugin-auth'] as const,
   },
   integrations: ['standalone.http', 'cli', 'event.listener'] as const,
 } as const
@@ -1398,11 +1319,14 @@ export const pluginManifest = {
 export const optionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
   'kl-plugin-auth': createAuthIdentityOptionsSchema,
   local: createAuthIdentityOptionsSchema,
+  rbac: createAuthIdentityOptionsSchema,
 }
 
 /** Policy options schemas keyed by provider id for plugin-settings discovery. */
 export const policyOptionsSchemas: Record<string, () => PluginSettingsOptionsSchemaMetadata> = {
   'kl-plugin-auth': createAuthPolicyOptionsSchema,
+  local: createAuthPolicyOptionsSchema,
+  rbac: createAuthPolicyOptionsSchema,
 }
 
 const authPluginPackage = {

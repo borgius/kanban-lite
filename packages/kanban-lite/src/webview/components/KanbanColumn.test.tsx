@@ -41,6 +41,8 @@ vi.mock('./QuickAddInput', () => ({ QuickAddInput: () => null }))
 
 import { KanbanColumn } from './KanbanColumn'
 
+type KanbanColumnProps = Parameters<typeof KanbanColumn>[0]
+
 describe('KanbanColumn minimized rail drop behavior', () => {
   it('does not swallow card drag events before they reach the column drop target', () => {
     const onColumnDragOver = vi.fn()
@@ -158,7 +160,7 @@ describe('KanbanColumn minimized rail drop behavior', () => {
 })
 
 describe('KanbanColumn normal-mode header/body structure', () => {
-  const baseProps = {
+  const baseProps: KanbanColumnProps = {
     column: { id: 'review', name: 'Review', color: '#8b5cf6' },
     columnIndex: 0,
     cards: [],
@@ -190,8 +192,7 @@ describe('KanbanColumn normal-mode header/body structure', () => {
   }
 
   it('renders a draggable header element above a distinct scrollable content body', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = KanbanColumn(baseProps as any) as ReactElement<{ children: any[] }>
+    const element = KanbanColumn(baseProps) as ReactElement<{ children: ReactElement[] }>
     const [headerEl, contentEl] = element.props.children
     // Header must be draggable so columns can be reordered
     expect(headerEl.props.draggable).toBe(true)
@@ -201,8 +202,7 @@ describe('KanbanColumn normal-mode header/body structure', () => {
 
   it('routes onDragStart from the header to the column drag handler', () => {
     const onColumnDragStart = vi.fn()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = KanbanColumn({ ...baseProps, onColumnDragStart } as any) as ReactElement<{ children: any[] }>
+    const element = KanbanColumn({ ...baseProps, onColumnDragStart }) as ReactElement<{ children: ReactElement[] }>
     const [headerEl] = element.props.children
     const fakeEvent = { dataTransfer: { effectAllowed: 'none', setData: vi.fn() } }
     headerEl.props.onDragStart(fakeEvent)
@@ -210,25 +210,23 @@ describe('KanbanColumn normal-mode header/body structure', () => {
   })
 
   it('forces the column landing border color to blue with a soft glow during column reordering', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = KanbanColumn({
       ...baseProps,
       draggedColumnId: 'todo',
       dropColumnIndex: 0,
-    } as any) as ReactElement<{ style?: { borderLeftColor?: string; boxShadow?: string } }>
+    }) as ReactElement<{ style?: { borderLeftColor?: string; boxShadow?: string } }>
 
     expect(element.props.style?.borderLeftColor).toBe('#3b82f6')
     expect(element.props.style?.boxShadow).toContain('rgba(59,130,246,0.65)')
   })
 
   it('uses top border highlighting in vertical layout column reorder mode', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = KanbanColumn({
       ...baseProps,
       layout: 'vertical',
       draggedColumnId: 'todo',
       dropColumnIndex: 0,
-    } as any) as ReactElement<{ style?: { borderTopColor?: string; boxShadow?: string }; className?: string }>
+    }) as ReactElement<{ style?: { borderTopColor?: string; boxShadow?: string }; className?: string }>
 
     expect(element.props.style?.borderTopColor).toBe('#3b82f6')
     expect(element.props.style?.boxShadow).toContain('rgba(59,130,246,0.65)')

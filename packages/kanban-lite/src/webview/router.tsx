@@ -31,9 +31,9 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 import App from './App'
-import { useStore, type CardTab, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
+import { useStore, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
 import type { Priority } from '../shared/types'
-import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG, type SettingsTab } from './components/SettingsPanel'
+import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG } from './components/SettingsPanel'
 import { shouldUseMemoryHistory } from './routerHistory'
 import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
 
@@ -46,7 +46,6 @@ const vscode = getVsCodeApi()
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type TabId = CardTab
 const VALID_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 const VALID_DUE_DATES: DueDateFilter[] = ['overdue', 'today', 'this-week', 'no-date']
 

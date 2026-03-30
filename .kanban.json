@@ -223,6 +223,9 @@
     },
     "auth.policy": {
       "provider": "kl-plugin-auth"
+    },
+    "card.storage": {
+      "provider": "sqlite"
     }
   },
   "logsFilter": {

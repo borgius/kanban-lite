@@ -23,41 +23,12 @@ export function UndoToast({
   persistent = false,
   tone = 'default',
 }: UndoToastProps) {
-  const [progress, setProgress] = useState(100)
   const showProgress = !persistent && typeof duration === 'number' && typeof onExpire === 'function'
   const accentColor = tone === 'error'
     ? 'var(--vscode-errorForeground, #f14c4c)'
     : tone === 'info'
       ? 'var(--vscode-progressBar-background)'
       : undefined
-
-  useEffect(() => {
-    if (!showProgress || !duration) {
-      setProgress(100)
-      return
-    }
-
-    const interval = 50
-    const step = (interval / duration) * 100
-    const timer = setInterval(() => {
-      setProgress(prev => {
-        const next = prev - step
-        if (next <= 0) {
-          clearInterval(timer)
-          return 0
-        }
-        return next
-      })
-    }, interval)
-
-    return () => clearInterval(timer)
-  }, [duration, showProgress])
-
-  useEffect(() => {
-    if (showProgress && progress <= 0 && onExpire) {
-      onExpire()
-    }
-  }, [progress, onExpire, showProgress])
 
   return (
     <div
@@ -91,13 +62,39 @@ export function UndoToast({
         )}
       </div>
       {showProgress && (
-        <div className="h-[2px] w-full" style={{ background: 'var(--vscode-widget-border)' }}>
-          <div
-            className="h-full transition-none"
-            style={{ width: `${progress}%`, background: 'var(--vscode-progressBar-background)' }}
-          />
-        </div>
+        <UndoToastProgressBar duration={duration} onExpire={onExpire} />
       )}
+    </div>
+  )
+}
+
+function UndoToastProgressBar({ duration, onExpire }: { duration: number; onExpire: () => void }) {
+  const [progress, setProgress] = useState(100)
+
+  useEffect(() => {
+    const interval = 50
+    const step = (interval / duration) * 100
+    const timer = setInterval(() => {
+      setProgress(prev => {
+        const next = prev - step
+        if (next <= 0) {
+          clearInterval(timer)
+          onExpire()
+          return 0
+        }
+        return next
+      })
+    }, interval)
+
+    return () => clearInterval(timer)
+  }, [duration, onExpire])
+
+  return (
+    <div className="h-[2px] w-full" style={{ background: 'var(--vscode-widget-border)' }}>
+      <div
+        className="h-full transition-none"
+        style={{ width: `${progress}%`, background: 'var(--vscode-progressBar-background)' }}
+      />
     </div>
   )
 }

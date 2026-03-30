@@ -583,7 +583,7 @@ function FilePathValue({ value, onOpenFile }: { value: string; onOpenFile?: (pat
   )
 }
 
-function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<string, any>; onOpenMetadataFile?: (path: string) => void }) {
+function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<string, unknown>; onOpenMetadataFile?: (path: string) => void }) {
   if (!metadata || Object.keys(metadata).length === 0) return null
 
   const keys = Object.keys(metadata)
@@ -601,7 +601,7 @@ function MetadataSection({ metadata, onOpenMetadataFile }: { metadata?: Record<s
   )
 }
 
-function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { data: Record<string, any>; depth: number; pathPrefix?: string; onOpenMetadataFile?: (path: string) => void }) {
+function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { data: Record<string, unknown>; depth: number; pathPrefix?: string; onOpenMetadataFile?: (path: string) => void }) {
   return (
     <div style={{ paddingLeft: depth > 0 ? 12 : 0 }}>
       {Object.entries(data).map(([key, value]) => {
@@ -613,7 +613,7 @@ function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { da
           {value && typeof value === 'object' && !Array.isArray(value) ? (
             <>
               <span className="text-zinc-500 dark:text-zinc-400">{key}:</span>
-              <MetadataTree data={value} depth={depth + 1} pathPrefix={path} onOpenMetadataFile={onOpenMetadataFile} />
+              <MetadataTree data={value as Record<string, unknown>} depth={depth + 1} pathPrefix={path} onOpenMetadataFile={onOpenMetadataFile} />
             </>
           ) : Array.isArray(value) ? (
             <div className="flex items-baseline gap-1">
@@ -775,15 +775,21 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 
 export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
   const { cardSettings, boards, currentBoard } = useStore()
-  const pinnedMetadataKeys = boards.find(b => b.id === currentBoard)?.metadata ?? []
-  const titleMetadataKeys = boards.find(b => b.id === currentBoard)?.title
+  const pinnedMetadataKeys = useMemo(
+    () => boards.find(b => b.id === currentBoard)?.metadata ?? [],
+    [boards, currentBoard],
+  )
+  const titleMetadataKeys = useMemo(
+    () => boards.find(b => b.id === currentBoard)?.title,
+    [boards, currentBoard],
+  )
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
   const cardTitle = getDisplayTitleFromContent(currentContent, currentFrontmatter.metadata, titleMetadataKeys)
-  const metadata = currentFrontmatter.metadata ?? {}
+  const metadata = useMemo(() => currentFrontmatter.metadata ?? {}, [currentFrontmatter.metadata])
   const pinnedMetadataEntries = useMemo(
     () => pinnedMetadataKeys
       .map((key) => ({ key, value: metadata[key] }))

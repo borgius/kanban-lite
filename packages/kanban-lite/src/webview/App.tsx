@@ -557,7 +557,7 @@ function App(): React.JSX.Element {
     }
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [editingCard, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
+  }, [editingCard, mergeCardStates, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
 
   useEffect(() => {
     if (!isColumnVisibilityPersistenceReady) {

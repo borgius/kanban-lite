@@ -99,7 +99,7 @@ export interface LogEntry {
   /** Human-readable log message text. Supports inline markdown (bold, italic, emoji). */
   text: string
   /** Optional structured data object, stored as compacted JSON. */
-  object?: Record<string, any>
+  object?: Record<string, unknown>
 }
 
 /**
@@ -161,7 +161,7 @@ export interface Card {
   /** Markdown body content of the card. */
   content: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
   actions?: string[] | Record<string, string>
   /** Forms attached to this card (named config-form references or inline definitions). */
@@ -226,7 +226,7 @@ export function getTitleFromContent(content: string): string {
   return firstLine || 'Untitled'
 }
 
-function getMetadataPathValue(metadata: Record<string, any> | undefined, path: string): unknown {
+function getMetadataPathValue(metadata: Record<string, unknown> | undefined, path: string): unknown {
   if (!metadata || !path.trim()) return undefined
   return path.split('.').reduce<unknown>((current, key) => {
     if (current === null || current === undefined || typeof current !== 'object') {
@@ -285,7 +285,7 @@ function stringifyDisplayTitlePrefix(value: unknown): string | null {
  */
 export function getDisplayTitleFromContent(
   content: string,
-  metadata?: Record<string, any>,
+  metadata?: Record<string, unknown>,
   titleFields?: readonly string[],
 ): string {
   const title = getTitleFromContent(content)
@@ -669,7 +669,7 @@ export interface CardFrontmatter {
   /** Fractional index (base-62) for ordering within a column. */
   order: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
   actions?: string[] | Record<string, string>
   /** Forms attached to this card (named config-form references or inline definitions). */
@@ -852,7 +852,7 @@ export interface CreateCardPayload {
   assignee: string | null
   dueDate: string | null
   labels: string[]
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   actions?: string[] | Record<string, string>
   forms?: CardFormAttachment[]
   formData?: CardFormDataMap
@@ -959,10 +959,10 @@ export type WebviewMessage =
   | { type: 'triggerAction'; cardId: string; action: string; callbackKey: string }
   | { type: 'triggerBoardAction'; boardId: string; actionKey: string; callbackKey: string }
   | SubmitFormMessage
-  | { type: 'addLog'; cardId: string; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
+  | { type: 'addLog'; cardId: string; text: string; source?: string; object?: Record<string, unknown>; timestamp?: string }
   | { type: 'clearLogs'; cardId: string }
   | { type: 'getLogs'; cardId: string }
-  | { type: 'addBoardLog'; text: string; source?: string; object?: Record<string, any>; timestamp?: string }
+  | { type: 'addBoardLog'; text: string; source?: string; object?: Record<string, unknown>; timestamp?: string }
   | { type: 'clearBoardLogs' }
   | { type: 'getBoardLogs' }
   | { type: 'getCardStates'; cardIds: string[] }

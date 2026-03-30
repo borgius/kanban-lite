@@ -286,7 +286,7 @@ export function registerPluginSettingsMcpTools(
     },
     async ({ capability, providerId }) => {
       try {
-        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() => Promise.resolve(
+        const payload = await options.runWithAuth(() => Promise.resolve(
           options.sdk.selectPluginSettingsProvider(String(capability) as never, String(providerId)),
         ))
         return createMcpJsonResult(payload)
@@ -1780,6 +1780,23 @@ async function main(): Promise<void> {
   })
 
   // --- Workspace Info Tool ---
+
+  server.tool(
+    'list_available_events',
+    'List discoverable SDK events, including built-in before/after events and any plugin-declared additions. Supports optional phase and wildcard mask filtering.',
+    {
+      type: z.enum(['before', 'after', 'all']).optional().describe('Optional event phase filter.'),
+      mask: z.string().optional().describe('Optional wildcard event mask such as task.* or comment.**.'),
+    },
+    async ({ type, mask }) => {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify(sdk.listAvailableEvents({ type, mask }), null, 2),
+        }],
+      }
+    }
+  )
 
   server.tool(
     'get_auth_status',

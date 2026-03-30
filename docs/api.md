@@ -1631,6 +1631,26 @@ Returns the active card, attachment, webhook, and `card.state` provider IDs plus
 |--------|-------------|
 | `200` | Storage status. |
 
+### GET `/api/events`
+
+**List available events**
+
+Returns discoverable SDK events, including built-in before/after events and any plugin-declared additions. Supports filtering by phase and wildcard mask.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `type` | query | `before` \\| `after` \\| `all` | No | Optional event phase filter. Defaults to `all`. |
+| `mask` | query | string | No | Optional EventEmitter2-style wildcard mask such as `task.*` or `comment.**`. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Available event descriptors. |
+| `400` | Invalid type filter. |
+
 ### POST `/api/storage/migrate-to-sqlite`
 
 **Migrate to SQLite**

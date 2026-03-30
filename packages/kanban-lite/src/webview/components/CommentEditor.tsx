@@ -131,7 +131,6 @@ export function CommentEditor({
           </>
         ) : (
           previewHtml ? (
-            // eslint-disable-next-line react/no-danger
             <div
               className="comment-editor-preview text-xs comment-markdown"
               style={{ color: 'var(--vscode-foreground)' }}

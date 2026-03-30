@@ -3,39 +3,38 @@ import * as fs from 'fs'
 import * as http from 'http'
 import * as https from 'https'
 import * as path from 'path'
-import type { KanbanConfig } from 'kanban-lite/sdk'
+import type {
+  CliPluginContext,
+  EventBus,
+  KanbanConfig,
+  KanbanCliPlugin,
+  McpPluginRegistration,
+  McpToolContext,
+  McpToolDefinition,
+  McpToolResult,
+  PluginSettingsOptionsSchemaMetadata,
+  PluginSettingsRedactionPolicy,
+  SDKEventListenerPlugin,
+  SDKExtensionPlugin,
+  StandaloneHttpHandler,
+  StandaloneHttpPlugin,
+  Webhook,
+  WebhookProviderPlugin,
+} from 'kanban-lite/sdk'
 
-// ---------------------------------------------------------------------------
-// Local type definitions
-// Structural interfaces that match kanban-lite internals without deep imports.
-// Validated by the runtime plugin loader's shape checks.
-// ---------------------------------------------------------------------------
-
-/** A registered webhook endpoint persisted in `.kanban.json`. */
-export interface Webhook {
-  /** Unique identifier (e.g., `'wh_a1b2c3d4e5f6a7b8'`). */
-  id: string
-  /** The HTTP(S) URL that receives POST requests with event payloads. */
-  url: string
-  /** Event names to subscribe to (e.g., `['task.created']`), or `['*']` for all events. */
-  events: string[]
-  /** Optional HMAC-SHA256 signing key for payload verification. */
-  secret?: string
-  /** Whether this webhook is active. Inactive webhooks are skipped during delivery. */
-  active: boolean
-}
+export type {
+  CliPluginContext,
+  KanbanCliPlugin,
+  McpPluginRegistration,
+  PluginSettingsOptionsSchemaMetadata,
+  SDKEventListenerPlugin,
+  SDKExtensionPlugin,
+  StandaloneHttpPlugin,
+  Webhook,
+  WebhookProviderPlugin,
+} from 'kanban-lite/sdk'
 
 type Awaitable<T> = T | Promise<T>
-
-interface WebhookSdkHost {
-  listWebhooks(): Webhook[]
-  createWebhook(input: { url: string; events: string[]; secret?: string }): Awaitable<Webhook>
-  updateWebhook(
-    id: string,
-    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
-  ): Awaitable<Webhook | null>
-  deleteWebhook(id: string): Awaitable<boolean>
-}
 
 /** Internal helper for partial `.kanban.json` persistence during plugin-owned fallback writes. */
 type PersistedWebhookConfig = Partial<KanbanConfig> & Record<string, unknown>
@@ -47,51 +46,6 @@ interface PersistedWebhookPluginConfig {
 
 interface PersistedWebhookPlugins {
   'webhook.delivery'?: PersistedWebhookPluginConfig
-}
-
-/**
- * Minimal EventBus duck type.
- *
- * The real `EventBus` is provided by kanban-lite at runtime; this interface
- * captures only the surface used by this plugin so no import from core is needed.
- */
-interface EventBus {
-  onAny(listener: (event: string, payload: { data: unknown; timestamp: string }) => void): () => void
-}
-
-/**
- * Minimal SDKEventListenerPlugin shape consumed by `KanbanSDK`.
- *
- * Mirrors the `SDKEventListenerPlugin` type from `kanban-lite/sdk/types` so
- * the exported listener is structurally compatible at runtime.
- */
-export interface SDKEventListenerPlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
-  /** Attach to the SDK event bus and begin delivering matching webhook events. */
-  register(bus: EventBus): void
-  /** Detach from the SDK event bus and stop delivery. */
-  unregister(): void
-}
-
-/**
- * Webhook provider plugin contract consumed by the kanban-lite core loader.
- *
- * Matches `WebhookProviderPlugin` from `kanban-lite/sdk/plugins`.
- */
-export interface WebhookProviderPlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
-  /** Lists all registered webhooks for the workspace. */
-  listWebhooks(workspaceRoot: string): Webhook[]
-  /** Creates and persists a new webhook. Returns the created webhook with its generated id. */
-  createWebhook(workspaceRoot: string, input: { url: string; events: string[]; secret?: string }): Webhook
-  /** Updates an existing webhook. Returns the updated webhook, or `null` if not found. */
-  updateWebhook(
-    workspaceRoot: string,
-    id: string,
-    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>,
-  ): Webhook | null
-  /** Deletes a webhook by id. Returns `true` if deleted, `false` if not found. */
-  deleteWebhook(workspaceRoot: string, id: string): boolean
 }
 
 function isDebugLoggingEnabled(): boolean {
@@ -428,7 +382,7 @@ export default webhookProviderPlugin
  * Accessible via `sdk.getExtension<WebhookSdkExtensions>('kl-plugin-webhook')`
  * after the package is loaded as the active `webhook.delivery` provider.
  */
-export interface WebhookSdkExtensions {
+export interface WebhookSdkExtensions extends Record<string, unknown> {
   listWebhooks(workspaceRoot: string): Webhook[]
   createWebhook(workspaceRoot: string, input: { url: string; events: string[]; secret?: string }): Webhook
   updateWebhook(
@@ -452,7 +406,7 @@ export interface WebhookSdkExtensions {
  * const webhooks = ext?.listWebhooks(sdk.workspaceRoot) ?? []
  * ```
  */
-export const sdkExtensionPlugin = {
+export const sdkExtensionPlugin: SDKExtensionPlugin<WebhookSdkExtensions> = {
   manifest: {
     id: 'kl-plugin-webhook',
     provides: ['sdk.extension'] as const,
@@ -463,45 +417,11 @@ export const sdkExtensionPlugin = {
     updateWebhook,
     deleteWebhook,
   },
-} satisfies { manifest: { id: string; provides: readonly string[] }; extensions: WebhookSdkExtensions }
+}
 
 // ---------------------------------------------------------------------------
 // MCP plugin – webhook tool ownership
 // ---------------------------------------------------------------------------
-
-interface McpToolResult {
-  readonly content: Array<{ type: 'text'; text: string }>
-  readonly isError?: boolean
-}
-
-interface McpToolContext {
-  readonly sdk: WebhookSdkHost
-  runWithAuth<T>(fn: () => Promise<T>): Promise<T>
-  toErrorResult(err: unknown): McpToolResult
-}
-
-interface McpZodType {
-  optional(): McpZodType
-  describe(description: string): McpZodType
-}
-
-interface McpZodFactory {
-  string(): McpZodType
-  array(item: McpZodType): McpZodType
-  boolean(): McpZodType
-}
-
-interface McpToolDefinition {
-  readonly name: string
-  readonly description: string
-  readonly inputSchema: (z: McpZodFactory) => Record<string, McpZodType>
-  readonly handler: (args: Record<string, unknown>, ctx: McpToolContext) => Promise<McpToolResult>
-}
-
-interface McpPluginRegistration {
-  readonly manifest: { readonly id: string; readonly provides: readonly string[] }
-  registerTools(ctx: McpToolContext): readonly McpToolDefinition[]
-}
 
 function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
   const { secret: _secret, ...safe } = w
@@ -669,31 +589,7 @@ function authErrMessage(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)) || 'Unauthorized'
 }
 
-interface WebhookStandaloneContext {
-  readonly sdk: WebhookSdkHost & {
-    addBoardLog(
-      text: string,
-      options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-      boardId?: string,
-    ): Promise<unknown>
-    runWithAuth<T>(
-      auth: { token?: string; tokenSource?: string; transport?: string; identity?: { subject: string; roles?: string[] } },
-      fn: () => Promise<T>,
-    ): Promise<T>
-  }
-  readonly req: http.IncomingMessage & { _rawBody?: Buffer }
-  readonly res: http.ServerResponse
-  route(method: string, pattern: string): Record<string, string> | null
-}
-
-type WebhookStandaloneHandler = (ctx: WebhookStandaloneContext) => Promise<boolean>
-
-interface WebhookStandalonePlugin {
-  readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
-  registerRoutes(): readonly WebhookStandaloneHandler[]
-}
-
-const handleGetWebhooks: WebhookStandaloneHandler = async (ctx) => {
+const handleGetWebhooks: StandaloneHttpHandler = async (ctx) => {
   if (!ctx.route('GET', '/api/webhooks')) return false
   const auth = pluginExtractAuth(ctx.req)
   try {
@@ -709,7 +605,7 @@ const handleGetWebhooks: WebhookStandaloneHandler = async (ctx) => {
   return true
 }
 
-const handlePostWebhook: WebhookStandaloneHandler = async (ctx) => {
+const handlePostWebhook: StandaloneHttpHandler = async (ctx) => {
   if (!ctx.route('POST', '/api/webhooks')) return false
   const auth = pluginExtractAuth(ctx.req)
   try {
@@ -736,7 +632,7 @@ const handlePostWebhook: WebhookStandaloneHandler = async (ctx) => {
   return true
 }
 
-const handlePutWebhook: WebhookStandaloneHandler = async (ctx) => {
+const handlePutWebhook: StandaloneHttpHandler = async (ctx) => {
   const params = ctx.route('PUT', '/api/webhooks/:id')
   if (!params) return false
   const { id } = params
@@ -764,7 +660,7 @@ const handlePutWebhook: WebhookStandaloneHandler = async (ctx) => {
   return true
 }
 
-const handleDeleteWebhook: WebhookStandaloneHandler = async (ctx) => {
+const handleDeleteWebhook: StandaloneHttpHandler = async (ctx) => {
   const params = ctx.route('DELETE', '/api/webhooks/:id')
   if (!params) return false
   const { id } = params
@@ -795,7 +691,7 @@ const handleDeleteWebhook: WebhookStandaloneHandler = async (ctx) => {
  * `http://localhost:<port>/api/webhooks/test` to exercise the full delivery
  * pipeline end-to-end.
  */
-const handlePostWebhookTest: WebhookStandaloneHandler = async (ctx) => {
+const handlePostWebhookTest: StandaloneHttpHandler = async (ctx) => {
   if (!ctx.route('POST', '/api/webhooks/test')) return false
   debugLog('[kl-plugin-webhook] POST /api/webhooks/test received')
   try {
@@ -845,12 +741,12 @@ const handlePostWebhookTest: WebhookStandaloneHandler = async (ctx) => {
  *
  * This plugin is the route owner for the standalone `/api/webhooks` surface.
  */
-export const standaloneHttpPlugin: WebhookStandalonePlugin = {
+export const standaloneHttpPlugin: StandaloneHttpPlugin = {
   manifest: {
     id: 'webhooks',
     provides: ['standalone.http'] as const,
   },
-  registerRoutes(): readonly WebhookStandaloneHandler[] {
+  registerRoutes(): readonly StandaloneHttpHandler[] {
     return [handleGetWebhooks, handlePostWebhookTest, handlePostWebhook, handlePutWebhook, handleDeleteWebhook]
   },
 }
@@ -864,12 +760,6 @@ function _bold(s: string): string { return `\x1b[1m${s}\x1b[0m` }
 function _green(s: string): string { return `\x1b[32m${s}\x1b[0m` }
 function _red(s: string): string { return `\x1b[31m${s}\x1b[0m` }
 function _dim(s: string): string { return `\x1b[2m${s}\x1b[0m` }
-
-interface WebhookCliContext {
-  readonly workspaceRoot: string
-  readonly sdk?: WebhookSdkHost
-  readonly runWithCliAuth?: <T>(fn: () => Promise<T>) => Promise<T>
-}
 
 /**
  * CLI plugin that contributes the `webhooks` top-level command family to the
@@ -890,14 +780,14 @@ interface WebhookCliContext {
  * kl webhooks remove wh_abc
  * ```
  */
-export const cliPlugin = {
+export const cliPlugin: KanbanCliPlugin = {
   manifest: { id: 'webhooks' },
   command: 'webhooks',
   aliases: ['webhook', 'wh'],
   async run(
     subArgs: string[],
     flags: Record<string, string | boolean | string[]>,
-    context: WebhookCliContext,
+    context: CliPluginContext,
   ): Promise<void> {
     const { workspaceRoot } = context
     const subcommand = subArgs[0] || 'list'
@@ -1024,29 +914,6 @@ export const pluginManifest = {
 // ---------------------------------------------------------------------------
 // Options schema — plugin-settings discovery
 // ---------------------------------------------------------------------------
-
-/** Local copy of the shared plugin-settings redaction target contract. */
-type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
-
-/** Local copy of the shared plugin-settings redaction policy contract. */
-interface PluginSettingsRedactionPolicy {
-  maskedValue: string
-  writeOnly: true
-  targets: readonly PluginSettingsRedactionTarget[]
-}
-
-/** Local copy of the shared plugin-settings secret-field metadata contract. */
-interface PluginSettingsSecretFieldMetadata {
-  path: string
-  redaction: PluginSettingsRedactionPolicy
-}
-
-/** Local copy of the shared provider options schema contract exposed by plugin packages. */
-interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
-  secrets: PluginSettingsSecretFieldMetadata[]
-}
 
 const WEBHOOK_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
   maskedValue: '••••••',

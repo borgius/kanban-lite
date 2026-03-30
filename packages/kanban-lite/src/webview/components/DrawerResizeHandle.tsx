@@ -14,10 +14,17 @@ export function DrawerResizeHandle({ panelMode, onPreview, onCommit, onCancel }:
   const onCommitRef = useRef(onCommit)
   const onCancelRef = useRef(onCancel)
 
-  // Keep refs current without recreating the controller on every render
-  onPreviewRef.current = onPreview
-  onCommitRef.current = onCommit
-  onCancelRef.current = onCancel
+  useEffect(() => {
+    onPreviewRef.current = onPreview
+  }, [onPreview])
+
+  useEffect(() => {
+    onCommitRef.current = onCommit
+  }, [onCommit])
+
+  useEffect(() => {
+    onCancelRef.current = onCancel
+  }, [onCancel])
 
   useEffect(() => {
     if (typeof window === 'undefined') {

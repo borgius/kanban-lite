@@ -155,6 +155,41 @@ function createCliTokenAuthPackageSource(packageName: string, expectedToken: str
   ].join('\n')
 }
 
+function createCliEventsPluginPackageSource(packageName: string): string {
+  return [
+    `const packageName = ${JSON.stringify(packageName)}`,
+    'module.exports.cardStoragePlugin = {',
+    '  manifest: { id: packageName, provides: [\'card.storage\'] },',
+    '  createEngine(kanbanDir) {',
+    '    return {',
+    '      type: \"markdown\",',
+    '      kanbanDir,',
+    '      async init() {},',
+    '      close() {},',
+    '      async migrate() {},',
+    '      async ensureBoardDirs() {},',
+    '      async deleteBoardData() {},',
+    '      async scanCards() { return [] },',
+    '      async writeCard() {},',
+    '      async moveCard() { return \"\" },',
+    '      async renameCard() { return \"\" },',
+    '      async deleteCard() {},',
+    '      getCardDir() { return kanbanDir },',
+    '      async copyAttachment() {},',
+    '    }',
+    '  },',
+    '}',
+    'module.exports.sdkExtensionPlugin = {',
+    '  manifest: { id: packageName, provides: [\'sdk.extensions\'] },',
+    '  events: [',
+    '    { event: \"workflow.run\", phase: \"before\", label: \"Workflow run\" },',
+    '    { event: \"workflow.completed\", phase: \"after\", label: \"Workflow completed\", apiAfter: true },',
+    '  ],',
+    '  extensions: {},',
+    '}',
+  ].join('\n')
+}
+
 async function createCliCardStateWorkspace(): Promise<{ workspaceDir: string; configPath: string; cardId: string; cleanup: () => void }> {
   const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-cli-card-state-'))
   fs.mkdirSync(path.join(workspaceDir, '.kanban'), { recursive: true })
@@ -377,6 +412,9 @@ describe('CLI list command', () => {
     expect(helpText).toContain('--meta key=value')
     expect(helpText).toContain('--config <path>')
     expect(helpText).toContain('--token <value>')
+    expect(helpText).toContain('events')
+    expect(helpText).toContain('--type <phase>')
+    expect(helpText).toContain('--mask <pattern>')
     expect(helpText).toContain('plugin-settings list')
     expect(helpText).toContain('plugin-settings show <capability> <provider>')
     expect(helpText).toContain('plugin-settings select <capability> <provider>')
@@ -386,6 +424,40 @@ describe('CLI list command', () => {
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")
     expect(helpText).toContain("--data '<json|@file>'")
+  })
+})
+
+describe('CLI events command', () => {
+  it('lists built-in and plugin-declared events with phase/mask filtering', async () => {
+    const packageName = `kanban-cli-events-${Date.now()}`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliEventsPluginPackageSource(packageName),
+    )
+    const { configPath, cleanup } = createCliWorkspace({
+      plugins: {
+        'card.storage': { provider: packageName },
+      },
+    })
+
+    try {
+      const allResult = await runCliCommand(['events', '--json', '--config', configPath])
+      expect(allResult.exitCode).toBe(0)
+      const allEvents = JSON.parse(allResult.stdout)
+      expect(allEvents).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: 'task.created', phase: 'after', source: 'core' }),
+        expect.objectContaining({ event: 'workflow.completed', phase: 'after', source: 'plugin', pluginIds: [packageName] }),
+      ]))
+
+      const filteredResult = await runCliCommand(['events', '--json', '--type', 'before', '--mask', 'workflow.*', '--config', configPath])
+      expect(filteredResult.exitCode).toBe(0)
+      expect(JSON.parse(filteredResult.stdout)).toEqual([
+        expect.objectContaining({ event: 'workflow.run', phase: 'before', source: 'plugin', pluginIds: [packageName] }),
+      ])
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
   })
 })
 

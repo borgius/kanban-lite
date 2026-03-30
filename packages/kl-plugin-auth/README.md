@@ -38,8 +38,8 @@ npm install kl-plugin-auth
 
 Current schema-backed fields:
 
-- `auth.identity`: `apiToken`, `users[].username`, `users[].password`, `users[].role`
-- `auth.policy`: `matrix`
+- `auth.identity`: `apiToken`, `users[].username`, `users[].password`, `users[].role`, `users[].groups[]`
+- `auth.policy`: `permissions[]`
 
 Secret metadata is declared for:
 
@@ -73,7 +73,7 @@ This preserves Kanban Lite's open-access behavior.
 ### `rbac`
 
 - `auth.identity` → validates opaque tokens against a runtime-owned principal registry
-- `auth.policy` → enforces the fixed `user` → `manager` → `admin` action matrix
+- `auth.policy` → enforces the fixed `user` → `manager` → `admin` action matrix unless a custom permission matrix is configured
 
 ### `local`
 
@@ -98,9 +98,9 @@ Auth capabilities are declared in the `plugins` key alongside storage providers.
 }
 ```
 
-### Custom RBAC matrix
+### Custom permission matrix
 
-Provide `options.matrix` on `auth.policy` to override the default behaviour per role.  Each key is a role name and the value is the list of actions that role may perform.  Roles are **not** cumulative — list every action explicitly for each role.
+Provide `options.permissions` on `auth.policy` to override the default behaviour per role or group. Each row targets either a role or a group and lists the actions that subject may perform. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
 
 ```json
 {
@@ -109,16 +109,25 @@ Provide `options.matrix` on `auth.policy` to override the default behaviour per 
     "auth.policy": {
       "provider": "rbac",
       "options": {
-        "matrix": {
-          "user":    ["form.submit", "comment.create", "comment.update", "comment.delete", "attachment.add", "attachment.remove", "card.action.trigger", "log.add"],
-          "manager": ["card.create", "card.update", "card.move", "card.transfer", "card.delete", "board.action.trigger", "log.clear", "board.log.add"],
-          "admin":   ["board.create", "board.update", "board.delete", "settings.update", "webhook.create", "webhook.update", "webhook.delete", "label.set", "label.rename", "label.delete", "column.create", "column.update", "column.reorder", "column.setMinimized", "column.delete", "column.cleanup", "board.action.config.add", "board.action.config.remove", "board.log.clear", "board.setDefault", "storage.migrate", "card.purgeDeleted"]
-        }
+        "permissions": [
+          {
+            "subjectType": "role",
+            "subject": "admin",
+            "actions": ["settings.update", "board.delete"]
+          },
+          {
+            "subjectType": "group",
+            "subject": "auditors",
+            "actions": ["board.log.add"]
+          }
+        ]
       }
     }
   }
 }
 ```
+
+Legacy role-map `options.matrix` objects remain supported at runtime for existing workspaces, but the shared Plugin Options UI now edits the row-based `permissions` format.
 
 ### Local standalone login + API token
 
@@ -132,7 +141,8 @@ Provide `options.matrix` on `auth.policy` to override the default behaviour per 
           {
             "username": "alice",
             "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
-            "role": "user"
+            "role": "user",
+            "groups": ["ops"]
           }
         ]
       }
@@ -146,7 +156,7 @@ Use the `kl` CLI to add users without computing hashes manually:
 
 ```sh
 kl auth create-user --username alice --password s3cr3t
-kl auth create-user --username admin --password s3cr3t --role admin
+kl auth create-user --username admin --password s3cr3t --role admin --groups ops,leadership
 ```
 
 The command bcrypt-hashes the password and appends the user to `plugins["auth.identity"].options.users` in `.kanban.json`.

@@ -387,8 +387,8 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
                   Validation issues
                 </p>
                 <ul className="space-y-1 pl-4 text-xs" style={{ color: 'var(--vscode-foreground)' }}>
-                  {errors.map((error, index) => (
-                    <li key={`${error.instancePath ?? '/'}-${error.message ?? 'invalid'}-${index}`} className="list-disc">
+                  {errors.map((error) => (
+                    <li key={JSON.stringify(error)} className="list-disc">
                       {formatFormValidationError(error)}
                     </li>
                   ))}

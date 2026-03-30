@@ -1,8 +1,7 @@
 import * as http from 'node:http';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import type { Card } from '../../shared/types';
-import type { Webhook, CardStateCapabilityNamespace } from '../../shared/config';
-import type { ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
+import type { Card, PluginSettingsOptionsSchemaMetadata, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsRedactionPolicy } from '../../shared/types';
+import type { Webhook, CardStateCapabilityNamespace, PluginCapabilityNamespace, ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
 import type { AuthContext, AuthDecision, SDKEventListenerPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types';
 import type { KanbanSDK } from '../KanbanSDK';
 import type { StorageEngine } from './types';
@@ -27,6 +26,8 @@ export interface AuthIdentity {
     subject: string;
     /** Optional list of roles or permission scopes. */
     roles?: string[];
+    /** Optional group memberships resolved for the caller. */
+    groups?: string[];
 }
 /** Plugin manifest scoped to auth capability namespaces. */
 export interface AuthPluginManifest {
@@ -45,6 +46,13 @@ export interface AuthPluginManifest {
 export interface AuthIdentityPlugin {
     readonly manifest: AuthPluginManifest;
     /**
+     * Optional transport-safe options schema metadata for shared plugin-settings flows.
+     *
+     * When provided, hosts may surface this in configuration UIs and redact any
+     * secret fields according to the accompanying metadata.
+     */
+    optionsSchema?(): PluginSettingsOptionsSchemaMetadata;
+    /**
      * Resolves an auth context to a caller identity, or `null` for
      * anonymous / invalid tokens.
      */
@@ -60,6 +68,13 @@ export interface AuthIdentityPlugin {
  */
 export interface AuthPolicyPlugin {
     readonly manifest: AuthPluginManifest;
+    /**
+     * Optional transport-safe options schema metadata for shared plugin-settings flows.
+     *
+     * When provided, hosts may surface this in configuration UIs and redact any
+     * secret fields according to the accompanying metadata.
+     */
+    optionsSchema?(): PluginSettingsOptionsSchemaMetadata;
     /**
      * Returns an {@link AuthDecision} indicating whether `identity` is
      * authorized to perform `action` in the given `context`.
@@ -169,6 +184,8 @@ export interface RbacPrincipalEntry {
     subject: string;
     /** Assigned RBAC roles (valid values: `'user'`, `'manager'`, `'admin'`). */
     roles: string[];
+    /** Optional group memberships resolved alongside the caller roles. */
+    groups?: string[];
 }
 /**
  * Creates a runtime-validated RBAC identity plugin backed by a host-supplied
@@ -579,7 +596,8 @@ export declare const PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /**
  * Maps short `card.state` provider ids to their installable npm package names.
  *
- * - `sqlite` → `npm install kl-plugin-card-state-sqlite`
+ * Card-state is now merged into storage packages. The aliases point to the
+ * same packages as `PROVIDER_ALIASES`.
  *
  * External packages must export `createCardStateProvider(context)` or a
  * `cardStateProvider`/`default` object with a manifest that provides
@@ -605,6 +623,16 @@ export declare const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /** Set of provider ids that are handled as built-in attachment plugins. */
 export declare const BUILTIN_ATTACHMENT_IDS: ReadonlySet<string>;
 export declare function loadExternalModule(request: string): unknown;
+type PluginSettingsProviderReadModel = PluginSettingsReadPayload & Pick<PluginSettingsProviderRow, 'packageName' | 'discoverySource' | 'optionsSchema'>;
+export declare class PluginSettingsStoreError extends Error {
+    readonly code: string;
+    readonly details?: Record<string, unknown>;
+    constructor(code: string, message: string, details?: Record<string, unknown>);
+}
+export declare function discoverPluginSettingsInventory(workspaceRoot: string, redaction: PluginSettingsRedactionPolicy): PluginSettingsPayload;
+export declare function readPluginSettingsProvider(workspaceRoot: string, capability: PluginCapabilityNamespace, providerId: string, redaction: PluginSettingsRedactionPolicy): PluginSettingsProviderReadModel | null;
+export declare function persistPluginSettingsProviderSelection(workspaceRoot: string, capability: PluginCapabilityNamespace, providerId: string, redaction: PluginSettingsRedactionPolicy): PluginSettingsProviderReadModel | null;
+export declare function persistPluginSettingsProviderOptions(workspaceRoot: string, capability: PluginCapabilityNamespace, providerId: string, options: unknown, redaction: PluginSettingsRedactionPolicy): PluginSettingsProviderReadModel;
 /**
  * Creates the built-in auth event listener plugin that enforces authorization
  * during the before-event phase.
@@ -677,3 +705,4 @@ export declare function resolveMcpPlugins(config: {
  *                           provider resolution is skipped and `bag.webhookProvider` is `null`.
  */
 export declare function resolveCapabilityBag(capabilities: ResolvedCapabilities, kanbanDir: string, authCapabilities?: ResolvedAuthCapabilities, webhookCapabilities?: ResolvedWebhookCapabilities, cardStateCapabilities?: ResolvedCardStateCapabilities): ResolvedCapabilityBag;
+export {};

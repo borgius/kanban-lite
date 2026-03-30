@@ -28,7 +28,7 @@ function LogText({ text }: { text: string }) {
   )
 }
 
-function toYaml(obj: Record<string, any>): string {
+function toYaml(obj: Record<string, unknown>): string {
   try {
     return yamlDump(obj, { indent: 2, lineWidth: 80, noRefs: true }).trimEnd()
   } catch {
@@ -36,13 +36,13 @@ function toYaml(obj: Record<string, any>): string {
   }
 }
 
-function toInlineJson(obj: Record<string, any>): string {
+function toInlineJson(obj: Record<string, unknown>): string {
   const s = JSON.stringify(obj)
   return s.length > 60 ? s.slice(0, 59) + '…}' : s
 }
 
 /** Object cell shown when show.objects=true — always expanded as YAML */
-function ObjectBlock({ obj }: { obj: Record<string, any> }) {
+function ObjectBlock({ obj }: { obj: Record<string, unknown> }) {
   const yaml = useMemo(() => toYaml(obj), [obj])
   return (
     <pre
@@ -57,7 +57,7 @@ function ObjectBlock({ obj }: { obj: Record<string, any> }) {
 }
 
 /** Inline object shown when show.objects=false — compact JSON, expandable to YAML */
-function InlineObject({ obj }: { obj: Record<string, any> }) {
+function InlineObject({ obj }: { obj: Record<string, unknown> }) {
   const [expanded, setExpanded] = useState(false)
   const yaml = useMemo(() => toYaml(obj), [obj])
   const inline = useMemo(() => toInlineJson(obj), [obj])
@@ -207,6 +207,10 @@ interface LogsSectionProps {
   onLogsFilterChange?: (filter: LogsFilterState) => void
 }
 
+function getLogEntryBaseKey(entry: LogEntry): string {
+  return JSON.stringify([entry.timestamp, entry.source, entry.text, entry.object ?? null])
+}
+
 export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange }: LogsSectionProps) {
   const [limit, setLimit] = useState<LogLimit>(() => (logsFilter?.limit as LogLimit) ?? 'all')
   const [order, setOrder] = useState<LogOrder>(() => logsFilter?.order ?? 'desc')
@@ -239,6 +243,21 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
     }
     return result
   }, [logs, disabledSources, order, limit])
+
+  const keyedLogs = useMemo(() => {
+    const seen = new Map<string, number>()
+
+    return filteredLogs.map((entry) => {
+      const baseKey = getLogEntryBaseKey(entry)
+      const nextCount = (seen.get(baseKey) ?? 0) + 1
+      seen.set(baseKey, nextCount)
+
+      return {
+        entry,
+        key: `${baseKey}:${nextCount}`,
+      }
+    })
+  }, [filteredLogs])
 
   const limitOptions: LogLimit[] = [10, 25, 50, 100, 'all']
 
@@ -342,9 +361,9 @@ export function LogsSection({ logs, onClearLogs, logsFilter, onLogsFilterChange 
           </p>
         ) : (
           <div className="flex flex-col">
-            {filteredLogs.map((entry, i) => (
+            {keyedLogs.map(({ entry, key }) => (
               <div
-                key={`${entry.timestamp}-${i}`}
+                key={key}
                 className="card-log-entry px-4 py-2 text-xs"
               >
                 <div className="flex items-center gap-2 flex-wrap">

@@ -120,7 +120,7 @@ Each provider row includes:
 - whether it is currently selected for that capability
 - optional schema metadata from `optionsSchema()`
 
-Enablement is represented only by provider selection. The canonical persisted form is the provider reference under `plugins[capability]` in `.kanban.json`; there is no second enabled/disabled boolean. Legacy config aliases still normalize into the same selected-provider view, but plugin-settings mutations write the canonical `plugins[capability]` entry.
+Enablement is represented only by provider selection. The canonical persisted form is the provider reference under `plugins[capability]` in `.kanban.json`; there is no second enabled/disabled boolean. Legacy config aliases still normalize into the same selected-provider view, but plugin-settings mutations write the canonical `plugins[capability]` entry. In the settings UI this now appears as a per-provider on/off toggle with in-flight loading feedback instead of separate Activate/Active buttons.
 
 Discovery sources surfaced to users are:
 
@@ -140,7 +140,7 @@ Providers may expose an `optionsSchema()` hook. When present, the loader normali
 - optional `uiSchema` — JSON Forms UI hints
 - `secrets` — secret-field metadata used for masking and write-only behavior
 
-The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms.
+The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Selected providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -225,7 +225,7 @@ This capability resolves a raw token to a typed identity.
 Compatibility/default provider ids:
 
 - `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
-- `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles }` for registered principals.
+- `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles, groups? }` for registered principals.
 - `local` — trusts host-validated standalone session identity, or the shared `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` API token for CLI, MCP, and bearer-authenticated HTTP calls.
 
 External package:
@@ -242,13 +242,15 @@ Compatibility/default provider ids:
 
 - `noop` (default) — always returns `true` (allow-all); preserves current open-access behavior.
 - `rbac` — enforces the fixed SDK-owned `RBAC_ROLE_MATRIX` for the cumulative `user`, `manager`, and `admin` roles.
-- `local` — requires a non-null identity and otherwise allows the action.
+- `local` — requires a non-null identity and otherwise allows the action unless a custom permission matrix is configured.
 
 External package:
 
 - `kl-plugin-auth`
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
+
+Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. Each row targets either a `role` or a `group` and lists the allowed actions for that subject. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
 
 > **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
@@ -269,7 +271,14 @@ Example:
       "provider": "local",
       "options": {
         "apiToken": "stored-secret",
-        "users": []
+        "users": [
+          {
+            "username": "alice",
+            "password": "$2b$12$REPLACE_WITH_BCRYPT_HASH",
+            "role": "admin",
+            "groups": ["ops"]
+          }
+        ]
       }
     }
   }
@@ -277,6 +286,20 @@ Example:
 ```
 
 The plugin-settings model does not add a second `enabled` boolean. Switching providers means changing the selected provider reference for that capability.
+
+For `webhook.delivery`, plugin settings also support an explicit disabled state by persisting:
+
+```json
+{
+  "plugins": {
+    "webhook.delivery": {
+      "provider": "none"
+    }
+  }
+}
+```
+
+That disables webhook runtime loading without discarding any previously stored provider options, so the same webhook configuration can be restored when the provider is re-enabled.
 
 Webhook delivery uses its own top-level config section:
 
@@ -852,6 +875,13 @@ The `KLPluginPackageManifest` interface and `PluginIntegrationNamespace` type ar
 exported from `kanban-lite/sdk` for plugin authors who want compile-time
 validation.
 
+Plugin packages should also import the shared public contracts from
+`kanban-lite/sdk` instead of re-declaring local structural copies. That
+includes provider contracts such as `CardStoragePlugin`,
+`AttachmentStoragePlugin`, `WebhookProviderPlugin`, standalone and CLI
+integration types, MCP tool registration types, auth plugin contracts, and the
+plugin-settings schema metadata types.
+
 ---
 
 ## Plugin manifest validation
@@ -940,6 +970,17 @@ The contract is intentionally small:
 - the package exports `sdkExtensionPlugin`,
 - the loader includes it in the resolved capability bag when that package is active,
 - `KanbanSDK.getExtension(id)` returns the contributed extension bag.
+
+`sdkExtensionPlugin` may also include an optional `events` array so plugins can declare additional discoverable SDK event names. Each declaration is metadata-only and has the shape `{ event, phase }`, where `phase` is either `before` or `after`. Plugins may also include optional `resource`, `label`, and `apiAfter` metadata on those declarations.
+
+That catalog feeds the shared event-discovery surfaces:
+
+- `sdk.listAvailableEvents({ type?, mask? })`
+- CLI `kl events --type <before|after|all> --mask <pattern>`
+- standalone `GET /api/events?type=...&mask=...`
+- MCP `list_available_events`
+
+Masks follow the same dotted wildcard rules as the EventEmitter2-backed SDK event bus, so patterns such as `task.*` and `comment.**` behave consistently across discovery and subscription.
 
 Webhook migration is the first concrete use of this model.
 
@@ -1817,6 +1858,9 @@ If you are building a plugin today, follow these rules:
 
 7. **If you support both cards and attachments, export both plugin objects.**
    - That makes same-package resolution much smoother.
+
+8. **Import public contracts from `kanban-lite/sdk`.**
+  - Do not maintain private copies of shared SDK interfaces inside plugin packages.
 
 ---
 

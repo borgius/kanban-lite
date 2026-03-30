@@ -303,6 +303,12 @@ function printPluginSettingsReadModel(payload: PluginSettingsReadModel): void {
   }
 }
 
+function printPluginSettingsDisabledSelection(capability: string): void {
+  console.log(`Capability:        ${bold(capability)}`)
+  console.log('Selected provider: none (none)')
+  console.log('Options:           preserved in config until you re-enable a provider')
+}
+
 function printPluginSettingsInstallResult(result: PluginSettingsInstallModel): void {
   console.log(green(result.message))
   console.log(`Package:           ${bold(result.packageName)}`)
@@ -403,6 +409,41 @@ function formatCardDetail(c: Card, title: string = getTitleFromContent(c.content
     lines.push('', dim('  --- Content ---'), '', '  ' + body.split('\n').join('\n  '))
   }
   return lines.join('\n')
+}
+
+function printAvailableEvents(events: ReturnType<KanbanSDK['listAvailableEvents']>): void {
+  if (events.length === 0) {
+    console.log(dim('  No events matched.'))
+    return
+  }
+
+  console.log(`  ${dim('EVENT'.padEnd(36))}  ${dim('PHASE'.padEnd(8))}  ${dim('SOURCE'.padEnd(8))}  ${dim('PLUGINS')}`)
+  console.log(dim(`  ${'-'.repeat(90)}`))
+  for (const event of events) {
+    const plugins = event.pluginIds && event.pluginIds.length > 0 ? event.pluginIds.join(', ') : '-'
+    console.log(`  ${bold(event.event.padEnd(36))}  ${event.phase.padEnd(8)}  ${event.source.padEnd(8)}  ${plugins}`)
+  }
+}
+
+async function cmdEvents(sdk: KanbanSDK, flags: Flags): Promise<void> {
+  const type = typeof flags.type === 'string' ? flags.type : undefined
+  if (type !== undefined && type !== 'before' && type !== 'after' && type !== 'all') {
+    console.error(red('Error: --type must be one of before, after, or all'))
+    process.exit(1)
+  }
+
+  const mask = typeof flags.mask === 'string' ? flags.mask : undefined
+  const events = sdk.listAvailableEvents({
+    type: type as 'before' | 'after' | 'all' | undefined,
+    mask,
+  })
+
+  if (flags.json) {
+    console.log(JSON.stringify(events, null, 2))
+    return
+  }
+
+  printAvailableEvents(events)
 }
 
 // --- Card Commands ---
@@ -566,7 +607,7 @@ export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const labels = typeof flags.label === 'string' ? flags.label.split(',').map(l => l.trim()) : []
   const body = typeof flags.body === 'string' ? flags.body : ''
 
-  let metadata: Record<string, any> | undefined
+  let metadata: Record<string, unknown> | undefined
   if (typeof flags.metadata === 'string') {
     try {
       metadata = JSON.parse(flags.metadata)
@@ -1232,7 +1273,7 @@ async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags): Promi
         process.exit(1)
       }
       const source = typeof flags.source === 'string' ? flags.source : undefined
-      let obj: Record<string, any> | undefined
+      let obj: Record<string, unknown> | undefined
       if (typeof flags.object === 'string') {
         try {
           obj = JSON.parse(flags.object)
@@ -1291,7 +1332,7 @@ async function cmdBoardLog(sdk: KanbanSDK, positional: string[], flags: Flags): 
         process.exit(1)
       }
       const source = typeof flags.source === 'string' ? flags.source : undefined
-      let obj: Record<string, any> | undefined
+      let obj: Record<string, unknown> | undefined
       if (typeof flags.object === 'string') {
         try {
           obj = JSON.parse(flags.object)
@@ -1780,6 +1821,7 @@ ${bold('Server:')}
 
 ${bold('Other:')}
   init                        Initialize cards directory
+  events                      List available built-in and plugin-declared events
   pwd                         Print workspace root path
 
 ${bold('Global Options:')}
@@ -1788,6 +1830,8 @@ ${bold('Global Options:')}
   --token <value>             API token override for this CLI invocation
   --board <id>                Target board (default: default board)
   --json                      Output as JSON
+  --type <phase>              Event phase filter for [1mevents[0m (before, after, all)
+  --mask <pattern>            Wildcard event mask for [1mevents[0m (for example task.*)
 
 ${bold('List Filters:')}
   --search <text>            Search card content and inline metadata tokens
@@ -2105,8 +2149,13 @@ export async function cmdPluginSettings(sdk: KanbanSDK, positional: string[], fl
         if (flags.json) {
           console.log(JSON.stringify(provider, null, 2))
         } else {
-          console.log(green('Selected plugin provider.'))
-          printPluginSettingsReadModel(provider)
+          if (provider) {
+            console.log(green('Selected plugin provider.'))
+            printPluginSettingsReadModel(provider)
+          } else {
+            console.log(green('Disabled plugin provider.'))
+            printPluginSettingsDisabledSelection(capability)
+          }
         }
         return
       }
@@ -2302,6 +2351,10 @@ async function main(): Promise<void> {
       break
     case 'init':
       await cmdInit(sdk)
+      break
+    case 'events':
+    case 'event':
+      await cmdEvents(sdk, flags)
       break
     case 'storage':
       await cmdStorage(sdk, positional, flags, workspaceRoot)

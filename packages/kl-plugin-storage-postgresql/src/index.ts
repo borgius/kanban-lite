@@ -1,74 +1,54 @@
 import * as fs from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
-import type { Card as BaseCard, Priority as BasePriority } from 'kanban-lite/sdk'
+import type {
+  AttachmentStoragePlugin,
+  Card,
+  CardStateCursor,
+  CardStateKey,
+  CardStateModuleContext,
+  CardStateProvider,
+  CardStateProviderManifest,
+  CardStateReadThroughInput,
+  CardStateRecord,
+  CardStateUnreadKey,
+  CardStateValue,
+  CardStateWriteInput,
+  CardStoragePlugin,
+  PluginSettingsOptionsSchemaMetadata,
+  PluginSettingsRedactionPolicy,
+  Priority,
+  StorageEngine,
+} from 'kanban-lite/sdk'
+
+export type {
+  AttachmentStoragePlugin,
+  Card,
+  CardStateCursor,
+  CardStateKey,
+  CardStateModuleContext,
+  CardStateProvider,
+  CardStateProviderManifest,
+  CardStateReadThroughInput,
+  CardStateRecord,
+  CardStateUnreadKey,
+  CardStateValue,
+  CardStateWriteInput,
+  CardStoragePlugin,
+  Priority,
+  StorageEngine,
+} from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
 // Local structural interfaces — avoids deep imports from kanban-lite internals.
 // Validated by runtime shape checks in the kanban-lite plugin loader.
 // ---------------------------------------------------------------------------
 
-export type Priority = BasePriority
-export interface Card extends BaseCard {
-  forms?: Array<{
-    name?: string
-    schema?: Record<string, unknown>
-    ui?: Record<string, unknown>
-    data?: Record<string, unknown>
-  }>
-  formData?: Record<string, Record<string, unknown>>
-}
 export type Comment = Card['comments'][number]
 
 /** Card format version constant (matches kanban-lite's CARD_FORMAT_VERSION). */
 const CARD_FORMAT_VERSION = 2
 
-/** Plugin manifest describing what capabilities a plugin provides. */
-interface PluginManifest {
-  readonly id: string
-  readonly provides: readonly ('card.storage' | 'attachment.storage')[]
-}
-
-/**
- * StorageEngine interface that external plugins must satisfy.
- * Matches the contract from kanban-lite's StorageEngine.
- */
-export interface StorageEngine {
-  readonly type: string
-  readonly kanbanDir: string
-  init(): Promise<void>
-  close(): void
-  migrate(): Promise<void>
-  ensureBoardDirs(boardDir: string, extraStatuses?: string[]): Promise<void>
-  deleteBoardData(boardDir: string, boardId: string): Promise<void>
-  scanCards(boardDir: string, boardId: string): Promise<Card[]>
-  writeCard(card: Card): Promise<void>
-  moveCard(card: Card, boardDir: string, newStatus: string): Promise<string>
-  renameCard(card: Card, newFilename: string): Promise<string>
-  deleteCard(card: Card): Promise<void>
-  getCardDir(card: Card): string
-  copyAttachment(sourcePath: string, card: Card): Promise<void>
-}
-
-/** CardStoragePlugin interface matching the kanban-lite plugin contract. */
-export interface CardStoragePlugin {
-  readonly manifest: PluginManifest
-  createEngine(kanbanDir: string, options?: Record<string, unknown>): StorageEngine
-  readonly nodeCapabilities?: {
-    readonly isFileBacked: boolean
-    getLocalCardPath(card: Card): string | null
-    getWatchGlob(): string | null
-  }
-}
-
-/** AttachmentStoragePlugin interface matching the kanban-lite plugin contract. */
-export interface AttachmentStoragePlugin {
-  readonly manifest: PluginManifest
-  getCardDir?(card: Card): string | null
-  copyAttachment(sourcePath: string, card: Card): Promise<void>
-  appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
-  materializeAttachment?(card: Card, attachment: string): Promise<string | null>
-}
 
 // ---------------------------------------------------------------------------
 // Type declarations for the lazily-loaded pg driver
@@ -619,61 +599,6 @@ export const attachmentStoragePlugin: AttachmentStoragePlugin = {
 // card.state provider (merged into storage package)
 // ---------------------------------------------------------------------------
 
-export interface CardStateProviderManifest {
-  readonly id: string
-  readonly provides: readonly ['card.state']
-}
-
-export type CardStateValue = Record<string, unknown>
-
-export interface CardStateKey {
-  actorId: string
-  boardId: string
-  cardId: string
-  domain: string
-}
-
-export interface CardStateRecord<TValue = CardStateValue> extends CardStateKey {
-  value: TValue
-  updatedAt: string
-}
-
-export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateKey {
-  value: TValue
-  updatedAt?: string
-}
-
-export interface CardStateCursor extends Record<string, unknown> {
-  cursor: string
-  updatedAt?: string
-}
-
-export interface CardStateUnreadKey {
-  actorId: string
-  boardId: string
-  cardId: string
-}
-
-export interface CardStateReadThroughInput extends CardStateUnreadKey {
-  cursor: CardStateCursor
-}
-
-export interface CardStateModuleContext {
-  workspaceRoot: string
-  kanbanDir: string
-  provider: string
-  backend: 'builtin' | 'external'
-  options?: Record<string, unknown>
-}
-
-export interface CardStateProvider {
-  readonly manifest: CardStateProviderManifest
-  getCardState(input: CardStateKey): Promise<CardStateRecord | null>
-  setCardState(input: CardStateWriteInput): Promise<CardStateRecord>
-  getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>
-  markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>
-}
-
 function _csIsRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -781,29 +706,6 @@ export const pluginManifest = {
 // ---------------------------------------------------------------------------
 // Options schema — plugin-settings discovery
 // ---------------------------------------------------------------------------
-
-/** Local copy of the shared plugin-settings redaction target contract. */
-type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
-
-/** Local copy of the shared plugin-settings redaction policy contract. */
-interface PluginSettingsRedactionPolicy {
-  maskedValue: string
-  writeOnly: true
-  targets: readonly PluginSettingsRedactionTarget[]
-}
-
-/** Local copy of the shared plugin-settings secret-field metadata contract. */
-interface PluginSettingsSecretFieldMetadata {
-  path: string
-  redaction: PluginSettingsRedactionPolicy
-}
-
-/** Local copy of the shared provider options schema contract exposed by plugin packages. */
-interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
-  secrets: PluginSettingsSecretFieldMetadata[]
-}
 
 const POSTGRESQL_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
   maskedValue: '••••••',

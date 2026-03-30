@@ -15,20 +15,29 @@ interface ColumnDialogProps {
 }
 
 export function ColumnDialog({ isOpen, onClose, onSave, initial, title }: ColumnDialogProps) {
+  if (!isOpen) return null
+
+  return (
+    <ColumnDialogContent
+      key={`${title}:${initial?.name ?? ''}:${initial?.color ?? ''}`}
+      onClose={onClose}
+      onSave={onSave}
+      initial={initial}
+      title={title}
+    />
+  )
+}
+
+function ColumnDialogContent({ onClose, onSave, initial, title }: Omit<ColumnDialogProps, 'isOpen'>) {
   const [name, setName] = useState(initial?.name ?? '')
   const [color, setColor] = useState(initial?.color ?? '#3b82f6')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (isOpen) {
-      setName(initial?.name ?? '')
-      setColor(initial?.color ?? '#3b82f6')
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [isOpen, initial])
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [])
 
   useEffect(() => {
-    if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && name.trim()) {
@@ -37,9 +46,7 @@ export function ColumnDialog({ isOpen, onClose, onSave, initial, title }: Column
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose, onSave, name, color])
-
-  if (!isOpen) return null
+  }, [onClose, onSave, name, color])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

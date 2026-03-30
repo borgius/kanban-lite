@@ -166,9 +166,9 @@ describe('kl-plugin-auth: local providers', () => {
   it('LOCAL_IDENTITY_PLUGIN trusts pre-resolved identity from middleware', async () => {
     const identity = await LOCAL_IDENTITY_PLUGIN.resolveIdentity({
       transport: 'http',
-      identity: { subject: 'alice' },
+      identity: { subject: 'alice', groups: ['ops'] },
     })
-    expect(identity).toEqual({ subject: 'alice' })
+    expect(identity).toEqual({ subject: 'alice', groups: ['ops'] })
   })
 
   it('LOCAL_IDENTITY_PLUGIN resolves the shared API token from env', async () => {
@@ -218,7 +218,7 @@ describe('kl-plugin-auth: RBAC identity provider', () => {
 
   it('createRbacIdentityPlugin resolves a registered principal', async () => {
     const principals = new Map([
-      ['token-alice', { subject: 'alice', roles: ['user'] }],
+      ['token-alice', { subject: 'alice', roles: ['user'], groups: ['ops'] }],
       ['token-bob', { subject: 'bob', roles: ['admin'] }],
     ])
     const plugin = createRbacIdentityPlugin(principals)
@@ -228,6 +228,7 @@ describe('kl-plugin-auth: RBAC identity provider', () => {
     expect(alice).not.toBeNull()
     expect(alice?.subject).toBe('alice')
     expect(alice?.roles).toEqual(['user'])
+    expect(alice?.groups).toEqual(['ops'])
 
     const bob = await plugin.resolveIdentity({ token: 'Bearer token-bob', transport: 'http' })
     expect(bob?.subject).toBe('bob')
@@ -641,6 +642,10 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
               username: { type: 'string' },
               password: { type: 'string' },
               role: { enum: ['user', 'manager', 'admin'] },
+              groups: {
+                type: 'array',
+                items: { type: 'string' },
+              },
             },
           },
         },
@@ -652,7 +657,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     ])
   })
 
-  it('auth.policy providers expose schema metadata compatible with matrix overrides and no secrets', () => {
+  it('auth.policy providers expose editable permission-matrix schema metadata and no secrets', () => {
     const schema = authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.()
 
     expect(schema).toBeDefined()
@@ -660,11 +665,19 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       type: 'object',
       additionalProperties: false,
       properties: {
-        matrix: {
-          type: 'object',
-          additionalProperties: {
-            type: 'array',
-            items: { type: 'string' },
+        permissions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['subjectType', 'subject', 'actions'],
+            properties: {
+              subjectType: { enum: ['role', 'group'] },
+              subject: { type: 'string' },
+              actions: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+            },
           },
         },
       },
@@ -675,7 +688,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
   it('schema-shaped auth.identity options remain backward-compatible with real provider behavior', async () => {
     const plugin = createAuthIdentityPlugin({
       apiToken: 'schema-token',
-      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'admin' }],
+      users: [{ username: 'alice', password: '$2b$12$existing-hash', role: 'admin', groups: ['ops'] }],
     })
 
     expect(plugin.optionsSchema?.().schema).toMatchObject({
@@ -690,17 +703,40 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
   })
 
-  it('schema-shaped auth.policy options remain backward-compatible with real provider behavior', async () => {
+  it('schema-shaped auth.policy options allow permission rules for roles and groups', async () => {
     const plugin = createAuthPolicyPlugin({
-      matrix: {
-        auditor: ['board.log.add'],
-        admin: ['settings.update'],
-      },
+      permissions: [
+        { subjectType: 'group', subject: 'auditors', actions: ['board.log.add'] },
+        { subjectType: 'role', subject: 'admin', actions: ['settings.update'] },
+      ],
     })
 
     expect(plugin.optionsSchema?.().schema).toMatchObject({
       properties: {
-        matrix: { type: 'object' },
+        permissions: { type: 'array' },
+      },
+    })
+
+    await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['admin'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
+      allowed: true,
+      actor: 'Ada',
+    })
+    await expect(plugin.checkPolicy({ subject: 'Bea', groups: ['auditors'] }, 'board.log.add', { transport: 'http' })).resolves.toMatchObject({
+      allowed: true,
+      actor: 'Bea',
+    })
+    await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['auditor'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
+      allowed: false,
+      reason: 'auth.policy.denied',
+      actor: 'Ada',
+    })
+  })
+
+  it('legacy matrix-shaped auth.policy options remain backward-compatible with real provider behavior', async () => {
+    const plugin = createAuthPolicyPlugin({
+      matrix: {
+        auditor: ['board.log.add'],
+        admin: ['settings.update'],
       },
     })
 

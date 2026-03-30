@@ -3,9 +3,54 @@ import * as fsSync from 'fs'
 import * as path from 'path'
 import Database from 'better-sqlite3'
 import type {
-  Card as BaseCard,
-  KanbanColumn as BaseKanbanColumn,
-  Priority as BasePriority,
+  AttachmentStoragePlugin,
+  BoardConfig,
+  BoardBackgroundMode,
+  BoardBackgroundPreset,
+  Card,
+  CardStateCursor,
+  CardStateKey,
+  CardStateModuleContext,
+  CardStateProvider,
+  CardStateProviderManifest,
+  CardStateReadThroughInput,
+  CardStateRecord,
+  CardStateUnreadKey,
+  CardStateValue,
+  CardStateWriteInput,
+  CardStoragePlugin,
+  KanbanColumn,
+  KanbanConfig,
+  LabelDefinition,
+  PluginSettingsOptionsSchemaMetadata,
+  Priority,
+  StorageEngine,
+  Webhook,
+} from 'kanban-lite/sdk'
+
+export type {
+  AttachmentStoragePlugin,
+  BoardConfig,
+  BoardBackgroundMode,
+  BoardBackgroundPreset,
+  Card,
+  CardStateCursor,
+  CardStateKey,
+  CardStateModuleContext,
+  CardStateProvider,
+  CardStateProviderManifest,
+  CardStateReadThroughInput,
+  CardStateRecord,
+  CardStateUnreadKey,
+  CardStateValue,
+  CardStateWriteInput,
+  CardStoragePlugin,
+  KanbanColumn,
+  KanbanConfig,
+  LabelDefinition,
+  Priority,
+  StorageEngine,
+  Webhook,
 } from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
@@ -17,123 +62,14 @@ import type {
 /** Current card frontmatter schema version. */
 const CARD_FORMAT_VERSION = 1
 
-export type Priority = BasePriority
-export type KanbanColumn = BaseKanbanColumn
-export interface Card extends BaseCard {
-  forms?: Array<{
-    name?: string
-    schema?: Record<string, unknown>
-    ui?: Record<string, unknown>
-    data?: Record<string, unknown>
-  }>
-  formData?: Record<string, Record<string, unknown>>
-}
+const DEFAULT_BOARD_BACKGROUND_MODE: BoardBackgroundMode = 'fancy'
+const DEFAULT_BOARD_BACKGROUND_PRESET: BoardBackgroundPreset = 'aurora'
 
 /** A single comment on a card. */
 export type Comment = Card['comments'][number]
 
 /** A form attachment on a card (named reference or inline definition). */
 export type CardFormAttachment = NonNullable<Card['forms']>[number]
-
-/** A label definition with color and optional group. */
-export interface LabelDefinition {
-  color: string
-  group?: string
-}
-
-/** A registered webhook endpoint. */
-export interface Webhook {
-  id: string
-  url: string
-  events: string[]
-  secret?: string
-  active: boolean
-}
-
-/** Configuration for a single kanban board. */
-export interface BoardConfig {
-  name: string
-  description?: string
-  columns: KanbanColumn[]
-  nextCardId: number
-  defaultStatus: string
-  defaultPriority: Priority
-}
-
-/** Root configuration object for the kanban workspace. */
-export interface KanbanConfig {
-  version: 2
-  boards: Record<string, BoardConfig>
-  defaultBoard: string
-  kanbanDirectory: string
-  aiAgent: string
-  defaultPriority: Priority
-  defaultStatus: string
-  nextCardId: number
-  showPriorityBadges: boolean
-  showAssignee: boolean
-  showDueDate: boolean
-  showLabels: boolean
-  showBuildWithAI: boolean
-  showFileName: boolean
-  compactMode: boolean
-  markdownEditorMode: boolean
-  showDeletedColumn: boolean
-  boardZoom: number
-  cardZoom: number
-  port: number
-  labels?: Record<string, LabelDefinition>
-  webhooks?: Webhook[]
-  /** @deprecated Use webhook plugin with `card.action.triggered` event instead. */
-  actionWebhookUrl?: string
-  storageEngine?: 'markdown' | 'sqlite'
-  sqlitePath?: string
-  [key: string]: unknown
-}
-
-/** Plugin manifest describing what capability namespaces a plugin provides. */
-export interface PluginManifest {
-  readonly id: string
-  readonly provides: readonly string[]
-}
-
-/** Interface for attachment.storage plugins. */
-export interface AttachmentStoragePlugin {
-  readonly manifest: PluginManifest
-  getCardDir?(card: Card): string | null
-  copyAttachment(sourcePath: string, card: Card): Promise<void>
-  appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
-  materializeAttachment?(card: Card, attachment: string): Promise<string | null>
-}
-
-/** StorageEngine interface that external sqlite-compatible plugins must satisfy. */
-export interface StorageEngine {
-  readonly type: string
-  readonly kanbanDir: string
-  init(): Promise<void>
-  close(): void
-  migrate(): Promise<void>
-  ensureBoardDirs(boardDir: string, extraStatuses?: string[]): Promise<void>
-  deleteBoardData(boardDir: string, boardId: string): Promise<void>
-  scanCards(boardDir: string, boardId: string): Promise<Card[]>
-  writeCard(card: Card): Promise<void>
-  moveCard(card: Card, boardDir: string, newStatus: string): Promise<string>
-  renameCard(card: Card, newFilename: string): Promise<string>
-  deleteCard(card: Card): Promise<void>
-  getCardDir(card: Card): string
-  copyAttachment(sourcePath: string, card: Card): Promise<void>
-}
-
-/** CardStoragePlugin interface matching the broadened kanban-lite storage plugin contract. */
-export interface CardStoragePlugin {
-  readonly manifest: PluginManifest
-  createEngine(kanbanDir: string, options?: Record<string, unknown>): StorageEngine
-  readonly nodeCapabilities?: {
-    readonly isFileBacked: boolean
-    getLocalCardPath(card: Card): string | null
-    getWatchGlob(): string | null
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Default constants (mirrored from kanban-lite shared/types.ts)
@@ -177,6 +113,8 @@ const DEFAULT_CONFIG: KanbanConfig = {
   showDeletedColumn: false,
   boardZoom: 100,
   cardZoom: 100,
+  boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
+  boardBackgroundPreset: DEFAULT_BOARD_BACKGROUND_PRESET,
   port: 2954,
   labels: {},
 }
@@ -512,6 +450,8 @@ export class SqliteStorageEngine implements StorageEngine {
       showDeletedColumn: this._bool(ws['showDeletedColumn'], false),
       boardZoom: Number(ws['boardZoom']) || 100,
       cardZoom: Number(ws['cardZoom']) || 100,
+      boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE as BoardBackgroundMode,
+      boardBackgroundPreset: DEFAULT_BOARD_BACKGROUND_PRESET,
       port: Number(ws['port']) || 3000,
       labels,
       webhooks: webhooks.length > 0 ? webhooks : undefined,
@@ -912,71 +852,6 @@ export const attachmentStoragePlugin: AttachmentStoragePlugin = {
 // card.state provider (merged into storage package)
 // ---------------------------------------------------------------------------
 
-/** Shared plugin manifest shape for `card.state` capability providers. */
-export interface CardStateProviderManifest {
-  readonly id: string
-  readonly provides: readonly ['card.state']
-}
-
-/** Opaque JSON-like payload stored for a card-state domain. */
-export type CardStateValue = Record<string, unknown>
-
-/** Stable actor/card/domain lookup key used by card-state providers. */
-export interface CardStateKey {
-  actorId: string
-  boardId: string
-  cardId: string
-  domain: string
-}
-
-/** Stored card-state record returned by provider operations. */
-export interface CardStateRecord<TValue = CardStateValue> extends CardStateKey {
-  value: TValue
-  updatedAt: string
-}
-
-/** Write input for card-state domain mutations. */
-export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateKey {
-  value: TValue
-  updatedAt?: string
-}
-
-/** Unread cursor payload persisted by card-state providers. */
-export interface CardStateCursor extends Record<string, unknown> {
-  cursor: string
-  updatedAt?: string
-}
-
-/** Lookup key for unread cursor state. */
-export interface CardStateUnreadKey {
-  actorId: string
-  boardId: string
-  cardId: string
-}
-
-/** Mutation input for marking unread state through a cursor. */
-export interface CardStateReadThroughInput extends CardStateUnreadKey {
-  cursor: CardStateCursor
-}
-
-/** Shared runtime context passed to `card.state` providers. */
-export interface CardStateModuleContext {
-  workspaceRoot: string
-  kanbanDir: string
-  provider: string
-  backend: 'builtin' | 'external'
-  options?: Record<string, unknown>
-}
-
-/** Contract for `card.state` capability providers. */
-export interface CardStateProvider {
-  readonly manifest: CardStateProviderManifest
-  getCardState(input: CardStateKey): Promise<CardStateRecord | null>
-  setCardState(input: CardStateWriteInput): Promise<CardStateRecord>
-  getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>
-  markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>
-}
-
 const CARD_STATE_CREATE_SQL = `
 CREATE TABLE IF NOT EXISTS card_state (
   actor_id   TEXT NOT NULL,
@@ -1082,29 +957,6 @@ export const pluginManifest = {
 // ---------------------------------------------------------------------------
 // Options schema — plugin-settings discovery
 // ---------------------------------------------------------------------------
-
-/** Local copy of the shared plugin-settings redaction target contract. */
-type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
-
-/** Local copy of the shared plugin-settings redaction policy contract. */
-interface PluginSettingsRedactionPolicy {
-  maskedValue: string
-  writeOnly: true
-  targets: readonly PluginSettingsRedactionTarget[]
-}
-
-/** Local copy of the shared plugin-settings secret-field metadata contract. */
-interface PluginSettingsSecretFieldMetadata {
-  path: string
-  redaction: PluginSettingsRedactionPolicy
-}
-
-/** Local copy of the shared provider options schema contract exposed by plugin packages. */
-interface PluginSettingsOptionsSchemaMetadata {
-  schema: Record<string, unknown>
-  uiSchema?: Record<string, unknown>
-  secrets: PluginSettingsSecretFieldMetadata[]
-}
 
 function createSqliteOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   return {

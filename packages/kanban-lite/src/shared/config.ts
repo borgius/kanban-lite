@@ -530,7 +530,7 @@ function loadDotEnv(dir: string): void {
  * @returns The processed node (same reference for objects/arrays; new primitive for strings).
  */
 function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
-  const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.\[])/.test(nodePath)
+  const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.[])/.test(nodePath)
 
   if (isFormDefaultDataPath) {
     return node
@@ -941,9 +941,17 @@ export function normalizeStorageCapabilities(
 export function normalizeWebhookCapabilities(
   config: Pick<KanbanConfig, 'webhookPlugin' | 'plugins'>,
 ): ResolvedWebhookCapabilities {
+  const pluginSelection = config.plugins?.['webhook.delivery']
+
+  if (pluginSelection?.provider === 'none') {
+    return {
+      'webhook.delivery': { provider: 'none' },
+    }
+  }
+
   return {
-    'webhook.delivery': config.plugins?.['webhook.delivery']
-      ? cloneProviderRef(config.plugins['webhook.delivery'])
+    'webhook.delivery': pluginSelection
+      ? cloneProviderRef(pluginSelection)
       : config.webhookPlugin?.['webhook.delivery']
         ? cloneProviderRef(config.webhookPlugin['webhook.delivery'])
         : { provider: 'webhooks' },

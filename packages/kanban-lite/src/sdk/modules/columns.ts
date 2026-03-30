@@ -76,7 +76,6 @@ export async function removeColumn(ctx: SDKContext, { columnId, boardId }: { col
     throw new Error(`Cannot remove column "${columnId}": ${cardsInColumn.length} card(s) still in this column`)
   }
 
-  const removed = board.columns[idx]
   board.columns.splice(idx, 1)
   writeConfig(ctx.workspaceRoot, config)
   return board.columns

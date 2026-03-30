@@ -52,13 +52,22 @@ export declare function updateCard(ctx: SDKContext, { cardId, updates, boardId }
     boardId?: string;
 }): Promise<Card>;
 /**
- * Triggers a named action for a card by POSTing to the global `actionWebhookUrl`.
+ * Triggers a named action for a card.
+ *
+ * Validates the card exists, appends an activity log entry, and returns the
+ * action payload. Webhook delivery is handled by the webhook plugin via the
+ * `card.action.triggered` after-event emitted by {@link KanbanSDK.triggerAction}.
  */
 export declare function triggerAction(ctx: SDKContext, { cardId, action, boardId }: {
     cardId: string;
     action: string;
     boardId?: string;
-}): Promise<void>;
+}): Promise<{
+    action: string;
+    board: string;
+    list: string;
+    card: Omit<Card, 'filePath'>;
+}>;
 /**
  * Validates and persists a card form submission, then emits `form.submit`.
  */

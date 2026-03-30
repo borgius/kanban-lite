@@ -408,7 +408,6 @@ describe('KanbanSDK – card/comment/form mutation event flow', () => {
     const card = await sdk.createCard({ content: '# Override Test', status: 'backlog' })
 
     expect(card.status).toBe('in-progress')
-    const afterReceived: SDKEvent<AfterEventPayload<{ id: string }>>[] = []
     // verify exactly one after-event was fired (checked retroactively via card state)
     expect(card.id).toBeTruthy()
   })

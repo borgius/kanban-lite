@@ -44,7 +44,7 @@ export interface SDKContext {
     addLog(cardId: string, text: string, options?: {
         source?: string;
         timestamp?: string;
-        object?: Record<string, any>;
+        object?: Record<string, unknown>;
     }, boardId?: string): Promise<LogEntry>;
     moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card>;
     permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void>;

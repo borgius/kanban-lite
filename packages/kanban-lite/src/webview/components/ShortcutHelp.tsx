@@ -68,9 +68,9 @@ export function ShortcutHelp({ isOpen, onClose }: ShortcutHelpProps) {
 
         {/* Shortcut list */}
         <div className="overflow-y-auto max-h-[60vh]">
-          {SHORTCUTS.map((s, i) => (
+          {SHORTCUTS.map((s) => (
             <div
-              key={i}
+              key={s.description}
               className="flex items-center justify-between px-5 py-2"
               style={{ borderBottom: '1px solid var(--vscode-panel-border)', opacity: 0.95 }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
@@ -80,9 +80,9 @@ export function ShortcutHelp({ isOpen, onClose }: ShortcutHelpProps) {
                 {s.description}
               </span>
               <div className="flex items-center gap-1 shrink-0 ml-4">
-                {s.keys.map((k, ki) => (
-                  <span key={ki} className="flex items-center gap-1">
-                    {ki > 0 && <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>+</span>}
+                {s.keys.map((k, keyIndex) => (
+                  <span key={`${s.description}-${k}`} className="flex items-center gap-1">
+                    {keyIndex > 0 && <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>+</span>}
                     <kbd
                       className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono"
                       style={{

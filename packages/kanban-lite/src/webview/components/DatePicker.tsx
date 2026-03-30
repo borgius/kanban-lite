@@ -21,8 +21,16 @@ export function DatePicker({ value, onChange, placeholder = 'Due date' }: DatePi
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
   // Monday = 0
   const firstDay = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7
-  const cells: (number | null)[] = Array(firstDay).fill(null)
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  const cells: Array<{ key: string; day: number | null }> = [
+    ...Array.from({ length: firstDay }, (_value, emptyIndex) => ({
+      key: `empty-${viewYear}-${viewMonth}-${emptyIndex}`,
+      day: null,
+    })),
+    ...Array.from({ length: daysInMonth }, (_value, dayIndex) => ({
+      key: `day-${viewYear}-${viewMonth}-${dayIndex + 1}`,
+      day: dayIndex + 1,
+    })),
+  ]
 
   const prevMonth = () => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) }
@@ -123,8 +131,8 @@ export function DatePicker({ value, onChange, placeholder = 'Due date' }: DatePi
             </div>
             {/* Day grid */}
             <div className="grid grid-cols-7">
-              {cells.map((day, i) => (
-                <div key={i} className="flex items-center justify-center">
+              {cells.map(({ key, day }) => (
+                <div key={key} className="flex items-center justify-center">
                   {day ? (
                     <button
                       type="button"

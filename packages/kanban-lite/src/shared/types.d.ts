@@ -1,3 +1,4 @@
+import type { PluginCapabilityNamespace } from './config';
 /** Current card frontmatter schema version. Increment when the format changes. */
 export declare const CARD_FORMAT_VERSION = 1;
 /**
@@ -21,7 +22,55 @@ export type CardSortOption = 'created:asc' | 'created:desc' | 'modified:asc' | '
 /**
  * String alias representing a column or status identifier.
  * Corresponds to the `id` field of a {@link KanbanColumn} (e.g. `'backlog'`, `'in-progress'`).
- */
+
+/** Transport-safe unread cursor used by UI read models. */
+export interface CardStateCursorTransport {
+    cursor: string;
+    updatedAt?: string;
+}
+/** Transport-safe open-state payload for UI read models. */
+export interface CardOpenStateValueTransport {
+    openedAt: string;
+    readThrough: CardStateCursorTransport | null;
+}
+/** Transport-safe generic card-state record. */
+export interface CardStateRecordTransport<TValue = Record<string, unknown>> {
+    actorId: string;
+    boardId: string;
+    cardId: string;
+    domain: string;
+    value: TValue;
+    updatedAt: string;
+}
+/** Side-effect-free unread summary emitted to UI hosts. */
+export interface CardUnreadSummaryTransport {
+    actorId: string;
+    boardId: string;
+    cardId: string;
+    latestActivity: CardStateCursorTransport | null;
+    readThrough: CardStateCursorTransport | null;
+    unread: boolean;
+}
+/** Minimal card-state runtime status surfaced to UI hosts. */
+export interface CardStateStatusTransport {
+    backend: 'builtin' | 'external' | 'none';
+    availability: 'available' | 'identity-unavailable' | 'unavailable';
+    configured: boolean;
+    errorCode?: string;
+}
+/** Machine-readable UI error for card-state read/open failures. */
+export interface CardStateErrorTransport {
+    code: string;
+    availability: 'identity-unavailable' | 'unavailable';
+    message: string;
+}
+/** Read-only card-state metadata attached to UI card read models. */
+export interface CardStateReadModelTransport {
+    unread: CardUnreadSummaryTransport | null;
+    open: CardStateRecordTransport<CardOpenStateValueTransport> | null;
+    status: CardStateStatusTransport;
+    error?: CardStateErrorTransport;
+}
 export type CardStatus = string;
 /**
  * A single log entry attached to a kanban card.
@@ -37,7 +86,7 @@ export interface LogEntry {
     /** Human-readable log message text. Supports inline markdown (bold, italic, emoji). */
     text: string;
     /** Optional structured data object, stored as compacted JSON. */
-    object?: Record<string, any>;
+    object?: Record<string, unknown>;
 }
 /**
  * A comment attached to a kanban card.
@@ -51,6 +100,12 @@ export interface Comment {
     created: string;
     /** Markdown body of the comment. */
     content: string;
+    /**
+     * When `true`, the comment is currently being streamed by an agent and has
+     * not yet been fully written. The content field contains whatever has
+     * accumulated so far. This field is stripped before persisting to storage.
+     */
+    streaming?: boolean;
 }
 /**
  * A kanban card with all associated metadata.
@@ -75,6 +130,7 @@ export interface Card {
     dueDate: string | null;
     /** ISO 8601 timestamp of when the card was created. */
     created: string;
+    cardState?: CardStateReadModelTransport;
     /** ISO 8601 timestamp of the last modification. */
     modified: string;
     /** ISO 8601 timestamp of when the card was moved to done, or `null`. */
@@ -90,7 +146,7 @@ export interface Card {
     /** Markdown body content of the card. */
     content: string;
     /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
     actions?: string[] | Record<string, string>;
     /** Forms attached to this card (named config-form references or inline definitions). */
@@ -125,6 +181,8 @@ export interface BoardInfo {
     actions?: Record<string, string>;
     /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
     metadata?: string[];
+    /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
+    title?: string[];
     /** Reusable named workspace forms available for attachment/resolution on this board. */
     forms?: Record<string, import('./config').FormDefinition>;
 }
@@ -145,6 +203,27 @@ export interface BoardInfo {
  * // => 'Just a line of text'
  */
 export declare function getTitleFromContent(content: string): string;
+/**
+ * Returns the user-visible card title for a board by prefixing selected
+ * metadata values ahead of the raw markdown-derived title.
+ *
+ * This helper is display-only. It does **not** modify stored markdown,
+ * filename generation, or rename behavior.
+ *
+ * @param content - Raw markdown card content.
+ * @param metadata - Optional card metadata object.
+ * @param titleFields - Ordered metadata keys whose non-empty rendered values should prefix the title.
+ * @returns The raw markdown title, optionally prefixed by configured metadata values.
+ *
+ * @example
+ * getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42', sprint: 'Q1' }, ['ticket', 'sprint'])
+ * // => 'REL-42 Q1 Ship release'
+ *
+ * @example
+ * getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42' }, ['missing', 'ticket'])
+ * // => 'REL-42 Ship release'
+ */
+export declare function getDisplayTitleFromContent(content: string, metadata?: Record<string, unknown>, titleFields?: readonly string[]): string;
 /**
  * Creates a filename-safe slug from a title string.
  *
@@ -441,7 +520,7 @@ export interface CardFrontmatter {
     /** Fractional index (base-62) for ordering within a column. */
     order: string;
     /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     /** Named actions that can be triggered via the action webhook. Either an array of action keys or a map of action key → display title. */
     actions?: string[] | Record<string, string>;
     /** Forms attached to this card (named config-form references or inline definitions). */
@@ -462,6 +541,123 @@ export interface WorkspaceInfo {
     port: number;
     configVersion: number;
 }
+/** Discovery locations surfaced for plugin provider inventory rows. */
+export type PluginSettingsDiscoverySource = 'builtin' | 'workspace' | 'dependency' | 'global' | 'sibling';
+/** Origin of the currently selected provider for a capability row. */
+export type PluginSettingsSelectionSource = 'config' | 'legacy' | 'default' | 'none';
+/** Surfaces that must never echo raw secret values back to callers. */
+export type PluginSettingsRedactionTarget = 'read' | 'list' | 'error';
+/** Supported install destinations for in-product plugin installation flows. */
+export type PluginSettingsInstallScope = 'workspace' | 'global';
+/** Shared secret redaction policy reused across SDK, REST, CLI, MCP, and host transports. */
+export interface PluginSettingsRedactionPolicy {
+    maskedValue: string;
+    writeOnly: true;
+    targets: readonly PluginSettingsRedactionTarget[];
+}
+/** Metadata for a single secret field declared by a provider options schema. */
+export interface PluginSettingsSecretFieldMetadata {
+    path: string;
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Transport-safe provider options schema plus secret-field annotations. */
+export interface PluginSettingsOptionsSchemaMetadata {
+    schema: Record<string, unknown>;
+    uiSchema?: Record<string, unknown>;
+    secrets: PluginSettingsSecretFieldMetadata[];
+}
+/** Selected-provider state for a capability. Enablement is represented only by provider selection. */
+export interface PluginSettingsSelectedState {
+    capability: PluginCapabilityNamespace;
+    providerId: string | null;
+    source: PluginSettingsSelectionSource;
+}
+/** Provider inventory row surfaced inside a capability group. */
+export interface PluginSettingsProviderRow {
+    capability: PluginCapabilityNamespace;
+    providerId: string;
+    packageName: string;
+    discoverySource: PluginSettingsDiscoverySource;
+    isSelected: boolean;
+    optionsSchema?: PluginSettingsOptionsSchemaMetadata;
+}
+/** Capability-group row for plugin settings inventory and selection surfaces. */
+export interface PluginSettingsCapabilityRow {
+    capability: PluginCapabilityNamespace;
+    selected: PluginSettingsSelectedState;
+    providers: PluginSettingsProviderRow[];
+}
+/** Shared plugin settings payload shape used by SDK-facing hosts and transports. */
+export interface PluginSettingsPayload {
+    capabilities: PluginSettingsCapabilityRow[];
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Redacted provider options readback for plugin settings detail/list flows. */
+export interface PluginSettingsRedactedValues {
+    values: Record<string, unknown>;
+    redactedPaths: string[];
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Redacted provider detail payload reused by SDK, REST, CLI, MCP, and hosts. */
+export interface PluginSettingsReadPayload {
+    capability: PluginCapabilityNamespace;
+    providerId: string;
+    selected: PluginSettingsSelectedState;
+    options: PluginSettingsRedactedValues | null;
+}
+/** Canonical redacted error payload for plugin settings operations. */
+export interface PluginSettingsErrorPayload {
+    code: string;
+    message: string;
+    capability?: PluginCapabilityNamespace;
+    providerId?: string;
+    details?: Record<string, unknown>;
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Install request contract accepted by SDK-facing plugin management surfaces. */
+export interface PluginSettingsInstallRequest {
+    packageName: string;
+    scope: PluginSettingsInstallScope;
+}
+/** Host-transport provider detail payload reused across VS Code and standalone bridges. */
+export interface PluginSettingsProviderTransport extends PluginSettingsReadPayload, Pick<PluginSettingsProviderRow, 'packageName' | 'discoverySource' | 'optionsSchema'> {
+}
+/** Fixed npm argv install command surfaced through plugin host transports. */
+export interface PluginSettingsInstallCommandTransport {
+    command: 'npm';
+    args: string[];
+    cwd: string;
+    shell: false;
+}
+/** Redacted install success payload surfaced through plugin host transports. */
+export interface PluginSettingsInstallTransportResult {
+    packageName: string;
+    scope: PluginSettingsInstallScope;
+    command: PluginSettingsInstallCommandTransport;
+    stdout: string;
+    stderr: string;
+    message: string;
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Plugin-settings actions routed through shared host/webview bridges. */
+export type PluginSettingsTransportAction = 'read' | 'select' | 'updateOptions' | 'install';
+/** Shared settings payload emitted when the settings modal opens. */
+export interface ShowSettingsMessage {
+    type: 'showSettings';
+    settings: CardDisplaySettings;
+    pluginSettings: PluginSettingsPayload;
+}
+/** Shared plugin-settings result message emitted by both host bridges. */
+export interface PluginSettingsResultMessage {
+    type: 'pluginSettingsResult';
+    action: PluginSettingsTransportAction;
+    pluginSettings?: PluginSettingsPayload;
+    provider?: PluginSettingsProviderTransport | null;
+    install?: PluginSettingsInstallTransportResult;
+    error?: PluginSettingsErrorPayload;
+}
+/** Empty plugin-settings payload used when a host has no active SDK context. */
+export declare function createEmptyPluginSettingsPayload(redaction: PluginSettingsRedactionPolicy): PluginSettingsPayload;
 /**
  * Shared create-card payload used by REST and webview transport surfaces.
  *
@@ -476,7 +672,7 @@ export interface CreateCardPayload {
     assignee: string | null;
     dueDate: string | null;
     labels: string[];
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     actions?: string[] | Record<string, string>;
     forms?: CardFormAttachment[];
     formData?: CardFormDataMap;
@@ -541,10 +737,7 @@ export type ExtensionMessage = {
     frontmatter: CardFrontmatter;
     comments: Comment[];
     logs?: LogEntry[];
-} | {
-    type: 'showSettings';
-    settings: CardDisplaySettings;
-} | {
+} | ShowSettingsMessage | PluginSettingsResultMessage | {
     type: 'labelsUpdated';
     labels: Record<string, LabelDefinition>;
 } | {
@@ -569,8 +762,23 @@ export type ExtensionMessage = {
     boardId: string;
     logs: import('./types').LogEntry[];
 } | {
+    type: 'commentStreamStart';
+    cardId: string;
+    commentId: string;
+    author: string;
+    created: string;
+} | {
+    type: 'commentChunk';
+    cardId: string;
+    commentId: string;
+    chunk: string;
+} | {
+    type: 'commentStreamDone';
+    cardId: string;
+    commentId: string;
+} | {
     type: 'cardStates';
-    states: Record<string, unknown>;
+    states: Record<string, CardStateReadModelTransport>;
 };
 export type WebviewMessage = {
     type: 'ready';
@@ -615,6 +823,25 @@ export type WebviewMessage = {
     attachment: string;
 } | {
     type: 'openSettings';
+} | {
+    type: 'loadPluginSettings';
+} | {
+    type: 'readPluginSettings';
+    capability: PluginCapabilityNamespace;
+    providerId: string;
+} | {
+    type: 'selectPluginSettingsProvider';
+    capability: PluginCapabilityNamespace;
+    providerId: string;
+} | {
+    type: 'updatePluginSettingsOptions';
+    capability: PluginCapabilityNamespace;
+    providerId: string;
+    options: Record<string, unknown>;
+} | {
+    type: 'installPluginSettingsPackage';
+    packageName: string;
+    scope: PluginSettingsInstallScope;
 } | {
     type: 'saveSettings';
     settings: CardDisplaySettings;
@@ -701,7 +928,7 @@ export type WebviewMessage = {
     cardId: string;
     text: string;
     source?: string;
-    object?: Record<string, any>;
+    object?: Record<string, unknown>;
     timestamp?: string;
 } | {
     type: 'clearLogs';
@@ -713,7 +940,7 @@ export type WebviewMessage = {
     type: 'addBoardLog';
     text: string;
     source?: string;
-    object?: Record<string, any>;
+    object?: Record<string, unknown>;
     timestamp?: string;
 } | {
     type: 'clearBoardLogs';

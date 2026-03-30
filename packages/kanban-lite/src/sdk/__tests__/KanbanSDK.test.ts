@@ -182,14 +182,25 @@ describe('KanbanSDK', () => {
         ],
       })
 
-      const firstSnapshot = sdk.getConfigSnapshot() as any
+      const firstSnapshot = sdk.getConfigSnapshot() as unknown as {
+        defaultBoard: string
+        boards: { default: { name: string } }
+        webhooks: Array<{ url: string }>
+        plugins: {
+          'auth.identity': {
+            options: {
+              users: Array<{ username: string; password: string }>
+            }
+          }
+        }
+      }
       firstSnapshot.defaultBoard = 'mutated-board'
       firstSnapshot.boards.default.name = 'Mutated Board'
       firstSnapshot.webhooks[0].url = 'https://example.com/mutated'
       firstSnapshot.plugins['auth.identity'].options.users.push({ username: 'mallory', password: 'bad-hash' })
 
-      const secondSnapshot = sdk.getConfigSnapshot() as any
-      const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as any
+      const secondSnapshot = sdk.getConfigSnapshot() as typeof firstSnapshot
+      const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as typeof firstSnapshot
 
       expect(secondSnapshot.defaultBoard).toBe('default')
       expect(secondSnapshot.boards.default.name).toBe('Default')
@@ -460,6 +471,114 @@ describe('KanbanSDK', () => {
 
       sdk.removeAllListeners()
       expect(sdk.hasListeners()).toBe(false)
+    })
+  })
+
+  describe('listAvailableEvents', () => {
+    it('returns built-in before and after events by default', () => {
+      const events = sdk.listAvailableEvents()
+
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          event: 'card.create',
+          phase: 'before',
+          source: 'core',
+          sdkBefore: true,
+          sdkAfter: false,
+          apiAfter: false,
+        }),
+        expect.objectContaining({
+          event: 'task.created',
+          phase: 'after',
+          source: 'core',
+          sdkBefore: false,
+          sdkAfter: true,
+          apiAfter: true,
+        }),
+      ]))
+    })
+
+    it('filters events by type and wildcard mask', () => {
+      const events = sdk.listAvailableEvents({ type: 'after', mask: 'task.*' })
+
+      expect(events).not.toHaveLength(0)
+      expect(events.every((event) => event.phase === 'after')).toBe(true)
+      expect(events.map((event) => event.event)).toEqual([
+        'task.created',
+        'task.deleted',
+        'task.moved',
+        'task.updated',
+      ])
+    })
+
+    it('includes plugin-declared events from active sdk extension plugins', () => {
+      const cleanup = installTempPackage(
+        'kanban-sdk-events-plugin',
+        `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-sdk-events-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) {
+      return {
+        type: 'markdown', kanbanDir,
+        async init() {}, close() {}, async migrate() {}, async ensureBoardDirs() {},
+        async deleteBoardData() {}, async scanCards() { return [] }, async writeCard() {},
+        async moveCard() { return '' }, async renameCard() { return '' }, async deleteCard() {},
+        getCardDir() { return kanbanDir }, async copyAttachment() {},
+      }
+    },
+  },
+  sdkExtensionPlugin: {
+    manifest: { id: 'kanban-sdk-events-plugin', provides: ['sdk.extensions'] },
+    events: [
+      { event: 'workflow.run', phase: 'before', label: 'Before workflow run' },
+      { event: 'workflow.completed', phase: 'after', label: 'Workflow completed', apiAfter: true },
+    ],
+    extensions: {
+      ping: () => 'pong',
+    },
+  },
+}`,
+      )
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'card.storage': { provider: 'kanban-sdk-events-plugin' },
+          },
+        })
+
+        const localSdk = new KanbanSDK(tempDir)
+        const events = localSdk.listAvailableEvents({ mask: 'workflow.*' })
+
+        expect(events).toEqual([
+          {
+            event: 'workflow.run',
+            phase: 'before',
+            source: 'plugin',
+            resource: undefined,
+            label: 'Before workflow run',
+            sdkBefore: true,
+            sdkAfter: false,
+            apiAfter: false,
+            pluginIds: ['kanban-sdk-events-plugin'],
+          },
+          {
+            event: 'workflow.completed',
+            phase: 'after',
+            source: 'plugin',
+            resource: undefined,
+            label: 'Workflow completed',
+            sdkBefore: false,
+            sdkAfter: true,
+            apiAfter: true,
+            pluginIds: ['kanban-sdk-events-plugin'],
+          },
+        ])
+
+        localSdk.close()
+      } finally {
+        cleanup()
+      }
     })
   })
 

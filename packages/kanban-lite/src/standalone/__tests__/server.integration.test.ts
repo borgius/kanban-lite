@@ -4149,6 +4149,34 @@ describe('Standalone Server Integration', () => {
     })
   })
 
+  describe('REST API — Available Events', () => {
+    it('GET /api/events returns built-in events and supports phase/mask filters', async () => {
+      const listRes = await httpGet(`http://localhost:${port}/api/events`)
+      expect(listRes.status).toBe(200)
+      const listJson = JSON.parse(listRes.body)
+      expect(listJson.ok).toBe(true)
+      expect(listJson.data).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: 'card.create', phase: 'before', source: 'core' }),
+        expect.objectContaining({ event: 'task.created', phase: 'after', source: 'core' }),
+      ]))
+
+      const filteredRes = await httpGet(`http://localhost:${port}/api/events?type=after&mask=task.*`)
+      expect(filteredRes.status).toBe(200)
+      const filteredJson = JSON.parse(filteredRes.body)
+      expect(filteredJson.ok).toBe(true)
+      expect(filteredJson.data.map((event: { event: string }) => event.event)).toEqual([
+        'task.created',
+        'task.deleted',
+        'task.moved',
+        'task.updated',
+      ])
+
+      const invalidTypeRes = await httpGet(`http://localhost:${port}/api/events?type=nope`)
+      expect(invalidTypeRes.status).toBe(400)
+      expect(JSON.parse(invalidTypeRes.body)).toEqual({ ok: false, error: 'type must be one of: before, after, all' })
+    })
+  })
+
   // ── Admin/Config Auth Denial Mapping ──
 
   describe('admin route auth denial semantics', () => {

@@ -929,6 +929,67 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
+  it('can explicitly disable webhook delivery while preserving stored webhook options', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'webhook.delivery': {
+            provider: 'webhooks',
+            options: {
+              webhooks: [
+                {
+                  id: 'wh_saved',
+                  url: 'https://example.test/hook',
+                  events: ['task.created'],
+                  active: true,
+                },
+              ],
+            },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const selected = sdk.selectPluginSettingsProvider('webhook.delivery', 'none')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
+
+      expect(selected).toBeNull()
+      expect(persistedConfig.plugins?.['webhook.delivery']).toEqual({
+        provider: 'none',
+        options: {
+          webhooks: [
+            {
+              id: 'wh_saved',
+              url: 'https://example.test/hook',
+              events: ['task.created'],
+              active: true,
+            },
+          ],
+        },
+      })
+
+      const inventory = sdk.listPluginSettings()
+      const webhookDelivery = inventory.capabilities.find((entry) => entry.capability === 'webhook.delivery')
+
+      expect(webhookDelivery?.selected).toEqual({
+        capability: 'webhook.delivery',
+        providerId: null,
+        source: 'none',
+      })
+      expect(webhookDelivery?.providers.every((provider) => provider.isSelected === false)).toBe(true)
+    } finally {
+      sdk.close()
+    }
+  })
+
   it('keeps masked secrets on round-trip updates while replacing explicit secret edits', () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
@@ -2492,8 +2553,57 @@ describe('SDK extension loading', () => {
       expect(bag.sdkExtensions).toHaveLength(1)
       const ext = bag.sdkExtensions[0] as SDKExtensionLoaderResult<{ greet: () => string }>
       expect(ext.id).toBe('kanban-sdk-ext-test-plugin')
+      expect(ext.events).toEqual([])
       expect(typeof ext.extensions.greet).toBe('function')
       expect(ext.extensions.greet()).toBe('hello from extension')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('sdkExtensions preserves plugin-declared event catalogs when a plugin exports events', () => {
+    const cleanup = installTempPackage(
+      'kanban-sdk-ext-events-plugin',
+      `module.exports = {
+  cardStoragePlugin: {
+    manifest: { id: 'kanban-sdk-ext-events-plugin', provides: ['card.storage'] },
+    createEngine(kanbanDir) {
+      return {
+        type: 'markdown', kanbanDir,
+        async init() {}, close() {}, async migrate() {}, async ensureBoardDirs() {},
+        async deleteBoardData() {}, async scanCards() { return [] }, async writeCard() {},
+        async moveCard() { return '' }, async renameCard() { return '' }, async deleteCard() {},
+        getCardDir() { return kanbanDir }, async copyAttachment() {},
+      }
+    },
+  },
+  sdkExtensionPlugin: {
+    manifest: { id: 'kanban-sdk-ext-events-plugin', provides: ['sdk.extensions'] },
+    events: [
+      { event: 'workflow.run', phase: 'before', label: 'Before workflow run' },
+      { event: 'workflow.completed', phase: 'after', label: 'Workflow completed', apiAfter: true },
+    ],
+    extensions: {
+      greet: () => 'hello from extension',
+    },
+  },
+}`
+    )
+
+    try {
+      const bag = resolveCapabilityBag(
+        {
+          'card.storage': { provider: 'kanban-sdk-ext-events-plugin' },
+          'attachment.storage': { provider: 'localfs' },
+        },
+        kanbanDir,
+      )
+
+      expect(bag.sdkExtensions).toHaveLength(1)
+      expect(bag.sdkExtensions[0].events).toEqual([
+        { event: 'workflow.run', phase: 'before', label: 'Before workflow run' },
+        { event: 'workflow.completed', phase: 'after', label: 'Workflow completed', apiAfter: true },
+      ])
     } finally {
       cleanup()
     }
@@ -2574,9 +2684,11 @@ describe('SDK extension loading', () => {
     // This test verifies the TypeScript contract is usable by plugin authors.
     const plugin: SDKExtensionPlugin<{ ping: () => string }> = {
       manifest: { id: 'test-plugin', provides: ['sdk.extensions'] },
+      events: [{ event: 'workflow.run', phase: 'before' }],
       extensions: { ping: () => 'pong' },
     }
     expect(plugin.manifest.id).toBe('test-plugin')
+    expect(plugin.events).toEqual([{ event: 'workflow.run', phase: 'before' }])
     expect(plugin.extensions.ping()).toBe('pong')
   })
 
@@ -2584,9 +2696,11 @@ describe('SDK extension loading', () => {
     // Verify the result type structure is correct.
     const result: SDKExtensionLoaderResult<{ value: number }> = {
       id: 'my-plugin',
+      events: [],
       extensions: { value: 42 },
     }
     expect(result.id).toBe('my-plugin')
+    expect(result.events).toEqual([])
     expect(result.extensions.value).toBe(42)
   })
 })

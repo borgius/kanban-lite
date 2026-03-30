@@ -267,7 +267,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             <Columns size={40} className="opacity-30" />
             <div className="text-center">
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No lists yet</p>
-              <p className="text-[12px] mt-1 text-zinc-400 dark:text-zinc-500">Click "Add List" in the toolbar to create your first column</p>
+              <p className="text-[12px] mt-1 text-zinc-400 dark:text-zinc-500">Click &quot;Add List&quot; in the toolbar to create your first column</p>
             </div>
           </div>
         )}

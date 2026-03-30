@@ -40,7 +40,7 @@ import type {
   ResolvedWebhookCapabilities,
   ResolvedCardStateCapabilities,
 } from '../../shared/config'
-import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types'
+import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult, CardStateBackend, SDKPluginEventDeclaration } from '../types'
 import { AuthError } from '../types'
 import type { KanbanSDK } from '../KanbanSDK'
 import type { StorageEngine } from './types'
@@ -113,6 +113,8 @@ export interface AuthIdentity {
   subject: string
   /** Optional list of roles or permission scopes. */
   roles?: string[]
+  /** Optional group memberships resolved for the caller. */
+  groups?: string[]
 }
 
 /** Plugin manifest scoped to auth capability namespaces. */
@@ -133,6 +135,13 @@ export interface AuthPluginManifest {
 export interface AuthIdentityPlugin {
   readonly manifest: AuthPluginManifest
   /**
+   * Optional transport-safe options schema metadata for shared plugin-settings flows.
+   *
+   * When provided, hosts may surface this in configuration UIs and redact any
+   * secret fields according to the accompanying metadata.
+   */
+  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
+  /**
    * Resolves an auth context to a caller identity, or `null` for
    * anonymous / invalid tokens.
    */
@@ -149,6 +158,13 @@ export interface AuthIdentityPlugin {
  */
 export interface AuthPolicyPlugin {
   readonly manifest: AuthPluginManifest
+  /**
+   * Optional transport-safe options schema metadata for shared plugin-settings flows.
+   *
+   * When provided, hosts may surface this in configuration UIs and redact any
+   * secret fields according to the accompanying metadata.
+   */
+  optionsSchema?(): PluginSettingsOptionsSchemaMetadata
   /**
    * Returns an {@link AuthDecision} indicating whether `identity` is
    * authorized to perform `action` in the given `context`.
@@ -172,9 +188,9 @@ interface AuthPluginModule {
   readonly RBAC_ROLE_MATRIX?: unknown
   readonly createRbacIdentityPlugin?: unknown
   /** Optional factory for a configurable policy plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as a custom RBAC matrix. */
-  readonly createAuthPolicyPlugin?: ((options?: Record<string, unknown>) => unknown) | unknown
+  readonly createAuthPolicyPlugin?: ((options?: Record<string, unknown>, providerId?: string) => unknown) | unknown
   /** Optional factory for a configurable identity plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as an explicit API token. */
-  readonly createAuthIdentityPlugin?: ((options?: Record<string, unknown>) => unknown) | unknown
+  readonly createAuthIdentityPlugin?: ((options?: Record<string, unknown>, providerId?: string) => unknown) | unknown
   readonly default?: unknown
 }
 
@@ -278,7 +294,7 @@ export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateK
 }
 
 /** Unread cursor payload persisted by card-state providers. */
-export interface CardStateCursor {
+export interface CardStateCursor extends Record<string, unknown> {
   cursor: string
   updatedAt?: string
 }
@@ -338,6 +354,8 @@ export interface RbacPrincipalEntry {
   subject: string
   /** Assigned RBAC roles (valid values: `'user'`, `'manager'`, `'admin'`). */
   roles: string[]
+  /** Optional group memberships resolved alongside the caller roles. */
+  groups?: string[]
 }
 
 function createFallbackRbacIdentityPlugin(
@@ -350,7 +368,11 @@ function createFallbackRbacIdentityPlugin(
       const raw = context.token.startsWith('Bearer ') ? context.token.slice(7) : context.token
       const entry = principals.get(raw)
       if (!entry) return null
-      return { subject: entry.subject, roles: [...entry.roles] }
+      return {
+        subject: entry.subject,
+        roles: [...entry.roles],
+        ...(Array.isArray(entry.groups) ? { groups: [...entry.groups] } : {}),
+      }
     },
   }
 }
@@ -1724,6 +1746,13 @@ function resolveExternalPackageName(capability: PluginCapabilityNamespace, provi
   }
 }
 
+function isPluginSettingsCapabilityDisabled(
+  config: PluginSettingsConfigSnapshot,
+  capability: PluginCapabilityNamespace,
+): boolean {
+  return capability === 'webhook.delivery' && config.plugins?.['webhook.delivery']?.provider === 'none'
+}
+
 function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapshot): string[] {
   const requests = new Set<string>()
   const add = (request: string | undefined): void => {
@@ -1745,7 +1774,7 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
 
   for (const capability of PLUGIN_CAPABILITY_NAMESPACES) {
     const providerRef = config.plugins?.[capability]
-    if (providerRef && !isBuiltinProviderForCapability(capability, providerRef.provider)) {
+    if (providerRef && providerRef.provider !== 'none' && !isBuiltinProviderForCapability(capability, providerRef.provider)) {
       add(resolveExternalPackageName(capability, providerRef.provider))
     }
   }
@@ -1786,6 +1815,14 @@ function buildPluginSettingsInventoryCatalog(
 }
 
 function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capability: PluginCapabilityNamespace): PluginSettingsSelectedState {
+  if (isPluginSettingsCapabilityDisabled(config, capability)) {
+    return {
+      capability,
+      providerId: null,
+      source: 'none',
+    }
+  }
+
   switch (capability) {
     case 'card.storage': {
       const selected = normalizeStorageCapabilities(config)['card.storage']
@@ -1855,6 +1892,10 @@ function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capabi
 }
 
 function getSelectedProviderRef(config: PluginSettingsConfigSnapshot, capability: PluginCapabilityNamespace): ProviderRef | null {
+  if (isPluginSettingsCapabilityDisabled(config, capability)) {
+    return null
+  }
+
   switch (capability) {
     case 'card.storage':
       return normalizeStorageCapabilities(config)['card.storage']
@@ -2003,15 +2044,32 @@ export function persistPluginSettingsProviderSelection(
   capability: PluginCapabilityNamespace,
   providerId: string,
   redaction: PluginSettingsRedactionPolicy,
-): PluginSettingsProviderReadModel {
+): PluginSettingsProviderReadModel | null {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
+  const configuredRef = config.plugins?.[capability]
+    ? cloneProviderRef(config.plugins[capability])
+    : null
+
+  if (capability === 'webhook.delivery' && providerId === 'none') {
+    getMutablePluginsRecord(config)[capability] = configuredRef?.options !== undefined
+      ? { provider: 'none', options: structuredClone(configuredRef.options) }
+      : { provider: 'none' }
+    writePluginSettingsConfigDocument(workspaceRoot, config)
+    return null
+  }
+
   const inventory = buildPluginSettingsInventoryCatalog(workspaceRoot, config)
   getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
   const nextRef = selectedRef?.provider === providerId
     ? cloneProviderRef(selectedRef)
-    : { provider: providerId }
+    : {
+        provider: providerId,
+        ...(configuredRef?.provider === 'none' && configuredRef.options !== undefined
+          ? { options: structuredClone(configuredRef.options) }
+          : {}),
+      }
 
   getMutablePluginsRecord(config)[capability] = nextRef
   writePluginSettingsConfigDocument(workspaceRoot, config)
@@ -2104,7 +2162,7 @@ function loadExternalAuthIdentityPlugin(packageName: string, providerId: string,
   const mod = loadExternalModule(packageName) as AuthPluginModule
 
   if (options !== undefined && typeof mod.createAuthIdentityPlugin === 'function') {
-    const created = (mod.createAuthIdentityPlugin as (opts?: Record<string, unknown>) => unknown)(options)
+    const created = (mod.createAuthIdentityPlugin as (opts?: Record<string, unknown>, providerId?: string) => unknown)(options, providerId)
     if (isValidAuthIdentityPlugin(created, providerId)) return created
   }
 
@@ -2123,7 +2181,7 @@ function loadExternalAuthPolicyPlugin(packageName: string, providerId: string, o
   const mod = loadExternalModule(packageName) as AuthPluginModule
 
   if (options !== undefined && typeof mod.createAuthPolicyPlugin === 'function') {
-    const created = (mod.createAuthPolicyPlugin as (opts?: Record<string, unknown>) => unknown)(options)
+    const created = (mod.createAuthPolicyPlugin as (opts?: Record<string, unknown>, providerId?: string) => unknown)(options, providerId)
     if (isValidAuthPolicyPlugin(created, providerId)) return created
   }
 
@@ -2148,6 +2206,21 @@ function isValidStandaloneHttpPlugin(plugin: unknown): plugin is StandaloneHttpP
     && (candidate.registerRoutes === undefined || typeof candidate.registerRoutes === 'function')
 }
 
+function isValidSDKPluginEventDeclaration(value: unknown): value is SDKPluginEventDeclaration {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as SDKPluginEventDeclaration
+  return typeof candidate.event === 'string'
+    && candidate.event.length > 0
+    && (candidate.phase === 'before' || candidate.phase === 'after')
+    && (candidate.resource === undefined || typeof candidate.resource === 'string')
+    && (candidate.label === undefined || typeof candidate.label === 'string')
+    && (candidate.apiAfter === undefined || typeof candidate.apiAfter === 'boolean')
+}
+
+function isValidSDKPluginEventDeclarations(value: unknown): value is readonly SDKPluginEventDeclaration[] {
+  return Array.isArray(value) && value.every(isValidSDKPluginEventDeclaration)
+}
+
 function isValidSDKExtensionPlugin(plugin: unknown): plugin is SDKExtensionPlugin {
   if (!plugin || typeof plugin !== 'object') return false
   const candidate = plugin as SDKExtensionPlugin
@@ -2155,6 +2228,7 @@ function isValidSDKExtensionPlugin(plugin: unknown): plugin is SDKExtensionPlugi
     && Array.isArray(candidate.manifest?.provides)
     && typeof candidate.extensions === 'object'
     && candidate.extensions !== null
+    && (candidate.events === undefined || isValidSDKPluginEventDeclarations(candidate.events))
 }
 
 /**
@@ -2174,7 +2248,11 @@ function tryLoadSDKExtensionPlugin(packageName: string): SDKExtensionLoaderResul
   }
   const candidate = mod.sdkExtensionPlugin
   if (!isValidSDKExtensionPlugin(candidate)) return null
-  return { id: candidate.manifest.id, extensions: candidate.extensions }
+  return {
+    id: candidate.manifest.id,
+    events: candidate.events ?? [],
+    extensions: candidate.extensions,
+  }
 }
 
 function isValidMcpPlugin(plugin: unknown): plugin is McpPluginRegistration {
@@ -2262,7 +2340,9 @@ function collectStandaloneHttpPackageNames(
 
   if (webhookCapabilities) {
     const webhookProvider = webhookCapabilities['webhook.delivery'].provider
-    add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+    if (webhookProvider !== 'none') {
+      add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+    }
   }
 
   return [...packageNames]
@@ -2687,6 +2767,10 @@ function resolveWebhookPlugins(
   ref: ProviderRef,
   workspaceRoot: string,
 ): { provider: WebhookProviderPlugin; listener: SDKEventListenerPlugin | null } | null {
+  if (ref.provider === 'none') {
+    return null
+  }
+
   const packageName = WEBHOOK_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
   try {
     const { provider, listener } = loadWebhookPluginPack(packageName, workspaceRoot)
@@ -2946,7 +3030,9 @@ export function collectActiveExternalPackageNames(config: {
   const webhookProvider = config.plugins?.['webhook.delivery']?.provider
     ?? config.webhookPlugin?.['webhook.delivery']?.provider
     ?? 'webhooks'
-  add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+  if (webhookProvider !== 'none') {
+    add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+  }
 
   return [...packageNames]
 }

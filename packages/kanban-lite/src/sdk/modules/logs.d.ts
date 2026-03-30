@@ -1,3 +1,4 @@
+import type { Card } from '../../shared/types';
 import type { LogEntry } from '../../shared/types';
 import type { SDKContext } from './context';
 export interface PersistedActivityBoundary {
@@ -21,6 +22,13 @@ export declare function listLogs(ctx: SDKContext, { cardId, boardId }: {
     boardId?: string;
 }): Promise<LogEntry[]>;
 /**
+ * Lists all log entries for a pre-loaded card without an extra getCard round-trip.
+ *
+ * Use this in batch operations where the caller already holds the Card object to
+ * avoid the redundant listCards scan that the regular listLogs performs internally.
+ */
+export declare function listLogsForCard(ctx: SDKContext, card: Card): Promise<LogEntry[]>;
+/**
  * Adds a log entry to a card.
  */
 export declare function addLog(ctx: SDKContext, { cardId, text, options, boardId }: {
@@ -29,7 +37,7 @@ export declare function addLog(ctx: SDKContext, { cardId, text, options, boardId
     options?: {
         source?: string;
         timestamp?: string;
-        object?: Record<string, any>;
+        object?: Record<string, unknown>;
     };
     boardId?: string;
 }): Promise<LogEntry>;

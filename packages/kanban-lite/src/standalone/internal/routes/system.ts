@@ -87,6 +87,22 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     return true
   }
 
+  params = route('GET', '/api/events')
+  if (params) {
+    const type = url.searchParams.get('type') ?? undefined
+    const mask = url.searchParams.get('mask') ?? undefined
+    if (type !== undefined && type !== 'before' && type !== 'after' && type !== 'all') {
+      jsonError(res, 400, 'type must be one of: before, after, all')
+      return true
+    }
+
+    jsonOk(res, sdk.listAvailableEvents({
+      type: type as 'before' | 'after' | 'all' | undefined,
+      mask,
+    }))
+    return true
+  }
+
   params = route('GET', '/api/card-state/status')
   if (params) {
     jsonOk(res, sdk.getCardStateStatus())

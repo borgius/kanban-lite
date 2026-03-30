@@ -1,7 +1,7 @@
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types';
-import type { CardDisplaySettings, Priority } from '../shared/types';
-import type { BoardConfig, KanbanConfig, ResolvedCapabilities, Webhook } from '../shared/config';
-import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardUnreadSummary } from './types';
+import type { CardDisplaySettings, PluginSettingsErrorPayload, PluginSettingsInstallRequest, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsInstallScope, PluginSettingsRedactionPolicy, Priority } from '../shared/types';
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ResolvedCapabilities, Webhook } from '../shared/config';
+import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types';
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus';
 import { EventBus } from './eventBus';
 import type { StorageEngine } from './plugins/types';
@@ -46,6 +46,71 @@ export interface AuthStatus {
      */
     policyEnabled: boolean;
 }
+type ReadonlySnapshot<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer U)[] ? readonly ReadonlySnapshot<U>[] : T extends object ? {
+    readonly [K in keyof T]: ReadonlySnapshot<T[K]>;
+} : T;
+/** Shared plugin secret redaction targets that every surface must honor. */
+export declare const PLUGIN_SETTINGS_REDACTION_TARGETS: readonly ["read", "list", "error"];
+/** Default write-only secret masking policy for plugin settings contracts. */
+export declare const DEFAULT_PLUGIN_SETTINGS_REDACTION: PluginSettingsRedactionPolicy;
+/** Supported install scopes for in-product plugin installation requests. */
+export declare const PLUGIN_SETTINGS_INSTALL_SCOPES: readonly ["workspace", "global"];
+/** Exact package-name matcher for install requests accepted by the plugin settings contract. */
+export declare const EXACT_PLUGIN_SETTINGS_PACKAGE_NAME_PATTERN: RegExp;
+/** Stable validation error codes for plugin settings contract violations. */
+export type PluginSettingsValidationErrorCode = 'invalid-plugin-install-package-name' | 'invalid-plugin-install-scope';
+/** Error thrown when plugin settings SDK operations fail with a redacted payload. */
+export declare class PluginSettingsOperationError extends Error {
+    readonly payload: PluginSettingsErrorPayload;
+    constructor(payload: PluginSettingsErrorPayload);
+}
+/** Error thrown when a plugin settings contract validation boundary rejects input. */
+export declare class PluginSettingsValidationError extends Error {
+    readonly code: PluginSettingsValidationErrorCode;
+    constructor(code: PluginSettingsValidationErrorCode, message: string);
+}
+/** Fixed argv install command emitted by the SDK-owned plugin installer. */
+export interface PluginSettingsInstallCommand {
+    command: 'npm';
+    args: string[];
+    cwd: string;
+    shell: false;
+}
+/** Structured success payload returned by guarded plugin install requests. */
+export interface PluginSettingsInstallResult {
+    packageName: string;
+    scope: PluginSettingsInstallScope;
+    command: PluginSettingsInstallCommand;
+    stdout: string;
+    stderr: string;
+    message: string;
+    redaction: PluginSettingsRedactionPolicy;
+}
+/** Returns `true` when `value` is a supported plugin install scope. */
+export declare function isPluginSettingsInstallScope(value: unknown): value is PluginSettingsInstallScope;
+/** Returns `true` when `value` is an exact unscoped `kl-*` npm package name. */
+export declare function isExactPluginSettingsPackageName(value: unknown): value is string;
+/**
+ * Validates the SDK install request contract for plugin settings flows.
+ *
+ * Only exact unscoped `kl-*` package names are accepted. Version specifiers,
+ * paths, URLs, shell fragments, whitespace-delimited arguments, and other
+ * npm wrapper syntax are rejected at this boundary before any subprocess work
+ * is attempted.
+ */
+export declare function validatePluginSettingsInstallRequest(input: {
+    packageName: unknown;
+    scope: unknown;
+}): PluginSettingsInstallRequest;
+/** Applies the shared plugin secret redaction policy to surfaced error payloads. */
+export declare function createPluginSettingsErrorPayload(input: {
+    code: string;
+    message: string;
+    capability?: PluginCapabilityNamespace;
+    providerId?: string;
+    details?: Record<string, unknown>;
+    redaction?: PluginSettingsRedactionPolicy;
+}): PluginSettingsErrorPayload;
 /**
  * Active webhook provider metadata for diagnostics and host surfaces.
  *
@@ -67,9 +132,7 @@ export interface WebhookStatus {
 }
 /** Active card-state provider metadata for diagnostics and host surfaces. */
 export type CardStateRuntimeStatus = CardStateStatus;
-type ReadonlySnapshot<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer U)[] ? readonly ReadonlySnapshot<U>[] : T extends object ? {
-    readonly [K in keyof T]: ReadonlySnapshot<T[K]>;
-} : T;
+type PluginSettingsProviderReadModel = PluginSettingsReadPayload & Pick<PluginSettingsProviderRow, 'packageName' | 'discoverySource' | 'optionsSchema'>;
 /**
  * Optional search and sort inputs for {@link KanbanSDK.listCards}.
  *
@@ -132,6 +195,7 @@ export declare class KanbanSDK {
     private _onEvent?;
     private readonly _eventBus;
     private _webhookPlugin;
+    private _pluginInstallRunner;
     /** @internal */ _storage: StorageEngine;
     private _capabilities;
     /** @internal Async-scoped auth carrier. Installed per request scope via {@link runWithAuth}. */
@@ -271,7 +335,79 @@ export declare class KanbanSDK {
      */
     getWebhookStatus(): WebhookStatus;
     /**
-     * Returns card-state provider metadata for host surfaces and diagnostics.
+     * Lists the capability-grouped plugin provider inventory for the workspace.
+     *
+     * Discovery reuses the canonical runtime loader order so the returned rows
+     * reflect providers that the SDK can actually resolve at runtime. Selected
+     * state is derived from `.kanban.json`, and the payload carries the shared
+     * plugin-settings redaction policy for downstream UI/API/CLI/MCP reuse.
+     *
+     * @returns A capability-grouped plugin settings inventory payload.
+     */
+    listPluginSettings(): PluginSettingsPayload;
+    /**
+     * Returns the redacted plugin settings read model for one provider.
+     *
+     * The read model includes the provider's discovery source, current selected
+     * state for the capability, any discovered options schema metadata, and a
+     * redacted snapshot of persisted options when this provider is selected.
+     *
+     * @param capability - The capability namespace to inspect.
+     * @param providerId - Provider identifier within that capability.
+     * @returns The redacted provider read model, or `null` when the provider is not discovered.
+     */
+    getPluginSettings(capability: PluginCapabilityNamespace, providerId: string): PluginSettingsProviderReadModel | null;
+    /**
+     * Persists the canonical selected provider for one capability inside `.kanban.json`.
+     *
+     * Selection is modeled only by the provider ref stored under `plugins[capability]`.
+     * Re-selecting the same provider preserves any existing persisted options while
+     * switching to a different provider replaces the previous single-provider entry.
+     * Selecting `none` for `webhook.delivery` disables webhook runtime loading while
+     * preserving any stored webhook options for later re-enable.
+     *
+     * @param capability - Capability namespace to update.
+     * @param providerId - Provider identifier to select.
+     * @returns The redacted provider read model after persistence succeeds, or `null`
+     *   when the capability was explicitly disabled.
+     */
+    selectPluginSettingsProvider(capability: PluginCapabilityNamespace, providerId: string): PluginSettingsProviderReadModel | null;
+    /**
+     * Persists provider options under the canonical capability-selection model.
+     *
+     * Secret fields remain write-only: callers may submit the shared masked value
+     * placeholder to keep an existing stored secret unchanged, while any non-masked
+     * replacement overwrites that secret. Persisting options also canonicalizes the
+     * selected provider under `plugins[capability]`.
+     *
+     * @param capability - Capability namespace to update.
+     * @param providerId - Provider identifier whose options are being updated.
+     * @param options - Provider options payload to persist.
+     * @returns The redacted provider read model after persistence succeeds.
+     */
+    updatePluginSettingsOptions(capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>): PluginSettingsProviderReadModel;
+    /**
+     * Installs a supported external plugin package through guarded `npm install` execution.
+     *
+     * The SDK validates the request before launching a subprocess, accepts only exact
+     * unscoped `kl-*` package names, always disables lifecycle scripts for in-product
+     * installs, and redacts stdout/stderr before surfacing either the success payload
+     * or a structured failure payload.
+     *
+     * @param input - Candidate package name and install scope to validate and install.
+     * @returns Structured redacted success payload describing the executed npm command.
+     * @throws {PluginSettingsOperationError} When validation fails or npm exits unsuccessfully.
+     */
+    installPluginSettingsPackage(input: {
+        packageName: unknown;
+        scope: unknown;
+    }): Promise<PluginSettingsInstallResult>;
+    /**
+      * Returns card-state provider metadata for host surfaces and diagnostics.
+      *
+      * The status includes the stable auth-absent default actor contract and lets
+      * callers distinguish configured-identity failures from true backend
+      * unavailability via `availability` / `errorCode`.
      */
     getCardStateStatus(): CardStateRuntimeStatus;
     /**
@@ -292,11 +428,16 @@ export declare class KanbanSDK {
      * const webhooks = webhookExt?.listWebhooks() ?? []
      * ```
      */
-    getExtension<T extends Record<string, any> = Record<string, unknown>>(id: string): T | undefined;
+    getExtension<T extends Record<string, unknown> = Record<string, unknown>>(id: string): T | undefined;
     /** @internal */
     private _requireCardStateCapabilities;
     /** @internal */
     private _resolveCardStateTarget;
+    /**
+     * Derives a card-state target directly from a pre-loaded Card without a listCards round-trip.
+     * @internal
+     */
+    private _resolveCardStateTargetDirect;
     /** @internal */
     private _resolveCardStateActorId;
     /** @internal */
@@ -306,25 +447,52 @@ export declare class KanbanSDK {
     /**
      * Reads persisted card-state for the current actor without producing any side effects.
      *
-     * When `domain` is omitted, the unread cursor domain is returned.
+      * When `domain` is omitted, the unread cursor domain is returned.
+      * This method reads actor-scoped `card.state` only and does not reflect or
+      * modify active-card UI state.
      */
     getCardState(cardId: string, boardId?: string, domain?: string): Promise<CardStateRecord | null>;
     /**
-     * Derives unread state for the current actor from persisted activity logs without mutating card state.
+     * Batch-efficient read model for a pre-loaded card used during board init and broadcast.
+     *
+     * Unlike calling {@link getUnreadSummary} and {@link getCardState} separately, this method:
+     * - Resolves the actor identity exactly once.
+     * - Derives the board/card target from the supplied Card without an extra listCards round-trip.
+     * - Runs log, unread-cursor, and open-state I/O concurrently.
+     *
+     * Use this when the caller already holds the full Card object (e.g. inside
+     * `decorateCardsForWebview`) to avoid the N² file-scan that the individual
+     * methods incur when called in a loop over all cards.
+     *
+     * @param card - The pre-loaded Card object.
+     * @param fallbackBoardId - Board ID to use when `card.boardId` is not set.
+     * @returns Unread summary and open-domain card-state record for the current actor.
+     */
+    getCardStateReadModelForCard(card: Card, fallbackBoardId?: string): Promise<{
+        unread: CardUnreadSummary;
+        open: CardStateRecord<CardOpenStateValue> | null;
+    }>;
+    /**
+      * Derives unread state for the current actor from persisted activity logs without mutating card state.
+      *
+      * Unread derivation is SDK-owned for both the built-in file-backed backend and
+      * first-party compatibility backends such as `sqlite`.
      */
     getUnreadSummary(cardId: string, boardId?: string): Promise<CardUnreadSummary>;
     /**
      * Persists an explicit open-card mutation for the current actor.
      *
      * Opening a card records the `open` domain and acknowledges the latest unread
-     * activity cursor for that actor without depending on `setActiveCard`.
+      * activity cursor for that actor without depending on `setActiveCard`.
+      * This does not change workspace active-card UI state.
      */
     markCardOpened(cardId: string, boardId?: string): Promise<CardUnreadSummary>;
     /**
      * Persists an explicit read-through cursor for the current actor.
      *
      * Reads are side-effect free; call this method when you want to acknowledge
-     * unread activity explicitly.
+      * unread activity explicitly. Configured-identity failures surface as
+      * `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` rather than backend unavailability.
      */
     markCardRead(cardId: string, boardId?: string, readThrough?: CardStateCursor): Promise<CardUnreadSummary>;
     /**
@@ -572,7 +740,7 @@ export declare class KanbanSDK {
      * Lists all boards defined in the workspace configuration.
      *
      * @returns An array of {@link BoardInfo} objects containing each board's
-     *   `id`, `name`, and optional `description`.
+      *   `id`, `name`, optional `description`, and display-title metadata config.
      *
      * @example
      * ```ts
@@ -635,7 +803,7 @@ export declare class KanbanSDK {
      * Retrieves the full configuration for a specific board.
      *
      * @param boardId - The ID of the board to retrieve.
-     * @returns The {@link BoardConfig} object containing columns, settings, and metadata.
+      * @returns The {@link BoardConfig} object containing columns, settings, metadata, and display-title metadata config.
      * @throws {Error} If the board does not exist.
      *
      * @example
@@ -658,6 +826,7 @@ export declare class KanbanSDK {
      * @param updates.columns - Replacement column definitions.
      * @param updates.defaultStatus - New default status for new cards.
      * @param updates.defaultPriority - New default priority for new cards.
+    * @param updates.title - Ordered metadata keys whose values should prefix rendered card titles.
      * @returns The updated {@link BoardConfig} object.
      * @throws {Error} If the board does not exist.
      *
@@ -1334,6 +1503,44 @@ export declare class KanbanSDK {
      */
     deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card>;
     /**
+     * Creates a comment on a card from a streaming text source, persisting it
+     * once the stream is exhausted.
+     *
+     * This method is the streaming counterpart to {@link addComment}. It is
+     * intended for use by AI agents that generate comment text incrementally
+     * (e.g. an LLM `textStream`). The caller may supply `onStart` and `onChunk`
+     * callbacks to fan live progress out to connected WebSocket viewers without
+     * requiring intermediate disk writes.
+     *
+     * @param cardId - The ID of the card to comment on.
+     * @param author - Display name of the streaming author.
+     * @param stream - An `AsyncIterable<string>` that yields text chunks.
+     * @param options.boardId - Optional board ID override.
+     * @param options.onStart - Called once before iteration with the allocated
+     *   comment ID, author, and ISO timestamp.
+     * @param options.onChunk - Called after each chunk with the comment ID and
+     *   the raw chunk string.
+     * @returns A promise resolving to the updated {@link Card} once the stream
+     *   has been fully consumed and the comment has been persisted.
+     * @throws {Error} If the card is not found.
+     * @throws {Error} If `author` is empty.
+     *
+     * @example
+     * ```ts
+     * // Stream an AI SDK textStream as a comment
+     * const { textStream } = await streamText({ model, prompt })
+     * const card = await sdk.streamComment('42', 'ai-agent', textStream, {
+     *   onStart: (id, author, created) => broadcast({ type: 'commentStreamStart', cardId: '42', commentId: id, author, created }),
+     *   onChunk: (id, chunk) => broadcast({ type: 'commentChunk', cardId: '42', commentId: id, chunk }),
+     * })
+     * ```
+     */
+    streamComment(cardId: string, author: string, stream: AsyncIterable<string>, options?: {
+        boardId?: string;
+        onStart?: (commentId: string, author: string, created: string) => void;
+        onChunk?: (commentId: string, chunk: string) => void;
+    }): Promise<Card>;
+    /**
      * Returns the absolute path to the log file for a card.
      *
       * The log file is stored as the card attachment `<cardId>.log` through the
@@ -1780,3 +1987,4 @@ export declare class KanbanSDK {
      */
     updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null>;
 }
+export {};

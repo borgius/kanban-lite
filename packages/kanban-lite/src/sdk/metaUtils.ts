@@ -1,6 +1,10 @@
 import Fuse from 'fuse.js'
 import type { Card } from '../shared/types'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 /**
  * Retrieves a value from a nested object using a dot-notation path.
  * Returns `undefined` if any segment along the path does not exist or is not an object.
@@ -13,9 +17,9 @@ import type { Card } from '../shared/types'
  * getNestedValue({ links: { jira: 'PROJ-123' } }, 'links.jira')
  * // => 'PROJ-123'
  */
-export function getNestedValue(obj: Record<string, any>, path: string): unknown {
-  return path.split('.').reduce((curr: any, key) =>
-    curr != null && typeof curr === 'object' ? curr[key] : undefined, obj)
+export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((curr, key) =>
+    isRecord(curr) ? curr[key] : undefined, obj)
 }
 
 export interface ParsedSearchQuery {
@@ -176,7 +180,7 @@ export function matchesFuzzyTextSearch(
  * // => false
  */
 export function matchesMetaFilter(
-  metadata: Record<string, any> | undefined,
+  metadata: Record<string, unknown> | undefined,
   filter: Record<string, string>,
   fuzzy = false
 ): boolean {

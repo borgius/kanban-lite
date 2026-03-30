@@ -11,7 +11,7 @@ import type { Card } from '../shared/types';
  * getNestedValue({ links: { jira: 'PROJ-123' } }, 'links.jira')
  * // => 'PROJ-123'
  */
-export declare function getNestedValue(obj: Record<string, any>, path: string): unknown;
+export declare function getNestedValue(obj: Record<string, unknown>, path: string): unknown;
 export interface ParsedSearchQuery {
     metaFilter: Record<string, string>;
     plainText: string;
@@ -79,7 +79,7 @@ export declare function matchesFuzzyTextSearch(card: Pick<Card, 'content' | 'id'
  * matchesMetaFilter(undefined, { sprint: 'Q1' })
  * // => false
  */
-export declare function matchesMetaFilter(metadata: Record<string, any> | undefined, filter: Record<string, string>, fuzzy?: boolean): boolean;
+export declare function matchesMetaFilter(metadata: Record<string, unknown> | undefined, filter: Record<string, string>, fuzzy?: boolean): boolean;
 /**
  * Evaluates a card against an optional free-text query and metadata filters.
  * Metadata tokens embedded inside `searchQuery` are merged with `metaFilter`

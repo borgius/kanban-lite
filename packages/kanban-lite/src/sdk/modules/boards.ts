@@ -6,7 +6,6 @@ import { generateSlug } from '../../shared/types'
 import { readConfig, writeConfig, getBoardConfig } from '../../shared/config'
 import type { BoardConfig } from '../../shared/config'
 import type { Priority } from '../../shared/types'
-import { sanitizeCard } from '../types'
 import type { SDKContext } from './context'
 
 // --- Board management ---

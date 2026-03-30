@@ -1,5 +1,6 @@
 import type { Card, CardFormAttachment, CardFormDataMap, Priority, ResolvedFormDescriptor } from '../shared/types';
-import type { CapabilitySelections, Webhook } from '../shared/config';
+import type { CapabilitySelections } from '../shared/config';
+import type { KanbanSDK } from './KanbanSDK';
 import type { StorageEngine, StorageEngineType } from './plugins/types';
 import type { CardStateCursor } from './plugins';
 export type { StorageEngine, StorageEngineType } from './plugins/types';
@@ -253,6 +254,18 @@ export interface SDKOptions {
      * Any omitted namespace falls back to `.kanban.json` and legacy defaults.
      */
     capabilities?: CapabilitySelections;
+    /** @internal Testing seam for guarded plugin install subprocess execution. */
+    pluginInstallRunner?: (command: {
+        command: 'npm';
+        args: string[];
+        cwd: string;
+        shell: false;
+    }) => Promise<{
+        exitCode: number | null;
+        signal: NodeJS.Signals | null;
+        stdout: string;
+        stderr: string;
+    }>;
 }
 export interface SubmitFormInput {
     /** Card ID that owns the target attached form. */
@@ -343,6 +356,7 @@ export interface AuthContext {
     identity?: {
         subject: string;
         roles?: string[];
+        groups?: string[];
     };
     /**
       * Optional non-authoritative hint for the caller identity.
@@ -398,6 +412,9 @@ export declare const CARD_STATE_DEFAULT_ACTOR_MODE = "auth-absent-only";
  * Shared default actor contract for auth-absent card-state mode.
  *
  * This actor is only valid when no real `auth.identity` provider is configured.
+ * All host surfaces should treat this as a stable public contract for both the
+ * built-in file-backed `builtin` backend and first-party compatibility backends
+ * such as `sqlite`.
  */
 export declare const DEFAULT_CARD_STATE_ACTOR: Readonly<{
     readonly id: "default-user";
@@ -412,16 +429,26 @@ export type CardStateAvailability = 'available' | 'identity-unavailable' | 'unav
 export type CardStateBackend = 'builtin' | 'external' | 'none';
 /** Stable built-in domain name for unread/read cursor persistence. */
 export declare const CARD_STATE_UNREAD_DOMAIN = "unread";
-/** Stable built-in domain name for explicit open-card state persistence. */
+/** Stable built-in domain name for explicit actor-scoped open-card state persistence. */
 export declare const CARD_STATE_OPEN_DOMAIN = "open";
-/** Value persisted for the built-in explicit open-card mutation. */
+/**
+ * Value persisted for the built-in explicit open-card mutation.
+ *
+ * This records actor-scoped `card.state` data and is distinct from workspace
+ * active-card UI state such as `.active-card.json`.
+ */
 export interface CardOpenStateValue extends Record<string, unknown> {
     /** When the actor explicitly opened the card. */
     openedAt: string;
     /** Latest unread-driving activity cursor acknowledged by the open mutation. */
     readThrough: CardStateCursor | null;
 }
-/** Side-effect-free unread snapshot resolved for one actor/card pair. */
+/**
+ * Side-effect-free unread snapshot resolved for one actor/card pair.
+ *
+ * This summary models actor-scoped unread/open semantics only; it does not
+ * describe which card the UI currently considers active/open.
+ */
 export interface CardUnreadSummary {
     /** Resolved actor id used for this read or mutation. */
     actorId: string;
@@ -438,6 +465,10 @@ export interface CardUnreadSummary {
 }
 /**
  * Public provider/status snapshot for `card.state` host surfaces.
+ *
+ * Host layers should use `availability` and `errorCode` to distinguish a real
+ * backend outage from configured-identity failures where the backend is healthy
+ * but no actor could be resolved.
  */
 export interface CardStateStatus {
     /** Active `card.state` provider id, or `'none'` when unavailable. */
@@ -459,6 +490,10 @@ export interface CardStateStatus {
 }
 /**
  * Typed public error for card-state availability and identity failures.
+ *
+ * `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` means a configured `auth.identity`
+ * provider did not yield an actor. `ERR_CARD_STATE_UNAVAILABLE` means no active
+ * `card.state` backend is available.
  */
 export declare class CardStateError extends Error {
     /** Machine-readable error code. */
@@ -485,10 +520,10 @@ export interface CliPluginContext {
      *
      * Present when the plugin is invoked through the core `kl` CLI.
      * Absent in isolated unit tests or standalone invocations.
-    * Plugins may use the full public {@link KanbanSDK} contract here, including
-    * extension lookup and `getConfigSnapshot()`, instead of relying on older
-    * helper-only SDK facades. Plugins should prefer this over constructing their
-    * own SDK so that SDK-level auth policy is honoured.
+     * Plugins may use the full public {@link KanbanSDK} contract here, including
+     * extension lookup and `getConfigSnapshot()`, instead of relying on older
+     * helper-only SDK facades. Plugins should prefer this over constructing their
+     * own SDK so that SDK-level auth policy is honoured.
      */
     sdk?: KanbanSDK;
     /**

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   CardDisplaySettings,
   PluginSettingsInstallTransportResult,
+  PluginSettingsOptionsSchemaMetadata,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
 } from '../../shared/types'
@@ -36,6 +37,60 @@ const storeState = {
   clearDrawerWidthPreview: vi.fn(),
 }
 
+const AUTH_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      apiToken: { type: 'string', title: 'API token' },
+      users: {
+        type: 'array',
+        title: 'Local users',
+        items: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', title: 'Username' },
+            password: { type: 'string', title: 'Password hash' },
+          },
+        },
+      },
+    },
+  },
+  secrets: [
+    { path: 'apiToken', redaction: { maskedValue: '••••••', writeOnly: true, targets: ['read', 'list', 'error'] } },
+    { path: 'users.*.password', redaction: { maskedValue: '••••••', writeOnly: true, targets: ['read', 'list', 'error'] } },
+  ],
+}
+
+const CARD_STORAGE_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      databasePath: { type: 'string', title: 'Database path' },
+    },
+  },
+  secrets: [],
+}
+
+const AUTH_POLICY_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      matrix: {
+        type: 'object',
+        title: 'Role matrix',
+        additionalProperties: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+      },
+    },
+  },
+  secrets: [],
+}
+
 const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
   redaction: {
     maskedValue: '••••••',
@@ -64,6 +119,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
           packageName: 'kl-plugin-storage-sqlite',
           discoverySource: 'workspace',
           isSelected: false,
+          optionsSchema: CARD_STORAGE_OPTIONS_SCHEMA,
         },
       ],
     },
@@ -81,6 +137,100 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
           packageName: 'kl-plugin-auth',
           discoverySource: 'dependency',
           isSelected: true,
+          optionsSchema: AUTH_OPTIONS_SCHEMA,
+        },
+      ],
+    },
+  ],
+}
+
+const PLUGIN_SETTINGS_SQLITE_SELECTED_FIXTURE: PluginSettingsPayload = {
+  ...PLUGIN_SETTINGS_FIXTURE,
+  capabilities: [
+    {
+      capability: 'card.storage',
+      selected: {
+        capability: 'card.storage',
+        providerId: 'sqlite',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'card.storage',
+          providerId: 'markdown',
+          packageName: 'markdown',
+          discoverySource: 'builtin',
+          isSelected: false,
+        },
+        {
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          packageName: 'kl-plugin-storage-sqlite',
+          discoverySource: 'workspace',
+          isSelected: true,
+          optionsSchema: CARD_STORAGE_OPTIONS_SCHEMA,
+        },
+      ],
+    },
+    PLUGIN_SETTINGS_FIXTURE.capabilities[1],
+  ],
+}
+
+const PLUGIN_SETTINGS_STORAGE_ONLY_FIXTURE: PluginSettingsPayload = {
+  ...PLUGIN_SETTINGS_FIXTURE,
+  capabilities: [PLUGIN_SETTINGS_SQLITE_SELECTED_FIXTURE.capabilities[0]],
+}
+
+const PLUGIN_SETTINGS_AUTH_PACKAGE_FIXTURE: PluginSettingsPayload = {
+  ...PLUGIN_SETTINGS_FIXTURE,
+  capabilities: [
+    {
+      capability: 'auth.identity',
+      selected: {
+        capability: 'auth.identity',
+        providerId: 'kl-plugin-auth',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'auth.identity',
+          providerId: 'kl-plugin-auth',
+          packageName: 'kl-plugin-auth',
+          discoverySource: 'workspace',
+          isSelected: true,
+          optionsSchema: AUTH_OPTIONS_SCHEMA,
+        },
+        {
+          capability: 'auth.identity',
+          providerId: 'rbac',
+          packageName: 'kl-plugin-auth',
+          discoverySource: 'workspace',
+          isSelected: false,
+        },
+      ],
+    },
+    {
+      capability: 'auth.policy',
+      selected: {
+        capability: 'auth.policy',
+        providerId: 'kl-plugin-auth',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'auth.policy',
+          providerId: 'kl-plugin-auth',
+          packageName: 'kl-plugin-auth',
+          discoverySource: 'workspace',
+          isSelected: true,
+          optionsSchema: AUTH_POLICY_OPTIONS_SCHEMA,
+        },
+        {
+          capability: 'auth.policy',
+          providerId: 'rbac',
+          packageName: 'kl-plugin-auth',
+          discoverySource: 'workspace',
+          isSelected: false,
         },
       ],
     },
@@ -98,24 +248,7 @@ const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
     source: 'config',
   },
   optionsSchema: {
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        apiToken: { type: 'string', title: 'API token' },
-        users: {
-          type: 'array',
-          title: 'Local users',
-          items: {
-            type: 'object',
-            properties: {
-              username: { type: 'string', title: 'Username' },
-              password: { type: 'string', title: 'Password hash' },
-            },
-          },
-        },
-      },
-    },
+    ...AUTH_OPTIONS_SCHEMA,
     secrets: [
       { path: 'apiToken', redaction: PLUGIN_SETTINGS_FIXTURE.redaction },
       { path: 'users.*.password', redaction: PLUGIN_SETTINGS_FIXTURE.redaction },
@@ -141,16 +274,7 @@ const CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
     providerId: 'sqlite',
     source: 'config',
   },
-  optionsSchema: {
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        databasePath: { type: 'string', title: 'Database path' },
-      },
-    },
-    secrets: [],
-  },
+  optionsSchema: CARD_STORAGE_OPTIONS_SCHEMA,
   options: {
     values: {
       databasePath: '.kanban/kanban.db',
@@ -216,7 +340,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).not.toContain('data-panel-resize-handle')
   })
 
-  it('renders the Plugin Options tab with capability-grouped provider rows and selected-state badges', () => {
+  it('renders the Plugin Options tab with provider switches and a selected plugin detail view', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         isOpen
@@ -231,23 +355,19 @@ describe('SettingsPanel drawer resize integration', () => {
     )
 
     expect(markup).toContain('Plugin providers')
-    expect(markup).toContain('card.storage')
-    expect(markup).toContain('auth.identity')
-    expect(markup).toContain('Selected provider: markdown (default)')
-    expect(markup).toContain('Selected provider: local (config)')
+    expect(markup).toContain('Capabilities')
     expect(markup).toContain('markdown')
-    expect(markup).toContain('sqlite')
-    expect(markup).toContain('kl-plugin-storage-sqlite')
+    expect(markup).toContain('kl-plugin-auth')
+    expect(markup).toContain('auth.identity')
+    expect(markup).toContain('Provider: local')
     expect(markup).toContain('Built-in')
-    expect(markup).toContain('Workspace')
     expect(markup).toContain('Dependency')
-    expect(markup).toContain('Selected')
-    expect(markup).toContain('Open')
-    expect(markup).toContain('Install plugin package')
-    expect(markup).toContain('Package name')
-    expect(markup).toContain('Global install')
-    expect(markup).toContain('Install safely')
-    expect(markup).toContain('kl-plugin-auth or another kl-* provider package')
+    expect(markup).toContain('role="switch"')
+    expect(markup).not.toContain('Activate')
+    expect(markup).toContain('Install package')
+    expect(markup).not.toContain('Package name')
+    expect(markup).not.toContain('Global install')
+    expect(markup).not.toContain('Install safely')
   })
 
   it('renders schema-driven provider options for auth and storage providers', () => {
@@ -264,7 +384,9 @@ describe('SettingsPanel drawer resize integration', () => {
       />
     )
 
-    expect(authMarkup).toContain('Provider options')
+    expect(authMarkup).toContain('auth.identity')
+    expect(authMarkup).toContain('Provider: local')
+    expect(authMarkup).toContain('Options')
     expect(authMarkup).toContain('API token')
     expect(authMarkup).toContain('Local users')
     expect(authMarkup).toContain('Save options')
@@ -276,7 +398,7 @@ describe('SettingsPanel drawer resize integration', () => {
         isOpen
         settings={{ ...DEFAULT_CARD_SETTINGS }}
         workspace={null}
-        pluginSettings={PLUGIN_SETTINGS_FIXTURE}
+        pluginSettings={PLUGIN_SETTINGS_STORAGE_ONLY_FIXTURE}
         pluginSettingsProvider={CARD_STORAGE_PROVIDER_FIXTURE}
         initialTab="pluginOptions"
         onClose={() => {}}
@@ -284,8 +406,44 @@ describe('SettingsPanel drawer resize integration', () => {
       />
     )
 
+    expect(storageMarkup).toContain('card.storage')
+    expect(storageMarkup).toContain('Provider: sqlite')
+    expect(storageMarkup).toContain('Options')
     expect(storageMarkup).toContain('Database path')
     expect(storageMarkup).not.toContain('Stored secret values reopen masked')
+  })
+
+  it('groups plugin capabilities by namespace and keeps options outside the capability cards', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={PLUGIN_SETTINGS_AUTH_PACKAGE_FIXTURE}
+        pluginSettingsProvider={{
+          ...AUTH_PROVIDER_FIXTURE,
+          capability: 'auth.identity',
+          providerId: 'kl-plugin-auth',
+          packageName: 'kl-plugin-auth',
+          selected: {
+            capability: 'auth.identity',
+            providerId: 'kl-plugin-auth',
+            source: 'config',
+          },
+        }}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('2 capabilities')
+    expect(markup).toContain('auth.identity')
+    expect(markup).toContain('auth.policy')
+    expect(markup).not.toContain('Provider: rbac')
+    expect(markup).not.toContain('Role matrix')
+    expect((markup.match(/Save options/g) ?? []).length).toBe(1)
+    expect(markup.lastIndexOf('Options')).toBeGreaterThan(markup.indexOf('Capabilities'))
   })
 
   it('annotates masked secret schema fields without redisplaying raw values', () => {
@@ -307,7 +465,6 @@ describe('SettingsPanel drawer resize integration', () => {
         isOpen
         settings={{ ...DEFAULT_CARD_SETTINGS }}
         workspace={null}
-        pluginSettings={PLUGIN_SETTINGS_FIXTURE}
         pluginSettingsInstall={INSTALL_RESULT_FIXTURE}
         pluginSettingsError="Use an exact package name like kl-plugin-auth."
         initialTab="pluginOptions"
@@ -316,6 +473,10 @@ describe('SettingsPanel drawer resize integration', () => {
       />
     )
 
+    expect(markup).toContain('Install plugin package')
+    expect(markup).toContain('Package name')
+    expect(markup).toContain('Global install')
+    expect(markup).toContain('Install safely')
     expect(markup).toContain('Installed plugin package with lifecycle scripts disabled.')
     expect(markup).toContain('Use an exact package name like kl-plugin-auth.')
     expect(markup).not.toContain('--ignore-scripts')

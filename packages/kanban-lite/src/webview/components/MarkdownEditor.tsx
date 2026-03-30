@@ -6,7 +6,7 @@ import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
 import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
-import { useStore, type CardTab, isFormCardTab, createFormCardTabId } from '../store'
+import { useStore, type CardTab, createFormCardTabId } from '../store'
 import { CardFormTab, resolveCardFormDescriptors } from './CardFormTab'
 
 interface MarkdownEditorProps {

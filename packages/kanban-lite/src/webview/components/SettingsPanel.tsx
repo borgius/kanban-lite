@@ -158,13 +158,51 @@ export function SettingsPanel({
   )
 }
 
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function getPluginProviderCacheKey(capability: PluginCapabilityNamespace, providerId: string): string {
+  return `${capability}:${providerId}`
+}
+
+function getPluginCapabilityFallbackProviderId(capability: PluginCapabilityNamespace): string {
+  switch (capability) {
+    case 'card.storage':
+    case 'attachment.storage':
+    case 'card.state':
+      return 'localfs'
+    case 'auth.identity':
+    case 'auth.policy':
+      return 'noop'
+    case 'webhook.delivery':
+      return 'none'
+  }
+}
+
+function ToggleSwitch({
+  checked,
+  pending = false,
+  disabled = false,
+  onChange,
+}: {
+  checked: boolean
+  pending?: boolean
+  disabled?: boolean
+  onChange: (v: boolean) => void
+}) {
+  const isDisabled = disabled || pending
+
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
+      role="switch"
+      aria-checked={checked}
+      aria-busy={pending || undefined}
+      disabled={isDisabled}
+      onClick={() => {
+        if (!isDisabled) {
+          onChange(!checked)
+        }
+      }}
       className={cn(
-        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0'
+        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 disabled:cursor-default disabled:opacity-70'
       )}
       style={{
         background: checked
@@ -175,9 +213,18 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
       <span
         className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
         style={{
-          transform: checked ? 'translateX(18px)' : 'translateX(3px)'
+          transform: checked ? 'translateX(18px)' : 'translateX(3px)',
+          opacity: pending ? 0 : 1,
         }}
       />
+      {pending && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="h-3 w-3 animate-spin rounded-full border-2 border-white/70 border-t-transparent"
+            aria-hidden="true"
+          />
+        </span>
+      )}
     </button>
   )
 }
@@ -233,11 +280,6 @@ function SettingsInfo({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   )
-}
-
-type PluginProviderFocusState = {
-  capability: PluginCapabilityNamespace
-  providerId: string
 }
 
 type PluginOptionsValidationError = {
@@ -337,16 +379,6 @@ function getCapabilityEntry(
   return pluginSettings?.capabilities.find((entry) => entry.capability === capability) ?? null
 }
 
-function getProviderRow(
-  pluginSettings: PluginSettingsPayload | null | undefined,
-  selection: PluginProviderFocusState | null,
-) {
-  if (!selection) return null
-  return getCapabilityEntry(pluginSettings, selection.capability)?.providers.find(
-    provider => provider.providerId === selection.providerId,
-  ) ?? null
-}
-
 interface PluginListEntry {
   key: string
   label: string
@@ -358,6 +390,37 @@ interface PluginListEntry {
     optionsSchema?: PluginSettingsOptionsSchemaMetadata
   }>
   hasSelectedCapability: boolean
+}
+
+interface PluginCapabilityDisplayEntry {
+  capability: PluginCapabilityNamespace
+  providerId: string
+  isSelected: boolean
+  optionsSchema?: PluginSettingsOptionsSchemaMetadata
+}
+
+function isPluginSchemaNodeUiEditable(node: unknown): boolean {
+  if (!isRecord(node)) return false
+
+  const nodeType = typeof node.type === 'string' ? node.type : null
+  const properties = isRecord(node.properties) ? Object.values(node.properties) : []
+
+  if (nodeType === 'object' || properties.length > 0 || isRecord(node.additionalProperties)) {
+    return properties.some((property) => isPluginSchemaNodeUiEditable(property))
+  }
+
+  if (nodeType === 'array') {
+    if (Array.isArray(node.items)) {
+      return node.items.some((item) => isPluginSchemaNodeUiEditable(item))
+    }
+    return isPluginSchemaNodeUiEditable(node.items)
+  }
+
+  return true
+}
+
+function isPluginOptionsSchemaUiEditable(optionsSchema: PluginSettingsOptionsSchemaMetadata | undefined): boolean {
+  return Boolean(optionsSchema && isPluginSchemaNodeUiEditable(optionsSchema.schema))
 }
 
 function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefined): PluginListEntry[] {
@@ -398,6 +461,32 @@ function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefin
   })
 }
 
+function getPluginCapabilityDisplayEntries(plugin: PluginListEntry | null): PluginCapabilityDisplayEntry[] {
+  if (!plugin) return []
+
+  const groupedCapabilities = new Map<PluginCapabilityNamespace, PluginListEntry['capabilities']>()
+
+  for (const capability of plugin.capabilities) {
+    const entries = groupedCapabilities.get(capability.capability) ?? []
+    entries.push(capability)
+    groupedCapabilities.set(capability.capability, entries)
+  }
+
+  return [...groupedCapabilities.entries()].map(([capability, entries]) => {
+    const selectedEntry = entries.find((entry) => entry.isSelected)
+    const preferredEntry = selectedEntry
+      ?? entries.find((entry) => entry.providerId === plugin.key)
+      ?? entries[0]
+
+    return {
+      capability,
+      providerId: preferredEntry.providerId,
+      isSelected: preferredEntry.isSelected,
+      optionsSchema: preferredEntry.optionsSchema,
+    }
+  })
+}
+
 function PluginSettingsBadge({
   children,
   tone = 'default',
@@ -421,6 +510,13 @@ function PluginSettingsBadge({
       {children}
     </span>
   )
+}
+
+type PendingPluginToggleState = {
+  rowKey: string
+  capability: PluginCapabilityNamespace
+  providerId: string
+  targetProviderId: string
 }
 
 function createPluginProviderOptionsEditorKey(provider: PluginSettingsProviderTransport): string {
@@ -537,12 +633,31 @@ function PluginOptionsSection({
   onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
 }) {
   const plugins = useMemo(() => derivePluginList(pluginSettings), [pluginSettings])
-  const [activePluginKey, setActivePluginKey] = useState<string | null>(null)
+  const [preferredPluginKey, setPreferredPluginKey] = useState<string | null>(null)
+  const [providerDetailsByKey, setProviderDetailsByKey] = useState<Record<string, PluginSettingsProviderTransport>>({})
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
   const [leftPanelPct, setLeftPanelPct] = useState(35)
+  const [pendingToggle, setPendingToggle] = useState<PendingPluginToggleState | null>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
+  const requestedProviderKeysRef = useRef<Set<string>>(new Set())
   const [showInstall, setShowInstall] = useState(false)
+
+  const activePluginKey = useMemo(() => {
+    if (showInstall) return null
+
+    if (preferredPluginKey && plugins.some(plugin => plugin.key === preferredPluginKey)) {
+      return preferredPluginKey
+    }
+
+    return plugins.find(plugin => plugin.key === pluginSettingsProvider?.packageName)?.key
+      ?? plugins.find(plugin => plugin.capabilities.some(
+        capability => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
+      ))?.key
+      ?? plugins.find(plugin => plugin.hasSelectedCapability)?.key
+      ?? plugins[0]?.key
+      ?? null
+  }, [plugins, preferredPluginKey, pluginSettingsProvider?.packageName, showInstall])
 
   const handleSplitDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
@@ -566,37 +681,68 @@ function PluginOptionsSection({
     () => (showInstall ? null : plugins.find(p => p.key === activePluginKey) ?? null),
     [plugins, activePluginKey, showInstall],
   )
+  const activePluginCapabilities = useMemo(
+    () => getPluginCapabilityDisplayEntries(activePlugin),
+    [activePlugin],
+  )
 
-  // Auto-load provider details when a plugin is selected
+  const getProviderDetails = useCallback((capability: PluginCapabilityNamespace, providerId: string) => {
+    if (pluginSettingsProvider?.capability === capability && pluginSettingsProvider.providerId === providerId) {
+      return pluginSettingsProvider
+    }
+
+    return providerDetailsByKey[getPluginProviderCacheKey(capability, providerId)] ?? null
+  }, [pluginSettingsProvider, providerDetailsByKey])
+
+  useEffect(() => {
+    if (!pluginSettingsProvider) return
+
+    const key = getPluginProviderCacheKey(pluginSettingsProvider.capability, pluginSettingsProvider.providerId)
+    requestedProviderKeysRef.current.delete(key)
+    queueMicrotask(() => {
+      setProviderDetailsByKey(prev => ({
+        ...prev,
+        [key]: pluginSettingsProvider,
+      }))
+    })
+  }, [pluginSettingsProvider])
+
+  // Auto-load provider details for selected capabilities that expose options schemas.
   useEffect(() => {
     if (!activePlugin) return
-    const capWithSchema = activePlugin.capabilities.find(c => c.optionsSchema)
-    if (capWithSchema) {
-      onReadPluginSettingsProvider?.(capWithSchema.capability, capWithSchema.providerId)
+
+    for (const capability of activePluginCapabilities) {
+      if (!capability.isSelected || !isPluginOptionsSchemaUiEditable(capability.optionsSchema) || !onReadPluginSettingsProvider) {
+        continue
+      }
+
+      const key = getPluginProviderCacheKey(capability.capability, capability.providerId)
+      if (getProviderDetails(capability.capability, capability.providerId) || requestedProviderKeysRef.current.has(key)) {
+        continue
+      }
+
+      requestedProviderKeysRef.current.add(key)
+      onReadPluginSettingsProvider(capability.capability, capability.providerId)
     }
-  }, [activePlugin?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activePlugin, activePluginCapabilities, getProviderDetails, onReadPluginSettingsProvider])
 
-  const activeProviderDetails = useMemo(() => {
-    if (!activePlugin || !pluginSettingsProvider) return null
-    const match = activePlugin.capabilities.find(
-      c => c.capability === pluginSettingsProvider.capability && c.providerId === pluginSettingsProvider.providerId,
-    )
-    if (!match) return null
-    return pluginSettingsProvider
-  }, [activePlugin, pluginSettingsProvider])
+  useEffect(() => {
+    if (!pendingToggle) return
 
-  const providerOptionsSchema = useMemo(() => {
-    if (!activeProviderDetails?.optionsSchema) return null
-    return applyPluginSecretSchemaHints(
-      activeProviderDetails.optionsSchema.schema,
-      activeProviderDetails.optionsSchema.secrets,
-    )
-  }, [activeProviderDetails])
+    if (pluginSettingsError) {
+      queueMicrotask(() => setPendingToggle(null))
+      return
+    }
 
-  const providerUiSchema = useMemo(() => {
-    if (!activeProviderDetails?.optionsSchema) return null
-    return (activeProviderDetails.optionsSchema.uiSchema ?? createPluginOptionsUiSchema(activeProviderDetails.optionsSchema.schema)) as UISchemaElement
-  }, [activeProviderDetails])
+    const selectedProviderId = getCapabilityEntry(pluginSettings, pendingToggle.capability)?.selected.providerId ?? null
+    const expectedProviderId = pendingToggle.targetProviderId === 'none'
+      ? null
+      : pendingToggle.targetProviderId
+
+    if (selectedProviderId === expectedProviderId) {
+      queueMicrotask(() => setPendingToggle(null))
+    }
+  }, [pendingToggle, pluginSettings, pluginSettingsError])
 
   const installTips = useMemo(() => {
     const tips = [
@@ -652,7 +798,7 @@ function PluginOptionsSection({
                     : { background: 'transparent' }),
                   ...(idx > 0 ? { borderTop: '1px solid var(--vscode-panel-border)' } : {}),
                 }}
-                onClick={() => { setActivePluginKey(plugin.key); setShowInstall(false) }}
+                onClick={() => { setPreferredPluginKey(plugin.key); setShowInstall(false) }}
                 onMouseEnter={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'transparent' }}
               >
@@ -681,7 +827,7 @@ function PluginOptionsSection({
                     }
                   : { background: 'transparent' }),
               }}
-              onClick={() => { setShowInstall(true); setActivePluginKey(null) }}
+              onClick={() => { setShowInstall(true); setPreferredPluginKey(null) }}
               onMouseEnter={e => { if (!showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
               onMouseLeave={e => { if (!showInstall) e.currentTarget.style.background = 'transparent' }}
             >
@@ -739,7 +885,7 @@ function PluginOptionsSection({
                 <div className="flex items-center gap-2 mt-1">
                   <PluginSettingsBadge>{pluginDiscoverySourceLabels[activePlugin.discoverySource]}</PluginSettingsBadge>
                   <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                    {activePlugin.capabilities.length} {activePlugin.capabilities.length === 1 ? 'capability' : 'capabilities'}
+                    {activePluginCapabilities.length} {activePluginCapabilities.length === 1 ? 'capability' : 'capabilities'}
                   </span>
                 </div>
               </div>
@@ -749,7 +895,12 @@ function PluginOptionsSection({
                 <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
                   Capabilities
                 </div>
-                {activePlugin.capabilities.map(cap => {
+                {activePluginCapabilities.map(cap => {
+                  const rowKey = `${cap.capability}:${cap.providerId}`
+                  const fallbackProviderId = getPluginCapabilityFallbackProviderId(cap.capability)
+                  const canDisable = cap.isSelected && fallbackProviderId !== cap.providerId
+                  const isTogglePending = pendingToggle?.rowKey === rowKey
+
                   return (
                     <div
                       key={`${cap.capability}:${cap.providerId}`}
@@ -769,47 +920,107 @@ function PluginOptionsSection({
                             Provider: {cap.providerId}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          disabled={cap.isSelected || !onSelectPluginSettingsProvider}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onSelectPluginSettingsProvider?.(cap.capability, cap.providerId)
-                          }}
-                          className="rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
-                          style={cap.isSelected
-                            ? {
-                                background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
-                                color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span
+                            className="text-[11px] font-medium uppercase tracking-wide"
+                            style={{ color: 'var(--vscode-descriptionForeground)' }}
+                          >
+                            {isTogglePending ? 'Updating' : cap.isSelected ? 'On' : 'Off'}
+                          </span>
+                          <ToggleSwitch
+                            checked={cap.isSelected}
+                            pending={isTogglePending}
+                            disabled={!onSelectPluginSettingsProvider || (cap.isSelected && !canDisable)}
+                            onChange={(nextChecked) => {
+                              const targetProviderId = nextChecked ? cap.providerId : fallbackProviderId
+                              if (!targetProviderId) return
+
+                              const currentSelectedProviderId = getCapabilityEntry(pluginSettings, cap.capability)?.selected.providerId ?? null
+                              const normalizedTargetProviderId = targetProviderId === 'none' ? null : targetProviderId
+                              if (currentSelectedProviderId === normalizedTargetProviderId) {
+                                return
                               }
-                            : {
-                                background: 'var(--vscode-button-background)',
-                                color: 'var(--vscode-button-foreground)',
-                              }}
-                        >
-                          {cap.isSelected ? 'Active' : 'Activate'}
-                        </button>
+
+                              setPendingToggle({
+                                rowKey,
+                                capability: cap.capability,
+                                providerId: cap.providerId,
+                                targetProviderId,
+                              })
+                              onSelectPluginSettingsProvider?.(cap.capability, targetProviderId)
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
                   )
                 })}
-              </div>
 
-              {/* Plugin options (loaded at plugin level) */}
-              {activeProviderDetails && providerOptionsSchema && providerUiSchema && (
-                <div className="px-4 py-3" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
-                  <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                    Options
+                {activePluginCapabilities.some(
+                  (capability) => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
+                ) && (
+                  <div className="pt-2 space-y-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                      Options
+                    </div>
+
+                    {activePluginCapabilities
+                      .filter(
+                        (capability) => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
+                      )
+                      .map((capability) => {
+                        const providerDetails = getProviderDetails(capability.capability, capability.providerId)
+                        const providerOptionsSchema = providerDetails?.optionsSchema
+                          ? applyPluginSecretSchemaHints(
+                              providerDetails.optionsSchema.schema,
+                              providerDetails.optionsSchema.secrets,
+                            )
+                          : null
+                        const providerUiSchema = providerDetails?.optionsSchema
+                          ? (providerDetails.optionsSchema.uiSchema ?? createPluginOptionsUiSchema(providerDetails.optionsSchema.schema)) as UISchemaElement
+                          : null
+
+                        return (
+                          <div
+                            key={`options:${capability.capability}:${capability.providerId}`}
+                            className="rounded-lg border px-3 py-3 space-y-2"
+                            style={{ borderColor: 'var(--vscode-panel-border)' }}
+                          >
+                            <div className="space-y-0.5">
+                              <div className="text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
+                                {capability.capability}
+                              </div>
+                              <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                                Provider: {capability.providerId}
+                              </div>
+                            </div>
+
+                            {providerDetails && providerOptionsSchema && providerUiSchema ? (
+                              <PluginProviderOptionsEditor
+                                key={createPluginProviderOptionsEditorKey(providerDetails)}
+                                provider={providerDetails}
+                                schema={providerOptionsSchema}
+                                uiSchema={providerUiSchema}
+                                onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
+                              />
+                            ) : (
+                              <div
+                                className="rounded-lg px-3 py-3 text-xs"
+                                style={{
+                                  background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+                                  color: 'var(--vscode-descriptionForeground)',
+                                  border: '1px solid var(--vscode-panel-border)',
+                                }}
+                              >
+                                Loading provider options…
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                   </div>
-                  <PluginProviderOptionsEditor
-                    key={createPluginProviderOptionsEditorKey(activeProviderDetails)}
-                    provider={activeProviderDetails}
-                    schema={providerOptionsSchema}
-                    uiSchema={providerUiSchema}
-                    onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
-                  />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : (
             /* Install form */

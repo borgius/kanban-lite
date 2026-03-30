@@ -14,10 +14,13 @@ export {
 export { parseCardFile, serializeCard } from './parser'
 export { getCardFilePath, ensureDirectories, ensureStatusSubfolders, moveCardFile, renameCardFile, getStatusFromPath } from './fileUtils'
 export { migrateFileSystemToMultiBoard } from './migration'
-export type { CreateCardInput, SDKEventType, SDKBeforeEventType, SDKAfterEventType, SDKEventHandler, SDKOptions, AuthContext, AuthDecision, AuthErrorCategory, SDKEvent, SDKEventListener, EventListenerPlugin, BeforeEventPayload, AfterEventPayload, BeforeEventListenerResponse, SDKEventListenerPlugin, CardStateErrorCode, CardStateAvailability, CardStateBackend, CardStateStatus, DefaultCardStateActor, CardOpenStateValue, CardUnreadSummary } from './types'
+export type { CreateCardInput, SDKEventType, SDKBeforeEventType, SDKAfterEventType, SDKAvailableEventPhase, SDKAvailableEventsOptions, SDKPluginEventDeclaration, SDKAvailableEventDescriptor, SDKEventHandler, SDKOptions, AuthContext, AuthDecision, AuthErrorCategory, SDKEvent, SDKEventListener, EventListenerPlugin, BeforeEventPayload, AfterEventPayload, BeforeEventListenerResponse, SDKEventListenerPlugin, CardStateErrorCode, CardStateAvailability, CardStateBackend, CardStateStatus, DefaultCardStateActor, CardOpenStateValue, CardUnreadSummary, StorageEngine, StorageEngineType, CliPluginSdk, CliPluginContext, KanbanCliPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult } from './types'
 export { sanitizeCard, AuthError, CardStateError, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE, CARD_STATE_DEFAULT_ACTOR_MODE, DEFAULT_CARD_STATE_ACTOR, CARD_STATE_UNREAD_DOMAIN, CARD_STATE_OPEN_DOMAIN } from './types'
 export type {
+  AuthCapabilityNamespace,
+  AuthCapabilitySelections,
   BoardConfig,
+  CapabilityNamespace,
   CardStateCapabilityNamespace,
   CardStateCapabilitySelections,
   KanbanConfig,
@@ -25,12 +28,22 @@ export type {
   PluginCapabilityNamespace,
   PluginCapabilitySelections,
   PluginIntegrationNamespace,
+  ProviderRef,
+  ResolvedAuthCapabilities,
+  ResolvedCapabilities,
   ResolvedCardStateCapabilities,
+  ResolvedWebhookCapabilities,
+  Webhook,
+  WebhookCapabilityNamespace,
+  WebhookCapabilitySelections,
 } from '../shared/config'
 export { PLUGIN_CAPABILITY_NAMESPACES } from '../shared/config'
 export type {
+  BoardBackgroundMode,
+  BoardBackgroundPreset,
   BoardInfo,
   CardDisplaySettings,
+  LabelDefinition,
   PluginSettingsCapabilityRow,
   PluginSettingsDiscoverySource,
   PluginSettingsErrorPayload,
@@ -49,12 +62,15 @@ export type {
 } from '../shared/types'
 export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCardStateCapabilities } from '../shared/config'
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types'
-export { getTitleFromContent, getDisplayTitleFromContent, generateCardFilename, DEFAULT_COLUMNS } from '../shared/types'
+export { getTitleFromContent, getDisplayTitleFromContent, generateCardFilename, DEFAULT_COLUMNS, DEFAULT_BOARD_BACKGROUND_MODE, getDefaultBoardBackgroundPreset } from '../shared/types'
 export type {
   AuthIdentity,
   AuthPluginManifest,
   AuthIdentityPlugin,
   AuthPolicyPlugin,
+  RbacPrincipalEntry,
+  RbacRole,
+  WebhookProviderPlugin,
   CardStateCursor,
   CardStateKey,
   CardStateModuleContext,
@@ -65,6 +81,15 @@ export type {
   CardStateUnreadKey,
   CardStateValue,
   CardStateWriteInput,
+  PluginManifest,
+  CardStoragePlugin,
+  AttachmentStoragePlugin,
+  McpToolContext,
+  McpToolResult,
+  McpSchemaFactory,
+  McpToolDefinition,
+  McpPluginRegistration,
+  ResolvedCapabilityBag,
 } from './plugins/index'
 export type {
   StandaloneHttpPlugin,

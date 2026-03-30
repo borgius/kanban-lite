@@ -144,6 +144,79 @@ export type SDKAfterEventType =
 export type SDKEventType = SDKBeforeEventType | SDKAfterEventType
 
 /**
+ * Phase filter used by {@link KanbanSDK.listAvailableEvents} and plugin-declared
+ * event catalogs.
+ */
+export type SDKAvailableEventPhase = 'before' | 'after'
+
+/**
+ * Filtering options for {@link KanbanSDK.listAvailableEvents}.
+ *
+ * - `type: 'before'` returns only pre-mutation events.
+ * - `type: 'after'` returns only post-mutation events.
+ * - `type: 'all'` (default) returns both.
+ * - `mask` supports dotted wildcard matching compatible with the SDK event bus
+ *   (`*` for one segment, `**` for zero-or-more segments).
+ */
+export interface SDKAvailableEventsOptions {
+  /** Event phase/type filter. Defaults to `'all'`. */
+  readonly type?: SDKAvailableEventPhase | 'all'
+  /** Optional dotted wildcard mask such as `'task.*'` or `'auth.**'`. */
+  readonly mask?: string
+}
+
+/**
+ * Event declaration that plugin packages may contribute through
+ * `sdkExtensionPlugin.events`.
+ *
+ * These declarations are metadata-only. Declaring an event here does not emit or
+ * subscribe to it automatically; it simply makes the event discoverable through
+ * `sdk.listAvailableEvents()` and host surfaces that wrap that SDK method.
+ */
+export interface SDKPluginEventDeclaration {
+  /** Custom or plugin-owned event name. Dotted namespaces are recommended. */
+  readonly event: string
+  /** Whether this is a pre-mutation (`'before'`) or post-mutation (`'after'`) event. */
+  readonly phase: SDKAvailableEventPhase
+  /** Optional resource/domain label shown in discovery UIs. */
+  readonly resource?: string
+  /** Optional human-readable label shown in discovery UIs. */
+  readonly label?: string
+  /**
+   * Whether this after-event is expected to be surfaced remotely as an API/webhook
+   * after-event. Ignored for before-events and defaults to `false`.
+   */
+  readonly apiAfter?: boolean
+}
+
+/**
+ * Canonical descriptor returned by {@link KanbanSDK.listAvailableEvents}.
+ *
+ * Core events are derived from the built-in integration catalog; plugin events are
+ * aggregated from active `sdkExtensionPlugin.events` declarations.
+ */
+export interface SDKAvailableEventDescriptor {
+  /** Event name. */
+  readonly event: string
+  /** Event phase (`'before'` or `'after'`). */
+  readonly phase: SDKAvailableEventPhase
+  /** Whether the event originates from core or from plugin declarations. */
+  readonly source: 'core' | 'plugin'
+  /** Optional resource/domain grouping label. */
+  readonly resource?: string
+  /** Optional human-readable label. */
+  readonly label?: string
+  /** `true` when the event is observable as an SDK before-event. */
+  readonly sdkBefore: boolean
+  /** `true` when the event is observable as an SDK after-event. */
+  readonly sdkAfter: boolean
+  /** `true` when the event is observable through remote API/webhook after-event transport. */
+  readonly apiAfter: boolean
+  /** Active plugin ids that declared this event, when any. */
+  readonly pluginIds?: readonly string[]
+}
+
+/**
  * Callback invoked by the SDK after every mutating operation.
  *
  * @param event - The event type (e.g., `'task.created'`).
@@ -450,7 +523,7 @@ export interface AuthContext {
    * Pre-resolved identity supplied by a trusted host integration such as
    * standalone middleware after validating a cookie-backed session.
    */
-  identity?: { subject: string; roles?: string[] }
+  identity?: { subject: string; roles?: string[]; groups?: string[] }
   /**
     * Optional non-authoritative hint for the caller identity.
     * Never trusted for authorization decisions; used for diagnostics and logging only.
@@ -738,6 +811,11 @@ export interface SDKExtensionPlugin<T extends Record<string, unknown> = Record<s
   /** Plugin manifest identifying this extension contribution. */
   readonly manifest: { readonly id: string; readonly provides: readonly string[] }
   /**
+   * Optional discoverable event declarations contributed by this plugin.
+   * These surface through `sdk.listAvailableEvents()` when the plugin is active.
+   */
+  readonly events?: readonly SDKPluginEventDeclaration[]
+  /**
    * Named SDK methods or capabilities contributed by this plugin.
    * Accessible through `sdk.getExtension(manifest.id)` after capability resolution.
    */
@@ -756,6 +834,8 @@ export interface SDKExtensionPlugin<T extends Record<string, unknown> = Record<s
 export interface SDKExtensionLoaderResult<T extends Record<string, unknown> = Record<string, unknown>> {
   /** Plugin id matching the contributing plugin's `manifest.id`. */
   readonly id: string
+  /** Optional discoverable event declarations contributed by the owning plugin. */
+  readonly events: readonly SDKPluginEventDeclaration[]
   /** Resolved SDK methods/capabilities from the plugin. */
   readonly extensions: T
 }

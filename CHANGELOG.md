@@ -9,13 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Available event discovery across SDK/API/CLI/MCP**: `KanbanSDK` now exposes `listAvailableEvents({ type?, mask? })` so callers can inspect built-in before/after events with optional wildcard filtering. SDK extension plugins may declare extra discoverable events through `sdkExtensionPlugin.events`, and the same catalog is now exposed through `kl events`, standalone `GET /api/events`, and the MCP `list_available_events` tool.
+
+- **Auth groups and editable permission matrix options**: `kl-plugin-auth` now lets local users carry `groups`, exposes those groups on resolved auth identities, adds a shared-plugin-settings-friendly `auth.policy.options.permissions[]` editor for role/group action rules, keeps legacy `options.matrix` role maps working at runtime, and extends `kl auth create-user` with optional `--groups` input.
+
+- **Modern React lint guardrails for contributors and agents**: Added stricter React/TSX ESLint rules for self-closing JSX, boolean props, useless fragments, stable key guidance, and nested-component warnings, plus workspace instruction files that tell agents to keep React changes lint-clean instead of papering over rules with inline disables.
+
 - **Standard plugin package manifest** (`pluginManifest` export): Every first-party plugin package now exports a `pluginManifest` constant declaring its capabilities and integration surfaces. The engine uses this manifest for fast, reliable discovery instead of exhaustive duck-typing. New types `KLPluginPackageManifest` and `PluginIntegrationNamespace` are exported from `kanban-lite/sdk`. All first-party plugin packages (`kl-plugin-auth`, `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, `kl-plugin-attachment-s3`, `kl-plugin-webhook`) include the manifest. Third-party plugins without `pluginManifest` still work via the legacy probing fallback.
 
 ### Changed
 
+- **Plugin authoring contracts now come from the SDK**: First-party plugin packages now import shared provider, auth, CLI, standalone, MCP, card-state, and plugin-settings metadata types from `kanban-lite/sdk` instead of re-declaring local structural copies. The SDK export surface now includes the additional plugin authoring types needed for that workflow.
 - **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.
 - **`CARD_STATE_PROVIDER_ALIASES`** now points to storage packages instead of dedicated card-state packages.
 - **Canonical local file provider IDs**: `card.storage` and default `card.state` now use `localfs` as the canonical provider id in runtime capabilities, plugin-settings inventory, and status surfaces. Legacy ids (`card.storage: "markdown"`, `card.state: "builtin"`) are normalized for compatibility and no longer treated as separate installable providers.
+- **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
 
 ### Added
 
@@ -55,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Package lint cleanup for `kanban-lite`**: Cleared the remaining `eslint` failures across the webview, SDK, CLI, tests, and declaration files by removing stale unused symbols, replacing lingering `any` types with `unknown`, fixing React hook/compiler warnings, and stabilizing several list keys.
 - **Plugin settings secret/install safety**: Persisted secret fields now reopen only as masked write-only placeholders, unchanged masks preserve existing secrets on save, and the in-product installer accepts only exact unscoped `kl-*` package names while redacting surfaced diagnostics.
 - **CLI mutation auth parity**: CLI mutating commands now consistently run through the shared auth wrapper, so authenticated actions such as `kl comment add ...` honor the resolved CLI token instead of failing with a false `Authentication required` error.
 - **Standalone browser `card.state` unread/open parity**: Standalone WebSocket/REST card snapshots now preserve actor-scoped `cardState` in both plugin-backed and built-in fallback modes, and opening a card in the browser clears unread state through the shared explicit open flow.

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auth plugin provider-option UI schemas**: `kl-plugin-auth` now ships explicit JSON Forms `uiSchema` metadata for `auth.identity` and `auth.policy`, giving the shared Plugin Options workflow grouped sections, inline array detail editors, and a small conditional rule for permission-action editing instead of the generic fallback layout.
+
 - **Available event discovery across SDK/API/CLI/MCP**: `KanbanSDK` now exposes `listAvailableEvents({ type?, mask? })` so callers can inspect built-in before/after events with optional wildcard filtering. SDK extension plugins may declare extra discoverable events through `sdkExtensionPlugin.events`, and the same catalog is now exposed through `kl events`, standalone `GET /api/events`, and the MCP `list_available_events` tool.
 
 - **Auth groups and editable permission matrix options**: `kl-plugin-auth` now lets local users carry `groups`, exposes those groups on resolved auth identities, adds a shared-plugin-settings-friendly `auth.policy.options.permissions[]` editor for role/group action rules, keeps legacy `options.matrix` role maps working at runtime, and extends `kl auth create-user` with optional `--groups` input.

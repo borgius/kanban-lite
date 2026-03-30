@@ -18,6 +18,7 @@ All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, co
 - In-product plugin installs accept only exact unscoped `kl-*` package names; reject scopes, specifiers, flags, URLs, paths, and extra args.
 - Plugin-settings reads/lists/errors/install output must reuse the shared redaction policy across SDK, API, CLI, MCP, and UI surfaces.
 - JSON Forms provider-option UIs should reuse the shared `.card-jsonforms` wrapper/styling hook instead of introducing a second theme.
+- When creating or changing plugin `optionsSchema()` / `uiSchema` metadata, load `.agents/skills/plugin-options-schema-author/SKILL.md` first and prefer explicit JSON Forms layouts for arrays and nested objects instead of relying on the generated fallback UI schema.
 
 ## Implementation Order
 

@@ -10,3 +10,4 @@ When editing React or TSX in this workspace, write code that passes `eslint.conf
 - Avoid defining components inside other components unless there is a clear, local reason.
 - After React or TSX edits, run the relevant lint target and fix any violations introduced by the change.
 - If a lint rule conflicts with an implementation idea, change the implementation before considering a rule suppression.
+- When creating or changing plugin `optionsSchema()` / `uiSchema` metadata, load `.agents/skills/plugin-options-schema-author/SKILL.md` first and keep JSON Forms layouts explicit for array or nested-object editors.

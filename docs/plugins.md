@@ -142,6 +142,8 @@ Providers may expose an `optionsSchema()` hook. When present, the loader normali
 
 The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Selected providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row.
 
+For anything more complex than a few flat scalar fields — especially arrays, nested objects, or sections that benefit from inline detail editors — providers should ship an explicit `uiSchema` instead of relying on the generated one-control-per-property fallback. Prefer JSON Forms `Group` / `VerticalLayout` / `HorizontalLayout`, array `options.detail`, `elementLabelProp`, and targeted `rule` conditions so the shared settings UI gets stable labels and predictable editing behavior.
+
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
 ### Redacted read/list behavior

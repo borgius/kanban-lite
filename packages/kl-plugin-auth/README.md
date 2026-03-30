@@ -35,6 +35,7 @@ npm install kl-plugin-auth
 - Select the auth provider id per capability (`local`, `rbac`, `noop`, or the compatibility alias `kl-plugin-auth`).
 - The selected provider id is persisted in `.kanban.json` at `plugins["auth.identity"].provider` / `plugins["auth.policy"].provider`; there is no separate auth-enabled boolean.
 - Both the exported package providers and the configurable factory helpers expose `optionsSchema()` metadata so the shared workflow can render schema-driven forms.
+- Those auth option forms now ship explicit JSON Forms `uiSchema` layouts, including grouped sections plus inline array-item detail editors for local users and permission rules.
 
 Current schema-backed fields:
 

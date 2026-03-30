@@ -165,6 +165,56 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
         },
       },
     },
+    uiSchema: {
+      type: 'VerticalLayout',
+      elements: [
+        {
+          type: 'Group',
+          label: 'API access',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/apiToken',
+              label: 'API token',
+            },
+          ],
+        },
+        {
+          type: 'Group',
+          label: 'Standalone local users',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/users',
+              label: 'Local users',
+              options: {
+                elementLabelProp: 'username',
+                detail: {
+                  type: 'HorizontalLayout',
+                  elements: [
+                    {
+                      type: 'Control',
+                      scope: '#/properties/username',
+                      label: 'Username',
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/password',
+                      label: 'Password hash',
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/role',
+                      label: 'Role',
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
     secrets: [
       { path: 'apiToken', redaction: AUTH_PLUGIN_SECRET_REDACTION },
       { path: 'users.*.password', redaction: AUTH_PLUGIN_SECRET_REDACTION },
@@ -209,6 +259,60 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
           },
         },
       },
+    },
+    uiSchema: {
+      type: 'VerticalLayout',
+      elements: [
+        {
+          type: 'Group',
+          label: 'Permission matrix',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/permissions',
+              label: 'Permission rules',
+              options: {
+                elementLabelProp: 'subject',
+                showSortButtons: true,
+                detail: {
+                  type: 'VerticalLayout',
+                  elements: [
+                    {
+                      type: 'Control',
+                      scope: '#/properties/subjectType',
+                      label: 'Subject type',
+                      options: { format: 'radio' },
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/subject',
+                      label: 'Subject',
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/actions',
+                      label: 'Allowed actions',
+                      options: { showSortButtons: true },
+                      rule: {
+                        effect: 'DISABLE',
+                        condition: {
+                          scope: '#/properties/subject',
+                          schema: {
+                            not: {
+                              type: 'string',
+                              minLength: 1,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
     },
     secrets: [],
   }

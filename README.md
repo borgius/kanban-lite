@@ -1255,8 +1255,8 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
-| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Core owns `markdown`. `sqlite` and `mysql` are compatibility ids that resolve to `kl-plugin-storage-sqlite` and `kl-plugin-storage-mysql`. |
-| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql` | Core owns `localfs`. `sqlite` and `mysql` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
+| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql`, `postgresql` | Core owns `markdown`. `sqlite`, `mysql`, and `postgresql` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, and `kl-plugin-storage-postgresql`. |
+| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql` | Core owns `localfs`. `sqlite`, `mysql`, and `postgresql` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
 
 If you want attachments to route through the SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
 
@@ -1301,7 +1301,7 @@ The same pattern applies to MySQL:
 ### Installing and selecting providers
 
 - Core built-ins are `markdown` and `localfs`.
-- `sqlite` and `mysql` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite` and `kl-plugin-storage-mysql`.
+- `sqlite`, `mysql`, and `postgresql` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, and `kl-plugin-storage-postgresql`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
@@ -1360,6 +1360,38 @@ Notes:
 npm install kl-plugin-storage-mysql mysql2
 ```
 
+### PostgreSQL setup and runtime expectations
+
+Use the PostgreSQL compatibility provider id by selecting `provider: "postgresql"` under `plugins["card.storage"]`:
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "postgresql",
+      "options": {
+        "host": "localhost",
+        "port": 5432,
+        "user": "kanban",
+        "password": "secret",
+        "database": "kanban_db"
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- `database` is required.
+- Install `kl-plugin-storage-postgresql` in the host environment that loads the plugin.
+- The `pg` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the PostgreSQL provider.
+- `postgresql` stores cards/comments in PostgreSQL, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"postgresql"`.
+
+```bash
+npm install kl-plugin-storage-postgresql pg
+```
+
 ### Provider status surfaces
 
 These commands/endpoints/tools expose provider ids and host-facing metadata without requiring callers to guess which compatibility shim or external package is active:
@@ -1369,7 +1401,7 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite`, `mysql`, and `postgresql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
 
 For `card.state`, core ships the built-in file-backed `builtin` backend, while the `sqlite` compatibility id resolves to the first-party `kl-plugin-card-state-sqlite` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 

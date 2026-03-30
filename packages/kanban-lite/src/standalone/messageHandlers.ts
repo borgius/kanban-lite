@@ -204,6 +204,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
 
       try {
         await runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
+        // Send updated card state so the UI clears the unread badge immediately
+        await sendCardStates(ctx, ws, [cardId], authContext)
       } catch (err) {
         if (!(err instanceof CardStateError)) {
           throw err

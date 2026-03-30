@@ -196,7 +196,7 @@
       }
     },
     "webhook.delivery": {
-      "provider": "kl-webhooks-plugin",
+      "provider": "kl-plugin-webhook",
       "options": {
         "webhooks": [
           {
@@ -211,10 +211,10 @@
       }
     },
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
+      "provider": "kl-plugin-attachment-s3"
     },
     "auth.identity": {
-      "provider": "kl-auth-plugin",
+      "provider": "kl-plugin-auth",
       "options": {
         "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
         "users": [
@@ -237,7 +237,7 @@
       }
     },
     "auth.policy": {
-      "provider": "kl-auth-plugin"
+      "provider": "kl-plugin-auth"
     }
   },
   "logsFilter": {

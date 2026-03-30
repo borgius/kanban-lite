@@ -230,6 +230,13 @@ function createRequestContext(
 }
 
 function resolveSwaggerUiStaticDir(): string | undefined {
+  // Try require.resolve first — works correctly with pnpm's virtual store and any package manager.
+  try {
+    const pkgJson = require.resolve('@fastify/swagger-ui/package.json')
+    const candidate = path.join(path.dirname(pkgJson), 'static')
+    if (fs.existsSync(path.join(candidate, 'swagger-ui.css'))) return candidate
+  } catch { /* package not resolvable from this context */ }
+
   const candidates = [
     path.join(process.cwd(), 'node_modules', '@fastify', 'swagger-ui', 'static'),
     path.join(__dirname, '..', '..', 'node_modules', '@fastify', 'swagger-ui', 'static'),

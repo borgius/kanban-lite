@@ -179,8 +179,7 @@ Compatibility provider ids resolved through external packages:
 
 - `sqlite`
 - `mysql`
-
-### `attachment.storage`
+- `postgresql`
 
 This capability owns attachment copy/materialization behavior.
 
@@ -467,6 +466,33 @@ npm install kl-plugin-storage-mysql
 ```
 
 The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `mysql2` load semantics.
+
+## `postgresql`
+
+Namespace: `card.storage`
+
+Behavior:
+
+- stores cards/comments in PostgreSQL tables,
+- is **not** file-backed for cards,
+- does not expose local card file paths,
+- reports `watchGlob: null`.
+
+Requirements:
+
+- `database` is required in provider options,
+- the `pg` driver is loaded lazily,
+- environments that do not use PostgreSQL do not need `pg` installed.
+
+External package:
+
+The `postgresql` provider id is a compatibility alias for the `kl-plugin-storage-postgresql` npm package. Install the external package in the host environment that loads Kanban Lite:
+
+```sh
+npm install kl-plugin-storage-postgresql
+```
+
+The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `pg` load semantics.
 
 ## `builtin` / `sqlite` for `card.state`
 
@@ -863,14 +889,15 @@ This is deliberate: plugin errors should be operator-friendly, not stack-trace a
 
 ## Compatibility aliases
 
-The short provider ids `sqlite` and `mysql` are compatibility aliases. They allow existing
+The short provider ids `sqlite`, `mysql`, and `postgresql` are compatibility aliases. They allow existing
 `.kanban.json` configurations to continue using the familiar short names while implementation
 ownership moves to standalone, versioned npm packages.
 
-| Provider id | Install target      |
-| ----------- | ------------------- |
-| `sqlite`    | `kl-plugin-storage-sqlite` |
-| `mysql`     | `kl-plugin-storage-mysql`  |
+| Provider id   | Install target                  |
+| ------------- | ------------------------------- |
+| `sqlite`      | `kl-plugin-storage-sqlite`      |
+| `mysql`       | `kl-plugin-storage-mysql`       |
+| `postgresql`  | `kl-plugin-storage-postgresql`  |
 
 The alias map lives in `PROVIDER_ALIASES` in `src/sdk/plugins/index.ts` and is exported so
 downstream tasks and tests can reference it directly.

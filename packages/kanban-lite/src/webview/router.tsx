@@ -1,11 +1,15 @@
 /**
  * TanStack Router setup for the standalone web mode.
  *
- * URL schema: /<boardId>/<cardId>/<tabId>?priority=&labels=&assignee=&dueDate=&q=
+ * URL schema:
+ *   /<boardId>/<cardId>/<tabId>?priority=&labels=&assignee=&dueDate=&q=
+ *   /settings/<general|defaults|labels>
+ *   /settings/plugins/<pluginId>
  *
  * Architecture:
  *  - rootRoute renders <App /> + <URLSync /> + <Outlet />
  *  - boardRoute / cardRoute / tabRoute extend the URL (nested paths)
+ *  - settingsRoute / settingsTabRoute / settingsPluginIdRoute handle settings URLs
  *  - URLSync is the single bridge between the URL and Zustand store
  *
  * The Zustand store is always the source of truth for UI state.
@@ -21,6 +25,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   useNavigate,
   useParams,
   useSearch,
@@ -28,6 +33,7 @@ import {
 import App from './App'
 import { useStore, type CardTab, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
 import type { Priority } from '../shared/types'
+import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG, type SettingsTab } from './components/SettingsPanel'
 import { shouldUseMemoryHistory } from './routerHistory'
 import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
 
@@ -54,6 +60,8 @@ function URLSync() {
     boardId?: string
     cardId?: string
     tabId?: string
+    settingsTab?: string
+    pluginId?: string
   }
   const search = useSearch({ strict: false }) as RouteSearch
 
@@ -65,6 +73,9 @@ function URLSync() {
     setSearchQuery,
     setFuzzySearch,
     setActiveCardTab,
+    setSettingsOpen,
+    setSettingsTab,
+    setSettingsPluginId,
   } = useStore.getState()
 
   const columns = useStore(s => s.columns)
@@ -77,6 +88,13 @@ function URLSync() {
   const dueDateFilter = useStore(s => s.dueDateFilter)
   const searchQuery = useStore(s => s.searchQuery)
   const fuzzySearch = useStore(s => s.fuzzySearch)
+  const settingsOpen = useStore(s => s.settingsOpen)
+  const settingsTab = useStore(s => s.settingsTab)
+  const settingsPluginId = useStore(s => s.settingsPluginId)
+
+  // Detect initial settings route from URL params
+  const initialSettingsTabResolved = params.settingsTab ? SETTINGS_TAB_FROM_SLUG[params.settingsTab] : undefined
+  const isInitialSettings = Boolean(initialSettingsTabResolved || params.pluginId)
 
   // Initialise prevStateRef from current URL (not store defaults) to prevent
   // spurious navigation on the first Store→URL effect run.
@@ -86,6 +104,11 @@ function URLSync() {
     cardId: '', // card opens asynchronously, start empty
     tab: normalizeCardTab(params.tabId ?? initialStore.activeCardTab),
     searchStr: buildSearchStr(search),
+    settingsOpen: isInitialSettings,
+    settingsTab: isInitialSettings
+      ? (params.pluginId ? 'plugins' : SETTINGS_TAB_TO_SLUG[initialSettingsTabResolved ?? 'general'])
+      : 'general',
+    settingsPluginId: params.pluginId ?? null,
   })
 
   // ── 1. URL → Store: one-time initialisation on mount ──────────────────────
@@ -122,6 +145,19 @@ function URLSync() {
       setActiveCardTab(params.tabId)
     }
 
+    // Restore settings state from URL
+    if (params.pluginId) {
+      setSettingsOpen(true)
+      setSettingsTab('pluginOptions')
+      setSettingsPluginId(params.pluginId)
+    } else if (params.settingsTab) {
+      const resolved = SETTINGS_TAB_FROM_SLUG[params.settingsTab]
+      if (resolved) {
+        setSettingsOpen(true)
+        setSettingsTab(resolved)
+      }
+    }
+
     // Switch to the board from the URL (shim queues the message if not yet connected)
     if (params.boardId) {
       vscode.postMessage({ type: 'switchBoard', boardId: params.boardId })
@@ -147,6 +183,51 @@ function URLSync() {
   useEffect(() => {
     if (columns.length === 0) return // wait for server init
 
+    // ── Settings URL sync ──────────────────────────────────────────────────
+    if (settingsOpen) {
+      const tabSlug = SETTINGS_TAB_TO_SLUG[settingsTab] ?? 'general'
+      const prev = prevStateRef.current
+      const justOpened = !prev.settingsOpen
+      const tabChanged = prev.settingsTab !== tabSlug
+      const pluginChanged = prev.settingsPluginId !== settingsPluginId
+
+      if (!justOpened && !tabChanged && !pluginChanged) return
+
+      prevStateRef.current = {
+        ...prev,
+        settingsOpen: true,
+        settingsTab: tabSlug,
+        settingsPluginId: settingsPluginId,
+      }
+
+      if (settingsTab === 'pluginOptions' && settingsPluginId) {
+        navigate({
+          to: '/settings/plugins/$pluginId',
+          params: { pluginId: settingsPluginId },
+          replace: !justOpened,
+        })
+      } else {
+        navigate({
+          to: '/settings/$settingsTab',
+          params: { settingsTab: tabSlug },
+          replace: !justOpened,
+        })
+      }
+      return
+    }
+
+    // ── Settings just closed — force board navigation ──────────────────────
+    const settingsJustClosed = prevStateRef.current.settingsOpen
+    if (settingsJustClosed) {
+      prevStateRef.current = {
+        ...prevStateRef.current,
+        settingsOpen: false,
+        settingsTab: 'general',
+        settingsPluginId: null,
+      }
+    }
+
+    // ── Board URL sync ─────────────────────────────────────────────────────
     const searchObj: RouteSearch = {}
     if (priorityFilter !== 'all') searchObj.priority = priorityFilter
     if (labelFilter.length > 0) searchObj.labels = labelFilter.join(',')
@@ -164,9 +245,10 @@ function URLSync() {
     const tabChanged = Boolean(activeCardId) && prev.tab !== activeCardTab
     const filterChanged = prev.searchStr !== searchStr
 
-    if (!boardChanged && !cardChanged && !tabChanged && !filterChanged) return
+    if (!settingsJustClosed && !boardChanged && !cardChanged && !tabChanged && !filterChanged) return
 
     prevStateRef.current = {
+      ...prevStateRef.current,
       board: currentBoard,
       cardId: activeCardId ?? '',
       tab: activeCardTab,
@@ -174,7 +256,7 @@ function URLSync() {
     }
 
     // First navigation after server init: use replace to avoid duplicate history entry.
-    const replace = firstNavRef.current || (!boardChanged && !cardChanged && !tabChanged && filterChanged)
+    const replace = firstNavRef.current || (!settingsJustClosed && !boardChanged && !cardChanged && !tabChanged && filterChanged)
     firstNavRef.current = false
 
     if (activeCardId) {
@@ -192,7 +274,7 @@ function URLSync() {
         replace,
       })
     }
-  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, navigate])
+  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, settingsOpen, settingsTab, settingsPluginId, navigate])
 
   return null
 }
@@ -250,10 +332,74 @@ const tabRoute = createRoute({
 })
 
 // ---------------------------------------------------------------------------
+// Settings routes
+// ---------------------------------------------------------------------------
+
+// "/settings" — settings layout
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'settings',
+  component: () => <Outlet />,
+})
+
+// "/settings/" — redirect to /settings/general
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/$settingsTab', params: { settingsTab: 'general' } })
+  },
+  component: () => null,
+})
+
+// "/settings/plugins" — plugin options tab
+const settingsPluginsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'plugins',
+  component: () => <Outlet />,
+})
+
+// "/settings/plugins/" — redirect to plugin options tab (no specific plugin)
+const settingsPluginsIndexRoute = createRoute({
+  getParentRoute: () => settingsPluginsRoute,
+  path: '/',
+  component: function SettingsPluginsSync() {
+    useEffect(() => {
+      const s = useStore.getState()
+      s.setSettingsOpen(true)
+      s.setSettingsTab('pluginOptions')
+    }, [])
+    return null
+  },
+})
+
+// "/settings/plugins/$pluginId" — specific plugin
+const settingsPluginIdRoute = createRoute({
+  getParentRoute: () => settingsPluginsRoute,
+  path: '$pluginId',
+  component: () => null,
+})
+
+// "/settings/$settingsTab" — general / defaults / labels
+const settingsTabRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '$settingsTab',
+  component: () => null,
+})
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  settingsRoute.addChildren([
+    settingsIndexRoute,
+    settingsPluginsRoute.addChildren([
+      settingsPluginsIndexRoute,
+      settingsPluginIdRoute,
+    ]),
+    settingsTabRoute,
+  ]),
   boardRoute.addChildren([
     cardRoute.addChildren([tabRoute]),
   ]),

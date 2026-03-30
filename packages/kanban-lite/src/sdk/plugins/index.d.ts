@@ -568,10 +568,11 @@ export declare function canUseDefaultCardStateActor(authCapabilities?: ResolvedA
  * mapped package name and issues install hints that reference it.
  *
  * Install targets:
- * - `sqlite` → `npm install kl-plugin-storage-sqlite`
- * - `mysql`  → `npm install kl-plugin-storage-mysql`
+ * - `sqlite`     → `npm install kl-plugin-storage-sqlite`
+ * - `mysql`      → `npm install kl-plugin-storage-mysql`
+ * - `postgresql` → `npm install kl-plugin-storage-postgresql`
  *
- * Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
+ * All packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
  * with CJS entry `dist/index.cjs`.
  */
 export declare const PROVIDER_ALIASES: ReadonlyMap<string, string>;

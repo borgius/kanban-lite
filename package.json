@@ -33,6 +33,8 @@
     "test:plugins:integration": "pnpm --filter 'kl-*' --if-present run test:integration",
     "test:plugins:mysql": "pnpm --filter kl-plugin-storage-mysql run test:integration",
     "test:plugins:mysql:service": "pnpm --filter kl-plugin-storage-mysql run test:integration:service",
+    "test:plugins:postgresql": "pnpm --filter kl-plugin-storage-postgresql run test:integration",
+    "test:plugins:postgresql:service": "pnpm --filter kl-plugin-storage-postgresql run test:integration:service",
     "test:watch": "pnpm --filter kanban-lite test:watch",
     "test:watch:workspace": "pnpm --filter './packages/*' --if-present run test:watch",
     "test:e2e": "playwright test --config=playwright.config.ts",

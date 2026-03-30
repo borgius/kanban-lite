@@ -35,7 +35,23 @@ const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string>
   sibling: 'Sibling',
 }
 
-type SettingsTab = 'general' | 'defaults' | 'labels' | 'pluginOptions'
+export type SettingsTab = 'general' | 'defaults' | 'labels' | 'pluginOptions'
+
+/** URL-safe slug → internal SettingsTab */
+export const SETTINGS_TAB_FROM_SLUG: Record<string, SettingsTab> = {
+  general: 'general',
+  defaults: 'defaults',
+  labels: 'labels',
+  plugins: 'pluginOptions',
+}
+
+/** Internal SettingsTab → URL-safe slug */
+export const SETTINGS_TAB_TO_SLUG: Record<SettingsTab, string> = {
+  general: 'general',
+  defaults: 'defaults',
+  labels: 'labels',
+  pluginOptions: 'plugins',
+}
 
 const settingsTabLabels: Record<SettingsTab, string> = {
   general: 'General',
@@ -91,6 +107,7 @@ interface SettingsPanelProps {
   onRenameLabel?: (oldName: string, newName: string) => void
   onDeleteLabel?: (name: string) => void
   onPluginOptionsTabActivated?: () => void
+  onTabChange?: (tab: SettingsTab) => void
   initialTab?: SettingsTab
 }
 
@@ -112,6 +129,7 @@ export function SettingsPanel({
   onRenameLabel,
   onDeleteLabel,
   onPluginOptionsTabActivated,
+  onTabChange,
   initialTab,
 }: SettingsPanelProps) {
   if (!isOpen) return null
@@ -133,6 +151,7 @@ export function SettingsPanel({
       onRenameLabel={onRenameLabel}
       onDeleteLabel={onDeleteLabel}
       onPluginOptionsTabActivated={onPluginOptionsTabActivated}
+      onTabChange={onTabChange}
       initialTab={initialTab}
     />
   )
@@ -357,96 +376,37 @@ function PluginProviderRow({
   provider,
   isActive,
   onOpen,
-  onSelect,
 }: {
   capability: PluginCapabilityNamespace
   provider: NonNullable<PluginSettingsPayload['capabilities'][number]>['providers'][number]
   isActive: boolean
   onOpen?: (capability: PluginCapabilityNamespace, providerId: string) => void
-  onSelect?: (capability: PluginCapabilityNamespace, providerId: string) => void
 }) {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  useEffect(() => {
-    if (isActive) setIsExpanded(true)
-  }, [isActive])
-
   return (
     <div
-      className="rounded-lg border overflow-hidden"
+      className="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer select-none"
       style={isActive
         ? {
-            borderColor: 'var(--vscode-focusBorder, var(--vscode-button-background))',
-            background: 'var(--vscode-list-hoverBackground)',
+            background: 'var(--vscode-list-activeSelectionBackground)',
+            color: 'var(--vscode-list-activeSelectionForeground)',
           }
         : {
-            borderColor: 'var(--vscode-panel-border)',
             background: 'transparent',
           }}
       data-plugin-provider={provider.providerId}
       data-active={isActive ? 'true' : 'false'}
       data-selected={provider.isSelected ? 'true' : 'false'}
+      onClick={() => onOpen?.(capability, provider.providerId)}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
     >
-      {/* Collapsed header row — always visible; clicking opens the provider */}
-      <div
-        className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
-        onClick={() => {
-          setIsExpanded(v => !v)
-          if (!isActive) onOpen?.(capability, provider.providerId)
-        }}
-        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
-        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-      >
-        <ChevronRight
-          size={12}
-          className="shrink-0 transition-transform"
-          style={{
-            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            color: 'var(--vscode-descriptionForeground)',
-          }}
-        />
-        <span className="text-sm font-medium flex-1 truncate" style={{ color: 'var(--vscode-foreground)' }}>
-          {provider.providerId}
-        </span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <PluginSettingsBadge>{pluginDiscoverySourceLabels[provider.discoverySource]}</PluginSettingsBadge>
-          {provider.isSelected && <PluginSettingsBadge tone="selected">Selected</PluginSettingsBadge>}
-        </div>
+      <span className="text-xs font-medium flex-1 truncate" style={isActive ? undefined : { color: 'var(--vscode-foreground)' }}>
+        {provider.providerId}
+      </span>
+      <div className="flex items-center gap-1 shrink-0">
+        <PluginSettingsBadge>{pluginDiscoverySourceLabels[provider.discoverySource]}</PluginSettingsBadge>
+        {provider.isSelected && <PluginSettingsBadge tone="selected">Selected</PluginSettingsBadge>}
       </div>
-
-      {/* Expandable details */}
-      {isExpanded && (
-        <div
-          className="px-3 pb-3 pt-2 space-y-2"
-          style={{ borderTop: '1px solid var(--vscode-panel-border)' }}
-        >
-          <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            Package: {provider.packageName}
-          </div>
-          <div className="text-[11px] font-mono" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            {capability}
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              disabled={provider.isSelected || !onSelect}
-              onClick={(e) => { e.stopPropagation(); onSelect?.(capability, provider.providerId) }}
-              className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
-              style={provider.isSelected
-                ? {
-                    background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
-                    color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
-                  }
-                : {
-                    background: 'var(--vscode-button-background)',
-                    color: 'var(--vscode-button-foreground)',
-                  }}
-            >
-              {provider.isSelected ? 'Selected' : 'Select'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -714,7 +674,7 @@ function PluginOptionsSection({
                 </button>
 
                 {!isFolded && (
-                  <div className="space-y-2 p-3">
+                  <div className="space-y-0.5 px-2 py-2">
                     {entry.providers.length === 0 ? (
                       <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
                         No providers discovered for this capability.
@@ -729,7 +689,6 @@ function PluginOptionsSection({
                           setActiveProvider({ capability, providerId })
                           onReadPluginSettingsProvider?.(capability, providerId)
                         }}
-                        onSelect={onSelectPluginSettingsProvider}
                       />
                     ))}
                   </div>
@@ -759,29 +718,50 @@ function PluginOptionsSection({
           }}
         >
           <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}>
-            <div>
+            <div className="min-w-0 flex-1">
               <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-                {resolvedActiveProvider ? 'Provider options' : 'Install plugin package'}
+                {resolvedActiveProvider ? (activeProviderRow?.providerId ?? 'Provider') : 'Install plugin package'}
               </h4>
-              <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                {resolvedActiveProvider
-                  ? 'This editor is driven directly from the provider schema and redacted option payload.'
-                  : 'No provider is open on the left, so the safe installer is ready here.'}
-              </p>
+              {resolvedActiveProvider && activeProviderRow && (
+                <div className="text-xs mt-0.5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                  {activeProviderRow.packageName} &middot; {resolvedActiveProvider.capability}
+                </div>
+              )}
             </div>
-            {resolvedActiveProvider && (
-              <button
-                type="button"
-                onClick={() => setActiveProvider(null)}
-                className="rounded-md px-3 py-1.5 text-xs font-medium"
-                style={{
-                  border: '1px solid var(--vscode-panel-border)',
-                  color: 'var(--vscode-foreground)',
-                }}
-              >
-                Install instead
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {resolvedActiveProvider && activeProviderRow && (
+                <button
+                  type="button"
+                  disabled={activeProviderRow.isSelected || !onSelectPluginSettingsProvider}
+                  onClick={() => onSelectPluginSettingsProvider?.(resolvedActiveProvider.capability, resolvedActiveProvider.providerId)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-70"
+                  style={activeProviderRow.isSelected
+                    ? {
+                        background: 'var(--vscode-button-secondaryBackground, var(--vscode-badge-background))',
+                        color: 'var(--vscode-button-secondaryForeground, var(--vscode-foreground))',
+                      }
+                    : {
+                        background: 'var(--vscode-button-background)',
+                        color: 'var(--vscode-button-foreground)',
+                      }}
+                >
+                  {activeProviderRow.isSelected ? 'Selected' : 'Select'}
+                </button>
+              )}
+              {resolvedActiveProvider && (
+                <button
+                  type="button"
+                  onClick={() => setActiveProvider(null)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    border: '1px solid var(--vscode-panel-border)',
+                    color: 'var(--vscode-foreground)',
+                  }}
+                >
+                  Install instead
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4 px-4 py-4">
@@ -1366,10 +1346,24 @@ function SettingsPanelContent({
   onRenameLabel,
   onDeleteLabel,
   onPluginOptionsTabActivated,
+  onTabChange,
   initialTab,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
-  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general')
+  const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
+
+  const setActiveTab = useCallback((tab: SettingsTab) => {
+    setActiveTabRaw(tab)
+    onTabChange?.(tab)
+  }, [onTabChange])
+
+  // Sync activeTab when initialTab changes from URL navigation
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTabRaw(initialTab)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab])
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => {

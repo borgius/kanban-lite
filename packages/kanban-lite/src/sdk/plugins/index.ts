@@ -913,15 +913,17 @@ const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
  * mapped package name and issues install hints that reference it.
  *
  * Install targets:
- * - `sqlite` → `npm install kl-plugin-storage-sqlite`
- * - `mysql`  → `npm install kl-plugin-storage-mysql`
+ * - `sqlite`     → `npm install kl-plugin-storage-sqlite`
+ * - `mysql`      → `npm install kl-plugin-storage-mysql`
+ * - `postgresql` → `npm install kl-plugin-storage-postgresql`
  *
- * Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
+ * All packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
  * with CJS entry `dist/index.cjs`.
  */
 export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['sqlite', 'kl-plugin-storage-sqlite'],
   ['mysql', 'kl-plugin-storage-mysql'],
+  ['postgresql', 'kl-plugin-storage-postgresql'],
 ])
 
 /**

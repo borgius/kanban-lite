@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport } from '../../shared/types'
+import type { SettingsTab } from '../components/SettingsPanel'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
@@ -214,6 +215,8 @@ interface KanbanState {
   drawerWidthPreview: number | null
   effectiveDrawerWidth: number
   settingsOpen: boolean
+  settingsTab: SettingsTab
+  settingsPluginId: string | null
   labelDefs: Record<string, LabelDefinition>
 
   /** ID of the currently open card in the editor (null if none) */
@@ -257,6 +260,8 @@ interface KanbanState {
   setDrawerWidthPreview: (width: number) => void
   clearDrawerWidthPreview: () => void
   setSettingsOpen: (open: boolean) => void
+  setSettingsTab: (tab: SettingsTab) => void
+  setSettingsPluginId: (id: string | null) => void
   setSearchQuery: (query: string) => void
   setFuzzySearch: (enabled: boolean) => void
   clearPlainTextSearch: () => void
@@ -379,6 +384,8 @@ export const useStore = create<KanbanState>((set, get) => ({
   drawerWidthPreview: null,
   effectiveDrawerWidth: 50,
   settingsOpen: false,
+  settingsTab: 'general' as SettingsTab,
+  settingsPluginId: null,
   labelDefs: {},
   activeCardId: null,
   activeCardTab: DEFAULT_CARD_TAB,
@@ -560,6 +567,8 @@ export const useStore = create<KanbanState>((set, get) => ({
     effectiveDrawerWidth: clampDrawerWidthPercent(state.cardSettings.drawerWidth ?? 50),
   })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
+  setSettingsPluginId: (id) => set({ settingsPluginId: id }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFuzzySearch: (enabled) => set({ fuzzySearch: enabled }),
   clearPlainTextSearch: () => set((state) => {

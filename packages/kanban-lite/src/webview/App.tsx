@@ -103,6 +103,7 @@ function App(): React.JSX.Element {
     cardSettings,
     effectiveDrawerWidth,
     settingsOpen,
+    settingsTab,
     selectedCardIds,
     setCards,
     setColumns,
@@ -113,6 +114,7 @@ function App(): React.JSX.Element {
     setDrawerWidthPreview,
     clearDrawerWidthPreview,
     setSettingsOpen,
+    setSettingsTab,
     setLabelDefs,
     mergeCardStates,
     selectCardRange,
@@ -1192,9 +1194,11 @@ function App(): React.JSX.Element {
         onPluginOptionsTabActivated={() => {
           vscode.postMessage({ type: 'loadPluginSettings' })
         }}
+        onTabChange={setSettingsTab}
         onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
         onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
         onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
+        initialTab={settingsTab}
       />
 
       <ColumnDialog

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PostgreSQL storage plugin** (`kl-plugin-storage-postgresql`): New external storage provider package for PostgreSQL. Cards and comments are persisted in PostgreSQL tables (`kanban_cards`, `kanban_comments`). Attachments remain on the local filesystem. Requires the `pg` driver as a peer dependency. Provider id: `postgresql`.
 - **Capability-grouped Plugin Options workflow**: Added the shared plugin-settings experience across the Settings panel, CLI, REST API, and MCP so users can list discovered providers, select one provider per capability, edit schema-driven provider options, and run guarded plugin installs from consistent public surfaces.
 - **CrewAI tool adapter** (`kl-adapter-crewai`): New Python package at `packages/kl-adapter-crewai` wrapping kanban-lite REST API operations as CrewAI `BaseTool` subclasses (9 tools: list/get/create/update/move/delete cards, list columns, get/add comments). Includes a `KanbanLiteToolkit` helper with `read_only` mode for reporting agents. Enables specialized agents (PM, Dev, QA) to each manage their own board lane.
 

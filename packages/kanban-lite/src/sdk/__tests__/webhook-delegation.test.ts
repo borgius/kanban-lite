@@ -134,7 +134,7 @@ function createTempWorkspace(): {
   }
 }
 
-/** Minimal mock package source for kl-webhooks-plugin using the T8+ listener-only contract. */
+/** Minimal mock package source for kl-plugin-webhook using the T8+ listener-only contract. */
 const MOCK_PACKAGE_SOURCE = `
 module.exports = {
   webhookProviderPlugin: {
@@ -180,7 +180,7 @@ describe('KanbanSDK – webhook delegation without provider (pre-built storage p
     try {
       const storage = new MarkdownStorageEngine(kanbanDir)
       const sdk = new KanbanSDK(kanbanDir, { storage })
-      expect(() => sdk.listWebhooks()).toThrow('Webhook commands require kl-webhooks-plugin')
+      expect(() => sdk.listWebhooks()).toThrow('Webhook commands require kl-plugin-webhook')
       sdk.destroy()
     } finally {
       cleanup()
@@ -191,7 +191,7 @@ describe('KanbanSDK – webhook delegation without provider (pre-built storage p
 // ---------------------------------------------------------------------------
 // Single delivery regression: one SDK mutation → exactly one outbound delivery
 // The workspace has no explicit webhookPlugin, so the default 'webhooks' →
-// 'kl-webhooks-plugin' alias causes the sibling at ../kl-webhooks-plugin to
+// 'kl-plugin-webhook' alias causes the sibling at ../kl-plugin-webhook to
 // be loaded via the sibling-fallback path.  This MUST run BEFORE
 // installTempPackage is called so the require-cache does NOT yet contain the
 // mock node_modules package, exercising the true sibling loading path.
@@ -201,8 +201,8 @@ describe('KanbanSDK – webhook delegation without provider (pre-built storage p
  * Regression: a single SDK mutation must cause exactly one HTTP POST to a
  * registered webhook endpoint. The workspace config has no explicit
  * webhookPlugin entry, so normalizeWebhookCapabilities defaults to provider
- * 'webhooks' → alias 'kl-webhooks-plugin'. The sibling at
- * ../kl-webhooks-plugin is loaded via the sibling-fallback path, establishing
+ * 'webhooks' → alias 'kl-plugin-webhook'. The sibling at
+ * ../kl-plugin-webhook is loaded via the sibling-fallback path, establishing
  * a true end-to-end sibling-loading + delivery assertion.
  */
 describe('KanbanSDK – single delivery regression: one SDK mutation → one outbound webhook POST', () => {
@@ -239,7 +239,7 @@ describe('KanbanSDK – single delivery regression: one SDK mutation → one out
     try {
       // The workspace has no explicit webhookPlugin config, so
       // normalizeWebhookCapabilities defaults to provider 'webhooks' →
-      // 'kl-webhooks-plugin'. The sibling at ../kl-webhooks-plugin is loaded
+      // 'kl-plugin-webhook'. The sibling at ../kl-plugin-webhook is loaded
       // via sibling fallback (no node_modules package installed yet), proving
       // end-to-end sibling loading + delivery through the provider-backed seam.
       const sdk = new KanbanSDK(kanbanDir)
@@ -268,7 +268,7 @@ describe('KanbanSDK – webhook delegation with provider', () => {
   let cleanupPackage: () => void
 
   beforeAll(() => {
-    cleanupPackage = installTempPackage('kl-webhooks-plugin', MOCK_PACKAGE_SOURCE)
+    cleanupPackage = installTempPackage('kl-plugin-webhook', MOCK_PACKAGE_SOURCE)
   })
 
   afterAll(() => {
@@ -291,7 +291,7 @@ describe('KanbanSDK – webhook delegation with provider', () => {
     const { kanbanDir, cleanup } = createTempWorkspace()
     try {
       const sdk = new KanbanSDK(kanbanDir)
-      // kl-webhooks-plugin exports WebhookListenerPlugin; capabilities.webhookListener must be non-null.
+      // kl-plugin-webhook exports WebhookListenerPlugin; capabilities.webhookListener must be non-null.
       expect(sdk.capabilities!.webhookListener).not.toBeNull()
       sdk.destroy()
     } finally {

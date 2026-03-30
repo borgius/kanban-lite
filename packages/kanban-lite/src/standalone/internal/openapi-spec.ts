@@ -1293,7 +1293,7 @@ export const KANBAN_OPENAPI_SPEC = {
       post: {
         tags: ['Workspace'],
         summary: 'Migrate to SQLite',
-        description: 'Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-sqlite-storage`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.',
+        description: 'Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-plugin-storage-sqlite`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.',
         requestBody: {
           required: false,
           content: {

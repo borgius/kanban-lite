@@ -1,6 +1,6 @@
 # langchain-tools-demo
 
-Example app demonstrating **kl-langchain-tools** — the LangChain / LangGraph adapter for [kanban-lite](https://github.com/borgius/kanban-lite).
+Example app demonstrating **kl-adapter-langchain** — the LangChain / LangGraph adapter for [kanban-lite](https://github.com/borgius/kanban-lite).
 
 ## What This Example Shows
 

@@ -61,7 +61,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
         {
           capability: 'card.storage',
           providerId: 'sqlite',
-          packageName: 'kl-sqlite-storage',
+          packageName: 'kl-plugin-storage-sqlite',
           discoverySource: 'workspace',
           isSelected: false,
         },
@@ -78,7 +78,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
         {
           capability: 'auth.identity',
           providerId: 'local',
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           discoverySource: 'dependency',
           isSelected: true,
         },
@@ -90,7 +90,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
 const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   capability: 'auth.identity',
   providerId: 'local',
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   discoverySource: 'dependency',
   selected: {
     capability: 'auth.identity',
@@ -134,7 +134,7 @@ const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
 const CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   capability: 'card.storage',
   providerId: 'sqlite',
-  packageName: 'kl-sqlite-storage',
+  packageName: 'kl-plugin-storage-sqlite',
   discoverySource: 'workspace',
   selected: {
     capability: 'card.storage',
@@ -161,11 +161,11 @@ const CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
 }
 
 const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   scope: 'workspace',
   command: {
     command: 'npm',
-    args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+    args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
     cwd: '/tmp/workspace',
     shell: false,
   },
@@ -237,7 +237,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Selected provider: local (config)')
     expect(markup).toContain('markdown')
     expect(markup).toContain('sqlite')
-    expect(markup).toContain('kl-sqlite-storage')
+    expect(markup).toContain('kl-plugin-storage-sqlite')
     expect(markup).toContain('Built-in')
     expect(markup).toContain('Workspace')
     expect(markup).toContain('Dependency')
@@ -247,7 +247,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Package name')
     expect(markup).toContain('Global install')
     expect(markup).toContain('Install safely')
-    expect(markup).toContain('kl-auth-plugin or another kl-* provider package')
+    expect(markup).toContain('kl-plugin-auth or another kl-* provider package')
   })
 
   it('renders schema-driven provider options for auth and storage providers', () => {
@@ -309,7 +309,7 @@ describe('SettingsPanel drawer resize integration', () => {
         workspace={null}
         pluginSettings={PLUGIN_SETTINGS_FIXTURE}
         pluginSettingsInstall={INSTALL_RESULT_FIXTURE}
-        pluginSettingsError="Use an exact package name like kl-auth-plugin."
+        pluginSettingsError="Use an exact package name like kl-plugin-auth."
         initialTab="pluginOptions"
         onClose={() => {}}
         onSave={() => {}}
@@ -317,7 +317,7 @@ describe('SettingsPanel drawer resize integration', () => {
     )
 
     expect(markup).toContain('Installed plugin package with lifecycle scripts disabled.')
-    expect(markup).toContain('Use an exact package name like kl-auth-plugin.')
+    expect(markup).toContain('Use an exact package name like kl-plugin-auth.')
     expect(markup).not.toContain('--ignore-scripts')
   })
 })

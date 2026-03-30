@@ -1,5 +1,5 @@
 /**
- * Agent demo — exercises every tool category from kl-langchain-tools.
+ * Agent demo — exercises every tool category from kl-adapter-langchain.
  *
  * This script creates a temporary kanban workspace, initialises the SDK,
  * builds the full toolkit, and invokes each tool to demonstrate the complete
@@ -60,7 +60,7 @@ import {
   // LangGraph
   createRefreshBoardNode,
   createKanbanToolNode,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 
 // ---------------------------------------------------------------------------
 // Helpers

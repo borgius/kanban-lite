@@ -10,7 +10,7 @@ import {
   RemoveColumnTool,
   ReorderColumnsTool,
   createColumnTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Column tools (unit)', () => {

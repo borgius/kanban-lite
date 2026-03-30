@@ -8,7 +8,7 @@ import {
   AddAttachmentTool,
   RemoveAttachmentTool,
   createAttachmentTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Attachment tools (unit)', () => {

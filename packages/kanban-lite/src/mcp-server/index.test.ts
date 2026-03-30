@@ -19,7 +19,7 @@ import type { AuthContext, AuthDecision } from '../sdk/types'
 import type { AuthIdentity } from '../sdk/plugins'
 import type { SDKEventListenerPlugin } from '../sdk/types'
 import type { Webhook } from '../shared/config'
-import { mcpPlugin } from '../../../kl-webhooks-plugin/src/index'
+import { mcpPlugin } from '../../../kl-plugin-webhook/src/index'
 
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 
@@ -822,7 +822,7 @@ describe('MCP plugin-settings parity tools', () => {
         code: 'plugin-settings-install-failed',
         message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
         details: {
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           scope: 'workspace',
           exitCode: 1,
           stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
@@ -831,7 +831,7 @@ describe('MCP plugin-settings parity tools', () => {
     )
 
     const result = await installTool!.handler({
-      packageName: 'kl-auth-plugin',
+      packageName: 'kl-plugin-auth',
       scope: 'workspace',
     })
 
@@ -840,7 +840,7 @@ describe('MCP plugin-settings parity tools', () => {
       code: 'plugin-settings-install-failed',
       message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
       details: {
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         scope: 'workspace',
         exitCode: 1,
         stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
@@ -861,7 +861,7 @@ describe('MCP plugin-settings parity tools', () => {
     expect(installTool).toBeDefined()
 
     const result = await installTool!.handler({
-      packageName: 'kl-auth-plugin --save-dev',
+      packageName: 'kl-plugin-auth --save-dev',
       scope: 'workspace',
     })
 

@@ -16,7 +16,7 @@ user_stories:
     i_want: to edit provider options through JSON Forms driven by each provider's `optionsSchema`
     so_that: provider-specific configuration stays structured, validated, and discoverable
   - as_a: auth-enabled deployer
-    i_want: to configure `kl-auth-plugin` through provider schemas in the same settings flow
+    i_want: to configure `kl-plugin-auth` through provider schemas in the same settings flow
     so_that: auth setup uses the same plugin-options workflow as other providers instead of a bespoke config path
   - as_a: product maintainer
     i_want: the plugin settings feature to include tests plus README and changelog updates required by repo rules
@@ -32,7 +32,7 @@ scope:
     - Add a plugin install form for `kl-*` packages with a global install option and actionable npm error tips.
     - Support provider option editing through per-provider `optionsSchema()` contracts rendered with JSON Forms.
     - Allow provider schemas to model secrets as editable values that are masked in the UI when displayed.
-    - Refactor first-party `kl-auth-plugin` configuration to expose provider schemas compatible with the same options editing flow.
+    - Refactor first-party `kl-plugin-auth` configuration to expose provider schemas compatible with the same options editing flow.
     - Add focused tests covering discovery, selection semantics, install behavior, options editing, masking behavior, and auth-plugin schema usage.
     - Update README, CHANGELOG, and any related plugin/auth docs required by repository rules when the feature is implemented.
   out_of_scope:
@@ -59,8 +59,8 @@ acceptance_criteria:
     verification: Open options for at least two different providers with different schemas and confirm the rendered forms and saved payloads follow the provider-provided schema definitions.
   - criterion: Secrets modeled in provider schemas remain editable but are masked in the UI when displayed.
     verification: Configure a schema-defined secret field, reopen the options view, and confirm the value can be updated while the displayed field remains masked.
-  - criterion: `kl-auth-plugin` configuration participates in the same schema-driven provider options flow as other providers.
-    verification: Configure `kl-auth-plugin` from the plugin/options tab and confirm its options are rendered from schema metadata and saved through the same provider-options path.
+  - criterion: `kl-plugin-auth` configuration participates in the same schema-driven provider options flow as other providers.
+    verification: Configure `kl-plugin-auth` from the plugin/options tab and confirm its options are rendered from schema metadata and saved through the same provider-options path.
   - criterion: Discovery, selection semantics, install behavior, provider schema rendering, secret masking, and auth-plugin schema behavior are covered by automated tests.
     verification: Run the targeted automated test suites added for this feature and confirm each behavior category is exercised.
   - criterion: User-facing documentation and changelog updates required by repository rules are identified as part of the feature contract.
@@ -85,7 +85,7 @@ features:
     overview: Render provider configuration with JSON Forms driven by each provider's `optionsSchema()` contract.
     status: completed
   - name: Auth plugin schema parity
-    overview: Refactor `kl-auth-plugin` so its configuration uses the same provider-schema options flow as other providers.
+    overview: Refactor `kl-plugin-auth` so its configuration uses the same provider-schema options flow as other providers.
     status: completed
   - name: Verification and documentation parity
     overview: Cover the feature with automated tests and the README/CHANGELOG/doc updates required by repository rules.
@@ -104,7 +104,7 @@ decisions:
     rationale: Schema-driven configuration scales across first-party and external providers without bespoke UI for every package.
   - decision: Schema-defined secrets are editable in the settings flow but masked when displayed.
     rationale: Users must be able to manage secret values from the same workflow without exposing them in plain text during normal editing.
-  - decision: `kl-auth-plugin` will be refactored to participate in the same schema-driven provider-options contract.
+  - decision: `kl-plugin-auth` will be refactored to participate in the same schema-driven provider-options contract.
     rationale: Auth configuration should follow the same plugin-management model as other capabilities instead of remaining a special-case path.
   - decision: The in-product installer only accepts exact unscoped `kl-*` package names and always runs with lifecycle scripts disabled.
     rationale: The settings flow must stay a constrained provider installer rather than becoming a general-purpose npm command wrapper.
@@ -117,6 +117,6 @@ changes:
   - version: 0.1.0
     change: Initial draft PRD for a capability-grouped plugin options tab with multi-scope discovery, schema-driven provider configuration, install flow support, and auth-plugin schema parity.
   - version: 0.1.0
-    change: Finalized after implementation with capability-grouped provider inventory, selected-provider persistence in `.kanban.json`, schema-driven options editing, and `kl-auth-plugin` parity across SDK, API, CLI, MCP, and settings UI.
+    change: Finalized after implementation with capability-grouped provider inventory, selected-provider persistence in `.kanban.json`, schema-driven options editing, and `kl-plugin-auth` parity across SDK, API, CLI, MCP, and settings UI.
   - version: 0.1.0
     change: Validation confirmed multi-scope discovery, exact unscoped `kl-*` install guardrails with `--ignore-scripts`, shared redaction across surfaced reads/errors/install output, and reuse of the shared `.card-jsonforms` styling hook.

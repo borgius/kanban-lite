@@ -71,7 +71,7 @@ function writeWorkspaceConfig(workspaceRoot: string): void {
         version: 2,
         plugins: {
           'attachment.storage': {
-            provider: 'kl-s3-attachment-storage',
+            provider: 'kl-plugin-attachment-s3',
           },
         },
       },
@@ -176,7 +176,7 @@ describe('S3 attachment storage integration', () => {
       storageEngine: 'markdown',
       providers: {
         'card.storage': { provider: 'markdown' },
-        'attachment.storage': { provider: 'kl-s3-attachment-storage' },
+        'attachment.storage': { provider: 'kl-plugin-attachment-s3' },
       },
       isFileBacked: true,
       watchGlob: 'boards/**/*.md',

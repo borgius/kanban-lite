@@ -266,7 +266,7 @@ export interface KanbanConfig {
      *
      * Auth capabilities (`auth.identity`, `auth.policy`) can also be declared
      * here using the npm package name as the provider id (e.g.
-     * `"provider": "kl-auth-plugin"`). When present they take precedence over
+     * `"provider": "kl-plugin-auth"`). When present they take precedence over
      * any value in the legacy {@link auth} key.
    */
   plugins?: PluginCapabilitySelections
@@ -805,7 +805,7 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
  * Normalizes auth capability selections into a complete runtime capability map.
  *
  * Omitted auth providers default to the `noop` compatibility ids. When the
- * external `kl-auth-plugin` package is installed those ids resolve there;
+ * external `kl-plugin-auth` package is installed those ids resolve there;
  * otherwise core keeps a built-in compatibility fallback so behavior is
  * unchanged when auth is not configured.
  *
@@ -885,7 +885,7 @@ export function normalizeStorageCapabilities(
  * Normalizes webhook capability selections into a complete runtime capability map.
  *
  * When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
- * maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
+ * maps to the `kl-plugin-webhook` external package via `WEBHOOK_PROVIDER_ALIASES`.
  * Core no longer provides a built-in webhook delivery fallback; hosts must install
  * that package anywhere webhook CRUD or runtime delivery is expected to work.
  *

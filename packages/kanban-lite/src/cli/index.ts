@@ -2285,7 +2285,7 @@ async function main(): Promise<void> {
       if (webhookPlugin) {
         await runCliPlugin(webhookPlugin, positional, flags, workspaceRoot, sdk)
       } else {
-        console.error(red('Webhook commands require kl-webhooks-plugin. Run: npm install kl-webhooks-plugin'))
+        console.error(red('Webhook commands require kl-plugin-webhook. Run: npm install kl-plugin-webhook'))
         process.exit(1)
       }
       break

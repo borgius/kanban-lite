@@ -92,7 +92,7 @@ const pluginSettingsPayload: PluginSettingsPayload = {
         {
           capability: 'auth.identity',
           providerId: 'local',
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           discoverySource: 'workspace',
           isSelected: true,
           optionsSchema: {
@@ -113,7 +113,7 @@ const pluginSettingsPayload: PluginSettingsPayload = {
 const providerTransport: PluginSettingsProviderTransport = {
   capability: 'auth.identity',
   providerId: 'local',
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   discoverySource: 'workspace',
   selected: {
     capability: 'auth.identity',
@@ -137,11 +137,11 @@ const providerTransport: PluginSettingsProviderTransport = {
 }
 
 const installTransport: PluginSettingsInstallTransportResult = {
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   scope: 'workspace',
   command: {
     command: 'npm',
-    args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+    args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
     cwd: '/tmp/workspace',
     shell: false,
   },
@@ -297,10 +297,10 @@ describe('KanbanPanel plugin-settings bridge', () => {
         },
       },
       {
-        message: { type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' } satisfies Extract<WebviewMessage, { type: 'installPluginSettingsPackage' }>,
+        message: { type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' } satisfies Extract<WebviewMessage, { type: 'installPluginSettingsPackage' }>,
         expectedAction: 'install' satisfies PluginSettingsTransportAction,
         assertSdkCall: () => {
-          expect(sdk.installPluginSettingsPackage).toHaveBeenCalledWith({ packageName: 'kl-auth-plugin', scope: 'workspace' })
+          expect(sdk.installPluginSettingsPackage).toHaveBeenCalledWith({ packageName: 'kl-plugin-auth', scope: 'workspace' })
           expect(panel._runWithAuth).toHaveBeenCalledTimes(1)
         },
         assertMessage: (message: PluginSettingsResultMessage) => {
@@ -342,14 +342,14 @@ describe('KanbanPanel plugin-settings bridge', () => {
         code: 'plugin-settings-install-failed',
         message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
         details: {
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           scope: 'workspace',
           stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
         },
       })),
     )
 
-    await harness.dispatch({ type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' })
+    await harness.dispatch({ type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' })
 
     expect(sdk.listPluginSettings).not.toHaveBeenCalled()
     expect(harness.postMessage).toHaveBeenCalledTimes(1)
@@ -362,7 +362,7 @@ describe('KanbanPanel plugin-settings bridge', () => {
         code: 'plugin-settings-install-failed',
         message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
         details: {
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           scope: 'workspace',
           stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
         },

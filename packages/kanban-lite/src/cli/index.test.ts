@@ -1034,19 +1034,19 @@ describe('Webhook CLI routing — plugin-owned dispatch', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('routes "webhooks list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+  it('routes "webhooks list" through kl-plugin-webhook cliPlugin (exits 0, no "Unknown command")', async () => {
     const result = await runCliCommand(['webhooks', 'list', '--config', configPath])
     expect(result.exitCode).toBe(0)
     expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
   })
 
-  it('routes "wh list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+  it('routes "wh list" through kl-plugin-webhook cliPlugin (exits 0, no "Unknown command")', async () => {
     const result = await runCliCommand(['wh', 'list', '--config', configPath])
     expect(result.exitCode).toBe(0)
     expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
   })
 
-  it('routes "webhook list" through kl-webhooks-plugin cliPlugin (exits 0, no "Unknown command")', async () => {
+  it('routes "webhook list" through kl-plugin-webhook cliPlugin (exits 0, no "Unknown command")', async () => {
     const result = await runCliCommand(['webhook', 'list', '--config', configPath])
     expect(result.exitCode).toBe(0)
     expect(stripAnsi(result.stdout + result.stderr)).not.toMatch(/unknown command/i)
@@ -1169,7 +1169,7 @@ describe('CLI plugin-settings commands', () => {
             providers: expect.arrayContaining([
               expect.objectContaining({
                 providerId: 'local',
-                packageName: 'kl-auth-plugin',
+                packageName: 'kl-plugin-auth',
                 isSelected: true,
               }),
             ]),
@@ -1305,7 +1305,7 @@ describe('CLI plugin-settings commands', () => {
     const exitSpy = mockProcessExit()
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-auth-plugin'], {
+    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-plugin-auth'], {
       scope: 'workspace',
       'save-dev': true,
     })).rejects.toThrow('process.exit:1')
@@ -1322,13 +1322,13 @@ describe('CLI plugin-settings commands', () => {
           code: 'plugin-settings-install-failed',
           message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
           details: {
-            packageName: 'kl-auth-plugin',
+            packageName: 'kl-plugin-auth',
             scope: 'workspace',
             exitCode: 1,
             stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
             manualInstall: {
               command: 'npm',
-              args: ['install', 'kl-auth-plugin'],
+              args: ['install', 'kl-plugin-auth'],
               cwd: '/tmp/demo',
               shell: false,
             },
@@ -1340,7 +1340,7 @@ describe('CLI plugin-settings commands', () => {
     const exitSpy = mockProcessExit()
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-auth-plugin'], {
+    await expect(cmdPluginSettings(sdk as KanbanSDK, ['install', 'kl-plugin-auth'], {
       scope: 'workspace',
       json: true,
     })).rejects.toThrow('process.exit:1')

@@ -222,7 +222,7 @@ const FALLBACK_NOOP_POLICY_PLUGIN: AuthPolicyPlugin = {
  * exported separately as `webhookListenerPlugin: SDKEventListenerPlugin` when an
  * external provider wants to own webhook event delivery.
  *
- * External packages (e.g. `kl-webhooks-plugin`) must export a compatible
+ * External packages (e.g. `kl-plugin-webhook`) must export a compatible
  * implementation as `webhookProviderPlugin` (or as the default export) with a
  * manifest that declares `'webhook.delivery'` in its `provides` array.
  */
@@ -540,16 +540,16 @@ function getBundledAuthCompatExports(): BundledAuthCompatExports {
   }
 }
 
-/** No-op identity provider resolved from `kl-auth-plugin` when available. */
+/** No-op identity provider resolved from `kl-plugin-auth` when available. */
 export const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin = getBundledAuthCompatExports().NOOP_IDENTITY_PLUGIN
 
-/** No-op policy provider resolved from `kl-auth-plugin` when available. */
+/** No-op policy provider resolved from `kl-plugin-auth` when available. */
 export const NOOP_POLICY_PLUGIN: AuthPolicyPlugin = getBundledAuthCompatExports().NOOP_POLICY_PLUGIN
 
-/** RBAC identity provider resolved from `kl-auth-plugin` when available. */
+/** RBAC identity provider resolved from `kl-plugin-auth` when available. */
 export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = getBundledAuthCompatExports().RBAC_IDENTITY_PLUGIN
 
-/** RBAC policy provider resolved from `kl-auth-plugin` when available. */
+/** RBAC policy provider resolved from `kl-plugin-auth` when available. */
 export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = getBundledAuthCompatExports().RBAC_POLICY_PLUGIN
 
 // ---------------------------------------------------------------------------
@@ -754,7 +754,7 @@ export interface McpToolDefinition {
  * First-partiy cut: tool contributions only. Pre/post registration hooks,
  * auth decorators, and resource contributions are deferred to follow-up work.
  *
- * Packages that want to own a set of MCP tools (e.g. `kl-webhooks-plugin`)
+ * Packages that want to own a set of MCP tools (e.g. `kl-plugin-webhook`)
  * can export `mcpPlugin` implementing this interface. The MCP server
  * discovers the export via the same active-package set used by the standalone
  * HTTP discovery path (SPE-06).
@@ -835,7 +835,7 @@ export interface ResolvedCapabilityBag {
   readonly eventListeners: readonly SDKEventListenerPlugin[]
   /**
    * Resolved webhook delivery provider for CRUD operations, or `null` when the
-   * `kl-webhooks-plugin` package is not yet installed.
+   * `kl-plugin-webhook` package is not yet installed.
    *
    * This field holds only the registry/persistence capability. Runtime delivery
    * is wired via {@link webhookListener}.
@@ -913,52 +913,52 @@ const BUILTIN_CARD_PLUGINS: ReadonlyMap<string, CardStoragePlugin> = new Map([
  * mapped package name and issues install hints that reference it.
  *
  * Install targets:
- * - `sqlite` → `npm install kl-sqlite-storage`
- * - `mysql`  → `npm install kl-mysql-storage`
+ * - `sqlite` → `npm install kl-plugin-storage-sqlite`
+ * - `mysql`  → `npm install kl-plugin-storage-mysql`
  *
  * Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
  * with CJS entry `dist/index.cjs`.
  */
 export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['sqlite', 'kl-sqlite-storage'],
-  ['mysql', 'kl-mysql-storage'],
+  ['sqlite', 'kl-plugin-storage-sqlite'],
+  ['mysql', 'kl-plugin-storage-mysql'],
 ])
 
 /**
  * Maps short `card.state` provider ids to their installable npm package names.
  *
- * - `sqlite` → `npm install kl-sqlite-card-state`
+ * - `sqlite` → `npm install kl-plugin-card-state-sqlite`
  *
  * External packages must export `createCardStateProvider(context)` or a
  * `cardStateProvider`/`default` object with a manifest that provides
  * `'card.state'`.
  */
 export const CARD_STATE_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['sqlite', 'kl-sqlite-card-state'],
+  ['sqlite', 'kl-plugin-card-state-sqlite'],
 ])
 
 /**
  * Maps short webhook provider ids to their installable npm package names.
  *
- * - `webhooks` → `npm install kl-webhooks-plugin`
+ * - `webhooks` → `npm install kl-plugin-webhook`
  *
  * External packages must export `webhookProviderPlugin` (or a default export)
  * with a manifest that provides `'webhook.delivery'` and CRUD methods.
  */
 export const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['webhooks', 'kl-webhooks-plugin'],
+  ['webhooks', 'kl-plugin-webhook'],
 ])
 
 /**
  * Maps built-in auth compatibility ids to the external auth package.
  *
- * - `noop` → `npm install kl-auth-plugin`
- * - `rbac` → `npm install kl-auth-plugin`
+ * - `noop` → `npm install kl-plugin-auth`
+ * - `rbac` → `npm install kl-plugin-auth`
  */
 export const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['noop', 'kl-auth-plugin'],
-  ['rbac', 'kl-auth-plugin'],
-  ['local', 'kl-auth-plugin'],
+  ['noop', 'kl-plugin-auth'],
+  ['rbac', 'kl-plugin-auth'],
+  ['local', 'kl-plugin-auth'],
 ])
 
 // ---------------------------------------------------------------------------
@@ -2322,7 +2322,7 @@ function isValidRbacRoleMatrix(value: unknown): value is Record<RbacRole, Readon
 }
 
 function tryLoadBundledAuthCompatExports(): BundledAuthCompatExports | null {
-  const packageName = 'kl-auth-plugin'
+  const packageName = 'kl-plugin-auth'
 
   try {
     const mod = loadExternalModule(packageName) as AuthPluginModule
@@ -2839,7 +2839,7 @@ export function createBuiltinAuthListenerPlugin(
  * deterministically activate the webhook package for all surfaces.
  *
  * When no explicit webhook provider is configured, falls through to the default
- * `'webhooks'` → `'kl-webhooks-plugin'` alias, matching the behaviour of
+ * `'webhooks'` → `'kl-plugin-webhook'` alias, matching the behaviour of
  * {@link normalizeWebhookCapabilities} and the standalone discovery path so that
  * both surfaces activate the same set of packages.
  *
@@ -2888,7 +2888,7 @@ export function collectActiveExternalPackageNames(config: {
 
   // Webhook provider — plugins['webhook.delivery'] takes precedence over the
   // legacy webhookPlugin key; falls through to the canonical default alias
-  // 'webhooks' → 'kl-webhooks-plugin' when neither is configured, matching
+  // 'webhooks' → 'kl-plugin-webhook' when neither is configured, matching
   // normalizeWebhookCapabilities and the standalone HTTP discovery path.
   const webhookProvider = config.plugins?.['webhook.delivery']?.provider
     ?? config.webhookPlugin?.['webhook.delivery']?.provider
@@ -2980,7 +2980,7 @@ export function resolveCapabilityBag(
   if (attachRef.provider === 'localfs') {
     if (shouldAttemptSamePluginAttachmentProvider(cardRef.provider, attachRef.provider)) {
       // Use the alias package name so the same-package attachment fallback
-      // loads from the correct external package (e.g. kl-sqlite-storage,
+      // loads from the correct external package (e.g. kl-plugin-storage-sqlite,
       // not the short alias id 'sqlite').
       const cardPackageName = PROVIDER_ALIASES.get(cardRef.provider) ?? cardRef.provider
       try {

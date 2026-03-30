@@ -10,7 +10,7 @@ import {
   ListBoardLogsTool,
   AddBoardLogTool,
   createLogTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Log tools (unit)', () => {

@@ -55,7 +55,7 @@ import {
   RemoveAttachmentTool,
   createRefreshBoardNode,
   createKanbanToolNode,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 
 // ---------------------------------------------------------------------------
 // Test workspace lifecycle

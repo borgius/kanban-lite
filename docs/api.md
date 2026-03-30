@@ -1635,7 +1635,7 @@ Returns the active card, attachment, webhook, and `card.state` provider IDs plus
 
 **Migrate to SQLite**
 
-Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-sqlite-storage`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.
+Migrates cards from the built-in markdown provider to the first-party `sqlite` compatibility provider (`kl-plugin-storage-sqlite`) and updates compatibility config fields in `.kanban.json`. This endpoint does not migrate into arbitrary external providers.
 
 #### Request Body
 

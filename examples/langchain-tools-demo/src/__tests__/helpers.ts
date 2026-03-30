@@ -3,7 +3,7 @@
  */
 
 import { vi } from 'vitest'
-import type { KanbanSDK } from 'kl-langchain-tools'
+import type { KanbanSDK } from 'kl-adapter-langchain'
 
 export function createMockSDK(): KanbanSDK & Record<string, any> {
   return {

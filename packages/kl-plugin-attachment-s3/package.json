@@ -1,0 +1,67 @@
+{
+  "name": "kl-plugin-attachment-s3",
+  "version": "0.1.6",
+  "description": "kanban-lite attachment.storage plugin for Amazon S3 (and S3-compatible APIs)",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgius/kl-plugin-attachment-s3.git"
+  },
+  "homepage": "https://github.com/borgius/kl-plugin-attachment-s3#readme",
+  "bugs": {
+    "url": "https://github.com/borgius/kl-plugin-attachment-s3/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:@aws-sdk/client-s3 && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run src/s3-kanban-lite.workspace.test.ts",
+    "release": "npm run clean && npm run build && npm version patch && npm publish",
+    "release:minor": "npm run clean && npm run build && npm version minor && npm publish",
+    "release:major": "npm run clean && npm run build && npm version major && npm publish"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.540.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "kanban-lite": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "kanban-lite": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "kanban-lite",
+    "kanban",
+    "s3",
+    "attachment",
+    "storage",
+    "plugin"
+  ]
+}

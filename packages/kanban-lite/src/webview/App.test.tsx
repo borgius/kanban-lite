@@ -57,7 +57,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
         {
           capability: 'card.storage',
           providerId: 'sqlite',
-          packageName: 'kl-sqlite-storage',
+          packageName: 'kl-plugin-storage-sqlite',
           discoverySource: 'workspace',
           isSelected: false,
         },
@@ -74,7 +74,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
         {
           capability: 'auth.identity',
           providerId: 'local',
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           discoverySource: 'dependency',
           isSelected: true,
         },
@@ -86,7 +86,7 @@ const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
 const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   capability: 'auth.identity',
   providerId: 'local',
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   discoverySource: 'dependency',
   selected: {
     capability: 'auth.identity',
@@ -110,11 +110,11 @@ const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
 }
 
 const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
-  packageName: 'kl-auth-plugin',
+  packageName: 'kl-plugin-auth',
   scope: 'global',
   command: {
     command: 'npm',
-    args: ['install', '--global', '--ignore-scripts', 'kl-auth-plugin'],
+    args: ['install', '--global', '--ignore-scripts', 'kl-plugin-auth'],
     cwd: '/tmp/workspace',
     shell: false,
   },
@@ -145,7 +145,7 @@ const PLUGIN_SETTINGS_AFTER_RESELECTION: PluginSettingsPayload = {
         {
           capability: 'card.storage',
           providerId: 'sqlite',
-          packageName: 'kl-sqlite-storage',
+          packageName: 'kl-plugin-storage-sqlite',
           discoverySource: 'workspace',
           isSelected: true,
         },
@@ -742,11 +742,11 @@ describe('App plugin settings bridge', () => {
       options: { apiToken: '••••••' },
     })
 
-    ;(latestSettingsPanelProps?.onInstallPluginSettingsPackage as ((packageName: string, scope: 'workspace' | 'global') => void) | undefined)?.('kl-auth-plugin', 'global')
+    ;(latestSettingsPanelProps?.onInstallPluginSettingsPackage as ((packageName: string, scope: 'workspace' | 'global') => void) | undefined)?.('kl-plugin-auth', 'global')
 
     expect(postMessageSpy).toHaveBeenNthCalledWith(4, {
       type: 'installPluginSettingsPackage',
-      packageName: 'kl-auth-plugin',
+      packageName: 'kl-plugin-auth',
       scope: 'global',
     })
 
@@ -808,7 +808,7 @@ describe('App plugin settings bridge', () => {
       action: 'install',
       error: {
         code: 'invalid-plugin-install-package-name',
-        message: 'Use an exact package name like kl-auth-plugin.',
+        message: 'Use an exact package name like kl-plugin-auth.',
         redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
       },
     })
@@ -817,7 +817,7 @@ describe('App plugin settings bridge', () => {
 
     const errorSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
 
-    expect(errorSettingsPanelProps?.pluginSettingsError).toBe('Use an exact package name like kl-auth-plugin.')
+    expect(errorSettingsPanelProps?.pluginSettingsError).toBe('Use an exact package name like kl-plugin-auth.')
     expect(errorSettingsPanelProps?.pluginSettingsInstall).toBeNull()
   })
 })

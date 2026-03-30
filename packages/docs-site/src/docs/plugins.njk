@@ -10,19 +10,19 @@ permalink: /docs/plugins/
   <div class="capability-grid">
     <div class="capability-card">
       <strong>card.storage</strong>
-      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-mysql-storage</code>.</span>
+      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-plugin-storage-mysql</code>.</span>
     </div>
     <div class="capability-card">
       <strong>attachment.storage</strong>
-      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-s3-attachment-storage</code>.</span>
+      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-plugin-attachment-s3</code>.</span>
     </div>
     <div class="capability-card">
       <strong>webhook.delivery</strong>
-      <span>Outbound HTTP delivery for kanban events. External: <code>kl-webhooks-plugin</code>.</span>
+      <span>Outbound HTTP delivery for kanban events. External: <code>kl-plugin-webhook</code>.</span>
     </div>
     <div class="capability-card">
       <strong>auth.identity / auth.policy</strong>
-      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-auth-plugin</code>.</span>
+      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-plugin-auth</code>.</span>
     </div>
   </div>
   <div class="usage-example">
@@ -30,7 +30,7 @@ permalink: /docs/plugins/
     <pre><code>{
   "storage": {
     "card.storage":        { "provider": "sqlite" },
-    "attachment.storage": { "provider": "kl-s3-attachment-storage" },
+    "attachment.storage": { "provider": "kl-plugin-attachment-s3" },
     "webhook.delivery":   { "provider": "webhooks" }
   }
 }</code></pre>

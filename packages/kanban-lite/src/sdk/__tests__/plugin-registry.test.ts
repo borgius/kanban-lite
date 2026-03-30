@@ -471,12 +471,12 @@ describe('BUILTIN_ATTACHMENT_IDS', () => {
 // ---------------------------------------------------------------------------
 
 describe('PROVIDER_ALIASES', () => {
-  it('maps sqlite to kl-sqlite-storage', () => {
-    expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-sqlite-storage')
+  it('maps sqlite to kl-plugin-storage-sqlite', () => {
+    expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-storage-sqlite')
   })
 
-  it('maps mysql to kl-mysql-storage', () => {
-    expect(PROVIDER_ALIASES.get('mysql')).toBe('kl-mysql-storage')
+  it('maps mysql to kl-plugin-storage-mysql', () => {
+    expect(PROVIDER_ALIASES.get('mysql')).toBe('kl-plugin-storage-mysql')
   })
 
   it('has no alias for unknown provider ids', () => {
@@ -495,8 +495,8 @@ describe('PROVIDER_ALIASES', () => {
 // ---------------------------------------------------------------------------
 
 describe('CARD_STATE_PROVIDER_ALIASES', () => {
-  it('maps sqlite to kl-sqlite-card-state', () => {
-    expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-sqlite-card-state')
+  it('maps sqlite to kl-plugin-card-state-sqlite', () => {
+    expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-card-state-sqlite')
   })
 
   it('has no alias for unknown card.state provider ids', () => {
@@ -718,7 +718,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       }))
       expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
         providerId: 'sqlite',
-        packageName: 'kl-sqlite-storage',
+        packageName: 'kl-plugin-storage-sqlite',
         discoverySource: 'workspace',
         isSelected: false,
       }))
@@ -733,7 +733,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       })
       expect(webhookDelivery?.providers).toContainEqual(expect.objectContaining({
         providerId: 'webhooks',
-        packageName: 'kl-webhooks-plugin',
+        packageName: 'kl-plugin-webhook',
         discoverySource: 'workspace',
         isSelected: true,
       }))
@@ -796,7 +796,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       })
       expect(cardStorage?.providers).toContainEqual(expect.objectContaining({
         providerId: 'sqlite',
-        packageName: 'kl-sqlite-storage',
+        packageName: 'kl-plugin-storage-sqlite',
         discoverySource: 'workspace',
         isSelected: true,
       }))
@@ -839,7 +839,7 @@ describe('KanbanSDK plugin settings inventory', () => {
       expect(provider).toMatchObject({
         capability: 'auth.identity',
         providerId: 'local',
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         discoverySource: 'workspace',
         selected: {
           capability: 'auth.identity',
@@ -1056,11 +1056,11 @@ describe('KanbanSDK plugin settings inventory', () => {
   it.each([
     {
       scope: 'workspace' as const,
-      expectedArgs: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+      expectedArgs: ['install', '--ignore-scripts', 'kl-plugin-auth'],
     },
     {
       scope: 'global' as const,
-      expectedArgs: ['install', '--global', '--ignore-scripts', 'kl-auth-plugin'],
+      expectedArgs: ['install', '--global', '--ignore-scripts', 'kl-plugin-auth'],
     },
   ])('installs exact plugin packages with fixed npm argv and lifecycle scripts disabled for %s scope', async ({ scope, expectedArgs }) => {
     const installCalls: Array<{
@@ -1080,10 +1080,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     } })
 
     try {
-      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope })
+      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-plugin-auth', scope })
 
       expect(result).toMatchObject({
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         scope,
         message: 'Installed plugin package with lifecycle scripts disabled.',
         stdout: 'added 1 package',
@@ -1114,11 +1114,11 @@ describe('KanbanSDK plugin settings inventory', () => {
       exitCode: 0,
       signal: null,
       stdout: 'Authorization: Bearer npm_super_secret_token\npassword=super-secret-password\n',
-      stderr: 'downloading https://demo-user:demo-pass@example.com/kl-auth-plugin.tgz\n',
+      stderr: 'downloading https://demo-user:demo-pass@example.com/kl-plugin-auth.tgz\n',
     }) })
 
     try {
-      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' })
+      const result = await sdk.installPluginSettingsPackage({ packageName: 'kl-plugin-auth', scope: 'workspace' })
 
       expect(result.stdout).toContain('[REDACTED]')
       expect(result.stderr).toContain('[REDACTED]')
@@ -1132,15 +1132,15 @@ describe('KanbanSDK plugin settings inventory', () => {
   })
 
   it.each([
-    { label: 'version specifier', packageName: 'kl-auth-plugin@latest' },
-    { label: 'scoped package', packageName: '@scope/kl-auth-plugin' },
-    { label: 'relative path', packageName: '../kl-auth-plugin' },
-    { label: 'file specifier', packageName: 'file:../kl-auth-plugin' },
-    { label: 'tarball URL', packageName: 'https://example.com/kl-auth-plugin.tgz' },
-    { label: 'flag fragment', packageName: 'kl-auth-plugin --save-dev' },
-    { label: 'shell fragment', packageName: 'kl-auth-plugin; rm -rf /' },
-    { label: 'leading whitespace', packageName: ' kl-auth-plugin' },
-    { label: 'newline fragment', packageName: 'kl-auth-plugin\n--global' },
+    { label: 'version specifier', packageName: 'kl-plugin-auth@latest' },
+    { label: 'scoped package', packageName: '@scope/kl-plugin-auth' },
+    { label: 'relative path', packageName: '../kl-plugin-auth' },
+    { label: 'file specifier', packageName: 'file:../kl-plugin-auth' },
+    { label: 'tarball URL', packageName: 'https://example.com/kl-plugin-auth.tgz' },
+    { label: 'flag fragment', packageName: 'kl-plugin-auth --save-dev' },
+    { label: 'shell fragment', packageName: 'kl-plugin-auth; rm -rf /' },
+    { label: 'leading whitespace', packageName: ' kl-plugin-auth' },
+    { label: 'newline fragment', packageName: 'kl-plugin-auth\n--global' },
   ])('rejects invalid install package input ($label) before spawning npm', async ({ packageName }) => {
     const installCalls: Array<unknown> = []
     const sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: async (command) => {
@@ -1181,17 +1181,17 @@ describe('KanbanSDK plugin settings inventory', () => {
         'Authorization: Bearer npm_super_secret_token',
         '//registry.npmjs.org/:_authToken=npm_inline_secret',
         'password=super-secret-password',
-        'download failed at https://demo-user:demo-pass@example.com/kl-auth-plugin.tgz',
+        'download failed at https://demo-user:demo-pass@example.com/kl-plugin-auth.tgz',
       ].join('\n'),
     }) })
 
     try {
       await expect(
-        sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' }),
+        sdk.installPluginSettingsPackage({ packageName: 'kl-plugin-auth', scope: 'workspace' }),
       ).rejects.toBeInstanceOf(PluginSettingsOperationError)
 
       try {
-        await sdk.installPluginSettingsPackage({ packageName: 'kl-auth-plugin', scope: 'workspace' })
+        await sdk.installPluginSettingsPackage({ packageName: 'kl-plugin-auth', scope: 'workspace' })
       } catch (error) {
         expect(error).toBeInstanceOf(PluginSettingsOperationError)
         const payload = (error as PluginSettingsOperationError).payload
@@ -1201,18 +1201,18 @@ describe('KanbanSDK plugin settings inventory', () => {
           message: expect.stringContaining('install the package manually'),
         })
         expect(payload.details).toMatchObject({
-          packageName: 'kl-auth-plugin',
+          packageName: 'kl-plugin-auth',
           scope: 'workspace',
           exitCode: 1,
           command: {
             command: 'npm',
-            args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+            args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
             cwd: workspaceDir,
             shell: false,
           },
           manualInstall: {
             command: 'npm',
-            args: ['install', 'kl-auth-plugin'],
+            args: ['install', 'kl-plugin-auth'],
             cwd: workspaceDir,
             shell: false,
           },
@@ -1566,7 +1566,7 @@ describe('KanbanSDK auth wiring', () => {
         'auth.policy': { provider: 'local' },
       },
     )
-    expect(bag.standaloneHttpPlugins.some((plugin) => plugin.manifest.id === 'kl-auth-plugin-standalone')).toBe(true)
+    expect(bag.standaloneHttpPlugins.some((plugin) => plugin.manifest.id === 'kl-plugin-auth-standalone')).toBe(true)
   })
 })
 
@@ -1631,7 +1631,7 @@ describe('KanbanSDK.getWebhookStatus', () => {
   it('returns built-in provider and inactive flag when no webhook plugin configured', () => {
     const sdk = new KanbanSDK(kanbanDir)
     const status = sdk.getWebhookStatus()
-    // When kl-webhooks-plugin is installed as a sibling, it resolves to 'webhooks'.
+    // When kl-plugin-webhook is installed as a sibling, it resolves to 'webhooks'.
     // When it is absent, the built-in fallback is used and webhookProvider is 'built-in'.
     expect(typeof status.webhookProvider).toBe('string')
     expect(typeof status.webhookProviderActive).toBe('boolean')
@@ -2152,8 +2152,8 @@ describe('RBAC built-in provider pair', () => {
 // ---------------------------------------------------------------------------
 
 describe('WEBHOOK_PROVIDER_ALIASES', () => {
-  it('maps "webhooks" to "kl-webhooks-plugin"', () => {
-    expect(WEBHOOK_PROVIDER_ALIASES.get('webhooks')).toBe('kl-webhooks-plugin')
+  it('maps "webhooks" to "kl-plugin-webhook"', () => {
+    expect(WEBHOOK_PROVIDER_ALIASES.get('webhooks')).toBe('kl-plugin-webhook')
   })
 
   it('does not contain unknown aliases', () => {
@@ -2166,12 +2166,12 @@ describe('WEBHOOK_PROVIDER_ALIASES', () => {
 // ---------------------------------------------------------------------------
 
 describe('AUTH_PROVIDER_ALIASES', () => {
-  it('maps "noop" to "kl-auth-plugin"', () => {
-    expect(AUTH_PROVIDER_ALIASES.get('noop')).toBe('kl-auth-plugin')
+  it('maps "noop" to "kl-plugin-auth"', () => {
+    expect(AUTH_PROVIDER_ALIASES.get('noop')).toBe('kl-plugin-auth')
   })
 
-  it('maps "rbac" to "kl-auth-plugin"', () => {
-    expect(AUTH_PROVIDER_ALIASES.get('rbac')).toBe('kl-auth-plugin')
+  it('maps "rbac" to "kl-plugin-auth"', () => {
+    expect(AUTH_PROVIDER_ALIASES.get('rbac')).toBe('kl-plugin-auth')
   })
 
   it('does not contain unknown aliases', () => {
@@ -2184,30 +2184,30 @@ describe('AUTH_PROVIDER_ALIASES', () => {
 // ---------------------------------------------------------------------------
 
 describe('collectActiveExternalPackageNames', () => {
-  it('includes kl-webhooks-plugin for an empty config (default webhook activation)', () => {
+  it('includes kl-plugin-webhook for an empty config (default webhook activation)', () => {
     const result = collectActiveExternalPackageNames({})
-    expect(result).toContain('kl-webhooks-plugin')
+    expect(result).toContain('kl-plugin-webhook')
   })
 
   it('maps sqlite card.state provider ids to the workspace package name', () => {
     const result = collectActiveExternalPackageNames({
       plugins: { 'card.state': { provider: 'sqlite' } },
     })
-    expect(result).toContain('kl-sqlite-card-state')
+    expect(result).toContain('kl-plugin-card-state-sqlite')
   })
 
-  it('includes kl-webhooks-plugin when webhookPlugin key is explicitly configured', () => {
+  it('includes kl-plugin-webhook when webhookPlugin key is explicitly configured', () => {
     const result = collectActiveExternalPackageNames({
       webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
     })
-    expect(result).toContain('kl-webhooks-plugin')
+    expect(result).toContain('kl-plugin-webhook')
   })
 
-  it('includes kl-webhooks-plugin via plugins["webhook.delivery"] override', () => {
+  it('includes kl-plugin-webhook via plugins["webhook.delivery"] override', () => {
     const result = collectActiveExternalPackageNames({
       plugins: { 'webhook.delivery': { provider: 'webhooks' } },
     })
-    expect(result).toContain('kl-webhooks-plugin')
+    expect(result).toContain('kl-plugin-webhook')
   })
 })
 
@@ -2245,7 +2245,7 @@ describe('resolveCapabilityBag – webhookProvider', () => {
       undefined,
       webhookCaps,
     )
-    // In dev the sibling `../kl-webhooks-plugin` is built and resolves successfully.
+    // In dev the sibling `../kl-plugin-webhook` is built and resolves successfully.
     // null is only returned in environments where neither node_modules nor the sibling exists.
     expect(bag.webhookProvider).not.toBeNull()
     expect(bag.webhookProvider?.manifest.provides).toContain('webhook.delivery')
@@ -2265,7 +2265,7 @@ describe('resolveCapabilityBag – webhookProvider', () => {
       unregister: () => {},
     }
 
-    const cleanup = installTempPackage('kl-webhooks-plugin', `
+    const cleanup = installTempPackage('kl-plugin-webhook', `
       module.exports = {
         webhookProviderPlugin: {
           manifest: { id: 'test-webhooks', provides: ['webhook.delivery'] },
@@ -2305,7 +2305,7 @@ describe('resolveCapabilityBag – webhookProvider', () => {
     }
   })
 
-  it('standaloneHttpPlugins includes kl-webhooks-plugin under webhook-only config', () => {
+  it('standaloneHttpPlugins includes kl-plugin-webhook under webhook-only config', () => {
     const webhookCaps = normalizeWebhookCapabilities({})
     const bag = resolveCapabilityBag(
       { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
@@ -2336,11 +2336,11 @@ describe('WORKSPACE_ROOT', () => {
   it('workspace root contains packages/ directory with all plugin packages', () => {
     expect(WORKSPACE_ROOT).toBeTruthy()
     const packagesDir = path.join(WORKSPACE_ROOT!, 'packages')
-    expect(fs.existsSync(path.join(packagesDir, 'kl-sqlite-storage'))).toBe(true)
-    expect(fs.existsSync(path.join(packagesDir, 'kl-mysql-storage'))).toBe(true)
-    expect(fs.existsSync(path.join(packagesDir, 'kl-auth-plugin'))).toBe(true)
-    expect(fs.existsSync(path.join(packagesDir, 'kl-webhooks-plugin'))).toBe(true)
-    expect(fs.existsSync(path.join(packagesDir, 'kl-s3-attachment-storage'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-storage-sqlite'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-storage-mysql'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-auth'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-webhook'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-attachment-s3'))).toBe(true)
   })
 })
 
@@ -2362,8 +2362,8 @@ describe('monorepo workspace-local plugin resolution', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('resolves kl-sqlite-storage from workspace packages/ directory', () => {
-    // kl-sqlite-storage is not published to npm but lives in packages/kl-sqlite-storage.
+  it('resolves kl-plugin-storage-sqlite from workspace packages/ directory', () => {
+    // kl-plugin-storage-sqlite is not published to npm but lives in packages/kl-plugin-storage-sqlite.
     // The workspace-local resolution tier must find it there.
     const bag = resolveCapabilityBag(
       {
@@ -2375,7 +2375,7 @@ describe('monorepo workspace-local plugin resolution', () => {
     expect(bag.cardStorage.type).toBe('sqlite')
   })
 
-  it('resolves kl-mysql-storage from workspace packages/ directory', () => {
+  it('resolves kl-plugin-storage-mysql from workspace packages/ directory', () => {
     const bag = resolveCapabilityBag(
       {
         'card.storage': { provider: 'mysql', options: { database: 'kanban_db' } },
@@ -2386,14 +2386,14 @@ describe('monorepo workspace-local plugin resolution', () => {
     expect(bag.cardStorage.type).toBe('mysql')
   })
 
-  it('resolves kl-auth-plugin NOOP_IDENTITY_PLUGIN from workspace packages/', () => {
-    // kl-auth-plugin is in packages/kl-auth-plugin; the NOOP/RBAC constants are
+  it('resolves kl-plugin-auth NOOP_IDENTITY_PLUGIN from workspace packages/', () => {
+    // kl-plugin-auth is in packages/kl-plugin-auth; the NOOP/RBAC constants are
     // loaded at module init time via the workspace-local path.
     expect(NOOP_IDENTITY_PLUGIN.manifest.id).toBe('noop')
     expect(NOOP_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
   })
 
-  it('resolves kl-auth-plugin RBAC_IDENTITY_PLUGIN from workspace packages/', () => {
+  it('resolves kl-plugin-auth RBAC_IDENTITY_PLUGIN from workspace packages/', () => {
     expect(RBAC_IDENTITY_PLUGIN.manifest.id).toBe('rbac')
     expect(RBAC_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
   })

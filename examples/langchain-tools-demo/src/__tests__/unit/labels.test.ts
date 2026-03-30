@@ -12,7 +12,7 @@ import {
   GetUniqueLabelsTool,
   FilterCardsByLabelGroupTool,
   createLabelTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Label tools (unit)', () => {

@@ -1,0 +1,67 @@
+{
+  "name": "kl-plugin-card-state-sqlite",
+  "version": "0.1.5",
+  "description": "kanban-lite card.state plugin for SQLite-backed actor-scoped card state",
+  "license": "MIT",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgius/kl-plugin-card-state-sqlite.git"
+  },
+  "homepage": "https://github.com/borgius/kl-plugin-card-state-sqlite#readme",
+  "bugs": {
+    "url": "https://github.com/borgius/kl-plugin-card-state-sqlite/issues"
+  },
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:better-sqlite3 --external:kanban-lite --external:kanban-lite/sdk && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src/index.test.ts",
+    "test:watch": "vitest",
+    "test:integration": "npm run build && vitest run src/sqlite-card-state.workspace.test.ts",
+    "release": "npm run clean && npm run build && npm version patch && npm publish",
+    "release:minor": "npm run clean && npm run build && npm version minor && npm publish",
+    "release:major": "npm run clean && npm run build && npm version major && npm publish"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "kanban-lite": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "kanban-lite": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "kanban-lite",
+    "kanban",
+    "card.state",
+    "sqlite",
+    "plugin"
+  ]
+}

@@ -204,7 +204,7 @@ Compatibility/default provider id:
 
 External package:
 
-- `kl-webhooks-plugin`
+- `kl-plugin-webhook`
 
 Behavior:
 
@@ -229,7 +229,7 @@ Compatibility/default provider ids:
 
 External package:
 
-- `kl-auth-plugin`
+- `kl-plugin-auth`
 
 Important nuance: the exported `RBAC_IDENTITY_PLUGIN` singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via `createRbacIdentityPlugin(principals)` and wire it in through custom capability wiring. Unknown or absent tokens resolve to `null`, and roles are never inferred from token text.
 
@@ -245,11 +245,11 @@ Compatibility/default provider ids:
 
 External package:
 
-- `kl-auth-plugin`
+- `kl-plugin-auth`
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-auth-plugin` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
+> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
 ---
 
@@ -289,7 +289,7 @@ Webhook delivery uses its own top-level config section:
 }
 ```
 
-If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. That default resolves to the external `kl-webhooks-plugin` package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.
+If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. That default resolves to the external `kl-plugin-webhook` package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.
 
 Only provider selection lives in `.kanban.json`. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing `event.listener` config namespace.
 
@@ -433,10 +433,10 @@ Attachments:
 
 External package:
 
-The `sqlite` provider id is a compatibility alias for the `kl-sqlite-storage` npm package. Install the external package in the host environment that loads Kanban Lite:
+The `sqlite` provider id is a compatibility alias for the `kl-plugin-storage-sqlite` npm package. Install the external package in the host environment that loads Kanban Lite:
 
 ```sh
-npm install kl-sqlite-storage
+npm install kl-plugin-storage-sqlite
 ```
 
 The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`.
@@ -460,10 +460,10 @@ Requirements:
 
 External package:
 
-The `mysql` provider id is a compatibility alias for the `kl-mysql-storage` npm package. Install the external package in the host environment that loads Kanban Lite:
+The `mysql` provider id is a compatibility alias for the `kl-plugin-storage-mysql` npm package. Install the external package in the host environment that loads Kanban Lite:
 
 ```sh
-npm install kl-mysql-storage
+npm install kl-plugin-storage-mysql
 ```
 
 The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `mysql2` load semantics.
@@ -476,7 +476,7 @@ Behavior:
 
 - `builtin` is the core file-backed backend and persists actor-scoped unread/open state in workspace sidecar files,
 - that persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
-- `sqlite` is a first-party compatibility id backed by the `kl-sqlite-card-state` package,
+- `sqlite` is a first-party compatibility id backed by the `kl-plugin-card-state-sqlite` package,
 - both backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.
 
 Identity behavior:
@@ -487,10 +487,10 @@ Identity behavior:
 
 External package:
 
-The `sqlite` provider id is a compatibility alias for the first-party `kl-sqlite-card-state` npm package:
+The `sqlite` provider id is a compatibility alias for the first-party `kl-plugin-card-state-sqlite` npm package:
 
 ```sh
-npm install kl-sqlite-card-state
+npm install kl-plugin-card-state-sqlite
 ```
 
 Example:
@@ -806,8 +806,8 @@ The contract is intentionally small:
 
 Webhook migration is the first concrete use of this model.
 
-- `kl-webhooks-plugin` contributes the canonical webhook CRUD implementation through its SDK extension bag,
-- advanced SDK consumers can call `sdk.getExtension('kl-webhooks-plugin')`,
+- `kl-plugin-webhook` contributes the canonical webhook CRUD implementation through its SDK extension bag,
+- advanced SDK consumers can call `sdk.getExtension('kl-plugin-webhook')`,
 - and the long-lived `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, and `sdk.deleteWebhook()` methods remain compatibility shims so existing callers do not need to migrate immediately.
 
 The same public-SDK rule now applies to plugin host contexts that expose an `sdk` value.
@@ -842,7 +842,7 @@ The flow is deliberately narrow:
 
 Webhook tools are the first migrated toolset on this seam.
 
-- `kl-webhooks-plugin` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook`,
+- `kl-plugin-webhook` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook`,
 - the public tool names and schemas stay unchanged,
 - and core still supplies the shared auth/error context so behavior such as secret redaction and auth mapping remains stable.
 
@@ -869,8 +869,8 @@ ownership moves to standalone, versioned npm packages.
 
 | Provider id | Install target      |
 | ----------- | ------------------- |
-| `sqlite`    | `kl-sqlite-storage` |
-| `mysql`     | `kl-mysql-storage`  |
+| `sqlite`    | `kl-plugin-storage-sqlite` |
+| `mysql`     | `kl-plugin-storage-mysql`  |
 
 The alias map lives in `PROVIDER_ALIASES` in `src/sdk/plugins/index.ts` and is exported so
 downstream tasks and tests can reference it directly.
@@ -881,8 +881,8 @@ Resolution rules:
 2. Otherwise, look up the provider id in `PROVIDER_ALIASES` and load that package.
 3. If there is no alias, treat the provider id as-is (bare npm package name).
 
-This means install errors for `sqlite` and `mysql` always name `kl-sqlite-storage` and
-`kl-mysql-storage`, not the short alias.
+This means install errors for `sqlite` and `mysql` always name `kl-plugin-storage-sqlite` and
+`kl-plugin-storage-mysql`, not the short alias.
 
 Both packages must export:
 
@@ -1167,7 +1167,7 @@ If you are reading the code to understand how storage works, start in
 
 ## MySQL compatibility alias deep dive
 
-Core no longer owns a first-party MySQL implementation. The provider id `mysql` is a compatibility alias for the external package `kl-mysql-storage`.
+Core no longer owns a first-party MySQL implementation. The provider id `mysql` is a compatibility alias for the external package `kl-plugin-storage-mysql`.
 
 ### What it does
 
@@ -1622,13 +1622,13 @@ Fix:
 
 Meaning:
 
-- you selected the `mysql` compatibility provider id without installing `kl-mysql-storage`, or
-- `kl-mysql-storage` is present but its peer driver `mysql2` is missing.
+- you selected the `mysql` compatibility provider id without installing `kl-plugin-storage-mysql`, or
+- `kl-plugin-storage-mysql` is present but its peer driver `mysql2` is missing.
 
 Fix:
 
 ```bash
-npm install kl-mysql-storage mysql2
+npm install kl-plugin-storage-mysql mysql2
 ```
 
 ## Watchers don’t refresh
@@ -1687,10 +1687,10 @@ If you are building a plugin today, follow these rules:
 | Namespace | Provider | File-backed | Watch glob | Notes |
 |---|---|---:|---|---|
 | `card.storage` | `markdown` | yes | `boards/**/*.md` | Default card provider |
-| `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-sqlite-storage` |
-| `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-mysql-storage` |
+| `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-plugin-storage-sqlite` |
+| `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-plugin-storage-mysql` |
 | `card.state` | `builtin` | yes | `null` | Built-in file-backed actor-scoped card-state provider |
-| `card.state` | `sqlite` | no | `null` | First-party compatibility id backed by `kl-sqlite-card-state` |
+| `card.state` | `sqlite` | no | `null` | First-party compatibility id backed by `kl-plugin-card-state-sqlite` |
 | `attachment.storage` | `localfs` | n/a | n/a | Default attachment provider |
 
 ## Resolver precedence

@@ -15,7 +15,7 @@ import {
   GetCardsByStatusTool,
   TriggerActionTool,
   createCardTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Card tools (unit)', () => {

@@ -3,6 +3,6 @@ import { PROVIDER_ALIASES } from '../plugins'
 
 describe('sqlite compatibility ownership boundary', () => {
   it('resolves the sqlite provider id through the external package alias', () => {
-    expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-sqlite-storage')
+    expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-storage-sqlite')
   })
 })

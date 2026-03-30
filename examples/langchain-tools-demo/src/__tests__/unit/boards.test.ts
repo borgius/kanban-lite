@@ -11,7 +11,7 @@ import {
   UpdateBoardTool,
   GetBoardActionsTool,
   createBoardTools,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Board tools (unit)', () => {

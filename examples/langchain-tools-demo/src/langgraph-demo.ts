@@ -2,7 +2,7 @@
  * LangGraph demo — shows how to build a kanban-aware agent graph.
  *
  * Uses the board state annotation and pre-built graph nodes from
- * kl-langchain-tools to compose a stateful workflow.
+ * kl-adapter-langchain to compose a stateful workflow.
  *
  * Run:
  *   npx tsx src/langgraph-demo.ts
@@ -18,7 +18,7 @@ import {
   createRefreshBoardNode,
   createKanbanToolNode,
   type BoardSnapshot,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 
 // ---------------------------------------------------------------------------
 // Helpers

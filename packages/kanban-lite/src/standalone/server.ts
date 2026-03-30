@@ -340,7 +340,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   })
 
   // Resolve auth context for WebSocket upgrade requests by running the middleware
-  // pipeline so session cookies set by auth plugins (e.g. kl-auth-plugin) are honoured.
+  // pipeline so session cookies set by auth plugins (e.g. kl-plugin-auth) are honoured.
   const resolveWsAuthContext = async (req: http.IncomingMessage) => {
     const silentRes = (() => {
       const r: Record<string, unknown> = {

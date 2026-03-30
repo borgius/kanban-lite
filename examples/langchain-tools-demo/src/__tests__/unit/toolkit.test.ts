@@ -7,7 +7,7 @@ import {
   createKanbanToolkit,
   createRefreshBoardNode,
   createKanbanToolNode,
-} from 'kl-langchain-tools'
+} from 'kl-adapter-langchain'
 import { createMockSDK } from '../helpers'
 
 describe('Toolkit (unit)', () => {

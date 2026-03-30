@@ -14,14 +14,14 @@ permalink: /docs/storage/
     </div>
     <div class="capability-card">
       <strong>sqlite</strong>
-      <span>Built-in SQLite provider via <code>kl-sqlite-storage</code>. Better query performance for large boards. Single-file database.</span>
+      <span>Built-in SQLite provider via <code>kl-plugin-storage-sqlite</code>. Better query performance for large boards. Single-file database.</span>
     </div>
     <div class="capability-card">
-      <strong>kl-mysql-storage</strong>
+      <strong>kl-plugin-storage-mysql</strong>
       <span>External npm package for MySQL/MariaDB-backed card storage. Suitable for shared team deployments.</span>
     </div>
     <div class="capability-card">
-      <strong>kl-s3-attachment-storage</strong>
+      <strong>kl-plugin-attachment-s3</strong>
       <span>External npm package — store attachments in S3 or any S3-compatible object storage (MinIO, Cloudflare R2, etc.).</span>
     </div>
   </div>
@@ -32,7 +32,7 @@ permalink: /docs/storage/
 <pre><code>{
   "storage": {
     "card.storage":        { "provider": "sqlite" },
-    "attachment.storage": { "provider": "kl-s3-attachment-storage" }
+    "attachment.storage": { "provider": "kl-plugin-attachment-s3" }
   }
 }</code></pre>
 
@@ -53,11 +53,11 @@ POST /api/storage/migrate-to-markdown</code></pre>
 
 <h2>S3 / MinIO attachment storage</h2>
 <p>Install the package and point it at any S3-compatible endpoint via environment variables or <code>.kanban.json</code>:</p>
-<pre><code>npm install kl-s3-attachment-storage</code></pre>
+<pre><code>npm install kl-plugin-attachment-s3</code></pre>
 <pre><code>{
   "storage": {
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage",
+      "provider": "kl-plugin-attachment-s3",
       "config": {
         "endpoint": "http://127.0.0.1:9000",
         "bucket":   "kanban",
@@ -78,7 +78,7 @@ POST /api/storage/migrate-to-markdown</code></pre>
 
 <h3>SQLite (<code>card.storage</code> + <code>attachment.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-sqlite-storage better-sqlite3
+npm install kl-plugin-storage-sqlite better-sqlite3
 
 # Migrate existing cards into SQLite
 kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db</code></pre>
@@ -99,7 +99,7 @@ kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db</code></pre>
 
 <h3>MySQL (<code>card.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-mysql-storage mysql2</code></pre>
+npm install kl-plugin-storage-mysql mysql2</code></pre>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
@@ -115,11 +115,11 @@ npm install kl-mysql-storage mysql2</code></pre>
     }
   }
 }</code></pre>
-<p>Required option: <code>database</code>. All other options (<code>host</code>, <code>port</code>, <code>user</code>, <code>password</code>, <code>ssl</code>) have sensible defaults. Attachments remain on the local filesystem; pair with <code>kl-s3-attachment-storage</code> for cloud attachments.</p>
+<p>Required option: <code>database</code>. All other options (<code>host</code>, <code>port</code>, <code>user</code>, <code>password</code>, <code>ssl</code>) have sensible defaults. Attachments remain on the local filesystem; pair with <code>kl-plugin-attachment-s3</code> for cloud attachments.</p>
 
 <h3>S3 Attachment Storage (<code>attachment.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-s3-attachment-storage
+npm install kl-plugin-attachment-s3
 
 # Set required environment variables
 export KL_S3_BUCKET=my-kanban-attachments
@@ -133,7 +133,7 @@ export AWS_REGION=us-east-1
   "version": 2,
   "plugins": {
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
+      "provider": "kl-plugin-attachment-s3"
     }
   }
 }</code></pre>
@@ -141,7 +141,7 @@ export AWS_REGION=us-east-1
 
 <h3>SQLite Card State (<code>card.state</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-sqlite-card-state</code></pre>
+npm install kl-plugin-card-state-sqlite</code></pre>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
@@ -168,7 +168,7 @@ npm install kl-sqlite-card-state</code></pre>
       }
     },
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
+      "provider": "kl-plugin-attachment-s3"
     },
     "card.state": {
       "provider": "sqlite",

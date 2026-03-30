@@ -31,7 +31,7 @@ class KanbanLiteClient:
     (extend this client with a board_id parameter if needed).
 
     Authentication: the standalone server ships with no auth by default.
-    If you have enabled the kl-auth-plugin, set KL_API_KEY in .env and
+    If you have enabled the kl-plugin-auth, set KL_API_KEY in .env and
     pass it as a Bearer token in self._headers().
     """
 

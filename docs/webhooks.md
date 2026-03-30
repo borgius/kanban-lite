@@ -1,14 +1,14 @@
 # Webhooks
 
-Kanban Lite webhook delivery is owned by `kl-webhooks-plugin`. It delivers committed SDK after-events via HTTP POST to any registered endpoint.
+Kanban Lite webhook delivery is owned by `kl-plugin-webhook`. It delivers committed SDK after-events via HTTP POST to any registered endpoint.
 
 ## Overview
 
 - Webhooks fire from **all interfaces**: REST API, CLI, MCP server, and the UI (via the standalone server).
-- `kl-webhooks-plugin` owns runtime delivery, webhook registry CRUD, the standalone `/api/webhooks` routes, the `kl webhooks` CLI family, and webhook MCP tool registration where those plugin seams exist.
+- `kl-plugin-webhook` owns runtime delivery, webhook registry CRUD, the standalone `/api/webhooks` routes, the `kl webhooks` CLI family, and webhook MCP tool registration where those plugin seams exist.
 - Events are emitted by the SDK event bus and delivered by the resolved `webhook.delivery` provider, ensuring the same behavior regardless of entry point.
-- The default runtime provider id is `webhooks`, which resolves to the external `kl-webhooks-plugin` package.
-- Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`; the direct webhook SDK methods remain stable compatibility shims.
+- The default runtime provider id is `webhooks`, which resolves to the external `kl-plugin-webhook` package.
+- Advanced SDK consumers can use `sdk.getExtension('kl-plugin-webhook')`; the direct webhook SDK methods remain stable compatibility shims.
 - Webhook registrations are read from `.kanban.json` `plugins["webhook.delivery"].options.webhooks` when configured, and persist across server restarts.
 - Only committed SDK after-events are delivered; before-events such as `form.submit` are not sent as outbound webhooks.
 - Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).
@@ -18,13 +18,13 @@ Kanban Lite webhook delivery is owned by `kl-webhooks-plugin`. It delivers commi
 
 ## Install and linking
 
-Install `kl-webhooks-plugin` in the same environment that loads Kanban Lite:
+Install `kl-plugin-webhook` in the same environment that loads Kanban Lite:
 
 ```bash
-npm install kl-webhooks-plugin
+npm install kl-plugin-webhook
 ```
 
-For local development, a sibling checkout at `../kl-webhooks-plugin` is resolved automatically. `npm link ../kl-webhooks-plugin` is optional when you want an explicit local package link.
+For local development, a sibling checkout at `../kl-plugin-webhook` is resolved automatically. `npm link ../kl-plugin-webhook` is optional when you want an explicit local package link.
 
 ## Configuration
 
@@ -34,7 +34,7 @@ Webhook delivery uses the capability config under `plugins["webhook.delivery"]`.
 {
   "plugins": {
     "webhook.delivery": {
-      "provider": "kl-webhooks-plugin",
+      "provider": "kl-plugin-webhook",
       "options": {
         "webhooks": [
           {
@@ -73,11 +73,11 @@ Legacy fallback format (still accepted):
 
 Webhook CRUD still converges on the same `KanbanSDK` methods: `listWebhooks()`, `createWebhook()`, `updateWebhook()`, `deleteWebhook()`, and `getWebhookStatus()`.
 
-For plugin-aware consumers, `kl-webhooks-plugin` also contributes an additive SDK extension bag available through `sdk.getExtension('kl-webhooks-plugin')`. Those extension methods and the direct SDK methods share the same backing store; the direct methods remain the compatibility path for existing callers.
+For plugin-aware consumers, `kl-plugin-webhook` also contributes an additive SDK extension bag available through `sdk.getExtension('kl-plugin-webhook')`. Those extension methods and the direct SDK methods share the same backing store; the direct methods remain the compatibility path for existing callers.
 
 ### REST API
 
-These routes are plugin-owned when `kl-webhooks-plugin` is loaded by the standalone host.
+These routes are plugin-owned when `kl-plugin-webhook` is loaded by the standalone host.
 
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
@@ -89,7 +89,7 @@ These routes are plugin-owned when `kl-webhooks-plugin` is loaded by the standal
 
 ### CLI
 
-These commands are plugin-owned when `kl-webhooks-plugin` is loaded by the CLI host.
+These commands are plugin-owned when `kl-plugin-webhook` is loaded by the CLI host.
 
 ```bash
 # List webhooks
@@ -108,7 +108,7 @@ kl webhooks remove <id>
 
 ### MCP Server
 
-These tools are plugin-owned when `kl-webhooks-plugin` is loaded by the MCP host through the narrow `mcpPlugin.registerTools(...)` seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
+These tools are plugin-owned when `kl-plugin-webhook` is loaded by the MCP host through the narrow `mcpPlugin.registerTools(...)` seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
 
 ## Event filters
 

@@ -49,7 +49,7 @@ kl add --title "My first task" --priority high
 
 Start with the stable docs hub at <code>/docs/examples/</code> for the shipped walkthroughs, then jump into the matching runnable apps:
 
-- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows); reusable adapter package: [`kl-chat-sdk-adapter`](packages/kl-chat-sdk-adapter/README.md)
+- Chat SDK / Vercel AI — guide: <code>/docs/examples/chat-sdk/</code>; app: [`examples/chat-sdk-vercel-ai/`](examples/chat-sdk-vercel-ai/README.md) (ships its own local Kanban Lite instance + seeded comment/form/action workflows); reusable adapter package: [`kl-adapter-vercel-ai`](packages/kl-adapter-vercel-ai/README.md)
 - LangGraph Python — guide: <code>/docs/examples/langgraph-python/</code>; app: [`examples/langgraph-python/`](examples/langgraph-python/README.md)
 - Mastra Agent Ops — guide: <code>/docs/examples/mastra/</code>; app: [`examples/mastra-agent-ops/`](examples/mastra-agent-ops/README.md)
 
@@ -67,7 +67,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
-- **SQLite `card.state` plugin parity**: Install the first-party `kl-sqlite-card-state` package and set `plugins['card.state'] = { provider: 'sqlite' }` to persist unread/open state in SQLite while keeping the same stable default-actor, actor-scoping, configured-identity failure semantics, and explicit read/open behavior as the built-in file-backed `builtin` backend
+- **SQLite `card.state` plugin parity**: Install the first-party `kl-plugin-card-state-sqlite` package and set `plugins['card.state'] = { provider: 'sqlite' }` to persist unread/open state in SQLite while keeping the same stable default-actor, actor-scoping, configured-identity failure semantics, and explicit read/open behavior as the built-in file-backed `builtin` backend
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
@@ -254,7 +254,7 @@ kl plugin-settings show auth.identity local            # Read one provider's red
 kl plugin-settings select auth.identity local          # Select one provider for a capability
 kl plugin-settings update-options auth.identity local \
   --options '{"apiToken":"••••••"}'                  # Persist provider options (masked secrets keep existing values)
-kl plugin-settings install kl-auth-plugin --scope workspace  # Safe install into the workspace runtime
+kl plugin-settings install kl-plugin-auth --scope workspace  # Safe install into the workspace runtime
 
 # Workspace
 kl pwd                                                  # Print workspace root path
@@ -443,7 +443,7 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 
 ### Local MinIO attachment plugin setup
 
-For local development in this repo, the published `kl-s3-attachment-storage` package is installed and can be used as the default `attachment.storage` provider against MinIO.
+For local development in this repo, the published `kl-plugin-attachment-s3` package is installed and can be used as the default `attachment.storage` provider against MinIO.
 
 - local runtime settings live in a workspace `.env`
 - local provider selection lives in the workspace `.kanban.json`
@@ -531,23 +531,23 @@ Register webhooks to receive HTTP POST notifications when data changes. Webhooks
 
 ### Install and compatibility
 
-Webhook runtime behavior is now owned by the external `kl-webhooks-plugin` package wherever the host already exposes a plugin seam. That package owns the `webhook.delivery` provider, the listener-only runtime subscriber, the standalone `/api/webhooks` routes, the `kl webhooks` CLI command surface, and the webhook MCP tools registered through the narrow `mcpPlugin` seam.
+Webhook runtime behavior is now owned by the external `kl-plugin-webhook` package wherever the host already exposes a plugin seam. That package owns the `webhook.delivery` provider, the listener-only runtime subscriber, the standalone `/api/webhooks` routes, the `kl webhooks` CLI command surface, and the webhook MCP tools registered through the narrow `mcpPlugin` seam.
 
 The SDK owns the mutation lifecycle: it awaits before-event listeners before a write, emits after-events exactly once after commit, and webhook delivery listens only to that committed after-event phase.
 
-For advanced SDK consumers, the same package also exports an additive SDK extension bag discoverable through `sdk.getExtension('kl-webhooks-plugin')`. Core `KanbanSDK` webhook methods remain stable compatibility shims over that same provider-backed implementation.
+For advanced SDK consumers, the same package also exports an additive SDK extension bag discoverable through `sdk.getExtension('kl-plugin-webhook')`. Core `KanbanSDK` webhook methods remain stable compatibility shims over that same provider-backed implementation.
 
 - Install it in the same environment that runs Kanban Lite (CLI, standalone server, MCP server, extension host, or SDK consumer).
 - Existing `.kanban.json` webhook registrations stay in the top-level `webhooks` array as a compatibility fallback; no migration is required.
 - A workspace that only sets `plugins["webhook.delivery"]` still activates webhook plugin discovery for the provider, standalone routes, CLI command loading, and MCP tool registration.
-- MCP now uses the same active-package discovery model as CLI and standalone. `kl-webhooks-plugin` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` through the plugin seam while preserving their public names, schemas, auth wrapping, and secret redaction behavior.
+- MCP now uses the same active-package discovery model as CLI and standalone. `kl-plugin-webhook` registers `list_webhooks`, `add_webhook`, `update_webhook`, and `remove_webhook` through the plugin seam while preserving their public names, schemas, auth wrapping, and secret redaction behavior.
 - Generated docs such as `docs/webhooks.md` are source-driven; update generator metadata and regenerate them instead of editing the generated markdown by hand.
 
 ```bash
-npm install kl-webhooks-plugin
+npm install kl-plugin-webhook
 ```
 
-For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is resolved automatically. `npm link ../kl-webhooks-plugin` is optional, but still useful when you want an explicit local package link.
+For local sibling-repo development, a checkout at `../kl-plugin-webhook` is resolved automatically. `npm link ../kl-plugin-webhook` is optional, but still useful when you want an explicit local package link.
 
 ```json
 {
@@ -571,7 +571,7 @@ For local sibling-repo development, a checkout at `../kl-webhooks-plugin` is res
 
 Webhook management still converges on the same SDK methods, but ownership is now split by host surface:
 
-- SDK: additive extension path via `sdk.getExtension('kl-webhooks-plugin')`, plus stable compatibility shims on `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, and `sdk.getWebhookStatus()`
+- SDK: additive extension path via `sdk.getExtension('kl-plugin-webhook')`, plus stable compatibility shims on `sdk.listWebhooks()`, `sdk.createWebhook()`, `sdk.updateWebhook()`, `sdk.deleteWebhook()`, and `sdk.getWebhookStatus()`
 - REST API: plugin-owned `/api/webhooks` routes via the standalone HTTP plugin seam
 - CLI: plugin-owned `kl webhooks`, `kl webhooks add`, `kl webhooks update`, `kl webhooks remove`
 - MCP: plugin-owned `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook` via the `mcpPlugin` registration seam
@@ -892,15 +892,15 @@ See [`packages/n8n-nodes-kanban-lite/README.md`](packages/n8n-nodes-kanban-lite/
 
 ## CrewAI Integration
 
-Kanban Lite ships a first-party Python package at `packages/kl-crewai-tools`, published as [`kl-crewai-tools`](https://pypi.org/project/kl-crewai-tools/). It wraps kanban-lite REST API operations as CrewAI `BaseTool` subclasses so specialized agents (PM, Dev, QA) can each manage their own board lane.
+Kanban Lite ships a first-party Python package at `packages/kl-adapter-crewai`, published as [`kl-adapter-crewai`](https://pypi.org/project/kl-adapter-crewai/). It wraps kanban-lite REST API operations as CrewAI `BaseTool` subclasses so specialized agents (PM, Dev, QA) can each manage their own board lane.
 
 ```bash
-pip install kl-crewai-tools
+pip install kl-adapter-crewai
 ```
 
 ```python
 from crewai import Agent
-from kl_crewai_tools import KanbanLiteClient, KanbanLiteToolkit
+from kl_adapter_crewai import KanbanLiteClient, KanbanLiteToolkit
 
 client = KanbanLiteClient("http://localhost:3000")
 toolkit = KanbanLiteToolkit(client=client)
@@ -915,14 +915,14 @@ pm_agent = Agent(
 
 9 tools are available: `list_cards`, `get_card`, `create_card`, `update_card`, `move_card`, `delete_card`, `list_columns`, `get_comments`, `add_comment`. Use `toolkit.get_tools(read_only=True)` for report-only agents.
 
-See [`packages/kl-crewai-tools/README.md`](packages/kl-crewai-tools/README.md) for full setup, multi-agent examples, and authentication configuration.
+See [`packages/kl-adapter-crewai/README.md`](packages/kl-adapter-crewai/README.md) for full setup, multi-agent examples, and authentication configuration.
 
 ## LangChain / LangGraph Integration
 
-Kanban Lite ships a first-party LangChain adapter at `packages/kl-langchain-tools`, published as [`kl-langchain-tools`](https://www.npmjs.com/package/kl-langchain-tools). It exposes all kanban-lite features as **39 LangChain `StructuredTool` instances** — including streaming comments, labels, actions, logs, and attachments.
+Kanban Lite ships a first-party LangChain adapter at `packages/kl-adapter-langchain`, published as [`kl-adapter-langchain`](https://www.npmjs.com/package/kl-adapter-langchain). It exposes all kanban-lite features as **39 LangChain `StructuredTool` instances** — including streaming comments, labels, actions, logs, and attachments.
 
 ```sh
-npm install kl-langchain-tools @langchain/core
+npm install kl-adapter-langchain @langchain/core
 # optional – for LangGraph state/nodes:
 npm install @langchain/langgraph
 ```
@@ -931,7 +931,7 @@ npm install @langchain/langgraph
 
 ```ts
 import { KanbanSDK } from 'kanban-lite/sdk'
-import { createKanbanToolkit } from 'kl-langchain-tools'
+import { createKanbanToolkit } from 'kl-adapter-langchain'
 
 const sdk = new KanbanSDK('/path/to/.kanban')
 await sdk.init()
@@ -948,7 +948,7 @@ Optional LangGraph helpers (`getKanbanBoardState`, `createRefreshBoardNode`, `cr
 
 The `streamCommentDirect` helper enables true chunk-by-chunk comment streaming from an `AsyncIterable<string>` (e.g. an LLM textStream), with `onStart` / `onChunk` callbacks for live WebSocket broadcast.
 
-See [`packages/kl-langchain-tools/README.md`](packages/kl-langchain-tools/README.md) for detailed usage, selective tool loading, streaming examples, and LangGraph integration guide.
+See [`packages/kl-adapter-langchain/README.md`](packages/kl-adapter-langchain/README.md) for detailed usage, selective tool loading, streaming examples, and LangGraph integration guide.
 
 ## MCP Server
 
@@ -1111,7 +1111,7 @@ const settings = sdk.getSettings()
 sdk.updateSettings({ ...settings, compactMode: true })
 ```
 
-Plugins can also contribute additive SDK methods without patching core. Call `sdk.getExtension(id)` to access a plugin's extension bag when that package is active. Webhooks are the first concrete example: `kl-webhooks-plugin` contributes webhook CRUD through `sdk.getExtension('kl-webhooks-plugin')`, while the direct `sdk.listWebhooks()` / `createWebhook()` / `updateWebhook()` / `deleteWebhook()` methods remain compatibility shims for existing callers.
+Plugins can also contribute additive SDK methods without patching core. Call `sdk.getExtension(id)` to access a plugin's extension bag when that package is active. Webhooks are the first concrete example: `kl-plugin-webhook` contributes webhook CRUD through `sdk.getExtension('kl-plugin-webhook')`, while the direct `sdk.listWebhooks()` / `createWebhook()` / `updateWebhook()` / `deleteWebhook()` methods remain compatibility shims for existing callers.
 
 When a host surface passes `sdk` into a plugin context, that value is now the full public `KanbanSDK` instance rather than a narrowed helper facade. Plugin code can call the same public methods core uses — for example `sdk.getBoard(...)`, `sdk.getExtension(...)`, and `sdk.getConfigSnapshot()` for a cloned read-only view of the current `.kanban.json` state. Prefer SDK methods and snapshot reads wherever an equivalent public API exists; keep direct plugin-owned writes only for flows that still lack a public SDK writer.
 
@@ -1255,7 +1255,7 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
-| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Core owns `markdown`. `sqlite` and `mysql` are compatibility ids that resolve to `kl-sqlite-storage` and `kl-mysql-storage`. |
+| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql` | Core owns `markdown`. `sqlite` and `mysql` are compatibility ids that resolve to `kl-plugin-storage-sqlite` and `kl-plugin-storage-mysql`. |
 | `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql` | Core owns `localfs`. `sqlite` and `mysql` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
 
 If you want attachments to route through the SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
@@ -1301,10 +1301,10 @@ The same pattern applies to MySQL:
 ### Installing and selecting providers
 
 - Core built-ins are `markdown` and `localfs`.
-- `sqlite` and `mysql` remain valid provider ids, but they resolve to the external packages `kl-sqlite-storage` and `kl-mysql-storage`.
+- `sqlite` and `mysql` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite` and `kl-plugin-storage-mysql`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
-- This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-s3-attachment-storage` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
+- This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
 
 ### Webhook delivery provider
 
@@ -1321,11 +1321,11 @@ Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting t
 ```
 
 - The default runtime provider id is `webhooks`.
-- The `webhooks` id resolves to the external package `kl-webhooks-plugin`.
+- The `webhooks` id resolves to the external package `kl-plugin-webhook`.
 - The persisted `.kanban.json` `webhooks` array is unchanged and remains the registry source of truth.
 - The package owns runtime delivery, standalone webhook routes, CLI webhook commands, and MCP webhook tool registration where those plugin seams are available.
-- Advanced SDK consumers can use `sdk.getExtension('kl-webhooks-plugin')`; direct webhook SDK methods remain stable compatibility shims.
-- A sibling checkout at `../kl-webhooks-plugin` is resolved automatically for local development.
+- Advanced SDK consumers can use `sdk.getExtension('kl-plugin-webhook')`; direct webhook SDK methods remain stable compatibility shims.
+- A sibling checkout at `../kl-plugin-webhook` is resolved automatically for local development.
 - Generated webhook reference docs are emitted from `scripts/generate-webhooks-docs.ts`; regenerate them from source metadata instead of editing `docs/webhooks.md` directly.
 
 ### MySQL setup and runtime expectations
@@ -1352,12 +1352,12 @@ Use the MySQL compatibility provider id by selecting `provider: "mysql"` under `
 Notes:
 
 - `database` is required.
-- Install `kl-mysql-storage` in the host environment that loads the plugin.
+- Install `kl-plugin-storage-mysql` in the host environment that loads the plugin.
 - The `mysql2` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the MySQL provider.
 - `mysql` stores cards/comments in MySQL, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mysql"`.
 
 ```bash
-npm install kl-mysql-storage mysql2
+npm install kl-plugin-storage-mysql mysql2
 ```
 
 ### Provider status surfaces
@@ -1369,9 +1369,9 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-webhooks-plugin` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite` and `mysql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
 
-For `card.state`, core ships the built-in file-backed `builtin` backend, while the `sqlite` compatibility id resolves to the first-party `kl-sqlite-card-state` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
+For `card.state`, core ships the built-in file-backed `builtin` backend, while the `sqlite` compatibility id resolves to the first-party `kl-plugin-card-state-sqlite` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 
 ### Migrating between compatibility-backed providers
 
@@ -1424,10 +1424,10 @@ Host surfaces now install request-scoped auth with `sdk.runWithAuth(authContext,
 Install the package in the environment that loads Kanban Lite:
 
 ```bash
-npm install kl-auth-plugin
+npm install kl-plugin-auth
 ```
 
-For local sibling-repo development, a checkout at `../kl-auth-plugin` is resolved automatically. `npm link ../kl-auth-plugin` is optional, but useful when you want an explicit local package link.
+For local sibling-repo development, a checkout at `../kl-plugin-auth` is resolved automatically. `npm link ../kl-plugin-auth` is optional, but useful when you want an explicit local package link.
 
 The shipped provider ids behave as before:
 
@@ -1441,8 +1441,8 @@ Provider references for both namespaces are read from `.kanban.json` via the `pl
 ```json
 {
   "plugins": {
-    "auth.identity": { "provider": "kl-auth-plugin" },
-    "auth.policy": { "provider": "kl-auth-plugin", "options": { "strict": true } }
+    "auth.identity": { "provider": "kl-plugin-auth" },
+    "auth.policy": { "provider": "kl-plugin-auth", "options": { "strict": true } }
   }
 }
 ```
@@ -1451,15 +1451,15 @@ Raw bearer tokens, token-to-role maps, and other live secrets must **not** be st
 
 ### `rbac` provider
 
-Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pair (`rbac`) in `kl-auth-plugin`. It enforces a fixed three-role action matrix without requiring a login flow or external identity service.
+Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pair (`rbac`) in `kl-plugin-auth`. It enforces a fixed three-role action matrix without requiring a login flow or external identity service.
 
 **Enable it in `.kanban.json`:**
 
 ```json
 {
   "plugins": {
-    "auth.identity": { "provider": "kl-auth-plugin" },
-    "auth.policy": { "provider": "kl-auth-plugin" }
+    "auth.identity": { "provider": "kl-plugin-auth" },
+    "auth.policy": { "provider": "kl-plugin-auth" }
   }
 }
 ```
@@ -1486,7 +1486,7 @@ Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
 
 ### `local` provider
 
-Kanban Lite also ships a first-party **local workspace auth** provider pair (`local`) in `kl-auth-plugin`.
+Kanban Lite also ships a first-party **local workspace auth** provider pair (`local`) in `kl-plugin-auth`.
 
 - **Standalone UI**: unauthenticated browser requests redirect to a plugin-served `/auth/login` page.
 - **Standalone API**: every `/api/*` request requires either `Authorization: Bearer <token>` or an authenticated standalone session cookie.
@@ -1500,7 +1500,7 @@ Enable it in `.kanban.json` with bcrypt-hashed passwords:
 {
   "plugins": {
     "auth.identity": {
-      "provider": "kl-auth-plugin",
+      "provider": "kl-plugin-auth",
       "options": {
         "users": [
           {
@@ -1511,7 +1511,7 @@ Enable it in `.kanban.json` with bcrypt-hashed passwords:
         ]
       }
     },
-    "auth.policy": { "provider": "kl-auth-plugin" }
+    "auth.policy": { "provider": "kl-plugin-auth" }
   }
 }
 ```
@@ -1622,7 +1622,7 @@ Columns are fully customizable per board — add, remove, rename, or recolor the
 `forms` defines reusable JSON Schema/JSON Forms descriptors that any card can attach by name. Card-local inline forms still live on the card frontmatter under `forms`, while submitted values persist per card under `formData`.
 
 ## AI Agent Integration
-- **Vercel AI Chat SDK adapter** (`kl-chat-sdk-adapter`): Reusable npm package providing pre-built `tool()` definitions and a REST client for kanban-lite — covers cards CRUD, streaming comments, labels, actions, forms, columns, and boards. See [`packages/kl-chat-sdk-adapter/`](packages/kl-chat-sdk-adapter/README.md).
+- **Vercel AI Chat SDK adapter** (`kl-adapter-vercel-ai`): Reusable npm package providing pre-built `tool()` definitions and a REST client for kanban-lite — covers cards CRUD, streaming comments, labels, actions, forms, columns, and boards. See [`packages/kl-adapter-vercel-ai/`](packages/kl-adapter-vercel-ai/README.md).
 - **Claude Code**: Default, Plan, Auto-edit, and Full Auto modes
 - **Codex**: Suggest, Auto-edit, and Full Auto modes
 - **OpenCode**: Agent integration support

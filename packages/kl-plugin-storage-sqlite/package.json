@@ -1,0 +1,67 @@
+{
+  "name": "kl-plugin-storage-sqlite",
+  "version": "0.1.5",
+  "description": "kanban-lite card.storage + attachment.storage plugin for SQLite (better-sqlite3)",
+  "license": "MIT",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgius/kl-plugin-storage-sqlite.git"
+  },
+  "homepage": "https://github.com/borgius/kl-plugin-storage-sqlite#readme",
+  "bugs": {
+    "url": "https://github.com/borgius/kl-plugin-storage-sqlite/issues"
+  },
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:better-sqlite3 && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run src/sqlite-kanban-lite.workspace.test.ts",
+    "release": "npm run clean && npm run build && npm version patch && npm publish",
+    "release:minor": "npm run clean && npm run build && npm version minor && npm publish",
+    "release:major": "npm run clean && npm run build && npm version major && npm publish"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "kanban-lite": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "kanban-lite": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "kanban-lite",
+    "kanban",
+    "sqlite",
+    "storage",
+    "plugin"
+  ]
+}

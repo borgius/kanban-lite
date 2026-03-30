@@ -272,23 +272,23 @@ describe('normalizeCardStateCapabilities', () => {
 
 describe('collectActiveExternalPackageNames', () => {
   describe('webhook provider discovery', () => {
-    it('includes kl-webhooks-plugin by default when no webhook config is present', () => {
+    it('includes kl-plugin-webhook by default when no webhook config is present', () => {
       const result = collectActiveExternalPackageNames({})
-      expect(result).toContain('kl-webhooks-plugin')
+      expect(result).toContain('kl-plugin-webhook')
     })
 
-    it('legacy webhookPlugin config activates kl-webhooks-plugin via alias', () => {
+    it('legacy webhookPlugin config activates kl-plugin-webhook via alias', () => {
       const result = collectActiveExternalPackageNames({
         webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
       })
-      expect(result).toContain('kl-webhooks-plugin')
+      expect(result).toContain('kl-plugin-webhook')
     })
 
-    it('plugins["webhook.delivery"] with alias "webhooks" resolves to kl-webhooks-plugin', () => {
+    it('plugins["webhook.delivery"] with alias "webhooks" resolves to kl-plugin-webhook', () => {
       const result = collectActiveExternalPackageNames({
         plugins: { 'webhook.delivery': { provider: 'webhooks' } },
       })
-      expect(result).toContain('kl-webhooks-plugin')
+      expect(result).toContain('kl-plugin-webhook')
     })
 
     it('plugins["webhook.delivery"] takes precedence over webhookPlugin', () => {
@@ -297,7 +297,7 @@ describe('collectActiveExternalPackageNames', () => {
         webhookPlugin: { 'webhook.delivery': { provider: 'webhooks' } },
       })
       expect(result).toContain('my-custom-delivery')
-      expect(result).not.toContain('kl-webhooks-plugin')
+      expect(result).not.toContain('kl-plugin-webhook')
     })
 
     it('custom webhook package name from webhookPlugin is passed through without alias', () => {
@@ -305,7 +305,7 @@ describe('collectActiveExternalPackageNames', () => {
         webhookPlugin: { 'webhook.delivery': { provider: 'my-webhook-delivery-pkg' } },
       })
       expect(result).toContain('my-webhook-delivery-pkg')
-      expect(result).not.toContain('kl-webhooks-plugin')
+      expect(result).not.toContain('kl-plugin-webhook')
     })
   })
 
@@ -317,7 +317,7 @@ describe('collectActiveExternalPackageNames', () => {
           'auth.policy': { provider: 'rbac' },
         },
       })
-      expect(result).toContain('kl-auth-plugin')
+      expect(result).toContain('kl-plugin-auth')
     })
 
     it('plugins auth key takes precedence over legacy auth key', () => {
@@ -325,7 +325,7 @@ describe('collectActiveExternalPackageNames', () => {
         plugins: { 'auth.identity': { provider: 'noop' } },
         auth: { 'auth.identity': { provider: 'custom-auth' } },
       })
-      expect(result).toContain('kl-auth-plugin')
+      expect(result).toContain('kl-plugin-auth')
       expect(result).not.toContain('custom-auth')
     })
   })
@@ -352,11 +352,11 @@ describe('collectActiveExternalPackageNames', () => {
       expect(result).not.toContain('localfs')
     })
 
-    it('storage alias "sqlite" resolves to kl-sqlite-storage', () => {
+    it('storage alias "sqlite" resolves to kl-plugin-storage-sqlite', () => {
       const result = collectActiveExternalPackageNames({
         plugins: { 'card.storage': { provider: 'sqlite' } },
       })
-      expect(result).toContain('kl-sqlite-storage')
+      expect(result).toContain('kl-plugin-storage-sqlite')
     })
 
     it('custom external card.state provider from plugins is included', () => {
@@ -382,7 +382,7 @@ describe('collectActiveExternalPackageNames', () => {
           'auth.policy': { provider: 'rbac' },
         },
       })
-      const authPkgCount = result.filter(p => p === 'kl-auth-plugin').length
+      const authPkgCount = result.filter(p => p === 'kl-plugin-auth').length
       expect(authPkgCount).toBe(1)
     })
 
@@ -429,24 +429,24 @@ describe('plugin settings contract helpers', () => {
   })
 
   it('accepts exact kl-* install requests without rewriting the input', () => {
-    expect(validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'workspace' })).toEqual({
-      packageName: 'kl-auth-plugin',
+    expect(validatePluginSettingsInstallRequest({ packageName: 'kl-plugin-auth', scope: 'workspace' })).toEqual({
+      packageName: 'kl-plugin-auth',
       scope: 'workspace',
     })
   })
 
   it.each([
-    'kl-auth-plugin@latest',
-    'npm install kl-auth-plugin',
-    '../kl-auth-plugin',
-    'https://example.com/kl-auth-plugin.tgz',
-    'kl-auth-plugin --ignore-scripts',
-    'kl-auth-plugin kl-webhooks-plugin',
-    ' kl-auth-plugin',
-    'kl-auth-plugin ',
-    'kl-auth-plugin\n--global',
-    'kl-auth-plugin; rm -rf /',
-    '@scope/kl-auth-plugin',
+    'kl-plugin-auth@latest',
+    'npm install kl-plugin-auth',
+    '../kl-plugin-auth',
+    'https://example.com/kl-plugin-auth.tgz',
+    'kl-plugin-auth --ignore-scripts',
+    'kl-plugin-auth kl-plugin-webhook',
+    ' kl-plugin-auth',
+    'kl-plugin-auth ',
+    'kl-plugin-auth\n--global',
+    'kl-plugin-auth; rm -rf /',
+    '@scope/kl-plugin-auth',
   ])('rejects non-exact package input %s at the validation boundary', (packageName) => {
     expect(() => validatePluginSettingsInstallRequest({ packageName, scope: 'workspace' })).toThrowError(PluginSettingsValidationError)
 
@@ -459,10 +459,10 @@ describe('plugin settings contract helpers', () => {
   })
 
   it('rejects unsupported install scopes', () => {
-    expect(() => validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'user' })).toThrowError(PluginSettingsValidationError)
+    expect(() => validatePluginSettingsInstallRequest({ packageName: 'kl-plugin-auth', scope: 'user' })).toThrowError(PluginSettingsValidationError)
 
     try {
-      validatePluginSettingsInstallRequest({ packageName: 'kl-auth-plugin', scope: 'user' })
+      validatePluginSettingsInstallRequest({ packageName: 'kl-plugin-auth', scope: 'user' })
     } catch (error) {
       expect(error).toBeInstanceOf(PluginSettingsValidationError)
       expect((error as PluginSettingsValidationError).code).toBe('invalid-plugin-install-scope')

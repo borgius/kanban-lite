@@ -73,7 +73,7 @@ export interface AuthPolicyPlugin {
  * exported separately as `webhookListenerPlugin: SDKEventListenerPlugin` when an
  * external provider wants to own webhook event delivery.
  *
- * External packages (e.g. `kl-webhooks-plugin`) must export a compatible
+ * External packages (e.g. `kl-plugin-webhook`) must export a compatible
  * implementation as `webhookProviderPlugin` (or as the default export) with a
  * manifest that declares `'webhook.delivery'` in its `provides` array.
  */
@@ -233,13 +233,13 @@ export declare const RBAC_ADMIN_ACTIONS: ReadonlySet<string>;
  * const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
  */
 export declare const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>>;
-/** No-op identity provider resolved from `kl-auth-plugin` when available. */
+/** No-op identity provider resolved from `kl-plugin-auth` when available. */
 export declare const NOOP_IDENTITY_PLUGIN: AuthIdentityPlugin;
-/** No-op policy provider resolved from `kl-auth-plugin` when available. */
+/** No-op policy provider resolved from `kl-plugin-auth` when available. */
 export declare const NOOP_POLICY_PLUGIN: AuthPolicyPlugin;
-/** RBAC identity provider resolved from `kl-auth-plugin` when available. */
+/** RBAC identity provider resolved from `kl-plugin-auth` when available. */
 export declare const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin;
-/** RBAC policy provider resolved from `kl-auth-plugin` when available. */
+/** RBAC policy provider resolved from `kl-plugin-auth` when available. */
 export declare const RBAC_POLICY_PLUGIN: AuthPolicyPlugin;
 /**
  * Manifest describing what capability namespaces a plugin provides.
@@ -430,7 +430,7 @@ export interface McpToolDefinition {
  * First-partiy cut: tool contributions only. Pre/post registration hooks,
  * auth decorators, and resource contributions are deferred to follow-up work.
  *
- * Packages that want to own a set of MCP tools (e.g. `kl-webhooks-plugin`)
+ * Packages that want to own a set of MCP tools (e.g. `kl-plugin-webhook`)
  * can export `mcpPlugin` implementing this interface. The MCP server
  * discovers the export via the same active-package set used by the standalone
  * HTTP discovery path (SPE-06).
@@ -513,7 +513,7 @@ export interface ResolvedCapabilityBag {
     readonly eventListeners: readonly SDKEventListenerPlugin[];
     /**
      * Resolved webhook delivery provider for CRUD operations, or `null` when the
-     * `kl-webhooks-plugin` package is not yet installed.
+     * `kl-plugin-webhook` package is not yet installed.
      *
      * This field holds only the registry/persistence capability. Runtime delivery
      * is wired via {@link webhookListener}.
@@ -568,8 +568,8 @@ export declare function canUseDefaultCardStateActor(authCapabilities?: ResolvedA
  * mapped package name and issues install hints that reference it.
  *
  * Install targets:
- * - `sqlite` → `npm install kl-sqlite-storage`
- * - `mysql`  → `npm install kl-mysql-storage`
+ * - `sqlite` → `npm install kl-plugin-storage-sqlite`
+ * - `mysql`  → `npm install kl-plugin-storage-mysql`
  *
  * Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
  * with CJS entry `dist/index.cjs`.
@@ -578,7 +578,7 @@ export declare const PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /**
  * Maps short `card.state` provider ids to their installable npm package names.
  *
- * - `sqlite` → `npm install kl-sqlite-card-state`
+ * - `sqlite` → `npm install kl-plugin-card-state-sqlite`
  *
  * External packages must export `createCardStateProvider(context)` or a
  * `cardStateProvider`/`default` object with a manifest that provides
@@ -588,7 +588,7 @@ export declare const CARD_STATE_PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /**
  * Maps short webhook provider ids to their installable npm package names.
  *
- * - `webhooks` → `npm install kl-webhooks-plugin`
+ * - `webhooks` → `npm install kl-plugin-webhook`
  *
  * External packages must export `webhookProviderPlugin` (or a default export)
  * with a manifest that provides `'webhook.delivery'` and CRUD methods.
@@ -597,8 +597,8 @@ export declare const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /**
  * Maps built-in auth compatibility ids to the external auth package.
  *
- * - `noop` → `npm install kl-auth-plugin`
- * - `rbac` → `npm install kl-auth-plugin`
+ * - `noop` → `npm install kl-plugin-auth`
+ * - `rbac` → `npm install kl-plugin-auth`
  */
 export declare const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string>;
 /** Set of provider ids that are handled as built-in attachment plugins. */
@@ -631,7 +631,7 @@ export declare function createBuiltinAuthListenerPlugin(authIdentity: AuthIdenti
  * deterministically activate the webhook package for all surfaces.
  *
  * When no explicit webhook provider is configured, falls through to the default
- * `'webhooks'` → `'kl-webhooks-plugin'` alias, matching the behaviour of
+ * `'webhooks'` → `'kl-plugin-webhook'` alias, matching the behaviour of
  * {@link normalizeWebhookCapabilities} and the standalone discovery path so that
  * both surfaces activate the same set of packages.
  *

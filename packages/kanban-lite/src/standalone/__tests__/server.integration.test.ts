@@ -1977,11 +1977,11 @@ describe('Standalone Server Integration', () => {
       })
 
       const installSpy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockResolvedValue({
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         scope: 'workspace',
         command: {
           command: 'npm',
-          args: ['install', '--ignore-scripts', 'kl-auth-plugin'],
+          args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
           cwd: path.dirname(tempDir),
           shell: false,
         },
@@ -1997,12 +1997,12 @@ describe('Standalone Server Integration', () => {
 
       const installResponse = await sendAndReceiveMatching(
         ws,
-        { type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' },
+        { type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' },
         'pluginSettingsResult',
         (parsed) => parsed.action === 'install' && parsed.error === undefined,
       )
       expect(installResponse.install).toMatchObject({
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         scope: 'workspace',
         stdout: 'Authorization: Bearer [REDACTED]',
         stderr: 'password=[REDACTED]',
@@ -2021,7 +2021,7 @@ describe('Standalone Server Integration', () => {
           code: 'plugin-settings-install-failed',
           message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
           details: {
-            packageName: 'kl-auth-plugin',
+            packageName: 'kl-plugin-auth',
             scope: 'workspace',
             stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
           },
@@ -2030,7 +2030,7 @@ describe('Standalone Server Integration', () => {
 
       const response = await sendAndReceiveMatching(
         ws,
-        { type: 'installPluginSettingsPackage', packageName: 'kl-auth-plugin', scope: 'workspace' },
+        { type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' },
         'pluginSettingsResult',
         (parsed) => parsed.action === 'install' && parsed.error !== undefined,
       )
@@ -3582,7 +3582,7 @@ describe('Standalone Server Integration', () => {
           providers: expect.arrayContaining([
             expect.objectContaining({
               providerId: 'local',
-              packageName: 'kl-auth-plugin',
+              packageName: 'kl-plugin-auth',
               isSelected: true,
             }),
           ]),
@@ -3759,11 +3759,11 @@ describe('Standalone Server Integration', () => {
     })
 
     it.each([
-      { label: 'specifier', invalidPackageName: 'kl-auth-plugin@latest' },
-      { label: 'flag fragment', invalidPackageName: 'kl-auth-plugin --save-dev' },
-      { label: 'path', invalidPackageName: '../kl-auth-plugin' },
-      { label: 'url', invalidPackageName: 'https://example.com/kl-auth-plugin.tgz' },
-      { label: 'shell fragment', invalidPackageName: 'kl-auth-plugin; rm -rf /' },
+      { label: 'specifier', invalidPackageName: 'kl-plugin-auth@latest' },
+      { label: 'flag fragment', invalidPackageName: 'kl-plugin-auth --save-dev' },
+      { label: 'path', invalidPackageName: '../kl-plugin-auth' },
+      { label: 'url', invalidPackageName: 'https://example.com/kl-plugin-auth.tgz' },
+      { label: 'shell fragment', invalidPackageName: 'kl-plugin-auth; rm -rf /' },
     ])('POST /api/plugin-settings/install rejects invalid package names for %s without echoing the input', async ({ invalidPackageName }) => {
       const res = await httpRequest('POST', `http://localhost:${port}/api/plugin-settings/install`, {
         packageName: invalidPackageName,
@@ -3787,7 +3787,7 @@ describe('Standalone Server Integration', () => {
           code: 'plugin-settings-install-failed',
           message: 'Unable to install plugin package. In-product installs disable lifecycle scripts; install the package manually if it requires lifecycle scripts.',
           details: {
-            packageName: 'kl-auth-plugin',
+            packageName: 'kl-plugin-auth',
             scope: 'workspace',
             exitCode: 1,
             stderr: 'Authorization: Bearer [REDACTED]\npassword=[REDACTED]',
@@ -3796,7 +3796,7 @@ describe('Standalone Server Integration', () => {
       )
 
       const res = await httpRequest('POST', `http://localhost:${port}/api/plugin-settings/install`, {
-        packageName: 'kl-auth-plugin',
+        packageName: 'kl-plugin-auth',
         scope: 'workspace',
       })
 

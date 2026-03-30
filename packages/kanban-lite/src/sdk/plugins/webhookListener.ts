@@ -1,9 +1,9 @@
 /**
- * @internal Temporary compatibility shim — canonical webhook runtime delivery moved to `kl-webhooks-plugin`.
+ * @internal Temporary compatibility shim — canonical webhook runtime delivery moved to `kl-plugin-webhook`.
  *
  * {@link WebhookListenerPlugin} here is the built-in fallback instantiated by `KanbanSDK`
  * only when no external webhook provider exports a compatible listener. When
- * `kl-webhooks-plugin` is active (it exports its own `WebhookListenerPlugin` class), that
+ * `kl-plugin-webhook` is active (it exports its own `WebhookListenerPlugin` class), that
  * plugin-owned listener is registered instead and this module is never reached for delivery.
  * This module remains as a temporary compatibility fallback until plugin-ownership parity
  * is fully verified; it will be removed in a subsequent migration wave.
@@ -51,9 +51,9 @@ const SDK_AFTER_EVENT_NAMES: ReadonlySet<string> = new Set<SDKAfterEventType>([
  * Built-in compatibility-shim listener plugin that delivers SDK after-events to configured webhooks.
  *
  * **This is a compatibility shim.** The canonical runtime delivery implementation is
- * owned by `kl-webhooks-plugin`. `KanbanSDK` instantiates this class only when no
+ * owned by `kl-plugin-webhook`. `KanbanSDK` instantiates this class only when no
  * external webhook provider exports a compatible `WebhookListenerPlugin`. When
- * `kl-webhooks-plugin` is active, its own listener is registered instead and this
+ * `kl-plugin-webhook` is active, its own listener is registered instead and this
  * class is never reached for delivery.
  *
  * Implements {@link SDKEventListenerPlugin} — registers and unregisters via

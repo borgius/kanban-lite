@@ -179,7 +179,7 @@ describe('Webhook CRUD via KanbanSDK (no provider — throws deterministic error
     cleanup()
   })
 
-  const pluginError = /Webhook commands require kl-webhooks-plugin/
+  const pluginError = /Webhook commands require kl-plugin-webhook/
 
   it('listWebhooks throws when no plugin is active', () => {
     expect(() => sdk.listWebhooks()).toThrow(pluginError)

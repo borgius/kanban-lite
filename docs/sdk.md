@@ -449,7 +449,7 @@ console.log(status.identityEnabled)  // false when no plugin configured
 Returns webhook provider metadata for host surfaces and diagnostics.
 
 Use this to inspect which webhook delivery provider is active and whether
-`kl-webhooks-plugin` is installed.
+`kl-plugin-webhook` is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A [WebhookStatus](WebhookStatus) snapshot containing the active provider id
@@ -458,7 +458,7 @@ Use this to inspect which webhook delivery provider is active and whether
 ```ts
 const status = sdk.getWebhookStatus()
 console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
-console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
+console.log(status.webhookProviderActive) // false when kl-plugin-webhook not installed
 ```
 
 * * *
@@ -584,7 +584,7 @@ Returns the SDK extension bag contributed by the plugin with the given `id`,
 or `undefined` when no active plugin has exported a matching `sdkExtensionPlugin`.
 
 Use this to access plugin-owned SDK capabilities (e.g. webhook CRUD methods
-contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
+contributed by `kl-plugin-webhook`) without importing plugin packages directly.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The resolved extension bag cast to `T`, or `undefined` when the plugin
@@ -593,11 +593,11 @@ contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
 
 | Param | Description |
 | --- | --- |
-| id | The plugin manifest id to look up (e.g. `'kl-webhooks-plugin'`). |
+| id | The plugin manifest id to look up (e.g. `'kl-plugin-webhook'`). |
 
 **Example**  
 ```ts
-const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-webhooks-plugin')
+const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-plugin-webhook')
 const webhooks = webhookExt?.listWebhooks() ?? []
 ```
 
@@ -2651,14 +2651,14 @@ sdk.setDefaultBoard('sprint-2')
 #### kanbanSDK.listWebhooks() ⇒
 Lists all registered webhooks.
 
-Delegates to the resolved `kl-webhooks-plugin` provider.
+Delegates to the resolved `kl-plugin-webhook` provider.
 Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: Array of [Webhook](Webhook) objects.  
 **Throws**:
 
-- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+- <code>Error</code> When `kl-plugin-webhook` is not installed.
 
 
 * * *
@@ -2668,14 +2668,14 @@ Throws if no `webhook.delivery` provider is installed.
 #### kanbanSDK.createWebhook(webhookConfig) ⇒
 Creates and persists a new webhook.
 
-Delegates to the resolved `kl-webhooks-plugin` provider.
+Delegates to the resolved `kl-plugin-webhook` provider.
 Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The newly created [Webhook](Webhook).  
 **Throws**:
 
-- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+- <code>Error</code> When `kl-plugin-webhook` is not installed.
 
 
 | Param | Description |
@@ -2690,14 +2690,14 @@ Throws if no `webhook.delivery` provider is installed.
 #### kanbanSDK.deleteWebhook(id) ⇒
 Deletes a webhook by its ID.
 
-Delegates to the resolved `kl-webhooks-plugin` provider.
+Delegates to the resolved `kl-plugin-webhook` provider.
 Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: `true` if deleted, `false` if not found.  
 **Throws**:
 
-- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+- <code>Error</code> When `kl-plugin-webhook` is not installed.
 
 
 | Param | Description |
@@ -2712,14 +2712,14 @@ Throws if no `webhook.delivery` provider is installed.
 #### kanbanSDK.updateWebhook(id, updates) ⇒
 Updates an existing webhook's configuration.
 
-Delegates to the resolved `kl-webhooks-plugin` provider.
+Delegates to the resolved `kl-plugin-webhook` provider.
 Throws if no `webhook.delivery` provider is installed.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The updated [Webhook](Webhook), or `null` if not found.  
 **Throws**:
 
-- <code>Error</code> When `kl-webhooks-plugin` is not installed.
+- <code>Error</code> When `kl-plugin-webhook` is not installed.
 
 
 | Param | Description |
@@ -3468,7 +3468,7 @@ writeConfig('/home/user/my-project', updated)
 Normalizes auth capability selections into a complete runtime capability map.
 
 Omitted auth providers default to the `noop` compatibility ids. When the
-external `kl-auth-plugin` package is installed those ids resolve there;
+external `kl-plugin-auth` package is installed those ids resolve there;
 otherwise core keeps a built-in compatibility fallback so behavior is
 unchanged when auth is not configured.
 
@@ -3519,7 +3519,7 @@ The input object is never mutated.
 Normalizes webhook capability selections into a complete runtime capability map.
 
 When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`, which
-maps to the `kl-webhooks-plugin` external package via `WEBHOOK_PROVIDER_ALIASES`.
+maps to the `kl-plugin-webhook` external package via `WEBHOOK_PROVIDER_ALIASES`.
 Core no longer provides a built-in webhook delivery fallback; hosts must install
 that package anywhere webhook CRUD or runtime delivery is expected to work.
 
@@ -3816,7 +3816,7 @@ const denied  = RBAC_ROLE_MATRIX['user'].has('board.delete')   // false
 <a name="NOOP_IDENTITY_PLUGIN"></a>
 
 ### NOOP\_IDENTITY\_PLUGIN
-No-op identity provider resolved from `kl-auth-plugin` when available.
+No-op identity provider resolved from `kl-plugin-auth` when available.
 
 **Kind**: global variable  
 
@@ -3825,7 +3825,7 @@ No-op identity provider resolved from `kl-auth-plugin` when available.
 <a name="NOOP_POLICY_PLUGIN"></a>
 
 ### NOOP\_POLICY\_PLUGIN
-No-op policy provider resolved from `kl-auth-plugin` when available.
+No-op policy provider resolved from `kl-plugin-auth` when available.
 
 **Kind**: global variable  
 
@@ -3834,7 +3834,7 @@ No-op policy provider resolved from `kl-auth-plugin` when available.
 <a name="RBAC_IDENTITY_PLUGIN"></a>
 
 ### RBAC\_IDENTITY\_PLUGIN
-RBAC identity provider resolved from `kl-auth-plugin` when available.
+RBAC identity provider resolved from `kl-plugin-auth` when available.
 
 **Kind**: global variable  
 
@@ -3843,7 +3843,7 @@ RBAC identity provider resolved from `kl-auth-plugin` when available.
 <a name="RBAC_POLICY_PLUGIN"></a>
 
 ### RBAC\_POLICY\_PLUGIN
-RBAC policy provider resolved from `kl-auth-plugin` when available.
+RBAC policy provider resolved from `kl-plugin-auth` when available.
 
 **Kind**: global variable  
 
@@ -3861,8 +3861,8 @@ here and no built-in implementation is registered, the resolver loads the
 mapped package name and issues install hints that reference it.
 
 Install targets:
-- `sqlite` → `npm install kl-sqlite-storage`
-- `mysql`  → `npm install kl-mysql-storage`
+- `sqlite` → `npm install kl-plugin-storage-sqlite`
+- `mysql`  → `npm install kl-plugin-storage-mysql`
 
 Both packages must export `cardStoragePlugin` and `attachmentStoragePlugin`
 with CJS entry `dist/index.cjs`.
@@ -3876,7 +3876,7 @@ with CJS entry `dist/index.cjs`.
 ### CARD\_STATE\_PROVIDER\_ALIASES
 Maps short `card.state` provider ids to their installable npm package names.
 
-- `sqlite` → `npm install kl-sqlite-card-state`
+- `sqlite` → `npm install kl-plugin-card-state-sqlite`
 
 External packages must export `createCardStateProvider(context)` or a
 `cardStateProvider`/`default` object with a manifest that provides
@@ -3891,7 +3891,7 @@ External packages must export `createCardStateProvider(context)` or a
 ### WEBHOOK\_PROVIDER\_ALIASES
 Maps short webhook provider ids to their installable npm package names.
 
-- `webhooks` → `npm install kl-webhooks-plugin`
+- `webhooks` → `npm install kl-plugin-webhook`
 
 External packages must export `webhookProviderPlugin` (or a default export)
 with a manifest that provides `'webhook.delivery'` and CRUD methods.
@@ -3905,8 +3905,8 @@ with a manifest that provides `'webhook.delivery'` and CRUD methods.
 ### AUTH\_PROVIDER\_ALIASES
 Maps built-in auth compatibility ids to the external auth package.
 
-- `noop` → `npm install kl-auth-plugin`
-- `rbac` → `npm install kl-auth-plugin`
+- `noop` → `npm install kl-plugin-auth`
+- `rbac` → `npm install kl-plugin-auth`
 
 **Kind**: global variable  
 
@@ -4153,7 +4153,7 @@ key and the legacy `webhookPlugin` key so that webhook-only configurations
 deterministically activate the webhook package for all surfaces.
 
 When no explicit webhook provider is configured, falls through to the default
-`'webhooks'` → `'kl-webhooks-plugin'` alias, matching the behaviour of
+`'webhooks'` → `'kl-plugin-webhook'` alias, matching the behaviour of
 [normalizeWebhookCapabilities](normalizeWebhookCapabilities) and the standalone discovery path so that
 both surfaces activate the same set of packages.
 

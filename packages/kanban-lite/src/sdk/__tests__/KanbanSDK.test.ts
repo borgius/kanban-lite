@@ -171,7 +171,7 @@ describe('KanbanSDK', () => {
         },
         plugins: {
           'auth.identity': {
-            provider: 'kl-auth-plugin',
+            provider: 'kl-plugin-auth',
             options: {
               users: [{ username: 'alice', password: '$2b$12$existing-hash' }],
             },

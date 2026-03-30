@@ -56,12 +56,12 @@ export interface AuthStatus {
 export interface WebhookStatus {
     /**
      * Active `webhook.delivery` provider id.
-     * Returns `'none'` when `kl-webhooks-plugin` is not installed.
+     * Returns `'none'` when `kl-plugin-webhook` is not installed.
      */
     webhookProvider: string;
     /**
      * `true` when an external webhook provider plugin is active.
-     * `false` when `kl-webhooks-plugin` is not installed.
+     * `false` when `kl-plugin-webhook` is not installed.
      */
     webhookProviderActive: boolean;
 }
@@ -257,7 +257,7 @@ export declare class KanbanSDK {
      * Returns webhook provider metadata for host surfaces and diagnostics.
      *
      * Use this to inspect which webhook delivery provider is active and whether
-     * `kl-webhooks-plugin` is installed.
+     * `kl-plugin-webhook` is installed.
      *
      * @returns A {@link WebhookStatus} snapshot containing the active provider id
      *   and a boolean flag indicating whether a provider is active.
@@ -266,7 +266,7 @@ export declare class KanbanSDK {
      * ```ts
      * const status = sdk.getWebhookStatus()
      * console.log(status.webhookProvider)      // 'none' | 'webhooks' | ...
-     * console.log(status.webhookProviderActive) // false when kl-webhooks-plugin not installed
+     * console.log(status.webhookProviderActive) // false when kl-plugin-webhook not installed
      * ```
      */
     getWebhookStatus(): WebhookStatus;
@@ -279,16 +279,16 @@ export declare class KanbanSDK {
      * or `undefined` when no active plugin has exported a matching `sdkExtensionPlugin`.
      *
      * Use this to access plugin-owned SDK capabilities (e.g. webhook CRUD methods
-     * contributed by `kl-webhooks-plugin`) without importing plugin packages directly.
+     * contributed by `kl-plugin-webhook`) without importing plugin packages directly.
      *
      * @typeParam T - Shape of the expected extension bag.
-     * @param id - The plugin manifest id to look up (e.g. `'kl-webhooks-plugin'`).
+     * @param id - The plugin manifest id to look up (e.g. `'kl-plugin-webhook'`).
      * @returns The resolved extension bag cast to `T`, or `undefined` when the plugin
      *   is not active or has not exported `sdkExtensionPlugin`.
      *
      * @example
      * ```ts
-     * const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-webhooks-plugin')
+     * const webhookExt = sdk.getExtension<{ listWebhooks(): Webhook[] }>('kl-plugin-webhook')
      * const webhooks = webhookExt?.listWebhooks() ?? []
      * ```
      */
@@ -1734,22 +1734,22 @@ export declare class KanbanSDK {
     /**
      * Lists all registered webhooks.
      *
-     * Delegates to the resolved `kl-webhooks-plugin` provider.
+     * Delegates to the resolved `kl-plugin-webhook` provider.
      * Throws if no `webhook.delivery` provider is installed.
      *
      * @returns Array of {@link Webhook} objects.
-     * @throws {Error} When `kl-webhooks-plugin` is not installed.
+     * @throws {Error} When `kl-plugin-webhook` is not installed.
      */
     listWebhooks(): Webhook[];
     /**
      * Creates and persists a new webhook.
      *
-     * Delegates to the resolved `kl-webhooks-plugin` provider.
+     * Delegates to the resolved `kl-plugin-webhook` provider.
      * Throws if no `webhook.delivery` provider is installed.
      *
      * @param webhookConfig - The webhook configuration.
      * @returns The newly created {@link Webhook}.
-     * @throws {Error} When `kl-webhooks-plugin` is not installed.
+     * @throws {Error} When `kl-plugin-webhook` is not installed.
      */
     createWebhook(webhookConfig: {
         url: string;
@@ -1759,24 +1759,24 @@ export declare class KanbanSDK {
     /**
      * Deletes a webhook by its ID.
      *
-     * Delegates to the resolved `kl-webhooks-plugin` provider.
+     * Delegates to the resolved `kl-plugin-webhook` provider.
      * Throws if no `webhook.delivery` provider is installed.
      *
      * @param id - The webhook ID to delete.
      * @returns `true` if deleted, `false` if not found.
-     * @throws {Error} When `kl-webhooks-plugin` is not installed.
+     * @throws {Error} When `kl-plugin-webhook` is not installed.
      */
     deleteWebhook(id: string): Promise<boolean>;
     /**
      * Updates an existing webhook's configuration.
      *
-     * Delegates to the resolved `kl-webhooks-plugin` provider.
+     * Delegates to the resolved `kl-plugin-webhook` provider.
      * Throws if no `webhook.delivery` provider is installed.
      *
      * @param id - The webhook ID to update.
      * @param updates - Partial webhook fields to merge.
      * @returns The updated {@link Webhook}, or `null` if not found.
-     * @throws {Error} When `kl-webhooks-plugin` is not installed.
+     * @throws {Error} When `kl-plugin-webhook` is not installed.
      */
     updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null>;
 }

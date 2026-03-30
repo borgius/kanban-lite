@@ -176,45 +176,45 @@ function URLSync() {
     }
   }, [columns])
 
-  // ── 3. Store → URL: keep URL in sync with store ───────────────────────────
-  // Wait until the server has responded (columns populated) before syncing.
+  // ── 3a. Settings URL sync — runs independently of column loading ─────────
+  useEffect(() => {
+    if (!settingsOpen) return
+    const tabSlug = SETTINGS_TAB_TO_SLUG[settingsTab] ?? 'general'
+    const prev = prevStateRef.current
+    const justOpened = !prev.settingsOpen
+    const tabChanged = prev.settingsTab !== tabSlug
+    const pluginChanged = prev.settingsPluginId !== settingsPluginId
+
+    if (!justOpened && !tabChanged && !pluginChanged) return
+
+    prevStateRef.current = {
+      ...prev,
+      settingsOpen: true,
+      settingsTab: tabSlug,
+      settingsPluginId: settingsPluginId,
+    }
+
+    if (settingsTab === 'pluginOptions' && settingsPluginId) {
+      navigate({
+        to: '/settings/plugins/$pluginId',
+        params: { pluginId: settingsPluginId },
+        replace: !justOpened,
+      })
+    } else {
+      navigate({
+        to: '/settings/$settingsTab',
+        params: { settingsTab: tabSlug },
+        replace: !justOpened,
+      })
+    }
+  }, [settingsOpen, settingsTab, settingsPluginId, navigate])
+
+  // ── 3b. Board URL sync — waits for columns ────────────────────────────────
   const firstNavRef = useRef(true)
 
   useEffect(() => {
     if (columns.length === 0) return // wait for server init
-
-    // ── Settings URL sync ──────────────────────────────────────────────────
-    if (settingsOpen) {
-      const tabSlug = SETTINGS_TAB_TO_SLUG[settingsTab] ?? 'general'
-      const prev = prevStateRef.current
-      const justOpened = !prev.settingsOpen
-      const tabChanged = prev.settingsTab !== tabSlug
-      const pluginChanged = prev.settingsPluginId !== settingsPluginId
-
-      if (!justOpened && !tabChanged && !pluginChanged) return
-
-      prevStateRef.current = {
-        ...prev,
-        settingsOpen: true,
-        settingsTab: tabSlug,
-        settingsPluginId: settingsPluginId,
-      }
-
-      if (settingsTab === 'pluginOptions' && settingsPluginId) {
-        navigate({
-          to: '/settings/plugins/$pluginId',
-          params: { pluginId: settingsPluginId },
-          replace: !justOpened,
-        })
-      } else {
-        navigate({
-          to: '/settings/$settingsTab',
-          params: { settingsTab: tabSlug },
-          replace: !justOpened,
-        })
-      }
-      return
-    }
+    if (settingsOpen) return // settings URL handled above
 
     // ── Settings just closed — force board navigation ──────────────────────
     const settingsJustClosed = prevStateRef.current.settingsOpen
@@ -274,7 +274,7 @@ function URLSync() {
         replace,
       })
     }
-  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, settingsOpen, settingsTab, settingsPluginId, navigate])
+  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, settingsOpen, navigate])
 
   return null
 }

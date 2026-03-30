@@ -534,7 +534,7 @@ function PluginOptionsSection({
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
   const [foldedCapabilities, setFoldedCapabilities] = useState<Set<string>>(() => new Set())
-  const [leftPanelPct, setLeftPanelPct] = useState(55)
+  const [leftPanelPct, setLeftPanelPct] = useState(35)
   const splitContainerRef = useRef<HTMLDivElement>(null)
 
   const handleSplitDragStart = useCallback((e: React.PointerEvent) => {
@@ -1361,6 +1361,9 @@ function SettingsPanelContent({
   useEffect(() => {
     if (initialTab && initialTab !== activeTab) {
       setActiveTabRaw(initialTab)
+      if (initialTab === 'pluginOptions') {
+        onPluginOptionsTabActivated?.()
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab])

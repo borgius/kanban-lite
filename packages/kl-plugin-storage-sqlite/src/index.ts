@@ -907,3 +907,164 @@ export const attachmentStoragePlugin: AttachmentStoragePlugin = {
     }
   },
 }
+
+// ---------------------------------------------------------------------------
+// card.state provider (merged into storage package)
+// ---------------------------------------------------------------------------
+
+/** Shared plugin manifest shape for `card.state` capability providers. */
+export interface CardStateProviderManifest {
+  readonly id: string
+  readonly provides: readonly ['card.state']
+}
+
+/** Opaque JSON-like payload stored for a card-state domain. */
+export type CardStateValue = Record<string, unknown>
+
+/** Stable actor/card/domain lookup key used by card-state providers. */
+export interface CardStateKey {
+  actorId: string
+  boardId: string
+  cardId: string
+  domain: string
+}
+
+/** Stored card-state record returned by provider operations. */
+export interface CardStateRecord<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt: string
+}
+
+/** Write input for card-state domain mutations. */
+export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt?: string
+}
+
+/** Unread cursor payload persisted by card-state providers. */
+export interface CardStateCursor extends Record<string, unknown> {
+  cursor: string
+  updatedAt?: string
+}
+
+/** Lookup key for unread cursor state. */
+export interface CardStateUnreadKey {
+  actorId: string
+  boardId: string
+  cardId: string
+}
+
+/** Mutation input for marking unread state through a cursor. */
+export interface CardStateReadThroughInput extends CardStateUnreadKey {
+  cursor: CardStateCursor
+}
+
+/** Shared runtime context passed to `card.state` providers. */
+export interface CardStateModuleContext {
+  workspaceRoot: string
+  kanbanDir: string
+  provider: string
+  backend: 'builtin' | 'external'
+  options?: Record<string, unknown>
+}
+
+/** Contract for `card.state` capability providers. */
+export interface CardStateProvider {
+  readonly manifest: CardStateProviderManifest
+  getCardState(input: CardStateKey): Promise<CardStateRecord | null>
+  setCardState(input: CardStateWriteInput): Promise<CardStateRecord>
+  getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>
+  markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>
+}
+
+const CARD_STATE_CREATE_SQL = `
+CREATE TABLE IF NOT EXISTS card_state (
+  actor_id   TEXT NOT NULL,
+  board_id   TEXT NOT NULL,
+  card_id    TEXT NOT NULL,
+  domain     TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (actor_id, board_id, card_id, domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_state_lookup
+  ON card_state (actor_id, board_id, card_id, domain);
+`
+
+function _isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function _isCardStateCursor(value: unknown): value is CardStateCursor {
+  return _isRecord(value)
+    && typeof value.cursor === 'string'
+    && (value.updatedAt === undefined || typeof value.updatedAt === 'string')
+}
+
+function _getUpdatedAt(updatedAt?: string): string {
+  return updatedAt ?? new Date().toISOString()
+}
+
+function _parseStateValue(valueJson: string): CardStateValue | null {
+  try {
+    const parsed = JSON.parse(valueJson) as unknown
+    return _isRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Creates the SQLite-backed `card.state` provider.
+ *
+ * Card-state data is stored in the same SQLite database as card storage,
+ * in a dedicated `card_state` table.  Actor-scoped unread / open state
+ * is kept separate from shared card content.
+ */
+export function createCardStateProvider(context: CardStateModuleContext): CardStateProvider {
+  const dbPath = resolveDbPath(context.kanbanDir, context.options)
+  const db = new Database(dbPath)
+  db.exec(CARD_STATE_CREATE_SQL)
+
+  const selectState = db.prepare(`
+    SELECT actor_id, board_id, card_id, domain, value_json, updated_at
+    FROM card_state
+    WHERE actor_id = ? AND board_id = ? AND card_id = ? AND domain = ?
+  `)
+  const upsertState = db.prepare(`
+    INSERT INTO card_state (actor_id, board_id, card_id, domain, value_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(actor_id, board_id, card_id, domain)
+    DO UPDATE SET
+      value_json = excluded.value_json,
+      updated_at = excluded.updated_at
+  `)
+
+  return {
+    manifest: Object.freeze({ id: 'sqlite', provides: ['card.state'] as const }),
+    async getCardState(input: CardStateKey): Promise<CardStateRecord | null> {
+      const row = selectState.get(input.actorId, input.boardId, input.cardId, input.domain) as
+        { actor_id: string; board_id: string; card_id: string; domain: string; value_json: string; updated_at: string } | undefined
+      if (!row) return null
+      const value = _parseStateValue(row.value_json)
+      if (!value) return null
+      return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: input.domain, value, updatedAt: row.updated_at }
+    },
+    async setCardState(input: CardStateWriteInput): Promise<CardStateRecord> {
+      const updatedAt = _getUpdatedAt(input.updatedAt)
+      upsertState.run(input.actorId, input.boardId, input.cardId, input.domain, JSON.stringify(input.value), updatedAt)
+      return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: input.domain, value: input.value, updatedAt }
+    },
+    async getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null> {
+      const record = await this.getCardState({ ...input, domain: 'unread' })
+      return record && _isCardStateCursor(record.value) ? record.value : null
+    },
+    async markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>> {
+      const updatedAt = _getUpdatedAt(input.cursor.updatedAt)
+      const value: CardStateCursor = { cursor: input.cursor.cursor, updatedAt }
+      upsertState.run(input.actorId, input.boardId, input.cardId, 'unread', JSON.stringify(value), updatedAt)
+      return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: 'unread', value, updatedAt }
+    },
+  }
+}

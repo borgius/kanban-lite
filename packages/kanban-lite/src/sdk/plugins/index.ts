@@ -924,19 +924,26 @@ export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['sqlite', 'kl-plugin-storage-sqlite'],
   ['mysql', 'kl-plugin-storage-mysql'],
   ['postgresql', 'kl-plugin-storage-postgresql'],
+  ['mongodb', 'kl-plugin-storage-mongodb'],
+  ['redis', 'kl-plugin-storage-redis'],
 ])
 
 /**
  * Maps short `card.state` provider ids to their installable npm package names.
  *
- * - `sqlite` → `npm install kl-plugin-card-state-sqlite`
+ * Card-state is now merged into storage packages. The aliases point to the
+ * same packages as `PROVIDER_ALIASES`.
  *
  * External packages must export `createCardStateProvider(context)` or a
  * `cardStateProvider`/`default` object with a manifest that provides
  * `'card.state'`.
  */
 export const CARD_STATE_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
-  ['sqlite', 'kl-plugin-card-state-sqlite'],
+  ['sqlite', 'kl-plugin-storage-sqlite'],
+  ['mysql', 'kl-plugin-storage-mysql'],
+  ['postgresql', 'kl-plugin-storage-postgresql'],
+  ['mongodb', 'kl-plugin-storage-mongodb'],
+  ['redis', 'kl-plugin-storage-redis'],
 ])
 
 /**
@@ -2551,6 +2558,53 @@ function resolveCardStateProvider(
   }
 }
 
+/**
+ * Auto-derives card-state from the active storage plugin when no explicit
+ * `card.state` provider is configured (or the configured provider is `builtin`).
+ *
+ * Resolution order:
+ * 1. If an explicit non-builtin card-state provider is configured, use it.
+ * 2. If the storage provider is external, try loading `createCardStateProvider`
+ *    from the storage package.
+ * 3. Fall back to the built-in file-backed card-state provider.
+ */
+function resolveCardStateProviderFromStorage(
+  storageRef: ProviderRef,
+  explicitCardStateRef: ProviderRef | undefined,
+  kanbanDir: string,
+): { provider: CardStateProvider; context: CardStateModuleContext } {
+  // 1. Explicit non-builtin card-state provider configured — honour it.
+  if (explicitCardStateRef && !BUILTIN_CARD_STATE_PROVIDER_IDS.has(explicitCardStateRef.provider)) {
+    return resolveCardStateProvider(explicitCardStateRef, kanbanDir)
+  }
+
+  // 2. External storage — try loading card-state from the same package.
+  if (storageRef.provider !== 'markdown') {
+    const storagePackageName = PROVIDER_ALIASES.get(storageRef.provider) ?? storageRef.provider
+    const context: CardStateModuleContext = {
+      workspaceRoot: path.dirname(kanbanDir),
+      kanbanDir,
+      provider: storageRef.provider,
+      backend: 'external',
+      options: storageRef.options,
+    }
+    try {
+      const provider = loadExternalCardStateProvider(storagePackageName, storageRef.provider, context)
+      return {
+        provider,
+        context: { ...context, provider: provider.manifest.id },
+      }
+    } catch {
+      // Storage package doesn't export card-state — fall through to builtin.
+    }
+  }
+
+  // 3. Fall back to built-in file-backed provider.
+  const builtinRef: ProviderRef = { provider: 'builtin' }
+  const builtinContext = createCardStateModuleContext(builtinRef, kanbanDir)
+  return { provider: createFileBackedCardStateProvider(builtinContext), context: builtinContext }
+}
+
 /** @internal Shape of a loaded webhook provider package module. */
 interface WebhookProviderModule {
   webhookProviderPlugin?: unknown
@@ -3002,13 +3056,20 @@ export function resolveCapabilityBag(
     'auth.identity': { provider: 'noop' },
     'auth.policy': { provider: 'noop' },
   }
-  const resolvedCardState: ResolvedCardStateCapabilities = cardStateCapabilities ?? {
-    'card.state': { provider: 'builtin' },
-  }
 
+  // Card-state is auto-derived from the storage plugin when not explicitly
+  // configured (or configured as 'builtin').  When the active card.storage
+  // provider is external, we attempt to load createCardStateProvider from the
+  // same storage package.  Falls back to the built-in file-backed provider
+  // when the storage package does not export card-state support.
+  const explicitCardState = cardStateCapabilities?.['card.state']
+  const resolvedCardStateProvider = resolveCardStateProviderFromStorage(
+    cardRef,
+    explicitCardState,
+    kanbanDir,
+  )
   const resolvedAuthIdentity = resolveAuthIdentityPlugin(resolvedAuth['auth.identity'])
   const resolvedAuthPolicy = resolveAuthPolicyPlugin(resolvedAuth['auth.policy'])
-  const resolvedCardStateProvider = resolveCardStateProvider(resolvedCardState['card.state'], kanbanDir)
   const workspaceRoot = path.dirname(kanbanDir)
   const webhookPlugins = webhookCapabilities
     ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], workspaceRoot)
@@ -3050,7 +3111,7 @@ export function resolveCapabilityBag(
     authProviders: resolvedAuth,
     authPolicy: resolvedAuthPolicy,
     cardState: resolvedCardStateProvider.provider,
-    cardStateProviders: resolvedCardState,
+    cardStateProviders: { 'card.state': { provider: resolvedCardStateProvider.provider.manifest.id } },
     cardStateContext: resolvedCardStateProvider.context,
     eventListeners: [],
     webhookProvider: webhookPlugins?.provider ?? null,

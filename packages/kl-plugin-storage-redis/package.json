@@ -1,0 +1,58 @@
+{
+  "name": "kl-plugin-storage-redis",
+  "version": "0.1.0",
+  "description": "kanban-lite card.storage and attachment.storage plugin for Redis",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:ioredis && tsc --declaration --emitDeclarationOnly",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "release": "npm run clean && npm run build && npm version patch && npm publish",
+    "release:minor": "npm run clean && npm run build && npm version minor && npm publish",
+    "release:major": "npm run clean && npm run build && npm version major && npm publish"
+  },
+  "peerDependencies": {
+    "ioredis": ">=5.0.0",
+    "kanban-lite": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": false
+    },
+    "kanban-lite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.19.0",
+    "ioredis": "^5.4.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "keywords": [
+    "kanban-lite",
+    "kanban",
+    "redis",
+    "storage",
+    "plugin"
+  ]
+}

@@ -67,7 +67,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
-- **SQLite `card.state` plugin parity**: Install the first-party `kl-plugin-card-state-sqlite` package and set `plugins['card.state'] = { provider: 'sqlite' }` to persist unread/open state in SQLite while keeping the same stable default-actor, actor-scoping, configured-identity failure semantics, and explicit read/open behavior as the built-in file-backed `builtin` backend
+- **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
@@ -1255,8 +1255,8 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
-| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql`, `postgresql` | Core owns `markdown`. `sqlite`, `mysql`, and `postgresql` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, and `kl-plugin-storage-postgresql`. |
-| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql` | Core owns `localfs`. `sqlite`, `mysql`, and `postgresql` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
+| `card.storage` | `markdown` | `markdown`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `markdown`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`. |
+| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
 
 If you want attachments to route through the SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
 
@@ -1301,7 +1301,7 @@ The same pattern applies to MySQL:
 ### Installing and selecting providers
 
 - Core built-ins are `markdown` and `localfs`.
-- `sqlite`, `mysql`, and `postgresql` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, and `kl-plugin-storage-postgresql`.
+- `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
@@ -1392,6 +1392,60 @@ Notes:
 npm install kl-plugin-storage-postgresql pg
 ```
 
+#### MongoDB
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "mongodb",
+      "options": {
+        "uri": "mongodb://localhost:27017",
+        "database": "kanban_db"
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- `database` is required.
+- Install `kl-plugin-storage-mongodb` in the host environment that loads the plugin.
+- The `mongodb` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the MongoDB provider.
+- `mongodb` stores cards/comments in MongoDB, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mongodb"`.
+
+```bash
+npm install kl-plugin-storage-mongodb mongodb
+```
+
+#### Redis
+
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "redis",
+      "options": {
+        "host": "localhost",
+        "port": 6379,
+        "db": 0
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- Install `kl-plugin-storage-redis` in the host environment that loads the plugin.
+- The `ioredis` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the Redis provider.
+- `redis` stores cards/comments in Redis hashes, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"redis"`.
+
+```bash
+npm install kl-plugin-storage-redis ioredis
+```
+
 ### Provider status surfaces
 
 These commands/endpoints/tools expose provider ids and host-facing metadata without requiring callers to guess which compatibility shim or external package is active:
@@ -1401,9 +1455,9 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 - `GET /api/workspace`
 - MCP: `get_storage_status`, `get_workspace_info`
 
-Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite`, `mysql`, and `postgresql` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
+Core `markdown` reports `watchGlob: "boards/**/*.md"`. The `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
 
-For `card.state`, core ships the built-in file-backed `builtin` backend, while the `sqlite` compatibility id resolves to the first-party `kl-plugin-card-state-sqlite` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
+For `card.state`, card-state is automatically derived from the active `card.storage` plugin. When `card.storage` is `markdown` (default), the built-in file-backed provider is used. When `card.storage` is an external plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package. There is no need to install or configure a separate `card.state` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 
 ### Migrating between compatibility-backed providers
 

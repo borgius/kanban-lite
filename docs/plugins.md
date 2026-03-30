@@ -180,6 +180,8 @@ Compatibility provider ids resolved through external packages:
 - `sqlite`
 - `mysql`
 - `postgresql`
+- `mongodb`
+- `redis`
 
 This capability owns attachment copy/materialization behavior.
 
@@ -494,16 +496,73 @@ npm install kl-plugin-storage-postgresql
 
 The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `pg` load semantics.
 
-## `builtin` / `sqlite` for `card.state`
+## `mongodb`
 
-Namespace: `card.state`
+Namespace: `card.storage`
 
 Behavior:
 
-- `builtin` is the core file-backed backend and persists actor-scoped unread/open state in workspace sidecar files,
-- that persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
-- `sqlite` is a first-party compatibility id backed by the `kl-plugin-card-state-sqlite` package,
-- both backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.
+- stores cards/comments in MongoDB collections,
+- is **not** file-backed for cards,
+- does not expose local card file paths,
+- reports `watchGlob: null`.
+
+Requirements:
+
+- `database` is required in provider options,
+- the `mongodb` driver is loaded lazily,
+- environments that do not use MongoDB do not need `mongodb` installed.
+
+External package:
+
+The `mongodb` provider id is a compatibility alias for the `kl-plugin-storage-mongodb` npm package. Install the external package in the host environment that loads Kanban Lite:
+
+```sh
+npm install kl-plugin-storage-mongodb
+```
+
+The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `mongodb` load semantics.
+
+## `redis`
+
+Namespace: `card.storage`
+
+Behavior:
+
+- stores cards/comments in Redis hashes,
+- is **not** file-backed for cards,
+- does not expose local card file paths,
+- reports `watchGlob: null`.
+
+Requirements:
+
+- the `ioredis` driver is loaded lazily,
+- environments that do not use Redis do not need `ioredis` installed.
+
+External package:
+
+The `redis` provider id is a compatibility alias for the `kl-plugin-storage-redis` npm package. Install the external package in the host environment that loads Kanban Lite:
+
+```sh
+npm install kl-plugin-storage-redis
+```
+
+The package exports both `cardStoragePlugin` and `attachmentStoragePlugin`, and preserves the lazy `ioredis` load semantics.
+
+## `card.state` (auto-derived from storage)
+
+Namespace: `card.state`
+
+Card-state is now **automatically derived** from the active `card.storage` plugin.
+There is no need to install or configure a separate `card.state` package.
+
+Behavior:
+
+- When `card.storage` is `markdown` (default), the built-in file-backed backend persists actor-scoped unread/open state in workspace sidecar files,
+- When `card.storage` is an external plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package via its `createCardStateProvider` export,
+- If the storage package does not export card-state support, the built-in file-backed backend is used as a fallback,
+- persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
+- all backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.
 
 Identity behavior:
 
@@ -511,15 +570,23 @@ Identity behavior:
 - when a real `auth.identity` provider is configured but no actor can be resolved, host surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE`,
 - this is intentionally different from backend unavailability (`unavailable` / `ERR_CARD_STATE_UNAVAILABLE`).
 
-External package:
+No separate installation is needed — card-state support is included in each storage plugin:
 
-The `sqlite` provider id is a compatibility alias for the first-party `kl-plugin-card-state-sqlite` npm package:
-
-```sh
-npm install kl-plugin-card-state-sqlite
+```json
+{
+  "plugins": {
+    "card.storage": {
+      "provider": "sqlite"
+    }
+  }
+}
 ```
 
-Example:
+The above configuration automatically provides both card storage and card-state via the `kl-plugin-storage-sqlite` package.
+
+> **Deprecation notice:** The dedicated `kl-plugin-card-state-sqlite`, `kl-plugin-card-state-mongodb`, and `kl-plugin-card-state-redis` packages are deprecated. Explicit `card.state` configuration is still supported for backward compatibility but is no longer required.
+
+Example with explicit options:
 
 ```json
 {
@@ -889,7 +956,7 @@ This is deliberate: plugin errors should be operator-friendly, not stack-trace a
 
 ## Compatibility aliases
 
-The short provider ids `sqlite`, `mysql`, and `postgresql` are compatibility aliases. They allow existing
+The short provider ids `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are compatibility aliases. They allow existing
 `.kanban.json` configurations to continue using the familiar short names while implementation
 ownership moves to standalone, versioned npm packages.
 
@@ -898,6 +965,8 @@ ownership moves to standalone, versioned npm packages.
 | `sqlite`      | `kl-plugin-storage-sqlite`      |
 | `mysql`       | `kl-plugin-storage-mysql`       |
 | `postgresql`  | `kl-plugin-storage-postgresql`  |
+| `mongodb`     | `kl-plugin-storage-mongodb`     |
+| `redis`       | `kl-plugin-storage-redis`       |
 
 The alias map lives in `PROVIDER_ALIASES` in `src/sdk/plugins/index.ts` and is exported so
 downstream tasks and tests can reference it directly.
@@ -1716,8 +1785,7 @@ If you are building a plugin today, follow these rules:
 | `card.storage` | `markdown` | yes | `boards/**/*.md` | Default card provider |
 | `card.storage` | `sqlite` | no | `null` | Compatibility id backed by `kl-plugin-storage-sqlite` |
 | `card.storage` | `mysql` | no | `null` | Compatibility id backed by `kl-plugin-storage-mysql` |
-| `card.state` | `builtin` | yes | `null` | Built-in file-backed actor-scoped card-state provider |
-| `card.state` | `sqlite` | no | `null` | First-party compatibility id backed by `kl-plugin-card-state-sqlite` |
+| `card.state` | _(auto)_ | — | `null` | Auto-derived from active `card.storage` plugin; falls back to built-in file-backed provider |
 | `attachment.storage` | `localfs` | n/a | n/a | Default attachment provider |
 
 ## Resolver precedence

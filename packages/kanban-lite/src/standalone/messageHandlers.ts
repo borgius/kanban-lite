@@ -271,6 +271,24 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       break
     }
 
+    case 'loadPluginSettings': {
+      try {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'read',
+          pluginSettings: getPluginSettingsPayload(ctx),
+        })
+      } catch (error) {
+        sendPluginSettingsResult(ws, {
+          type: 'pluginSettingsResult',
+          action: 'read',
+          pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+          error: toPluginSettingsErrorPayload('read', error),
+        })
+      }
+      break
+    }
+
     case 'readPluginSettings': {
       const capability = msg.capability as PluginCapabilityNamespace
       const providerId = msg.providerId as string

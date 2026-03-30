@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.
+- **`CARD_STATE_PROVIDER_ALIASES`** now points to storage packages instead of dedicated card-state packages.
+
 ### Added
 
+- **MongoDB storage plugin** (`kl-plugin-storage-mongodb`): New external storage provider package for MongoDB. Cards and comments are persisted in MongoDB collections (`kanban_cards`, `kanban_comments`). Attachments remain on the local filesystem. Requires the `mongodb` driver as a peer dependency. Provider id: `mongodb`.
+- **MongoDB card-state plugin** (`kl-plugin-card-state-mongodb`): New external `card.state` provider for MongoDB-backed actor-scoped card state (unread cursors, explicit-open state). Stores state in a `card_state` collection with a unique compound index. Provider id: `mongodb`.
+- **Redis storage plugin** (`kl-plugin-storage-redis`): New external storage provider package for Redis. Cards and comments are persisted in Redis hashes. Attachments remain on the local filesystem. Requires the `ioredis` driver as a peer dependency. Provider id: `redis`.
+- **Redis card-state plugin** (`kl-plugin-card-state-redis`): New external `card.state` provider for Redis-backed actor-scoped card state (unread cursors, explicit-open state). Stores state as JSON strings with composite keys. Provider id: `redis`.
 - **PostgreSQL storage plugin** (`kl-plugin-storage-postgresql`): New external storage provider package for PostgreSQL. Cards and comments are persisted in PostgreSQL tables (`kanban_cards`, `kanban_comments`). Attachments remain on the local filesystem. Requires the `pg` driver as a peer dependency. Provider id: `postgresql`.
 - **Capability-grouped Plugin Options workflow**: Added the shared plugin-settings experience across the Settings panel, CLI, REST API, and MCP so users can list discovered providers, select one provider per capability, edit schema-driven provider options, and run guarded plugin installs from consistent public surfaces.
 - **CrewAI tool adapter** (`kl-adapter-crewai`): New Python package at `packages/kl-adapter-crewai` wrapping kanban-lite REST API operations as CrewAI `BaseTool` subclasses (9 tools: list/get/create/update/move/delete cards, list columns, get/add comments). Includes a `KanbanLiteToolkit` helper with `read_only` mode for reporting agents. Enables specialized agents (PM, Dev, QA) to each manage their own board lane.

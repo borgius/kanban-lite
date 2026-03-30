@@ -614,3 +614,156 @@ export const attachmentStoragePlugin: AttachmentStoragePlugin = {
     )
   },
 }
+
+// ---------------------------------------------------------------------------
+// card.state provider (merged into storage package)
+// ---------------------------------------------------------------------------
+
+export interface CardStateProviderManifest {
+  readonly id: string
+  readonly provides: readonly ['card.state']
+}
+
+export type CardStateValue = Record<string, unknown>
+
+export interface CardStateKey {
+  actorId: string
+  boardId: string
+  cardId: string
+  domain: string
+}
+
+export interface CardStateRecord<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt: string
+}
+
+export interface CardStateWriteInput<TValue = CardStateValue> extends CardStateKey {
+  value: TValue
+  updatedAt?: string
+}
+
+export interface CardStateCursor extends Record<string, unknown> {
+  cursor: string
+  updatedAt?: string
+}
+
+export interface CardStateUnreadKey {
+  actorId: string
+  boardId: string
+  cardId: string
+}
+
+export interface CardStateReadThroughInput extends CardStateUnreadKey {
+  cursor: CardStateCursor
+}
+
+export interface CardStateModuleContext {
+  workspaceRoot: string
+  kanbanDir: string
+  provider: string
+  backend: 'builtin' | 'external'
+  options?: Record<string, unknown>
+}
+
+export interface CardStateProvider {
+  readonly manifest: CardStateProviderManifest
+  getCardState(input: CardStateKey): Promise<CardStateRecord | null>
+  setCardState(input: CardStateWriteInput): Promise<CardStateRecord>
+  getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>
+  markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>
+}
+
+function _csIsRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function _csIsCardStateCursor(value: unknown): value is CardStateCursor {
+  return _csIsRecord(value)
+    && typeof value.cursor === 'string'
+    && (value.updatedAt === undefined || typeof value.updatedAt === 'string')
+}
+
+function _csGetUpdatedAt(updatedAt?: string): string {
+  return updatedAt ?? new Date().toISOString()
+}
+
+const PG_CARD_STATE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS card_state (
+  actor_id   VARCHAR(255) NOT NULL,
+  board_id   VARCHAR(255) NOT NULL,
+  card_id    VARCHAR(255) NOT NULL,
+  domain     VARCHAR(100) NOT NULL,
+  value_json TEXT         NOT NULL,
+  updated_at VARCHAR(50)  NOT NULL,
+  PRIMARY KEY (actor_id, board_id, card_id, domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_state_lookup
+  ON card_state (actor_id, board_id, card_id, domain);
+`
+
+/**
+ * Creates the PostgreSQL-backed `card.state` provider.
+ *
+ * Card-state data is stored in a `card_state` table in the same PostgreSQL
+ * database as card storage.
+ */
+export function createCardStateProvider(context: CardStateModuleContext): CardStateProvider {
+  const pg = loadPgDriver()
+  const pool = new pg.Pool({
+    host: (context.options?.['host'] as string | undefined) ?? 'localhost',
+    port: typeof context.options?.['port'] === 'number' ? context.options['port'] : 5432,
+    user: (context.options?.['user'] as string | undefined) ?? 'postgres',
+    password: (context.options?.['password'] as string | undefined) ?? '',
+    database: (context.options?.['database'] as string | undefined) ?? 'kanban_lite',
+    ...(context.options?.['ssl'] !== undefined ? { ssl: context.options['ssl'] } : {}),
+  })
+
+  let _initialized = false
+  async function ensureSchema(): Promise<void> {
+    if (_initialized) return
+    await pool.query(PG_CARD_STATE_SCHEMA)
+    _initialized = true
+  }
+
+  return {
+    manifest: Object.freeze({ id: 'postgresql', provides: ['card.state'] as const }),
+    async getCardState(input: CardStateKey): Promise<CardStateRecord | null> {
+      await ensureSchema()
+      const res = await pool.query(
+        'SELECT value_json, updated_at FROM card_state WHERE actor_id = $1 AND board_id = $2 AND card_id = $3 AND domain = $4',
+        [input.actorId, input.boardId, input.cardId, input.domain],
+      )
+      const row = res.rows[0] as { value_json: string; updated_at: string } | undefined
+      if (!row) return null
+      try {
+        const value = JSON.parse(row.value_json) as unknown
+        if (!_csIsRecord(value)) return null
+        return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: input.domain, value, updatedAt: row.updated_at }
+      } catch { return null }
+    },
+    async setCardState(input: CardStateWriteInput): Promise<CardStateRecord> {
+      await ensureSchema()
+      const updatedAt = _csGetUpdatedAt(input.updatedAt)
+      await pool.query(
+        `INSERT INTO card_state (actor_id, board_id, card_id, domain, value_json, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (actor_id, board_id, card_id, domain)
+         DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at`,
+        [input.actorId, input.boardId, input.cardId, input.domain, JSON.stringify(input.value), updatedAt],
+      )
+      return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: input.domain, value: input.value, updatedAt }
+    },
+    async getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null> {
+      const record = await this.getCardState({ ...input, domain: 'unread' })
+      return record && _csIsCardStateCursor(record.value) ? record.value : null
+    },
+    async markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>> {
+      const updatedAt = _csGetUpdatedAt(input.cursor.updatedAt)
+      const value: CardStateCursor = { cursor: input.cursor.cursor, updatedAt }
+      await this.setCardState({ actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: 'unread', value, updatedAt })
+      return { actorId: input.actorId, boardId: input.boardId, cardId: input.cardId, domain: 'unread', value, updatedAt }
+    },
+  }
+}

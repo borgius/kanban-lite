@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { optionsSchemas as callbackOptionsSchemas } from '../../../../kl-plugin-callback/src/index'
 import type {
   CardDisplaySettings,
   PluginSettingsInstallTransportResult,
@@ -156,6 +157,19 @@ const AUTH_POLICY_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
   secrets: [],
 }
 
+const CALLBACK_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = (() => {
+  const metadata = callbackOptionsSchemas.callbacks()
+  const handlers = (metadata.schema.properties as Record<string, Record<string, unknown>>).handlers
+  const items = handlers.items as Record<string, unknown>
+  const properties = items.properties as Record<string, Record<string, unknown>>
+  const events = properties.events as Record<string, unknown>
+  const eventItems = events.items as Record<string, unknown>
+
+  eventItems.enum = ['task.created', 'task.updated', 'task.deleted']
+
+  return metadata
+})()
+
 const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
   redaction: {
     maskedValue: '••••••',
@@ -302,6 +316,30 @@ const PLUGIN_SETTINGS_AUTH_PACKAGE_FIXTURE: PluginSettingsPayload = {
   ],
 }
 
+const PLUGIN_SETTINGS_CALLBACK_FIXTURE: PluginSettingsPayload = {
+  redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+  capabilities: [
+    {
+      capability: 'callback.runtime',
+      selected: {
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        source: 'config',
+      },
+      providers: [
+        {
+          capability: 'callback.runtime',
+          providerId: 'callbacks',
+          packageName: 'kl-plugin-callback',
+          discoverySource: 'workspace',
+          isSelected: true,
+          optionsSchema: CALLBACK_OPTIONS_SCHEMA,
+        },
+      ],
+    },
+  ],
+}
+
 const AUTH_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   capability: 'auth.identity',
   providerId: 'local',
@@ -362,6 +400,43 @@ const INACTIVE_CARD_STORAGE_PROVIDER_FIXTURE: PluginSettingsProviderTransport = 
   },
   optionsSchema: CARD_STORAGE_OPTIONS_SCHEMA,
   options: null,
+}
+
+const CALLBACK_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
+  capability: 'callback.runtime',
+  providerId: 'callbacks',
+  packageName: 'kl-plugin-callback',
+  discoverySource: 'workspace',
+  selected: {
+    capability: 'callback.runtime',
+    providerId: 'callbacks',
+    source: 'config',
+  },
+  optionsSchema: CALLBACK_OPTIONS_SCHEMA,
+  options: {
+    values: {
+      handlers: [
+        {
+          name: 'inline-created',
+          type: 'inline',
+          events: ['task.created'],
+          enabled: true,
+          source: 'async ({ event, sdk }) => {\n  console.log(event.event, Boolean(sdk))\n}',
+        },
+        {
+          name: 'process-created',
+          type: 'process',
+          events: ['task.created'],
+          enabled: true,
+          command: 'node',
+          args: ['worker.cjs', '--stdin'],
+          cwd: '.kanban/callbacks',
+        },
+      ],
+    },
+    redactedPaths: [],
+    redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+  },
 }
 
 const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
@@ -523,6 +598,36 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Provider: sqlite · Off')
     expect(markup).toContain('Database path')
     expect(markup).toContain('Save to persist these options and switch this capability to the provider.')
+  })
+
+  it('renders mixed callback handlers through the shared plugin options JSON Forms path', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={PLUGIN_SETTINGS_CALLBACK_FIXTURE}
+        pluginSettingsProvider={CALLBACK_PROVIDER_FIXTURE}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('callback.runtime')
+    expect(markup).toContain('Provider: callbacks')
+    expect(markup).toContain('Callback handlers')
+    expect(markup).toContain('Handlers')
+    expect(markup).toContain('Inline JavaScript')
+    expect(markup).toContain('Command')
+    expect(markup).toContain('Arguments')
+    expect(markup).toContain('Working directory')
+    expect(markup).toContain('Add to Handlers')
+    expect(markup).toContain('button-up')
+    expect(markup).toContain('button-down')
+    expect(markup).toContain('button-delete')
+    expect(markup).toContain('card-jsonforms')
+    expect(markup).toContain('shared multiline text field in plugin settings for v1')
   })
 
   it('prefers the routed plugin package id when choosing the active plugin detail view', () => {

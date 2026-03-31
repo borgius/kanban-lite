@@ -47,12 +47,22 @@ export type WebhookCapabilitySelections = Partial<Record<WebhookCapabilityNamesp
 /** Fully normalized webhook capability selections used at runtime. */
 export type ResolvedWebhookCapabilities = Record<WebhookCapabilityNamespace, ProviderRef>
 
+/** Capability namespace for same-runtime callback delivery providers. */
+export type CallbackCapabilityNamespace = 'callback.runtime'
+
+/** Partial callback capability selections from config or constructor overrides. */
+export type CallbackCapabilitySelections = Partial<Record<CallbackCapabilityNamespace, ProviderRef>>
+
+/** Fully normalized callback capability selections used at runtime. */
+export type ResolvedCallbackCapabilities = Record<CallbackCapabilityNamespace, ProviderRef>
+
 /** Capability namespaces surfaced by the plugin settings inventory and selection flows. */
 export type PluginCapabilityNamespace =
   | CapabilityNamespace
   | CardStateCapabilityNamespace
   | AuthCapabilityNamespace
   | WebhookCapabilityNamespace
+  | CallbackCapabilityNamespace
 
 /** Stable ordered capability list reused by plugin settings hosts and tests. */
 export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] = [
@@ -62,6 +72,7 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
   'auth.identity',
   'auth.policy',
   'webhook.delivery',
+  'callback.runtime',
 ]
 
 /** Partial plugin capability selections keyed by the full plugin settings namespace set. */
@@ -979,5 +990,23 @@ export function normalizeWebhookCapabilities(
       : config.webhookPlugin?.['webhook.delivery']
         ? cloneProviderRef(config.webhookPlugin['webhook.delivery'])
         : { provider: 'webhooks' },
+  }
+}
+
+/**
+ * Normalizes callback runtime capability selections into a complete runtime capability map.
+ *
+ * `callback.runtime` is first-class but disabled by default until a provider is
+ * explicitly selected through the shared plugin settings flow.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeCallbackCapabilities(
+  config: Pick<KanbanConfig, 'plugins'>,
+): ResolvedCallbackCapabilities {
+  return {
+    'callback.runtime': config.plugins?.['callback.runtime']
+      ? cloneProviderRef(config.plugins['callback.runtime'])
+      : { provider: 'none' },
   }
 }

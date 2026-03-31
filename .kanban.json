@@ -319,6 +319,24 @@
     },
     "card.storage": {
       "provider": "localfs"
+    },
+    "callback.runtime": {
+      "provider": "callbacks",
+      "options": {
+        "handlers": [
+          {
+            "type": "inline",
+            "enabled": true,
+            "args": [],
+            "events": [
+              "task.moved"
+            ],
+            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
+            "name": "console.log",
+            "cwd": "."
+          }
+        ]
+      }
     }
   },
   "logsFilter": {
@@ -343,6 +361,23 @@
               "auth.allowed",
               "board.action"
             ]
+          }
+        ]
+      }
+    },
+    "callback.runtime": {
+      "callbacks": {
+        "handlers": [
+          {
+            "type": "inline",
+            "enabled": true,
+            "args": [],
+            "events": [
+              "task.moved"
+            ],
+            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
+            "name": "console.log",
+            "cwd": "."
           }
         ]
       }

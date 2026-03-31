@@ -22,6 +22,13 @@ import { parseCardFile, serializeCard, getTitleFromContent, getDisplayTitleFromC
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 ```
 
+Callback runtime helpers are also exported from the SDK barrel:
+
+```typescript
+import type { CallbackCapabilityNamespace, ResolvedCallbackCapabilities } from 'kanban-lite/sdk'
+import { normalizeCallbackCapabilities } from 'kanban-lite/sdk'
+```
+
 ## Quick Start
 
 ```typescript
@@ -551,8 +558,12 @@ Persists provider options under the canonical capability-selection model.
 
 Secret fields remain write-only: callers may submit the shared masked value
 placeholder to keep an existing stored secret unchanged, while any non-masked
-replacement overwrites that secret. Persisting options also canonicalizes the
-selected provider under `plugins[capability]`.
+replacement overwrites that secret. When the target provider is already
+selected, the canonical `plugins[capability]` entry is updated in place.
+When the provider is currently inactive, the options are cached under the
+shared plugin-options store so hosts can save and reopen schema-driven forms
+without changing enablement; selecting that provider later restores the
+cached options into `plugins[capability]`.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model after persistence succeeds.  
@@ -3562,11 +3573,12 @@ into a complete runtime capability map.
 Precedence:
 1. Explicit `plugins[namespace]`
 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
-3. Backward-compatible defaults (`localfs` + `localfs`)
+3. Backward-compatible defaults (`localfs` + derived attachment provider)
 
-Explicit built-in `attachment.storage` providers such as `sqlite` and
-`mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
-it away from the legacy `localfs` default.
+`attachment.storage` follows the active `card.storage` provider by default,
+reusing the same provider id and options for first-party storage plugins.
+Configure `attachment.storage` explicitly only when you want a different
+provider (for example an attachment-only plugin such as S3).
 
 The input object is never mutated.
 
@@ -3583,6 +3595,20 @@ When no explicit provider is configured, defaults to `{ provider: 'webhooks' }`,
 maps to the `kl-plugin-webhook` external package via `WEBHOOK_PROVIDER_ALIASES`.
 Core no longer provides a built-in webhook delivery fallback; hosts must install
 that package anywhere webhook CRUD or runtime delivery is expected to work.
+
+The input object is never mutated.
+
+**Kind**: global function  
+
+* * *
+
+<a name="normalizeCallbackCapabilities"></a>
+
+### normalizeCallbackCapabilities()
+Normalizes callback runtime capability selections into a complete runtime capability map.
+
+`callback.runtime` is first-class but disabled by default until a provider is
+explicitly selected through the shared plugin settings flow.
 
 The input object is never mutated.
 
@@ -3963,6 +3989,17 @@ with a manifest that provides `'webhook.delivery'` and CRUD methods.
 
 * * *
 
+<a name="CALLBACK_PROVIDER_ALIASES"></a>
+
+### CALLBACK\_PROVIDER\_ALIASES
+Maps short callback runtime provider ids to their installable npm package names.
+
+- `callbacks` → `npm install kl-plugin-callback`
+
+**Kind**: global variable  
+
+* * *
+
 <a name="AUTH_PROVIDER_ALIASES"></a>
 
 ### AUTH\_PROVIDER\_ALIASES
@@ -4071,6 +4108,21 @@ on Windows it is `{prefix}/node_modules`.
 
 **Kind**: global function  
 **Internal**:   
+
+* * *
+
+<a name="resolvePluginSettingsOptionsSchema"></a>
+
+### resolvePluginSettingsOptionsSchema()
+Resolves transport-safe plugin-settings metadata from a static object or a
+dynamic sync/async schema factory.
+
+Any nested resolver function found inside `schema`, `uiSchema`, or other
+metadata fields is awaited before normalization, ensuring downstream host
+transports and JSON Forms consumers receive plain structured-clone-safe
+values only.
+
+**Kind**: global function  
 
 * * *
 
@@ -4260,7 +4312,7 @@ activation model as CLI and standalone HTTP discovery.
 
 <a name="resolveCapabilityBag"></a>
 
-### resolveCapabilityBag(capabilities, kanbanDir, authCapabilities, webhookCapabilities)
+### resolveCapabilityBag(capabilities, kanbanDir, authCapabilities, webhookCapabilities, cardStateCapabilities, callbackCapabilities)
 Resolves a fully typed [ResolvedCapabilityBag](ResolvedCapabilityBag) from a normalized
 [ResolvedCapabilities](ResolvedCapabilities) map.
 
@@ -4281,6 +4333,8 @@ the current open-access behavior.
 | kanbanDir | Absolute path to the `.kanban` directory. |
 | authCapabilities | Optional normalized auth provider selections from                           [normalizeAuthCapabilities](normalizeAuthCapabilities). Defaults to noop providers. |
 | webhookCapabilities | Optional normalized webhook provider selections from                           [normalizeWebhookCapabilities](normalizeWebhookCapabilities). When omitted, webhook                           provider resolution is skipped and `bag.webhookProvider` is `null`. |
+| cardStateCapabilities | Optional normalized card-state provider selections from                           [normalizeCardStateCapabilities](normalizeCardStateCapabilities). |
+| callbackCapabilities | Optional normalized callback runtime provider selections from                           [normalizeCallbackCapabilities](normalizeCallbackCapabilities). When omitted, callback                           listener resolution is skipped and `bag.callbackListener` is `null`. |
 
 
 * * *

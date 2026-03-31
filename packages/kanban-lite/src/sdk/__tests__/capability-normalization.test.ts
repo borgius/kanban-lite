@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, PLUGIN_CAPABILITY_NAMESPACES } from '../../shared/config'
+import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, PLUGIN_CAPABILITY_NAMESPACES } from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 import { collectActiveExternalPackageNames } from '../plugins'
@@ -251,6 +251,45 @@ describe('normalizeWebhookCapabilities', () => {
   })
 })
 
+describe('normalizeCallbackCapabilities', () => {
+  it('defaults callback.runtime to none when config is absent', () => {
+    const result = normalizeCallbackCapabilities(makeConfig())
+    expect(result['callback.runtime']).toEqual({ provider: 'none' })
+  })
+
+  it('passes through an explicit callback.runtime provider with options', () => {
+    const result = normalizeCallbackCapabilities(
+      makeConfig({
+        plugins: { 'callback.runtime': { provider: 'callbacks', options: { handlers: [] } } },
+      })
+    )
+
+    expect(result['callback.runtime']).toEqual({
+      provider: 'callbacks',
+      options: { handlers: [] },
+    })
+  })
+
+  it('callback.runtime namespace is always present in output', () => {
+    const result = normalizeCallbackCapabilities(makeConfig())
+    expect(result).toHaveProperty('callback.runtime')
+  })
+
+  it('does not mutate the input config', () => {
+    const config = makeConfig({
+      plugins: { 'callback.runtime': { provider: 'callbacks', options: { enabled: true } } },
+    })
+    const before = JSON.stringify(config)
+    normalizeCallbackCapabilities(config)
+    expect(JSON.stringify(config)).toBe(before)
+  })
+
+  it('accepts a plain object with only plugins field', () => {
+    const result = normalizeCallbackCapabilities({})
+    expect(result['callback.runtime']).toEqual({ provider: 'none' })
+  })
+})
+
 describe('normalizeCardStateCapabilities', () => {
   it('defaults card.state to localfs provider when config is absent', () => {
     const result = normalizeCardStateCapabilities(makeConfig())
@@ -339,6 +378,18 @@ describe('collectActiveExternalPackageNames', () => {
       })
       expect(result).toContain('my-webhook-delivery-pkg')
       expect(result).not.toContain('kl-plugin-webhook')
+    })
+
+    it('selected callback.runtime alias resolves to kl-plugin-callback', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'callback.runtime': { provider: 'callbacks' } },
+      })
+      expect(result).toContain('kl-plugin-callback')
+    })
+
+    it('callback.runtime is not activated by default when unconfigured', () => {
+      const result = collectActiveExternalPackageNames({})
+      expect(result).not.toContain('kl-plugin-callback')
     })
   })
 
@@ -446,6 +497,7 @@ describe('plugin settings contract helpers', () => {
       'auth.identity',
       'auth.policy',
       'webhook.delivery',
+      'callback.runtime',
     ])
   })
 

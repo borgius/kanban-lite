@@ -18,17 +18,13 @@ Kanban Lite used to treat storage as a simple engine switch (`markdown` vs `sqli
 
 The plugin system splits those concerns into **capabilities**.
 
-Today there are two **storage** capability namespaces:
+Today the core capability namespaces are:
 
 - `card.storage`
 - `attachment.storage`
-
-There is also one **webhook delivery** capability namespace:
-
+- `card.state`
 - `webhook.delivery`
-
-And two **auth** capability namespaces (no-op by default):
-
+- `callback.runtime`
 - `auth.identity`
 - `auth.policy`
 
@@ -36,7 +32,9 @@ That means:
 
 - one provider can store cards/comments,
 - another provider can store attachments,
+- card-state can stay actor-scoped without being mixed into shared card content,
 - a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,
+- a callback provider can run trusted inline JavaScript or subprocess handlers for committed after-events through the shared plugin-settings flow,
 - auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,
 - or one provider can implement multiple capabilities explicitly in the plugin layer.
 
@@ -108,6 +106,7 @@ Today that means the UI/API/CLI/MCP inventory can show providers for capabilitie
 - `card.storage`
 - `attachment.storage`
 - `card.state`
+- `callback.runtime`
 - `auth.identity`
 - `auth.policy`
 - `webhook.delivery`
@@ -155,6 +154,8 @@ When a field such as `enum`, `default`, or a JSON Forms `rule` depends on runtim
 JSON Schema `default` values are also applied when the shared settings editor opens provider options that omit a field, so providers can seed editable arrays such as auth role catalogs without hard-coding that behavior in the UI layer.
 
 When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into `plugins[capability].options`. For example, selecting `auth.policy: rbac` or `auth.policy: kl-plugin-auth` writes the default permission rows derived from the shipped `RBAC_ROLE_MATRIX` instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.
+
+The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the multiline inline `source` field and the process `command` / `args` / `cwd` fields.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -229,6 +230,35 @@ Behavior:
 - keeps the registry format stable so existing workspaces do not need migration.
 
 Important config nuance: unlike storage capabilities, webhook delivery is currently configured under the top-level `webhookPlugin` key rather than the `plugins` map.
+
+---
+
+### `callback.runtime`
+
+This capability owns same-runtime callback automation for committed SDK after-events.
+
+Provider id:
+
+- `callbacks`
+
+External package:
+
+- `kl-plugin-callback`
+
+Behavior:
+
+- is selected through the shared plugin-settings path at `plugins["callback.runtime"]`,
+- persists one ordered mixed `plugins["callback.runtime"].options.handlers` array,
+- supports `inline` rows evaluated with `new Function` and invoked as `({ event, sdk })`,
+- supports `process` rows that receive one serialized `{ event }` JSON payload on stdin only,
+- logs per-handler failures and continues later matching handlers.
+
+Trust model:
+
+- inline handlers are trusted same-runtime JavaScript, not sandboxed, and run with host process privileges,
+- process handlers are ordinary subprocesses, not sandboxed, and do not receive a live SDK object or other in-memory runtime handles.
+
+In v1, inline source authoring intentionally stays inside the shared multiline text field from plugin settings rather than a callback-specific editor.
 
 ---
 
@@ -338,6 +368,40 @@ Webhook delivery uses its own top-level config section:
 
 If `webhookPlugin` is omitted, runtime normalization still defaults to `{ provider: "webhooks" }` for `webhook.delivery`. That default resolves to the external `kl-plugin-webhook` package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.
 
+First-party callback runtime selection uses the normal shared plugin-settings path:
+
+```json
+{
+  "plugins": {
+    "callback.runtime": {
+      "provider": "callbacks",
+      "options": {
+        "handlers": [
+          {
+            "name": "log task creation",
+            "type": "inline",
+            "events": ["task.created"],
+            "enabled": true,
+            "source": "async ({ event, sdk }) => { console.log(event.event, sdk.constructor.name) }"
+          },
+          {
+            "name": "notify local worker",
+            "type": "process",
+            "events": ["task.created", "task.updated"],
+            "enabled": true,
+            "command": "node",
+            "args": ["scripts/callback-worker.mjs"],
+            "cwd": "."
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+That `handlers[]` list is intentionally mixed: inline rows carry `source`; process rows carry `command` / `args` / `cwd`.
+
 Only provider selection lives in `.kanban.json`. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing `event.listener` config namespace.
 
 ## Runtime listener model
@@ -363,6 +427,8 @@ interface SDKEventListenerPlugin {
 ```
 
 This replaces the old `init(...)` / `destroy()` runtime seam for plugin authors. Storage and attachment providers remain direct capability adapters; they do not participate in this listener contract.
+
+First-party `kl-plugin-webhook` and `kl-plugin-callback` both use this listener-only model; users configure `webhook.delivery` or `callback.runtime`, not the internal `event.listener` seam.
 
 ### Modern capability-based config
 
@@ -1751,14 +1817,19 @@ then you should treat provider change and data migration as separate concerns un
 
 This is important for plugin authors and operators.
 
-### Only two capability namespaces today
+### Capability namespaces are still intentionally small
 
 Supported now:
 
 - `card.storage`
 - `attachment.storage`
+- `card.state`
+- `webhook.delivery`
+- `callback.runtime`
+- `auth.identity`
+- `auth.policy`
 
-Future namespaces are possible, but not implemented yet.
+More namespaces are possible, but the current public surface is still intentionally focused on storage, listener-based automation, and auth.
 
 ### Public plugin-author API is still runtime-shape-oriented
 

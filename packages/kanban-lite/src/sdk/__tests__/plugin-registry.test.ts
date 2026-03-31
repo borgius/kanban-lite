@@ -5,16 +5,46 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
+import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, CALLBACK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK, PluginSettingsOperationError } from '../KanbanSDK'
-import { normalizeAuthCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
+import { normalizeAuthCapabilities, normalizeCallbackCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
 import { AuthError, DEFAULT_CARD_STATE_ACTOR, CARD_STATE_DEFAULT_ACTOR_MODE, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
+
+type PluginSettingsUiDetailElement = {
+  scope?: string
+  options?: Record<string, unknown>
+}
+
+type PluginSettingsArrayControlOptions = {
+  showSortButtons?: boolean
+  elementLabelProp?: string
+  detail?: {
+    elements?: PluginSettingsUiDetailElement[]
+  }
+}
+
+type PluginSettingsUiRoot = {
+  elements?: Array<{
+    elements?: Array<{
+      options?: PluginSettingsArrayControlOptions
+    }>
+  }>
+}
+
+function expectPresent<T>(value: T | null | undefined, message: string): T {
+  expect(value).toBeDefined()
+  expect(value).not.toBeNull()
+  if (value == null) {
+    throw new Error(message)
+  }
+  return value
+}
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-plugin-test-'))
@@ -56,6 +86,53 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
     'utf-8',
   )
   fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  clearPackageCache()
+
+  return () => {
+    clearPackageCache()
+    fs.rmSync(packageDir, { recursive: true, force: true })
+    if (existingSymlinkTarget !== null) {
+      fs.symlinkSync(existingSymlinkTarget, packageDir)
+    } else if (backupDir) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.cpSync(backupDir, packageDir, { recursive: true })
+      fs.rmSync(backupDir, { recursive: true, force: true })
+    }
+    clearPackageCache()
+  }
+}
+
+function installBrokenPackageSymlink(packageName: string): () => void {
+  const packageDir = path.join(process.cwd(), 'node_modules', packageName)
+  const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+  let existingSymlinkTarget: string | null = null
+  let backupDir: string | null = null
+
+  const clearPackageCache = (): void => {
+    for (const candidate of [packageName, packageDir, siblingPackagePath]) {
+      try {
+        const resolved = runtimeRequire.resolve(candidate)
+        delete runtimeRequire.cache[resolved]
+      } catch {
+        // Ignore paths that are not currently resolvable.
+      }
+    }
+  }
+
+  if (fs.existsSync(packageDir) || fs.lstatSync(packageDir, { throwIfNoEntry: false })) {
+    try {
+      existingSymlinkTarget = fs.readlinkSync(packageDir)
+    } catch {
+      backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+      fs.cpSync(packageDir, backupDir, { recursive: true })
+    }
+    fs.rmSync(packageDir, { recursive: true, force: true })
+  }
+
+  const brokenTarget = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-missing-`))
+  fs.rmSync(brokenTarget, { recursive: true, force: true })
+  fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+  fs.symlinkSync(brokenTarget, packageDir)
   clearPackageCache()
 
   return () => {
@@ -823,6 +900,57 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
+  it('discovers callback.runtime schema metadata through the shared plugin settings resolver', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'callback.runtime': { provider: 'callbacks' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = await sdk.listPluginSettings()
+      const callbackRuntime = inventory.capabilities.find((entry) => entry.capability === 'callback.runtime')
+      const callbacksProvider = callbackRuntime?.providers.find((entry) => entry.providerId === 'callbacks')
+      const handlers = ((callbacksProvider?.optionsSchema?.schema.properties as Record<string, unknown>).handlers ?? {}) as Record<string, unknown>
+      const handlerProperties = ((handlers.items as Record<string, unknown>)?.properties ?? {}) as Record<string, Record<string, unknown>>
+      const uiRoot = (callbacksProvider?.optionsSchema?.uiSchema ?? {}) as PluginSettingsUiRoot
+      const handlersControl = uiRoot.elements?.[0]?.elements?.[0]
+      const handlersOptions = handlersControl?.options
+      const detailElements = handlersOptions?.detail?.elements ?? []
+      const sourceControl = detailElements.find((element) => element.scope === '#/properties/source')
+      const commandControl = detailElements.find((element) => element.scope === '#/properties/command')
+
+      expect(callbackRuntime?.selected).toEqual({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        source: 'config',
+      })
+      expect(callbacksProvider).toMatchObject({
+        providerId: 'callbacks',
+        packageName: 'kl-plugin-callback',
+        isSelected: true,
+      })
+      expect(handlers.type).toBe('array')
+      expect(handlerProperties.type?.enum).toEqual(['inline', 'process'])
+      expect(handlerProperties.events?.type).toBe('array')
+      expect(handlerProperties.source?.type).toBe('string')
+      expect(handlerProperties.command?.type).toBe('string')
+      expect(handlersOptions?.showSortButtons).toBe(true)
+      expect(handlersOptions?.elementLabelProp).toBe('name')
+      expect(sourceControl?.options?.multi).toBe(true)
+      expect(commandControl?.scope).toBe('#/properties/command')
+    } finally {
+      sdk.close()
+    }
+  })
+
   it('discovers dependency-installed providers from local node_modules', async () => {
     const cleanup = installTempPackage(
       'temp-inventory-attachment-plugin',
@@ -1087,7 +1215,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = await sdk.selectPluginSettingsProvider('card.storage', 'localfs')
+      const selected = expectPresent(
+        await sdk.selectPluginSettingsProvider('card.storage', 'localfs'),
+        'Expected card.storage localfs provider selection result',
+      )
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as { plugins?: Record<string, { provider: string; options?: Record<string, unknown> }> }
@@ -1204,7 +1335,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = await sdk.selectPluginSettingsProvider('card.storage', 'sqlite')
+      const selected = expectPresent(
+        await sdk.selectPluginSettingsProvider('card.storage', 'sqlite'),
+        'Expected card.storage sqlite provider selection result',
+      )
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as {
@@ -1242,7 +1376,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const selected = await sdk.selectPluginSettingsProvider('auth.policy', 'rbac')
+      const selected = expectPresent(
+        await sdk.selectPluginSettingsProvider('auth.policy', 'rbac'),
+        'Expected auth.policy rbac provider selection result',
+      )
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as {
@@ -1428,6 +1565,76 @@ describe('KanbanSDK plugin settings inventory', () => {
       expect(readback?.options?.values).toMatchObject({
         apiToken: '••••••',
         users: [{ username: 'alice', password: '••••••', role: 'manager' }],
+      })
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('round-trips mixed callback handler edits through the shared plugin settings save flow', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'callback.runtime': { provider: 'callbacks' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+    const handlerOptions = {
+      handlers: [
+        {
+          name: 'inline-created',
+          type: 'inline',
+          events: ['task.created'],
+          enabled: true,
+          source: 'async ({ event, sdk }) => { console.log(event.event, Boolean(sdk)) }',
+        },
+        {
+          name: 'process-created',
+          type: 'process',
+          events: ['task.created'],
+          enabled: true,
+          command: 'node',
+          args: ['worker.cjs', '--stdin'],
+          cwd: '.kanban/callbacks',
+        },
+      ],
+    }
+
+    try {
+      const updated = await sdk.updatePluginSettingsOptions('callback.runtime', 'callbacks', handlerOptions)
+      const readback = await sdk.getPluginSettings('callback.runtime', 'callbacks')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+
+      expect(updated.selected).toEqual({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        source: 'config',
+      })
+      expect(updated.options?.values).toEqual(handlerOptions)
+      expect(readback).toMatchObject({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        selected: {
+          capability: 'callback.runtime',
+          providerId: 'callbacks',
+          source: 'config',
+        },
+        options: {
+          values: handlerOptions,
+        },
+      })
+      expect(persistedConfig.plugins?.['callback.runtime']).toEqual({
+        provider: 'callbacks',
+        options: handlerOptions,
       })
     } finally {
       sdk.close()
@@ -2673,6 +2880,13 @@ describe('collectActiveExternalPackageNames', () => {
     })
     expect(result).toContain('kl-plugin-webhook')
   })
+
+  it('includes kl-plugin-callback via plugins["callback.runtime"] override', () => {
+    const result = collectActiveExternalPackageNames({
+      plugins: { 'callback.runtime': { provider: 'callbacks' } },
+    })
+    expect(result).toContain('kl-plugin-callback')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -2778,6 +2992,110 @@ describe('resolveCapabilityBag – webhookProvider', () => {
       webhookCaps,
     )
     expect(bag.standaloneHttpPlugins.some((p) => p.manifest.id === 'webhooks')).toBe(true)
+  })
+
+  it('falls back to the workspace webhook package when node_modules contains a stale symlink', () => {
+    const cleanup = installBrokenPackageSymlink('kl-plugin-webhook')
+
+    try {
+      const webhookCaps = normalizeWebhookCapabilities({})
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        webhookCaps,
+      )
+
+      expect(bag.webhookProvider?.manifest.id).toBe('webhooks')
+      expect(bag.standaloneHttpPlugins.some((plugin) => plugin.manifest.id === 'webhooks')).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('resolveCapabilityBag – callback.runtime', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-callback-test-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('exports the callback provider alias map', () => {
+    expect(CALLBACK_PROVIDER_ALIASES.get('callbacks')).toBe('kl-plugin-callback')
+  })
+
+  it('returns callbackListener=null when callbackCapabilities is omitted', () => {
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+    expect(bag.callbackListener).toBeNull()
+    expect(bag.callbackProviders).toBeNull()
+  })
+
+  it('loads callbackListenerPlugin from a temp-installed package', () => {
+    const cleanup = installTempPackage('kl-plugin-callback', `
+      module.exports = {
+        callbackListenerPlugin: {
+          manifest: { id: 'test-callback-listener', provides: ['event.listener'] },
+          register: () => {},
+          unregister: () => {},
+          optionsSchema: () => ({ schema: { type: 'object', properties: { handlers: { type: 'array' } } } }),
+        },
+      }
+    `)
+
+    try {
+      const callbackCaps = normalizeCallbackCapabilities({
+        plugins: { 'callback.runtime': { provider: 'callbacks' } },
+      })
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        undefined,
+        undefined,
+        callbackCaps,
+      )
+
+      expect(bag.callbackProviders).toEqual(callbackCaps)
+      expect(bag.callbackListener).not.toBeNull()
+      expect(bag.callbackListener?.manifest.id).toBe('test-callback-listener')
+      expect(bag.callbackListener?.manifest.provides).toContain('event.listener')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('falls back to the workspace callback package when node_modules contains a stale symlink', () => {
+    const cleanup = installBrokenPackageSymlink('kl-plugin-callback')
+
+    try {
+      const callbackCaps = normalizeCallbackCapabilities({
+        plugins: { 'callback.runtime': { provider: 'callbacks' } },
+      })
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        undefined,
+        undefined,
+        callbackCaps,
+      )
+
+      expect(bag.callbackListener?.manifest.id).toBe('kl-plugin-callback')
+      expect(bag.callbackListener?.manifest.provides).toContain('event.listener')
+    } finally {
+      cleanup()
+    }
   })
 })
 

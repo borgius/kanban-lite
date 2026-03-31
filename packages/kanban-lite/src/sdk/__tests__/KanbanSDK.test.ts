@@ -20,6 +20,32 @@ function createTempDir(): string {
 
 const runtimeRequire = createRequire(import.meta.url)
 
+type CallbackLifecycleState = {
+  registerCalls: number
+  unregisterCalls: number
+  observedEvents: number
+  unsubscribe: (() => void) | null
+}
+
+type CallbackLifecycleGlobal = typeof globalThis & {
+  __kanbanCallbackLifecycle?: CallbackLifecycleState
+  __kanbanCallbackContext?: {
+    constructorWorkspaceRoot: string | null
+    attachedWorkspaceRoot: string | null
+    attachedSdkWorkspaceRoot: string | null
+    registerSawAttachment: boolean
+  }
+}
+
+function expectPresent<T>(value: T | null | undefined, message: string): T {
+  expect(value).toBeDefined()
+  expect(value).not.toBeNull()
+  if (value == null) {
+    throw new Error(message)
+  }
+  return value
+}
+
 function installTempPackage(packageName: string, entrySource: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
   let backupDir: string | null = null
@@ -155,6 +181,123 @@ describe('KanbanSDK', () => {
     })
   })
 
+  describe('callback runtime listener lifecycle', () => {
+    it('registers the active callback listener once and unregisters it on close', async () => {
+      const cleanup = installTempPackage(
+        'kl-plugin-callback',
+        `module.exports = {
+  callbackListenerPlugin: {
+    manifest: { id: 'test-callback-listener', provides: ['event.listener'] },
+    register(bus) {
+      const state = globalThis.__kanbanCallbackLifecycle
+      state.registerCalls += 1
+      state.unsubscribe = bus.on('task.created', () => {
+        state.observedEvents += 1
+      })
+    },
+    unregister() {
+      const state = globalThis.__kanbanCallbackLifecycle
+      state.unregisterCalls += 1
+      if (typeof state.unsubscribe === 'function') {
+        state.unsubscribe()
+        state.unsubscribe = null
+      }
+    },
+  },
+}
+`,
+      )
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'callback.runtime': { provider: 'callbacks' },
+          },
+        })
+
+        const lifecycleGlobal = globalThis as CallbackLifecycleGlobal
+
+        lifecycleGlobal.__kanbanCallbackLifecycle = {
+          registerCalls: 0,
+          unregisterCalls: 0,
+          observedEvents: 0,
+          unsubscribe: null,
+        }
+
+        const callbackSdk = new KanbanSDK(tempDir)
+
+        expect(lifecycleGlobal.__kanbanCallbackLifecycle?.registerCalls).toBe(1)
+
+        await callbackSdk.init()
+        await callbackSdk.init()
+        await callbackSdk.createCard({ content: '# Callback lifecycle card' })
+
+        expect(lifecycleGlobal.__kanbanCallbackLifecycle?.registerCalls).toBe(1)
+        expect(lifecycleGlobal.__kanbanCallbackLifecycle?.observedEvents).toBe(1)
+
+        callbackSdk.close()
+
+        expect(lifecycleGlobal.__kanbanCallbackLifecycle?.unregisterCalls).toBe(1)
+      } finally {
+        delete (globalThis as CallbackLifecycleGlobal).__kanbanCallbackLifecycle
+        cleanup()
+      }
+    })
+
+    it('attaches callback runtime context before registering constructor-based listeners', () => {
+      const cleanup = installTempPackage(
+        'kl-plugin-callback',
+        `class CallbackListenerPlugin {
+  constructor(workspaceRoot) {
+    this.workspaceRoot = workspaceRoot
+    this.context = null
+    this.manifest = { id: 'test-callback-context', provides: ['event.listener'] }
+  }
+  attachRuntimeContext(context) {
+    this.context = context
+  }
+  register() {
+    globalThis.__kanbanCallbackContext = {
+      constructorWorkspaceRoot: this.workspaceRoot ?? null,
+      attachedWorkspaceRoot: this.context?.workspaceRoot ?? null,
+      attachedSdkWorkspaceRoot: this.context?.sdk?.workspaceRoot ?? null,
+      registerSawAttachment: Boolean(this.context),
+    }
+  }
+  unregister() {}
+}
+
+module.exports = { CallbackListenerPlugin }
+`,
+      )
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'callback.runtime': { provider: 'callbacks' },
+          },
+        })
+
+        const lifecycleGlobal = globalThis as CallbackLifecycleGlobal
+        delete lifecycleGlobal.__kanbanCallbackContext
+
+        const callbackSdk = new KanbanSDK(tempDir)
+
+        expect(lifecycleGlobal.__kanbanCallbackContext).toEqual({
+          constructorWorkspaceRoot: workspaceDir,
+          attachedWorkspaceRoot: workspaceDir,
+          attachedSdkWorkspaceRoot: callbackSdk.workspaceRoot,
+          registerSawAttachment: true,
+        })
+
+        callbackSdk.close()
+      } finally {
+        delete (globalThis as CallbackLifecycleGlobal).__kanbanCallbackContext
+        cleanup()
+      }
+    })
+  })
+
   describe('getConfigSnapshot', () => {
     it('returns an isolated clone that cannot mutate subsequent SDK reads or persisted config', () => {
       writeWorkspaceConfig(workspaceDir, {
@@ -199,13 +342,18 @@ describe('KanbanSDK', () => {
       firstSnapshot.webhooks[0].url = 'https://example.com/mutated'
       firstSnapshot.plugins['auth.identity'].options.users.push({ username: 'mallory', password: 'bad-hash' })
 
-      const secondSnapshot = sdk.getConfigSnapshot() as typeof firstSnapshot
+      const secondSnapshot = sdk.getConfigSnapshot()
+      const secondWebhooks = expectPresent(secondSnapshot.webhooks, 'Expected webhooks in config snapshot copy test')
+      const secondAuthIdentity = expectPresent(
+        secondSnapshot.plugins?.['auth.identity'],
+        'Expected auth.identity plugin in config snapshot copy test',
+      )
       const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as typeof firstSnapshot
 
       expect(secondSnapshot.defaultBoard).toBe('default')
       expect(secondSnapshot.boards.default.name).toBe('Default')
-      expect(secondSnapshot.webhooks[0].url).toBe('https://example.com/original')
-      expect(secondSnapshot.plugins['auth.identity'].options.users).toEqual([
+      expect(secondWebhooks[0].url).toBe('https://example.com/original')
+      expect((secondAuthIdentity.options as typeof firstSnapshot.plugins['auth.identity']['options']).users).toEqual([
         { username: 'alice', password: '$2b$12$existing-hash' },
       ])
       expect(sdk.listWebhooks()).toEqual([

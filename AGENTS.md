@@ -9,11 +9,13 @@ All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, co
 ## Capability/provider namespaces
 
 - `card.state` is a first-class capability/provider namespace.
+- `callback.runtime` is a first-class capability/provider namespace.
 - Actor-scoped card state (for example unread/open state) must live outside shared card content/frontmatter.
 - Standalone transports that expose `card.state` (for example websocket init/`cardsUpdated` payloads) must decorate cards per request/session auth context; raw shared broadcasts must not carry actor-scoped state.
 - Board-configured card display titles (for example metadata-based prefixes) must use the shared display-title helper; raw markdown title extraction remains the source of truth for storage, filenames, and rename logic.
 - The built-in default backend is file-backed sidecar storage; SQLite support ships as a first-party provider package.
 - Active-card UI state remains separate from `card.state`.
+- Callback configuration lives in shared plugin settings; v1 inline authoring uses the schema-driven plain text/textarea path rather than bespoke callback CRUD or code-editor surfaces.
 - Plugin-settings enablement must map to the selected `plugins[capability].provider`; do not add a separate enabled boolean.
 - In-product plugin installs accept only exact unscoped `kl-*` package names; reject scopes, specifiers, flags, URLs, paths, and extra args.
 - Plugin-settings reads/lists/errors/install output must reuse the shared redaction policy across SDK, API, CLI, MCP, and UI surfaces.

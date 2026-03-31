@@ -15,8 +15,8 @@ import type {
   Priority,
 } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities } from '../shared/config'
-import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, Webhook } from '../shared/config'
+import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities } from '../shared/config'
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
@@ -46,6 +46,13 @@ import * as Logs from './modules/logs'
 import * as Columns from './modules/columns'
 import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
+
+type CallbackRuntimeContextAwareListener = SDKEventListenerPlugin & {
+  attachRuntimeContext?: (context: {
+    workspaceRoot: string
+    sdk: KanbanSDK
+  }) => void
+}
 
 function normalizeAvailableEventType(type: SDKAvailableEventsOptions['type']): 'before' | 'after' | 'all' {
   if (type === undefined) return 'all'
@@ -585,6 +592,11 @@ function resolveConfiguredWebhookCapabilities(kanbanDir: string): ResolvedWebhoo
   return normalizeWebhookCapabilities(config)
 }
 
+function resolveConfiguredCallbackCapabilities(kanbanDir: string): ResolvedCallbackCapabilities {
+  const config = readConfig(path.dirname(kanbanDir))
+  return normalizeCallbackCapabilities(config)
+}
+
 function resolveConfiguredCardStateCapabilities(kanbanDir: string): ResolvedCardStateCapabilities {
   const config = readConfig(path.dirname(kanbanDir))
   return normalizeCardStateCapabilities(config)
@@ -615,6 +627,7 @@ export class KanbanSDK {
   private _onEvent?: SDKEventHandler
   private readonly _eventBus: EventBus
   private _webhookPlugin: SDKEventListenerPlugin | null = null
+  private _callbackPlugin: SDKEventListenerPlugin | null = null
   private _pluginInstallRunner = runPluginSettingsInstallCommand
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
@@ -686,8 +699,8 @@ export class KanbanSDK {
     if (options?.storage) {
       this._storage = options.storage
       this._capabilities = null
-      // Pre-built storage engine injected: no webhook provider available.
-      // _webhookPlugin stays null; webhook CRUD methods throw plugin-missing errors.
+      // Pre-built storage engine injected: no runtime capability bag is available.
+      // _webhookPlugin/_callbackPlugin stay null; plugin-owned runtime hooks are unavailable.
       return
     }
 
@@ -697,6 +710,7 @@ export class KanbanSDK {
       resolveConfiguredAuthCapabilities(this.kanbanDir),
       resolveConfiguredWebhookCapabilities(this.kanbanDir),
       resolveConfiguredCardStateCapabilities(this.kanbanDir),
+      resolveConfiguredCallbackCapabilities(this.kanbanDir),
     )
     this._capabilities = {
       ...capabilityBag,
@@ -716,6 +730,18 @@ export class KanbanSDK {
     }
     // When no listener is provided, _webhookPlugin stays null. No delivery listener is
     // registered. Webhook CRUD methods will return plugin-missing errors.
+
+    const callbackListener = this._capabilities.callbackListener
+    if (callbackListener) {
+      this._callbackPlugin = callbackListener
+      ;(this._callbackPlugin as CallbackRuntimeContextAwareListener).attachRuntimeContext?.({
+        workspaceRoot: this.workspaceRoot,
+        sdk: this,
+      })
+      this._callbackPlugin.register(this._eventBus)
+    }
+    // When no listener is provided, _callbackPlugin stays null. The shared SDK
+    // lifecycle remains the only runtime registration point for same-runtime callbacks.
 
     // Register the built-in auth listener plugin.
     this._capabilities.authListener.register(this._eventBus)
@@ -1785,6 +1811,7 @@ export class KanbanSDK {
   close(): void {
     this._storage.close()
     this._webhookPlugin?.unregister()
+    this._callbackPlugin?.unregister()
     this._capabilities?.authListener.unregister()
     this._eventBus.destroy()
   }

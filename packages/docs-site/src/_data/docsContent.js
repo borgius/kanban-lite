@@ -29,7 +29,7 @@ function extractSection(markdown, heading) {
 }
 
 export default async function () {
-  const [sdk, api, plugins, forms, webhooks, auth, readme] =
+  const [sdk, api, plugins, forms, webhooks, auth, mcpDoc, readme] =
     await Promise.all([
       rd("docs/sdk.md"),
       rd("docs/api.md"),
@@ -37,11 +37,12 @@ export default async function () {
       rd("docs/forms.md"),
       rd("docs/webhooks.md"),
       rd("docs/auth.md"),
+      rd("docs/mcp.md"),
       rd("README.md"),
     ]);
 
   const cli = extractSection(readme, "CLI");
-  const mcp = extractSection(readme, "MCP Server");
+  const mcp = mcpDoc || extractSection(readme, "MCP Server");
 
   return {
     sdk,

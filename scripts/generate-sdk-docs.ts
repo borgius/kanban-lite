@@ -44,6 +44,13 @@ import { parseCardFile, serializeCard, getTitleFromContent, getDisplayTitleFromC
 import { readConfig, writeConfig, configToSettings, settingsToConfig } from 'kanban-lite/sdk'
 \`\`\`
 
+Callback runtime helpers are also exported from the SDK barrel:
+
+\`\`\`typescript
+import type { CallbackCapabilityNamespace, ResolvedCallbackCapabilities } from 'kanban-lite/sdk'
+import { normalizeCallbackCapabilities } from 'kanban-lite/sdk'
+\`\`\`
+
 ## Quick Start
 
 \`\`\`typescript

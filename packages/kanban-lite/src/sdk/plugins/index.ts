@@ -21,6 +21,7 @@ import type {
 import {
   DEFAULT_CONFIG,
   PLUGIN_CAPABILITY_NAMESPACES,
+  normalizeCallbackCapabilities,
   configPath,
   normalizeAuthCapabilities,
   normalizeCardStateCapabilities,
@@ -39,6 +40,7 @@ import type {
   ProviderRef,
   AuthCapabilityNamespace,
   ResolvedAuthCapabilities,
+  ResolvedCallbackCapabilities,
   ResolvedWebhookCapabilities,
   ResolvedCardStateCapabilities,
 } from '../../shared/config'
@@ -876,6 +878,10 @@ export interface ResolvedCapabilityBag {
    * SDK startup to subscribe to after-events and deliver outbound HTTP webhooks.
    */
   readonly webhookListener: SDKEventListenerPlugin | null
+  /** Raw resolved callback runtime provider selection used to resolve callback plugins. */
+  readonly callbackProviders: ResolvedCallbackCapabilities | null
+  /** Resolved same-runtime callback listener for committed event subscriptions. */
+  readonly callbackListener: SDKEventListenerPlugin | null
   /** Standalone-only middleware/routes exported by active capability packages. */
   readonly standaloneHttpPlugins: readonly StandaloneHttpPlugin[]
   /**
@@ -1003,6 +1009,15 @@ export const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
 ])
 
 /**
+ * Maps short callback runtime provider ids to their installable npm package names.
+ *
+ * - `callbacks` → `npm install kl-plugin-callback`
+ */
+export const CALLBACK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['callbacks', 'kl-plugin-callback'],
+])
+
+/**
  * Maps built-in auth compatibility ids to the external auth package.
  *
  * - `noop` → `npm install kl-plugin-auth`
@@ -1057,13 +1072,36 @@ function materializeAttachmentFromDir(
 // External plugin loaders
 // ---------------------------------------------------------------------------
 
-function isMissingRequestedModule(request: string, err: unknown): err is NodeJS.ErrnoException {
-  return (err as NodeJS.ErrnoException)?.code === 'MODULE_NOT_FOUND'
-    && typeof (err as Error)?.message === 'string'
-    && (
-      (err as Error).message.includes(`'${request}'`)
-      || (err as Error).message.includes(request)
-    )
+function messageIncludesPathHint(message: string, hint: string): boolean {
+  const normalizedMessage = message.replace(/\\/g, '/')
+  const normalizedHint = hint.replace(/\\/g, '/')
+  return normalizedMessage.includes(`'${hint}'`)
+    || normalizedMessage.includes(`"${hint}"`)
+    || normalizedMessage.includes(hint)
+    || normalizedMessage.includes(normalizedHint)
+}
+
+function isRecoverableMissingModuleError(err: unknown, ...hints: string[]): err is NodeJS.ErrnoException {
+  const code = (err as NodeJS.ErrnoException)?.code
+  const message = typeof (err as Error)?.message === 'string' ? (err as Error).message : ''
+  return ['MODULE_NOT_FOUND', 'ENOENT', 'ENOTDIR'].includes(code ?? '')
+    && hints.some((hint) => hint.length > 0 && messageIncludesPathHint(message, hint))
+}
+
+function resolveInstalledModuleEntry(request: string): string | null {
+  try {
+    return runtimeRequire.resolve(request)
+  } catch (err: unknown) {
+    if (!isRecoverableMissingModuleError(err, request, path.join('node_modules', request))) throw err
+    return null
+  }
+}
+
+function isStaleResolvedModuleEntry(resolvedPath: string, err: unknown): boolean {
+  if (!isRecoverableMissingModuleError(err, resolvedPath, path.dirname(resolvedPath))) {
+    return false
+  }
+  return !fs.existsSync(resolvedPath) || !fs.existsSync(path.dirname(resolvedPath))
 }
 
 /**
@@ -1084,29 +1122,35 @@ function tryLoadGlobalPackage(request: string): unknown {
 }
 
 export function loadExternalModule(request: string): unknown {
-  // 1. Workspace-local packages/{request} (monorepo layout — primary path
+  // 1. Standard npm resolution (installed package or pnpm workspace symlink).
+  //    This intentionally takes precedence over the direct monorepo fallback so
+  //    tests and consumers can override a workspace package with an installed
+  //    copy (for example a temp-installed fixture in node_modules).
+  const resolvedInstalledEntry = resolveInstalledModuleEntry(request)
+  if (resolvedInstalledEntry) {
+    try {
+      return runtimeRequire(resolvedInstalledEntry)
+    } catch (err: unknown) {
+      if (!isStaleResolvedModuleEntry(resolvedInstalledEntry, err)) throw err
+    }
+  }
+
+  // 2. Workspace-local packages/{request} (monorepo layout — fallback path
   //    during the staged migration before the package is published to npm).
   if (WORKSPACE_ROOT) {
     const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
     try {
       return runtimeRequire(workspacePackagePath)
     } catch (workspaceErr: unknown) {
-      if (!isMissingRequestedModule(workspacePackagePath, workspaceErr)) throw workspaceErr
+      if (!isRecoverableMissingModuleError(workspaceErr, workspacePackagePath)) throw workspaceErr
     }
-  }
-
-  // 2. Standard npm resolution (installed package or pnpm workspace symlink).
-  try {
-    return runtimeRequire(request)
-  } catch (err: unknown) {
-    if (!isMissingRequestedModule(request, err)) throw err
   }
 
   // 3. Globally installed npm package (npm install -g ...).
   try {
     return tryLoadGlobalPackage(request)
   } catch (err: unknown) {
-    if (!isMissingRequestedModule(request, err)) throw err
+    if (!isRecoverableMissingModuleError(err, request)) throw err
   }
 
   // 4. Legacy sibling path ../request (backward-compat for non-monorepo
@@ -1115,7 +1159,7 @@ export function loadExternalModule(request: string): unknown {
   try {
     return runtimeRequire(siblingPackagePath)
   } catch (siblingErr: unknown) {
-    if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
+    if (isRecoverableMissingModuleError(siblingErr, siblingPackagePath)) {
       throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
     }
     throw siblingErr
@@ -1820,27 +1864,27 @@ function resolveExternalModuleWithSource(request: string): ResolvedExternalModul
     try {
       return { module: runtimeRequire(workspacePackagePath), source: 'workspace' }
     } catch (workspaceErr: unknown) {
-      if (!isMissingRequestedModule(workspacePackagePath, workspaceErr)) throw workspaceErr
+      if (!isRecoverableMissingModuleError(workspaceErr, workspacePackagePath)) throw workspaceErr
     }
   }
 
   try {
     return { module: runtimeRequire(request), source: 'dependency' }
   } catch (err: unknown) {
-    if (!isMissingRequestedModule(request, err)) throw err
+    if (!isRecoverableMissingModuleError(err, request, path.join('node_modules', request))) throw err
   }
 
   try {
     return { module: tryLoadGlobalPackage(request), source: 'global' }
   } catch (err: unknown) {
-    if (!isMissingRequestedModule(request, err)) throw err
+    if (!isRecoverableMissingModuleError(err, request)) throw err
   }
 
   const siblingPackagePath = path.resolve(process.cwd(), '..', request)
   try {
     return { module: runtimeRequire(siblingPackagePath), source: 'sibling' }
   } catch (siblingErr: unknown) {
-    if (isMissingRequestedModule(siblingPackagePath, siblingErr)) {
+    if (isRecoverableMissingModuleError(siblingErr, siblingPackagePath)) {
       throw new Error(`Plugin package "${request}" is not installed. Run: npm install ${request}`)
     }
     throw siblingErr
@@ -2045,6 +2089,22 @@ async function inspectExternalPluginModule(
             }
             break
           }
+          case 'callback.runtime': {
+            const directListener = isValidSDKEventListenerPlugin(mod.callbackListenerPlugin)
+              ? mod.callbackListenerPlugin
+              : isSDKEventListenerPluginConstructor(mod.CallbackListenerPlugin)
+                ? new mod.CallbackListenerPlugin(process.cwd())
+                : isValidSDKEventListenerPlugin(mod.default)
+                  ? mod.default
+                  : null
+            if (directListener) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, directListener, sdk),
+              })
+            }
+            break
+          }
           case 'card.state': {
             const shouldExposeOptionsSchema = !storageBackedCardStateProviderIds.has(providerId)
             if (isRecord(mod.cardStateProviders)) {
@@ -2111,6 +2171,7 @@ function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, p
     case 'auth.policy':
       return BUILTIN_AUTH_PROVIDER_IDS.has(normalizedProviderId)
     case 'webhook.delivery':
+    case 'callback.runtime':
       return false
   }
 }
@@ -2127,6 +2188,8 @@ function resolveExternalPackageName(capability: PluginCapabilityNamespace, provi
       return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'webhook.delivery':
       return WEBHOOK_PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'callback.runtime':
+      return CALLBACK_PROVIDER_ALIASES.get(providerId) ?? providerId
   }
 }
 
@@ -2134,7 +2197,10 @@ function isPluginSettingsCapabilityDisabled(
   config: PluginSettingsConfigSnapshot,
   capability: PluginCapabilityNamespace,
 ): boolean {
-  return capability === 'webhook.delivery' && config.plugins?.['webhook.delivery']?.provider === 'none'
+  return (
+    (capability === 'webhook.delivery' && config.plugins?.['webhook.delivery']?.provider === 'none')
+    || (capability === 'callback.runtime' && config.plugins?.['callback.runtime']?.provider === 'none')
+  )
 }
 
 function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapshot): string[] {
@@ -2155,6 +2221,7 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
   for (const request of CARD_STATE_PROVIDER_ALIASES.values()) add(request)
   for (const request of AUTH_PROVIDER_ALIASES.values()) add(request)
   for (const request of WEBHOOK_PROVIDER_ALIASES.values()) add(request)
+  for (const request of CALLBACK_PROVIDER_ALIASES.values()) add(request)
 
   for (const capability of PLUGIN_CAPABILITY_NAMESPACES) {
     const providerRef = config.plugins?.[capability]
@@ -2273,6 +2340,18 @@ function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capabi
             : 'default',
       }
     }
+    case 'callback.runtime': {
+      const selected = normalizeCallbackCapabilities(config)['callback.runtime']
+      return {
+        capability,
+        providerId: selected.provider === 'none' ? null : selected.provider,
+        source: config.plugins?.['callback.runtime']
+          ? selected.provider === 'none'
+            ? 'none'
+            : 'config'
+          : 'default',
+      }
+    }
   }
 }
 
@@ -2294,6 +2373,10 @@ function getSelectedProviderRef(config: PluginSettingsConfigSnapshot, capability
       return normalizeAuthCapabilities(config)['auth.policy']
     case 'webhook.delivery':
       return normalizeWebhookCapabilities(config)['webhook.delivery']
+    case 'callback.runtime': {
+      const selected = normalizeCallbackCapabilities(config)['callback.runtime']
+      return selected.provider === 'none' ? null : selected
+    }
   }
 }
 
@@ -2446,7 +2529,7 @@ export async function persistPluginSettingsProviderSelection(
     ? cloneProviderRef(config.plugins[capability])
     : null
 
-  if (capability === 'webhook.delivery' && providerId === 'none') {
+  if ((capability === 'webhook.delivery' || capability === 'callback.runtime') && providerId === 'none') {
     getMutablePluginsRecord(config)[capability] = configuredRef?.options !== undefined
       ? { provider: 'none', options: structuredClone(configuredRef.options) }
       : { provider: 'none' }
@@ -3111,6 +3194,13 @@ interface WebhookProviderModule {
   default?: unknown
 }
 
+/** @internal Shape of a loaded callback runtime package module. */
+interface CallbackRuntimeModule {
+  callbackListenerPlugin?: unknown
+  CallbackListenerPlugin?: unknown
+  default?: unknown
+}
+
 /** @internal Combined result of loading a webhook package. */
 interface WebhookPluginPack {
   provider: WebhookProviderPlugin
@@ -3118,11 +3208,11 @@ interface WebhookPluginPack {
   listener?: SDKEventListenerPlugin
 }
 
-interface WebhookListenerPluginConstructor {
+interface SDKEventListenerPluginConstructor {
   new (workspaceRoot: string): SDKEventListenerPlugin
 }
 
-function isWebhookListenerPluginConstructor(value: unknown): value is WebhookListenerPluginConstructor {
+function isSDKEventListenerPluginConstructor(value: unknown): value is SDKEventListenerPluginConstructor {
   return typeof value === 'function'
 }
 
@@ -3163,15 +3253,64 @@ function loadWebhookPluginPack(providerName: string, workspaceRoot: string): Web
 
   const directListener = isValidSDKEventListenerPlugin(mod.webhookListenerPlugin)
     ? mod.webhookListenerPlugin
-    : isWebhookListenerPluginConstructor(mod.WebhookListenerPlugin)
+    : isSDKEventListenerPluginConstructor(mod.WebhookListenerPlugin)
       ? mod.WebhookListenerPlugin
       : undefined
 
-  if (isWebhookListenerPluginConstructor(directListener)) {
+  if (isSDKEventListenerPluginConstructor(directListener)) {
     return { provider: rawProvider, listener: new directListener(workspaceRoot) }
   }
 
   return { provider: rawProvider, listener: directListener }
+}
+
+function loadCallbackRuntimeListener(providerName: string, workspaceRoot: string): SDKEventListenerPlugin {
+  const mod = loadExternalModule(providerName) as CallbackRuntimeModule
+
+  const directListener = isSDKEventListenerPluginConstructor(mod.CallbackListenerPlugin)
+    ? mod.CallbackListenerPlugin
+    : isValidSDKEventListenerPlugin(mod.callbackListenerPlugin)
+      ? mod.callbackListenerPlugin
+      : isValidSDKEventListenerPlugin(mod.default)
+        ? mod.default
+        : undefined
+
+  if (isSDKEventListenerPluginConstructor(directListener)) {
+    return new directListener(workspaceRoot)
+  }
+
+  if (directListener) {
+    return directListener
+  }
+
+  throw new Error(
+    `Plugin "${providerName}" does not export a valid callback runtime listener. ` +
+    `Expected a named export 'callbackListenerPlugin', 'CallbackListenerPlugin', ` +
+    `or default export implementing register/unregister with an event-listener manifest.`
+  )
+}
+
+function resolveCallbackRuntimeListener(
+  ref: ProviderRef,
+  workspaceRoot: string,
+): SDKEventListenerPlugin | null {
+  if (ref.provider === 'none') {
+    return null
+  }
+
+  const packageName = CALLBACK_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  try {
+    return loadCallbackRuntimeListener(packageName, workspaceRoot)
+  } catch (err) {
+    if (
+      err instanceof Error
+      && err.message.includes('Plugin package')
+      && err.message.includes('not installed')
+    ) {
+      return null
+    }
+    throw err
+  }
 }
 
 /**
@@ -3459,6 +3598,11 @@ export function collectActiveExternalPackageNames(config: {
     add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
   }
 
+  const callbackProvider = config.plugins?.['callback.runtime']?.provider ?? 'none'
+  if (callbackProvider !== 'none') {
+    add(CALLBACK_PROVIDER_ALIASES.get(callbackProvider) ?? callbackProvider)
+  }
+
   return [...packageNames]
 }
 
@@ -3525,6 +3669,11 @@ function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
  * @param webhookCapabilities - Optional normalized webhook provider selections from
  *                           {@link normalizeWebhookCapabilities}. When omitted, webhook
  *                           provider resolution is skipped and `bag.webhookProvider` is `null`.
+ * @param cardStateCapabilities - Optional normalized card-state provider selections from
+ *                           {@link normalizeCardStateCapabilities}.
+ * @param callbackCapabilities - Optional normalized callback runtime provider selections from
+ *                           {@link normalizeCallbackCapabilities}. When omitted, callback
+ *                           listener resolution is skipped and `bag.callbackListener` is `null`.
  */
 export function resolveCapabilityBag(
   capabilities: ResolvedCapabilities,
@@ -3532,6 +3681,7 @@ export function resolveCapabilityBag(
   authCapabilities?: ResolvedAuthCapabilities,
   webhookCapabilities?: ResolvedWebhookCapabilities,
   cardStateCapabilities?: ResolvedCardStateCapabilities,
+  callbackCapabilities?: ResolvedCallbackCapabilities,
 ): ResolvedCapabilityBag {
   const normalizedCapabilities: ResolvedCapabilities = {
     ...capabilities,
@@ -3602,6 +3752,9 @@ export function resolveCapabilityBag(
   const webhookPlugins = webhookCapabilities
     ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], workspaceRoot)
     : null
+  const callbackListener = callbackCapabilities
+    ? resolveCallbackRuntimeListener(callbackCapabilities['callback.runtime'], workspaceRoot)
+    : null
   const standaloneHttpPlugins = resolveStandaloneHttpPlugins({
     workspaceRoot,
     kanbanDir,
@@ -3645,6 +3798,8 @@ export function resolveCapabilityBag(
     webhookProvider: webhookPlugins?.provider ?? null,
     webhookProviders: webhookCapabilities ?? null,
     webhookListener: webhookPlugins?.listener ?? null,
+    callbackProviders: callbackCapabilities ?? null,
+    callbackListener,
     standaloneHttpPlugins,
     sdkExtensions,
     authListener: createBuiltinAuthListenerPlugin(resolvedAuthIdentity, resolvedAuthPolicy),

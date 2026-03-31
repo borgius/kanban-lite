@@ -20,6 +20,8 @@ export type {
   AuthCapabilityNamespace,
   AuthCapabilitySelections,
   BoardConfig,
+  CallbackCapabilityNamespace,
+  CallbackCapabilitySelections,
   CapabilityNamespace,
   CardStateCapabilityNamespace,
   CardStateCapabilitySelections,
@@ -30,6 +32,7 @@ export type {
   PluginIntegrationNamespace,
   ProviderRef,
   ResolvedAuthCapabilities,
+  ResolvedCallbackCapabilities,
   ResolvedCapabilities,
   ResolvedCardStateCapabilities,
   ResolvedWebhookCapabilities,
@@ -64,7 +67,7 @@ export type {
   PluginSettingsSelectionSource,
   PluginSettingsUiSchemaElement,
 } from '../shared/types'
-export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCardStateCapabilities } from '../shared/config'
+export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCallbackCapabilities, normalizeCardStateCapabilities } from '../shared/config'
 export type { Card, CardStatus, Priority, KanbanColumn, LogEntry } from '../shared/types'
 export { getTitleFromContent, getDisplayTitleFromContent, generateCardFilename, DEFAULT_COLUMNS, DEFAULT_BOARD_BACKGROUND_MODE, getDefaultBoardBackgroundPreset } from '../shared/types'
 export type {

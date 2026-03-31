@@ -1,6 +1,6 @@
 {
   "name": "kanban-lite",
-  "version": "1.2.18",
+  "version": "1.2.19",
   "description": "Kanban board manager - VSCode extension, CLI, MCP server, and standalone web app",
   "license": "MIT",
   "repository": {
@@ -128,9 +128,9 @@
     "publish:npm": "npm publish --ignore-scripts",
     "publish:marketplace": "vsce publish --no-dependencies && ovsx publish --no-dependencies",
     "publish:all": "pnpm run publish:npm && pnpm run publish:marketplace",
-    "release": "npm version patch && pnpm run build && pnpm run package && pnpm run publish:npm",
-    "release:minor": "npm version minor && pnpm run build && pnpm run package && pnpm run publish:npm",
-    "release:major": "npm version major && pnpm run build && pnpm run package && pnpm run publish:npm"
+    "release": "pnpm --dir ../.. run release",
+    "release:minor": "pnpm --dir ../.. run release:minor",
+    "release:major": "pnpm --dir ../.. run release:major"
   },
   "dependencies": {
     "kl-plugin-auth": "workspace:*",

@@ -974,6 +974,10 @@ export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
     }
+    // Global API token resolves to subject 'api-token' with no roles; allow all actions.
+    if (identity.subject === 'api-token') {
+      return { allowed: true, actor: identity.subject }
+    }
     const roles = identity.roles ?? []
     for (const role of roles) {
       const permitted = RBAC_ROLE_MATRIX[role as RbacRole]
@@ -1095,6 +1099,11 @@ export function createAuthPolicyPlugin(options?: Record<string, unknown>, provid
     manifest: { id: providerId, provides: ['auth.policy'] },
     optionsSchema,
     async checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision> {
+      // Global API token (apiToken in identity options) authenticates as subject 'api-token'
+      // with no roles. Treat it as a supertoken: allow all actions when it is present.
+      if (identity?.subject === 'api-token') {
+        return { allowed: true, actor: identity.subject }
+      }
       if (permissionEntries.length === 0) {
         return defaultCheckPolicy(identity, action, context)
       }

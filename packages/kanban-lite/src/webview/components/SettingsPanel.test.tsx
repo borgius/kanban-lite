@@ -10,6 +10,11 @@ import type {
   PluginSettingsProviderTransport,
 } from '../../shared/types'
 
+vi.mock('./JsonFormsCodeEditorControl', () => ({
+  JsonFormsCodeEditorControl: () => <div className="kl-jsonforms-code-editor" />,
+  jsonFormsCodeEditorTester: (uischema: { options?: { editor?: string } } | undefined) => uischema?.options?.editor === 'code' ? 5 : -1,
+}))
+
 const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   showPriorityBadges: true,
   showAssignee: true,
@@ -627,7 +632,8 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('button-down')
     expect(markup).toContain('button-delete')
     expect(markup).toContain('card-jsonforms')
-    expect(markup).toContain('shared multiline text field in plugin settings for v1')
+    expect(markup).toContain('shared CodeMirror-backed editor inside plugin settings')
+    expect(markup).toContain('kl-jsonforms-code-editor')
   })
 
   it('prefers the routed plugin package id when choosing the active plugin detail view', () => {
@@ -654,6 +660,13 @@ describe('SettingsPanel drawer resize integration', () => {
 
     expect(css).toContain('.card-jsonforms .array-table-layout > header button')
     expect(css).toContain('.card-jsonforms .array-table-layout tbody td:last-child button')
+  })
+
+  it('styles valid helper text separately from validation errors in shared plugin forms', () => {
+    const css = readFileSync(new URL('../assets/main.css', import.meta.url), 'utf8')
+
+    expect(css).toContain('.card-jsonforms .validation.input-description')
+    expect(css).toContain('.card-jsonforms .validation.validation_error')
   })
 
   it('groups plugin capabilities by namespace and keeps options outside the capability cards', () => {

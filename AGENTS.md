@@ -54,6 +54,16 @@ Never implement a feature directly in an interface layer without the SDK method 
 9. Keep reasoning concise and implementation focused.
 10. If a task can be implemented by editing constants or inserting small functions, do that instead of restructuring the file.
 
+## Reliability checklist
+
+Before finalizing async, retry, webhook, payment, or callback-related changes, explicitly check for:
+
+1. **Race conditions in async flows** — do not only implement the happy path; reason about concurrent requests, overlapping callbacks, and out-of-order resolution.
+2. **Silent error swallowing** — avoid broad `try/catch` blocks that suppress failures or log nothing; surface actionable error context.
+3. **Naive retry logic** — do not add retries without bounded backoff and jitter; avoid hammering production APIs under load.
+4. **State assumptions** — do not assume a clean state; account for stale, partial, duplicated, migrated, or otherwise dirty real-world data.
+5. **Missing idempotency** — for payments, webhooks, callbacks, and retried APIs, ensure repeated delivery does not double-apply side effects.
+
 ## React / TSX lint contract
 
 - When editing React or TSX, write code that passes `eslint.config.mjs` without adding new inline `eslint-disable` comments.

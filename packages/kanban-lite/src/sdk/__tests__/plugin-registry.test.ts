@@ -944,7 +944,11 @@ describe('KanbanSDK plugin settings inventory', () => {
       expect(handlerProperties.command?.type).toBe('string')
       expect(handlersOptions?.showSortButtons).toBe(true)
       expect(handlersOptions?.elementLabelProp).toBe('name')
-      expect(sourceControl?.options?.multi).toBe(true)
+      expect(sourceControl?.options).toMatchObject({
+        editor: 'code',
+        language: 'javascript',
+        height: '220px',
+      })
       expect(commandControl?.scope).toBe('#/properties/command')
     } finally {
       sdk.close()
@@ -983,6 +987,73 @@ describe('KanbanSDK plugin settings inventory', () => {
       sdk.close()
     } finally {
       cleanup()
+    }
+  })
+
+  it('ignores broken discovered packages so valid providers still load', async () => {
+    const cleanup = installTempPackage(
+      'temp-broken-plugin-module',
+      `throw new Error('broken package import should not block plugin inventory')\n`,
+    )
+
+    try {
+      fs.writeFileSync(
+        path.join(workspaceDir, '.kanban.json'),
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            'callback.runtime': { provider: 'callbacks' },
+          },
+        }),
+        'utf-8',
+      )
+
+      const sdk = new KanbanSDK(kanbanDir)
+
+      try {
+        const inventory = await sdk.listPluginSettings()
+        const callbackRuntime = inventory.capabilities.find((entry) => entry.capability === 'callback.runtime')
+
+        expect(callbackRuntime?.selected).toEqual({
+          capability: 'callback.runtime',
+          providerId: 'callbacks',
+          source: 'config',
+        })
+        expect(callbackRuntime?.providers).toContainEqual(expect.objectContaining({
+          providerId: 'callbacks',
+          packageName: 'kl-plugin-callback',
+          isSelected: true,
+        }))
+        expect(callbackRuntime?.providers).not.toContainEqual(expect.objectContaining({
+          packageName: 'temp-broken-plugin-module',
+        }))
+      } finally {
+        sdk.close()
+      }
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('skips broad-scan packages that do not look like plugins', async () => {
+    const markerPath = path.join(workspaceDir, 'non-plugin-imported.txt')
+    const cleanup = installTempPackage(
+      'temp-side-effect-adapter',
+      `const fs = require('node:fs')\nfs.writeFileSync(${JSON.stringify(markerPath)}, 'loaded', 'utf-8')\nmodule.exports = { loaded: true }\n`,
+    )
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+
+      try {
+        await sdk.listPluginSettings()
+        expect(fs.existsSync(markerPath)).toBe(false)
+      } finally {
+        sdk.close()
+      }
+    } finally {
+      cleanup()
+      fs.rmSync(markerPath, { force: true })
     }
   })
 

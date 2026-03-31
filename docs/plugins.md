@@ -155,7 +155,7 @@ JSON Schema `default` values are also applied when the shared settings editor op
 
 When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into `plugins[capability].options`. For example, selecting `auth.policy: rbac` or `auth.policy: kl-plugin-auth` writes the default permission rows derived from the shipped `RBAC_ROLE_MATRIX` instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.
 
-The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the multiline inline `source` field and the process `command` / `args` / `cwd` fields.
+The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the CodeMirror-backed inline `source` field and the process `command` / `args` / `cwd` fields.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -258,7 +258,7 @@ Trust model:
 - inline handlers are trusted same-runtime JavaScript, not sandboxed, and run with host process privileges,
 - process handlers are ordinary subprocesses, not sandboxed, and do not receive a live SDK object or other in-memory runtime handles.
 
-In v1, inline source authoring intentionally stays inside the shared multiline text field from plugin settings rather than a callback-specific editor.
+Inline source authoring stays inside the shared plugin-settings workflow, but now uses the embedded CodeMirror JavaScript editor rather than a plain multiline text field.
 
 ---
 

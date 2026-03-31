@@ -39,8 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Storage-backed `card.state` config now stays implicit**: shared config normalization, Plugin Options inventory, and provider persistence now reuse the active `card.storage` provider/options for storage-backed `card.state`, hide the duplicate DB form for those rows, and automatically prune redundant matching `plugins["card.state"]` entries from `.kanban.json`.
 - **Storage-backed `attachment.storage` config now stays implicit**: shared config normalization, Plugin Options inventory, and storage-migration cleanup now reuse the active `card.storage` provider/options for first-party storage-backed attachment handlers, hide duplicate DB forms for those rows, and automatically prune redundant matching `plugins["attachment.storage"]` entries from `.kanban.json`.
 - **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
+- **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Nested plugin-option code editor dispatch**: The shared Plugin Options form now resolves `editor: 'code'` against the scoped field schema, so nested controls such as `callback.runtime.handlers[].source` render the embedded CodeMirror editor in the live browser instead of falling back to the default text input.
 
 - **Plugin Options helper text now shows without focusing fields**: The shared Settings → Plugin Options form now surfaces schema-level descriptions and keeps field descriptions visible even before focus, so provider setup notes such as S3 environment-variable guidance are actually visible in the UI instead of hiding behind JSON Forms focus state.
 

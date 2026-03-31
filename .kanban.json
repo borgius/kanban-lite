@@ -195,6 +195,72 @@
         "webhooks": [
           {
             "active": true,
+            "url": "https://localhost:2954/api/webhooks/test",
+            "events": [
+              "attachment.added",
+              "auth.allowed",
+              "board.action"
+            ]
+          },
+          {
+            "id": "wh_c2f78ab2784e87cb",
+            "url": "https://your-pipeline.example.com/events",
+            "events": [
+              "task.moved",
+              "task.created",
+              "comment.created",
+              "attachment.added",
+              "form.submit"
+            ],
+            "active": true
+          }
+        ]
+      }
+    },
+    "auth.identity": {
+      "provider": "noop"
+    },
+    "auth.policy": {
+      "provider": "noop"
+    },
+    "card.storage": {
+      "provider": "localfs"
+    },
+    "callback.runtime": {
+      "provider": "callbacks",
+      "options": {
+        "handlers": [
+          {
+            "type": "inline",
+            "enabled": true,
+            "args": [],
+            "events": [
+              "task.moved"
+            ],
+            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
+            "name": "console.log",
+            "cwd": "."
+          }
+        ]
+      }
+    }
+  },
+  "logsFilter": {
+    "limit": "all",
+    "order": "desc",
+    "disabledSources": [],
+    "show": {
+      "timestamp": true,
+      "source": true,
+      "objects": false
+    }
+  },
+  "pluginOptions": {
+    "webhook.delivery": {
+      "webhooks": {
+        "webhooks": [
+          {
+            "active": true,
             "url": "https://localhost:2954//api/webhooks/test",
             "events": [
               "attachment.added",
@@ -205,37 +271,25 @@
         ]
       }
     },
-    "auth.identity": {
-      "provider": "kl-plugin-auth",
-      "options": {
-        "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
-        "users": [
+    "callback.runtime": {
+      "callbacks": {
+        "handlers": [
           {
-            "username": "admin",
-            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
-            "role": "admin"
-          },
-          {
-            "username": "manager",
-            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
-            "role": "manager"
-          },
-          {
-            "username": "user",
-            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
-            "role": "user"
+            "type": "inline",
+            "enabled": true,
+            "args": [],
+            "events": [
+              "task.moved"
+            ],
+            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
+            "name": "console.log",
+            "cwd": "."
           }
-        ],
-        "roles": [
-          "user",
-          "manager",
-          "admin"
         ]
       }
     },
     "auth.policy": {
-      "provider": "kl-plugin-auth",
-      "options": {
+      "kl-plugin-auth": {
         "permissions": [
           {
             "role": "user",
@@ -317,70 +371,55 @@
         ]
       }
     },
-    "card.storage": {
-      "provider": "localfs"
-    },
-    "callback.runtime": {
-      "provider": "callbacks",
-      "options": {
-        "handlers": [
+    "auth.identity": {
+      "kl-plugin-auth": {
+        "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
+        "users": [
           {
-            "type": "inline",
-            "enabled": true,
-            "args": [],
-            "events": [
-              "task.moved"
-            ],
-            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
-            "name": "console.log",
-            "cwd": "."
+            "username": "admin",
+            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
+            "role": "admin"
+          },
+          {
+            "username": "manager",
+            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
+            "role": "manager"
+          },
+          {
+            "username": "user",
+            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
+            "role": "user"
           }
+        ],
+        "roles": [
+          "user",
+          "manager",
+          "admin"
         ]
       }
     }
   },
-  "logsFilter": {
-    "limit": "all",
-    "order": "desc",
-    "disabledSources": [],
-    "show": {
-      "timestamp": true,
-      "source": true,
-      "objects": false
-    }
-  },
-  "pluginOptions": {
-    "webhook.delivery": {
-      "webhooks": {
-        "webhooks": [
-          {
-            "active": true,
-            "url": "https://localhost:2954//api/webhooks/test",
-            "events": [
-              "attachment.added",
-              "auth.allowed",
-              "board.action"
-            ]
-          }
-        ]
-      }
+  "webhooks": [
+    {
+      "active": true,
+      "url": "https://localhost:2954/api/webhooks/test",
+      "events": [
+        "attachment.added",
+        "auth.allowed",
+        "board.action"
+      ]
     },
-    "callback.runtime": {
-      "callbacks": {
-        "handlers": [
-          {
-            "type": "inline",
-            "enabled": true,
-            "args": [],
-            "events": [
-              "task.moved"
-            ],
-            "source": "async ({event, skd}) => {\nconsole.log(event)\n}",
-            "name": "console.log",
-            "cwd": "."
-          }
-        ]
-      }
+    {
+      "id": "wh_c2f78ab2784e87cb",
+      "url": "https://your-pipeline.example.com/events",
+      "events": [
+        "task.moved",
+        "task.created",
+        "comment.created",
+        "attachment.added",
+        "form.submit"
+      ],
+      "active": true
     }
-  }
+  ]
 }

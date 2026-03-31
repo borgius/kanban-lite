@@ -134,6 +134,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1013.0",
+    "@codemirror/lang-javascript": "^6.2.5",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
     "@jsonforms/core": "^3.5.0",
@@ -145,6 +146,7 @@
     "@tiptap/pm": "^3.15.3",
     "@tiptap/react": "^3.15.3",
     "@tiptap/starter-kit": "^3.15.3",
+    "@uiw/react-codemirror": "^4.25.9",
     "chokidar": "^4.0.0",
     "clsx": "^2.1.1",
     "eventemitter2": "^6.4.9",

@@ -350,7 +350,7 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
     schema: {
       type: 'object',
       title: 'Callback runtime options',
-      description: 'Configure ordered callback handlers for committed Kanban after-events. Inline JavaScript authoring intentionally reuses the shared multiline text field in plugin settings for v1 instead of adding callback-specific editor plumbing.',
+      description: 'Configure ordered callback handlers for committed Kanban after-events. Inline JavaScript authoring uses the shared CodeMirror-backed editor inside plugin settings instead of a separate callback-specific surface.',
       additionalProperties: false,
       properties: {
         handlers: {
@@ -498,7 +498,9 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                       scope: '#/properties/source',
                       label: 'Inline JavaScript',
                       options: {
-                        multi: true,
+                        editor: 'code',
+                        language: 'javascript',
+                        height: '220px',
                         placeholder: 'async ({ event, sdk }) => {\n  console.log(event.event)\n}',
                       },
                       rule: {

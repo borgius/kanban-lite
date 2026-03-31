@@ -23,7 +23,7 @@ npm install kl-plugin-callback
 
 - discovery and selection for the `callback.runtime` capability
 - the shared provider-options contract surfaced through SDK/UI/API/CLI/MCP plugin settings at `plugins["callback.runtime"]`
-- the v1 inline authoring choice: plain text / multiline textarea input in the existing JSON Forms settings flow
+- the inline authoring choice: an embedded CodeMirror JavaScript editor in the existing shared JSON Forms settings flow
 - the runtime listener export that executes matching handlers for committed Kanban after-events
 
 ## Handler model
@@ -43,7 +43,7 @@ Each handler entry includes:
 
 Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, and receive exactly one argument shaped as `({ event, sdk })`.
 
-In v1, inline JavaScript is authored through the shared plugin settings form using a multiline textarea (`uiSchema.options.multi = true`), not a bespoke editor.
+Inline JavaScript is authored through the shared plugin settings form using an embedded CodeMirror JavaScript editor (`uiSchema.options.editor = "code"`), not a separate callback-specific editor surface.
 
 ### Process handlers
 

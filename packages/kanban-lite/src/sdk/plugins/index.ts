@@ -2203,19 +2203,26 @@ function isPluginSettingsCapabilityDisabled(
   )
 }
 
+function isLikelyPluginPackageRequest(request: string): boolean {
+  return /(^|\/|-)plugin(?:-|$)/i.test(request)
+}
+
 function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapshot): string[] {
   const requests = new Set<string>()
   const add = (request: string | undefined): void => {
     if (request) requests.add(request)
   }
-
-  for (const request of collectWorkspacePackageRequests()) add(request)
-  for (const request of collectNodeModulePackageRequests(path.join(process.cwd(), 'node_modules'))) add(request)
-  if (WORKSPACE_ROOT && WORKSPACE_ROOT !== process.cwd()) {
-    for (const request of collectNodeModulePackageRequests(path.join(WORKSPACE_ROOT, 'node_modules'))) add(request)
+  const addFromBroadScan = (request: string | undefined): void => {
+    if (request && isLikelyPluginPackageRequest(request)) requests.add(request)
   }
-  for (const request of collectNodeModulePackageRequests(getGlobalNodeModulesDir())) add(request)
-  for (const request of collectSiblingPackageRequests()) add(request)
+
+  for (const request of collectWorkspacePackageRequests()) addFromBroadScan(request)
+  for (const request of collectNodeModulePackageRequests(path.join(process.cwd(), 'node_modules'))) addFromBroadScan(request)
+  if (WORKSPACE_ROOT && WORKSPACE_ROOT !== process.cwd()) {
+    for (const request of collectNodeModulePackageRequests(path.join(WORKSPACE_ROOT, 'node_modules'))) addFromBroadScan(request)
+  }
+  for (const request of collectNodeModulePackageRequests(getGlobalNodeModulesDir())) addFromBroadScan(request)
+  for (const request of collectSiblingPackageRequests()) addFromBroadScan(request)
 
   for (const request of PROVIDER_ALIASES.values()) add(request)
   for (const request of CARD_STATE_PROVIDER_ALIASES.values()) add(request)
@@ -2258,8 +2265,15 @@ async function buildPluginSettingsInventoryCatalog(
     const resolved = tryResolveExternalModuleWithSource(request)
     if (!resolved) continue
 
-    for (const provider of await inspectExternalPluginModule(request, resolved, sdk)) {
-      addDiscoveredProvider(inventory, provider)
+    try {
+      for (const provider of await inspectExternalPluginModule(request, resolved, sdk)) {
+        addDiscoveredProvider(inventory, provider)
+      }
+    } catch {
+      // Ignore broken or side-effectful packages discovered during broad inventory
+      // scans so one unrelated module cannot prevent valid plugin providers from
+      // appearing in shared plugin-settings hosts.
+      continue
     }
   }
 

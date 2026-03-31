@@ -2207,6 +2207,66 @@ input:focus-visible {
   color: var(--vscode-input-placeholderForeground);
 }
 
+/* ── CodeMirror-backed code editor control ── */
+.card-jsonforms .kl-jsonforms-code-editor {
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 0.1875rem;
+  background: var(--vscode-input-background);
+  overflow: hidden;
+  transition: border-color 0.1s;
+}
+
+.card-jsonforms .kl-jsonforms-code-editor:hover:not(.kl-jsonforms-code-editor--disabled) {
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+}
+
+.card-jsonforms .kl-jsonforms-code-editor:has(.cm-editor.cm-focused) {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.card-jsonforms .control:has(.validation_error:not(:empty)) .kl-jsonforms-code-editor {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.card-jsonforms .kl-jsonforms-code-editor--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card-jsonforms .kl-jsonforms-code-editor .cm-editor {
+  min-height: 12rem;
+  background: transparent;
+}
+
+.card-jsonforms .kl-jsonforms-code-editor .cm-scroller,
+.card-jsonforms .kl-jsonforms-code-editor .cm-content,
+.card-jsonforms .kl-jsonforms-code-editor .cm-gutters {
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family, monospace));
+  font-size: var(--vscode-editor-font-size, var(--vscode-font-size, 13px));
+}
+
+.card-jsonforms .kl-jsonforms-code-editor .cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
+.card-jsonforms .kl-jsonforms-code-editor .cm-activeLine,
+.card-jsonforms .kl-jsonforms-code-editor .cm-activeLineGutter {
+  background: var(--vscode-editor-lineHighlightBackground, rgba(255, 255, 255, 0.05));
+}
+
+.card-jsonforms .kl-jsonforms-code-editor .cm-placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.card-jsonforms .kl-jsonforms-code-editor textarea {
+  min-height: 12rem;
+  border: 0;
+  border-radius: 0;
+}
+
 /* ── Select ── */
 .card-jsonforms select {
   width: 100%;
@@ -2246,6 +2306,8 @@ input:focus-visible {
 }
 
 /* ── Help / description text ── */
+.card-jsonforms .input-description,
+.card-jsonforms .validation.input-description,
 .card-jsonforms .description,
 .card-jsonforms p.description {
   font-size: 0.6875rem;
@@ -2255,6 +2317,7 @@ input:focus-visible {
 }
 
 /* ── Validation messages ── */
+.card-jsonforms .validation.validation_error,
 .card-jsonforms .validation_error,
 .card-jsonforms p.validation_error {
   font-size: 0.6875rem;
@@ -2265,7 +2328,6 @@ input:focus-visible {
 
 .card-jsonforms .validation {
   font-size: 0.6875rem;
-  color: var(--vscode-errorForeground);
   margin: 0;
 }
 

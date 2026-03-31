@@ -71,7 +71,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Real-time updates**: WebSocket-powered live sync across clients
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
-- **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list even before a provider is enabled, reuse provider-authored JSON Forms `uiSchema` layouts for grouped sections and inline array editors, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
+- **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list even before a provider is enabled, reuse provider-authored JSON Forms `uiSchema` layouts for grouped sections, inline array editors, and code-enabled controls such as callback inline source, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
@@ -1220,7 +1220,7 @@ Kanban Lite now exposes one shared plugin-settings workflow across the Settings 
 - **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
 - **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
-- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers.
+- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers, and the inline `source` field now renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
 - **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
@@ -1393,7 +1393,7 @@ Same-runtime callback automation is owned by the external `kl-plugin-callback` p
 - Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, and receive exactly one argument shaped as `({ event, sdk })`.
 - Process handlers are normal subprocesses, not sandboxed. They receive one serialized `{ event }` JSON payload on stdin only and do not receive a live SDK object.
 - Matching handlers run in order. Failures are logged, then later matching handlers continue.
-- In v1, inline JavaScript stays in the shared multiline Plugin Options field; there is no callback-specific editor.
+- Inline JavaScript now uses the shared CodeMirror-backed JavaScript editor in Plugin Options; there is still no separate callback-specific management surface.
 
 ### MySQL setup and runtime expectations
 

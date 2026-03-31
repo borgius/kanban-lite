@@ -16,7 +16,9 @@ interface SchemaNode {
 interface UiSchemaNode {
   scope?: string
   options?: {
-    multi?: boolean
+    editor?: string
+    language?: string
+    height?: string
     showSortButtons?: boolean
     elementLabelProp?: string
     detail?: {
@@ -75,7 +77,7 @@ describe('callback options schema', () => {
     expect(itemProperties.args.type).toBe('array')
   })
 
-  it('uses explicit uiSchema rules and multiline inline source authoring hints', () => {
+  it('uses explicit uiSchema rules and CodeMirror inline source authoring hints', () => {
     const metadata = optionsSchemas.callbacks()
     const handlersControl = ((metadata.uiSchema as UiSchemaNode).elements ?? [])[0]?.elements?.[0]
     const detailElements = handlersControl?.options?.detail?.elements ?? []
@@ -84,7 +86,9 @@ describe('callback options schema', () => {
 
     expect(handlersControl?.options?.showSortButtons).toBe(true)
     expect(handlersControl?.options?.elementLabelProp).toBe('name')
-    expect(sourceControl?.options?.multi).toBe(true)
+    expect(sourceControl?.options?.editor).toBe('code')
+    expect(sourceControl?.options?.language).toBe('javascript')
+    expect(sourceControl?.options?.height).toBe('220px')
     expect(sourceControl?.rule).toEqual({
       effect: 'SHOW',
       condition: {

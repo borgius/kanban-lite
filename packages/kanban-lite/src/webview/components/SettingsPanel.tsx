@@ -25,10 +25,15 @@ import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import type { SettingsTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
+import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
 const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
 const pluginOptionsJsonFormsConfig = { showUnfocusedDescription: true }
+const pluginOptionsJsonFormsRenderers = [
+  { tester: jsonFormsCodeEditorTester, renderer: JsonFormsCodeEditorControl },
+  ...vanillaRenderers,
+]
 
 const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string> = {
   builtin: 'Built-in',
@@ -158,6 +163,8 @@ function getPluginCapabilityFallbackProviderId(capability: PluginCapabilityNames
     case 'attachment.storage':
     case 'card.state':
       return 'localfs'
+    case 'callback.runtime':
+      return 'none'
     case 'auth.identity':
     case 'auth.policy':
       return 'noop'
@@ -627,7 +634,7 @@ function PluginProviderOptionsEditor({
           schema={schema}
           uischema={uiSchema}
           data={optionData}
-          renderers={vanillaRenderers}
+          renderers={pluginOptionsJsonFormsRenderers}
           cells={vanillaCells}
           ajv={pluginOptionsAjv}
           config={pluginOptionsJsonFormsConfig}
@@ -694,7 +701,7 @@ function PluginOptionsSection({
   onActivePluginIdChange?: (pluginId: string | null) => void
 }) {
   const plugins = useMemo(() => derivePluginList(pluginSettings), [pluginSettings])
-  const [preferredPluginKey, setPreferredPluginKey] = useState<string | null>(activePluginId ?? null)
+  const [localPreferredPluginKey, setLocalPreferredPluginKey] = useState<string | null>(activePluginId ?? null)
   const [providerDetailsByKey, setProviderDetailsByKey] = useState<Record<string, PluginSettingsProviderTransport>>({})
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
@@ -703,24 +710,16 @@ function PluginOptionsSection({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const requestedProviderKeysRef = useRef<Set<string>>(new Set())
   const [showInstall, setShowInstall] = useState(false)
-
-  useEffect(() => {
-    setPreferredPluginKey(activePluginId ?? null)
-  }, [activePluginId])
-
-  useEffect(() => {
-    if (activePluginId && showInstall) {
-      setShowInstall(false)
-    }
-  }, [activePluginId, showInstall])
+  const preferredPluginKey = activePluginId ?? localPreferredPluginKey
+  const isInstallVisible = showInstall && !activePluginId
 
   const handleActivePluginIdChange = useCallback((pluginId: string | null) => {
-    setPreferredPluginKey(pluginId)
+    setLocalPreferredPluginKey(pluginId)
     onActivePluginIdChange?.(pluginId)
   }, [onActivePluginIdChange])
 
   const activePluginKey = useMemo(() => {
-    if (showInstall) return null
+    if (isInstallVisible) return null
 
     if (preferredPluginKey && plugins.some(plugin => plugin.key === preferredPluginKey)) {
       return preferredPluginKey
@@ -733,7 +732,7 @@ function PluginOptionsSection({
       ?? plugins.find(plugin => plugin.hasSelectedCapability)?.key
       ?? plugins[0]?.key
       ?? null
-  }, [plugins, preferredPluginKey, pluginSettingsProvider?.packageName, showInstall])
+  }, [plugins, preferredPluginKey, pluginSettingsProvider?.packageName, isInstallVisible])
 
   const handleSplitDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
@@ -754,8 +753,8 @@ function PluginOptionsSection({
   }, [])
 
   const activePlugin = useMemo(
-    () => (showInstall ? null : plugins.find(p => p.key === activePluginKey) ?? null),
-    [plugins, activePluginKey, showInstall],
+    () => (isInstallVisible ? null : plugins.find(p => p.key === activePluginKey) ?? null),
+    [plugins, activePluginKey, isInstallVisible],
   )
   const activePluginCapabilities = useMemo(
     () => getPluginCapabilityDisplayEntries(activePlugin),
@@ -870,7 +869,7 @@ function PluginOptionsSection({
                 key={plugin.key}
                 className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
                 style={{
-                  ...(activePluginKey === plugin.key && !showInstall
+                  ...(activePluginKey === plugin.key && !isInstallVisible
                     ? {
                         background: 'var(--vscode-list-activeSelectionBackground)',
                         color: 'var(--vscode-list-activeSelectionForeground)',
@@ -882,12 +881,12 @@ function PluginOptionsSection({
                   handleActivePluginIdChange(plugin.key)
                   setShowInstall(false)
                 }}
-                onMouseEnter={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
-                onMouseLeave={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'transparent' }}
+                onMouseEnter={e => { if (activePluginKey !== plugin.key || isInstallVisible) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+                onMouseLeave={e => { if (activePluginKey !== plugin.key || isInstallVisible) e.currentTarget.style.background = 'transparent' }}
               >
                 <span
                   className="text-sm font-medium flex-1 truncate"
-                  style={activePluginKey === plugin.key && !showInstall ? undefined : { color: 'var(--vscode-foreground)' }}
+                  style={activePluginKey === plugin.key && !isInstallVisible ? undefined : { color: 'var(--vscode-foreground)' }}
                 >
                   {plugin.label}
                 </span>
@@ -903,7 +902,7 @@ function PluginOptionsSection({
               className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
               style={{
                 borderTop: plugins.length > 0 ? '1px solid var(--vscode-panel-border)' : undefined,
-                ...(showInstall
+                ...(isInstallVisible
                   ? {
                       background: 'var(--vscode-list-activeSelectionBackground)',
                       color: 'var(--vscode-list-activeSelectionForeground)',
@@ -914,13 +913,13 @@ function PluginOptionsSection({
                 setShowInstall(true)
                 handleActivePluginIdChange(null)
               }}
-              onMouseEnter={e => { if (!showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
-              onMouseLeave={e => { if (!showInstall) e.currentTarget.style.background = 'transparent' }}
+              onMouseEnter={e => { if (!isInstallVisible) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
+              onMouseLeave={e => { if (!isInstallVisible) e.currentTarget.style.background = 'transparent' }}
             >
-              <Plus size={13} className="shrink-0" style={showInstall ? undefined : { color: 'var(--vscode-descriptionForeground)' }} />
+              <Plus size={13} className="shrink-0" style={isInstallVisible ? undefined : { color: 'var(--vscode-descriptionForeground)' }} />
               <span
                 className="text-sm font-medium flex-1"
-                style={showInstall ? undefined : { color: 'var(--vscode-descriptionForeground)' }}
+                style={isInstallVisible ? undefined : { color: 'var(--vscode-descriptionForeground)' }}
               >
                 Install package
               </span>

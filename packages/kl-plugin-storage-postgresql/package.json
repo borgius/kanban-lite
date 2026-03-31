@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-storage-postgresql",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "kanban-lite card.storage and attachment.storage plugin for PostgreSQL",
   "license": "MIT",
   "type": "commonjs",

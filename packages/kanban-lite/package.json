@@ -1,6 +1,6 @@
 {
   "name": "kanban-lite",
-  "version": "1.2.19",
+  "version": "1.2.20",
   "description": "Kanban board manager - VSCode extension, CLI, MCP server, and standalone web app",
   "license": "MIT",
   "repository": {

@@ -28,6 +28,7 @@ import { DrawerResizeHandle } from './DrawerResizeHandle'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
 const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
+const pluginOptionsJsonFormsConfig = { showUnfocusedDescription: true }
 
 const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string> = {
   builtin: 'Built-in',
@@ -81,12 +82,14 @@ interface SettingsPanelProps {
   pluginSettingsProvider?: PluginSettingsProviderTransport | null
   pluginSettingsInstall?: PluginSettingsInstallTransportResult | null
   pluginSettingsError?: string | null
+  activePluginId?: string | null
   onClose: () => void
   onSave: (settings: CardDisplaySettings) => void
   onReadPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
   onSelectPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
   onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
   onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
+  onActivePluginIdChange?: (pluginId: string | null) => void
   onSetLabel?: (name: string, definition: LabelDefinition) => void
   onRenameLabel?: (oldName: string, newName: string) => void
   onDeleteLabel?: (name: string) => void
@@ -103,12 +106,14 @@ export function SettingsPanel({
   pluginSettingsProvider,
   pluginSettingsInstall,
   pluginSettingsError,
+  activePluginId,
   onClose,
   onSave,
   onReadPluginSettingsProvider,
   onSelectPluginSettingsProvider,
   onUpdatePluginSettingsOptions,
   onInstallPluginSettingsPackage,
+  onActivePluginIdChange,
   onSetLabel,
   onRenameLabel,
   onDeleteLabel,
@@ -125,12 +130,14 @@ export function SettingsPanel({
       pluginSettingsProvider={pluginSettingsProvider}
       pluginSettingsInstall={pluginSettingsInstall}
       pluginSettingsError={pluginSettingsError}
+      activePluginId={activePluginId}
       onClose={onClose}
       onSave={onSave}
       onReadPluginSettingsProvider={onReadPluginSettingsProvider}
       onSelectPluginSettingsProvider={onSelectPluginSettingsProvider}
       onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
       onInstallPluginSettingsPackage={onInstallPluginSettingsPackage}
+      onActivePluginIdChange={onActivePluginIdChange}
       onSetLabel={onSetLabel}
       onRenameLabel={onRenameLabel}
       onDeleteLabel={onDeleteLabel}
@@ -572,6 +579,7 @@ function PluginProviderOptionsEditor({
   const [optionData, setOptionData] = useState<Record<string, unknown>>(() => applyPluginSchemaDefaults(schema, provider.options?.values))
   const [optionErrors, setOptionErrors] = useState<PluginOptionsValidationError[]>([])
   const isSelectedProvider = provider.selected.providerId === provider.providerId
+  const schemaDescription = typeof schema.description === 'string' ? schema.description.trim() : ''
 
   useEffect(() => {
     setOptionErrors(validatePluginOptions(schema, optionData))
@@ -601,6 +609,19 @@ function PluginProviderOptionsEditor({
         </div>
       )}
 
+      {schemaDescription.length > 0 && (
+        <div
+          className="rounded-lg px-3 py-3 text-xs"
+          style={{
+            background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+            color: 'var(--vscode-descriptionForeground)',
+            border: '1px solid var(--vscode-panel-border)',
+          }}
+        >
+          {schemaDescription}
+        </div>
+      )}
+
       <div className="card-jsonforms">
         <JsonForms
           schema={schema}
@@ -609,6 +630,7 @@ function PluginProviderOptionsEditor({
           renderers={vanillaRenderers}
           cells={vanillaCells}
           ajv={pluginOptionsAjv}
+          config={pluginOptionsJsonFormsConfig}
           onChange={({ data, errors }) => {
             const nextData = applyPluginSchemaDefaults(schema, data)
             setOptionData(nextData)
@@ -653,22 +675,26 @@ function PluginOptionsSection({
   pluginSettingsProvider,
   pluginSettingsInstall,
   pluginSettingsError,
+  activePluginId,
   onReadPluginSettingsProvider,
   onSelectPluginSettingsProvider,
   onUpdatePluginSettingsOptions,
   onInstallPluginSettingsPackage,
+  onActivePluginIdChange,
 }: {
   pluginSettings?: PluginSettingsPayload | null
   pluginSettingsProvider?: PluginSettingsProviderTransport | null
   pluginSettingsInstall?: PluginSettingsInstallTransportResult | null
   pluginSettingsError?: string | null
+  activePluginId?: string | null
   onReadPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
   onSelectPluginSettingsProvider?: (capability: PluginCapabilityNamespace, providerId: string) => void
   onUpdatePluginSettingsOptions?: (capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>) => void
   onInstallPluginSettingsPackage?: (packageName: string, scope: PluginSettingsInstallScope) => void
+  onActivePluginIdChange?: (pluginId: string | null) => void
 }) {
   const plugins = useMemo(() => derivePluginList(pluginSettings), [pluginSettings])
-  const [preferredPluginKey, setPreferredPluginKey] = useState<string | null>(null)
+  const [preferredPluginKey, setPreferredPluginKey] = useState<string | null>(activePluginId ?? null)
   const [providerDetailsByKey, setProviderDetailsByKey] = useState<Record<string, PluginSettingsProviderTransport>>({})
   const [installPackageName, setInstallPackageName] = useState('')
   const [installGlobally, setInstallGlobally] = useState(false)
@@ -677,6 +703,21 @@ function PluginOptionsSection({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const requestedProviderKeysRef = useRef<Set<string>>(new Set())
   const [showInstall, setShowInstall] = useState(false)
+
+  useEffect(() => {
+    setPreferredPluginKey(activePluginId ?? null)
+  }, [activePluginId])
+
+  useEffect(() => {
+    if (activePluginId && showInstall) {
+      setShowInstall(false)
+    }
+  }, [activePluginId, showInstall])
+
+  const handleActivePluginIdChange = useCallback((pluginId: string | null) => {
+    setPreferredPluginKey(pluginId)
+    onActivePluginIdChange?.(pluginId)
+  }, [onActivePluginIdChange])
 
   const activePluginKey = useMemo(() => {
     if (showInstall) return null
@@ -837,7 +878,10 @@ function PluginOptionsSection({
                     : { background: 'transparent' }),
                   ...(idx > 0 ? { borderTop: '1px solid var(--vscode-panel-border)' } : {}),
                 }}
-                onClick={() => { setPreferredPluginKey(plugin.key); setShowInstall(false) }}
+                onClick={() => {
+                  handleActivePluginIdChange(plugin.key)
+                  setShowInstall(false)
+                }}
                 onMouseEnter={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { if (activePluginKey !== plugin.key || showInstall) e.currentTarget.style.background = 'transparent' }}
               >
@@ -866,7 +910,10 @@ function PluginOptionsSection({
                     }
                   : { background: 'transparent' }),
               }}
-              onClick={() => { setShowInstall(true); setPreferredPluginKey(null) }}
+              onClick={() => {
+                setShowInstall(true)
+                handleActivePluginIdChange(null)
+              }}
               onMouseEnter={e => { if (!showInstall) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
               onMouseLeave={e => { if (!showInstall) e.currentTarget.style.background = 'transparent' }}
             >
@@ -1601,12 +1648,14 @@ function SettingsPanelContent({
   pluginSettingsProvider,
   pluginSettingsInstall,
   pluginSettingsError,
+  activePluginId,
   onClose,
   onSave,
   onReadPluginSettingsProvider,
   onSelectPluginSettingsProvider,
   onUpdatePluginSettingsOptions,
   onInstallPluginSettingsPackage,
+  onActivePluginIdChange,
   onSetLabel,
   onRenameLabel,
   onDeleteLabel,
@@ -1922,10 +1971,12 @@ function SettingsPanelContent({
               pluginSettingsProvider={pluginSettingsProvider}
               pluginSettingsInstall={pluginSettingsInstall}
               pluginSettingsError={pluginSettingsError}
+              activePluginId={activePluginId}
               onReadPluginSettingsProvider={onReadPluginSettingsProvider}
               onSelectPluginSettingsProvider={onSelectPluginSettingsProvider}
               onUpdatePluginSettingsOptions={onUpdatePluginSettingsOptions}
               onInstallPluginSettingsPackage={onInstallPluginSettingsPackage}
+              onActivePluginIdChange={onActivePluginIdChange}
             />
           )}
         </div>

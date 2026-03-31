@@ -21,6 +21,8 @@ npm install kl-plugin-storage-postgresql pg
 - `card.storage` — persists cards and comments in PostgreSQL tables
 - `attachment.storage` — copies attachment files to local filesystem paths under `.kanban/`
 
+`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `postgresql` here also enables the package's PostgreSQL-backed card-state provider without a separate `plugins["card.state"]` entry.
+
 ## `.kanban.json` example
 
 ```json

@@ -379,7 +379,7 @@ describe('kl-plugin-auth: listener-only auth runtime helpers', () => {
       },
       {
         manifest: { id: 'custom-policy', provides: ['auth.policy'] },
-        async checkPolicy(identity, action): Promise<AuthDecision> {
+        async checkPolicy(identity: AuthIdentity | null, action: string): Promise<AuthDecision> {
           return { allowed: true, actor: identity?.subject, metadata: { action } }
         },
       },
@@ -641,7 +641,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
         { event: 'card.create', phase: 'before' },
         { event: 'task.created', phase: 'after' },
       ]),
-    } as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
 
     const exportedIdentitySchema = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const createdIdentitySchema = await createAuthIdentityPlugin().optionsSchema?.(sdk)
@@ -754,7 +754,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
           },
         },
       })),
-    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
 
     const schemaInput = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const schema = schemaInput
@@ -771,7 +771,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
   it('auth.identity providers fall back to the default role catalog when saved config has no roles yet', async () => {
     const sdk = {
       getConfigSnapshot: vi.fn(() => ({ plugins: {} })),
-    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
 
     const schemaInput = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const schema = schemaInput
@@ -860,6 +860,44 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     expect(schema?.secrets).toEqual([])
   })
 
+  it('rbac auth.policy schema defaults to the canonical RBAC role matrix', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({ plugins: {} })),
+      listAvailableEvents: vi.fn(async () => []),
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
+
+    const schemaInput = await authPolicyPlugins.rbac?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const permissions = ((schema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>)
+
+    expect(permissions.default).toEqual([
+      { role: 'user', actions: [...RBAC_ROLE_MATRIX.user] },
+      { role: 'manager', actions: [...RBAC_ROLE_MATRIX.manager] },
+      { role: 'admin', actions: [...RBAC_ROLE_MATRIX.admin] },
+    ])
+  })
+
+  it('kl-plugin-auth auth.policy schema also defaults to the canonical RBAC role matrix', async () => {
+    const sdk = {
+      getConfigSnapshot: vi.fn(() => ({ plugins: {} })),
+      listAvailableEvents: vi.fn(async () => []),
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
+
+    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schema = schemaInput
+      ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
+      : undefined
+    const permissions = ((schema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>)
+
+    expect(permissions.default).toEqual([
+      { role: 'user', actions: [...RBAC_ROLE_MATRIX.user] },
+      { role: 'manager', actions: [...RBAC_ROLE_MATRIX.manager] },
+      { role: 'admin', actions: [...RBAC_ROLE_MATRIX.admin] },
+    ])
+  })
+
   it('auth.policy providers resolve role enums from the saved role catalog', async () => {
     const sdk = {
       getConfigSnapshot: vi.fn(() => ({
@@ -869,7 +907,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
           },
         },
       })),
-    } as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
+    } as unknown as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
 
     const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const schema = schemaInput
@@ -891,7 +929,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
           { event: 'task.created', phase: 'after' },
           { event: 'card.create', phase: 'before' },
         ]),
-    } as Pick<KanbanSDK, 'listAvailableEvents'> as KanbanSDK
+    } as unknown as Pick<KanbanSDK, 'listAvailableEvents'> as KanbanSDK
 
     const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const schema = schemaInput

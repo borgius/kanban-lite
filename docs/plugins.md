@@ -142,6 +142,8 @@ Providers may expose an `optionsSchema()` hook. When present, the loader normali
 
 The **Plugin Options** tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Schema-backed providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row, even when that provider is not currently selected.
 
+Schema and field `description` values are surfaced as visible helper text in the shared Plugin Options form, so provider authors should treat those descriptions as user-facing setup guidance rather than transport-only metadata.
+
 Saving options for an inactive provider does not change enablement. Instead, the shared contract caches those values under `pluginOptions[capability][providerId]` in `.kanban.json`. When that provider is selected later, the cached options are restored into the canonical `plugins[capability]` entry automatically.
 
 The shared plugin-settings loader resolves provider metadata before transport. `optionsSchema()` may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside `schema` / `uiSchema` fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.
@@ -151,6 +153,8 @@ For anything more complex than a few flat scalar fields — especially arrays, n
 When a field such as `enum`, `default`, or a JSON Forms `rule` depends on runtime data, providers should prefer nested sync/async resolvers in `schema` / `uiSchema` values instead of UI-only schema extensions. The shared loader resolves those functions before transport, so hosts still receive plain JSON-compatible metadata.
 
 JSON Schema `default` values are also applied when the shared settings editor opens provider options that omit a field, so providers can seed editable arrays such as auth role catalogs without hard-coding that behavior in the UI layer.
+
+When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into `plugins[capability].options`. For example, selecting `auth.policy: rbac` or `auth.policy: kl-plugin-auth` writes the default permission rows derived from the shipped `RBAC_ROLE_MATRIX` instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -602,6 +606,7 @@ Behavior:
 
 - When `card.storage` is `localfs` (default), the built-in file-backed backend persists actor-scoped unread/open state in workspace sidecar files,
 - When `card.storage` is an external plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package via its `createCardStateProvider` export,
+- Plugin Settings reuses the selected `card.storage` provider/options for storage-backed `card.state` rows instead of surfacing a second database configuration form,
 - If the storage package does not export card-state support, the built-in file-backed backend is used as a fallback,
 - persisted `card.state` data is distinct from `.active-card.json` and other active-card UI selection state,
 - all backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.

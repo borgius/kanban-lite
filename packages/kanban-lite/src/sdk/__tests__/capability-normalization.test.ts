@@ -238,6 +238,20 @@ describe('normalizeCardStateCapabilities', () => {
     expect(result['card.state']).toEqual({ provider: 'localfs' })
   })
 
+  it('derives card.state from card.storage when storage is configured externally', () => {
+    const result = normalizeCardStateCapabilities(
+      makeConfig({
+        storageEngine: 'sqlite',
+        sqlitePath: '.kanban/custom.db',
+      })
+    )
+
+    expect(result['card.state']).toEqual({
+      provider: 'sqlite',
+      options: { sqlitePath: '.kanban/custom.db' },
+    })
+  })
+
   it('passes through an explicit card.state provider with options', () => {
     const result = normalizeCardStateCapabilities(
       makeConfig({

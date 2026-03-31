@@ -21,6 +21,8 @@ npm install kl-plugin-storage-mongodb mongodb
 - `card.storage` — persists cards and comments in MongoDB collections
 - `attachment.storage` — copies attachment files to local filesystem paths under `.kanban/`
 
+`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `mongodb` here also enables the package's MongoDB-backed card-state provider without a separate `plugins["card.state"]` entry.
+
 ## `.kanban.json` example
 
 ```json

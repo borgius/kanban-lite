@@ -24,6 +24,8 @@ The package already declares `@aws-sdk/client-s3` as a dependency, so you do not
 
 All configuration is read from environment variables. No options are embedded in `.kanban.json` — this keeps credentials out of version-controlled config files.
 
+In the shared **Plugin Options** form, only non-secret S3 settings are edited. Keep `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional region defaults such as `AWS_REGION` in the host environment or workspace `.env` file.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `KL_S3_BUCKET` | **yes** | — | S3 bucket name |

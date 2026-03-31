@@ -138,25 +138,24 @@ export AWS_REGION=us-east-1
   }
 }</code></pre>
 <p>All credentials and endpoint configuration are read from environment variables — nothing sensitive goes into <code>.kanban.json</code>.</p>
+<p>The shared <strong>Plugin Options</strong> form only edits non-secret settings. Keep <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, and any default region such as <code>AWS_REGION</code> in the host environment or workspace <code>.env</code>.</p>
 
-<h3>SQLite Card State (<code>card.state</code>)</h3>
-<pre><code class="language-bash"># Install
-npm install kl-plugin-card-state-sqlite</code></pre>
+<h3>Storage-backed Card State (<code>card.state</code>)</h3>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
-    "card.state": {
+    "card.storage": {
       "provider": "sqlite",
       "options": {
-        "sqlitePath": ".kanban/card-state.db"
+        "sqlitePath": ".kanban/kanban.db"
       }
     }
   }
 }</code></pre>
-<p>Stores actor-scoped unread and open-card state in a lightweight SQLite database. Independent of the <code>card.storage</code> provider — works with markdown, SQLite, or MySQL cards.</p>
+<p>Actor-scoped unread and open-card state is automatically derived from the active <code>card.storage</code> plugin. Use the same storage package and connection settings — there is no separate <code>card.state</code> package install or second database form to configure.</p>
 
 <h3>Combined Example</h3>
-<p>Use multiple providers together — for example MySQL cards with S3 attachments and SQLite card state:</p>
+<p>Use multiple providers together — for example MySQL cards/state with S3 attachments:</p>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
@@ -169,12 +168,6 @@ npm install kl-plugin-card-state-sqlite</code></pre>
     },
     "attachment.storage": {
       "provider": "kl-plugin-attachment-s3"
-    },
-    "card.state": {
-      "provider": "sqlite",
-      "options": {
-        "sqlitePath": ".kanban/card-state.db"
-      }
     }
   }
 }</code></pre>

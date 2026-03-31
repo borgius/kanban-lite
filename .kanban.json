@@ -189,11 +189,21 @@
     }
   },
   "plugins": {
-    "card.state": {
-      "provider": "localfs"
-    },
     "webhook.delivery": {
-      "provider": "webhooks"
+      "provider": "webhooks",
+      "options": {
+        "webhooks": [
+          {
+            "active": true,
+            "url": "https://localhost:2954//api/webhooks/test",
+            "events": [
+              "attachment.added",
+              "auth.allowed",
+              "board.action"
+            ]
+          }
+        ]
+      }
     },
     "attachment.storage": {
       "provider": "localfs"
@@ -222,8 +232,7 @@
         "roles": [
           "user",
           "manager",
-          "admin",
-          "xxx"
+          "admin"
         ]
       }
     },
@@ -232,13 +241,80 @@
       "options": {
         "permissions": [
           {
-            "subjectType": "role",
-            "subject": "user",
+            "role": "user",
             "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
               "attachment.add",
-              "board.action.config.remove",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add"
+            ]
+          },
+          {
+            "role": "manager",
+            "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
+              "attachment.add",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add",
+              "card.create",
+              "card.update",
+              "card.move",
+              "card.transfer",
+              "card.delete",
+              "board.action.trigger",
+              "log.clear",
+              "board.log.add"
+            ]
+          },
+          {
+            "role": "admin",
+            "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
+              "attachment.add",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add",
+              "card.create",
+              "card.update",
+              "card.move",
+              "card.transfer",
+              "card.delete",
+              "board.action.trigger",
+              "log.clear",
+              "board.log.add",
+              "board.create",
+              "board.update",
               "board.delete",
-              "board.action.config.add"
+              "settings.update",
+              "webhook.create",
+              "webhook.update",
+              "webhook.delete",
+              "label.set",
+              "label.rename",
+              "label.delete",
+              "column.create",
+              "column.update",
+              "column.reorder",
+              "column.setMinimized",
+              "column.delete",
+              "column.cleanup",
+              "board.action.config.add",
+              "board.action.config.remove",
+              "board.log.clear",
+              "board.setDefault",
+              "storage.migrate",
+              "card.purgeDeleted"
             ]
           }
         ]
@@ -259,17 +335,16 @@
     }
   },
   "pluginOptions": {
-    "auth.policy": {
-      "kl-plugin-auth": {
-        "permissions": [
+    "webhook.delivery": {
+      "webhooks": {
+        "webhooks": [
           {
-            "subjectType": "role",
-            "subject": "user",
-            "actions": [
-              "attachment.add",
-              "board.action.config.remove",
-              "board.delete",
-              "board.action.config.add"
+            "active": true,
+            "url": "https://localhost:2954//api/webhooks/test",
+            "events": [
+              "attachment.added",
+              "auth.allowed",
+              "board.action"
             ]
           }
         ]

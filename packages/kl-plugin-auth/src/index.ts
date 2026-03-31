@@ -97,6 +97,13 @@ interface PermissionMatrixEntry {
   actions: string[]
 }
 
+function createRbacDefaultPermissionEntries(): PermissionMatrixEntry[] {
+  return (['user', 'manager', 'admin'] as const).map((role) => ({
+    role,
+    actions: [...RBAC_ROLE_MATRIX[role]],
+  }))
+}
+
 interface LocalAuthSession {
   username: string
   expiresAt: number
@@ -266,45 +273,52 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
   }
 }
 
-function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
+function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSettingsOptionsSchemaMetadata {
+  const shouldSeedDefaultMatrix = providerId === 'rbac' || providerId === 'kl-plugin-auth'
+  const permissionsSchema: Record<string, unknown> = {
+    type: 'array',
+    title: 'Permission matrix',
+    description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the before-events it may run. When omitted, the provider uses its default policy behavior.',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['role', 'actions'],
+      properties: {
+        role: {
+          type: 'string',
+          title: 'Role',
+          minLength: 1,
+          description: 'Role to authorize. Values come from auth.identity options.roles when available.',
+          enum: async (sdk: KanbanSDK) => getConfiguredAuthRoles(sdk),
+        },
+        actions: {
+          type: 'array',
+          title: 'Events',
+          minItems: 1,
+          uniqueItems: true,
+          items: {
+            type: 'string',
+            title: 'Before-event',
+            enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyBeforeEvents(sdk),
+            minLength: 1,
+          },
+        },
+      },
+    },
+  }
+
+  if (shouldSeedDefaultMatrix) {
+    permissionsSchema.default = createRbacDefaultPermissionEntries()
+  }
+
   return {
     schema: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        permissions: {
-          type: 'array',
-          title: 'Permission matrix',
-          description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the before-events it may run. When omitted, the provider uses its default policy behavior.',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['role', 'actions'],
-            properties: {
-              role: {
-                type: 'string',
-                title: 'Role',
-                minLength: 1,
-                description: 'Role to authorize. Values come from auth.identity options.roles when available.',
-                enum: async (sdk: KanbanSDK) => getConfiguredAuthRoles(sdk),
-              },
-              actions: {
-                type: 'array',
-                title: 'Events',
-                minItems: 1,
-                uniqueItems: true,
-                items: {
-                  type: 'string',
-                  title: 'Before-event',
-                  enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyBeforeEvents(sdk),
-                  minLength: 1,
-                },
-              },
-            },
-          },
-        },
+        permissions: permissionsSchema,
       },
-    },
+    } as PluginSettingsOptionsSchemaMetadata['schema'],
     uiSchema: {
       type: 'VerticalLayout',
       elements: [
@@ -357,9 +371,11 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   }
 }
 
-const createResolvedAuthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = () => {
-  return createAuthPolicyOptionsSchema()
-}
+const createResolvedLocalAuthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = () => createAuthPolicyOptionsSchema('local')
+
+const createResolvedKlauthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = () => createAuthPolicyOptionsSchema('kl-plugin-auth')
+
+const createResolvedRbacPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = () => createAuthPolicyOptionsSchema('rbac')
 
 function loadSessionsFromFile(filePath: string): Map<string, LocalAuthSession> {
   try {
@@ -574,7 +590,7 @@ export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 
 export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'local', provides: ['auth.policy'] },
-  optionsSchema: createResolvedAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedLocalAuthPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
@@ -953,7 +969,7 @@ export const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>> = {
 
 export const RBAC_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'rbac', provides: ['auth.policy'] },
-  optionsSchema: createResolvedAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedRbacPolicyOptionsSchema,
   async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
     if (!identity) {
       return { allowed: false, reason: 'auth.identity.missing' }
@@ -1034,7 +1050,7 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>, prov
  */
 const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
   manifest: { id: 'kl-plugin-auth', provides: ['auth.policy'] },
-  optionsSchema: createResolvedAuthPolicyOptionsSchema,
+  optionsSchema: createResolvedKlauthPolicyOptionsSchema,
   checkPolicy: LOCAL_POLICY_PLUGIN.checkPolicy,
 }
 
@@ -1069,10 +1085,15 @@ export function createAuthPolicyPlugin(options?: Record<string, unknown>, provid
   const defaultCheckPolicy = providerId === 'rbac'
     ? RBAC_POLICY_PLUGIN.checkPolicy
     : LOCAL_POLICY_PLUGIN.checkPolicy
+  const optionsSchema = providerId === 'rbac'
+    ? createResolvedRbacPolicyOptionsSchema
+    : providerId === 'local'
+      ? createResolvedLocalAuthPolicyOptionsSchema
+      : createResolvedKlauthPolicyOptionsSchema
 
   return {
     manifest: { id: providerId, provides: ['auth.policy'] },
-    optionsSchema: createResolvedAuthPolicyOptionsSchema,
+    optionsSchema,
     async checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision> {
       if (permissionEntries.length === 0) {
         return defaultCheckPolicy(identity, action, context)
@@ -1465,9 +1486,9 @@ export const optionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
 
 /** Policy options schemas keyed by provider id for plugin-settings discovery. */
 export const policyOptionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
-  'kl-plugin-auth': createResolvedAuthPolicyOptionsSchema,
-  local: createResolvedAuthPolicyOptionsSchema,
-  rbac: createResolvedAuthPolicyOptionsSchema,
+  'kl-plugin-auth': createResolvedKlauthPolicyOptionsSchema,
+  local: createResolvedLocalAuthPolicyOptionsSchema,
+  rbac: createResolvedRbacPolicyOptionsSchema,
 }
 
 const authPluginPackage = {

@@ -34,9 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Card-state merged into storage plugins**: `card.state` is no longer a separate capability that requires a dedicated package. Each storage plugin (`kl-plugin-storage-sqlite`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mysql`, `kl-plugin-storage-redis`) now exports `createCardStateProvider` and card-state is auto-derived from the active storage plugin at startup. The built-in file-backed provider remains the fallback for `markdown` storage. Dedicated `kl-plugin-card-state-*` packages are deprecated and will be removed in a future release.
 - **`CARD_STATE_PROVIDER_ALIASES`** now points to storage packages instead of dedicated card-state packages.
 - **Canonical local file provider IDs**: `card.storage` and default `card.state` now use `localfs` as the canonical provider id in runtime capabilities, plugin-settings inventory, and status surfaces. Legacy ids (`card.storage: "markdown"`, `card.state: "builtin"`) are normalized for compatibility and no longer treated as separate installable providers.
+- **Storage-backed `card.state` config now stays implicit**: shared config normalization, Plugin Options inventory, and provider persistence now reuse the active `card.storage` provider/options for storage-backed `card.state`, hide the duplicate DB form for those rows, and automatically prune redundant matching `plugins["card.state"]` entries from `.kanban.json`.
 - **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
 
 ### Fixed
+
+- **Plugin Options helper text now shows without focusing fields**: The shared Settings → Plugin Options form now surfaces schema-level descriptions and keeps field descriptions visible even before focus, so provider setup notes such as S3 environment-variable guidance are actually visible in the UI instead of hiding behind JSON Forms focus state.
+
+- **S3 attachment plugin options-form env guidance**: `kl-plugin-attachment-s3` now describes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` directly in its schema metadata and matching docs, making it clearer that the shared Plugin Options form only edits non-secret settings while credentials still come from the host environment or workspace `.env`.
+
+- **Webhook plugin-option IDs now self-heal on save**: Saving `webhook.delivery` provider options now auto-generates a `wh_…` id for any webhook row whose ID is left blank in the schema-driven Plugin Options form, instead of persisting an empty identifier.
+
+- **RBAC plugin-settings default persistence**: Selecting `auth.policy: rbac` with no saved options now materializes the canonical `RBAC_ROLE_MATRIX` into `plugins["auth.policy"].options.permissions`, so the shared Plugin Options flow starts from the built-in editable matrix instead of an empty config.
 
 - **Redis `card.state` provider no longer connects during load/build**: `kl-plugin-storage-redis` now creates its `ioredis` client lazily with `lazyConnect`, matching the storage engine path so package discovery and workspace builds do not emit stray `ECONNREFUSED` errors just from resolving the provider.
 

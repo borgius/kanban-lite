@@ -4,7 +4,15 @@ import * as http from 'node:http'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { WebhookListenerPlugin, cliPlugin, sdkExtensionPlugin, standaloneHttpPlugin, webhookProviderPlugin, type Webhook } from './index'
+import {
+  WebhookListenerPlugin,
+  cliPlugin,
+  optionsSchemas,
+  sdkExtensionPlugin,
+  standaloneHttpPlugin,
+  webhookProviderPlugin,
+  type Webhook,
+} from './index'
 
 const CONFIG_FILE = '.kanban.json'
 
@@ -32,6 +40,17 @@ describe('webhookProviderPlugin manifest', () => {
   it('has id "webhooks" and provides webhook.delivery', () => {
     expect(webhookProviderPlugin.manifest.id).toBe('webhooks')
     expect(webhookProviderPlugin.manifest.provides).toContain('webhook.delivery')
+  })
+
+  it('documents webhook ids as optional and auto-generated on first save', () => {
+    const schema = optionsSchemas.webhooks().schema
+    const properties = schema.properties as Record<string, Record<string, unknown>>
+    const webhooks = properties.webhooks
+    const itemSchema = webhooks.items as Record<string, unknown>
+    const itemProperties = itemSchema.properties as Record<string, Record<string, unknown>>
+
+    expect(itemSchema.required).toEqual(['url', 'events', 'active'])
+    expect(itemProperties.id.description).toContain('auto-generate it on first save')
   })
 })
 

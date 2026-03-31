@@ -449,7 +449,7 @@ Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, incl
 
 For local development in this repo, the published `kl-plugin-attachment-s3` package is installed and can be used as the default `attachment.storage` provider against MinIO.
 
-- local runtime settings live in a workspace `.env`
+- local runtime settings live in a workspace `.env` (including `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_REGION`)
 - local provider selection lives in the workspace `.kanban.json`
 - the default local card provider stays on `localfs` (markdown engine)
 
@@ -1214,6 +1214,7 @@ Attachments keep their legacy default unless you opt in explicitly: omitted `att
 Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
+- **Storage-backed `card.state` reuse**: when `card.state` comes from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
 - **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
@@ -1488,6 +1489,8 @@ Core `localfs` (markdown engine) reports `watchGlob: "boards/**/*.md"`. The `sql
 
 For `card.state`, card-state is automatically derived from the active `card.storage` plugin. When `card.storage` is `localfs` (default), the built-in file-backed provider is used. When `card.storage` is an external plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package. There is no need to install or configure a separate `card.state` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 
+In the shared Plugin Options workflow, that means the storage-backed `card.state` row is informational only: it follows the selected `card.storage` provider automatically and does not require a second set of connection options in `.kanban.json`.
+
 ### Migrating between compatibility-backed providers
 
 **CLI:**
@@ -1590,6 +1593,8 @@ Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pa
 | `admin` | All `manager` actions plus all board/config mutations: `board.create`, `board.update`, `board.delete`, `settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
 
 Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
+
+When you enable `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the shared Plugin Options UI and no saved policy options exist yet, Kanban Lite now materializes the default `permissions` matrix from the built-in `RBAC_ROLE_MATRIX` into `.kanban.json` so you start from an editable baseline instead of an empty config block. The same backfill also runs when plugin-settings refresh sees a selected auth-policy provider with an empty options object.
 
 **Scope limits (v1):**
 

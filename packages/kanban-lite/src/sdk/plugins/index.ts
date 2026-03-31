@@ -1,5 +1,7 @@
+import * as crypto from 'node:crypto'
 import * as fs from 'node:fs'
 import * as http from 'node:http'
+import { isDeepStrictEqual } from 'node:util'
 import * as path from 'path'
 import { createRequire } from 'node:module'
 import type { ZodRawShape, ZodTypeAny } from 'zod'
@@ -1295,6 +1297,60 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
     : { provider: ref.provider }
 }
 
+function clonePluginSchemaDefaultValue<T>(value: T): T {
+  return structuredClone(value)
+}
+
+function applyPluginSchemaDefaultsToData(schemaNode: unknown, dataNode: unknown): unknown {
+  if (!isRecord(schemaNode)) return dataNode
+
+  if (dataNode === undefined && Object.prototype.hasOwnProperty.call(schemaNode, 'default')) {
+    return clonePluginSchemaDefaultValue(schemaNode.default)
+  }
+
+  if (Array.isArray(dataNode)) {
+    if (isRecord(schemaNode.items)) {
+      return dataNode.map((item) => applyPluginSchemaDefaultsToData(schemaNode.items, item))
+    }
+
+    const tupleItems = schemaNode.items
+    if (Array.isArray(tupleItems)) {
+      return dataNode.map((item, index) => applyPluginSchemaDefaultsToData(tupleItems[index], item))
+    }
+
+    return dataNode
+  }
+
+  if (!isRecord(dataNode)) return dataNode
+
+  if (isRecord(schemaNode.properties)) {
+    for (const [key, childSchema] of Object.entries(schemaNode.properties)) {
+      const nextValue = applyPluginSchemaDefaultsToData(childSchema, dataNode[key])
+      if (nextValue !== undefined) {
+        dataNode[key] = nextValue
+      }
+    }
+  }
+
+  return dataNode
+}
+
+function applyPluginSchemaDefaults(
+  schema: Record<string, unknown>,
+  data: unknown,
+): Record<string, unknown> {
+  const nextData = isRecord(data) ? structuredClone(data) as Record<string, unknown> : {}
+  return applyPluginSchemaDefaultsToData(schema, nextData) as Record<string, unknown>
+}
+
+function getPluginSchemaDefaultOptions(
+  schema: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!schema) return undefined
+  const defaultOptions = applyPluginSchemaDefaults(schema, undefined)
+  return Object.keys(defaultOptions).length > 0 ? defaultOptions : undefined
+}
+
 function readPluginSettingsConfigDocument(workspaceRoot: string): KanbanConfig {
   const filePath = configPath(workspaceRoot)
 
@@ -1361,6 +1417,54 @@ function ensurePluginSettingsOptionsRecord(
     'Plugin option updates must be an object payload.',
     { capability, providerId },
   )
+}
+
+function generatePluginSettingsWebhookId(): string {
+  return `wh_${crypto.randomBytes(8).toString('hex')}`
+}
+
+function normalizeWebhookPluginSettingsOptions(
+  currentOptions: Record<string, unknown> | undefined,
+  nextOptions: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!Array.isArray(nextOptions.webhooks)) return nextOptions
+
+  const currentWebhooks = Array.isArray(currentOptions?.webhooks) ? currentOptions.webhooks : []
+  const webhooks = nextOptions.webhooks.map((entry, index) => {
+    if (!isRecord(entry)) return entry
+
+    const nextId = typeof entry.id === 'string' ? entry.id.trim() : ''
+    if (nextId.length > 0) {
+      return nextId === entry.id ? entry : { ...entry, id: nextId }
+    }
+
+    const currentEntry = currentWebhooks[index]
+    const currentId = isRecord(currentEntry) && typeof currentEntry.id === 'string'
+      ? currentEntry.id.trim()
+      : ''
+
+    return {
+      ...entry,
+      id: currentId.length > 0 ? currentId : generatePluginSettingsWebhookId(),
+    }
+  })
+
+  return {
+    ...nextOptions,
+    webhooks,
+  }
+}
+
+function normalizePluginSettingsProviderOptionsForPersistence(
+  capability: PluginCapabilityNamespace,
+  currentOptions: Record<string, unknown> | undefined,
+  nextOptions: Record<string, unknown>,
+): Record<string, unknown> {
+  if (capability === 'webhook.delivery') {
+    return normalizeWebhookPluginSettingsOptions(currentOptions, nextOptions)
+  }
+
+  return nextOptions
 }
 
 function getMutablePluginsRecord(config: KanbanConfig): PluginCapabilitySelections {
@@ -1438,6 +1542,68 @@ function setCachedPluginProviderOptions(
   }
 
   pluginOptions[capability] = nextProviders
+}
+
+function normalizeProviderIdForComparison(
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+): string {
+  if (capability === 'card.storage' && providerId === 'markdown') return 'localfs'
+  if (capability === 'card.state' && providerId === 'builtin') return 'localfs'
+  return providerId
+}
+
+function normalizeProviderRefForComparison(
+  capability: PluginCapabilityNamespace,
+  ref: ProviderRef,
+): ProviderRef {
+  return {
+    provider: normalizeProviderIdForComparison(capability, ref.provider),
+    ...(isRecord(ref.options) ? { options: structuredClone(ref.options) } : {}),
+  }
+}
+
+function providerRefsMatch(
+  capability: PluginCapabilityNamespace,
+  left: ProviderRef,
+  right: ProviderRef,
+): boolean {
+  const normalizedLeft = normalizeProviderRefForComparison(capability, left)
+  const normalizedRight = normalizeProviderRefForComparison(capability, right)
+
+  return normalizedLeft.provider === normalizedRight.provider
+    && isDeepStrictEqual(normalizedLeft.options, normalizedRight.options)
+}
+
+function pruneEmptyPluginSettingsContainers(config: KanbanConfig): void {
+  if (isRecord(config.plugins) && Object.keys(config.plugins).length === 0) {
+    delete config.plugins
+  }
+
+  if (isRecord(config.pluginOptions) && Object.keys(config.pluginOptions).length === 0) {
+    delete config.pluginOptions
+  }
+}
+
+function pruneRedundantDerivedCardStateConfig(config: KanbanConfig): boolean {
+  const configured = config.plugins?.['card.state']
+  if (!configured) return false
+
+  const derived = normalizeStorageCapabilities(config)['card.storage']
+  if (!providerRefsMatch('card.state', configured, derived)) return false
+
+  const plugins = getMutablePluginsRecord(config)
+  delete plugins['card.state']
+
+  setCachedPluginProviderOptions(config, 'card.state', configured.provider, undefined)
+  const normalizedConfiguredProvider = normalizeProviderIdForComparison('card.state', configured.provider)
+  if (normalizedConfiguredProvider !== configured.provider) {
+    setCachedPluginProviderOptions(config, 'card.state', normalizedConfiguredProvider, undefined)
+  }
+
+  setCachedPluginProviderOptions(config, 'card.state', derived.provider, undefined)
+  pruneEmptyPluginSettingsContainers(config)
+  return true
 }
 
 function getPersistedPluginProviderOptions(
@@ -1776,6 +1942,7 @@ async function inspectExternalPluginModule(
   // -----------------------------------------------------------------------
   const manifest = mod.pluginManifest
   if (isValidPluginPackageManifest(manifest)) {
+    const storageBackedCardStateProviderIds = new Set(manifest.capabilities['card.storage'] ?? [])
     for (const [ns, providerIds] of Object.entries(manifest.capabilities)) {
       const capability = ns as PluginCapabilityNamespace
       for (const providerId of providerIds as readonly string[]) {
@@ -1840,12 +2007,15 @@ async function inspectExternalPluginModule(
             break
           }
           case 'card.state': {
+            const shouldExposeOptionsSchema = !storageBackedCardStateProviderIds.has(providerId)
             if (isRecord(mod.cardStateProviders)) {
               const candidate = mod.cardStateProviders[providerId]
               if (isValidCardStateProvider(candidate, providerId)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
+                  ...(shouldExposeOptionsSchema
+                    ? { optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk) }
+                    : {}),
                 })
                 break
               }
@@ -1853,7 +2023,9 @@ async function inspectExternalPluginModule(
             if (isValidCardStateProviderCandidate(mod.cardStateProvider)) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, mod.cardStateProvider, sdk),
+                ...(shouldExposeOptionsSchema
+                  ? { optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, mod.cardStateProvider, sdk) }
+                  : {}),
               })
             } else if (typeof mod.createCardStateProvider === 'function') {
               const candidate = (mod.createCardStateProvider as (context: CardStateModuleContext) => unknown)({
@@ -1865,7 +2037,9 @@ async function inspectExternalPluginModule(
               if (isValidCardStateProviderCandidate(candidate)) {
                 add({
                   capability, providerId, packageName: request, discoverySource: resolved.source,
-                  optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
+                  ...(shouldExposeOptionsSchema
+                    ? { optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk) }
+                    : {}),
                 })
               }
             }
@@ -2146,6 +2320,9 @@ export async function discoverPluginSettingsInventory(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsPayload> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
+  if (pruneRedundantDerivedCardStateConfig(config)) {
+    writePluginSettingsConfigDocument(workspaceRoot, config)
+  }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
 
   const capabilities: PluginSettingsCapabilityRow[] = PLUGIN_CAPABILITY_NAMESPACES.map((capability) => {
@@ -2175,6 +2352,9 @@ export async function readPluginSettingsProvider(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
+  if (pruneRedundantDerivedCardStateConfig(config)) {
+    writePluginSettingsConfigDocument(workspaceRoot, config)
+  }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   let provider = inventory.get(capability)?.get(providerId) ?? null
 
@@ -2222,6 +2402,7 @@ export async function persistPluginSettingsProviderSelection(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
+  pruneRedundantDerivedCardStateConfig(config)
   const configuredRef = config.plugins?.[capability]
     ? cloneProviderRef(config.plugins[capability])
     : null
@@ -2235,7 +2416,8 @@ export async function persistPluginSettingsProviderSelection(
   }
 
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
-  getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, providerId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
   if (selectedRef?.provider && isRecord(selectedRef.options)) {
@@ -2251,12 +2433,21 @@ export async function persistPluginSettingsProviderSelection(
     ?? (configuredRef?.provider === 'none' && isRecord(configuredRef.options)
       ? structuredClone(configuredRef.options)
       : undefined)
+    ?? getPluginSchemaDefaultOptions(
+      isRecord(provider.optionsSchema?.schema)
+        ? provider.optionsSchema.schema
+        : undefined,
+    )
+  const persistedOptions = nextOptions !== undefined
+    ? normalizePluginSettingsProviderOptionsForPersistence(capability, currentTargetOptions, nextOptions)
+    : undefined
   const nextRef = {
     provider: providerId,
-    ...(nextOptions !== undefined ? { options: nextOptions } : {}),
+    ...(persistedOptions !== undefined ? { options: persistedOptions } : {}),
   }
 
   getMutablePluginsRecord(config)[capability] = nextRef
+  pruneRedundantDerivedCardStateConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
   const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
@@ -2278,6 +2469,7 @@ export async function persistPluginSettingsProviderOptions(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
+  pruneRedundantDerivedCardStateConfig(config)
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
   const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
@@ -2285,7 +2477,11 @@ export async function persistPluginSettingsProviderOptions(
   const currentOptions = getPersistedPluginProviderOptions(config, capability, providerId)
   const secretPaths = provider.optionsSchema?.secrets.map((secret) => secret.path) ?? []
   const mergedOptions = mergeProviderOptionsUpdate(currentOptions, nextOptions, '', secretPaths, redaction)
-  const persistedOptions = isRecord(mergedOptions) ? mergedOptions : {}
+  const persistedOptions = normalizePluginSettingsProviderOptionsForPersistence(
+    capability,
+    currentOptions,
+    isRecord(mergedOptions) ? mergedOptions : {},
+  )
 
   setCachedPluginProviderOptions(config, capability, providerId, persistedOptions)
 
@@ -2295,6 +2491,7 @@ export async function persistPluginSettingsProviderOptions(
       options: persistedOptions,
     }
   }
+  pruneRedundantDerivedCardStateConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
   const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)

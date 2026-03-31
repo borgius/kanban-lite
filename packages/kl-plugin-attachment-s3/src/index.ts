@@ -291,19 +291,20 @@ function createS3OptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   return {
     schema: {
       type: 'object',
+      description: 'Plugin options store only non-secret S3 settings. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the host environment or workspace .env. Region may come from KL_S3_REGION or AWS_REGION.',
       additionalProperties: false,
       required: ['bucket'],
       properties: {
         bucket: {
           type: 'string',
           title: 'S3 bucket',
-          description: 'Name of the S3 bucket where attachments are stored.',
+          description: 'Name of the S3 bucket where attachments are stored. Credentials are resolved from the AWS SDK environment chain, including AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.',
           minLength: 1,
         },
         region: {
           type: 'string',
           title: 'AWS region',
-          description: 'AWS region for the S3 bucket. Falls back to AWS_REGION, then us-east-1.',
+          description: 'Optional AWS region for the S3 bucket. KL_S3_REGION overrides AWS_REGION; when neither is set, the runtime defaults to us-east-1.',
           default: 'us-east-1',
         },
         endpoint: {

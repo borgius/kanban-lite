@@ -874,7 +874,7 @@ export function normalizeAuthCapabilities(
  * The input object is never mutated.
  */
 export function normalizeCardStateCapabilities(
-  config: Pick<KanbanConfig, 'plugins'>,
+  config: Pick<KanbanConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
 ): ResolvedCardStateCapabilities {
   const configured = config.plugins?.['card.state']
   if (configured) {
@@ -888,8 +888,10 @@ export function normalizeCardStateCapabilities(
     }
   }
 
+  const derivedFromStorage = normalizeStorageCapabilities(config)['card.storage']
+
   return {
-    'card.state': { provider: 'localfs' },
+    'card.state': cloneProviderRef(derivedFromStorage),
   }
 }
 

@@ -116,6 +116,7 @@ function App(): React.JSX.Element {
     effectiveDrawerWidth,
     settingsOpen,
     settingsTab,
+    settingsPluginId,
     selectedCardIds,
     setCards,
     setColumns,
@@ -127,6 +128,7 @@ function App(): React.JSX.Element {
     clearDrawerWidthPreview,
     setSettingsOpen,
     setSettingsTab,
+    setSettingsPluginId,
     setLabelDefs,
     mergeCardStates,
     selectCardRange,
@@ -1204,6 +1206,7 @@ function App(): React.JSX.Element {
           pluginSettingsProvider={pluginSettingsProvider}
           pluginSettingsInstall={pluginSettingsInstall}
           pluginSettingsError={pluginSettingsError}
+          activePluginId={settingsPluginId}
           onClose={() => setSettingsOpen(false)}
           onSave={handleSaveSettings}
           onReadPluginSettingsProvider={(capability, providerId) => {
@@ -1225,6 +1228,7 @@ function App(): React.JSX.Element {
           onPluginOptionsTabActivated={() => {
             vscode.postMessage({ type: 'loadPluginSettings' })
           }}
+          onActivePluginIdChange={setSettingsPluginId}
           onTabChange={setSettingsTab}
           onSetLabel={(name, definition) => vscode.postMessage({ type: 'setLabel', name, definition })}
           onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}

@@ -26,6 +26,8 @@ npm install kl-plugin-storage-sqlite better-sqlite3
 - `card.storage`
 - `attachment.storage`
 
+`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `sqlite` here also enables the package's SQLite-backed card-state provider without a separate `plugins["card.state"]` entry.
+
 ## What it does
 
 - Persists cards and comments in a SQLite database

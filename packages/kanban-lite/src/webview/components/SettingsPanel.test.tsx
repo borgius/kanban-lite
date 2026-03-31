@@ -125,9 +125,14 @@ const AUTH_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
 const CARD_STORAGE_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
   schema: {
     type: 'object',
+    description: 'SQLite provider options stay in config, while runtime secrets still belong in the environment.',
     additionalProperties: false,
     properties: {
-      databasePath: { type: 'string', title: 'Database path' },
+      databasePath: {
+        type: 'string',
+        title: 'Database path',
+        description: 'Relative or absolute path to the SQLite database file.',
+      },
     },
   },
   secrets: [],
@@ -494,6 +499,8 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(storageMarkup).toContain('Provider: sqlite')
     expect(storageMarkup).toContain('Options')
     expect(storageMarkup).toContain('Database path')
+    expect(storageMarkup).toContain('SQLite provider options stay in config, while runtime secrets still belong in the environment.')
+    expect(storageMarkup).toContain('Relative or absolute path to the SQLite database file.')
     expect(storageMarkup).not.toContain('Stored secret values reopen masked')
   })
 
@@ -516,6 +523,25 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Provider: sqlite · Off')
     expect(markup).toContain('Database path')
     expect(markup).toContain('Save to persist these options and switch this capability to the provider.')
+  })
+
+  it('prefers the routed plugin package id when choosing the active plugin detail view', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={PLUGIN_SETTINGS_FIXTURE}
+        initialTab="pluginOptions"
+        activePluginId="kl-plugin-storage-sqlite"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('kl-plugin-storage-sqlite')
+    expect(markup).toContain('Provider: sqlite')
+    expect(markup).not.toContain('Provider: local')
   })
 
   it('styles table-array add and delete controls for primitive lists', () => {

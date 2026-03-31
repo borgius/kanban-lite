@@ -885,6 +885,70 @@ describe('KanbanSDK plugin settings inventory', () => {
         discoverySource: 'workspace',
         isSelected: true,
       }))
+
+      const cardState = inventory.capabilities.find((entry) => entry.capability === 'card.state')
+      const sqliteCardStateProvider = cardState?.providers.find((entry) => entry.providerId === 'sqlite')
+
+      expect(cardState).toMatchObject({
+        capability: 'card.state',
+        selected: {
+          capability: 'card.state',
+          providerId: 'sqlite',
+          source: 'default',
+        },
+      })
+      expect(sqliteCardStateProvider).toMatchObject({
+        providerId: 'sqlite',
+        packageName: 'kl-plugin-storage-sqlite',
+        discoverySource: 'workspace',
+        isSelected: true,
+      })
+      expect(sqliteCardStateProvider).not.toHaveProperty('optionsSchema')
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('prunes redundant explicit card.state config that matches card.storage', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+          'card.state': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+        },
+        pluginOptions: {
+          'card.state': {
+            sqlite: { sqlitePath: '.kanban/custom.db' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = await sdk.listPluginSettings()
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+        pluginOptions?: Record<string, Record<string, Record<string, unknown>>>
+      }
+
+      const cardState = inventory.capabilities.find((entry) => entry.capability === 'card.state')
+
+      expect(cardState?.selected).toEqual({
+        capability: 'card.state',
+        providerId: 'sqlite',
+        source: 'default',
+      })
+      expect(persistedConfig.plugins).toEqual({
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+      })
+      expect(persistedConfig.pluginOptions).toBeUndefined()
     } finally {
       sdk.close()
     }
@@ -1099,6 +1163,53 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
+  it('materializes schema defaults when selecting auth.policy rbac without saved options', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'auth.identity': { provider: 'noop' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const selected = await sdk.selectPluginSettingsProvider('auth.policy', 'rbac')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+
+      const expectedPermissions = [
+        { role: 'user', actions: [...RBAC_ROLE_MATRIX.user] },
+        { role: 'manager', actions: [...RBAC_ROLE_MATRIX.manager] },
+        { role: 'admin', actions: [...RBAC_ROLE_MATRIX.admin] },
+      ]
+
+      expect(selected.selected).toEqual({
+        capability: 'auth.policy',
+        providerId: 'rbac',
+        source: 'config',
+      })
+      expect(selected.options?.values).toEqual({
+        permissions: expectedPermissions,
+      })
+      expect(persistedConfig.plugins?.['auth.policy']).toEqual({
+        provider: 'rbac',
+        options: {
+          permissions: expectedPermissions,
+        },
+      })
+    } finally {
+      sdk.close()
+    }
+  })
+
   it('can explicitly disable webhook delivery while preserving stored webhook options', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),
@@ -1155,6 +1266,45 @@ describe('KanbanSDK plugin settings inventory', () => {
         source: 'none',
       })
       expect(webhookDelivery?.providers.every((provider) => provider.isSelected === false)).toBe(true)
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('autogenerates webhook ids for blank plugin-settings webhook rows on save', async () => {
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const updated = await sdk.updatePluginSettingsOptions('webhook.delivery', 'webhooks', {
+        webhooks: [
+          {
+            id: '   ',
+            url: 'https://example.test/hook',
+            events: ['task.created'],
+            active: true,
+          },
+        ],
+      })
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: { webhooks?: Array<{ id: string }> } }>
+        pluginOptions?: Record<string, Record<string, { webhooks?: Array<{ id: string }> }>>
+      }
+
+      const webhookId = ((updated.options?.values.webhooks as Array<{ id: string }>)?.[0]?.id) ?? ''
+
+      expect(webhookId).toMatch(/^wh_[0-9a-f]{16}$/)
+      expect(persistedConfig.plugins?.['webhook.delivery']).toEqual({
+        provider: 'webhooks',
+        options: {
+          webhooks: [
+            expect.objectContaining({
+              id: webhookId,
+            }),
+          ],
+        },
+      })
     } finally {
       sdk.close()
     }

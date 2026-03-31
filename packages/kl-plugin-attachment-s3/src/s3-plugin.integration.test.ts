@@ -19,7 +19,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { attachmentStoragePlugin, type Card } from './index'
+import { attachmentStoragePlugin, optionsSchemas, type Card } from './index'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,6 +68,20 @@ describe('kl-plugin-attachment-s3: manifest shape (kanban-lite loader contract)'
   it('does not expose getCardDir (S3 has no local directory concept)', () => {
     // kanban-lite calls getCardDir?.(); undefined is the correct answer for S3
     expect(attachmentStoragePlugin.getCardDir).toBeUndefined()
+  })
+
+  it('documents env-var-based credentials and region fallback in plugin options metadata', () => {
+    const schema = optionsSchemas['kl-plugin-attachment-s3']().schema as {
+      description?: string
+      properties: Record<string, { description?: string }>
+    }
+
+    expect(schema.description).toContain('AWS_ACCESS_KEY_ID')
+    expect(schema.description).toContain('AWS_SECRET_ACCESS_KEY')
+    expect(schema.description).toContain('AWS_REGION')
+    expect(schema.properties.bucket.description).toContain('AWS_ACCESS_KEY_ID')
+    expect(schema.properties.bucket.description).toContain('AWS_SECRET_ACCESS_KEY')
+    expect(schema.properties.region.description).toContain('AWS_REGION')
   })
 })
 

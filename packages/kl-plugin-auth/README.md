@@ -47,6 +47,8 @@ The shared Plugin Options editor seeds `roles[]` with the default catalog `user`
 
 The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog via `permissions[].role`, and `actions[]` is rendered as a before-event picker resolved from `sdk.listAvailableEvents({ type: 'before' })` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog.
 
+When users select `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the shared Plugin Options workflow and no saved policy options exist yet, the provider now seeds `options.permissions` from the canonical `RBAC_ROLE_MATRIX` so the editable config starts from the shipped role/action matrix instead of an empty array. The same backfill also runs on plugin-settings refresh when a selected auth-policy provider still has an empty options object.
+
 Secret metadata is declared for:
 
 - `apiToken`
@@ -107,6 +109,8 @@ Auth capabilities are declared in the `plugins` key alongside storage providers.
 ### Custom permission matrix
 
 Provide `options.permissions` on `auth.policy` to override the default behaviour per role. In the shared Plugin Options UI, each row picks one role from `auth.identity.options.roles` and lists the before-events that role may perform. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
+
+If you select the RBAC policy provider or the package-backed `kl-plugin-auth` policy provider first and have not saved custom options yet, Kanban Lite writes that default matrix into `.kanban.json` automatically so you can edit it in place.
 
 ```json
 {

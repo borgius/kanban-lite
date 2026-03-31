@@ -7,9 +7,14 @@ import { defineConfig, type Plugin } from 'vite'
 // Spawn the standalone server from TS source when Vite starts in watch mode
 function standaloneServerPlugin(configFile: string, port = 2954): Plugin {
   let child: ChildProcess | null = null
+  let isWatchMode = false
   return {
     name: 'standalone-server',
+    buildStart() {
+      isWatchMode = this.meta.watchMode
+    },
     closeBundle() {
+      if (!isWatchMode) return // only spawn in watch/dev mode, not during plain build
       if (child) return // already running after first build
       child = spawn(
         'tsx',

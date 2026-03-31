@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-storage-redis",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "kanban-lite card.storage and attachment.storage plugin for Redis",
   "license": "MIT",
   "type": "commonjs",

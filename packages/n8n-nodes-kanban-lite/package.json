@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-kanban-lite",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "First-party n8n node package for Kanban Lite – supports full action surface and event triggers over local SDK or remote API transport",
   "license": "MIT",
   "author": "borgius",

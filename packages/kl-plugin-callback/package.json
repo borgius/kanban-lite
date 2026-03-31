@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-callback",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "kanban-lite callback.runtime plugin for same-runtime event callbacks",
   "license": "MIT",
   "type": "commonjs",

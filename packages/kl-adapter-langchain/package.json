@@ -1,6 +1,6 @@
 {
   "name": "kl-adapter-langchain",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LangChain / LangGraph adapter for kanban-lite – exposes all kanban-lite features as LangChain StructuredTools with streaming comment support",
   "license": "MIT",
   "type": "commonjs",

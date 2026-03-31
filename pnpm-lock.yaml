@@ -164,6 +164,15 @@ importers:
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
+      kl-plugin-auth:
+        specifier: workspace:*
+        version: link:../kl-plugin-auth
+      kl-plugin-callback:
+        specifier: workspace:*
+        version: link:../kl-plugin-callback
+      kl-plugin-webhook:
+        specifier: workspace:*
+        version: link:../kl-plugin-webhook
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@18.3.1)

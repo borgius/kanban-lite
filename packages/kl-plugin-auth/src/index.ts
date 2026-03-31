@@ -92,11 +92,8 @@ interface LocalAuthUser {
   role?: string
 }
 
-type PermissionMatrixSubjectType = 'role' | 'group'
-
 interface PermissionMatrixEntry {
-  subjectType: PermissionMatrixSubjectType
-  subject: string
+  role: string
   actions: string[]
 }
 
@@ -169,7 +166,7 @@ function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata 
         },
         users: {
           type: 'array',
-          title: 'Local users',
+          title: 'Users',
           description: 'Optional standalone login users. Password values remain bcrypt hashes in storage.',
           items: {
             type: 'object',
@@ -282,15 +279,9 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['subject', 'actions'],
+            required: ['role', 'actions'],
             properties: {
-              subjectType: {
-                type: 'string',
-                title: 'Subject type',
-                enum: ['role', 'group'],
-                default: 'role',
-              },
-              subject: {
+              role: {
                 type: 'string',
                 title: 'Role',
                 minLength: 1,
@@ -326,14 +317,14 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
               scope: '#/properties/permissions',
               label: 'Permission rules',
               options: {
-                elementLabelProp: 'subject',
+                elementLabelProp: 'role',
                 showSortButtons: true,
                 detail: {
                   type: 'VerticalLayout',
                   elements: [
                     {
                       type: 'Control',
-                      scope: '#/properties/subject',
+                      scope: '#/properties/role',
                       label: 'Role',
                     },
                     {
@@ -344,7 +335,7 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                       rule: {
                         effect: 'DISABLE',
                         condition: {
-                          scope: '#/properties/subject',
+                          scope: '#/properties/role',
                           schema: {
                             not: {
                               type: 'string',
@@ -366,11 +357,7 @@ function createAuthPolicyOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
   }
 }
 
-const createResolvedAuthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = (sdk?: KanbanSDK) => {
-  if (!sdk) {
-    return createAuthPolicyOptionsSchema()
-  }
-
+const createResolvedAuthPolicyOptionsSchema: AuthPluginOptionsSchemaFactory = () => {
   return createAuthPolicyOptionsSchema()
 }
 
@@ -513,15 +500,16 @@ function parsePermissionMatrixEntries(value: unknown): PermissionMatrixEntry[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return []
-    const rawSubjectType = (entry as { subjectType?: unknown }).subjectType
-    const subject = (entry as { subject?: unknown }).subject
+    const role = typeof (entry as { role?: unknown }).role === 'string'
+      ? (entry as { role: string }).role
+      : typeof (entry as { subject?: unknown }).subject === 'string'
+        ? (entry as { subject: string }).subject
+        : undefined
     const actions = normalizeStringList((entry as { actions?: unknown }).actions)
-    if (rawSubjectType !== undefined && rawSubjectType !== 'role' && rawSubjectType !== 'group') return []
-    if (typeof subject !== 'string') return []
-    const subjectType: PermissionMatrixSubjectType = rawSubjectType === 'group' ? 'group' : 'role'
-    const normalizedSubject = subject.trim()
-    if (normalizedSubject.length === 0 || !actions || actions.length === 0) return []
-    return [{ subjectType, subject: normalizedSubject, actions }]
+    if (typeof role !== 'string') return []
+    const normalizedRole = role.trim()
+    if (normalizedRole.length === 0 || !actions || actions.length === 0) return []
+    return [{ role: normalizedRole, actions }]
   })
 }
 
@@ -531,7 +519,7 @@ function parseLegacyPermissionMatrix(value: unknown): PermissionMatrixEntry[] {
     const normalizedRole = role.trim()
     const normalizedActions = normalizeStringList(actions)
     if (normalizedRole.length === 0 || !normalizedActions || normalizedActions.length === 0) return []
-    return [{ subjectType: 'role', subject: normalizedRole, actions: normalizedActions }]
+    return [{ role: normalizedRole, actions: normalizedActions }]
   })
 }
 
@@ -551,12 +539,8 @@ function checkPermissionMatrixPolicy(
   }
 
   const roles = new Set(identity.roles ?? [])
-  const groups = new Set(identity.groups ?? [])
   for (const entry of entries) {
-    const matchesSubject = entry.subjectType === 'role'
-      ? roles.has(entry.subject)
-      : groups.has(entry.subject)
-    if (matchesSubject && entry.actions.includes(action)) {
+    if (roles.has(entry.role) && entry.actions.includes(action)) {
       return { allowed: true, actor: identity.subject }
     }
   }
@@ -1058,10 +1042,10 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  * Factory for a configurable auth policy plugin for `local`, `rbac`, and `kl-plugin-auth` providers.
  *
  * When `options.permissions` is provided it **overrides** the provider's default
- * policy behavior with an explicit permission matrix. The shared settings UI now
- * writes role-based rows and uses the live before-event catalog, while legacy
- * manual `subjectType: "group"` entries and `options.matrix` role maps remain
- * supported for backward compatibility.
+ * policy behavior with an explicit per-role permission matrix. The shared
+ * settings UI writes role-based rows and uses the live before-event catalog,
+ * while legacy `options.matrix` role maps remain supported for backward
+ * compatibility.
  *
  * When no explicit matrix is provided, `rbac` falls back to the fixed SDK role
  * matrix while `local` / `kl-plugin-auth` fall back to the existing
@@ -1073,8 +1057,8 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  *   "provider": "kl-plugin-auth",
  *   "options": {
  *     "permissions": [
- *       { "subject": "user", "actions": ["form.submit", "comment.create"] },
- *       { "subject": "admin", "actions": ["board.log.add", "settings.update"] }
+ *       { "role": "user", "actions": ["form.submit", "comment.create"] },
+ *       { "role": "admin", "actions": ["board.log.add", "settings.update"] }
  *     ]
  *   }
  * }

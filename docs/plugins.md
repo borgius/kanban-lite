@@ -260,7 +260,7 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog and lists the allowed before-events for that role. Existing legacy `options.matrix` role maps and manually-authored `subjectType: "group"` rows are still honored at runtime for backward compatibility.
+Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed before-events for that role. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
 
 > **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 

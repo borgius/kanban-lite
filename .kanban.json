@@ -228,7 +228,21 @@
       }
     },
     "auth.policy": {
-      "provider": "kl-plugin-auth"
+      "provider": "kl-plugin-auth",
+      "options": {
+        "permissions": [
+          {
+            "subjectType": "role",
+            "subject": "user",
+            "actions": [
+              "attachment.add",
+              "board.action.config.remove",
+              "board.delete",
+              "board.action.config.add"
+            ]
+          }
+        ]
+      }
     },
     "card.storage": {
       "provider": "localfs"
@@ -242,6 +256,24 @@
       "timestamp": true,
       "source": true,
       "objects": false
+    }
+  },
+  "pluginOptions": {
+    "auth.policy": {
+      "kl-plugin-auth": {
+        "permissions": [
+          {
+            "subjectType": "role",
+            "subject": "user",
+            "actions": [
+              "attachment.add",
+              "board.action.config.remove",
+              "board.delete",
+              "board.action.config.add"
+            ]
+          }
+        ]
+      }
     }
   }
 }

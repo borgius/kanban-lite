@@ -794,10 +794,9 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
           type: 'array',
           items: {
             type: 'object',
-            required: ['subject', 'actions'],
+            required: ['role', 'actions'],
             properties: {
-              subjectType: { enum: ['role', 'group'], default: 'role' },
-              subject: { type: 'string', enum: expect.any(Function) },
+              role: { type: 'string', enum: expect.any(Function) },
               actions: {
                 type: 'array',
                 minItems: 1,
@@ -821,12 +820,12 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
               scope: '#/properties/permissions',
               label: 'Permission rules',
               options: {
-                elementLabelProp: 'subject',
+                elementLabelProp: 'role',
                 showSortButtons: true,
                 detail: {
                   type: 'VerticalLayout',
                   elements: [
-                    { type: 'Control', scope: '#/properties/subject', label: 'Role' },
+                    { type: 'Control', scope: '#/properties/role', label: 'Role' },
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
@@ -835,7 +834,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                       rule: {
                         effect: 'DISABLE',
                         condition: {
-                          scope: '#/properties/subject',
+                          scope: '#/properties/role',
                           schema: {
                             not: {
                               type: 'string',
@@ -855,7 +854,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
     const permissionDetail = (((schema?.uiSchema as { elements?: Array<{ elements?: Array<{ options?: { detail?: { elements?: Array<{ scope?: string }> } } }> }> })?.elements?.[0]?.elements?.[0]?.options?.detail?.elements) ?? [])
     expect(permissionDetail.map((element) => element.scope)).toEqual([
-      '#/properties/subject',
+      '#/properties/role',
       '#/properties/actions',
     ])
     expect(schema?.secrets).toEqual([])
@@ -878,7 +877,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       : undefined
     const permissionItems = (((schema?.schema.properties as Record<string, unknown>).permissions as Record<string, unknown>).items as Record<string, unknown>).properties as Record<string, unknown>
 
-    expect((permissionItems.subject as Record<string, unknown>)).toMatchObject({
+    expect((permissionItems.role as Record<string, unknown>)).toMatchObject({
       type: 'string',
       enum: ['auditor', 'reviewer'],
     })
@@ -929,11 +928,10 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
   })
 
-  it('schema-shaped auth.policy options allow role rules and keep legacy group entries working', async () => {
+  it('schema-shaped auth.policy options allow role rules', async () => {
     const plugin = createAuthPolicyPlugin({
       permissions: [
-        { subjectType: 'group', subject: 'auditors', actions: ['board.log.add'] },
-        { subject: 'admin', actions: ['settings.update'] },
+        { role: 'admin', actions: ['settings.update'] },
       ],
     })
 
@@ -946,10 +944,6 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['admin'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
       allowed: true,
       actor: 'Ada',
-    })
-    await expect(plugin.checkPolicy({ subject: 'Bea', groups: ['auditors'] }, 'board.log.add', { transport: 'http' })).resolves.toMatchObject({
-      allowed: true,
-      actor: 'Bea',
     })
     await expect(plugin.checkPolicy({ subject: 'Ada', roles: ['auditor'] }, 'settings.update', { transport: 'http' })).resolves.toMatchObject({
       allowed: false,

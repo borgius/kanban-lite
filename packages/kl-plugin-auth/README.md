@@ -45,7 +45,7 @@ Current schema-backed fields:
 
 The shared Plugin Options editor seeds `roles[]` with the default catalog `user`, `manager`, `admin` when the field is missing, still lets users add or delete extra entries like a normal array, and turns each `users[].role` field into a picker sourced from that live role catalog instead of a hard-coded enum.
 
-The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog, and `actions[]` is rendered as a before-event picker resolved from `sdk.listAvailableEvents({ type: 'before' })` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog.
+The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog via `permissions[].role`, and `actions[]` is rendered as a before-event picker resolved from `sdk.listAvailableEvents({ type: 'before' })` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog.
 
 Secret metadata is declared for:
 
@@ -117,7 +117,7 @@ Provide `options.permissions` on `auth.policy` to override the default behaviour
       "options": {
         "permissions": [
           {
-            "subject": "admin",
+            "role": "admin",
             "actions": ["settings.update", "board.delete"]
           }
         ]
@@ -127,7 +127,7 @@ Provide `options.permissions` on `auth.policy` to override the default behaviour
 }
 ```
 
-Legacy role-map `options.matrix` objects remain supported at runtime for existing workspaces. Manually-authored legacy `subjectType: "group"` entries are also still honored at runtime for backward compatibility, but the shared Plugin Options UI now edits the simpler role-based `permissions` format.
+Legacy role-map `options.matrix` objects remain supported at runtime for existing workspaces.
 
 ### Local standalone login + API token
 

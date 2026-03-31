@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Available event discovery across SDK/API/CLI/MCP**: `KanbanSDK` now exposes `listAvailableEvents({ type?, mask? })` so callers can inspect built-in before/after events with optional wildcard filtering. SDK extension plugins may declare extra discoverable events through `sdkExtensionPlugin.events`, and the same catalog is now exposed through `kl events`, standalone `GET /api/events`, and the MCP `list_available_events` tool.
 
-- **Dynamic auth role catalogs and editable permission matrices**: `kl-plugin-auth` now lets local auth configs maintain a reusable `roles[]` catalog that defaults to `user`, `manager`, and `admin`, drives the shared Plugin Options role picker, still allows adding or deleting extra roles as a normal array, drops local-user group editing from `auth.identity`, preserves arbitrary role strings at runtime, keeps `auth.policy.options.permissions[]` available for custom role/group action rules, and teaches `kl auth create-user --role <role>` to auto-register new roles in that catalog.
+- **Dynamic auth role catalogs and editable permission matrices**: `kl-plugin-auth` now lets local auth configs maintain a reusable `roles[]` catalog that defaults to `user`, `manager`, and `admin`, drives the shared Plugin Options role picker, still allows adding or deleting extra roles as a normal array, drops local-user group editing from `auth.identity`, preserves arbitrary role strings at runtime, keeps `auth.policy.options.permissions[]` available for custom per-role action rules, and teaches `kl auth create-user --role <role>` to auto-register new roles in that catalog.
 
 - **Modern React lint guardrails for contributors and agents**: Added stricter React/TSX ESLint rules for self-closing JSX, boolean props, useless fragments, stable key guidance, and nested-component warnings, plus workspace instruction files that tell agents to keep React changes lint-clean instead of papering over rules with inline disables.
 
@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin settings disabled-provider option persistence**: Schema-driven provider forms now remain visible and saveable even when a provider is toggled off. Inactive-provider edits are cached under `pluginOptions[capability][providerId]`, selected-provider enablement still stays tied to `plugins[capability].provider`, and re-enabling a provider restores its cached options automatically.
 
 - **Auth policy options matrix UX**: `kl-plugin-auth` now treats shared `auth.policy.permissions[]` rows as role-based by default, sources role choices from `auth.identity.options.roles`, and filters the action picker to before-events only so new permission rows save as valid, usable policy rules without an extra subject-type field.
+
+- **Auth policy permission rows are now explicitly role-based**: `kl-plugin-auth` now uses `auth.policy.options.permissions[].role` instead of `subject`, removes unused group-only matrix handling from the shared auth-policy path, and keeps legacy `options.matrix` role maps working for existing workspaces.
 
 - **Plugin settings table-array buttons**: Styled the JSON Forms table-based array add/delete controls in the Settings panel so primitive list editors such as the auth role catalog no longer render unthemed browser-default buttons.
 

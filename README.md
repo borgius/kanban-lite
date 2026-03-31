@@ -1641,7 +1641,7 @@ kl auth create-user --username admin --password s3cr3t --role reviewer
 
 This command hashes the password, appends the user entry to `plugins["auth.identity"].options.users`, seeds the default `user` / `manager` / `admin` role catalog when missing, and appends any new custom role to `plugins["auth.identity"].options.roles`.
 
-The shared settings UI now exposes that `roles[]` catalog directly beside `users[]`, seeds it with `user`, `manager`, and `admin` by default, and uses it as the live enum source for both `users[].role` and `auth.policy.permissions[].subject`. The `local` policy itself remains permissive for any authenticated identity unless you configure an explicit `auth.policy.options.permissions[]` matrix. Anonymous callers are still denied with `auth.identity.missing`.
+The shared settings UI now exposes that `roles[]` catalog directly beside `users[]`, seeds it with `user`, `manager`, and `admin` by default, and uses it as the live enum source for both `users[].role` and `auth.policy.permissions[].role`. The `local` policy itself remains permissive for any authenticated identity unless you configure an explicit `auth.policy.options.permissions[]` matrix. Anonymous callers are still denied with `auth.identity.missing`.
 
 To override the default role behavior, add a custom permission matrix on `auth.policy`. In the shared Plugin Options UI, each row now picks one role plus the before-events that role may run:
 
@@ -1653,7 +1653,7 @@ To override the default role behavior, add a custom permission matrix on `auth.p
       "options": {
         "permissions": [
           {
-            "subject": "admin",
+            "role": "admin",
             "actions": ["settings.update", "board.delete"]
           }
         ]
@@ -1663,7 +1663,7 @@ To override the default role behavior, add a custom permission matrix on `auth.p
 }
 ```
 
-Legacy `options.matrix` role maps remain supported for backward compatibility. Manually-authored legacy `subjectType: "group"` entries are also still honored at runtime, but the shared Plugin Options UI now edits the simpler role-based `permissions` format and sources its action picker from the before-event catalog.
+Legacy `options.matrix` role maps remain supported for backward compatibility, and the shared Plugin Options UI now edits the simpler role-based `permissions` format while sourcing its action picker from the before-event catalog.
 
 
 

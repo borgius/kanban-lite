@@ -6,7 +6,7 @@ permalink: /docs/storage/
 ---
 <div class="ref-intro">
   <h1>Storage Providers</h1>
-  <p>Kanban Lite decouples <em>what</em> you store from <em>where</em> you store it through the capability-based plugin system. Two namespaces control storage: <code>card.storage</code> for cards and comments, and <code>attachment.storage</code> for file attachments. Swap providers in <code>.kanban.json</code> without changing any application code.</p>
+  <p>Kanban Lite decouples <em>what</em> you store from <em>where</em> you store it through the capability-based plugin system. <code>card.storage</code> owns cards and comments, while <code>attachment.storage</code> can override attachment handling when you want a different backend such as S3. For first-party storage plugins, attachments are normally auto-derived from the active <code>card.storage</code> provider and reuse the same options.</p>
   <div class="capability-grid">
     <div class="capability-card">
       <strong>markdown <span class="badge badge--default">default</span></strong>
@@ -90,12 +90,10 @@ kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db</code></pre>
       "options": {
         "sqlitePath": ".kanban/kanban.db"
       }
-    },
-    "attachment.storage": {
-      "provider": "sqlite"
     }
   }
 }</code></pre>
+<p>The matching <code>attachment.storage</code> and <code>card.state</code> providers are auto-derived from the same SQLite package/options, so no extra provider block is needed unless you intentionally choose a different attachment backend.</p>
 
 <h3>MySQL (<code>card.storage</code>)</h3>
 <pre><code class="language-bash"># Install

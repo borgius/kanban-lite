@@ -902,11 +902,12 @@ export function normalizeCardStateCapabilities(
  * Precedence:
  * 1. Explicit `plugins[namespace]`
  * 2. Legacy `storageEngine` / `sqlitePath` for `card.storage`
- * 3. Backward-compatible defaults (`localfs` + `localfs`)
+ * 3. Backward-compatible defaults (`localfs` + derived attachment provider)
  *
- * Explicit built-in `attachment.storage` providers such as `sqlite` and
- * `mysql` remain opt-in. Omitting `attachment.storage` never auto-switches
- * it away from the legacy `localfs` default.
+ * `attachment.storage` follows the active `card.storage` provider by default,
+ * reusing the same provider id and options for first-party storage plugins.
+ * Configure `attachment.storage` explicitly only when you want a different
+ * provider (for example an attachment-only plugin such as S3).
  *
  * The input object is never mutated.
  */
@@ -933,11 +934,21 @@ export function normalizeStorageCapabilities(
       }
     : legacyCardProvider
 
+  const configuredAttachmentStorage = config.plugins?.['attachment.storage']
+    ? cloneProviderRef(config.plugins['attachment.storage'])
+    : null
+
+  const shouldReuseCardStorageForAttachments = configuredAttachmentStorage === null
+    || configuredAttachmentStorage.provider === normalizedCardStorage.provider
+    || (configuredAttachmentStorage.provider === 'localfs' && normalizedCardStorage.provider !== 'localfs')
+
+  const normalizedAttachmentStorage = shouldReuseCardStorageForAttachments
+    ? cloneProviderRef(normalizedCardStorage)
+    : configuredAttachmentStorage
+
   return {
     'card.storage': normalizedCardStorage,
-    'attachment.storage': config.plugins?.['attachment.storage']
-      ? cloneProviderRef(config.plugins['attachment.storage'])
-      : { provider: 'localfs' },
+    'attachment.storage': normalizedAttachmentStorage,
   }
 }
 

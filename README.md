@@ -1207,13 +1207,14 @@ Comments are stored as additional YAML documents in the same file, keeping every
 
 When you switch the `card.storage` provider to `sqlite` or `mysql`, card/comment persistence moves behind that provider while `.kanban.json` remains the source of truth for board config, columns, labels, settings, forms, and webhooks.
 
-Attachments keep their legacy default unless you opt in explicitly: omitted `attachment.storage` still resolves to `localfs`, even when `card.storage` is `sqlite` or `mysql`.
+For first-party storage plugins, `attachment.storage` now follows the active `card.storage` provider automatically and reuses the same provider options. Configure `attachment.storage` explicitly only when you want a different attachment provider such as S3.
 
 ## Plugin Settings
 
 Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
+- **Storage-backed `attachment.storage` reuse**: when attachments come from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Storage-backed `card.state` reuse**: when `card.state` comes from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
@@ -1234,7 +1235,7 @@ For the deeper runtime model, provider discovery rules, and plugin authoring det
 Kanban Lite resolves storage by capability namespace. When no explicit config is present, it defaults to:
 
 - `card.storage` → `localfs`
-- `attachment.storage` → `localfs`
+- `attachment.storage` → follows `card.storage` (`localfs` by default)
 
 Legacy `.kanban.json` fields still work and are normalized into the same runtime capability map:
 
@@ -1255,9 +1256,6 @@ The equivalent capability-based config is:
       "options": {
         "sqlitePath": ".kanban/kanban.db"
       }
-    },
-    "attachment.storage": {
-      "provider": "localfs"
     }
   }
 }
@@ -1268,9 +1266,9 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
 | `card.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs` (markdown engine). Legacy `markdown` input is normalized to `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`. |
-| `attachment.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are explicit opt-ins that resolve through the matching external package. Omitting this namespace still falls back to `localfs`. |
+| `attachment.storage` | follows `card.storage` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs`. For first-party storage plugins, omitted or redundant matching `attachment.storage` config is auto-derived from the active `card.storage` provider and reuses its options. Configure this namespace only when you want a different provider such as `kl-plugin-attachment-s3`. |
 
-If you want attachments to route through the SQLite or MySQL attachment capability instead of the legacy `localfs` default, configure the matching provider explicitly:
+For first-party storage plugins, selecting `card.storage` is enough to activate the matching attachment handler with the same options:
 
 ```json
 {
@@ -1280,15 +1278,12 @@ If you want attachments to route through the SQLite or MySQL attachment capabili
       "options": {
         "sqlitePath": ".kanban/kanban.db"
       }
-    },
-    "attachment.storage": {
-      "provider": "sqlite"
     }
   }
 }
 ```
 
-The same pattern applies to MySQL:
+If you want a different attachment backend, configure `attachment.storage` explicitly. For example, keep MySQL cards but move attachments to S3:
 
 ```json
 {
@@ -1304,7 +1299,7 @@ The same pattern applies to MySQL:
       }
     },
     "attachment.storage": {
-      "provider": "mysql"
+      "provider": "kl-plugin-attachment-s3"
     }
   }
 }
@@ -1384,7 +1379,7 @@ Notes:
 - `database` is required.
 - Install `kl-plugin-storage-mysql` in the host environment that loads the plugin.
 - The `mysql2` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the MySQL provider.
-- `mysql` stores cards/comments in MySQL, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mysql"`.
+- `mysql` stores cards/comments in MySQL, and the matching attachment handler is auto-derived from the same package/options unless you explicitly choose a different `attachment.storage` provider.
 
 ```bash
 npm install kl-plugin-storage-mysql mysql2
@@ -1416,7 +1411,7 @@ Notes:
 - `database` is required.
 - Install `kl-plugin-storage-postgresql` in the host environment that loads the plugin.
 - The `pg` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the PostgreSQL provider.
-- `postgresql` stores cards/comments in PostgreSQL, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"postgresql"`.
+- `postgresql` stores cards/comments in PostgreSQL, and the matching attachment handler is auto-derived from the same package/options unless you explicitly choose a different `attachment.storage` provider.
 
 ```bash
 npm install kl-plugin-storage-postgresql pg
@@ -1443,7 +1438,7 @@ Notes:
 - `database` is required.
 - Install `kl-plugin-storage-mongodb` in the host environment that loads the plugin.
 - The `mongodb` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the MongoDB provider.
-- `mongodb` stores cards/comments in MongoDB, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"mongodb"`.
+- `mongodb` stores cards/comments in MongoDB, and the matching attachment handler is auto-derived from the same package/options unless you explicitly choose a different `attachment.storage` provider.
 
 ```bash
 npm install kl-plugin-storage-mongodb mongodb
@@ -1470,7 +1465,7 @@ Notes:
 
 - Install `kl-plugin-storage-redis` in the host environment that loads the plugin.
 - The `ioredis` driver is an optional runtime dependency of that external package and is loaded lazily. Install it only in environments that actually use the Redis provider.
-- `redis` stores cards/comments in Redis hashes, while attachments still default to the core `localfs` attachment provider unless you explicitly set `plugins["attachment.storage"].provider` to `"redis"`.
+- `redis` stores cards/comments in Redis hashes, and the matching attachment handler is auto-derived from the same package/options unless you explicitly choose a different `attachment.storage` provider.
 
 ```bash
 npm install kl-plugin-storage-redis ioredis
@@ -1487,9 +1482,11 @@ These commands/endpoints/tools expose provider ids and host-facing metadata with
 
 Core `localfs` (markdown engine) reports `watchGlob: "boards/**/*.md"`. The `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` compatibility providers report `isFileBacked: false` and `watchGlob: null` through their external plugin metadata, so host layers do not have to infer them from the storage engine name. Standalone `GET /api/storage` and `GET /api/workspace` also include `providers["webhook.delivery"]`, and SDK consumers can call `sdk.getWebhookStatus()` to see whether `kl-plugin-webhook` is active. When the plugin is not installed, `webhookProvider` returns `'none'` and webhook CRUD methods throw a deterministic install error.
 
+For `attachment.storage`, the same first-party storage plugins (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`) are auto-derived from the active `card.storage` provider and reuse the same option payload. There is no need to keep a matching `plugins["attachment.storage"]` block unless you want a different provider such as S3.
+
 For `card.state`, card-state is automatically derived from the active `card.storage` plugin. When `card.storage` is `localfs` (default), the built-in file-backed provider is used. When `card.storage` is an external plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is loaded from the same storage package. There is no need to install or configure a separate `card.state` package. In auth-absent mode, both surfaces share the same stable default actor contract. When a real `auth.identity` provider is configured but no actor can be resolved, status/read/open surfaces report `identity-unavailable` / `ERR_CARD_STATE_IDENTITY_UNAVAILABLE` instead of implying that the backend itself is missing. This actor-scoped unread/open state is separate from `get_active_card`, `kl active`, and `/api/tasks/active`, which describe UI-style active-card selection.
 
-In the shared Plugin Options workflow, that means the storage-backed `card.state` row is informational only: it follows the selected `card.storage` provider automatically and does not require a second set of connection options in `.kanban.json`.
+In the shared Plugin Options workflow, that means the storage-backed `attachment.storage` and `card.state` rows are informational only: they follow the selected `card.storage` provider automatically and do not require second connection-option blocks in `.kanban.json`.
 
 ### Migrating between compatibility-backed providers
 

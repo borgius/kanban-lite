@@ -26,7 +26,7 @@ npm install kl-plugin-storage-sqlite better-sqlite3
 - `card.storage`
 - `attachment.storage`
 
-`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `sqlite` here also enables the package's SQLite-backed card-state provider without a separate `plugins["card.state"]` entry.
+In kanban-lite, selecting `sqlite` under `card.storage` is enough to auto-derive this package's `attachment.storage` and `card.state` providers with the same options. You only need an explicit `plugins["attachment.storage"]` entry when choosing a different attachment backend such as S3.
 
 ## What it does
 
@@ -48,9 +48,6 @@ Minimal setup using the default SQLite path:
   "plugins": {
     "card.storage": {
       "provider": "sqlite"
-    },
-    "attachment.storage": {
-      "provider": "sqlite"
     }
   }
 }
@@ -66,9 +63,6 @@ Explicit database path:
       "options": {
         "sqlitePath": ".kanban/kanban.db"
       }
-    },
-    "attachment.storage": {
-      "provider": "sqlite"
     }
   }
 }

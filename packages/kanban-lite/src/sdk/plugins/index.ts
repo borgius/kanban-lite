@@ -1606,6 +1606,41 @@ function pruneRedundantDerivedCardStateConfig(config: KanbanConfig): boolean {
   return true
 }
 
+function isRedundantDerivedAttachmentStorageConfig(configured: ProviderRef, derived: ProviderRef): boolean {
+  const normalizedConfiguredProvider = normalizeProviderIdForComparison('attachment.storage', configured.provider)
+  const normalizedDerivedProvider = normalizeProviderIdForComparison('attachment.storage', derived.provider)
+
+  return normalizedConfiguredProvider === normalizedDerivedProvider
+    || (normalizedConfiguredProvider === 'localfs' && normalizedDerivedProvider !== 'localfs')
+}
+
+function pruneRedundantDerivedAttachmentStorageConfig(config: KanbanConfig): boolean {
+  const configured = config.plugins?.['attachment.storage']
+  if (!configured) return false
+
+  const derived = normalizeStorageCapabilities(config)['card.storage']
+  if (!isRedundantDerivedAttachmentStorageConfig(configured, derived)) return false
+
+  const plugins = getMutablePluginsRecord(config)
+  delete plugins['attachment.storage']
+
+  setCachedPluginProviderOptions(config, 'attachment.storage', configured.provider, undefined)
+  const normalizedConfiguredProvider = normalizeProviderIdForComparison('attachment.storage', configured.provider)
+  if (normalizedConfiguredProvider !== configured.provider) {
+    setCachedPluginProviderOptions(config, 'attachment.storage', normalizedConfiguredProvider, undefined)
+  }
+
+  setCachedPluginProviderOptions(config, 'attachment.storage', derived.provider, undefined)
+  pruneEmptyPluginSettingsContainers(config)
+  return true
+}
+
+function pruneRedundantDerivedStorageConfig(config: KanbanConfig): boolean {
+  const prunedAttachmentStorage = pruneRedundantDerivedAttachmentStorageConfig(config)
+  const prunedCardState = pruneRedundantDerivedCardStateConfig(config)
+  return prunedAttachmentStorage || prunedCardState
+}
+
 function getPersistedPluginProviderOptions(
   config: PluginSettingsConfigSnapshot,
   capability: PluginCapabilityNamespace,
@@ -1942,6 +1977,7 @@ async function inspectExternalPluginModule(
   // -----------------------------------------------------------------------
   const manifest = mod.pluginManifest
   if (isValidPluginPackageManifest(manifest)) {
+    const storageBackedAttachmentProviderIds = new Set(manifest.capabilities['card.storage'] ?? [])
     const storageBackedCardStateProviderIds = new Set(manifest.capabilities['card.storage'] ?? [])
     for (const [ns, providerIds] of Object.entries(manifest.capabilities)) {
       const capability = ns as PluginCapabilityNamespace
@@ -1960,13 +1996,16 @@ async function inspectExternalPluginModule(
             break
           }
           case 'attachment.storage': {
+            const shouldExposeOptionsSchema = !storageBackedAttachmentProviderIds.has(providerId)
             const plugin = isValidAttachmentStoragePluginCandidate(mod.attachmentStoragePlugin)
               ? mod.attachmentStoragePlugin
               : isValidAttachmentStoragePluginCandidate(mod.default) ? mod.default : null
             if (plugin) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
-                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, plugin, sdk),
+                ...(shouldExposeOptionsSchema
+                  ? { optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, plugin, sdk) }
+                  : {}),
               })
             }
             break
@@ -2320,7 +2359,7 @@ export async function discoverPluginSettingsInventory(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsPayload> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  if (pruneRedundantDerivedCardStateConfig(config)) {
+  if (pruneRedundantDerivedStorageConfig(config)) {
     writePluginSettingsConfigDocument(workspaceRoot, config)
   }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
@@ -2352,7 +2391,7 @@ export async function readPluginSettingsProvider(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  if (pruneRedundantDerivedCardStateConfig(config)) {
+  if (pruneRedundantDerivedStorageConfig(config)) {
     writePluginSettingsConfigDocument(workspaceRoot, config)
   }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
@@ -2402,7 +2441,7 @@ export async function persistPluginSettingsProviderSelection(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  pruneRedundantDerivedCardStateConfig(config)
+  pruneRedundantDerivedStorageConfig(config)
   const configuredRef = config.plugins?.[capability]
     ? cloneProviderRef(config.plugins[capability])
     : null
@@ -2447,7 +2486,7 @@ export async function persistPluginSettingsProviderSelection(
   }
 
   getMutablePluginsRecord(config)[capability] = nextRef
-  pruneRedundantDerivedCardStateConfig(config)
+  pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
   const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
@@ -2469,7 +2508,7 @@ export async function persistPluginSettingsProviderOptions(
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
-  pruneRedundantDerivedCardStateConfig(config)
+  pruneRedundantDerivedStorageConfig(config)
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
   const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
@@ -2491,7 +2530,7 @@ export async function persistPluginSettingsProviderOptions(
       options: persistedOptions,
     }
   }
-  pruneRedundantDerivedCardStateConfig(config)
+  pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
   const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)

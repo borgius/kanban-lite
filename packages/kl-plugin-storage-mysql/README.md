@@ -21,7 +21,7 @@ npm install kl-plugin-storage-mysql mysql2
 - `card.storage` — persists cards and comments in MySQL tables
 - `attachment.storage` — copies attachment files to local filesystem paths under `.kanban/`
 
-`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `mysql` here also enables the package's MySQL-backed card-state provider without a separate `plugins["card.state"]` entry.
+In kanban-lite, selecting `mysql` under `card.storage` is enough to auto-derive this package's `attachment.storage` and `card.state` providers with the same options. You only need an explicit `plugins["attachment.storage"]` entry when choosing a different attachment backend such as S3.
 
 ## `.kanban.json` example
 

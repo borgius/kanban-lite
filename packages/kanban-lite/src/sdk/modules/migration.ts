@@ -7,7 +7,7 @@ import { resolveCapabilityBag } from '../plugins'
 import type { StorageEngine } from '../plugins/types'
 import type { SDKContext } from './context'
 
-const CARD_BOUND_ATTACHMENT_PROVIDERS = new Set(['sqlite', 'mysql'])
+const STORAGE_BACKED_ATTACHMENT_PROVIDERS = new Set(['sqlite', 'mysql', 'postgresql', 'mongodb', 'redis'])
 
 function removeCardStoragePlugin(config: KanbanConfig): KanbanConfig {
   if (!config.plugins?.['card.storage']) return config
@@ -19,10 +19,17 @@ function removeCardStoragePlugin(config: KanbanConfig): KanbanConfig {
   }
 }
 
-function removeIncompatibleBuiltInAttachmentPlugin(config: KanbanConfig, targetCardProvider: string): KanbanConfig {
+function removeDerivedAttachmentPlugin(config: KanbanConfig, targetCardProvider: string): KanbanConfig {
   const attachmentProvider = config.plugins?.['attachment.storage']?.provider
-  if (!attachmentProvider || !CARD_BOUND_ATTACHMENT_PROVIDERS.has(attachmentProvider)) return config
-  if (attachmentProvider === targetCardProvider) return config
+  if (!attachmentProvider) return config
+
+  const targetUsesStorageBackedAttachments = STORAGE_BACKED_ATTACHMENT_PROVIDERS.has(targetCardProvider)
+  const attachmentIsStorageBacked = STORAGE_BACKED_ATTACHMENT_PROVIDERS.has(attachmentProvider)
+  const shouldRemove = targetUsesStorageBackedAttachments
+    ? attachmentProvider === 'localfs' || attachmentProvider === targetCardProvider || attachmentIsStorageBacked
+    : attachmentProvider === 'localfs' || attachmentIsStorageBacked
+
+  if (!shouldRemove) return config
 
   const nextPlugins = { ...config.plugins }
   delete nextPlugins['attachment.storage']
@@ -33,7 +40,7 @@ function removeIncompatibleBuiltInAttachmentPlugin(config: KanbanConfig, targetC
 }
 
 function getMigrationAttachmentProvider(targetCardProvider: string): { provider: string } {
-  return CARD_BOUND_ATTACHMENT_PROVIDERS.has(targetCardProvider)
+  return STORAGE_BACKED_ATTACHMENT_PROVIDERS.has(targetCardProvider)
     ? { provider: targetCardProvider }
     : { provider: 'localfs' }
 }
@@ -106,7 +113,7 @@ export async function migrateToSqlite(ctx: SDKContext, { dbPath }: { dbPath?: st
 
   const config = readConfig(ctx.workspaceRoot)
   writeConfig(ctx.workspaceRoot, {
-    ...removeIncompatibleBuiltInAttachmentPlugin(removeCardStoragePlugin(config), 'sqlite'),
+    ...removeDerivedAttachmentPlugin(removeCardStoragePlugin(config), 'sqlite'),
     storageEngine: 'sqlite',
     sqlitePath: resolvedDbPath,
   })
@@ -126,7 +133,7 @@ export async function migrateToMarkdown(ctx: SDKContext): Promise<number> {
   const config = readConfig(ctx.workspaceRoot)
   targetEngine.close()
 
-  const cleanedConfig = removeIncompatibleBuiltInAttachmentPlugin(removeCardStoragePlugin(config), 'localfs')
+  const cleanedConfig = removeDerivedAttachmentPlugin(removeCardStoragePlugin(config), 'localfs')
   const restConfig = { ...cleanedConfig } as typeof config & { storageEngine?: string; sqlitePath?: string }
   delete restConfig.storageEngine
   delete restConfig.sqlitePath

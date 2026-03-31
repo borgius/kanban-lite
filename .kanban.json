@@ -205,9 +205,6 @@
         ]
       }
     },
-    "attachment.storage": {
-      "provider": "localfs"
-    },
     "auth.identity": {
       "provider": "kl-plugin-auth",
       "options": {

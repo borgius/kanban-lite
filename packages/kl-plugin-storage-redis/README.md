@@ -21,7 +21,7 @@ npm install kl-plugin-storage-redis ioredis
 - `card.storage` — persists cards and comments in Redis hashes
 - `attachment.storage` — copies attachment files to local filesystem paths under `.kanban/`
 
-`card.state` is auto-derived by kanban-lite from the active `card.storage` provider, so selecting `redis` here also enables the package's Redis-backed card-state provider without a separate `plugins["card.state"]` entry.
+In kanban-lite, selecting `redis` under `card.storage` is enough to auto-derive this package's `attachment.storage` and `card.state` providers with the same options. You only need an explicit `plugins["attachment.storage"]` entry when choosing a different attachment backend such as S3.
 
 ## `.kanban.json` example
 

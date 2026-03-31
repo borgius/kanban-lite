@@ -78,9 +78,28 @@ describe('normalizeStorageCapabilities', () => {
       expect(result['attachment.storage']).toEqual({ provider: 'localfs' })
     })
 
-    it('localfs default is independent of storageEngine value', () => {
+    it('derives attachment.storage from card.storage when storageEngine selects sqlite', () => {
       const result = normalizeStorageCapabilities(makeConfig({ storageEngine: 'sqlite' }))
-      expect(result['attachment.storage']).toEqual({ provider: 'localfs' })
+      expect(result['attachment.storage']).toEqual({
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/kanban.db' },
+      })
+    })
+
+    it('reuses card.storage options when attachment.storage selects the same provider', () => {
+      const result = normalizeStorageCapabilities(
+        makeConfig({
+          plugins: {
+            'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+            'attachment.storage': { provider: 'sqlite' },
+          },
+        })
+      )
+
+      expect(result['attachment.storage']).toEqual({
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/custom.db' },
+      })
     })
 
     it('plugins["attachment.storage"] overrides localfs default', () => {

@@ -886,6 +886,25 @@ describe('KanbanSDK plugin settings inventory', () => {
         isSelected: true,
       }))
 
+      const attachmentStorage = inventory.capabilities.find((entry) => entry.capability === 'attachment.storage')
+      const sqliteAttachmentProvider = attachmentStorage?.providers.find((entry) => entry.providerId === 'sqlite')
+
+      expect(attachmentStorage).toMatchObject({
+        capability: 'attachment.storage',
+        selected: {
+          capability: 'attachment.storage',
+          providerId: 'sqlite',
+          source: 'default',
+        },
+      })
+      expect(sqliteAttachmentProvider).toMatchObject({
+        providerId: 'sqlite',
+        packageName: 'kl-plugin-storage-sqlite',
+        discoverySource: 'workspace',
+        isSelected: true,
+      })
+      expect(sqliteAttachmentProvider).not.toHaveProperty('optionsSchema')
+
       const cardState = inventory.capabilities.find((entry) => entry.capability === 'card.state')
       const sqliteCardStateProvider = cardState?.providers.find((entry) => entry.providerId === 'sqlite')
 
@@ -942,6 +961,51 @@ describe('KanbanSDK plugin settings inventory', () => {
 
       expect(cardState?.selected).toEqual({
         capability: 'card.state',
+        providerId: 'sqlite',
+        source: 'default',
+      })
+      expect(persistedConfig.plugins).toEqual({
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+      })
+      expect(persistedConfig.pluginOptions).toBeUndefined()
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('prunes redundant explicit attachment.storage config that matches card.storage', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+          'attachment.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/ignored.db' } },
+        },
+        pluginOptions: {
+          'attachment.storage': {
+            sqlite: { sqlitePath: '.kanban/ignored.db' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = await sdk.listPluginSettings()
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+        pluginOptions?: Record<string, Record<string, Record<string, unknown>>>
+      }
+
+      const attachmentStorage = inventory.capabilities.find((entry) => entry.capability === 'attachment.storage')
+
+      expect(attachmentStorage?.selected).toEqual({
+        capability: 'attachment.storage',
         providerId: 'sqlite',
         source: 'default',
       })
@@ -1035,8 +1099,8 @@ describe('KanbanSDK plugin settings inventory', () => {
       })
       expect(persistedConfig.plugins).toMatchObject({
         'card.storage': { provider: 'localfs' },
-        'attachment.storage': { provider: 'localfs' },
       })
+      expect(persistedConfig.plugins?.['attachment.storage']).toBeUndefined()
       expect(persistedConfig).toMatchObject({
         pluginOptions: {
           'card.storage': {

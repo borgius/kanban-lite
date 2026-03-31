@@ -674,7 +674,8 @@ That means:
 
 - with core `markdown`, `localfs` delegates directly to the markdown engine,
 - with external card providers that expose the same local attachment semantics, `localfs` delegates to the active engine,
-- when `attachment.storage` stays on `localfs`, the resolver still gives the selected external card provider package a same-package chance to provide `attachment.storage` first.
+- omitted or redundant matching `attachment.storage` config is normalized to the active `card.storage` provider/options for first-party storage plugins,
+- when `attachment.storage` would otherwise stay on `localfs`, the resolver still gives the selected external card provider package a same-package chance to provide `attachment.storage` first.
 
 ---
 

@@ -187,7 +187,7 @@ describe('Storage Engine Migration', () => {
       const cfg = readConfig(workspaceDir)
       expect(cfg.storageEngine).toBe('sqlite')
       expect(cfg.plugins?.['card.storage']).toBeUndefined()
-      expect(cfg.plugins?.['attachment.storage']).toEqual({ provider: 'localfs' })
+      expect(cfg.plugins?.['attachment.storage']).toBeUndefined()
       sdk.close()
     })
 

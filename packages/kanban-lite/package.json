@@ -132,10 +132,12 @@
     "release:minor": "pnpm --dir ../.. run release:minor",
     "release:major": "pnpm --dir ../.. run release:major"
   },
-  "dependencies": {
+  "devDependencies": {
     "kl-plugin-auth": "workspace:*",
     "kl-plugin-callback": "workspace:*",
-    "kl-plugin-webhook": "workspace:*",
+    "kl-plugin-webhook": "workspace:*"
+  },
+  "dependencies": {
     "@aws-sdk/client-s3": "^3.1013.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@fastify/swagger": "^9.7.0",

@@ -549,18 +549,26 @@ function _csRedisKey(keyPrefix: string, input: CardStateKey | (CardStateUnreadKe
  * using `{keyPrefix}:card_state:{actorId}:{boardId}:{cardId}:{domain}` keys.
  */
 export function createCardStateProvider(context: CardStateModuleContext): CardStateProvider {
-  const Redis = loadRedisDriver()
-  const client = new Redis.default({
-    host: (context.options?.['host'] as string | undefined) ?? 'localhost',
-    port: typeof context.options?.['port'] === 'number' ? context.options['port'] : 6379,
-    password: context.options?.['password'] as string | undefined,
-    db: typeof context.options?.['db'] === 'number' ? context.options['db'] : 0,
-  })
+  let client: RedisClient | null = null
+  const getClient = (): RedisClient => {
+    if (!client) {
+      const Redis = loadRedisDriver()
+      client = new Redis.default({
+        host: (context.options?.['host'] as string | undefined) ?? 'localhost',
+        port: typeof context.options?.['port'] === 'number' ? context.options['port'] : 6379,
+        password: context.options?.['password'] as string | undefined,
+        db: typeof context.options?.['db'] === 'number' ? context.options['db'] : 0,
+        lazyConnect: true,
+      })
+    }
+    return client
+  }
   const keyPrefix = (context.options?.['keyPrefix'] as string | undefined) ?? 'kanban'
 
   return {
     manifest: Object.freeze({ id: 'redis', provides: ['card.state'] as const }),
     async getCardState(input: CardStateKey): Promise<CardStateRecord | null> {
+      const client = getClient()
       const raw = await client.hget(_csRedisKey(keyPrefix, input), 'data')
       if (!raw) return null
       try {
@@ -570,6 +578,7 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
       } catch { return null }
     },
     async setCardState(input: CardStateWriteInput): Promise<CardStateRecord> {
+      const client = getClient()
       const updatedAt = _csGetUpdatedAt(input.updatedAt)
       const data = JSON.stringify({ value: input.value, updatedAt })
       await client.hset(_csRedisKey(keyPrefix, input), 'data', data)

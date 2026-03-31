@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Redis `card.state` provider no longer connects during load/build**: `kl-plugin-storage-redis` now creates its `ioredis` client lazily with `lazyConnect`, matching the storage engine path so package discovery and workspace builds do not emit stray `ECONNREFUSED` errors just from resolving the provider.
+
 - **Plugin settings disabled-provider option persistence**: Schema-driven provider forms now remain visible and saveable even when a provider is toggled off. Inactive-provider edits are cached under `pluginOptions[capability][providerId]`, selected-provider enablement still stays tied to `plugins[capability].provider`, and re-enabling a provider restores its cached options automatically.
 
 - **Auth policy options matrix UX**: `kl-plugin-auth` now treats shared `auth.policy.permissions[]` rows as role-based by default, sources role choices from `auth.identity.options.roles`, and filters the action picker to before-events only so new permission rows save as valid, usable policy rules without an extra subject-type field.

@@ -157,6 +157,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(SidebarViewProvider.viewType, sidebarProvider)
   )
 
+  const reloadAuthScopedViews = async () => {
+    await sidebarProvider.reloadState()
+    await KanbanPanel.currentPanel?.reloadState()
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('kanban-lite.open', () => {
       const wasOpen = !!KanbanPanel.currentPanel
@@ -186,7 +191,7 @@ export function activate(context: vscode.ExtensionContext) {
       })
       if (!token) return
       await context.secrets.store(AUTH_TOKEN_SECRET_KEY, token)
-      await KanbanPanel.currentPanel?.reloadState()
+      await reloadAuthScopedViews()
       vscode.window.showInformationMessage('Kanban auth token saved securely in VS Code.')
     })
   )
@@ -194,7 +199,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('kanban-lite.clearAuthToken', async () => {
       await context.secrets.delete(AUTH_TOKEN_SECRET_KEY)
-      await KanbanPanel.currentPanel?.reloadState()
+      await reloadAuthScopedViews()
       vscode.window.showInformationMessage('Kanban auth token cleared from VS Code secure storage.')
     })
   )

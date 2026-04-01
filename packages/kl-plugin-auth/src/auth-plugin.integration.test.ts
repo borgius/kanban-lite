@@ -127,6 +127,8 @@ describe('kl-plugin-auth: RBAC role action sets (kanban-lite action catalog)', (
     }
     expect(RBAC_ADMIN_ACTIONS.has('board.create')).toBe(true)
     expect(RBAC_ADMIN_ACTIONS.has('settings.update')).toBe(true)
+    expect(RBAC_ADMIN_ACTIONS.has('plugin-settings.read')).toBe(true)
+    expect(RBAC_ADMIN_ACTIONS.has('plugin-settings.update')).toBe(true)
     expect(RBAC_ADMIN_ACTIONS.has('storage.migrate')).toBe(true)
     expect(RBAC_ADMIN_ACTIONS.has('card.purgeDeleted')).toBe(true)
   })
@@ -801,7 +803,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                 type: 'array',
                 minItems: 1,
                 uniqueItems: true,
-                items: { type: 'string', enum: expect.any(Function) },
+                items: { type: 'string', title: 'Action', enum: expect.any(Function) },
               },
             },
           },
@@ -829,7 +831,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed before-events',
+                      label: 'Allowed actions',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -921,7 +923,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
   })
 
-  it('auth.policy providers resolve before-event enums from the SDK event inventory', async () => {
+  it('auth.policy providers resolve action enums from the SDK event inventory plus auth-only supplements', async () => {
     const sdk = {
       listAvailableEvents: vi.fn(async () => [
           { event: 'settings.update', phase: 'before' },
@@ -939,8 +941,8 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
 
     expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
       type: 'string',
-      title: 'Before-event',
-      enum: ['card.create', 'settings.update'],
+      title: 'Action',
+      enum: ['card.create', 'plugin-settings.read', 'plugin-settings.update', 'settings.update'],
       minLength: 1,
     })
     expect(sdk.listAvailableEvents).toHaveBeenCalledTimes(1)

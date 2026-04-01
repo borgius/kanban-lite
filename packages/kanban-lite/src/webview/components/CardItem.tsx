@@ -78,6 +78,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
   const title = getTitleFromContent(card.content)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
+  const viewMode = cardSettings.cardViewMode ?? 'large'
 
   const formatDueDate = (dateStr: string | null) => {
     if (!dateStr) return null
@@ -155,6 +156,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
       className={[
         'group kb-card',
         `kb-card-priority--${card.priority}`,
+        viewMode === 'compact' ? 'kb-card--compact' : '',
         isSelected ? 'kb-card--selected' : '',
         isDragging ? 'shadow-lg opacity-90' : '',
       ].filter(Boolean).join(' ')}
@@ -187,7 +189,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           </div>
         )}
 
-        <div className={`flex items-start gap-2 ${description ? 'mb-1' : 'mb-2'}`}>
+        <div className={`flex items-start gap-2 ${viewMode === 'compact' ? 'mb-0' : description ? 'mb-1' : 'mb-2'}`}>
           <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-2 flex-1">
             {title}
           </h3>
@@ -209,21 +211,26 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
         </div>
 
         {/* Description — plain-text excerpt (markdown stripped, no HTML rendered) */}
-        {description && (
-          <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${cardSettings.compactMode ? 'line-clamp-1' : 'line-clamp-2'} mb-1.5`}>
+        {description && viewMode !== 'compact' && (
+          <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${
+            viewMode === 'normal' ? 'line-clamp-1' :
+            viewMode === 'large' ? 'line-clamp-2' :
+            viewMode === 'xlarge' ? 'line-clamp-[8]' :
+            'line-clamp-[12]'
+          } mb-1.5`}>
             {getPlainTextExcerpt(description)}
           </p>
         )}
 
         {/* Labels */}
-        {cardSettings.showLabels && (card.labels.length > 0 || isUnread) && (
+        {cardSettings.showLabels && viewMode !== 'compact' && viewMode !== 'normal' && (card.labels.length > 0 || isUnread) && (
           <div className="flex flex-wrap gap-1 mb-2">
             {isUnread && (
               <span className="text-xs px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300 font-semibold">
                 unread
               </span>
             )}
-            {(cardSettings.compactMode ? card.labels.slice(0, 2) : card.labels.slice(0, 4)).map((label) => {
+            {(viewMode === 'xxlarge' ? card.labels : card.labels.slice(0, 4)).map((label) => {
               const def = labelDefs[label]
               return (
                 <span
@@ -235,9 +242,9 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
                 </span>
               )
             })}
-            {(cardSettings.compactMode ? card.labels.length > 2 : card.labels.length > 4) && (
+            {viewMode !== 'xxlarge' && card.labels.length > 4 && (
               <span className="text-[10px] text-zinc-400 dark:text-zinc-400 px-0.5 py-0.5 leading-tight">
-                +{card.labels.length - (cardSettings.compactMode ? 2 : 4)}
+                +{card.labels.length - 4}
               </span>
             )}
           </div>
@@ -245,7 +252,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between text-xs mt-auto">
+      {viewMode !== 'compact' && <div className="flex items-center justify-between text-xs mt-auto">
         <div className="flex items-center gap-1">
           {cardSettings.showAssignee && card.assignee && card.assignee !== 'null' && (
             <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
@@ -286,7 +293,7 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
           <Clock size={12} />
           <span>{formatRelativeCompact(card.modified)}</span>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

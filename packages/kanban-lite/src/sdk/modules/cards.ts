@@ -8,8 +8,9 @@ import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/conf
 import { buildCardInterpolationContext, prepareFormData } from '../../shared/formDataPreparation'
 import { getCardFilePath } from '../fileUtils'
 import { matchesCardSearch } from '../metaUtils'
+import type { AuthIdentity, AuthVisibilityFilterInput } from '../plugins'
 import { sanitizeCard } from '../types'
-import type { CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
+import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
 import type { SDKContext } from './context'
 import { appendActivityLog } from './logs'
 
@@ -31,6 +32,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cloneRecord(value: Record<string, unknown> | undefined): Record<string, unknown> {
   return value ? { ...value } : {}
+}
+
+type AuthScopedCardsContext = SDKContext & {
+  readonly _currentAuthContext?: AuthContext
 }
 
 const CARD_EDIT_ACTIVITY_FIELDS = new Set<keyof Card>([
@@ -177,6 +182,57 @@ function formatValidationErrors(errors: unknown): string {
     .join('; ')
 }
 
+function normalizeResolvedRoles(identity: AuthIdentity | null): string[] {
+  if (!Array.isArray(identity?.roles)) return []
+
+  return identity.roles
+    .filter((role): role is string => typeof role === 'string' && role.trim().length > 0)
+    .map((role) => role.trim())
+}
+
+function buildVisibilityAuthContext(
+  auth: AuthContext,
+  identity: AuthIdentity | null,
+  roles: readonly string[],
+): AuthContext {
+  const { identity: _ignoredIdentity, ...restAuth } = auth
+  if (!identity?.subject) return restAuth
+
+  const groups = Array.isArray(identity.groups)
+    ? identity.groups
+      .filter((group): group is string => typeof group === 'string' && group.trim().length > 0)
+      .map((group) => group.trim())
+    : []
+
+  return {
+    ...restAuth,
+    identity: {
+      subject: identity.subject,
+      roles: [...roles],
+      ...(groups.length > 0 ? { groups } : {}),
+    },
+  }
+}
+
+async function applyCardVisibilityFilter(ctx: SDKContext, cards: Card[]): Promise<Card[]> {
+  const capabilities = ctx.capabilities
+  const visibilityProvider = capabilities?.authVisibility
+  if (!visibilityProvider || cards.length === 0) {
+    return cards
+  }
+
+  const activeAuthContext = (ctx as AuthScopedCardsContext)._currentAuthContext ?? {}
+  const identity = await capabilities.authIdentity.resolveIdentity(activeAuthContext)
+  const roles = normalizeResolvedRoles(identity)
+  const input: AuthVisibilityFilterInput = {
+    identity,
+    roles,
+    auth: buildVisibilityAuthContext(activeAuthContext, identity, roles),
+  }
+
+  return visibilityProvider.filterVisibleCards(cards, input)
+}
+
 async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardState | null> {
   try {
     const raw = await fs.readFile(getActiveCardStateFilePath(ctx), 'utf-8')
@@ -249,11 +305,13 @@ export async function listCards(
     syncCardIdCounter(ctx.workspaceRoot, resolvedBoardId, numericIds)
   }
 
+  const visibleCards = await applyCardVisibilityFilter(ctx, cards)
+
   const hasSearch = Boolean(searchQuery && searchQuery.trim().length > 0)
   const hasMetaFilter = Boolean(metaFilter && Object.keys(metaFilter).length > 0)
   const filtered = hasMetaFilter || hasSearch
-    ? cards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
-    : cards
+    ? visibleCards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
+    : visibleCards
   if (sort) {
     const [field, dir] = sort.split(':')
     return filtered.sort((a, b) => {

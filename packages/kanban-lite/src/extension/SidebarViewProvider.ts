@@ -5,6 +5,7 @@ import type { CardStatus, Priority, KanbanColumn } from '../shared/types'
 import { readConfig, CONFIG_FILENAME } from '../shared/config'
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { KanbanPanel } from './KanbanPanel'
+import { resolveExtensionAuthContext } from './auth'
 
 interface SidebarCard {
   id: string
@@ -101,6 +102,10 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  public async reloadState(): Promise<void> {
+    await this._refresh()
+  }
+
   public dispose(): void {
     if (this._fileWatcher) {
       this._fileWatcher.dispose()
@@ -168,6 +173,10 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     return sdk.listColumns()
   }
 
+  private async _runWithAuth<T>(sdk: KanbanSDK, fn: () => Promise<T>): Promise<T> {
+    return sdk.runWithAuth(await resolveExtensionAuthContext(this._context), fn)
+  }
+
   private async _loadCards(): Promise<void> {
     const kanbanDir = this._getKanbanDir()
     if (!kanbanDir) {
@@ -181,7 +190,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       const root = workspaceFolders?.[0]?.uri.fsPath
       const config = root ? readConfig(root) : undefined
       const defaultBoardTitleFields = config?.boards[config.defaultBoard]?.title
-      const cards = await sdk.listCards()
+      const cards = await this._runWithAuth(sdk, () => sdk.listCards())
       this._cards = cards.map(c => ({
         id: c.id,
         title: getDisplayTitleFromContent(c.content, c.metadata, defaultBoardTitleFields),

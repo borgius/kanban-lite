@@ -38,6 +38,7 @@ import type {
   ResolvedCapabilities,
   CapabilityNamespace,
   ProviderRef,
+  AuthCapabilitySelections,
   AuthCapabilityNamespace,
   ResolvedAuthCapabilities,
   ResolvedCallbackCapabilities,
@@ -176,12 +177,44 @@ export interface AuthPolicyPlugin {
   checkPolicy(identity: AuthIdentity | null, action: string, context: AuthContext): Promise<AuthDecision>
 }
 
+/** Normalized auth input passed to `auth.visibility` providers. */
+export interface AuthVisibilityFilterInput {
+  /** Resolved caller identity, or `null` when the caller is anonymous. */
+  identity: AuthIdentity | null
+  /** Resolved caller roles normalized by the SDK. */
+  roles: readonly string[]
+  /** Active request-scoped auth context for the read flow. */
+  auth: AuthContext
+}
+
+/**
+ * Contract for `auth.visibility` capability providers.
+ *
+ * Visibility providers receive the SDK-resolved identity and a normalized role
+ * list, then return the visible subset of the provided cards. The capability is
+ * opt-in and disabled by default.
+ */
+export interface AuthVisibilityPlugin {
+  readonly manifest: AuthPluginManifest
+  /**
+   * Optional transport-safe options schema metadata for shared plugin-settings flows.
+   *
+   * When provided, hosts may surface this in configuration UIs and redact any
+   * secret fields according to the accompanying metadata.
+   */
+  optionsSchema?: PluginSettingsOptionsSchemaFactory
+  /** Returns the visible subset of `cards` for the resolved caller. */
+  filterVisibleCards(cards: readonly Card[], input: AuthVisibilityFilterInput): Promise<Card[]>
+}
+
 /** Module shape supported for external auth provider packages. */
 interface AuthPluginModule {
   readonly authIdentityPlugins?: Record<string, unknown>
   readonly authPolicyPlugins?: Record<string, unknown>
+  readonly authVisibilityPlugins?: Record<string, unknown>
   readonly authIdentityPlugin?: unknown
   readonly authPolicyPlugin?: unknown
+  readonly authVisibilityPlugin?: unknown
   readonly NOOP_IDENTITY_PLUGIN?: unknown
   readonly NOOP_POLICY_PLUGIN?: unknown
   readonly RBAC_IDENTITY_PLUGIN?: unknown
@@ -195,6 +228,8 @@ interface AuthPluginModule {
   readonly createAuthPolicyPlugin?: ((options?: Record<string, unknown>, providerId?: string) => unknown) | unknown
   /** Optional factory for a configurable identity plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment overrides such as an explicit API token. */
   readonly createAuthIdentityPlugin?: ((options?: Record<string, unknown>, providerId?: string) => unknown) | unknown
+  /** Optional factory for a configurable visibility plugin. When present it is called with the provider options from `.kanban.json` so plugins can apply per-deployment visibility-rule configuration. */
+  readonly createAuthVisibilityPlugin?: ((options?: Record<string, unknown>, providerId?: string) => unknown) | unknown
   readonly default?: unknown
 }
 
@@ -418,6 +453,12 @@ function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
   return loadExternalAuthPolicyPlugin(packageName, ref.provider, ref.options)
 }
 
+function resolveAuthVisibilityPlugin(ref: ProviderRef): AuthVisibilityPlugin | null {
+  if (ref.provider === 'none') return null
+  const packageName = AUTH_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  return loadExternalAuthVisibilityPlugin(packageName, ref.provider, ref.options)
+}
+
 // ---------------------------------------------------------------------------
 // RBAC action catalog and role matrix (first-cut built-in provider contract)
 // ---------------------------------------------------------------------------
@@ -472,8 +513,9 @@ export const RBAC_MANAGER_ACTIONS: ReadonlySet<string> = new Set([
  * Actions available to the `admin` role (includes all `manager` and `user` actions).
  *
  * Adds all destructive and configuration operations: board create/update/delete,
- * settings, webhooks, labels, columns, board-action config edits, board-log
- * clearing, migrations, default-board changes, and deleted-card purge.
+ * settings, plugin-settings reads/updates, webhooks, labels, columns,
+ * board-action config edits, board-log clearing, migrations, default-board
+ * changes, and deleted-card purge.
  */
 export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   ...RBAC_MANAGER_ACTIONS,
@@ -481,6 +523,8 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
+  'plugin-settings.read',
+  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',
@@ -851,6 +895,8 @@ export interface ResolvedCapabilityBag {
    * (always returns `true` / allow-all) when no auth plugin is configured.
     */
   readonly authPolicy: AuthPolicyPlugin
+  /** Resolved `auth.visibility` plugin, or `null` when visibility filtering is disabled. */
+  readonly authVisibility: AuthVisibilityPlugin | null
   /** Resolved `card.state` provider shared across SDK modules and host surfaces. */
   readonly cardState: CardStateProvider
   /** Raw resolved `card.state` provider selection used to resolve card-state capability routing. */
@@ -1104,6 +1150,11 @@ function isStaleResolvedModuleEntry(resolvedPath: string, err: unknown): boolean
   return !fs.existsSync(resolvedPath) || !fs.existsSync(path.dirname(resolvedPath))
 }
 
+function isPathWithin(parentPath: string, candidatePath: string): boolean {
+  const relative = path.relative(parentPath, candidatePath)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
 /**
  * Tries to load an external plugin from the global npm node_modules directory.
  * The global prefix is derived from the Node.js binary path ({@link process.execPath}).
@@ -1184,6 +1235,23 @@ interface DiscoveredPluginProvider {
   packageName: string
   discoverySource: PluginSettingsDiscoverySource
   optionsSchema?: PluginSettingsOptionsSchemaMetadata
+}
+
+function resolveInstalledModuleSource(request: string, resolvedPath: string): ExternalPluginDiscoverySource {
+  if (!WORKSPACE_ROOT) return 'dependency'
+
+  const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
+  const resolvedCandidates = [resolvedPath]
+
+  try {
+    resolvedCandidates.push(fs.realpathSync(resolvedPath))
+  } catch {
+    // Keep the original resolved path classification when realpath lookup fails.
+  }
+
+  return resolvedCandidates.some((candidatePath) => isPathWithin(workspacePackagePath, candidatePath))
+    ? 'workspace'
+    : 'dependency'
 }
 
 /**
@@ -1784,17 +1852,18 @@ function getDiscoveredPluginSettingsProvider(
   capability: PluginCapabilityNamespace,
   providerId: string,
 ): DiscoveredPluginProvider {
-  const provider = inventory.get(capability)?.get(providerId)
+  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
+  const provider = inventory.get(capability)?.get(normalizedProviderId)
   if (provider) return provider
 
   // Alias fallback: resolve provider aliases (e.g. "local" → kl-plugin-auth)
-  const aliasedPackage = resolveExternalPackageName(capability, providerId)
-  if (aliasedPackage !== providerId) {
+  const aliasedPackage = resolveExternalPackageName(capability, normalizedProviderId)
+  if (aliasedPackage !== normalizedProviderId) {
     const byCapability = inventory.get(capability)
     if (byCapability) {
       for (const candidate of byCapability.values()) {
         if (candidate.packageName === aliasedPackage) {
-          return { ...candidate, providerId }
+          return { ...candidate, providerId: normalizedProviderId }
         }
       }
     }
@@ -1859,6 +1928,18 @@ function getGlobalNodeModulesDir(): string {
 }
 
 function resolveExternalModuleWithSource(request: string): ResolvedExternalModule {
+  const resolvedInstalledEntry = resolveInstalledModuleEntry(request)
+  if (resolvedInstalledEntry) {
+    try {
+      return {
+        module: runtimeRequire(resolvedInstalledEntry),
+        source: resolveInstalledModuleSource(request, resolvedInstalledEntry),
+      }
+    } catch (err: unknown) {
+      if (!isStaleResolvedModuleEntry(resolvedInstalledEntry, err)) throw err
+    }
+  }
+
   if (WORKSPACE_ROOT) {
     const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
     try {
@@ -1866,12 +1947,6 @@ function resolveExternalModuleWithSource(request: string): ResolvedExternalModul
     } catch (workspaceErr: unknown) {
       if (!isRecoverableMissingModuleError(workspaceErr, workspacePackagePath)) throw workspaceErr
     }
-  }
-
-  try {
-    return { module: runtimeRequire(request), source: 'dependency' }
-  } catch (err: unknown) {
-    if (!isRecoverableMissingModuleError(err, request, path.join('node_modules', request))) throw err
   }
 
   try {
@@ -2078,6 +2153,16 @@ async function inspectExternalPluginModule(
             }
             break
           }
+          case 'auth.visibility': {
+            const candidate = selectAuthVisibilityPlugin(mod as AuthPluginModule, providerId)
+            if (candidate) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, candidate, sdk),
+              })
+            }
+            break
+          }
           case 'webhook.delivery': {
             const directWebhookPlugin = isRecord(mod.webhookProviderPlugin) ? mod.webhookProviderPlugin : mod.default
             if (directWebhookPlugin && isValidWebhookProviderManifest((directWebhookPlugin as WebhookProviderPlugin).manifest)) {
@@ -2170,6 +2255,8 @@ function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, p
     case 'auth.identity':
     case 'auth.policy':
       return BUILTIN_AUTH_PROVIDER_IDS.has(normalizedProviderId)
+    case 'auth.visibility':
+      return normalizedProviderId === 'none'
     case 'webhook.delivery':
     case 'callback.runtime':
       return false
@@ -2185,6 +2272,7 @@ function resolveExternalPackageName(capability: PluginCapabilityNamespace, provi
       return CARD_STATE_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'auth.identity':
     case 'auth.policy':
+    case 'auth.visibility':
       return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'webhook.delivery':
       return WEBHOOK_PROVIDER_ALIASES.get(providerId) ?? providerId
@@ -2198,6 +2286,8 @@ function isPluginSettingsCapabilityDisabled(
   capability: PluginCapabilityNamespace,
 ): boolean {
   return (
+    (capability === 'auth.visibility' && config.plugins?.['auth.visibility']?.provider === 'none')
+    ||
     (capability === 'webhook.delivery' && config.plugins?.['webhook.delivery']?.provider === 'none')
     || (capability === 'callback.runtime' && config.plugins?.['callback.runtime']?.provider === 'none')
   )
@@ -2245,6 +2335,9 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
   }
   if (config.auth?.['auth.policy']) {
     add(resolveExternalPackageName('auth.policy', config.auth['auth.policy'].provider))
+  }
+  if (config.auth?.['auth.visibility'] && config.auth['auth.visibility'].provider !== 'none') {
+    add(resolveExternalPackageName('auth.visibility', config.auth['auth.visibility'].provider))
   }
   if (config.webhookPlugin?.['webhook.delivery']) {
     add(resolveExternalPackageName('webhook.delivery', config.webhookPlugin['webhook.delivery'].provider))
@@ -2342,6 +2435,22 @@ function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capabi
             : 'default',
       }
     }
+    case 'auth.visibility': {
+      const selected = normalizeAuthCapabilities(config)['auth.visibility']
+      return {
+        capability,
+        providerId: selected.provider === 'none' ? null : selected.provider,
+        source: config.plugins?.['auth.visibility']
+          ? selected.provider === 'none'
+            ? 'none'
+            : 'config'
+          : config.auth?.['auth.visibility']
+            ? selected.provider === 'none'
+              ? 'none'
+              : 'legacy'
+            : 'default',
+      }
+    }
     case 'webhook.delivery': {
       const selected = normalizeWebhookCapabilities(config)['webhook.delivery']
       return {
@@ -2385,6 +2494,10 @@ function getSelectedProviderRef(config: PluginSettingsConfigSnapshot, capability
       return normalizeAuthCapabilities(config)['auth.identity']
     case 'auth.policy':
       return normalizeAuthCapabilities(config)['auth.policy']
+    case 'auth.visibility': {
+      const selected = normalizeAuthCapabilities(config)['auth.visibility']
+      return selected.provider === 'none' ? null : selected
+    }
     case 'webhook.delivery':
       return normalizeWebhookCapabilities(config)['webhook.delivery']
     case 'callback.runtime': {
@@ -2539,11 +2652,12 @@ export async function persistPluginSettingsProviderSelection(
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   pruneRedundantDerivedStorageConfig(config)
+  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
   const configuredRef = config.plugins?.[capability]
     ? cloneProviderRef(config.plugins[capability])
     : null
 
-  if ((capability === 'webhook.delivery' || capability === 'callback.runtime') && providerId === 'none') {
+  if ((capability === 'auth.visibility' || capability === 'webhook.delivery' || capability === 'callback.runtime') && normalizedProviderId === 'none') {
     getMutablePluginsRecord(config)[capability] = configuredRef?.options !== undefined
       ? { provider: 'none', options: structuredClone(configuredRef.options) }
       : { provider: 'none' }
@@ -2552,16 +2666,16 @@ export async function persistPluginSettingsProviderSelection(
   }
 
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
-  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
-  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, providerId)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, normalizedProviderId)
+  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, normalizedProviderId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
   if (selectedRef?.provider && isRecord(selectedRef.options)) {
     setCachedPluginProviderOptions(config, capability, selectedRef.provider, selectedRef.options)
   }
 
-  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, providerId)
-  const selectedTargetOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
+  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, normalizedProviderId)
+  const selectedTargetOptions = selectedRef?.provider === normalizedProviderId && isRecord(selectedRef.options)
     ? structuredClone(selectedRef.options)
     : undefined
   const nextOptions = selectedTargetOptions
@@ -2578,7 +2692,7 @@ export async function persistPluginSettingsProviderSelection(
     ? normalizePluginSettingsProviderOptionsForPersistence(capability, currentTargetOptions, nextOptions)
     : undefined
   const nextRef = {
-    provider: providerId,
+    provider: normalizedProviderId,
     ...(persistedOptions !== undefined ? { options: persistedOptions } : {}),
   }
 
@@ -2586,7 +2700,7 @@ export async function persistPluginSettingsProviderSelection(
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(
@@ -2660,6 +2774,16 @@ function isValidAuthPolicyPlugin(plugin: unknown, providerId: string): plugin is
     && candidate.manifest.provides.includes('auth.policy')
 }
 
+function isValidAuthVisibilityPlugin(plugin: unknown, providerId: string): plugin is AuthVisibilityPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as AuthVisibilityPlugin
+  return typeof candidate.filterVisibleCards === 'function'
+    && typeof candidate.manifest?.id === 'string'
+    && candidate.manifest.id === providerId
+    && Array.isArray(candidate.manifest.provides)
+    && candidate.manifest.provides.includes('auth.visibility')
+}
+
 function selectAuthIdentityPlugin(mod: AuthPluginModule, providerId: string): AuthIdentityPlugin | null {
   const mapped = mod.authIdentityPlugins?.[providerId]
   if (isValidAuthIdentityPlugin(mapped, providerId)) return mapped
@@ -2676,6 +2800,16 @@ function selectAuthPolicyPlugin(mod: AuthPluginModule, providerId: string): Auth
 
   const direct = mod.authPolicyPlugin ?? mod.default
   if (isValidAuthPolicyPlugin(direct, providerId)) return direct
+
+  return null
+}
+
+function selectAuthVisibilityPlugin(mod: AuthPluginModule, providerId: string): AuthVisibilityPlugin | null {
+  const mapped = mod.authVisibilityPlugins?.[providerId]
+  if (isValidAuthVisibilityPlugin(mapped, providerId)) return mapped
+
+  const direct = mod.authVisibilityPlugin ?? mod.default
+  if (isValidAuthVisibilityPlugin(direct, providerId)) return direct
 
   return null
 }
@@ -2713,6 +2847,25 @@ function loadExternalAuthPolicyPlugin(packageName: string, providerId: string, o
       `Plugin "${packageName}" does not export a valid auth policy provider for "${providerId}". ` +
       `Expected authPolicyPlugins["${providerId}"] or authPolicyPlugin/default export with ` +
       `a manifest that provides 'auth.policy'.`
+    )
+  }
+  return plugin
+}
+
+function loadExternalAuthVisibilityPlugin(packageName: string, providerId: string, options?: Record<string, unknown>): AuthVisibilityPlugin {
+  const mod = loadExternalModule(packageName) as AuthPluginModule
+
+  if (options !== undefined && typeof mod.createAuthVisibilityPlugin === 'function') {
+    const created = (mod.createAuthVisibilityPlugin as (opts?: Record<string, unknown>, providerId?: string) => unknown)(options, providerId)
+    if (isValidAuthVisibilityPlugin(created, providerId)) return created
+  }
+
+  const plugin = selectAuthVisibilityPlugin(mod, providerId)
+  if (!plugin) {
+    throw new Error(
+      `Plugin "${packageName}" does not export a valid auth visibility provider for "${providerId}". ` +
+      `Expected authVisibilityPlugins["${providerId}"] or authVisibilityPlugin/default export with ` +
+      `a manifest that provides 'auth.visibility'.`
     )
   }
   return plugin
@@ -2859,6 +3012,9 @@ function collectStandaloneHttpPackageNames(
 
   add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.identity'].provider) ?? authCapabilities['auth.identity'].provider)
   add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.policy'].provider) ?? authCapabilities['auth.policy'].provider)
+  if (authCapabilities['auth.visibility'].provider !== 'none') {
+    add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.visibility'].provider) ?? authCapabilities['auth.visibility'].provider)
+  }
 
   if (webhookCapabilities) {
     const webhookProvider = webhookCapabilities['webhook.delivery'].provider
@@ -3601,6 +3757,13 @@ export function collectActiveExternalPackageNames(config: {
     add(AUTH_PROVIDER_ALIASES.get(policyProvider) ?? policyProvider)
   }
 
+  const visibilityProvider = config.plugins?.['auth.visibility']?.provider
+    ?? config.auth?.['auth.visibility']?.provider
+    ?? 'none'
+  if (visibilityProvider !== 'none') {
+    add(AUTH_PROVIDER_ALIASES.get(visibilityProvider) ?? visibilityProvider)
+  }
+
   // Webhook provider — plugins['webhook.delivery'] takes precedence over the
   // legacy webhookPlugin key; falls through to the canonical default alias
   // 'webhooks' → 'kl-plugin-webhook' when neither is configured, matching
@@ -3673,13 +3836,13 @@ function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
  * 3. Built-in `localfs`
  *
  * Auth plugins default to the `noop` compatibility providers (anonymous identity,
- * allow-all policy) when `authCapabilities` is not supplied, preserving
- * the current open-access behavior.
+ * allow-all policy) plus disabled visibility filtering when `authCapabilities`
+ * is not supplied, preserving the current open-access behavior.
  *
  * @param capabilities     - Normalized provider selections from {@link normalizeStorageCapabilities}.
  * @param kanbanDir        - Absolute path to the `.kanban` directory.
- * @param authCapabilities - Optional normalized auth provider selections from
- *                           {@link normalizeAuthCapabilities}. Defaults to noop providers.
+ * @param authCapabilities - Optional auth provider selections. Missing auth
+ *                           namespaces are normalized to noop/no-provider defaults.
  * @param webhookCapabilities - Optional normalized webhook provider selections from
  *                           {@link normalizeWebhookCapabilities}. When omitted, webhook
  *                           provider resolution is skipped and `bag.webhookProvider` is `null`.
@@ -3692,7 +3855,7 @@ function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
 export function resolveCapabilityBag(
   capabilities: ResolvedCapabilities,
   kanbanDir: string,
-  authCapabilities?: ResolvedAuthCapabilities,
+  authCapabilities?: AuthCapabilitySelections,
   webhookCapabilities?: ResolvedWebhookCapabilities,
   cardStateCapabilities?: ResolvedCardStateCapabilities,
   callbackCapabilities?: ResolvedCallbackCapabilities,
@@ -3736,9 +3899,16 @@ export function resolveCapabilityBag(
     attachPlugin = resolveAttachmentPlugin(attachRef)
   }
 
-  const resolvedAuth: ResolvedAuthCapabilities = authCapabilities ?? {
-    'auth.identity': { provider: 'noop' },
-    'auth.policy': { provider: 'noop' },
+  const resolvedAuth: ResolvedAuthCapabilities = {
+    'auth.identity': authCapabilities?.['auth.identity']
+      ? cloneProviderRef(authCapabilities['auth.identity'])
+      : { provider: 'noop' },
+    'auth.policy': authCapabilities?.['auth.policy']
+      ? cloneProviderRef(authCapabilities['auth.policy'])
+      : { provider: 'noop' },
+    'auth.visibility': authCapabilities?.['auth.visibility']
+      ? cloneProviderRef(authCapabilities['auth.visibility'])
+      : { provider: 'none' },
   }
 
   // Card-state is auto-derived from the storage plugin when not explicitly
@@ -3762,6 +3932,7 @@ export function resolveCapabilityBag(
   )
   const resolvedAuthIdentity = resolveAuthIdentityPlugin(resolvedAuth['auth.identity'])
   const resolvedAuthPolicy = resolveAuthPolicyPlugin(resolvedAuth['auth.policy'])
+  const resolvedAuthVisibility = resolveAuthVisibilityPlugin(resolvedAuth['auth.visibility'])
   const workspaceRoot = path.dirname(kanbanDir)
   const webhookPlugins = webhookCapabilities
     ? resolveWebhookPlugins(webhookCapabilities['webhook.delivery'], workspaceRoot)
@@ -3805,6 +3976,7 @@ export function resolveCapabilityBag(
     authIdentity: resolvedAuthIdentity,
     authProviders: resolvedAuth,
     authPolicy: resolvedAuthPolicy,
+    authVisibility: resolvedAuthVisibility,
     cardState: resolvedCardStateProvider.provider,
     cardStateProviders: { 'card.state': { provider: resolvedCardStateProvider.provider.manifest.id } },
     cardStateContext: resolvedCardStateProvider.context,

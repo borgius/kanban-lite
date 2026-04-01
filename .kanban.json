@@ -52,13 +52,13 @@
   "defaultPriority": "medium",
   "defaultStatus": "backlog",
   "nextCardId": 231,
-  "showPriorityBadges": true,
+  "showPriorityBadges": false,
   "showAssignee": true,
   "showDueDate": true,
   "showLabels": true,
   "showBuildWithAI": true,
   "showFileName": false,
-  "compactMode": false,
+  "cardViewMode": "xxlarge",
   "markdownEditorMode": false,
   "showDeletedColumn": false,
   "boardZoom": 120,
@@ -67,8 +67,9 @@
   "boardBackgroundPreset": "aurora",
   "port": 2954,
   "labels": {},
+  "compactMode": false,
   "panelMode": "drawer",
-  "drawerWidth": 53.5045922022104,
+  "drawerWidth": 44.868629758493654,
   "forms": {
     "editorial-review": {
       "name": "Editorial Review",
@@ -421,5 +422,6 @@
       ],
       "active": true
     }
-  ]
+  ],
+  "columnWidth": 208
 }

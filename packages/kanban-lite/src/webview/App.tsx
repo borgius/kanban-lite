@@ -104,6 +104,8 @@ function buildCardFrontmatter(card: Card): CardFrontmatter {
   }
 }
 
+import { drawerContainerClass, drawerPanelClass, drawerPanelStyle, boardShrinkStyle, getSlideInClass, isHorizontalDrawer } from './drawerPositionHelpers'
+
 function App(): React.JSX.Element {
 
   const {
@@ -1015,7 +1017,12 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <div className="h-full w-full flex flex-col bg-[var(--vscode-editor-background)]">
+    <div
+      className="h-full w-full flex flex-col bg-[var(--vscode-editor-background)]"
+      style={(cardSettings.panelMode ?? 'drawer') === 'drawer' && selectedCardIds.length === 0 && (editingCard !== null || boardLogsOpen)
+        ? boardShrinkStyle(cardSettings.drawerPosition ?? 'right', effectiveDrawerWidth)
+        : undefined}
+    >
       <Toolbar
         onOpenSettings={() => vscode.postMessage({ type: 'openSettings' })}
         onAddColumn={handleAddColumn}
@@ -1032,12 +1039,7 @@ function App(): React.JSX.Element {
         onOpenShortcutHelp={() => setShortcutHelpOpen(open => !open)}
       />
       <div className="kb-board-stage flex-1 flex overflow-hidden">
-        <div
-          className="board-zoom-scope w-full min-w-0"
-          style={(cardSettings.panelMode ?? 'drawer') === 'drawer' && selectedCardIds.length === 0 && (editingCard !== null || boardLogsOpen)
-            ? { width: `${100 - effectiveDrawerWidth}%` }
-            : undefined}
-        >
+        <div className="board-zoom-scope w-full min-w-0">
           <KanbanBoard
             onCardClick={handleCardClick}
             onAddCard={handleAddCardInColumn}
@@ -1057,20 +1059,22 @@ function App(): React.JSX.Element {
         </div>
         {boardLogsOpen && selectedCardIds.length === 0 && !editingCard && (() => {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
+          const dPos = cardSettings.drawerPosition ?? 'right'
           return (
-            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? `${drawerContainerClass(dPos)} pointer-events-none` : 'items-center justify-center p-4'}`}>
               {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={() => setBoardLogsOpen(false)} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full flex flex-col shadow-xl animate-in slide-in-from-right duration-200 pointer-events-auto'
+                  ? `relative flex flex-col shadow-xl ${getSlideInClass(dPos)} pointer-events-auto ${isHorizontalDrawer(dPos) ? 'h-full' : 'w-full'}`
                   : 'relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl shadow-xl animate-in zoom-in-95 fade-in duration-200'}
                 style={isDrawer
-                  ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+                  ? drawerPanelStyle(dPos, effectiveDrawerWidth, { background: 'var(--vscode-editor-background)' })
                   : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
                 <DrawerResizeHandle
                   panelMode={isDrawer ? 'drawer' : 'popup'}
+                  drawerPosition={dPos}
                   onPreview={handlePreviewDrawerWidth}
                   onCommit={handleCommitDrawerWidth}
                   onCancel={handleCancelDrawerResize}
@@ -1108,23 +1112,25 @@ function App(): React.JSX.Element {
         })()}
         {editingCard && selectedCardIds.length === 0 && (() => {
           const isDrawer = (cardSettings.panelMode ?? 'drawer') === 'drawer'
+          const dPos = cardSettings.drawerPosition ?? 'right'
           return (
-            <div className={`fixed inset-0 z-40 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
+            <div className={`fixed inset-0 z-40 flex ${isDrawer ? `${drawerContainerClass(dPos)} pointer-events-none` : 'items-center justify-center p-4'}`}>
               {!isDrawer && <div className="absolute inset-0 card-view-modal-backdrop" onClick={handleCloseEditor} />}
               <div
                 className={isDrawer
-                  ? 'relative h-full flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right duration-200 pointer-events-auto card-view-shell card-view-shell--drawer'
+                  ? drawerPanelClass(dPos)
                   : 'relative w-full max-w-none h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 card-view-shell card-view-shell--popup'}
                 style={{
                   fontSize: `calc(1em * var(--card-zoom, 1))`,
                   ...(isDrawer
-                    ? { width: `${effectiveDrawerWidth}%` }
+                    ? drawerPanelStyle(dPos, effectiveDrawerWidth)
                     : {})
                 }}
                 {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
               >
                 <DrawerResizeHandle
                   panelMode={isDrawer ? 'drawer' : 'popup'}
+                  drawerPosition={dPos}
                   onPreview={handlePreviewDrawerWidth}
                   onCommit={handleCommitDrawerWidth}
                   onCancel={handleCancelDrawerResize}

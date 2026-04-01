@@ -21,10 +21,12 @@ import type {
   PluginSettingsSecretFieldMetadata,
 } from '../../shared/types'
 import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
+import type { CardViewMode } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
 import type { SettingsTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
+import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDrawer } from '../drawerPositionHelpers'
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
@@ -1721,21 +1723,23 @@ function SettingsPanelContent({
   }, [onClose])
 
   const isDrawer = (local.panelMode ?? 'drawer') === 'drawer'
+  const dPos = local.drawerPosition ?? 'right'
 
   return (
-    <div className={`fixed inset-0 z-50 flex ${isDrawer ? 'justify-end pointer-events-none' : 'items-center justify-center p-4'}`}>
+    <div className={`fixed inset-0 z-50 flex ${isDrawer ? `${drawerContainerClass(dPos)} pointer-events-none` : 'items-center justify-center p-4'}`}>
       {!isDrawer && <div className="absolute inset-0 bg-black/50" onClick={onClose} />}
       <div
         className={isDrawer
-          ? 'relative h-full shadow-xl flex flex-col animate-in slide-in-from-right duration-200 pointer-events-auto'
+          ? `relative shadow-xl flex flex-col ${getSlideInClass(dPos)} pointer-events-auto ${isHorizontalDrawer(dPos) ? 'h-full' : 'w-full'}`
           : 'relative w-full max-w-2xl max-h-[85vh] shadow-xl flex flex-col rounded-xl animate-in zoom-in-95 fade-in duration-200'}
         style={isDrawer
-          ? { width: `${effectiveDrawerWidth}%`, background: 'var(--vscode-editor-background)', borderLeft: '1px solid var(--vscode-panel-border)' }
+          ? drawerPanelStyle(dPos, effectiveDrawerWidth, { background: 'var(--vscode-editor-background)' })
           : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
         {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
       >
         <DrawerResizeHandle
           panelMode={isDrawer ? 'drawer' : 'popup'}
+          drawerPosition={dPos}
           onPreview={setDrawerWidthPreview}
           onCommit={(width) => {
             clearDrawerWidthPreview()
@@ -1831,11 +1835,17 @@ function SettingsPanelContent({
                   checked={local.showFileName}
                   onChange={v => update({ showFileName: v })}
                 />
-                <SettingsToggle
-                  label="Compact Mode"
-                  description="Use compact card layout to show more cards"
-                  checked={local.compactMode}
-                  onChange={v => update({ compactMode: v })}
+                <SettingsDropdown
+                  label="Card Size"
+                  value={local.cardViewMode ?? 'large'}
+                  options={[
+                    { value: 'compact', label: 'Compact' },
+                    { value: 'normal', label: 'Normal' },
+                    { value: 'large', label: 'Large' },
+                    { value: 'xlarge', label: 'X-Large' },
+                    { value: 'xxlarge', label: 'XX-Large' },
+                  ]}
+                  onChange={v => update({ cardViewMode: v as CardViewMode })}
                 />
                 <SettingsToggle
                   label="Show Deleted Column"
@@ -1850,21 +1860,34 @@ function SettingsPanelContent({
                   label="Panel Style"
                   value={local.panelMode ?? 'drawer'}
                   options={[
-                    { value: 'drawer', label: 'Right-side Drawer' },
+                    { value: 'drawer', label: 'Drawer' },
                     { value: 'popup', label: 'Centered Popup' },
                   ]}
                   onChange={v => update({ panelMode: v as 'popup' | 'drawer' })}
                 />
                 {(local.panelMode ?? 'drawer') === 'drawer' && (
-                  <SettingsSlider
-                    label="Drawer Width"
-                    description="Width of the right-side drawer as a percentage of the viewport"
-                    value={local.drawerWidth ?? 50}
-                    min={20}
-                    max={80}
-                    step={5}
-                    onChange={v => update({ drawerWidth: v })}
-                  />
+                  <>
+                    <SettingsDropdown
+                      label="Drawer Position"
+                      value={local.drawerPosition ?? 'right'}
+                      options={[
+                        { value: 'right', label: 'Right' },
+                        { value: 'left', label: 'Left' },
+                        { value: 'top', label: 'Top' },
+                        { value: 'bottom', label: 'Bottom' },
+                      ]}
+                      onChange={v => update({ drawerPosition: v as 'right' | 'left' | 'top' | 'bottom' })}
+                    />
+                    <SettingsSlider
+                      label="Drawer Size"
+                      description="Size of the drawer as a percentage of the viewport"
+                      value={local.drawerWidth ?? 50}
+                      min={20}
+                      max={80}
+                      step={5}
+                      onChange={v => update({ drawerWidth: v })}
+                    />
+                  </>
                 )}
                 <SettingsDropdown
                   label="Background Style"
@@ -1904,6 +1927,16 @@ function SettingsPanelContent({
                   max={150}
                   step={5}
                   onChange={v => update({ cardZoom: v })}
+                />
+                <SettingsSlider
+                  label="Column Width"
+                  description="Width of each column in pixels"
+                  value={local.columnWidth ?? 288}
+                  min={200}
+                  max={500}
+                  step={8}
+                  unit="px"
+                  onChange={v => update({ columnWidth: v })}
                 />
               </SettingsSection>
             {workspace && (

@@ -4,6 +4,7 @@ import { CardItem } from './CardItem'
 import { QuickAddInput } from './QuickAddInput'
 import type { Card, KanbanColumn as KanbanColumnType, CardStatus, Priority } from '../../shared/types'
 import type { LayoutMode, SortOrder } from '../store'
+import { useStore } from '../store'
 import type { DropTarget } from './KanbanBoard'
 
 const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
@@ -112,6 +113,7 @@ export function KanbanColumn({
   onTriggerAction
 }: KanbanColumnProps) {
   const isVertical = layout === 'vertical'
+  const columnWidth = useStore((s) => s.cardSettings.columnWidth) ?? 288
   const isActiveColumnDrag = (event: Pick<React.DragEvent, 'dataTransfer'>) => isColumnDragEvent(event, draggedColumnId)
   const isDropTarget = dropTarget && dropTarget.columnId === column.id
   const isColumnDropBefore = !isDeletedColumn && dropColumnIndex === columnIndex && draggedColumnId !== column.id
@@ -257,12 +259,12 @@ export function KanbanColumn({
 
   return (
     <div
-      style={columnDropBorderStyle}
+      style={{ ...columnDropBorderStyle, ...(!isVertical ? { width: `${columnWidth}px` } : {}) }}
       className={
         [
           isVertical
             ? "flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm"
-            : "flex-shrink-0 w-72 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm",
+            : "flex-shrink-0 h-full flex flex-col bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm",
           isBeingDragged ? "opacity-40" : "",
           isColumnDropBefore ? beforeDropBorderClass : "",
           isColumnDropAfter ? afterDropBorderClass : "",

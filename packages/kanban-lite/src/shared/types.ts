@@ -495,6 +495,16 @@ export function normalizeBoardBackgroundSettings(
 }
 
 /**
+ * Controls how much detail is shown on each kanban card.
+ * - `compact`  — title + priority only, no description, no labels, no footer
+ * - `normal`   — title + clipped description (1 line), no labels, show footer
+ * - `large`    — title + description (2 lines) + up to 4 labels (default)
+ * - `xlarge`   — title + description (8 lines) + up to 4 labels
+ * - `xxlarge`  — title + description (12 lines) + all labels
+ */
+export type CardViewMode = 'compact' | 'normal' | 'large' | 'xlarge' | 'xxlarge'
+
+/**
  * UI display preferences controlling which card fields are visible and
  * how the board renders cards.
  */
@@ -511,8 +521,11 @@ export interface CardDisplaySettings {
   showBuildWithAI: boolean
   /** Whether to display the source filename on cards. */
   showFileName: boolean
-  /** Whether to use a compact card layout with reduced spacing. */
-  compactMode: boolean
+  /**
+   * How much detail to show on each card.
+   * Default `'large'` (title + 2-line description + up to 4 labels).
+   */
+  cardViewMode?: CardViewMode
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
   /** Whether to display the hidden Deleted column on the board. */
@@ -525,6 +538,8 @@ export interface CardDisplaySettings {
   boardZoom: number
   /** Zoom level for the card detail panel as a percentage (75–150). Default 100. */
   cardZoom: number
+  /** Column width in pixels (200–500). Default 288. */
+  columnWidth?: number
   /** Whether the board canvas uses a plain or fancy background preset. Default `fancy`. */
   boardBackgroundMode: BoardBackgroundMode
   /** Selected board background preset within the active background mode. */
@@ -533,6 +548,8 @@ export interface CardDisplaySettings {
   panelMode?: 'popup' | 'drawer'
   /** Width of the right-side drawer as a percentage of the viewport (20–80). Default 50. */
   drawerWidth?: number
+  /** Which edge the drawer anchors to when panelMode is 'drawer'. Default 'right'. */
+  drawerPosition?: 'right' | 'left' | 'top' | 'bottom'
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'

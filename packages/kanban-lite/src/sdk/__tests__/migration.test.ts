@@ -206,7 +206,7 @@ describe('config migration (v1 to v2)', () => {
 
     // Global settings should carry over
     expect(config.showAssignee).toBe(false)
-    expect(config.compactMode).toBe(true)
+    expect(config.cardViewMode).toBe('normal')
     expect(config.showLabels).toBe(false)
     expect(config.kanbanDirectory).toBe('.kanban')
   })
@@ -376,7 +376,6 @@ describe('config v1 detection – regression: webhooks must survive read/write c
       showLabels: true,
       showBuildWithAI: true,
       showFileName: false,
-      compactMode: false,
       markdownEditorMode: false,
       showDeletedColumn: false,
       boardZoom: 100,

@@ -1,165 +1,113 @@
-prd_id: 20260329-plugin-options-tab
-version: 0.1.2
+prd_id: prd-role-based-card-visibility
+version: 0.1.0
 status: final
 
 user_stories:
-  - as_a: workspace maintainer
-    i_want: to manage installed plugin providers from the settings screen
-    so_that: I can understand which providers are available and adjust configuration without hand-editing `.kanban.json` for routine changes
-  - as_a: operator configuring capabilities
-    i_want: to enable or disable providers by capability from a capability-grouped settings tab
-    so_that: I can choose the active provider for each capability with clear feedback about what is selected
-  - as_a: user adding functionality
-    i_want: to install new `kl-*` packages from the settings experience
-    so_that: I can add supported plugins without leaving the product workflow or guessing the next step after install failures
-  - as_a: plugin user
-    i_want: to edit provider options through JSON Forms driven by each provider's `optionsSchema`
-    so_that: provider-specific configuration stays structured, validated, and discoverable
-  - as_a: auth-enabled deployer
-    i_want: to configure `kl-plugin-auth` through provider schemas in the same settings flow
-    so_that: auth setup uses the same plugin-options workflow as other providers instead of a bespoke config path
-  - as_a: product maintainer
-    i_want: the plugin settings feature to include tests plus README and changelog updates required by repo rules
-    so_that: the feature ships with parity coverage and accurate documentation
-  - as_a: workspace maintainer
-    i_want: to run first-party callback handlers inside the same runtime as core when Kanban events fire
-    so_that: I can automate local side effects without deploying an external webhook receiver
+  - as_a: authenticated user
+    i_want: card visibility to follow my resolved roles across every interface
+    so_that: I only see cards I am allowed to discover whether I use the SDK, REST API, CLI, MCP, or UI
+  - as_a: policy author
+    i_want: visibility rules to match roles only and merge by union when multiple rules apply
+    so_that: multi-role users inherit the full card set granted by their matching roles without ambiguous precedence
+  - as_a: policy author
+    i_want: rule conditions to use AND semantics across fields and OR semantics within each field
+    so_that: rule matching stays compact and predictable
+  - as_a: policy author
+    i_want: assignee conditions to support explicit assignee names and a special `@me` token
+    so_that: I can target cards assigned to the current resolved user without hardcoding every subject-specific rule
+  - as_a: security-conscious operator
+    i_want: hidden cards to behave as not found for direct reads and mutations
+    so_that: restricted users do not learn that hidden cards exist through targeted operations
+  - as_a: platform maintainer
+    i_want: card visibility filtering to ship as a standalone plugin package that consumes `kl-plugin-auth` identity and roles
+    so_that: visibility remains composable and SDK-first without expanding `kl-plugin-auth` itself into a second responsibility
 
 scope:
   in_scope:
-    - Discover available plugin providers from workspace resolution, local dependencies, and global installs.
-    - Add a capability-grouped settings UI tab that renders provider rows under each capability.
-    - Represent each provider row with provider identity, install/discovery source, enablement state, and access to provider options when available.
-    - Treat provider enablement as capability selection in `.kanban.json`, where enabled means the provider is the selected provider for that capability.
-    - Enforce single-provider auto-disable behavior so selecting one provider for a single-provider capability deselects the previously selected provider for that capability.
-    - Add a plugin install form for `kl-*` packages with a global install option and actionable npm error tips.
-    - Support provider option editing through per-provider `optionsSchema()` contracts rendered with JSON Forms.
-    - Allow provider schemas to model secrets as editable values that are masked in the UI when displayed.
-    - Refactor first-party `kl-plugin-auth` configuration to expose provider schemas compatible with the same options editing flow.
-    - Add focused tests covering discovery, selection semantics, install behavior, options editing, masking behavior, and auth-plugin schema usage.
-    - Update README, CHANGELOG, and any related plugin/auth docs required by repository rules when the feature is implemented.
-    - Add a first-party `kl-plugin-callback` package for same-runtime event callbacks similar to the webhook plugin's event ownership model.
-    - Support callback plugin options as one mixed `handlers` list where each handler can match one or more events.
-    - Run matching inline JavaScript handlers with one argument shaped as `({ event, sdk })`.
-    - Run matching process-based handlers by sending serialized event/context payloads over stdin only, without exposing a live SDK object.
-    - Log handler failures and continue running other matching callback handlers for the same event.
-    - Cover callback plugin behavior across SDK, API, CLI, MCP, plugin options, and required documentation updates when the feature is implemented.
+    - Introduce a new standalone auth-related plugin package for card visibility filtering that consumes resolved identity and roles from `kl-plugin-auth`.
+    - Enforce card visibility everywhere cards are listed, searched, opened, or mutated, with consistent behavior across SDK, REST, CLI, MCP, and UI.
+    - Match visibility rules by resolved roles only.
+    - Merge all cards granted by multiple matching rules using UNION semantics.
+    - Return no visible cards when a user matches no visibility rule.
+    - Apply the same rule resolution to every role, including `admin` and `manager`, with no implicit bypass.
+    - Treat hidden cards as not found for direct card-targeted reads and mutations.
+    - Evaluate rule conditions with AND semantics across different fields and OR semantics within each individual field.
+    - Support assignee condition values as explicit assignee names plus a special current-user token `@me`.
+    - Keep the SDK as the canonical enforcement seam while host surfaces render or return already-filtered results.
   out_of_scope:
-    - Publishing plugins to npm.
-    - Marketplace-style browsing or marketplace UX.
-    - Uninstalling packages or removing plugins from disk.
-    - Editing env-only secrets outside provider schemas unless those secrets are explicitly modeled in the provider schema.
-    - Broad redesign of non-settings UI surfaces.
-    - Replacing `kl-plugin-webhook` HTTP delivery with in-process callbacks.
-    - Passing a live SDK object or other in-memory runtime handles to spawned process handlers.
-    - A bespoke code editor or callback-specific editor plumbing for inline JavaScript authoring in v1.
+    - Implicit admin, manager, or superuser visibility bypasses.
+    - Rule selection by subject, email, group, token value, or any non-role identity attribute.
+    - Partial redaction or placeholder card responses that reveal hidden-card existence.
+    - Host-local visibility evaluators that diverge from SDK-owned enforcement.
+    - Changes to how `kl-plugin-auth` resolves identity or roles.
 
 acceptance_criteria:
-  - criterion: The settings experience exposes a dedicated plugin/options tab grouped by capability, and each capability section renders provider rows rather than a flat package list.
-    verification: Open the settings UI in a workspace with multiple capabilities and confirm provider entries appear under their capability group with one row per discovered provider.
-  - criterion: Plugin discovery includes providers resolvable from the workspace, local dependencies, and global installs.
-    verification: Set up one provider from each discovery scope and confirm all three appear in the plugin/options tab with discovery-source metadata.
-  - criterion: Provider enablement is stored as the selected provider in `.kanban.json`, not as a separate boolean flag.
-    verification: Select a provider for a capability, inspect the resulting `.kanban.json`, and confirm the saved config identifies that provider as selected for the capability without introducing an independent `enabled` boolean.
-  - criterion: Selecting a provider for a single-provider capability automatically disables the previously selected provider for that same capability.
-    verification: Select provider A for a capability, then select provider B for the same capability and confirm the UI and saved config show only provider B as selected.
-  - criterion: Provider rows clearly show whether a provider is currently selected for its capability.
-    verification: With a mix of selected and unselected providers, confirm each row exposes the correct selected state and that the selected row matches `.kanban.json`.
-  - criterion: The install flow accepts `kl-*` package names, supports an explicit global-install option, and surfaces actionable npm error tips when installation fails.
-    verification: Submit a valid install through the form once with workspace install and once with global install, then trigger a failing install and confirm the UI shows npm-derived guidance instead of a generic failure message.
-  - criterion: Provider option editing is driven by each provider's `optionsSchema()` contract and rendered through JSON Forms rather than hard-coded per-provider inputs.
-    verification: Open options for at least two different providers with different schemas and confirm the rendered forms and saved payloads follow the provider-provided schema definitions.
-  - criterion: Secrets modeled in provider schemas remain editable but are masked in the UI when displayed.
-    verification: Configure a schema-defined secret field, reopen the options view, and confirm the value can be updated while the displayed field remains masked.
-  - criterion: `kl-plugin-auth` configuration participates in the same schema-driven provider options flow as other providers.
-    verification: Configure `kl-plugin-auth` from the plugin/options tab and confirm its options are rendered from schema metadata and saved through the same provider-options path.
-  - criterion: Discovery, selection semantics, install behavior, provider schema rendering, secret masking, and auth-plugin schema behavior are covered by automated tests.
-    verification: Run the targeted automated test suites added for this feature and confirm each behavior category is exercised.
-  - criterion: User-facing documentation and changelog updates required by repository rules are identified as part of the feature contract.
-    verification: Review implementation deliverables and confirm README, CHANGELOG, and any related plugin/auth docs are updated alongside the feature before release.
-  - criterion: A first-party `kl-plugin-callback` package can be configured as a same-runtime callback plugin using provider options rather than bespoke per-host wiring.
-    verification: Install or resolve `kl-plugin-callback`, configure it through the plugin provider path, and confirm the active runtime loads it without requiring separate callback registration code in each host surface.
-  - criterion: Callback plugin options use one mixed `handlers` list, and multiple matching handlers can run for the same committed event.
-    verification: Configure inline and process handlers in the same `handlers` list for one shared event mask, trigger that event once, and confirm every matching handler is invoked.
-  - criterion: Inline JavaScript handlers receive exactly one argument shaped as `({ event, sdk })`.
-    verification: Configure an inline handler that reads both `event` and `sdk` from its single parameter object and confirm it executes successfully without any additional injected arguments.
-  - criterion: Process-based handlers receive serialized event/context input through stdin only and do not receive a live SDK object.
-    verification: Configure a process handler that reads stdin, trigger a matching event, and confirm the child process receives the serialized payload while no live SDK handle is exposed to the process.
-  - criterion: Callback handler failures are isolated so one failing handler does not prevent other matching handlers from running.
-    verification: Configure two matching handlers where the first throws or exits non-zero and confirm the failure is logged while the second handler still executes.
-  - criterion: Committed events from SDK, REST API, CLI, and MCP mutations all reach matching callback handlers through the same event lifecycle.
-    verification: Trigger representative writes from SDK, standalone API, CLI, and MCP, then confirm the callback plugin observes the committed after-event once per mutation source.
-  - criterion: Callback plugin implementation ships with automated tests and README/CHANGELOG/plugins documentation updates required by repository rules.
-    verification: Review the implementation deliverable and confirm targeted tests plus README, CHANGELOG, `docs/plugins.md`, and package-specific docs are updated before release.
+  - criterion: The feature is delivered as a new standalone plugin package rather than as an expansion of `kl-plugin-auth` or a host-specific filter.
+    verification: Review package boundaries and configuration shape to confirm visibility filtering is provided by a dedicated package that consumes `kl-plugin-auth` identity and roles.
+  - criterion: Visibility rules are selected by resolved roles only.
+    verification: Compare callers with the same resolved subject but different role sets and confirm only role membership changes which rules are applied.
+  - criterion: When multiple visibility rules match a caller's roles, the final visible-card set is the UNION of cards granted by all matching rules.
+    verification: Configure overlapping role matches with distinct visible card slices and confirm the caller sees the combined result without authoring an extra synthetic rule.
+  - criterion: When no visibility rule matches a caller's roles, the caller sees no cards.
+    verification: Use a caller whose roles do not match any rule and confirm list and search-style card discovery returns an empty result.
+  - criterion: No role, including `admin` or `manager`, receives an implicit visibility bypass.
+    verification: Use admin and manager callers with no matching rule and confirm they see no cards; add matching rules and confirm they still see only the explicitly granted cards.
+  - criterion: Visibility enforcement is consistent across SDK, REST, CLI, MCP, and UI.
+    verification: Exercise the same caller and workspace through each surface and confirm the visible-card set and hidden-card outcomes match everywhere.
+  - criterion: Hidden cards behave as not found for direct read and mutation flows.
+    verification: Attempt direct card reads and mutations against a hidden card and confirm each surface returns its standard not-found outcome rather than a permission-specific reveal.
+  - criterion: Rule matching uses AND semantics across different fields and OR semantics within each field.
+    verification: Configure rules with multiple fields and multi-value field lists, then confirm cards must satisfy every defined field while any listed value within the same field is sufficient.
+  - criterion: Assignee conditions support explicit assignee names and the `@me` token.
+    verification: Configure one rule with literal assignee names and another with `@me`, then confirm `@me` matches cards assigned to the current resolved user while literal names match exact assignee strings.
+  - criterion: Host surfaces do not implement divergent visibility logic outside the SDK.
+    verification: Review the cross-surface flow and confirm hosts surface SDK-filtered results and SDK-owned not-found semantics instead of re-evaluating rules locally.
+
+needs_clarification: []
 
 features:
-  - name: Capability-grouped plugin settings tab
-    overview: Add a settings tab that groups discovered providers by capability and shows provider rows with selection and configuration entry points.
-    status: completed
-  - name: Multi-scope plugin discovery
-    overview: Discover plugin providers from workspace resolution, local dependencies, and global installs for display in settings.
-    status: completed
-  - name: Capability-based provider selection
-    overview: Treat provider enablement as capability selection in `.kanban.json`, including single-provider auto-disable behavior.
-    status: completed
-  - name: In-app `kl-*` package install flow
-    overview: Let users install supported `kl-*` packages from settings with a global-install option and npm error guidance.
-    status: completed
-  - name: Schema-driven provider options
-    overview: Render provider configuration with JSON Forms driven by each provider's `optionsSchema()` contract.
-    status: completed
-  - name: Auth plugin schema parity
-    overview: Refactor `kl-plugin-auth` so its configuration uses the same provider-schema options flow as other providers.
-    status: completed
-  - name: Verification and documentation parity
-    overview: Cover the feature with automated tests and the README/CHANGELOG/doc updates required by repository rules.
-    status: completed
-  - name: First-party callback plugin
-    overview: Add `kl-plugin-callback` as a same-runtime event callback plugin with mixed inline/process handlers, failure isolation, and parity across host surfaces.
-    status: completed
+  - name: Standalone role-based visibility plugin package
+    overview: Provide card visibility filtering through a dedicated plugin package that consumes `kl-plugin-auth` identity and role output rather than expanding the base auth package or embedding filters in hosts.
+    status: planned
+  - name: Role-only rule selection
+    overview: Choose visibility rules exclusively from resolved role membership, with no subject-specific selectors and no implicit elevated-role bypass.
+    status: planned
+  - name: Union-based multi-rule visibility
+    overview: Merge all cards granted by matching rules so multi-role users inherit the union of their role-based visibility slices.
+    status: planned
+  - name: Deterministic condition semantics
+    overview: Evaluate rule conditions with AND semantics across fields and OR semantics within each field so visibility behavior stays predictable.
+    status: planned
+  - name: Assignee-aware `@me` conditions
+    overview: Allow assignee matching against explicit assignee names or the current resolved user via the special `@me` token.
+    status: planned
+  - name: Hidden-as-not-found enforcement
+    overview: Remove hidden cards from discovery results and make direct access attempts return standard not-found behavior.
+    status: planned
+  - name: Cross-surface parity
+    overview: Apply the same visibility outcomes in SDK, REST, CLI, MCP, and UI with SDK-owned enforcement as the source of truth.
+    status: planned
 
 decisions:
-  - decision: The settings UI will present capability/provider rows instead of a flat plugin list.
-    rationale: Capability-first organization matches how providers are actually selected and configured in `.kanban.json`.
-  - decision: Discovery scope includes workspace, local dependency, and global install resolution.
-    rationale: Users need one management surface that reflects the providers they can actually select in real deployments.
-  - decision: Enabled means selected in `.kanban.json`.
-    rationale: A separate enablement boolean would drift from the existing provider-selection model and create ambiguous state.
-  - decision: Single-provider capabilities auto-disable the previously selected provider when a new provider is selected.
-    rationale: The UI should enforce the one-active-provider rule instead of leaving conflicting selections for the user to untangle manually.
-  - decision: Provider options are defined per provider through `optionsSchema()` and rendered with JSON Forms.
-    rationale: Schema-driven configuration scales across first-party and external providers without bespoke UI for every package.
-  - decision: Schema-defined secrets are editable in the settings flow but masked when displayed.
-    rationale: Users must be able to manage secret values from the same workflow without exposing them in plain text during normal editing.
-  - decision: `kl-plugin-auth` will be refactored to participate in the same schema-driven provider-options contract.
-    rationale: Auth configuration should follow the same plugin-management model as other capabilities instead of remaining a special-case path.
-  - decision: The in-product installer only accepts exact unscoped `kl-*` package names and always runs with lifecycle scripts disabled.
-    rationale: The settings flow must stay a constrained provider installer rather than becoming a general-purpose npm command wrapper.
-  - decision: Plugin settings reads, lists, install output, and surfaced errors all reuse one shared redaction policy.
-    rationale: Secret masking must be enforced once at the shared contract layer so every surface inherits the same safety guarantees.
-  - decision: Plugin options forms reuse the shared `.card-jsonforms` wrapper and styling hooks.
-    rationale: Reusing the existing JSON Forms styling contract keeps provider options visually consistent without adding a second form theme.
-  - decision: `kl-plugin-callback` will run in the same runtime as core rather than delivering to an external receiver.
-    rationale: The goal is local event-driven automation with plugin ownership similar to webhooks but without leaving the current process boundary.
-  - decision: Callback plugin options will use one mixed `handlers` list.
-    rationale: A single list keeps inline and process-based handlers in one ordered configuration model while still allowing multiple handlers per event.
-  - decision: Inline JavaScript handlers receive one argument shaped as `({ event, sdk })`.
-    rationale: Inline callbacks need both the event envelope and the public SDK surface, but the contract should stay narrow and explicit.
-  - decision: v1 inline JavaScript authoring uses the existing schema-driven plain text/textarea path in shared plugin settings.
-    rationale: Reusing the current schema-driven settings flow keeps callback configuration aligned with other providers while deferring bespoke code-editor investment until a later release proves it necessary.
-  - decision: Process-based handlers receive serialized event/context data over stdin only.
-    rationale: Child processes should get a portable serialized payload, not a live in-memory SDK object that only exists inside the host runtime.
-  - decision: Handler failures are logged and isolated from other matching handlers.
-    rationale: Callback execution should be best-effort so one bad handler does not block unrelated automation for the same event.
+  - decision: Card visibility filtering ships as a separate standalone plugin package that consumes `kl-plugin-auth` identity and roles.
+    rationale: Separating visibility from the base auth package keeps responsibilities narrow and lets deployments opt into visibility filtering without redefining identity resolution.
+  - decision: Visibility rules match roles only.
+    rationale: The approved scope intentionally limits rule selection to role membership and avoids a broader subject- or attribute-based policy language in the first release.
+  - decision: Multiple matching rules merge by UNION.
+    rationale: Multi-role users should receive every card slice granted by their matching roles without authors needing duplicate composite rules.
+  - decision: No matching rule yields zero visible cards.
+    rationale: The model is explicit allowlist visibility rather than fallback-open visibility.
+  - decision: No admin or manager bypass exists.
+    rationale: Elevated operational permissions must not silently expand card discoverability beyond configured visibility rules.
+  - decision: Hidden cards behave as not found for direct reads and mutations.
+    rationale: Not-found semantics prevent callers from inferring the existence of restricted cards through targeted operations.
+  - decision: Rule conditions use AND semantics across fields and OR semantics within each field.
+    rationale: This produces a compact and predictable rule language for policy authors.
+  - decision: Assignee conditions support both explicit names and `@me`.
+    rationale: Policies need a simple way to target cards assigned to the current resolved user without coupling rule selection to non-role identity fields.
+  - decision: Enforcement scope is every interface, but enforcement logic remains SDK-first.
+    rationale: Cross-surface parity requires one canonical evaluator so hosts do not drift or leak visibility differences.
 
 changes:
-  - version: 0.1.2
-    change: Resolved the callback inline-authoring clarification by locking v1 to the existing schema-driven plain text/textarea settings path and marking bespoke code-editor plumbing out of scope.
-  - version: 0.1.1
-    change: Added a planned `kl-plugin-callback` feature entry covering same-runtime callback execution, a mixed handler list, SDK/API/CLI/MCP parity expectations, failure isolation, and an unresolved inline-code editor question.
   - version: 0.1.0
-    change: Initial draft PRD for a capability-grouped plugin options tab with multi-scope discovery, schema-driven provider configuration, install flow support, and auth-plugin schema parity.
-  - version: 0.1.0
-    change: Finalized after implementation with capability-grouped provider inventory, selected-provider persistence in `.kanban.json`, schema-driven options editing, and `kl-plugin-auth` parity across SDK, API, CLI, MCP, and settings UI.
-  - version: 0.1.0
-    change: Validation confirmed multi-scope discovery, exact unscoped `kl-*` install guardrails with `--ignore-scripts`, shared redaction across surfaced reads/errors/install output, and reuse of the shared `.card-jsonforms` styling hook.
+    change: Initial root PRD capturing the standalone role-based card visibility plugin package, union-based matching, hidden-as-not-found behavior, `@me` assignee conditions, and SDK-first parity across SDK, REST, CLI, MCP, and UI.

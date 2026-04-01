@@ -1382,20 +1382,22 @@ Plugin discovery, selection, options, and guarded installation
 
 **List plugin providers**
 
-Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload.
+Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.
 
 #### Responses
 
 | Status | Description |
 |--------|-------------|
 | `200` | Capability-grouped plugin inventory. |
+| `401` | Authentication required. |
+| `403` | Authenticated caller is not allowed to perform `plugin-settings.read`. |
 | `500` | Unable to list plugin settings. |
 
 ### GET `/api/plugin-settings/{capability}/{providerId}`
 
 **Read plugin settings**
 
-Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders.
+Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.
 
 #### Parameters
 
@@ -1409,6 +1411,8 @@ Returns the redacted plugin-settings read model for one provider. Persisted secr
 | Status | Description |
 |--------|-------------|
 | `200` | Redacted provider read model. |
+| `401` | Authentication required. |
+| `403` | Authenticated caller is not allowed to perform `plugin-settings.read`. |
 | `404` | Provider not found for the requested capability. |
 | `500` | Unable to read plugin settings. |
 

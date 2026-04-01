@@ -45,7 +45,7 @@ Current schema-backed fields:
 
 The shared Plugin Options editor seeds `roles[]` with the default catalog `user`, `manager`, `admin` when the field is missing, still lets users add or delete extra entries like a normal array, and turns each `users[].role` field into a picker sourced from that live role catalog instead of a hard-coded enum.
 
-The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog via `permissions[].role`, and `actions[]` is rendered as a before-event picker resolved from `sdk.listAvailableEvents({ type: 'before' })` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog.
+The shared Plugin Options UI also treats `auth.policy.permissions[]` as a role-based matrix: each row picks a role from the same live `roles[]` catalog via `permissions[].role`, and `actions[]` is rendered as an action picker built from `sdk.listAvailableEvents({ type: 'before' })` plus auth-only supplements such as `plugin-settings.read` and `plugin-settings.update` when an SDK runtime is available. Without an SDK runtime, the picker falls back to the built-in before-event catalog plus the same auth-specific action supplements.
 
 When users select `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the shared Plugin Options workflow and no saved policy options exist yet, the provider now seeds `options.permissions` from the canonical `RBAC_ROLE_MATRIX` so the editable config starts from the shipped role/action matrix instead of an empty array. The same backfill also runs on plugin-settings refresh when a selected auth-policy provider still has an empty options object.
 
@@ -67,7 +67,7 @@ The package also exports listener-only auth helpers for the SDK before-event pip
 
 These listeners register on SDK before-events, read request-scoped auth installed by host surfaces via `sdk.runWithAuth(...)`, emit `auth.allowed` / `auth.denied`, veto denied mutations by throwing `AuthError`, and can optionally return plain-object input overrides via `options.overrideInput`. Listener overrides are immutably deep-merged by `KanbanSDK._runBeforeEvent()`; `BeforeEventPayload` no longer carries `auth`, so listeners must not rely on `payload.auth`.
 
-The runtime contract is listener-only: capability providers still resolve identity and policy, but mutation enforcement now happens through SDK-owned before-events rather than a direct runtime seam. User-visible denial behavior remains unchanged.
+The runtime contract is listener-only: capability providers still resolve identity and policy, SDK-owned before-events continue to drive listener hooks, and auth-only actions such as `plugin-settings.read` / `plugin-settings.update` are checked directly by the SDK without inventing synthetic events. User-visible denial behavior remains unchanged.
 
 ## Provider ids
 
@@ -82,6 +82,8 @@ This preserves Kanban Lite's open-access behavior.
 
 - `auth.identity` → validates opaque tokens against a runtime-owned principal registry
 - `auth.policy` → enforces the fixed `user` → `manager` → `admin` action matrix unless a custom permission matrix is configured
+
+In the default RBAC matrix, `admin` includes both `plugin-settings.read` and `plugin-settings.update`; `user` and `manager` do not receive either action unless you add them explicitly in `options.permissions`.
 
 ### `local`
 
@@ -108,7 +110,7 @@ Auth capabilities are declared in the `plugins` key alongside storage providers.
 
 ### Custom permission matrix
 
-Provide `options.permissions` on `auth.policy` to override the default behaviour per role. In the shared Plugin Options UI, each row picks one role from `auth.identity.options.roles` and lists the before-events that role may perform. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
+Provide `options.permissions` on `auth.policy` to override the default behaviour per role. In the shared Plugin Options UI, each row picks one role from `auth.identity.options.roles` and lists the actions that role may perform. That action list combines the live before-event catalog with auth-only supplements such as `plugin-settings.read` and `plugin-settings.update`. These entries are evaluated independently — there is no implicit inheritance inside the custom matrix, so list every allowed action explicitly.
 
 If you select the RBAC policy provider or the package-backed `kl-plugin-auth` policy provider first and have not saved custom options yet, Kanban Lite writes that default matrix into `.kanban.json` automatically so you can edit it in place.
 
@@ -121,8 +123,17 @@ If you select the RBAC policy provider or the package-backed `kl-plugin-auth` po
       "options": {
         "permissions": [
           {
+            "role": "manager",
+            "actions": ["plugin-settings.read"]
+          },
+          {
             "role": "admin",
-            "actions": ["settings.update", "board.delete"]
+            "actions": [
+              "plugin-settings.read",
+              "plugin-settings.update",
+              "settings.update",
+              "board.delete"
+            ]
           }
         ]
       }

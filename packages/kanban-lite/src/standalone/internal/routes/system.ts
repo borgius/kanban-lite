@@ -62,6 +62,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   const { ctx, route, req, res, url, pathname, resolvedWebviewDir, indexHtml } = request
   const { sdk, workspaceRoot } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
+  const getRequestScopedCard = (cardId: string, boardId = ctx.currentBoardId) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
 
   let params = route('GET', '/api/resolve-path')
   if (params) {
@@ -255,7 +256,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('GET', '/api/plugin-settings')
   if (params) {
     try {
-      jsonOk(res, await sdk.listPluginSettings())
+      jsonOk(res, await runWithRequestAuth(() => sdk.listPluginSettings()))
     } catch (err) {
       handlePluginSettingsRouteError(res, err)
     }
@@ -265,7 +266,9 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
   params = route('GET', '/api/plugin-settings/:capability/:providerId')
   if (params) {
     try {
-      const provider = await sdk.getPluginSettings(params.capability as never, params.providerId)
+      const provider = await runWithRequestAuth(() =>
+        sdk.getPluginSettings(params.capability as never, params.providerId),
+      )
       if (!provider) {
         jsonError(res, 404, 'Plugin provider not found')
       } else {
@@ -474,19 +477,31 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
         jsonError(res, 400, 'Missing cardId or files')
         return true
       }
-      for (const file of files) {
-        await doAddAttachment(ctx, cardId, file.name, Buffer.from(file.data, 'base64'))
+      const card = await runWithRequestAuth(async () => {
+        for (const file of files) {
+          const added = await doAddAttachment(ctx, cardId, file.name, Buffer.from(file.data, 'base64'))
+          if (!added) return null
+        }
+        return sdk.getCard(cardId, ctx.currentBoardId)
+      })
+      if (!card) {
+        jsonError(res, 404, 'Card not found')
+        return true
       }
       broadcast(ctx, buildInitMessage(ctx))
-      const card = ctx.cards.find(item => item.id === cardId)
-      if (card && getClientsEditingCard(ctx, cardId).length > 0) {
+      if (getClientsEditingCard(ctx, cardId).length > 0) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: true }))
     } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: String(err) }))
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: String(err) }))
+      }
     }
     return true
   }
@@ -499,33 +514,43 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       res.end('Missing cardId or filename')
       return true
     }
-    const card = ctx.cards.find(item => item.id === cardId)
-    if (!card) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' })
-      res.end('Card not found')
-      return true
-    }
-    const attachmentPath = await sdk.materializeAttachment(card, filename)
-    if (!attachmentPath) {
-      res.writeHead(501, { 'Content-Type': 'text/plain' })
-      res.end('Attachment provider does not expose a local file path')
-      return true
-    }
-    const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
-    const contentType = getContentType(filename, MIME_TYPES)
-    const fs = await import('fs')
-    fs.readFile(attachmentPath, (err, data) => {
-      if (err) {
+    try {
+      const card = await getRequestScopedCard(cardId)
+      if (!card) {
         res.writeHead(404, { 'Content-Type': 'text/plain' })
-        res.end('File not found')
+        res.end('Card not found')
         return
       }
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Disposition': `${disposition}; filename="${filename}"`,
+      const attachmentPath = await sdk.materializeAttachment(card, filename)
+      if (!attachmentPath) {
+        res.writeHead(501, { 'Content-Type': 'text/plain' })
+        res.end('Attachment provider does not expose a local file path')
+        return true
+      }
+      const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
+      const contentType = getContentType(filename, MIME_TYPES)
+      const fs = await import('fs')
+      fs.readFile(attachmentPath, (err, data) => {
+        if (err) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' })
+          res.end('File not found')
+          return
+        }
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Content-Disposition': `${disposition}; filename="${filename}"`,
+        })
+        res.end(data)
       })
-      res.end(data)
-    })
+    } catch (err) {
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
+      } else {
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end(String(err))
+      }
+    }
     return true
   }
 

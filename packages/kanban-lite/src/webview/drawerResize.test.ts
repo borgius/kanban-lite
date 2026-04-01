@@ -2,24 +2,24 @@ import { describe, expect, it, vi } from 'vitest'
 import { clampDrawerWidthPercent, createDrawerResizeController } from './drawerResize'
 
 function createEventTarget() {
-  const listeners = new Map<string, (event: { clientX: number }) => void>()
+  const listeners = new Map<string, (event: { clientX: number; clientY: number }) => void>()
 
   return {
-    addEventListener: vi.fn((type: string, listener: (event: { clientX: number }) => void) => {
+    addEventListener: vi.fn((type: string, listener: (event: { clientX: number; clientY: number }) => void) => {
       listeners.set(type, listener)
     }),
-    removeEventListener: vi.fn((type: string, listener: (event: { clientX: number }) => void) => {
+    removeEventListener: vi.fn((type: string, listener: (event: { clientX: number; clientY: number }) => void) => {
       if (listeners.get(type) === listener) {
         listeners.delete(type)
       }
     }),
-    dispatch(type: string, clientX: number) {
+    dispatch(type: string, clientX: number, clientY = 0) {
       const listener = listeners.get(type)
       if (!listener) {
         throw new Error(`Missing ${type} listener`)
       }
 
-      listener({ clientX })
+      listener({ clientX, clientY })
     },
     has(type: string) {
       return listeners.has(type)
@@ -42,13 +42,15 @@ describe('drawer resize contract', () => {
     const controller = createDrawerResizeController({
       eventTarget,
       getPanelMode: () => 'drawer',
+      getDrawerPosition: () => 'right',
       getViewportWidth: () => 1000,
+      getViewportHeight: () => 800,
       onPreview: preview,
       onCommit: commit,
       onCancel: cancel,
     })
 
-    expect(controller.start({ clientX: 900 })).toBe(true)
+    expect(controller.start({ clientX: 900, clientY: 0 })).toBe(true)
     expect(preview).toHaveBeenLastCalledWith(20)
     expect(commit).not.toHaveBeenCalled()
     expect(eventTarget.has('pointermove')).toBe(true)
@@ -76,13 +78,15 @@ describe('drawer resize contract', () => {
     const controller = createDrawerResizeController({
       eventTarget,
       getPanelMode: () => 'drawer',
+      getDrawerPosition: () => 'right',
       getViewportWidth: () => 1000,
+      getViewportHeight: () => 800,
       onPreview: preview,
       onCommit: commit,
       onCancel: cancel,
     })
 
-    controller.start({ clientX: 600 })
+    controller.start({ clientX: 600, clientY: 0 })
     eventTarget.dispatch('pointercancel', 600)
 
     expect(commit).not.toHaveBeenCalled()
@@ -103,13 +107,15 @@ describe('drawer resize contract', () => {
     const controller = createDrawerResizeController({
       eventTarget,
       getPanelMode: () => 'popup',
+      getDrawerPosition: () => 'right',
       getViewportWidth: () => 1000,
+      getViewportHeight: () => 800,
       onPreview: preview,
       onCommit: commit,
       onCancel: cancel,
     })
 
-    expect(controller.start({ clientX: 500 })).toBe(false)
+    expect(controller.start({ clientX: 500, clientY: 0 })).toBe(false)
     expect(preview).not.toHaveBeenCalled()
     expect(commit).not.toHaveBeenCalled()
     expect(cancel).not.toHaveBeenCalled()

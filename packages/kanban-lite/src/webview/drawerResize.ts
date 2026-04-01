@@ -4,8 +4,11 @@ export const MIN_DRAWER_WIDTH_PERCENT = 20
 export const MAX_DRAWER_WIDTH_PERCENT = 80
 export const DEFAULT_DRAWER_WIDTH_PERCENT = 50
 
+export type DrawerPosition = 'right' | 'left' | 'top' | 'bottom'
+
 export interface DrawerResizePointerEvent {
   clientX: number
+  clientY: number
 }
 
 export interface DrawerResizeEventTarget {
@@ -16,7 +19,9 @@ export interface DrawerResizeEventTarget {
 export interface DrawerResizeControllerOptions {
   eventTarget: DrawerResizeEventTarget
   getPanelMode: () => CardDisplaySettings['panelMode']
+  getDrawerPosition: () => DrawerPosition
   getViewportWidth: () => number
+  getViewportHeight: () => number
   onPreview: (width: number) => void
   onCommit: (width: number) => void
   onCancel: () => void
@@ -45,12 +50,28 @@ export function getDrawerWidthPercentFromClientX(clientX: number, viewportWidth:
   return clampDrawerWidthPercent(((viewportWidth - clientX) / viewportWidth) * 100)
 }
 
+export function getDrawerSizePercent(event: DrawerResizePointerEvent, position: DrawerPosition, viewportWidth: number, viewportHeight: number): number {
+  switch (position) {
+    case 'right':
+      return getDrawerWidthPercentFromClientX(event.clientX, viewportWidth)
+    case 'left':
+      if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return DEFAULT_DRAWER_WIDTH_PERCENT
+      return clampDrawerWidthPercent((event.clientX / viewportWidth) * 100)
+    case 'bottom':
+      if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return DEFAULT_DRAWER_WIDTH_PERCENT
+      return clampDrawerWidthPercent(((viewportHeight - event.clientY) / viewportHeight) * 100)
+    case 'top':
+      if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return DEFAULT_DRAWER_WIDTH_PERCENT
+      return clampDrawerWidthPercent((event.clientY / viewportHeight) * 100)
+  }
+}
+
 export function createDrawerResizeController(options: DrawerResizeControllerOptions): DrawerResizeController {
   let active = false
   let lastWidth = DEFAULT_DRAWER_WIDTH_PERCENT
 
-  const readWidth = (clientX: number): number => {
-    lastWidth = getDrawerWidthPercentFromClientX(clientX, options.getViewportWidth())
+  const readWidth = (event: DrawerResizePointerEvent): number => {
+    lastWidth = getDrawerSizePercent(event, options.getDrawerPosition(), options.getViewportWidth(), options.getViewportHeight())
     return lastWidth
   }
 
@@ -59,7 +80,7 @@ export function createDrawerResizeController(options: DrawerResizeControllerOpti
       return
     }
 
-    options.onPreview(readWidth(event.clientX))
+    options.onPreview(readWidth(event))
   }
 
   const removeListeners = (): void => {
@@ -82,7 +103,7 @@ export function createDrawerResizeController(options: DrawerResizeControllerOpti
       return
     }
 
-    const width = readWidth(event.clientX)
+    const width = readWidth(event)
     cleanup()
     options.onCommit(width)
   }
@@ -107,7 +128,7 @@ export function createDrawerResizeController(options: DrawerResizeControllerOpti
       options.eventTarget.addEventListener('pointermove', handlePointerMove)
       options.eventTarget.addEventListener('pointerup', handlePointerUp)
       options.eventTarget.addEventListener('pointercancel', handlePointerCancel)
-      options.onPreview(readWidth(event.clientX))
+      options.onPreview(readWidth(event))
       return true
     },
     cancel() {

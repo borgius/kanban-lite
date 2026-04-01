@@ -9,7 +9,7 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: false,
+  cardViewMode: 'large',
   markdownEditorMode: false,
   showDeletedColumn: false,
   defaultPriority: 'medium',
@@ -132,13 +132,13 @@ describe('CardItem — premium card surface', () => {
     expect(markup).not.toContain('>e<')
   })
 
-  it('clamps to 2 labels with +N overflow indicator in compact mode', () => {
-    storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS, compactMode: true }
+  it('hides labels in normal mode', () => {
+    storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS, cardViewMode: 'normal' }
     const labels = ['a', 'b', 'c', 'd']
     const markup = renderToStaticMarkup(
       <CardItem card={makeCard({ labels })} onClick={vi.fn()} />,
     )
-    expect(markup).toContain('+2')
+    expect(markup).not.toContain('>a<')
     storeState.cardSettings = { ...DEFAULT_CARD_SETTINGS }
   })
 

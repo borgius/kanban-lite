@@ -16,6 +16,7 @@ export function cleanupTempFile(ctx: StandaloneContext): void {
     ctx.tempFilePath = undefined
   }
   ctx.tempFileCardId = undefined
+  ctx.tempFileAuthContext = undefined
 }
 
 function escapeRegex(value: string): string {

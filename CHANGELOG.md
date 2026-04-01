@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CLI/MCP auth-visibility card lookups now stay caller-scoped**: CLI `list` / `active` / `show`, card-targeted partial-id and existence preflights, MCP `list_cards` / `get_card` / `get_active_card`, and card-targeted MCP helper/tool resolution now all run inside the caller auth scope so hidden cards behave exactly like missing cards while existing multiple-match UX remains unchanged for visible cards.
+
+- **Plugin-settings reads now require the dedicated auth action**: When auth is active, listing or reading plugin settings now requires `plugin-settings.read`, while select/update/install continue to use `plugin-settings.update`. Allowed reads remain redacted, but redaction no longer acts as an authorization bypass.
+
+- **Plugin-settings auth-denial mutation results now clear stale host state**: The standalone websocket bridge and VS Code extension host now send an explicit empty `pluginSettings` payload plus `provider: null` when plugin-settings select/update/install mutations fail due to auth or permission-denied errors, so the webview clears stale provider/plugin state instead of leaving old data visible after access is lost.
+
+- **Standalone websocket visibility fan-out now stays auth-scoped per client**: Standalone `init`, `cardsUpdated`, `cardContent`, `logsUpdated`, comment-stream, and `cardStates` websocket payloads now reload visible cards/logs inside each recipient's auth context, while hidden cards behave as not found for `openCard` / `closeCard` / log flows instead of leaking through shared raw-card caches.
+
+- **Plugin-settings mutation refresh auth scope**: The standalone websocket bridge and VS Code extension host now reload plugin-settings inventory inside the same request auth scope after successful select/update/install mutations, and when that follow-up inventory read is denied they keep the successful mutation provider/install result while falling back to an empty redacted inventory instead of falsely reporting the write as failed.
+
+- **Plugin discovery/runtime package precedence now stays aligned**: External plugin settings discovery now follows the same installed-package-first fallback order as runtime loading while still classifying true monorepo package resolutions as `workspace`, preventing temp-installed overrides (such as `kl-plugin-callback`) from drifting between discovery and execution.
+
 - **Nested plugin-option code editor dispatch**: The shared Plugin Options form now resolves `editor: 'code'` against the scoped field schema, so nested controls such as `callback.runtime.handlers[].source` render the embedded CodeMirror editor in the live browser instead of falling back to the default text input.
 
 - **Plugin Options helper text now shows without focusing fields**: The shared Settings → Plugin Options form now surfaces schema-level descriptions and keeps field descriptions visible even before focus, so provider setup notes such as S3 environment-variable guidance are actually visible in the UI instead of hiding behind JSON Forms focus state.

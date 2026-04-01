@@ -502,6 +502,7 @@ Discovery reuses the canonical runtime loader order so the returned rows
 reflect providers that the SDK can actually resolve at runtime. Selected
 state is derived from `.kanban.json`, and the payload carries the shared
 plugin-settings redaction policy for downstream UI/API/CLI/MCP reuse.
+Requires the `plugin-settings.read` auth action before any inventory is materialized.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: A capability-grouped plugin settings inventory payload.  
@@ -516,6 +517,7 @@ Returns the redacted plugin settings read model for one provider.
 The read model includes the provider's discovery source, current selected
 state for the capability, any discovered options schema metadata, and a
 redacted snapshot of persisted options when this provider is selected.
+Requires the `plugin-settings.read` auth action before any provider payload is materialized.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model, or `null` when the provider is not discovered.  
@@ -538,6 +540,8 @@ Re-selecting the same provider preserves any existing persisted options while
 switching to a different provider replaces the previous single-provider entry.
 Selecting `none` for `webhook.delivery` disables webhook runtime loading while
 preserving any stored webhook options for later re-enable.
+Requires the `plugin-settings.update` auth action before any persistence or
+provider readback occurs.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model after persistence succeeds, or `null`
@@ -564,6 +568,8 @@ When the provider is currently inactive, the options are cached under the
 shared plugin-options store so hosts can save and reopen schema-driven forms
 without changing enablement; selecting that provider later restores the
 cached options into `plugins[capability]`.
+Requires the `plugin-settings.update` auth action before any persistence or
+provider readback occurs.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model after persistence succeeds.  
@@ -586,6 +592,8 @@ The SDK validates the request before launching a subprocess, accepts only exact
 unscoped `kl-*` package names, always disables lifecycle scripts for in-product
 installs, and redacts stdout/stderr before surfacing either the success payload
 or a structured failure payload.
+Requires the `plugin-settings.update` auth action before validation or install
+subprocess work begins.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: Structured redacted success payload describing the executed npm command.  
@@ -3873,8 +3881,9 @@ board-action triggers, card-log clearing, and board-level log writes.
 Actions available to the `admin` role (includes all `manager` and `user` actions).
 
 Adds all destructive and configuration operations: board create/update/delete,
-settings, webhooks, labels, columns, board-action config edits, board-log
-clearing, migrations, default-board changes, and deleted-card purge.
+settings, plugin-settings reads/updates, webhooks, labels, columns,
+board-action config edits, board-log clearing, migrations, default-board
+changes, and deleted-card purge.
 
 **Kind**: global variable  
 
@@ -4322,8 +4331,8 @@ Attachment storage fallback precedence:
 3. Built-in `localfs`
 
 Auth plugins default to the `noop` compatibility providers (anonymous identity,
-allow-all policy) when `authCapabilities` is not supplied, preserving
-the current open-access behavior.
+allow-all policy) plus disabled visibility filtering when `authCapabilities`
+is not supplied, preserving the current open-access behavior.
 
 **Kind**: global function  
 
@@ -4331,7 +4340,7 @@ the current open-access behavior.
 | --- | --- |
 | capabilities | Normalized provider selections from [normalizeStorageCapabilities](normalizeStorageCapabilities). |
 | kanbanDir | Absolute path to the `.kanban` directory. |
-| authCapabilities | Optional normalized auth provider selections from                           [normalizeAuthCapabilities](normalizeAuthCapabilities). Defaults to noop providers. |
+| authCapabilities | Optional auth provider selections. Missing auth                           namespaces are normalized to noop/no-provider defaults. |
 | webhookCapabilities | Optional normalized webhook provider selections from                           [normalizeWebhookCapabilities](normalizeWebhookCapabilities). When omitted, webhook                           provider resolution is skipped and `bag.webhookProvider` is `null`. |
 | cardStateCapabilities | Optional normalized card-state provider selections from                           [normalizeCardStateCapabilities](normalizeCardStateCapabilities). |
 | callbackCapabilities | Optional normalized callback runtime provider selections from                           [normalizeCallbackCapabilities](normalizeCallbackCapabilities). When omitted, callback                           listener resolution is skipped and `bag.callbackListener` is `null`. |

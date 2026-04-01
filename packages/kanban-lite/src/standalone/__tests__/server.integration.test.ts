@@ -7,6 +7,7 @@ import { createRequire } from 'module'
 import { WebSocket } from 'ws'
 import { vi } from 'vitest'
 import { startServer } from '../server'
+import { broadcast } from '../broadcastService'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../../sdk/KanbanSDK'
 import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
 
@@ -165,6 +166,36 @@ function waitForMessage(ws: WebSocket, expectedType: string, timeout = 5000): Pr
   })
 }
 
+function expectNoMessageOfTypes(
+  ws: WebSocket,
+  forbiddenTypes: string | string[],
+  timeout = 400,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const forbidden = new Set(Array.isArray(forbiddenTypes) ? forbiddenTypes : [forbiddenTypes])
+
+    const handler = (data: Buffer | string) => {
+      try {
+        const parsed = JSON.parse(data.toString()) as { type?: unknown }
+        if (typeof parsed.type === 'string' && forbidden.has(parsed.type)) {
+          clearTimeout(timer)
+          ws.off('message', handler)
+          reject(new Error(`Unexpected websocket message type: ${parsed.type}`))
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const timer = setTimeout(() => {
+      ws.off('message', handler)
+      resolve()
+    }, timeout)
+
+    ws.on('message', handler)
+  })
+}
+
 // Helper: fetch HTTP response
 function httpGet(
   url: string,
@@ -286,6 +317,66 @@ function writeWorkspaceConfig(workspaceDir: string, config: Record<string, unkno
   return resolvedConfigPath
 }
 
+function createPluginSettingsScopedAuthPluginSource(packageName: string, denyAfterReadCount?: number): string {
+  const denyAfterReadGuard = typeof denyAfterReadCount === 'number'
+    ? `
+        pluginSettingsReadCount += 1
+        if (pluginSettingsReadCount > ${denyAfterReadCount}) {
+          return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+        }
+`
+    : ''
+
+  return `let pluginSettingsReadCount = 0
+module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      const rawToken = context && typeof context.token === 'string' ? context.token : ''
+      const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7) : rawToken
+      if (!token) return null
+      if (token === 'admin') return { subject: 'user-admin', roles: ['admin'] }
+      if (token === 'manager') return { subject: 'user-manager', roles: ['manager'] }
+      return { subject: 'user-' + token, roles: ['user'] }
+    },
+  },
+  authPolicyPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.policy'] },
+    async checkPolicy(identity, action) {
+      if (!identity) {
+        return { allowed: false, reason: 'auth.identity.missing' }
+      }
+
+      if (action === 'plugin-settings.read') {
+        const roles = Array.isArray(identity.roles) ? identity.roles : []
+        if (!roles.includes('admin')) {
+          return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+        }${denyAfterReadGuard}
+      }
+
+      return { allowed: true, actor: identity.subject }
+    },
+  },
+}
+`
+}
+
+function createVisibilityScopedAuthIdentityPluginSource(packageName: string): string {
+  return `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      const rawToken = context && typeof context.token === 'string' ? context.token : ''
+      const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7) : rawToken
+      if (token === 'reader-token') return { subject: 'alice', roles: ['reader'] }
+      if (token === 'writer-token') return { subject: 'casey', roles: ['writer'] }
+      return null
+    },
+  },
+}
+`
+}
+
 // Helper: create a temp webview directory with dummy static files
 function createTempWebviewDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-webview-'))
@@ -293,6 +384,109 @@ function createTempWebviewDir(): string {
   fs.writeFileSync(path.join(dir, 'style.css'), '/* test css */', 'utf-8')
   return dir
 }
+
+function createIsolatedStandaloneTestWorkspace(): {
+  kanbanDir: string
+  workspaceRoot: string
+  webviewDir: string
+  cleanup: () => void
+} {
+  const kanbanDir = createTempDir()
+  const workspaceRoot = path.dirname(kanbanDir)
+  const webviewDir = createTempWebviewDir()
+
+  return {
+    kanbanDir,
+    workspaceRoot,
+    webviewDir,
+    cleanup: () => {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true })
+      fs.rmSync(webviewDir, { recursive: true, force: true })
+    },
+  }
+}
+
+describe('Standalone broadcastService visibility scoping', () => {
+  it('builds cardsUpdated payloads under each websocket client auth context', async () => {
+    const publicCard = {
+      id: 'public-card',
+      boardId: 'default',
+      status: 'backlog',
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      labels: ['public'],
+      attachments: [],
+      order: 'a0',
+      created: '2026-03-31T00:00:00.000Z',
+      modified: '2026-03-31T00:00:00.000Z',
+      completedAt: null,
+      content: '# Public Card',
+      comments: [],
+    }
+    const privateCard = {
+      ...publicCard,
+      id: 'private-card',
+      labels: ['private'],
+      content: '# Private Card',
+      order: 'a1',
+    }
+
+    const readerSend = vi.fn()
+    const writerSend = vi.fn()
+    const readerClient = { readyState: WebSocket.OPEN, send: readerSend } as unknown as WebSocket
+    const writerClient = { readyState: WebSocket.OPEN, send: writerSend } as unknown as WebSocket
+
+    let activeAuthToken: string | undefined
+    const sdk = {
+      listColumns: vi.fn(() => [{ id: 'backlog' }]),
+      listCards: vi.fn(async () => activeAuthToken === 'reader-token' ? [publicCard] : [publicCard, privateCard]),
+      getCardStateStatus: vi.fn(() => ({
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: false,
+      })),
+      getCardStateReadModelForCard: vi.fn(async (card: { id: string }) => ({
+        unread: {
+          actorId: activeAuthToken ?? 'anonymous',
+          cardId: card.id,
+          unread: false,
+        },
+        open: null,
+      })),
+      runWithAuth: vi.fn(async (auth: { token?: string }, fn: () => Promise<unknown>) => {
+        const previous = activeAuthToken
+        activeAuthToken = auth.token
+        try {
+          return await fn()
+        } finally {
+          activeAuthToken = previous
+        }
+      }),
+    }
+
+    const ctx = {
+      sdk,
+      wss: { clients: new Set([readerClient, writerClient]) },
+      cards: [publicCard, privateCard],
+      clientAuthContexts: new Map([
+        [readerClient, { token: 'reader-token' }],
+        [writerClient, { token: 'writer-token' }],
+      ]),
+      clientEditingCardIds: new Map(),
+      currentBoardId: 'default',
+    } as unknown as Parameters<typeof broadcast>[0]
+
+    broadcast(ctx, { type: 'cardsUpdated' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const readerPayload = JSON.parse(String(readerSend.mock.calls[0][0])) as { cards: Array<{ id: string }> }
+    const writerPayload = JSON.parse(String(writerSend.mock.calls[0][0])) as { cards: Array<{ id: string }> }
+
+    expect(readerPayload.cards.map((card) => card.id)).toEqual(['public-card'])
+    expect(writerPayload.cards.map((card) => card.id)).toEqual(['public-card', 'private-card'])
+  })
+})
 
 describe('Standalone Server Integration', () => {
   let server: http.Server
@@ -526,7 +720,7 @@ describe('Standalone Server Integration', () => {
         title: 'Test Card'
       }), 'backlog')
 
-      ws = await connectWs(port)
+      ws = await connectWs(port, { Authorization: 'Bearer ws-local-token' })
 
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
 
@@ -1913,16 +2107,16 @@ describe('Standalone Server Integration', () => {
 
       const selectResponse = await sendAndReceiveMatching(
         ws,
-        { type: 'selectPluginSettingsProvider', capability: 'card.storage', providerId: 'markdown' },
+        { type: 'selectPluginSettingsProvider', capability: 'card.storage', providerId: 'localfs' },
         'pluginSettingsResult',
         (parsed) => parsed.action === 'select',
       )
       expect(selectResponse.provider).toMatchObject({
         capability: 'card.storage',
-        providerId: 'markdown',
+        providerId: 'localfs',
         selected: {
           capability: 'card.storage',
-          providerId: 'markdown',
+          providerId: 'localfs',
           source: 'config',
         },
       })
@@ -1930,7 +2124,7 @@ describe('Standalone Server Integration', () => {
         capabilities: expect.arrayContaining([
           expect.objectContaining({
             capability: 'card.storage',
-            selected: expect.objectContaining({ providerId: 'markdown' }),
+            selected: expect.objectContaining({ providerId: 'localfs' }),
           }),
         ]),
       })
@@ -1966,7 +2160,7 @@ describe('Standalone Server Integration', () => {
         plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
       }
       expect(persistedConfig.plugins).toMatchObject({
-        'card.storage': { provider: 'markdown' },
+        'card.storage': { provider: 'localfs' },
         'auth.identity': {
           provider: 'local',
           options: {
@@ -2041,9 +2235,490 @@ describe('Standalone Server Integration', () => {
           stderr: expect.stringContaining('[REDACTED]'),
         }),
       })
+      expect(response.pluginSettings).toBeUndefined()
+      expect(response.provider).toBeUndefined()
       expect(JSON.stringify(response)).not.toContain('npm_super_secret_token')
       expect(JSON.stringify(response)).not.toContain('super-secret-password')
       installSpy.mockRestore()
+    })
+
+    it('keeps websocket plugin-settings mutation refreshes inside the request auth scope', async () => {
+      const packageName = 'standalone-plugin-settings-websocket-refresh-scope-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createPluginSettingsScopedAuthPluginSource(packageName),
+      )
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        auth: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: packageName },
+        },
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const installSpy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockResolvedValue({
+        packageName: 'kl-plugin-auth',
+        scope: 'workspace',
+        command: {
+          command: 'npm',
+          args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
+          cwd: isolated.workspaceRoot,
+          shell: false,
+        },
+        stdout: 'Authorization: Bearer [REDACTED]',
+        stderr: 'password=[REDACTED]',
+        message: 'Installed plugin package with lifecycle scripts disabled.',
+        redaction: {
+          maskedValue: '••••••',
+          writeOnly: true,
+          targets: ['read', 'list', 'error'],
+        },
+      })
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer admin' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const selectResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'selectPluginSettingsProvider', capability: 'card.storage', providerId: 'localfs' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'select',
+        )
+        expect(selectResponse.error).toBeUndefined()
+        expect(selectResponse.pluginSettings).toMatchObject({
+          capabilities: expect.arrayContaining([
+            expect.objectContaining({
+              capability: 'card.storage',
+              selected: expect.objectContaining({ providerId: 'localfs' }),
+            }),
+          ]),
+        })
+
+        const updateResponse = await sendAndReceiveMatching(
+          ws,
+          {
+            type: 'updatePluginSettingsOptions',
+            capability: 'card.storage',
+            providerId: 'sqlite',
+            options: { sqlitePath: '.kanban/updated.db' },
+          },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'updateOptions',
+        )
+        expect(updateResponse.error).toBeUndefined()
+        expect(updateResponse.provider).toMatchObject({
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          options: {
+            values: {
+              sqlitePath: '.kanban/updated.db',
+            },
+          },
+        })
+
+        const installResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'install',
+        )
+        expect(installResponse.error).toBeUndefined()
+        expect(installResponse.install).toMatchObject({
+          packageName: 'kl-plugin-auth',
+          scope: 'workspace',
+        })
+        expect(installResponse.pluginSettings).toMatchObject({
+          redaction: expect.objectContaining({ maskedValue: '••••••' }),
+        })
+      } finally {
+        installSpy.mockRestore()
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('preserves successful websocket plugin-settings mutations when refresh inventory reads are denied', async () => {
+      const packageName = 'standalone-plugin-settings-websocket-refresh-denied-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createPluginSettingsScopedAuthPluginSource(packageName),
+      )
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        auth: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: packageName },
+        },
+        plugins: {
+          'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const installSpy = vi.spyOn(KanbanSDK.prototype, 'installPluginSettingsPackage').mockResolvedValue({
+        packageName: 'kl-plugin-auth',
+        scope: 'workspace',
+        command: {
+          command: 'npm',
+          args: ['install', '--ignore-scripts', 'kl-plugin-auth'],
+          cwd: isolated.workspaceRoot,
+          shell: false,
+        },
+        stdout: 'Authorization: Bearer [REDACTED]',
+        stderr: 'password=[REDACTED]',
+        message: 'Installed plugin package with lifecycle scripts disabled.',
+        redaction: {
+          maskedValue: '••••••',
+          writeOnly: true,
+          targets: ['read', 'list', 'error'],
+        },
+      })
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer manager' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const selectResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'selectPluginSettingsProvider', capability: 'card.storage', providerId: 'localfs' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'select',
+        )
+        expect(selectResponse.error).toBeUndefined()
+        expect(selectResponse.pluginSettings).toMatchObject({
+          redaction: expect.objectContaining({ maskedValue: '••••••' }),
+          capabilities: [],
+        })
+        expect(selectResponse.provider).toMatchObject({
+          capability: 'card.storage',
+          providerId: 'localfs',
+          selected: {
+            capability: 'card.storage',
+            providerId: 'localfs',
+            source: 'config',
+          },
+        })
+
+        const updateResponse = await sendAndReceiveMatching(
+          ws,
+          {
+            type: 'updatePluginSettingsOptions',
+            capability: 'card.storage',
+            providerId: 'sqlite',
+            options: { sqlitePath: '.kanban/updated.db' },
+          },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'updateOptions',
+        )
+        expect(updateResponse.error).toBeUndefined()
+        expect(updateResponse.pluginSettings).toMatchObject({
+          redaction: expect.objectContaining({ maskedValue: '••••••' }),
+          capabilities: [],
+        })
+        expect(updateResponse.provider).toMatchObject({
+          capability: 'card.storage',
+          providerId: 'sqlite',
+          options: {
+            values: {
+              sqlitePath: '.kanban/updated.db',
+            },
+          },
+        })
+
+        const installResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'installPluginSettingsPackage', packageName: 'kl-plugin-auth', scope: 'workspace' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'install',
+        )
+        expect(installResponse.error).toBeUndefined()
+        expect(installResponse.pluginSettings).toMatchObject({
+          redaction: expect.objectContaining({ maskedValue: '••••••' }),
+          capabilities: [],
+        })
+        expect(installResponse.provider).toBeNull()
+        expect(installResponse.install).toMatchObject({
+          packageName: 'kl-plugin-auth',
+          scope: 'workspace',
+        })
+      } finally {
+        installSpy.mockRestore()
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('keeps showSettings alive while denied websocket plugin-settings reads fall back to the empty/error channel', async () => {
+      const packageName = 'standalone-plugin-settings-websocket-deny-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createPluginSettingsScopedAuthPluginSource(packageName),
+      )
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: packageName },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer manager' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const showSettings = await sendAndReceive(ws, { type: 'openSettings' }, 'showSettings')
+        expect(showSettings.settings).toBeDefined()
+        expect(showSettings.pluginSettings).toMatchObject({
+          redaction: expect.objectContaining({ maskedValue: '••••••' }),
+          capabilities: [],
+        })
+      } finally {
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('returns empty websocket plugin-settings/provider payloads when loadPluginSettings is denied', async () => {
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'load-local-token',
+              users: [{ username: 'alice', password: 'load-super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer load-local-token' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const { AuthError } = await import('../../sdk/types')
+        const listSpy = vi.spyOn(KanbanSDK.prototype, 'listPluginSettings').mockRejectedValue(
+          new AuthError('auth.policy.denied', 'Action "plugin-settings.read" denied', undefined),
+        )
+
+        try {
+          const pluginSettingsError = await sendAndReceiveMatching(
+            ws,
+            { type: 'loadPluginSettings' },
+            'pluginSettingsResult',
+            (parsed) => parsed.action === 'read' && parsed.error !== undefined,
+          )
+          expect(pluginSettingsError).toMatchObject({
+            type: 'pluginSettingsResult',
+            action: 'read',
+            pluginSettings: {
+              redaction: expect.objectContaining({ maskedValue: '••••••' }),
+              capabilities: [],
+            },
+            provider: null,
+            error: expect.objectContaining({
+              code: 'plugin-settings-read-failed',
+              message: 'Unable to read plugin settings.',
+            }),
+          })
+        } finally {
+          listSpy.mockRestore()
+        }
+      } finally {
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
+    })
+
+    it('clears stale websocket plugin-settings/provider payloads when a later scoped read is denied', async () => {
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'stale-local-token',
+              users: [{ username: 'alice', password: 'stale-super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer stale-local-token' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const readResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'readPluginSettings', capability: 'auth.identity', providerId: 'local' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'read' && parsed.error === undefined,
+        )
+        expect(readResponse.provider).toMatchObject({
+          capability: 'auth.identity',
+          providerId: 'local',
+        })
+
+        const { AuthError } = await import('../../sdk/types')
+        const listSpy = vi.spyOn(KanbanSDK.prototype, 'listPluginSettings').mockRejectedValue(
+          new AuthError('auth.policy.denied', 'Action "plugin-settings.read" denied', undefined),
+        )
+
+        const deniedResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'readPluginSettings', capability: 'auth.identity', providerId: 'local' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'read' && parsed.error !== undefined,
+        )
+        expect(deniedResponse).toMatchObject({
+          pluginSettings: {
+            redaction: expect.objectContaining({ maskedValue: '••••••' }),
+            capabilities: [],
+          },
+          provider: null,
+          error: expect.objectContaining({
+            code: 'plugin-settings-read-failed',
+            message: 'Unable to read plugin settings.',
+          }),
+        })
+        listSpy.mockRestore()
+      } finally {
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
+    })
+
+    it('clears stale websocket plugin-settings/provider payloads when plugin-settings mutations are auth-denied', async () => {
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'mutation-local-token',
+              users: [{ username: 'alice', password: 'mutation-super-secret-password', role: 'admin' }],
+            },
+          },
+          'auth.policy': { provider: 'local' },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        ws = await connectWs(localPort, { Authorization: 'Bearer mutation-local-token' })
+        await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+        const readResponse = await sendAndReceiveMatching(
+          ws,
+          { type: 'readPluginSettings', capability: 'auth.identity', providerId: 'local' },
+          'pluginSettingsResult',
+          (parsed) => parsed.action === 'read' && parsed.error === undefined,
+        )
+        expect(readResponse.provider).toMatchObject({
+          capability: 'auth.identity',
+          providerId: 'local',
+        })
+
+        const { AuthError } = await import('../../sdk/types')
+        const cases = [
+          {
+            action: 'select',
+            message: { type: 'selectPluginSettingsProvider', capability: 'auth.identity', providerId: 'local' },
+            mock: vi.spyOn(KanbanSDK.prototype, 'selectPluginSettingsProvider').mockRejectedValue(
+              new AuthError('auth.policy.denied', 'Action "plugin-settings.update" denied', undefined),
+            ),
+            expectedError: {
+              code: 'plugin-settings-select-failed',
+              capability: 'auth.identity',
+              providerId: 'local',
+            },
+          },
+          {
+            action: 'updateOptions',
+            message: {
+              type: 'updatePluginSettingsOptions',
+              capability: 'auth.identity',
+              providerId: 'local',
+              options: { apiToken: '••••••' },
+            },
+            mock: vi.spyOn(KanbanSDK.prototype, 'updatePluginSettingsOptions').mockRejectedValue(
+              new AuthError('auth.policy.denied', 'Action "plugin-settings.update" denied', undefined),
+            ),
+            expectedError: {
+              code: 'plugin-settings-update-failed',
+              capability: 'auth.identity',
+              providerId: 'local',
+            },
+          },
+        ] as const
+
+        try {
+          for (const testCase of cases) {
+            const deniedResponse = await sendAndReceiveMatching(
+              ws,
+              testCase.message,
+              'pluginSettingsResult',
+              (parsed) => parsed.action === testCase.action && parsed.error !== undefined,
+            )
+            expect(deniedResponse).toMatchObject({
+              pluginSettings: {
+                redaction: expect.objectContaining({ maskedValue: '••••••' }),
+                capabilities: [],
+              },
+              provider: null,
+              error: expect.objectContaining(testCase.expectedError),
+            })
+          }
+        } finally {
+          for (const testCase of cases) {
+            testCase.mock.mockRestore()
+          }
+        }
+      } finally {
+        ws.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
     })
 
     it('should persist settings to .kanban-settings.json', async () => {
@@ -2059,7 +2734,7 @@ describe('Standalone Server Integration', () => {
           showLabels: false,
           showBuildWithAI: false,
           showFileName: false,
-          compactMode: true,
+          cardViewMode: 'normal',
           markdownEditorMode: false,
           defaultPriority: 'high',
           defaultStatus: 'todo'
@@ -2068,7 +2743,7 @@ describe('Standalone Server Integration', () => {
 
       // init broadcast should have updated settings
       const settings = response.settings as Record<string, unknown>
-      expect(settings.compactMode).toBe(true)
+      expect(settings.cardViewMode).toBe('normal')
       expect(settings.showLabels).toBe(false)
       expect(settings.defaultPriority).toBe('high')
       expect(settings.defaultStatus).toBe('todo')
@@ -2077,7 +2752,7 @@ describe('Standalone Server Integration', () => {
       const configFile = path.join(path.dirname(tempDir), '.kanban.json')
       expect(fs.existsSync(configFile)).toBe(true)
       const persisted = JSON.parse(fs.readFileSync(configFile, 'utf-8'))
-      expect(persisted.compactMode).toBe(true)
+      expect(persisted.cardViewMode).toBe('normal')
       expect(persisted.showLabels).toBe(false)
     })
 
@@ -2099,7 +2774,7 @@ describe('Standalone Server Integration', () => {
       const response = await sendAndReceive(ws, { type: 'ready' }, 'init')
       const settings = response.settings as Record<string, unknown>
       expect(settings.showPriorityBadges).toBe(false)
-      expect(settings.compactMode).toBe(true)
+      expect(settings.cardViewMode).toBe('normal')
       expect(settings.defaultPriority).toBe('low')
       // Defaults for unspecified settings
       expect(settings.showAssignee).toBe(true)
@@ -2125,7 +2800,7 @@ describe('Standalone Server Integration', () => {
           showLabels: true,
           showBuildWithAI: false,
           showFileName: true,
-          compactMode: true,
+          cardViewMode: 'normal',
           markdownEditorMode: false,
           defaultPriority: 'medium',
           defaultStatus: 'backlog'
@@ -2134,7 +2809,7 @@ describe('Standalone Server Integration', () => {
 
       const response = await ws2Update
       const settings = response.settings as Record<string, unknown>
-      expect(settings.compactMode).toBe(true)
+      expect(settings.cardViewMode).toBe('normal')
       expect(settings.showFileName).toBe(true)
 
       ws1.close()
@@ -2155,7 +2830,6 @@ describe('Standalone Server Integration', () => {
           showLabels: true,
           showBuildWithAI: true,
           showFileName: false,
-          compactMode: false,
           markdownEditorMode: true,
           defaultPriority: 'medium',
           defaultStatus: 'backlog'
@@ -2177,7 +2851,7 @@ describe('Standalone Server Integration', () => {
       const settings = response.settings as Record<string, unknown>
       // Should fall back to defaults
       expect(settings.showPriorityBadges).toBe(true)
-      expect(settings.compactMode).toBe(false)
+      expect(settings.cardViewMode).toBe('large')
     })
   })
 
@@ -2652,7 +3326,7 @@ describe('Standalone Server Integration', () => {
       const json = JSON.parse(res.body)
       expect(json.ok).toBe(true)
       expect(json.data).toMatchObject({
-        provider: 'builtin',
+        provider: 'localfs',
         active: true,
         backend: 'builtin',
         availability: 'available',
@@ -2879,6 +3553,631 @@ describe('Standalone Server Integration', () => {
       } finally {
         cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+      }
+    })
+
+    it('uses request-scoped auth for task and board list/get/active/open/read lookups when visibility is caller-specific', async () => {
+      const packageName = 'standalone-rest-auth-visibility-lookups-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+      fs.writeFileSync(
+        path.join(isolated.kanbanDir, '.active-card.json'),
+        JSON.stringify({
+          cardId: 'private-card',
+          boardId: 'default',
+          updatedAt: '2026-03-31T00:00:00.000Z',
+        }),
+        'utf-8',
+      )
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const expectTaskNotFound = async (
+        responsePromise: Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>,
+      ) => {
+        const response = await responsePromise
+        expect(response.status).toBe(404)
+        expect(JSON.parse(response.body)).toEqual({
+          ok: false,
+          error: 'Task not found',
+        })
+      }
+
+      try {
+        const listRes = await httpGet(`http://localhost:${localPort}/api/tasks`, readerHeaders)
+        expect(listRes.status).toBe(200)
+        expect(JSON.parse(listRes.body).data.map((card: { id: string }) => card.id)).toEqual(['public-card'])
+
+        const boardListRes = await httpGet(`http://localhost:${localPort}/api/boards/default/tasks`, readerHeaders)
+        expect(boardListRes.status).toBe(200)
+        expect(JSON.parse(boardListRes.body).data.map((card: { id: string }) => card.id)).toEqual(['public-card'])
+
+        const activeRes = await httpGet(`http://localhost:${localPort}/api/tasks/active`, readerHeaders)
+        expect(activeRes.status).toBe(200)
+        expect(JSON.parse(activeRes.body).data).toBeNull()
+
+        const boardActiveRes = await httpGet(`http://localhost:${localPort}/api/boards/default/tasks/active`, readerHeaders)
+        expect(boardActiveRes.status).toBe(200)
+        expect(JSON.parse(boardActiveRes.body).data).toBeNull()
+
+        await expectTaskNotFound(httpGet(`http://localhost:${localPort}/api/tasks/private-card`, readerHeaders))
+        await expectTaskNotFound(httpGet(`http://localhost:${localPort}/api/boards/default/tasks/private-card`, readerHeaders))
+        await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/open`, {}, readerHeaders))
+        await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/read`, {}, readerHeaders))
+        await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/boards/default/tasks/private-card/open`, {}, readerHeaders))
+        await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/boards/default/tasks/private-card/read`, {}, readerHeaders))
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('returns 404 for hidden task and board card-targeted mutations instead of leaking cached card existence', async () => {
+      const packageName = 'standalone-rest-auth-visibility-mutations-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      const expectTaskNotFoundStatus = async (
+        responsePromise: Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>,
+      ) => {
+        const response = await responsePromise
+        expect(response.status).toBe(404)
+      }
+
+      try {
+        const createBoardRes = await httpRequest('POST', `http://localhost:${localPort}/api/boards`, {
+          id: 'ops',
+          name: 'Ops',
+        }, writerHeaders)
+        expect(createBoardRes.status).toBe(201)
+
+        await expectTaskNotFoundStatus(httpRequest('PUT', `http://localhost:${localPort}/api/tasks/private-card`, {
+          priority: 'high',
+        }, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('PATCH', `http://localhost:${localPort}/api/tasks/private-card/move`, {
+          status: 'done',
+          position: 0,
+        }, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('DELETE', `http://localhost:${localPort}/api/tasks/private-card`, undefined, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('DELETE', `http://localhost:${localPort}/api/tasks/private-card/permanent`, undefined, readerHeaders))
+
+        await expectTaskNotFoundStatus(httpRequest('PUT', `http://localhost:${localPort}/api/boards/default/tasks/private-card`, {
+          priority: 'high',
+        }, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('PATCH', `http://localhost:${localPort}/api/boards/default/tasks/private-card/move`, {
+          status: 'done',
+          position: 0,
+        }, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('DELETE', `http://localhost:${localPort}/api/boards/default/tasks/private-card`, undefined, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('DELETE', `http://localhost:${localPort}/api/boards/default/tasks/private-card/permanent`, undefined, readerHeaders))
+        await expectTaskNotFoundStatus(httpRequest('POST', `http://localhost:${localPort}/api/boards/ops/tasks/private-card/transfer`, {
+          targetStatus: 'backlog',
+        }, readerHeaders))
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('treats hidden cards as not found across comment, log, attachment, and system attachment routes', async () => {
+      const packageName = 'standalone-rest-auth-visibility-card-data-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      const expectJsonNotFound = async (
+        responsePromise: Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>,
+      ) => {
+        const response = await responsePromise
+        expect(response.status).toBe(404)
+        const json = JSON.parse(response.body)
+        expect(json.ok).toBe(false)
+        expect(String(json.error).toLowerCase()).toContain('not found')
+      }
+
+      try {
+        const seedCommentRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/comments`, {
+          author: 'casey',
+          content: 'private note',
+        }, writerHeaders)
+        expect(seedCommentRes.status).toBe(201)
+
+        const seedLogRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/logs`, {
+          text: 'private log entry',
+        }, writerHeaders)
+        expect(seedLogRes.status).toBe(201)
+
+        const seedAttachmentRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/attachments`, {
+          files: [{
+            name: 'secret.txt',
+            data: Buffer.from('classified').toString('base64'),
+          }],
+        }, writerHeaders)
+        expect(seedAttachmentRes.status).toBe(200)
+
+        await expectJsonNotFound(httpGet(`http://localhost:${localPort}/api/tasks/private-card/comments`, readerHeaders))
+        await expectJsonNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/comments`, {
+          author: 'alice',
+          content: 'should be hidden',
+        }, readerHeaders))
+
+        await expectJsonNotFound(httpGet(`http://localhost:${localPort}/api/tasks/private-card/logs`, readerHeaders))
+        await expectJsonNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/logs`, {
+          text: 'should be hidden',
+        }, readerHeaders))
+
+        await expectJsonNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/attachments`, {
+          files: [{
+            name: 'blocked.txt',
+            data: Buffer.from('blocked').toString('base64'),
+          }],
+        }, readerHeaders))
+        await expectJsonNotFound(httpGet(`http://localhost:${localPort}/api/tasks/private-card/attachments/secret.txt`, readerHeaders))
+        await expectJsonNotFound(httpRequest('DELETE', `http://localhost:${localPort}/api/tasks/private-card/attachments/secret.txt`, undefined, readerHeaders))
+
+        const hiddenSystemUploadRes = await httpRequest('POST', `http://localhost:${localPort}/api/upload-attachment`, {
+          cardId: 'private-card',
+          files: [{
+            name: 'system-secret.txt',
+            data: Buffer.from('still blocked').toString('base64'),
+          }],
+        }, readerHeaders)
+        expect(hiddenSystemUploadRes.status).toBe(404)
+        expect(JSON.parse(hiddenSystemUploadRes.body)).toEqual({
+          ok: false,
+          error: 'Card not found',
+        })
+
+        const hiddenSystemGetRes = await httpGet(
+          `http://localhost:${localPort}/api/attachment?cardId=private-card&filename=secret.txt`,
+          readerHeaders,
+        )
+        expect(hiddenSystemGetRes.status).toBe(404)
+        expect(hiddenSystemGetRes.body).toBe('Card not found')
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('treats hidden /api/card-file requests as not found and syncs temp-file edits through the opener auth context', async () => {
+      const packageName = 'standalone-rest-auth-visibility-card-file-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      const privateCardPath = writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+        body: 'Original private body.',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      let writerWs: WebSocket | undefined
+
+      try {
+        writerWs = await connectWs(localPort, writerHeaders)
+        await sendAndReceive(writerWs, { type: 'ready' }, 'init')
+
+        const hiddenRes = await httpGet(`http://localhost:${localPort}/api/card-file?cardId=private-card`, readerHeaders)
+        expect(hiddenRes.status).toBe(404)
+        expect(JSON.parse(hiddenRes.body)).toEqual({
+          ok: false,
+          error: 'Card not found',
+        })
+
+        const openRes = await httpGet(`http://localhost:${localPort}/api/card-file?cardId=private-card`, writerHeaders)
+        expect(openRes.status).toBe(200)
+        const openPayload = JSON.parse(openRes.body) as { ok: boolean; data: { path: string } }
+        expect(openPayload.ok).toBe(true)
+        expect(typeof openPayload.data.path).toBe('string')
+
+        const tempFilePath = openPayload.data.path
+        const tempCard = fs.readFileSync(tempFilePath, 'utf-8')
+        fs.writeFileSync(tempFilePath, tempCard.replace('Original private body.', 'Updated through temp file.'), 'utf-8')
+
+        let syncedSource = fs.readFileSync(privateCardPath, 'utf-8')
+        for (let attempt = 0; attempt < 20 && !syncedSource.includes('Updated through temp file.'); attempt += 1) {
+          await sleep(100)
+          syncedSource = fs.readFileSync(privateCardPath, 'utf-8')
+        }
+
+        expect(syncedSource).toContain('Updated through temp file.')
+      } finally {
+        writerWs?.close()
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('scopes websocket init and hidden card-state requests per client visibility', async () => {
+      const packageName = 'standalone-websocket-auth-visibility-init-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerWs = await connectWs(localPort, { Authorization: 'Bearer reader-token' })
+      const writerWs = await connectWs(localPort, { Authorization: 'Bearer writer-token' })
+
+      try {
+        const readerInit = await sendAndReceive(readerWs, { type: 'ready' }, 'init')
+        const writerInit = await sendAndReceive(writerWs, { type: 'ready' }, 'init')
+
+        expect((readerInit.cards as Array<{ id: string }>).map((card) => card.id)).toEqual(['public-card'])
+        expect((writerInit.cards as Array<{ id: string }>).map((card) => card.id)).toEqual(['public-card', 'private-card'])
+
+        const hiddenStates = await sendAndReceive(readerWs, { type: 'getCardStates', cardIds: ['private-card'] }, 'cardStates')
+        expect(hiddenStates.states).toEqual({})
+      } finally {
+        readerWs.close()
+        writerWs.close()
+        await sleep(50)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('treats websocket open, close, log, and state paths as hidden-as-not-found per client auth context', async () => {
+      const packageName = 'standalone-websocket-auth-visibility-card-detail-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      const readerWs = await connectWs(localPort, readerHeaders)
+      const writerWs = await connectWs(localPort, writerHeaders)
+
+      try {
+        await sendAndReceive(readerWs, { type: 'ready' }, 'init')
+        await sendAndReceive(writerWs, { type: 'ready' }, 'init')
+
+        const hiddenStates = await sendAndReceive(readerWs, { type: 'getCardStates', cardIds: ['private-card'] }, 'cardStates')
+        expect(hiddenStates.states).toEqual({})
+
+        readerWs.send(JSON.stringify({ type: 'openCard', cardId: 'private-card' }))
+        await expectNoMessageOfTypes(readerWs, ['cardContent', 'logsUpdated'])
+
+        const hiddenActiveRes = await httpGet(`http://localhost:${localPort}/api/tasks/active`, readerHeaders)
+        expect(hiddenActiveRes.status).toBe(200)
+        expect(JSON.parse(hiddenActiveRes.body).data).toBeNull()
+
+        const writerOpen = await sendAndReceive(writerWs, { type: 'openCard', cardId: 'private-card' }, 'cardContent')
+        expect(writerOpen.cardId).toBe('private-card')
+
+        readerWs.send(JSON.stringify({ type: 'closeCard' }))
+        await sleep(150)
+
+        const writerActiveRes = await httpGet(`http://localhost:${localPort}/api/tasks/active`, writerHeaders)
+        expect(writerActiveRes.status).toBe(200)
+        expect(JSON.parse(writerActiveRes.body).data).toMatchObject({ id: 'private-card' })
+
+        readerWs.send(JSON.stringify({ type: 'getLogs', cardId: 'private-card' }))
+        await expectNoMessageOfTypes(readerWs, 'logsUpdated')
+
+        const writerLogsUpdatePromise = waitForMessage(writerWs, 'logsUpdated', 5000)
+        const hiddenReaderLogs = expectNoMessageOfTypes(readerWs, 'logsUpdated', 800)
+        const logRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/logs`, {
+          text: 'writer-only private log',
+        }, writerHeaders)
+        expect(logRes.status).toBe(201)
+
+        const writerLogsUpdate = await writerLogsUpdatePromise
+        expect(writerLogsUpdate.cardId).toBe('private-card')
+        expect(writerLogsUpdate.logs).toEqual(expect.arrayContaining([
+          expect.objectContaining({ text: 'writer-only private log' }),
+        ]))
+        await hiddenReaderLogs
+      } finally {
+        readerWs.close()
+        writerWs.close()
+        await sleep(50)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('limits websocket comment-stream events to visible clients editing that card', async () => {
+      const packageName = 'standalone-websocket-auth-visibility-comment-stream-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createVisibilityScopedAuthIdentityPluginSource(packageName),
+      )
+
+      writeCardFile(isolated.kanbanDir, 'public-card.md', makeCardContent({
+        id: 'public-card',
+        labels: ['public'],
+        order: 'a0',
+      }), 'backlog')
+      writeCardFile(isolated.kanbanDir, 'private-card.md', makeCardContent({
+        id: 'private-card',
+        labels: ['private'],
+        order: 'a1',
+      }), 'backlog')
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: 'noop' },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      const readerWs = await connectWs(localPort, readerHeaders)
+      const writerWs = await connectWs(localPort, writerHeaders)
+
+      try {
+        await sendAndReceive(readerWs, { type: 'ready' }, 'init')
+        await sendAndReceive(writerWs, { type: 'ready' }, 'init')
+        await sendAndReceive(writerWs, { type: 'openCard', cardId: 'private-card' }, 'cardContent')
+
+        const readerNoStreamEvents = expectNoMessageOfTypes(readerWs, [
+          'commentStreamStart',
+          'commentChunk',
+          'commentStreamDone',
+        ], 1000)
+        const writerStreamStart = waitForMessage(writerWs, 'commentStreamStart', 5000)
+        const writerStreamDone = waitForMessage(writerWs, 'commentStreamDone', 5000)
+
+        const streamRes = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+          const req = http.request(
+            {
+              hostname: 'localhost',
+              port: localPort,
+              path: '/api/tasks/private-card/comments/stream?author=casey',
+              method: 'POST',
+              headers: {
+                ...writerHeaders,
+                'Content-Type': 'text/plain',
+                'Transfer-Encoding': 'chunked',
+              },
+            },
+            (res) => {
+              let body = ''
+              res.on('data', (chunk) => body += chunk)
+              res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }))
+            },
+          )
+          req.on('error', reject)
+          req.write('private ')
+          setTimeout(() => {
+            req.end('streamed comment')
+          }, 25)
+        })
+        expect(streamRes.status).toBe(201)
+
+        expect((await writerStreamStart).cardId).toBe('private-card')
+        expect((await writerStreamDone).cardId).toBe('private-card')
+        await readerNoStreamEvents
+      } finally {
+        readerWs.close()
+        writerWs.close()
+        await sleep(50)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
       }
     })
 
@@ -3531,7 +4830,7 @@ describe('Standalone Server Integration', () => {
 
       const res = await httpRequest('PUT', `http://localhost:${port}/api/settings`, {
         showPriorityBadges: false,
-        compactMode: true,
+        cardViewMode: 'normal',
         showAssignee: true,
         showDueDate: true,
         showLabels: true,
@@ -3545,13 +4844,13 @@ describe('Standalone Server Integration', () => {
       const json = JSON.parse(res.body)
       expect(json.ok).toBe(true)
       expect(json.data.showPriorityBadges).toBe(false)
-      expect(json.data.compactMode).toBe(true)
+      expect(json.data.cardViewMode).toBe('normal')
 
       // Verify via GET
       const getRes = await httpGet(`http://localhost:${port}/api/settings`)
       const getJson = JSON.parse(getRes.body)
       expect(getJson.data.showPriorityBadges).toBe(false)
-      expect(getJson.data.compactMode).toBe(true)
+      expect(getJson.data.cardViewMode).toBe('normal')
     })
   })
 
@@ -3613,6 +4912,51 @@ describe('Standalone Server Integration', () => {
       expect(readRes.body).not.toContain('super-secret-password')
     })
 
+    it('GET plugin-settings routes use request-scoped auth and return 403 for underprivileged bearer tokens', async () => {
+      const packageName = 'standalone-plugin-settings-rest-auth-scope-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createPluginSettingsScopedAuthPluginSource(packageName),
+      )
+
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port,
+        auth: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: packageName },
+        },
+      })
+
+      const localPort = await getPort()
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      try {
+        const listRes = await httpGet(`http://localhost:${localPort}/api/plugin-settings`, {
+          Authorization: 'Bearer manager',
+        })
+        expect(listRes.status).toBe(403)
+        expect(JSON.parse(listRes.body)).toMatchObject({
+          ok: false,
+          error: expect.stringContaining('denied'),
+        })
+
+        const readRes = await httpGet(`http://localhost:${localPort}/api/plugin-settings/auth.identity/${packageName}`, {
+          Authorization: 'Bearer manager',
+        })
+        expect(readRes.status).toBe(403)
+        expect(JSON.parse(readRes.body)).toMatchObject({
+          ok: false,
+          error: expect.stringContaining('denied'),
+        })
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
     it('PUT select and PUT options persist canonical plugin state with redacted REST readbacks', async () => {
       writeWorkspaceConfig(path.dirname(tempDir), {
         auth: {
@@ -3631,13 +4975,15 @@ describe('Standalone Server Integration', () => {
         },
       })
 
-      const selectRes = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/card.storage/markdown/select`)
+      const selectRes = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/card.storage/localfs/select`, undefined, {
+        Authorization: 'Bearer existing-token',
+      })
       expect(selectRes.status).toBe(200)
       const selectJson = JSON.parse(selectRes.body)
       expect(selectJson.ok).toBe(true)
       expect(selectJson.data.selected).toEqual({
         capability: 'card.storage',
-        providerId: 'markdown',
+        providerId: 'localfs',
         source: 'config',
       })
 
@@ -3646,6 +4992,8 @@ describe('Standalone Server Integration', () => {
           apiToken: '••••••',
           users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
         },
+      }, {
+        Authorization: 'Bearer existing-token',
       })
       expect(optionsRes.status).toBe(200)
       const optionsJson = JSON.parse(optionsRes.body)
@@ -3663,22 +5011,26 @@ describe('Standalone Server Integration', () => {
       expect(optionsRes.body).not.toContain('existing-token')
       expect(optionsRes.body).not.toContain('$2b$12$new-hash')
 
-      const listRes = await httpGet(`http://localhost:${port}/api/plugin-settings`)
+      const listRes = await httpGet(`http://localhost:${port}/api/plugin-settings`, {
+        Authorization: 'Bearer existing-token',
+      })
       expect(listRes.status).toBe(200)
       const listJson = JSON.parse(listRes.body)
       expect(listJson.ok).toBe(true)
       expect(listJson.data.capabilities).toEqual(expect.arrayContaining([
         expect.objectContaining({
           capability: 'card.storage',
-          selected: expect.objectContaining({ providerId: 'markdown', source: 'config' }),
+          selected: expect.objectContaining({ providerId: 'localfs', source: 'config' }),
           providers: expect.arrayContaining([
-            expect.objectContaining({ providerId: 'markdown', isSelected: true }),
+            expect.objectContaining({ providerId: 'localfs', isSelected: true }),
             expect.objectContaining({ providerId: 'sqlite', isSelected: false }),
           ]),
         }),
       ]))
 
-      const readRes = await httpGet(`http://localhost:${port}/api/plugin-settings/auth.identity/local`)
+      const readRes = await httpGet(`http://localhost:${port}/api/plugin-settings/auth.identity/local`, {
+        Authorization: 'Bearer existing-token',
+      })
       expect(readRes.status).toBe(200)
       const readJson = JSON.parse(readRes.body)
       expect(readJson.ok).toBe(true)
@@ -3693,8 +5045,7 @@ describe('Standalone Server Integration', () => {
         plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
       }
       expect(persistedConfig.plugins).toMatchObject({
-        'card.storage': { provider: 'markdown' },
-        'attachment.storage': { provider: 'localfs' },
+        'card.storage': { provider: 'localfs' },
         'auth.identity': {
           provider: 'local',
           options: {

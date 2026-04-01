@@ -5,6 +5,7 @@ import * as path from 'path'
 import chokidar from 'chokidar'
 import { parseCardFile, serializeCard } from '../../sdk/parser'
 import { broadcast, broadcastCardContentToEditingClients, getClientsEditingCard } from '../broadcastService'
+import { extractAuthContext } from '../authUtils'
 import type { StandaloneContext } from '../context'
 import { cleanupTempFile, setupWatcher } from '../watcherSetup'
 import { jsonOk, jsonError } from '../httpUtils'
@@ -19,7 +20,7 @@ export function setupStandaloneLifecycle(ctx: StandaloneContext, server: http.Se
 }
 
 export async function handleCardFileRoute(request: StandaloneRequestContext): Promise<boolean> {
-  const { ctx, route, url, res } = request
+  const { ctx, route, url, res, req } = request
   const params = route('GET', '/api/card-file')
   if (!params) return false
 
@@ -29,7 +30,8 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
     return true
   }
 
-  const openCard = ctx.cards.find(card => card.id === cardId)
+  const requestAuth = extractAuthContext(req)
+  const openCard = await ctx.sdk.runWithAuth(requestAuth, () => ctx.sdk.getCard(cardId, ctx.currentBoardId))
   if (!openCard) {
     jsonError(res, 404, 'Card not found')
     return true
@@ -44,6 +46,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
   }
 
   if (ctx.tempFileCardId === cardId && ctx.tempFilePath) {
+    ctx.tempFileAuthContext = requestAuth
     ctx.tempFileWriting = true
     try {
       fs.writeFileSync(ctx.tempFilePath, serializeCard(openCard), 'utf-8')
@@ -64,6 +67,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
 
   ctx.tempFilePath = tmpPath
   ctx.tempFileCardId = openCard.id
+  ctx.tempFileAuthContext = requestAuth
 
   let debounce: ReturnType<typeof setTimeout> | undefined
   const watcher = chokidar.watch(tmpPath, { ignoreInitial: true })
@@ -73,7 +77,8 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
     debounce = setTimeout(async () => {
       const currentCardId = ctx.tempFileCardId
       const currentTempPath = ctx.tempFilePath
-      if (!currentCardId || !currentTempPath) return
+      const currentAuthContext = ctx.tempFileAuthContext
+      if (!currentCardId || !currentTempPath || !currentAuthContext) return
 
       try {
         const raw = fs.readFileSync(currentTempPath, 'utf-8')
@@ -82,7 +87,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
 
         ctx.migrating = true
         try {
-          const updated = await ctx.sdk.updateCard(currentCardId, {
+          const updated = await ctx.sdk.runWithAuth(currentAuthContext, () => ctx.sdk.updateCard(currentCardId, {
             content: parsed.content,
             status: parsed.status,
             priority: parsed.priority,
@@ -90,7 +95,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
             dueDate: parsed.dueDate,
             labels: parsed.labels,
             metadata: parsed.metadata,
-          }, ctx.currentBoardId)
+          }, ctx.currentBoardId))
           const cardIndex = ctx.cards.findIndex(card => card.id === currentCardId)
           if (cardIndex !== -1) ctx.cards[cardIndex] = updated
           broadcast(ctx, { type: 'cardsUpdated' })

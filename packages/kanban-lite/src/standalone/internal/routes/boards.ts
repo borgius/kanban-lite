@@ -21,6 +21,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   const { ctx, route, req, res, url } = request
   const { sdk, workspaceRoot } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
+  const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const handleKnownError = (err: unknown): void => {
     const authErr = getAuthErrorLike(err)
     if (authErr) {
@@ -32,7 +34,12 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       jsonError(res, 400, cardStateErr.message)
       return
     }
-    jsonError(res, 400, String(err))
+    const message = getErrorMessage(err)
+    if (message.includes('Card not found')) {
+      jsonError(res, 404, 'Task not found')
+      return
+    }
+    jsonError(res, 400, message)
   }
 
   let params = route('GET', '/api/boards')
@@ -200,6 +207,11 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       const config = readConfig(workspaceRoot)
       const { id, boardId } = params
       const fromBoard = ctx.currentBoardId || config.defaultBoard
+      const sourceCard = await getRequestScopedCard(id, fromBoard)
+      if (!sourceCard) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
       const card = await runWithRequestAuth(() => sdk.transferCard(
         id,
         fromBoard,
@@ -208,7 +220,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       ))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
-      jsonError(res, 400, String(err))
+      handleKnownError(err)
     }
     return true
   }
@@ -217,11 +229,11 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const boardColumns = sdk.listColumns(params.boardId)
-      const tasks = await sdk.listCards(
+      const tasks = await runWithRequestAuth(() => sdk.listCards(
         boardColumns.map(column => column.id),
         params.boardId,
         getListCardsOptions(url.searchParams),
-      )
+      ))
       jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
     } catch (err) {
       handleKnownError(err)
@@ -232,7 +244,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('GET', '/api/boards/:boardId/tasks/active')
   if (params) {
     try {
-      const card = await sdk.getActiveCard(params.boardId)
+      const card = await runWithRequestAuth(() => sdk.getActiveCard(params.boardId))
       jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
@@ -273,7 +285,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('GET', '/api/boards/:boardId/tasks/:id')
   if (params) {
     try {
-      const card = await sdk.getCard(params.id, params.boardId)
+      const card = await getRequestScopedCard(params.id, params.boardId)
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -289,7 +301,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const { boardId, id } = params
-      const card = await sdk.getCard(id, boardId)
+      const card = await getRequestScopedCard(id, boardId)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
@@ -306,7 +318,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const { boardId, id } = params
-      const card = await sdk.getCard(id, boardId)
+      const card = await getRequestScopedCard(id, boardId)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
@@ -326,14 +338,15 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
     try {
       const body = await readBody(req)
       const { id, boardId } = params
+      const existingCard = await getRequestScopedCard(id, boardId)
+      if (!existingCard) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
       const card = await runWithRequestAuth(() => sdk.updateCard(id, body as Partial<Card>, boardId))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }
@@ -367,14 +380,15 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         return true
       }
       const { id, boardId } = params
+      const existingCard = await getRequestScopedCard(id, boardId)
+      if (!existingCard) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
       const card = await runWithRequestAuth(() => sdk.moveCard(id, newStatus, position, boardId))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }
@@ -396,16 +410,17 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const { id, boardId } = params
+      const existingCard = await getRequestScopedCard(id, boardId)
+      if (!existingCard) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
       await runWithRequestAuth(() => sdk.permanentlyDeleteCard(id, boardId))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true, permanent: true })
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }
@@ -414,16 +429,17 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   if (params) {
     try {
       const { id, boardId } = params
+      const existingCard = await getRequestScopedCard(id, boardId)
+      if (!existingCard) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
       await runWithRequestAuth(() => sdk.deleteCard(id, boardId))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true })
     } catch (err) {
-      if (err instanceof AuthError) {
-        jsonError(res, authErrorToHttpStatus(err), err.message)
-      } else {
-        jsonError(res, 400, String(err))
-      }
+      handleKnownError(err)
     }
     return true
   }

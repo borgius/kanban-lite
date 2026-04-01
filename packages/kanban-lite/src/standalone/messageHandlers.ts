@@ -16,6 +16,7 @@ import { DEFAULT_PLUGIN_SETTINGS_REDACTION, PluginSettingsOperationError, create
 import { CardStateError, type AuthContext } from '../sdk/types'
 import { readConfig } from '../shared/config'
 import type { StandaloneContext } from './context'
+import { getAuthErrorLike } from './authUtils'
 import {
   broadcast,
   broadcastCardContentToEditingClients,
@@ -23,6 +24,7 @@ import {
   buildInitMessage,
   sendCardContent,
   sendCardStates,
+  sendLogsUpdated,
   sendInitMessage,
   loadCards,
   setClientEditingCard,
@@ -51,8 +53,43 @@ import {
 } from './mutationService'
 import { cleanupTempFile } from './watcherSetup'
 
-async function getPluginSettingsPayload(ctx: StandaloneContext): Promise<PluginSettingsPayload> {
-  return await ctx.sdk.listPluginSettings()
+type RunWithScopedAuth = <T>(fn: () => Promise<T>) => Promise<T>
+
+function buildEmptyPluginSettingsPayload(): PluginSettingsPayload {
+  return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
+}
+
+async function getPluginSettingsPayload(
+  ctx: StandaloneContext,
+  runWithScopedAuth?: RunWithScopedAuth,
+): Promise<PluginSettingsPayload> {
+  if (!runWithScopedAuth) {
+    return await ctx.sdk.listPluginSettings()
+  }
+  return await runWithScopedAuth(() => ctx.sdk.listPluginSettings())
+}
+
+async function getPluginSettingsMutationPayload(
+  ctx: StandaloneContext,
+  runWithScopedAuth: RunWithScopedAuth,
+): Promise<PluginSettingsPayload> {
+  try {
+    return await getPluginSettingsPayload(ctx, runWithScopedAuth)
+  } catch (error) {
+    if (getAuthErrorLike(error)) {
+      return buildEmptyPluginSettingsPayload()
+    }
+    throw error
+  }
+}
+
+async function getPluginSettingsProvider(
+  ctx: StandaloneContext,
+  runWithScopedAuth: RunWithScopedAuth,
+  capability: PluginCapabilityNamespace,
+  providerId: string,
+) {
+  return await runWithScopedAuth(() => ctx.sdk.getPluginSettings(capability, providerId))
 }
 
 function toPluginSettingsProviderTransport(
@@ -113,11 +150,38 @@ function toPluginSettingsErrorPayload(
   })
 }
 
+function shouldClearPluginSettingsMutationState(error: unknown): boolean {
+  return getAuthErrorLike(error) !== null
+}
+
+function toPluginSettingsMutationErrorResult(
+  action: Exclude<PluginSettingsTransportAction, 'read'>,
+  error: unknown,
+  capability?: PluginCapabilityNamespace,
+  providerId?: string,
+): PluginSettingsResultMessage {
+  return {
+    type: 'pluginSettingsResult',
+    action,
+    ...(shouldClearPluginSettingsMutationState(error)
+      ? {
+          pluginSettings: buildEmptyPluginSettingsPayload(),
+          provider: null,
+        }
+      : {}),
+    error: toPluginSettingsErrorPayload(action, error, capability, providerId),
+  }
+}
+
 function sendPluginSettingsResult(ws: WebSocket, result: PluginSettingsResultMessage): void {
   ws.send(JSON.stringify(result))
 }
 
-async function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
+async function sendSettingsBridgePayload(
+  ctx: StandaloneContext,
+  ws: WebSocket,
+  runWithScopedAuth: RunWithScopedAuth,
+): Promise<void> {
   const settings = ctx.sdk.getSettings()
   settings.showBuildWithAI = false
   settings.markdownEditorMode = false
@@ -126,13 +190,13 @@ async function sendSettingsBridgePayload(ctx: StandaloneContext, ws: WebSocket):
     ws.send(JSON.stringify({
       type: 'showSettings',
       settings,
-      pluginSettings: await getPluginSettingsPayload(ctx),
+      pluginSettings: await getPluginSettingsPayload(ctx, runWithScopedAuth),
     }))
   } catch (error) {
     ws.send(JSON.stringify({
       type: 'showSettings',
       settings,
-      pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+      pluginSettings: buildEmptyPluginSettingsPayload(),
     }))
     sendPluginSettingsResult(ws, {
       type: 'pluginSettingsResult',
@@ -193,7 +257,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
 
     case 'openCard': {
       const cardId = msg.cardId as string
-      const card = ctx.cards.find(f => f.id === cardId)
+      const card = await runWithScopedAuth(() => ctx.sdk.getCard(cardId, ctx.currentBoardId))
       if (!card) break
       const boardId = card.boardId ?? ctx.currentBoardId
 
@@ -204,18 +268,17 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
 
       try {
         await runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
-        // Send updated card state so the UI clears the unread badge immediately
-        await sendCardStates(ctx, ws, [cardId], authContext)
       } catch (err) {
         if (!(err instanceof CardStateError)) {
           throw err
         }
       }
 
+      await runWithScopedAuth(() => ctx.sdk.setActiveCard(cardId, boardId))
       ctx.currentEditingCardId = cardId
       setClientEditingCard(ctx, ws, cardId)
-      await ctx.sdk.setActiveCard(cardId, boardId)
-      await sendCardContent(ctx, ws, card)
+      await sendCardStates(ctx, ws, [cardId], authContext)
+      await sendCardContent(ctx, ws, card, authContext)
       break
     }
 
@@ -260,14 +323,22 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'closeCard':
+      {
+        const closingCardId = ctx.clientEditingCardIds.get(ws) ?? null
+        if (closingCardId) {
+          const closingCard = await runWithScopedAuth(() => ctx.sdk.getCard(closingCardId, ctx.currentBoardId))
+          if (closingCard) {
+            await runWithScopedAuth(() => ctx.sdk.clearActiveCard(closingCard.boardId ?? ctx.currentBoardId))
+          }
+        }
+      }
       ctx.currentEditingCardId = null
       setClientEditingCard(ctx, ws, null)
-      await ctx.sdk.clearActiveCard(ctx.currentBoardId)
       cleanupTempFile(ctx)
       break
 
     case 'openSettings': {
-      await sendSettingsBridgePayload(ctx, ws)
+      await sendSettingsBridgePayload(ctx, ws, runWithScopedAuth)
       break
     }
 
@@ -276,13 +347,14 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
-          pluginSettings: await getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsPayload(ctx, runWithScopedAuth),
         })
       } catch (error) {
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
-          pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+          pluginSettings: buildEmptyPluginSettingsPayload(),
+          provider: null,
           error: toPluginSettingsErrorPayload('read', error),
         })
       }
@@ -296,13 +368,15 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
-          pluginSettings: await getPluginSettingsPayload(ctx),
-          provider: toPluginSettingsProviderTransport(await ctx.sdk.getPluginSettings(capability, providerId)),
+          pluginSettings: await getPluginSettingsPayload(ctx, runWithScopedAuth),
+          provider: toPluginSettingsProviderTransport(await getPluginSettingsProvider(ctx, runWithScopedAuth, capability, providerId)),
         })
       } catch (error) {
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'read',
+          pluginSettings: buildEmptyPluginSettingsPayload(),
+          provider: null,
           error: toPluginSettingsErrorPayload('read', error, capability, providerId),
         })
       }
@@ -319,15 +393,11 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'select',
-          pluginSettings: await getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsMutationPayload(ctx, runWithScopedAuth),
           provider: toPluginSettingsProviderTransport(provider),
         })
       } catch (error) {
-        sendPluginSettingsResult(ws, {
-          type: 'pluginSettingsResult',
-          action: 'select',
-          error: toPluginSettingsErrorPayload('select', error, capability, providerId),
-        })
+        sendPluginSettingsResult(ws, toPluginSettingsMutationErrorResult('select', error, capability, providerId))
       }
       break
     }
@@ -342,15 +412,11 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'updateOptions',
-          pluginSettings: await getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsMutationPayload(ctx, runWithScopedAuth),
           provider: toPluginSettingsProviderTransport(provider),
         })
       } catch (error) {
-        sendPluginSettingsResult(ws, {
-          type: 'pluginSettingsResult',
-          action: 'updateOptions',
-          error: toPluginSettingsErrorPayload('updateOptions', error, capability, providerId),
-        })
+        sendPluginSettingsResult(ws, toPluginSettingsMutationErrorResult('updateOptions', error, capability, providerId))
       }
       break
     }
@@ -364,15 +430,12 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         sendPluginSettingsResult(ws, {
           type: 'pluginSettingsResult',
           action: 'install',
-          pluginSettings: await getPluginSettingsPayload(ctx),
+          pluginSettings: await getPluginSettingsMutationPayload(ctx, runWithScopedAuth),
+          provider: null,
           install: toPluginSettingsInstallTransportResult(install),
         })
       } catch (error) {
-        sendPluginSettingsResult(ws, {
-          type: 'pluginSettingsResult',
-          action: 'install',
-          error: toPluginSettingsErrorPayload('install', error),
-        })
+        sendPluginSettingsResult(ws, toPluginSettingsMutationErrorResult('install', error))
       }
       break
     }
@@ -476,12 +539,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
     }
 
     case 'getLogs': {
-      try {
-        const logs = await ctx.sdk.listLogs(msg.cardId as string, ctx.currentBoardId)
-        ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs }))
-      } catch {
-        ws.send(JSON.stringify({ type: 'logsUpdated', cardId: msg.cardId, logs: [] }))
-      }
+      await sendLogsUpdated(ctx, ws, msg.cardId as string, authContext)
       break
     }
 

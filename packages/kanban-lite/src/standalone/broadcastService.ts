@@ -7,10 +7,13 @@ import type { StandaloneContext } from './context'
 import { buildCardFrontmatter } from './cardHelpers'
 
 export async function loadCards(ctx: StandaloneContext): Promise<void> {
-  ctx.cards = await ctx.sdk.listCards(
-    ctx.sdk.listColumns(ctx.currentBoardId).map(c => c.id),
-    ctx.currentBoardId
-  )
+  const columnIds = ctx.sdk.listColumns(ctx.currentBoardId).map(c => c.id)
+  const boardDir = ctx.sdk._boardDir(ctx.currentBoardId)
+  const boardId = ctx.sdk._resolveBoardId(ctx.currentBoardId)
+
+  await ctx.sdk._ensureMigrated()
+  await ctx.sdk._storage.ensureBoardDirs(boardDir, columnIds)
+  ctx.cards = await ctx.sdk._storage.scanCards(boardDir, boardId)
 }
 
 export function broadcast(ctx: StandaloneContext, message: unknown): void {
@@ -71,12 +74,53 @@ function buildCardContentMessage(card: Card, logs: LogEntry[]): unknown {
   }
 }
 
-async function buildDecoratedCards(ctx: StandaloneContext, authContext?: AuthContext): Promise<Card[]> {
-  const runWithAuth = authContext
+function getBoardColumnIds(ctx: StandaloneContext): string[] {
+  return ctx.sdk.listColumns(ctx.currentBoardId).map(c => c.id)
+}
+
+function getAuthRunner(ctx: StandaloneContext, authContext?: AuthContext) {
+  return authContext
     ? <T,>(fn: () => Promise<T>) => ctx.sdk.runWithAuth(authContext, fn)
     : async <T,>(fn: () => Promise<T>) => fn()
+}
 
-  return decorateCardsForWebview(ctx.sdk, runWithAuth, ctx.cards, ctx.currentBoardId)
+async function listVisibleCards(ctx: StandaloneContext, authContext?: AuthContext): Promise<Card[]> {
+  return getAuthRunner(ctx, authContext)(() =>
+    ctx.sdk.listCards(getBoardColumnIds(ctx), ctx.currentBoardId),
+  )
+}
+
+async function resolveVisibleCard(
+  ctx: StandaloneContext,
+  cardId: string,
+  authContext?: AuthContext,
+  boardId?: string,
+): Promise<Card | null> {
+  return getAuthRunner(ctx, authContext)(() =>
+    ctx.sdk.getCard(cardId, boardId ?? ctx.currentBoardId),
+  )
+}
+
+async function resolveVisibleCardLogs(
+  ctx: StandaloneContext,
+  cardId: string,
+  authContext?: AuthContext,
+  boardId?: string,
+): Promise<LogEntry[]> {
+  try {
+    return await getAuthRunner(ctx, authContext)(() =>
+      ctx.sdk.listLogs(cardId, boardId ?? ctx.currentBoardId),
+    )
+  } catch {
+    return []
+  }
+}
+
+async function buildDecoratedCards(ctx: StandaloneContext, authContext?: AuthContext): Promise<Card[]> {
+  const runWithAuth = getAuthRunner(ctx, authContext)
+  const cards = await listVisibleCards(ctx, authContext)
+
+  return decorateCardsForWebview(ctx.sdk, runWithAuth, cards, ctx.currentBoardId)
 }
 
 function buildBaseInitMessage(ctx: StandaloneContext): Record<string, unknown> {
@@ -134,7 +178,8 @@ export function buildInitMessage(ctx: StandaloneContext): unknown {
 }
 
 export async function sendInitMessage(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
-  ws.send(JSON.stringify(buildInitMessage(ctx)))
+  const authContext = ctx.clientAuthContexts.get(ws)
+  ws.send(JSON.stringify(await buildClientInitMessage(ctx, authContext)))
 }
 
 export async function sendCardStates(
@@ -144,14 +189,12 @@ export async function sendCardStates(
   authContext?: AuthContext,
 ): Promise<void> {
   const ids = new Set(cardIds)
-  const targetCards = ctx.cards.filter(c => ids.has(c.id))
+  const targetCards = (await listVisibleCards(ctx, authContext)).filter(c => ids.has(c.id))
   if (targetCards.length === 0) {
     ws.send(JSON.stringify({ type: 'cardStates', states: {} }))
     return
   }
-  const runWithAuth = authContext
-    ? <T,>(fn: () => Promise<T>) => ctx.sdk.runWithAuth(authContext, fn)
-    : async <T,>(fn: () => Promise<T>) => fn()
+  const runWithAuth = getAuthRunner(ctx, authContext)
   const decorated = await decorateCardsForWebview(ctx.sdk, runWithAuth, targetCards, ctx.currentBoardId)
   const states: Record<string, unknown> = {}
   for (const card of decorated) {
@@ -160,41 +203,72 @@ export async function sendCardStates(
   ws.send(JSON.stringify({ type: 'cardStates', states }))
 }
 
-export async function sendCardContent(ctx: StandaloneContext, ws: WebSocket, card: Card): Promise<void> {
-  let logs: LogEntry[] = []
-  try { logs = await ctx.sdk.listLogs(card.id, ctx.currentBoardId) } catch { /* ignore */ }
-  ws.send(JSON.stringify(buildCardContentMessage(card, logs)))
+export async function sendCardContent(
+  ctx: StandaloneContext,
+  ws: WebSocket,
+  card: Card | string,
+  authContext?: AuthContext,
+): Promise<boolean> {
+  const scopedAuth = authContext ?? ctx.clientAuthContexts.get(ws)
+  const cardId = typeof card === 'string' ? card : card.id
+  const boardId = typeof card === 'string' ? ctx.currentBoardId : card.boardId ?? ctx.currentBoardId
+  const visibleCard = await resolveVisibleCard(ctx, cardId, scopedAuth, boardId)
+  if (!visibleCard) return false
+
+  const logs = await resolveVisibleCardLogs(ctx, visibleCard.id, scopedAuth, visibleCard.boardId)
+  ws.send(JSON.stringify(buildCardContentMessage(visibleCard, logs)))
+  return true
 }
 
-export async function broadcastCardContentToEditingClients(ctx: StandaloneContext, card: Card): Promise<void> {
-  const clients = getClientsEditingCard(ctx, card.id)
+export async function broadcastCardContentToEditingClients(ctx: StandaloneContext, card: Card | string): Promise<void> {
+  const cardId = typeof card === 'string' ? card : card.id
+  const clients = getClientsEditingCard(ctx, cardId)
   if (clients.length === 0) return
 
-  let logs: LogEntry[] = []
-  try { logs = await ctx.sdk.listLogs(card.id, ctx.currentBoardId) } catch { /* ignore */ }
-  const json = JSON.stringify(buildCardContentMessage(card, logs))
   for (const client of clients) {
-    client.send(json)
+    await sendCardContent(ctx, client, card, ctx.clientAuthContexts.get(client))
   }
+}
+
+export async function sendLogsUpdated(
+  ctx: StandaloneContext,
+  ws: WebSocket,
+  cardId: string,
+  authContext?: AuthContext,
+  logs?: LogEntry[],
+): Promise<boolean> {
+  const scopedAuth = authContext ?? ctx.clientAuthContexts.get(ws)
+  const visibleCard = await resolveVisibleCard(ctx, cardId, scopedAuth)
+  if (!visibleCard) return false
+
+  const resolvedLogs = logs ?? await resolveVisibleCardLogs(ctx, cardId, scopedAuth, visibleCard.boardId)
+  ws.send(JSON.stringify({ type: 'logsUpdated', cardId: visibleCard.id, logs: resolvedLogs }))
+  return true
 }
 
 export async function broadcastLogsUpdatedToEditingClients(ctx: StandaloneContext, cardId: string, logs?: LogEntry[]): Promise<void> {
   const clients = getClientsEditingCard(ctx, cardId)
   if (clients.length === 0) return
 
-  let resolvedLogs = logs
-  if (!resolvedLogs) {
-    try {
-      resolvedLogs = await ctx.sdk.listLogs(cardId, ctx.currentBoardId)
-    } catch {
-      resolvedLogs = []
-    }
-  }
-
-  const json = JSON.stringify({ type: 'logsUpdated', cardId, logs: resolvedLogs })
   for (const client of clients) {
-    client.send(json)
+    await sendLogsUpdated(ctx, client, cardId, ctx.clientAuthContexts.get(client), logs)
   }
+}
+
+function broadcastScopedCardEventToEditingClients(ctx: StandaloneContext, cardId: string, message: unknown): void {
+  const clients = getClientsEditingCard(ctx, cardId)
+  if (clients.length === 0) return
+
+  void (async () => {
+    const json = JSON.stringify(message)
+    for (const client of clients) {
+      const visibleCard = await resolveVisibleCard(ctx, cardId, ctx.clientAuthContexts.get(client))
+      if (!visibleCard) continue
+      client.send(json)
+    }
+  })().catch((err) => {
+    console.error(`Failed to broadcast scoped card event for ${cardId}:`, err)
+  })
 }
 
 /**
@@ -208,7 +282,7 @@ export function broadcastCommentStreamStart(
   author: string,
   created: string
 ): void {
-  broadcast(ctx, { type: 'commentStreamStart', cardId, commentId, author, created })
+  broadcastScopedCardEventToEditingClients(ctx, cardId, { type: 'commentStreamStart', cardId, commentId, author, created })
 }
 
 /**
@@ -221,7 +295,7 @@ export function broadcastCommentChunk(
   commentId: string,
   chunk: string
 ): void {
-  broadcast(ctx, { type: 'commentChunk', cardId, commentId, chunk })
+  broadcastScopedCardEventToEditingClients(ctx, cardId, { type: 'commentChunk', cardId, commentId, chunk })
 }
 
 /**
@@ -233,6 +307,6 @@ export function broadcastCommentStreamDone(
   cardId: string,
   commentId: string
 ): void {
-  broadcast(ctx, { type: 'commentStreamDone', cardId, commentId })
+  broadcastScopedCardEventToEditingClients(ctx, cardId, { type: 'commentStreamDone', cardId, commentId })
 }
 

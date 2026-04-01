@@ -1,10 +1,12 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, Undo2, FileUp } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, Undo2, FileUp, PanelRight, PanelLeft, PanelTop, PanelBottom } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
 import { CopyableValue } from '../lib/CopyableValue'
 import { useStore } from '../store'
+import { NEXT_POSITION, type DrawerPosition } from '../drawerPositionHelpers'
+import { getVsCodeApi } from '../vsCodeApi'
 import { MarkdownEditor } from './MarkdownEditor'
 
 type AIAgent = 'claude' | 'codex' | 'opencode'
@@ -490,6 +492,20 @@ function CardActionButton({
   )
 }
 
+const DRAWER_POSITION_ICON: Record<DrawerPosition, React.ReactNode> = {
+  right: <PanelRight size={15} />,
+  left: <PanelLeft size={15} />,
+  top: <PanelTop size={15} />,
+  bottom: <PanelBottom size={15} />,
+}
+
+const DRAWER_POSITION_LABEL: Record<DrawerPosition, string> = {
+  right: 'Move drawer to bottom',
+  left: 'Move drawer to top',
+  top: 'Move drawer to right',
+  bottom: 'Move drawer to left',
+}
+
 function isUrl(v: string): boolean {
   return /^https?:\/\//i.test(v)
 }
@@ -774,7 +790,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 }
 
 export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
-  const { cardSettings, boards, currentBoard } = useStore()
+  const { cardSettings, boards, currentBoard, setCardSettings } = useStore()
   const pinnedMetadataKeys = useMemo(
     () => boards.find(b => b.id === currentBoard)?.metadata ?? [],
     [boards, currentBoard],
@@ -796,6 +812,15 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
       .filter(({ value }) => value !== undefined && value !== null && String(value).trim() !== ''),
     [metadata, pinnedMetadataKeys]
   )
+  const isDrawerMode = (cardSettings.panelMode ?? 'drawer') === 'drawer'
+  const drawerPosition: DrawerPosition = cardSettings.drawerPosition ?? 'right'
+
+  const handleCycleDrawerPosition = useCallback(() => {
+    const next = { ...useStore.getState().cardSettings, drawerPosition: NEXT_POSITION[drawerPosition] }
+    setCardSettings(next)
+    getVsCodeApi().postMessage({ type: 'saveSettings', settings: next })
+  }, [drawerPosition, setCardSettings])
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentFrontmatterRef = useRef(currentFrontmatter)
   const currentContentRef = useRef(currentContent)
@@ -916,11 +941,18 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                   <CardActionButton title="Move to deleted" icon={<Trash2 size={15} />} onClick={onDelete} variant="danger" />
                 </>
               )}
+              {isDrawerMode && (
+                <CardActionButton
+                  title={DRAWER_POSITION_LABEL[drawerPosition]}
+                  icon={DRAWER_POSITION_ICON[drawerPosition]}
+                  onClick={handleCycleDrawerPosition}
+                />
+              )}
               <CardActionButton title="Close card" icon={<X size={16} />} onClick={onClose} />
             </div>
           </header>
 
-          <div className={cn('card-editor-desktop-columns', cardSettings.compactMode && 'is-compact')}>
+          <div className={cn('card-editor-desktop-columns', (cardSettings.cardViewMode === 'compact' || cardSettings.cardViewMode === 'normal') && 'is-compact')}>
             <div className="card-editor-top-row">
               <section className="card-surface card-surface--details">
                 <div className="card-surface-header">
@@ -1061,7 +1093,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 </div>
               </section>
 
-              <section className={cn('card-surface card-surface--attachments', cardSettings.compactMode && 'card-surface--attachments-compact')}>
+              <section className={cn('card-surface card-surface--attachments', (cardSettings.cardViewMode === 'compact' || cardSettings.cardViewMode === 'normal') && 'card-surface--attachments-compact')}>
                 <div className="card-surface-header">
                   <div>
                     <span className="card-surface-kicker">Files</span>

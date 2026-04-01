@@ -121,6 +121,19 @@ async function resolveMcpCardId(sdk: KanbanSDK, cardId: string, boardId?: string
   throw new Error(`Card not found: ${cardId}`)
 }
 
+async function runWithResolvedMcpCardId<T>(
+  sdk: KanbanSDK,
+  runWithAuth: <TResult>(fn: () => Promise<TResult>) => Promise<TResult>,
+  cardId: string,
+  boardId: string | undefined,
+  fn: (resolvedId: string) => Promise<T>,
+): Promise<T> {
+  return runWithAuth(async () => {
+    const resolvedId = await resolveMcpCardId(sdk, cardId, boardId)
+    return fn(resolvedId)
+  })
+}
+
 async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<McpCardStateReadModel> {
   const unread = await sdk.getUnreadSummary(cardId, boardId)
   const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
@@ -269,7 +282,7 @@ export function registerPluginSettingsMcpTools(
     {},
     async () => {
       try {
-        const payload: McpPluginSettingsListModel = await options.sdk.listPluginSettings()
+        const payload: McpPluginSettingsListModel = await options.runWithAuth(() => options.sdk.listPluginSettings())
         return createMcpJsonResult(payload)
       } catch (err) {
         return createMcpErrorResult(err)
@@ -347,6 +360,12 @@ export function createMcpErrorResult(err: unknown): McpToolResult {
   const cardStateResult = createMcpCardStateErrorResult(err)
   if (cardStateResult) {
     return { ...cardStateResult, isError: true }
+  }
+  if (err instanceof Error && (
+    err.message.startsWith('Multiple cards match "')
+    || err.message.startsWith('Card not found: ')
+  )) {
+    return { content: [{ type: 'text' as const, text: err.message }], isError: true }
   }
   if (err instanceof PluginSettingsOperationError) {
     return { ...createMcpJsonResult(err.payload), isError: true }
@@ -516,38 +535,44 @@ async function main(): Promise<void> {
       sort: z.enum(['created:asc', 'created:desc', 'modified:asc', 'modified:desc']).optional().describe('Sort order: created:asc, created:desc, modified:asc, or modified:desc. Defaults to board order.'),
     },
     async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, searchQuery, fuzzy, metaFilter, sort }) => {
-      const titleFields = getBoardTitleFieldsForMcp(sdk, boardId)
-      let cards = await sdk.listCards(undefined, boardId, {
-        metaFilter: metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
-        sort: sort || undefined,
-        searchQuery: searchQuery?.trim() ? searchQuery : undefined,
-        fuzzy,
-      })
-      if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
-      if (status) cards = cards.filter(c => c.status === status)
-      if (priority) cards = cards.filter(c => c.priority === priority)
-      if (assignee) cards = cards.filter(c => c.assignee === assignee)
-      if (label) cards = cards.filter(c => c.labels.includes(label))
-      if (labelGroup) {
-        const groupLabels = sdk.getLabelsInGroup(labelGroup)
-        cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
-      }
+      try {
+        const titleFields = getBoardTitleFieldsForMcp(sdk, boardId)
+        const summary = await runWithMcpAuth(async () => {
+          let cards = await sdk.listCards(undefined, boardId, {
+            metaFilter: metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
+            sort: sort || undefined,
+            searchQuery: searchQuery?.trim() ? searchQuery : undefined,
+            fuzzy,
+          })
+          if (!includeDeleted) cards = cards.filter(c => c.status !== DELETED_STATUS_ID)
+          if (status) cards = cards.filter(c => c.status === status)
+          if (priority) cards = cards.filter(c => c.priority === priority)
+          if (assignee) cards = cards.filter(c => c.assignee === assignee)
+          if (label) cards = cards.filter(c => c.labels.includes(label))
+          if (labelGroup) {
+            const groupLabels = sdk.getLabelsInGroup(labelGroup)
+            cards = cards.filter(c => c.labels.some(l => groupLabels.includes(l)))
+          }
 
-      const summary = cards.map(c => ({
-        id: c.id,
-        title: getDisplayTitleFromContent(c.content, c.metadata, titleFields),
-        status: c.status,
-        priority: c.priority,
-        assignee: c.assignee,
-        labels: c.labels,
-        dueDate: c.dueDate,
-      }))
+          return cards.map(c => ({
+            id: c.id,
+            title: getDisplayTitleFromContent(c.content, c.metadata, titleFields),
+            status: c.status,
+            priority: c.priority,
+            assignee: c.assignee,
+            labels: c.labels,
+            dueDate: c.dueDate,
+          }))
+        })
 
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(summary, null, 2),
-        }],
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(summary, null, 2),
+          }],
+        }
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -560,32 +585,22 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      let card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        // Try partial match
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          card = matches[0]
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
+      try {
+        const card = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (resolvedId) => {
+          const resolvedCard = await sdk.getCard(resolvedId, boardId)
+          if (!resolvedCard) throw new Error(`Card not found: ${cardId}`)
+          return resolvedCard
+        })
 
-      const titleFields = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(decorateMcpCardTitle(card, titleFields), null, 2),
-        }],
+        const titleFields = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(decorateMcpCardTitle(card, titleFields), null, 2),
+          }],
+        }
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -597,13 +612,17 @@ async function main(): Promise<void> {
       boardId: z.string().optional().describe('Board ID (returns the active card only if it belongs to this board)'),
     },
     async ({ boardId }) => {
-      const card = await sdk.getActiveCard(boardId)
-      const titleFields = card ? getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId) : undefined
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(card ? decorateMcpCardTitle(card, titleFields) : null, null, 2),
-        }],
+      try {
+        const card = await runWithMcpAuth(() => sdk.getActiveCard(boardId))
+        const titleFields = card ? getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId) : undefined
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(card ? decorateMcpCardTitle(card, titleFields) : null, null, 2),
+          }],
+        }
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -673,27 +692,6 @@ async function main(): Promise<void> {
       formData: cardFormDataMapSchema.optional().describe('Per-form persisted data keyed by resolved form id (replaces existing formData when provided).'),
     },
     async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata, actions, forms, formData }) => {
-      // Resolve partial ID
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       const updates: Record<string, unknown> = {}
       if (status) updates.status = status
       if (priority) updates.priority = priority
@@ -707,7 +705,9 @@ async function main(): Promise<void> {
       if (formData !== undefined) updates.formData = formData
 
       try {
-        const updated = await runWithMcpAuth(() => sdk.updateCard(resolvedId, updates, boardId))
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.updateCard(resolvedId, updates, boardId)
+        )
         return {
           content: [{
             type: 'text' as const,
@@ -715,8 +715,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -732,32 +731,14 @@ async function main(): Promise<void> {
     },
     async ({ boardId, cardId, formId, data }) => {
       try {
-        let resolvedId = cardId
-        const card = await sdk.getCard(cardId, boardId)
-        if (!card) {
-          const all = await sdk.listCards(undefined, boardId)
-          const matches = all.filter(c => c.id.includes(cardId))
-          if (matches.length === 1) {
-            resolvedId = matches[0].id
-          } else if (matches.length > 1) {
-            return {
-              content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-              isError: true,
-            }
-          } else {
-            return {
-              content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-              isError: true,
-            }
-          }
-        }
-
-        const result = await runWithMcpAuth(() => sdk.submitForm({
-          boardId,
-          cardId: resolvedId,
-          formId,
-          data,
-        }))
+        const result = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.submitForm({
+            boardId,
+            cardId: resolvedId,
+            formId,
+            data,
+          })
+        )
 
         return {
           content: [{
@@ -766,10 +747,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: String(err) }],
-          isError: true,
-        }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -783,29 +761,10 @@ async function main(): Promise<void> {
       status: z.string().describe('Target status column'),
     },
     async ({ boardId, cardId, status }) => {
-      // Resolve partial ID
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        const updated = await runWithMcpAuth(() => sdk.moveCard(resolvedId, status, undefined, boardId))
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.moveCard(resolvedId, status, undefined, boardId)
+        )
         return {
           content: [{
             type: 'text' as const,
@@ -813,8 +772,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -827,29 +785,11 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      // Resolve partial ID
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        await runWithMcpAuth(() => sdk.deleteCard(resolvedId, boardId))
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
+          await sdk.deleteCard(nextResolvedId, boardId)
+          return nextResolvedId
+        })
         return {
           content: [{
             type: 'text' as const,
@@ -857,8 +797,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -871,29 +810,11 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      // Resolve partial ID
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        await runWithMcpAuth(() => sdk.permanentlyDeleteCard(resolvedId, boardId))
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
+          await sdk.permanentlyDeleteCard(nextResolvedId, boardId)
+          return nextResolvedId
+        })
         return {
           content: [{
             type: 'text' as const,
@@ -901,8 +822,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1004,32 +924,18 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const attachments = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.listAttachments(resolvedId, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(attachments, null, 2),
+          }],
         }
-      }
-
-      const attachments = await sdk.listAttachments(resolvedId, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(attachments, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1043,32 +949,18 @@ async function main(): Promise<void> {
       filePath: z.string().describe('Absolute path to the file to attach'),
     },
     async ({ boardId, cardId, filePath }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.addAttachment(resolvedId, filePath, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ id: updated.id, attachments: updated.attachments }, null, 2),
+          }],
         }
-      }
-
-      const updated = await runWithMcpAuth(() => sdk.addAttachment(resolvedId, filePath, boardId))
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({ id: updated.id, attachments: updated.attachments }, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1082,32 +974,18 @@ async function main(): Promise<void> {
       attachment: z.string().describe('Attachment filename to remove'),
     },
     async ({ boardId, cardId, attachment }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.removeAttachment(resolvedId, attachment, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ id: updated.id, attachments: updated.attachments }, null, 2),
+          }],
         }
-      }
-
-      const updated = await runWithMcpAuth(() => sdk.removeAttachment(resolvedId, attachment, boardId))
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({ id: updated.id, attachments: updated.attachments }, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1122,32 +1000,18 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const comments = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.listComments(resolvedId, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(comments, null, 2),
+          }],
         }
-      }
-
-      const comments = await sdk.listComments(resolvedId, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(comments, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1162,33 +1026,19 @@ async function main(): Promise<void> {
       content: z.string().describe('Comment text (supports markdown)'),
     },
     async ({ boardId, cardId, author, content }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.addComment(resolvedId, author, content, boardId)
+        )
+        const added = updated.comments[updated.comments.length - 1]
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(added, null, 2),
+          }],
         }
-      }
-
-      const updated = await runWithMcpAuth(() => sdk.addComment(resolvedId, author, content, boardId))
-      const added = updated.comments[updated.comments.length - 1]
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(added, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1203,32 +1053,14 @@ async function main(): Promise<void> {
       content: z.string().describe('Full comment text (supports markdown). The content is streamed word-by-word to connected viewers.'),
     },
     async ({ boardId, cardId, author, content }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       // Wrap the full content string as an async iterable so it exercises the
       // same SDK streaming code path that a real token stream would use.
       async function* singleChunk(): AsyncIterable<string> { yield content }
 
       try {
-        const updated = await runWithMcpAuth(() => sdk.streamComment(resolvedId, author, singleChunk(), { boardId }))
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.streamComment(resolvedId, author, singleChunk(), { boardId })
+        )
         const added = updated.comments?.[updated.comments.length - 1]
         return {
           content: [{
@@ -1237,10 +1069,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: String(err) }],
-          isError: true,
-        }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1255,28 +1084,10 @@ async function main(): Promise<void> {
       content: z.string().describe('New comment text'),
     },
     async ({ boardId, cardId, commentId, content }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        const updated = await runWithMcpAuth(() => sdk.updateComment(resolvedId, commentId, content, boardId))
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.updateComment(resolvedId, commentId, content, boardId)
+        )
         const comment = updated.comments.find(c => c.id === commentId)
         return {
           content: [{
@@ -1285,10 +1096,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: String(err) }],
-          isError: true,
-        }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1302,28 +1110,11 @@ async function main(): Promise<void> {
       commentId: z.string().describe('Comment ID (e.g. "c1")'),
     },
     async ({ boardId, cardId, commentId }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        await runWithMcpAuth(() => sdk.deleteComment(resolvedId, commentId, boardId))
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
+          await sdk.deleteComment(nextResolvedId, commentId, boardId)
+          return nextResolvedId
+        })
         return {
           content: [{
             type: 'text' as const,
@@ -1331,10 +1122,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: String(err) }],
-          isError: true,
-        }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1349,32 +1137,18 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const logs = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.listLogs(resolvedId, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(logs, null, 2),
+          }],
         }
-      }
-
-      const logs = await sdk.listLogs(resolvedId, boardId)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(logs, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1390,32 +1164,18 @@ async function main(): Promise<void> {
       object: z.record(z.string(), z.any()).optional().describe('Optional structured data object stored as JSON'),
     },
     async ({ boardId, cardId, text, source, object }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
+      try {
+        const entry = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+          sdk.addLog(resolvedId, text, { source, object }, boardId)
+        )
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(entry, null, 2),
+          }],
         }
-      }
-
-      const entry = await runWithMcpAuth(() => sdk.addLog(resolvedId, text, { source, object }, boardId))
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify(entry, null, 2),
-        }],
+      } catch (err) {
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1428,28 +1188,11 @@ async function main(): Promise<void> {
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
     async ({ boardId, cardId }) => {
-      let resolvedId = cardId
-      const card = await sdk.getCard(cardId, boardId)
-      if (!card) {
-        const all = await sdk.listCards(undefined, boardId)
-        const matches = all.filter(c => c.id.includes(cardId))
-        if (matches.length === 1) {
-          resolvedId = matches[0].id
-        } else if (matches.length > 1) {
-          return {
-            content: [{ type: 'text' as const, text: `Multiple cards match "${cardId}": ${matches.map(m => m.id).join(', ')}` }],
-            isError: true,
-          }
-        } else {
-          return {
-            content: [{ type: 'text' as const, text: `Card not found: ${cardId}` }],
-            isError: true,
-          }
-        }
-      }
-
       try {
-        await runWithMcpAuth(() => sdk.clearLogs(resolvedId, boardId))
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
+          await sdk.clearLogs(nextResolvedId, boardId)
+          return nextResolvedId
+        })
         return {
           content: [{
             type: 'text' as const,
@@ -1457,10 +1200,7 @@ async function main(): Promise<void> {
           }],
         }
       } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: String(err) }],
-          isError: true,
-        }
+        return createMcpErrorResult(err)
       }
     }
   )
@@ -1738,7 +1478,7 @@ async function main(): Promise<void> {
       showDueDate: z.boolean().optional().describe('Show due date on cards'),
       showLabels: z.boolean().optional().describe('Show labels on cards'),
       showFileName: z.boolean().optional().describe('Show file name on cards'),
-      compactMode: z.boolean().optional().describe('Enable compact card display'),
+      cardViewMode: z.enum(['compact', 'normal', 'large', 'xlarge', 'xxlarge']).optional().describe('Card size mode controlling how much detail is shown on each card'),
       showDeletedColumn: z.boolean().optional().describe('Show the deleted cards column on the board'),
       defaultPriority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Default priority for new cards'),
       defaultStatus: z.string().optional().describe('Default status for new cards'),

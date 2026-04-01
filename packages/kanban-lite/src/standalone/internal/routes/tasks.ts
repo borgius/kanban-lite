@@ -37,6 +37,8 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   const { ctx, route, req, res, url } = request
   const { sdk } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
+  const getRequestScopedCard = (cardId: string, boardId = ctx.currentBoardId) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const handleKnownError = (err: unknown): void => {
     if (err instanceof AuthError) {
       jsonError(res, authErrorToHttpStatus(err), err.message)
@@ -47,13 +49,18 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
       jsonError(res, 400, cardStateErr.message)
       return
     }
-    jsonError(res, 400, String(err))
+    const message = getErrorMessage(err)
+    if (message.includes('Card not found')) {
+      jsonError(res, 404, 'Task not found')
+      return
+    }
+    jsonError(res, 400, message)
   }
 
   let params = route('GET', '/api/tasks')
   if (params) {
     try {
-      const taskCards = await sdk.listCards(undefined, undefined, getListCardsOptions(url.searchParams))
+      const taskCards = await runWithRequestAuth(() => sdk.listCards(undefined, undefined, getListCardsOptions(url.searchParams)))
       jsonOk(res, await buildCardReadModels(taskCards, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
     } catch (err) {
       handleKnownError(err)
@@ -64,7 +71,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('GET', '/api/tasks/active')
   if (params) {
     try {
-      const card = await sdk.getActiveCard()
+      const card = await runWithRequestAuth(() => sdk.getActiveCard())
       jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
@@ -104,7 +111,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   if (params) {
     try {
       const taskParams = params
-      const card = ctx.cards.find(item => item.id === taskParams.id)
+      const card = await getRequestScopedCard(taskParams.id)
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -119,7 +126,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/open')
   if (params) {
     try {
-      const card = await sdk.getCard(params.id, ctx.currentBoardId)
+      const card = await getRequestScopedCard(params.id)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
@@ -135,7 +142,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('POST', '/api/tasks/:id/read')
   if (params) {
     try {
-      const card = await sdk.getCard(params.id, ctx.currentBoardId)
+      const card = await getRequestScopedCard(params.id)
       if (!card) {
         jsonError(res, 404, 'Task not found')
         return true
@@ -284,17 +291,18 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 400, 'files array is required')
         return true
       }
-      await runWithRequestAuth(async () => {
+      const card = await runWithRequestAuth(async () => {
         for (const file of files) {
           const buffer = Buffer.from(file.data, 'base64')
-          await doAddAttachment(ctx, taskParams.id, file.name, buffer)
+          const added = await doAddAttachment(ctx, taskParams.id, file.name, buffer)
+          if (!added) return null
         }
+        return sdk.getCard(taskParams.id, ctx.currentBoardId)
       })
-      broadcast(ctx, buildInitMessage(ctx))
-      const card = ctx.cards.find(item => item.id === taskParams.id)
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
+        broadcast(ctx, buildInitMessage(ctx))
         jsonOk(res, sanitizeCard(card))
       }
     } catch (err) {
@@ -310,30 +318,34 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('GET', '/api/tasks/:id/attachments/:filename')
   if (params) {
     const taskParams = params
-    const card = ctx.cards.find(item => item.id === taskParams.id)
-    if (!card) {
-      jsonError(res, 404, 'Task not found')
-      return true
-    }
-    const attachmentPath = await sdk.materializeAttachment(card, taskParams.filename)
-    if (!attachmentPath) {
-      jsonError(res, 501, 'Attachment provider does not expose a local file path')
-      return true
-    }
-    const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
-    fs.readFile(attachmentPath, (err, data) => {
-      if (err) {
-        res.writeHead(404)
-        res.end('File not found')
-        return
+    try {
+      const card = await getRequestScopedCard(taskParams.id)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
       }
-      res.writeHead(200, {
-        'Content-Type': getContentType(taskParams.filename, MIME_TYPES),
-        'Content-Disposition': `${disposition}; filename="${taskParams.filename}"`,
-        'Access-Control-Allow-Origin': '*',
+      const attachmentPath = await sdk.materializeAttachment(card, taskParams.filename)
+      if (!attachmentPath) {
+        jsonError(res, 501, 'Attachment provider does not expose a local file path')
+        return true
+      }
+      const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
+      fs.readFile(attachmentPath, (err, data) => {
+        if (err) {
+          res.writeHead(404)
+          res.end('File not found')
+          return
+        }
+        res.writeHead(200, {
+          'Content-Type': getContentType(taskParams.filename, MIME_TYPES),
+          'Content-Disposition': `${disposition}; filename="${taskParams.filename}"`,
+          'Access-Control-Allow-Origin': '*',
+        })
+        res.end(data)
       })
-      res.end(data)
-    })
+    } catch (err) {
+      handleKnownError(err)
+    }
     return true
   }
 
@@ -360,11 +372,10 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('GET', '/api/tasks/:id/comments')
   if (params) {
     const taskParams = params
-    const card = ctx.cards.find(item => item.id === taskParams.id)
-    if (!card) {
-      jsonError(res, 404, 'Task not found')
-    } else {
-      jsonOk(res, card.comments || [])
+    try {
+      jsonOk(res, await runWithRequestAuth(() => sdk.listComments(taskParams.id, ctx.currentBoardId)))
+    } catch (err) {
+      handleKnownError(err)
     }
     return true
   }
@@ -493,9 +504,9 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
   params = route('GET', '/api/tasks/:id/logs')
   if (params) {
     try {
-      jsonOk(res, await sdk.listLogs(params.id, ctx.currentBoardId))
-    } catch {
-      jsonError(res, 404, 'Task not found')
+      jsonOk(res, await runWithRequestAuth(() => sdk.listLogs(params.id, ctx.currentBoardId)))
+    } catch (err) {
+      handleKnownError(err)
     }
     return true
   }

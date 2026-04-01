@@ -20,6 +20,7 @@ export interface StandaloneContext {
   currentBoardId: string | undefined
   tempFilePath: string | undefined
   tempFileCardId: string | undefined
+  tempFileAuthContext: AuthContext | undefined
   tempFileWatcher: ReturnType<typeof chokidar.watch> | undefined
   tempFileWriting: boolean
 }

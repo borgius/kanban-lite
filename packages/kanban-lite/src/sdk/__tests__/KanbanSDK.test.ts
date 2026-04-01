@@ -37,6 +37,17 @@ type CallbackLifecycleGlobal = typeof globalThis & {
   }
 }
 
+type AuthVisibilityCallSnapshot = {
+  subject: string | null
+  roles: string[] | null
+  authIdentityRoles: string[] | null
+  cardIds: string[]
+}
+
+type AuthVisibilityGlobal = typeof globalThis & {
+  __kanbanVisibilityCalls?: AuthVisibilityCallSnapshot[]
+}
+
 function expectPresent<T>(value: T | null | undefined, message: string): T {
   expect(value).toBeDefined()
   expect(value).not.toBeNull()
@@ -86,6 +97,50 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
     }
     clearPackageCache()
   }
+}
+
+function installTempAuthVisibilityRuntimePackage(): () => void {
+  return installTempPackage(
+    'temp-auth-visibility-runtime',
+    `module.exports = {
+  pluginManifest: {
+    id: 'temp-auth-visibility-runtime',
+    capabilities: {
+      'auth.identity': ['temp-auth-visibility-runtime'],
+      'auth.visibility': ['temp-auth-visibility-runtime'],
+    },
+  },
+  authIdentityPlugin: {
+    manifest: { id: 'temp-auth-visibility-runtime', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      if (context.token === 'reader-token') return { subject: 'alice', roles: ['reader'] }
+      if (context.token === 'noroles-token') return { subject: 'alice' }
+      if (context.token === 'emptyroles-token') return { subject: 'alice', roles: [] }
+      if (context.token === 'manager-token') return { subject: 'manager', roles: ['manager'] }
+      return null
+    },
+  },
+  authVisibilityPlugin: {
+    manifest: { id: 'temp-auth-visibility-runtime', provides: ['auth.visibility'] },
+    async filterVisibleCards(cards, input) {
+      const calls = globalThis.__kanbanVisibilityCalls || (globalThis.__kanbanVisibilityCalls = [])
+      calls.push({
+        subject: input.identity?.subject ?? null,
+        roles: Array.isArray(input.roles) ? [...input.roles] : null,
+        authIdentityRoles: Array.isArray(input.auth?.identity?.roles) ? [...input.auth.identity.roles] : null,
+        cardIds: cards.map((card) => card.id),
+      })
+
+      if (input.roles.includes('reader')) {
+        return cards.filter((card) => card.labels.includes('public'))
+      }
+
+      return []
+    },
+  },
+}
+`,
+  )
 }
 
 function writeCardFile(dir: string, filename: string, content: string, subfolder?: string): void {
@@ -375,7 +430,7 @@ module.exports = { CallbackListenerPlugin }
       const status = sdk.getCardStateStatus()
 
       expect(status).toEqual({
-        provider: 'builtin',
+        provider: 'localfs',
         active: true,
         backend: 'builtin',
         availability: 'available',
@@ -461,7 +516,7 @@ module.exports = { CallbackListenerPlugin }
       const localSdk = new KanbanSDK(tempDir)
 
       expect(localSdk.getCardStateStatus()).toMatchObject({
-        provider: 'builtin',
+        provider: 'localfs',
         backend: 'builtin',
         availability: 'available',
         defaultActorAvailable: false,
@@ -494,7 +549,7 @@ module.exports = { CallbackListenerPlugin }
         identityEnabled: true,
       })
       expect(cardStateStatus).toMatchObject({
-        provider: 'builtin',
+        provider: 'localfs',
         backend: 'builtin',
         availability: 'available',
         defaultActorMode: CARD_STATE_DEFAULT_ACTOR_MODE,
@@ -517,7 +572,7 @@ module.exports = { CallbackListenerPlugin }
       const authConfiguredStatus = authConfiguredSdk.getCardStateStatus()
 
       expect(authConfiguredStatus).toMatchObject({
-        provider: 'builtin',
+        provider: 'localfs',
         backend: 'builtin',
         availability: 'available',
         defaultActorAvailable: false,
@@ -685,6 +740,33 @@ module.exports = { CallbackListenerPlugin }
       ping: () => 'pong',
     },
   },
+  attachmentStoragePlugin: {
+    manifest: { id: 'kanban-sdk-events-plugin', provides: ['attachment.storage'] },
+    async copyAttachment(_sourcePath, _destDir, fileName) {
+      return fileName
+    },
+    getCardDir(card) {
+      return path.dirname(card.filePath)
+    },
+  },
+  cardStateProvider: {
+    manifest: { id: 'kanban-sdk-events-plugin', provides: ['card.state'] },
+    async getCardState() { return null },
+    async setCardState(input) {
+      return { ...input, updatedAt: input.updatedAt || '2026-03-24T00:00:00.000Z' }
+    },
+    async getUnreadCursor() { return null },
+    async markUnreadReadThrough(input) {
+      return {
+        actorId: input.actorId,
+        boardId: input.boardId,
+        cardId: input.cardId,
+        domain: 'unread',
+        value: input.cursor,
+        updatedAt: input.cursor.updatedAt || '2026-03-24T00:00:00.000Z',
+      }
+    },
+  },
 }`,
       )
 
@@ -848,6 +930,388 @@ module.exports = { CallbackListenerPlugin }
 
       await expect(sdk.getActiveCard()).resolves.toBeNull()
       await expect(sdk.getActiveCard()).resolves.toBeNull()
+    })
+
+    it('filters list/get/active reads and hidden-card mutations through the canonical visibility seam', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+      const visibilityGlobal = globalThis as AuthVisibilityGlobal
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+        visibilityGlobal.__kanbanVisibilityCalls = []
+
+        writeCardFile(
+          tempDir,
+          'public-card.md',
+          makeCardContent({ id: 'public-card', labels: ['public'], order: 'a0' }),
+          'backlog',
+        )
+        writeCardFile(
+          tempDir,
+          'private-card.md',
+          makeCardContent({ id: 'private-card', labels: ['private'], order: 'a1' }),
+          'backlog',
+        )
+        fs.writeFileSync(
+          path.join(tempDir, '.active-card.json'),
+          JSON.stringify({
+            cardId: 'private-card',
+            boardId: 'default',
+            updatedAt: '2026-03-31T00:00:00.000Z',
+          }),
+          'utf-8',
+        )
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          await expect(sdk.listCards()).resolves.toMatchObject([
+            expect.objectContaining({ id: 'public-card' }),
+          ])
+          await expect(sdk.getCard('private-card')).resolves.toBeNull()
+          await expect(sdk.getActiveCard()).resolves.toBeNull()
+          await expect(sdk.getActiveCard()).resolves.toBeNull()
+          await expect(sdk.addComment('private-card', 'alice', 'hidden comment')).rejects.toThrow('Card not found: private-card')
+        })
+
+        expect(fs.existsSync(path.join(tempDir, '.active-card.json'))).toBe(false)
+        expect(
+          visibilityGlobal.__kanbanVisibilityCalls?.some((call) =>
+            call.subject === 'alice'
+            && JSON.stringify(call.roles) === JSON.stringify(['reader'])
+            && JSON.stringify(call.authIdentityRoles) === JSON.stringify(['reader'])
+            && JSON.stringify([...call.cardIds].sort()) === JSON.stringify(['private-card', 'public-card']),
+          ),
+        ).toBe(true)
+      } finally {
+        delete visibilityGlobal.__kanbanVisibilityCalls
+        cleanup()
+      }
+    })
+
+    it('normalizes missing and empty resolved roles to [] before invoking visibility providers', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+      const visibilityGlobal = globalThis as AuthVisibilityGlobal
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+        visibilityGlobal.__kanbanVisibilityCalls = []
+
+        writeCardFile(
+          tempDir,
+          'public-card.md',
+          makeCardContent({ id: 'public-card', labels: ['public'], order: 'a0' }),
+          'backlog',
+        )
+
+        await sdk.runWithAuth({ token: 'noroles-token' }, async () => {
+          await expect(sdk.listCards()).resolves.toEqual([])
+        })
+        await sdk.runWithAuth({ token: 'emptyroles-token' }, async () => {
+          await expect(sdk.listCards()).resolves.toEqual([])
+        })
+        await sdk.runWithAuth({ token: 'manager-token' }, async () => {
+          await expect(sdk.listCards()).resolves.toEqual([])
+        })
+
+        expect(visibilityGlobal.__kanbanVisibilityCalls).toEqual([
+          {
+            subject: 'alice',
+            roles: [],
+            authIdentityRoles: [],
+            cardIds: ['public-card'],
+          },
+          {
+            subject: 'alice',
+            roles: [],
+            authIdentityRoles: [],
+            cardIds: ['public-card'],
+          },
+          {
+            subject: 'manager',
+            roles: ['manager'],
+            authIdentityRoles: ['manager'],
+            cardIds: ['public-card'],
+          },
+        ])
+      } finally {
+        delete visibilityGlobal.__kanbanVisibilityCalls
+        cleanup()
+      }
+    })
+  })
+
+  describe('auth visibility', () => {
+    it('keeps discovery and direct card-targeted operations unchanged when auth.visibility is disabled', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+      const visibilityGlobal = globalThis as AuthVisibilityGlobal
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'none' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+        delete visibilityGlobal.__kanbanVisibilityCalls
+
+        writeCardFile(
+          tempDir,
+          'public-card.md',
+          makeCardContent({ id: 'public-card', labels: ['public'], order: 'a0' }),
+          'backlog',
+        )
+        writeCardFile(
+          tempDir,
+          'private-card.md',
+          makeCardContent({ id: 'private-card', labels: ['private'], order: 'a1' }),
+          'backlog',
+        )
+        fs.writeFileSync(
+          path.join(tempDir, '.active-card.json'),
+          JSON.stringify({
+            cardId: 'private-card',
+            boardId: 'default',
+            updatedAt: '2026-03-31T00:00:00.000Z',
+          }),
+          'utf-8',
+        )
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const cards = await sdk.listCards()
+          expect(cards.map((card) => card.id).sort()).toEqual(['private-card', 'public-card'])
+          await expect(sdk.getCard('private-card')).resolves.toMatchObject({ id: 'private-card' })
+          await expect(sdk.getActiveCard()).resolves.toMatchObject({ id: 'private-card' })
+          await expect(sdk.addComment('private-card', 'alice', 'still visible')).resolves.toMatchObject({
+            id: 'private-card',
+          })
+          await expect(sdk.listComments('private-card')).resolves.toEqual([
+            expect.objectContaining({ author: 'alice', content: 'still visible' }),
+          ])
+        })
+
+        expect(visibilityGlobal.__kanbanVisibilityCalls).toBeUndefined()
+      } finally {
+        delete visibilityGlobal.__kanbanVisibilityCalls
+        cleanup()
+      }
+    })
+
+    it('treats hidden cards as not found across direct SDK card-targeted operation families', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+      const attachmentPath = path.join(os.tmpdir(), `hidden-card-attach-${Date.now()}.txt`)
+      fs.writeFileSync(attachmentPath, 'hidden attachment', 'utf-8')
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        writeCardFile(
+          tempDir,
+          'public-card.md',
+          makeCardContent({ id: 'public-card', labels: ['public'], order: 'a0' }),
+          'backlog',
+        )
+        writeCardFile(
+          tempDir,
+          'private-card.md',
+          makeCardContent({ id: 'private-card', labels: ['private'], order: 'a1' }),
+          'backlog',
+        )
+        await sdk.createBoard('ops', 'Ops')
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const hiddenCardNotFound = 'Card not found: private-card'
+          const transferNotFound = 'Card not found: private-card in board default'
+          const cases: Array<{ name: string; run: () => Promise<void> }> = [
+            {
+              name: 'setActiveCard',
+              run: async () => {
+                await expect(sdk.setActiveCard('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'updateCard',
+              run: async () => {
+                await expect(sdk.updateCard('private-card', { priority: 'high' })).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'getCardState',
+              run: async () => {
+                await expect(sdk.getCardState('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'getUnreadSummary',
+              run: async () => {
+                await expect(sdk.getUnreadSummary('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'markCardOpened',
+              run: async () => {
+                await expect(sdk.markCardOpened('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'markCardRead',
+              run: async () => {
+                await expect(sdk.markCardRead('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'listComments',
+              run: async () => {
+                await expect(sdk.listComments('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'addComment',
+              run: async () => {
+                await expect(sdk.addComment('private-card', 'alice', 'hidden comment')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'updateComment',
+              run: async () => {
+                await expect(sdk.updateComment('private-card', 'c99', 'hidden edit')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'deleteComment',
+              run: async () => {
+                await expect(sdk.deleteComment('private-card', 'c99')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'streamComment',
+              run: async () => {
+                await expect(sdk.streamComment('private-card', 'alice', (async function* () {
+                  yield 'hidden chunk'
+                })())).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'addAttachment',
+              run: async () => {
+                await expect(sdk.addAttachment('private-card', attachmentPath)).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'removeAttachment',
+              run: async () => {
+                await expect(sdk.removeAttachment('private-card', 'missing.txt')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'listAttachments',
+              run: async () => {
+                await expect(sdk.listAttachments('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'getAttachmentDir',
+              run: async () => {
+                await expect(sdk.getAttachmentDir('private-card')).resolves.toBeNull()
+              },
+            },
+            {
+              name: 'getLogFilePath',
+              run: async () => {
+                await expect(sdk.getLogFilePath('private-card')).resolves.toBeNull()
+              },
+            },
+            {
+              name: 'listLogs',
+              run: async () => {
+                await expect(sdk.listLogs('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'addLog',
+              run: async () => {
+                await expect(sdk.addLog('private-card', 'hidden log')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'clearLogs',
+              run: async () => {
+                await expect(sdk.clearLogs('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'submitForm preflight',
+              run: async () => {
+                await expect(sdk.submitForm({ cardId: 'private-card', formId: 'missing-form', data: {} })).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'triggerAction',
+              run: async () => {
+                await expect(sdk.triggerAction('private-card', 'retry')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'moveCard',
+              run: async () => {
+                await expect(sdk.moveCard('private-card', 'todo')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'deleteCard',
+              run: async () => {
+                await expect(sdk.deleteCard('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'permanentlyDeleteCard',
+              run: async () => {
+                await expect(sdk.permanentlyDeleteCard('private-card')).rejects.toThrow(hiddenCardNotFound)
+              },
+            },
+            {
+              name: 'transferCard',
+              run: async () => {
+                await expect(sdk.transferCard('private-card', 'default', 'ops', 'backlog')).rejects.toThrow(transferNotFound)
+              },
+            },
+          ]
+
+          for (const operation of cases) {
+            await operation.run()
+          }
+        })
+      } finally {
+        if (fs.existsSync(attachmentPath)) {
+          fs.unlinkSync(attachmentPath)
+        }
+        cleanup()
+      }
     })
   })
 

@@ -34,7 +34,7 @@ const storeState = {
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    compactMode: false,
+    cardViewMode: 'large' as const,
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium' as const,

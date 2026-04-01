@@ -154,7 +154,7 @@ describe('extension card-state UI adapter', () => {
     const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open', 'default')
 
     expect(error).toBeNull()
-    expect(runWithAuthCalls).toHaveBeenCalledTimes(1)
+    expect(runWithAuthCalls).toHaveBeenCalledTimes(2)
     expect(sdk.markCardOpened).toHaveBeenCalledWith('card-open', 'default')
     expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open', 'default')
   })
@@ -162,7 +162,11 @@ describe('extension card-state UI adapter', () => {
   it('still updates active-card state when markCardOpened fails for configured identities', async () => {
     const sdk = createSdkStub()
     sdk.markCardOpened.mockRejectedValue(new CardStateError(ERR_CARD_STATE_IDENTITY_UNAVAILABLE, 'Sign in required for card state'))
-    const runWithAuth: CardStateAuthRunner = async <T,>(fn: () => Promise<T>) => fn()
+    const runWithAuthCalls = vi.fn()
+    const runWithAuth: CardStateAuthRunner = async <T,>(fn: () => Promise<T>) => {
+      runWithAuthCalls()
+      return fn()
+    }
 
     const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open', 'default')
 
@@ -170,6 +174,23 @@ describe('extension card-state UI adapter', () => {
       code: ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
       availability: 'identity-unavailable',
     })
+    expect(runWithAuthCalls).toHaveBeenCalledTimes(2)
     expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open', 'default')
+  })
+
+  it('does not set active-card state when an auth-scoped explicit open is hidden as not found', async () => {
+    const sdk = createSdkStub()
+    const hiddenCardNotFound = new Error('Card not found: private-card')
+    sdk.markCardOpened.mockRejectedValue(hiddenCardNotFound)
+    const runWithAuthCalls = vi.fn()
+    const runWithAuth: CardStateAuthRunner = async <T,>(fn: () => Promise<T>) => {
+      runWithAuthCalls()
+      return fn()
+    }
+
+    await expect(performExplicitCardOpen(sdk, runWithAuth, 'private-card', 'default')).rejects.toThrow(hiddenCardNotFound)
+
+    expect(runWithAuthCalls).toHaveBeenCalledTimes(1)
+    expect(sdk.setActiveCard).not.toHaveBeenCalled()
   })
 })

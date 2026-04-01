@@ -136,7 +136,12 @@ function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
   return roles ?? getDefaultLocalAuthRoles()
 }
 
-async function getAvailableAuthPolicyBeforeEvents(sdk?: KanbanSDK): Promise<string[]> {
+const AUTH_POLICY_ACTION_SUPPLEMENTS = [
+  'plugin-settings.read',
+  'plugin-settings.update',
+] as const
+
+async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]> {
   const events = typeof sdk?.listAvailableEvents === 'function'
     ? await sdk.listAvailableEvents({ type: 'before' })
     : undefined
@@ -146,7 +151,8 @@ async function getAvailableAuthPolicyBeforeEvents(sdk?: KanbanSDK): Promise<stri
   const names = configuredEvents && configuredEvents.length > 0
     ? configuredEvents
     : [...SDK_BEFORE_EVENT_NAMES]
-  return [...new Set(names)].sort((left, right) => left.localeCompare(right))
+  return [...new Set([...names, ...AUTH_POLICY_ACTION_SUPPLEMENTS])]
+    .sort((left, right) => left.localeCompare(right))
 }
 
 function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
@@ -278,7 +284,7 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
   const permissionsSchema: Record<string, unknown> = {
     type: 'array',
     title: 'Permission matrix',
-    description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the before-events it may run. When omitted, the provider uses its default policy behavior.',
+    description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the actions it may run. When omitted, the provider uses its default policy behavior.',
     items: {
       type: 'object',
       additionalProperties: false,
@@ -293,13 +299,13 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
         },
         actions: {
           type: 'array',
-          title: 'Events',
+          title: 'Actions',
           minItems: 1,
           uniqueItems: true,
           items: {
             type: 'string',
-            title: 'Before-event',
-            enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyBeforeEvents(sdk),
+            title: 'Action',
+            enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyActions(sdk),
             minLength: 1,
           },
         },
@@ -344,7 +350,7 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed before-events',
+                      label: 'Allowed actions',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -442,6 +448,7 @@ function resolveAuthCapabilities(
   return {
     'auth.identity': getAuthProviderSelection(configSnapshot, 'auth.identity') ?? { provider: 'noop' },
     'auth.policy': getAuthProviderSelection(configSnapshot, 'auth.policy') ?? { provider: 'noop' },
+    'auth.visibility': getAuthProviderSelection(configSnapshot, 'auth.visibility') ?? { provider: 'none' },
   }
 }
 
@@ -941,6 +948,8 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
+  'plugin-settings.read',
+  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',
@@ -1063,7 +1072,7 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  *
  * When `options.permissions` is provided it **overrides** the provider's default
  * policy behavior with an explicit per-role permission matrix. The shared
- * settings UI writes role-based rows and uses the live before-event catalog,
+ * settings UI writes role-based rows and uses the live action catalog,
  * while legacy `options.matrix` role maps remain supported for backward
  * compatibility.
  *

@@ -37,7 +37,7 @@ export async function doCreateCard(ctx: StandaloneContext, data: CreateCardData)
 }
 
 export async function doMoveCard(ctx: StandaloneContext, cardId: string, newStatus: string, newOrder: number): Promise<Card | null> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return null
 
   ctx.migrating = true
@@ -53,7 +53,7 @@ export async function doMoveCard(ctx: StandaloneContext, cardId: string, newStat
 }
 
 export async function doUpdateCard(ctx: StandaloneContext, cardId: string, updates: Partial<Card>): Promise<Card | null> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return null
 
   ctx.migrating = true
@@ -85,7 +85,7 @@ export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInpu
 }
 
 export async function doDeleteCard(ctx: StandaloneContext, cardId: string): Promise<boolean> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return false
 
   try {
@@ -102,7 +102,7 @@ export async function doDeleteCard(ctx: StandaloneContext, cardId: string): Prom
 }
 
 export async function doPermanentDeleteCard(ctx: StandaloneContext, cardId: string): Promise<boolean> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return false
 
   try {
@@ -189,7 +189,7 @@ export async function doSaveSettings(ctx: StandaloneContext, newSettings: CardDi
 }
 
 export async function doAddAttachment(ctx: StandaloneContext, cardId: string, filename: string, fileData: Buffer): Promise<boolean> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return false
 
   const tempUploadPath = path.join(os.tmpdir(), `kanban-upload-${card.id}-${Date.now()}-${filename}`)
@@ -208,7 +208,7 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
 }
 
 export async function doRemoveAttachment(ctx: StandaloneContext, cardId: string, attachment: string): Promise<Card | null> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return null
 
   ctx.migrating = true
@@ -261,7 +261,7 @@ export async function doUpdateComment(ctx: StandaloneContext, cardId: string, co
 }
 
 export async function doDeleteComment(ctx: StandaloneContext, cardId: string, commentId: string): Promise<boolean> {
-  const card = ctx.cards.find(f => f.id === cardId)
+  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return false
   const comment = (card.comments || []).find(c => c.id === commentId)
   if (!comment) return false

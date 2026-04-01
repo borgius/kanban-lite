@@ -1551,6 +1551,10 @@ body.vscode-high-contrast {
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
+.kb-card--compact {
+  min-height: 0;
+}
+
 /* Priority accent strip across top edge */
 .kb-card::before {
   content: '';

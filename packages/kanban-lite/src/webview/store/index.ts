@@ -369,7 +369,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    compactMode: false,
+    cardViewMode: 'large' as import('../../../shared/types').CardViewMode,
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium',
@@ -379,7 +379,8 @@ export const useStore = create<KanbanState>((set, get) => ({
     boardBackgroundMode: 'fancy',
     boardBackgroundPreset: 'aurora',
     panelMode: 'drawer' as const,
-    drawerWidth: 50
+    drawerWidth: 50,
+    drawerPosition: 'right' as const,
   },
   drawerWidthPreview: null,
   effectiveDrawerWidth: 50,
@@ -551,6 +552,8 @@ export const useStore = create<KanbanState>((set, get) => ({
         boardBackgroundPreset: background.boardBackgroundPreset,
         panelMode: settings.panelMode ?? state.cardSettings.panelMode,
         drawerWidth: nextDrawerWidth,
+        drawerPosition: settings.drawerPosition ?? state.cardSettings.drawerPosition,
+        columnWidth: settings.columnWidth ?? state.cardSettings.columnWidth,
       },
       effectiveDrawerWidth: state.drawerWidthPreview ?? nextDrawerWidth,
     }

@@ -162,7 +162,7 @@ function createCliEventsPluginPackageSource(packageName: string): string {
     '  manifest: { id: packageName, provides: [\'card.storage\'] },',
     '  createEngine(kanbanDir) {',
     '    return {',
-    '      type: \"markdown\",',
+    '      type: "markdown",',
     '      kanbanDir,',
     '      async init() {},',
     '      close() {},',
@@ -171,19 +171,40 @@ function createCliEventsPluginPackageSource(packageName: string): string {
     '      async deleteBoardData() {},',
     '      async scanCards() { return [] },',
     '      async writeCard() {},',
-    '      async moveCard() { return \"\" },',
-    '      async renameCard() { return \"\" },',
+    '      async moveCard() { return "" },',
+    '      async renameCard() { return "" },',
     '      async deleteCard() {},',
     '      getCardDir() { return kanbanDir },',
     '      async copyAttachment() {},',
     '    }',
     '  },',
     '}',
+    'module.exports.attachmentStoragePlugin = {',
+    '  manifest: { id: packageName, provides: [\'attachment.storage\'] },',
+    '  getCardDir(card) { return card?.filePath || null },',
+    '  async copyAttachment() {},',
+    '}',
+    'module.exports.cardStateProvider = {',
+    '  manifest: { id: packageName, provides: [\'card.state\'] },',
+    '  async getCardState() { return null },',
+    '  async setCardState(input) { return { ...input, updatedAt: input.updatedAt || "2026-03-24T00:00:00.000Z" } },',
+    '  async getUnreadCursor() { return null },',
+    '  async markUnreadReadThrough(input) {',
+    '    return {',
+    '      actorId: input.actorId,',
+    '      boardId: input.boardId,',
+    '      cardId: input.cardId,',
+    '      domain: "unread",',
+    '      value: input.cursor,',
+    '      updatedAt: input.cursor.updatedAt || "2026-03-24T00:00:00.000Z"',
+    '    }',
+    '  },',
+    '}',
     'module.exports.sdkExtensionPlugin = {',
     '  manifest: { id: packageName, provides: [\'sdk.extensions\'] },',
     '  events: [',
-    '    { event: \"workflow.run\", phase: \"before\", label: \"Workflow run\" },',
-    '    { event: \"workflow.completed\", phase: \"after\", label: \"Workflow completed\", apiAfter: true },',
+    '    { event: "workflow.run", phase: "before", label: "Workflow run" },',
+    '    { event: "workflow.completed", phase: "after", label: "Workflow completed", apiAfter: true },',
     '  ],',
     '  extensions: {},',
     '}',
@@ -253,6 +274,140 @@ async function createCliProtectedWorkspaceWithCard(
   return {
     ...workspace,
     cardId: card.id,
+  }
+}
+
+function makeCliCardContent(opts: {
+  id: string
+  title: string
+  labels: string[]
+  order: string
+}): string {
+  const { id, title, labels, order } = opts
+  return `---
+id: "${id}"
+status: "backlog"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2026-03-31T00:00:00.000Z"
+modified: "2026-03-31T00:00:00.000Z"
+completedAt: null
+labels: [${labels.map((label) => `"${label}"`).join(', ')}]
+attachments: []
+order: "${order}"
+---
+# ${title}
+
+Visibility fixture.
+`
+}
+
+function writeCliCardFile(kanbanDir: string, filename: string, content: string, status = 'backlog'): string {
+  const targetDir = path.join(kanbanDir, 'boards', 'default', status)
+  fs.mkdirSync(targetDir, { recursive: true })
+  const filePath = path.join(targetDir, filename)
+  fs.writeFileSync(filePath, content, 'utf-8')
+  return filePath
+}
+
+function createCliVisibilityScopedAuthIdentityPluginSource(packageName: string): string {
+  return [
+    `const packageName = ${JSON.stringify(packageName)}`,
+    'module.exports.authIdentityPlugin = {',
+    '  manifest: { id: packageName, provides: [\'auth.identity\'] },',
+    '  async resolveIdentity(context) {',
+    '    const rawToken = context && typeof context.token === "string" ? context.token : ""',
+    '    const token = rawToken.startsWith("Bearer ") ? rawToken.slice(7) : rawToken',
+    '    if (token === "reader-token") return { subject: "alice", roles: ["reader"] }',
+    '    if (token === "writer-token") return { subject: "casey", roles: ["writer"] }',
+    '    return null',
+    '  },',
+    '}',
+  ].join('\n')
+}
+
+async function createCliVisibilityWorkspace(packageName: string): Promise<{
+  workspaceDir: string
+  configPath: string
+  publicCardId: string
+  privateCardId: string
+  cleanup: () => void
+}> {
+  const workspace = createCliWorkspace({})
+  const kanbanDir = path.join(workspace.workspaceDir, '.kanban')
+  const publicCardId = 'public-card'
+  const privateCardId = 'private-card'
+  const hiddenAttachmentPath = path.join(workspace.workspaceDir, 'hidden-attachment.txt')
+
+  writeCliCardFile(
+    kanbanDir,
+    `${publicCardId}.md`,
+    makeCliCardContent({
+      id: publicCardId,
+      title: 'Public card',
+      labels: ['public'],
+      order: 'a0',
+    }),
+  )
+  writeCliCardFile(
+    kanbanDir,
+    `${privateCardId}.md`,
+    makeCliCardContent({
+      id: privateCardId,
+      title: 'Private card',
+      labels: ['private'],
+      order: 'a1',
+    }),
+  )
+
+  fs.writeFileSync(hiddenAttachmentPath, 'hidden attachment', 'utf-8')
+  fs.writeFileSync(
+    path.join(kanbanDir, '.active-card.json'),
+    JSON.stringify({
+      cardId: privateCardId,
+      boardId: 'default',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    }),
+    'utf-8',
+  )
+
+  const sdk = new KanbanSDK(kanbanDir)
+  await sdk.init()
+  try {
+    await sdk.addComment(privateCardId, 'seed-user', 'Hidden comment')
+    await sdk.addLog(privateCardId, 'Hidden log')
+    await sdk.addAttachment(privateCardId, hiddenAttachmentPath)
+  } finally {
+    sdk.close()
+  }
+
+  const currentConfig = JSON.parse(fs.readFileSync(workspace.configPath, 'utf-8')) as Record<string, unknown>
+  fs.writeFileSync(
+    workspace.configPath,
+    JSON.stringify({
+      ...currentConfig,
+      plugins: {
+        'auth.identity': { provider: packageName },
+        'auth.policy': { provider: 'noop' },
+        'auth.visibility': {
+          provider: 'kl-plugin-auth-visibility',
+          options: {
+            rules: [
+              { roles: ['writer'], labels: ['public', 'private'] },
+              { roles: ['reader'], labels: ['public'] },
+            ],
+          },
+        },
+      },
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+
+  return {
+    ...workspace,
+    publicCardId,
+    privateCardId,
   }
 }
 
@@ -351,6 +506,7 @@ describe('CLI list command', () => {
   it('delegates search and fuzzy matching to sdk.listCards while preserving JSON output', async () => {
     const sdk = {
       listCards: vi.fn().mockResolvedValue([makeCard()]),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
       getLabelsInGroup: vi.fn().mockReturnValue([]),
       getConfigSnapshot: vi.fn().mockReturnValue({
         defaultBoard: 'default',
@@ -360,7 +516,7 @@ describe('CLI list command', () => {
           },
         },
       }),
-    } as unknown as Pick<KanbanSDK, 'listCards' | 'getLabelsInGroup' | 'getConfigSnapshot'>
+    } as unknown as Pick<KanbanSDK, 'listCards' | 'runWithAuth' | 'getLabelsInGroup' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdList(sdk as KanbanSDK, {
@@ -383,6 +539,7 @@ describe('CLI list command', () => {
   it('renders prefixed display titles in human-readable list output', async () => {
     const sdk = {
       listCards: vi.fn().mockResolvedValue([makeCard({ metadata: { sprint: 'Q1' }, content: '# Ship release' })]),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
       getLabelsInGroup: vi.fn().mockReturnValue([]),
       getConfigSnapshot: vi.fn().mockReturnValue({
         defaultBoard: 'default',
@@ -392,7 +549,7 @@ describe('CLI list command', () => {
           },
         },
       }),
-    } as unknown as Pick<KanbanSDK, 'listCards' | 'getLabelsInGroup' | 'getConfigSnapshot'>
+    } as unknown as Pick<KanbanSDK, 'listCards' | 'runWithAuth' | 'getLabelsInGroup' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdList(sdk as KanbanSDK, {})
@@ -469,6 +626,7 @@ describe('CLI active command', () => {
   it('prints the active card as JSON when requested', async () => {
     const sdk = {
       getActiveCard: vi.fn().mockResolvedValue(makeCard({ id: 'active-1' })),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
       getConfigSnapshot: vi.fn().mockReturnValue({
         defaultBoard: 'default',
         boards: {
@@ -477,7 +635,7 @@ describe('CLI active command', () => {
           },
         },
       }),
-    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'runWithAuth' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdActive(sdk as KanbanSDK, { json: true })
@@ -489,13 +647,14 @@ describe('CLI active command', () => {
   it('prints a friendly message when no active card exists', async () => {
     const sdk = {
       getActiveCard: vi.fn().mockResolvedValue(null),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
       getConfigSnapshot: vi.fn().mockReturnValue({
         defaultBoard: 'default',
         boards: {
           default: {},
         },
       }),
-    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'runWithAuth' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdActive(sdk as KanbanSDK, {})
@@ -506,6 +665,7 @@ describe('CLI active command', () => {
   it('renders prefixed display titles in active-card detail output', async () => {
     const sdk = {
       getActiveCard: vi.fn().mockResolvedValue(makeCard({ id: 'active-2', content: '# Fix release', metadata: { sprint: 'Q2' } })),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
       getConfigSnapshot: vi.fn().mockReturnValue({
         defaultBoard: 'default',
         boards: {
@@ -514,7 +674,7 @@ describe('CLI active command', () => {
           },
         },
       }),
-    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'getConfigSnapshot'>
+    } as unknown as Pick<KanbanSDK, 'getActiveCard' | 'runWithAuth' | 'getConfigSnapshot'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdActive(sdk as KanbanSDK, {})
@@ -945,7 +1105,7 @@ describe('CLI card-state commands', () => {
       const providerStatus = await runCliCommand(['card-state', 'status', '--json', '--config', configPath])
       expect(providerStatus.exitCode).toBe(0)
       expect(JSON.parse(providerStatus.stdout)).toMatchObject({
-        provider: 'builtin',
+        provider: 'localfs',
         active: true,
         backend: 'builtin',
         availability: 'available',
@@ -1070,6 +1230,104 @@ describe('CLI card-state commands', () => {
       }
     } finally {
       cleanup()
+    }
+  })
+})
+
+describe('CLI auth visibility parity', () => {
+  it('uses CLI auth scope for list, active, and show reads while preserving multiple-match UX for visible cards', async () => {
+    const packageName = `kanban-cli-auth-visibility-${Date.now()}-reads`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliVisibilityScopedAuthIdentityPluginSource(packageName),
+    )
+    const { configPath, cleanup, publicCardId } = await createCliVisibilityWorkspace(packageName)
+
+    try {
+      const readerList = await runCliCommand(['list', '--json', '--config', configPath], {
+        KANBAN_LITE_TOKEN: 'reader-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(readerList.exitCode).toBe(0)
+      expect((JSON.parse(readerList.stdout) as Array<{ id: string }>).map((card) => card.id)).toEqual([publicCardId])
+
+      const readerActive = await runCliCommand(['active', '--json', '--config', configPath], {
+        KANBAN_LITE_TOKEN: 'reader-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(readerActive.exitCode).toBe(0)
+      expect(JSON.parse(readerActive.stdout)).toBeNull()
+
+      const readerShow = await runCliCommand(['show', 'card', '--json', '--config', configPath], {
+        KANBAN_LITE_TOKEN: 'reader-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(readerShow.exitCode).toBe(0)
+      expect(JSON.parse(readerShow.stdout)).toMatchObject({ id: publicCardId })
+
+      const writerShow = await runCliCommand(['show', 'card', '--config', configPath], {
+        KANBAN_LITE_TOKEN: 'writer-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(writerShow.exitCode).toBe(1)
+      expect(stripAnsi(writerShow.stderr)).toContain('Multiple cards match "card":')
+    } finally {
+      cleanup()
+      cleanupPlugin()
+    }
+  })
+
+  it('uses CLI auth scope for card-targeted list handlers and mutation preflight resolution', async () => {
+    const packageName = `kanban-cli-auth-visibility-${Date.now()}-targets`
+    const cleanupPlugin = installTempCliPlugin(
+      packageName,
+      createCliVisibilityScopedAuthIdentityPluginSource(packageName),
+    )
+    const { configPath, cleanup, publicCardId, privateCardId } = await createCliVisibilityWorkspace(packageName)
+
+    try {
+      for (const args of [
+        ['attach', 'list', privateCardId],
+        ['comment', 'list', privateCardId],
+        ['log', 'list', privateCardId],
+      ]) {
+        const result = await runCliCommand([...args, '--json', '--config', configPath], {
+          KANBAN_LITE_TOKEN: 'reader-token',
+          KANBAN_TOKEN: undefined,
+        })
+        expect(result.exitCode).toBe(1)
+        expect(stripAnsi(result.stderr)).toContain(`Card not found: ${privateCardId}`)
+      }
+
+      const addComment = await runCliCommand([
+        'comment',
+        'add',
+        'card',
+        '--author',
+        'reader',
+        '--body',
+        'partial visible comment',
+        '--config',
+        configPath,
+      ], {
+        KANBAN_LITE_TOKEN: 'reader-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(addComment.exitCode).toBe(0)
+      expect(stripAnsi(addComment.stdout)).toContain(`Added comment c1 to card ${publicCardId}`)
+
+      const publicShow = await runCliCommand(['show', publicCardId, '--json', '--config', configPath], {
+        KANBAN_LITE_TOKEN: 'reader-token',
+        KANBAN_TOKEN: undefined,
+      })
+      expect(publicShow.exitCode).toBe(0)
+      expect(JSON.parse(publicShow.stdout)).toMatchObject({
+        id: publicCardId,
+        comments: [expect.objectContaining({ author: 'reader', content: 'partial visible comment' })],
+      })
+    } finally {
+      cleanup()
+      cleanupPlugin()
     }
   })
 })
@@ -1229,7 +1487,12 @@ describe('CLI plugin-settings commands', () => {
     })
 
     try {
-      const listResult = await runCliCommand(['plugin-settings', 'list', '--json', '--config', configPath])
+      const authEnv = {
+        KANBAN_LITE_TOKEN: 'inventory-local-token',
+        KANBAN_TOKEN: undefined,
+      }
+
+      const listResult = await runCliCommand(['plugin-settings', 'list', '--json', '--config', configPath], authEnv)
       expect(listResult.exitCode).toBe(0)
       const listJson = JSON.parse(listResult.stdout)
       expect(listJson).toMatchObject({
@@ -1251,14 +1514,14 @@ describe('CLI plugin-settings commands', () => {
       expect(listResult.stdout).not.toContain('inventory-local-token')
       expect(listResult.stdout).not.toContain('super-secret-password')
 
-      const listHumanResult = await runCliCommand(['plugin-settings', 'list', '--config', configPath])
+      const listHumanResult = await runCliCommand(['plugin-settings', 'list', '--config', configPath], authEnv)
       expect(listHumanResult.exitCode).toBe(0)
       expect(stripAnsi(listHumanResult.stdout)).toContain('auth.identity')
       expect(stripAnsi(listHumanResult.stdout)).toContain('local')
       expect(listHumanResult.stdout).not.toContain('inventory-local-token')
       expect(listHumanResult.stdout).not.toContain('super-secret-password')
 
-      const showJsonResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--json', '--config', configPath])
+      const showJsonResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--json', '--config', configPath], authEnv)
       expect(showJsonResult.exitCode).toBe(0)
       expect(JSON.parse(showJsonResult.stdout)).toMatchObject({
         capability: 'auth.identity',
@@ -1275,12 +1538,44 @@ describe('CLI plugin-settings commands', () => {
       expect(showJsonResult.stdout).not.toContain('inventory-local-token')
       expect(showJsonResult.stdout).not.toContain('super-secret-password')
 
-      const showHumanResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--config', configPath])
+      const showHumanResult = await runCliCommand(['plugin-settings', 'show', 'auth.identity', 'local', '--config', configPath], authEnv)
       expect(showHumanResult.exitCode).toBe(0)
       expect(stripAnsi(showHumanResult.stdout)).toContain('Capability:')
       expect(stripAnsi(showHumanResult.stdout)).toContain('••••••')
       expect(showHumanResult.stdout).not.toContain('inventory-local-token')
       expect(showHumanResult.stdout).not.toContain('super-secret-password')
+    } finally {
+      cleanup()
+    }
+  }, 20_000)
+
+  it('routes plugin-settings list/show through CLI auth and prints token guidance for denied reads', async () => {
+    const { configPath, cleanup } = createCliWorkspace({
+      auth: {
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'inventory-local-token',
+          },
+        },
+        'auth.policy': { provider: 'local' },
+      },
+    })
+
+    try {
+      for (const args of [
+        ['plugin-settings', 'list', '--config', configPath],
+        ['plugin-settings', 'show', 'auth.identity', 'local', '--config', configPath],
+      ]) {
+        const result = await runCliCommand(args, {
+          KANBAN_LITE_TOKEN: undefined,
+          KANBAN_TOKEN: undefined,
+        })
+
+        expect(result.exitCode).toBe(1)
+        expect(stripAnsi(result.stdout)).toBe('')
+        expect(stripAnsi(result.stderr)).toContain('Error: Authentication required. Set KANBAN_LITE_TOKEN or pass --token <value>.')
+      }
     } finally {
       cleanup()
     }
@@ -1312,10 +1607,10 @@ describe('CLI plugin-settings commands', () => {
       expect(selectResult.exitCode).toBe(0)
       expect(JSON.parse(selectResult.stdout)).toMatchObject({
         capability: 'card.storage',
-        providerId: 'markdown',
+        providerId: 'localfs',
         selected: {
           capability: 'card.storage',
-          providerId: 'markdown',
+          providerId: 'localfs',
           source: 'config',
         },
       })
@@ -1341,8 +1636,8 @@ describe('CLI plugin-settings commands', () => {
         providerId: 'local',
         selected: {
           capability: 'auth.identity',
-          providerId: 'local',
-          source: 'config',
+          providerId: 'noop',
+          source: 'legacy',
         },
         options: {
           values: {
@@ -1354,12 +1649,17 @@ describe('CLI plugin-settings commands', () => {
 
       const persistedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
         plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+        auth: Record<string, { provider: string; options?: Record<string, unknown> }>
+        pluginOptions: Record<string, Record<string, Record<string, unknown>>>
       }
-      expect(persistedConfig.plugins['card.storage']).toEqual({ provider: 'markdown' })
-      expect(persistedConfig.plugins['attachment.storage']).toEqual({ provider: 'localfs' })
-      expect(persistedConfig.plugins['auth.identity']).toMatchObject({
-        provider: 'local',
-        options: {
+      expect(persistedConfig.plugins['card.storage']).toEqual({ provider: 'localfs' })
+      expect(persistedConfig.plugins['attachment.storage']).toBeUndefined()
+      expect(persistedConfig.auth['auth.identity']).toEqual({ provider: 'noop' })
+      expect(persistedConfig.pluginOptions['card.storage']).toMatchObject({
+        sqlite: { sqlitePath: '.kanban/custom.db' },
+      })
+      expect(persistedConfig.pluginOptions['auth.identity']).toMatchObject({
+        local: {
           apiToken: 'updated-local-token',
           users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
         },

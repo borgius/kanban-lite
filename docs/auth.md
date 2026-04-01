@@ -396,6 +396,17 @@ Secret-bearing auth fields participate in the same masked edit flow as other pro
 
 Those values reopen as `••••••` in the shared workflow. Leaving the masked placeholder unchanged keeps the stored secret/hash, and typing a new value replaces it. Read/list/error payloads stay redacted and do not redisplay the raw stored value.
 
+### Plugin settings auth split
+
+Shared plugin-settings surfaces now use two auth actions:
+
+- `plugin-settings.read` controls plugin-settings inventory/detail reads before any plugin-settings payload is materialized. This covers the Settings panel hosts, the standalone websocket settings bridge (`openSettings`, `loadPluginSettings`, `readPluginSettings`), REST `GET /api/plugin-settings` and `GET /api/plugin-settings/:capability/:providerId`, CLI `plugin-settings list|show`, and MCP `list_plugin_settings`.
+- `plugin-settings.update` controls provider selection, option updates, and guarded installs. This covers the Settings panel hosts, the standalone websocket bridge mutation messages, REST `select` / `options` / `install`, CLI `plugin-settings select|update-options|install`, and the matching MCP mutation tools.
+- Allowed reads still reuse the shared redaction contract (`••••••` masked write-only placeholders plus redacted error payloads).
+- Redaction does **not** replace authorization; callers still need the matching auth action before any inventory or provider read model is returned.
+
+In the shipped RBAC defaults, only `admin` gets these actions automatically. A default `user` therefore cannot list/view plugin settings, while an `admin` can list/show redacted settings and perform plugin-settings mutations unless you override the permission matrix.
+
 ### Default (no auth)
 
 Omit auth namespaces entirely — the SDK defaults both to `noop` (open-access).
@@ -1029,6 +1040,8 @@ Includes all `manager` and `user` actions plus:
 - `board.update`
 - `board.delete`
 - `settings.update`
+- `plugin-settings.read`
+- `plugin-settings.update`
 - `webhook.create`
 - `webhook.update`
 - `webhook.delete`

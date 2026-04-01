@@ -9,6 +9,7 @@ import type {
   CardFrontmatter,
   CardDisplaySettings,
   CreateCardPayload,
+  LogEntry,
   PluginSettingsInstallTransportResult,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
@@ -20,7 +21,7 @@ import { serializeCard, parseCardFile } from '../sdk/parser'
 import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '../shared/config'
 import type { PluginCapabilityNamespace } from '../shared/config'
 import { KanbanSDK, DEFAULT_PLUGIN_SETTINGS_REDACTION, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
-import type { AuthContext } from '../sdk/types'
+import { AuthError, type AuthContext } from '../sdk/types'
 import { getExtensionAuthStatus, resolveExtensionAuthContext } from './auth'
 import { decorateCardsForWebview, formatCardStateWarning, performExplicitCardOpen } from './cardStateUi'
 
@@ -189,7 +190,7 @@ export class KanbanPanel {
             this._cleanupTempFile()
             break
           case 'openFile': {
-            const feat = this._cards.find(f => f.id === message.cardId)
+            const feat = await this._getCardForCurrentAuth(message.cardId)
             if (feat) {
               const sdk = this._getSDK()
               const localCardPath = sdk ? sdk.getLocalCardPath(feat) : feat.filePath
@@ -272,7 +273,7 @@ export class KanbanPanel {
             break
           }
           case 'downloadCard': {
-            const dlCard = this._cards.find(f => f.id === message.cardId)
+              const dlCard = await this._getCardForCurrentAuth(message.cardId)
             if (!dlCard) break
             const downloadSdk = this._getSDK()
             const localCardPath = downloadSdk ? downloadSdk.getLocalCardPath(dlCard) : dlCard.filePath
@@ -661,11 +662,28 @@ export class KanbanPanel {
     return sdk.runWithAuth(await this._getAuthContext(), fn)
   }
 
-  private async _getPluginSettingsPayload(sdk: KanbanSDK | null): Promise<PluginSettingsPayload> {
+  private async _getPluginSettingsPayload(
+    sdk: KanbanSDK | null,
+    scoped = false,
+  ): Promise<PluginSettingsPayload> {
     if (!sdk) {
       return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
     }
+    if (scoped) {
+      return await this._runWithAuth(sdk, async () => sdk.listPluginSettings())
+    }
     return await sdk.listPluginSettings()
+  }
+
+  private async _getPluginSettingsMutationPayload(sdk: KanbanSDK): Promise<PluginSettingsPayload> {
+    try {
+      return await this._getPluginSettingsPayload(sdk, true)
+    } catch (error) {
+      if (this._shouldClearPluginSettingsMutationState(error)) {
+        return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
+      }
+      throw error
+    }
   }
 
   private _toPluginSettingsProviderTransport(
@@ -697,7 +715,6 @@ export class KanbanPanel {
     if (error instanceof PluginSettingsOperationError) {
       return error.payload
     }
-
     const fallback = {
       read: {
         code: 'plugin-settings-read-failed',
@@ -726,6 +743,36 @@ export class KanbanPanel {
     })
   }
 
+  private _shouldClearPluginSettingsMutationState(error: unknown): boolean {
+    if (error instanceof AuthError) {
+      return true
+    }
+    if (!error || typeof error !== 'object') {
+      return false
+    }
+    const category = (error as { category?: unknown }).category
+    return typeof category === 'string' && category.startsWith('auth.')
+  }
+
+  private _toPluginSettingsMutationErrorResult(
+    action: Exclude<PluginSettingsTransportAction, 'read'>,
+    error: unknown,
+    capability?: PluginCapabilityNamespace,
+    providerId?: string,
+  ): PluginSettingsResultMessage {
+    return {
+      type: 'pluginSettingsResult',
+      action,
+      ...(this._shouldClearPluginSettingsMutationState(error)
+        ? {
+            pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+            provider: null,
+          }
+        : {}),
+      error: this._toPluginSettingsErrorPayload(action, error, capability, providerId),
+    }
+  }
+
   private _postPluginSettingsResult(message: PluginSettingsResultMessage): void {
     this._panel.webview.postMessage(message)
   }
@@ -746,13 +793,14 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
-        pluginSettings: await this._getPluginSettingsPayload(sdk),
+        pluginSettings: await this._getPluginSettingsPayload(sdk, true),
       })
     } catch (error) {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
         pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+        provider: null,
         error: this._toPluginSettingsErrorPayload('read', error),
       })
     }
@@ -778,13 +826,17 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
-        pluginSettings: await this._getPluginSettingsPayload(sdk),
-        provider: this._toPluginSettingsProviderTransport(await sdk.getPluginSettings(capability, providerId)),
+        pluginSettings: await this._getPluginSettingsPayload(sdk, true),
+        provider: this._toPluginSettingsProviderTransport(
+          await this._runWithAuth(sdk, async () => sdk.getPluginSettings(capability, providerId)),
+        ),
       })
     } catch (error) {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action: 'read',
+        pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
+        provider: null,
         error: this._toPluginSettingsErrorPayload('read', error, capability, providerId),
       })
     }
@@ -805,6 +857,7 @@ export class KanbanPanel {
         type: 'pluginSettingsResult',
         action,
         pluginSettings: await this._getPluginSettingsPayload(null),
+        provider: null,
         error: this._toPluginSettingsErrorPayload(action, null, capability, providerId),
       })
       return
@@ -815,16 +868,12 @@ export class KanbanPanel {
       this._postPluginSettingsResult({
         type: 'pluginSettingsResult',
         action,
-        pluginSettings: await this._getPluginSettingsPayload(sdk),
+        pluginSettings: await this._getPluginSettingsMutationPayload(sdk),
         provider: this._toPluginSettingsProviderTransport(result.provider ?? null),
         install: result.install ? this._toPluginSettingsInstallTransportResult(result.install) : undefined,
       })
     } catch (error) {
-      this._postPluginSettingsResult({
-        type: 'pluginSettingsResult',
-        action,
-        error: this._toPluginSettingsErrorPayload(action, error, capability, providerId),
-      })
+      this._postPluginSettingsResult(this._toPluginSettingsMutationErrorResult(action, error, capability, providerId))
     }
   }
 
@@ -838,12 +887,37 @@ export class KanbanPanel {
     try {
       this._migrating = true
       const columns = this._getColumns().map(c => c.id)
-      this._cards = await sdk.listCards(columns, this._currentBoardId)
+      this._cards = await this._runWithAuth(sdk, () => sdk.listCards(columns, this._currentBoardId))
     } catch {
       this._cards = []
     } finally {
       this._migrating = false
     }
+  }
+
+  private async _getCardForCurrentAuth(cardId: string): Promise<Card | null> {
+    const sdk = this._getSDK()
+    if (!sdk) {
+      return this._cards.find((card) => card.id === cardId) ?? null
+    }
+
+    const card = await this._runWithAuth(sdk, () => sdk.getCard(cardId, this._currentBoardId))
+    const existingIndex = this._cards.findIndex((cachedCard) => cachedCard.id === cardId)
+
+    if (!card) {
+      if (existingIndex !== -1) {
+        this._cards.splice(existingIndex, 1)
+      }
+      return null
+    }
+
+    if (existingIndex !== -1) {
+      this._cards[existingIndex] = card
+    } else {
+      this._cards.push(card)
+    }
+
+    return card
   }
 
   public triggerCreateDialog(): void {
@@ -1072,12 +1146,14 @@ export class KanbanPanel {
   }
 
   private async _openCardInNativeEditor(cardId: string): Promise<void> {
-    const card = this._cards.find(f => f.id === cardId)
-    if (!card) return
+    const sdk = this._getSDK()
+    if (!sdk) return
 
     await this._handleExplicitCardOpen(cardId)
 
-    const sdk = this._getSDK()
+    const card = await this._getCardForCurrentAuth(cardId)
+    if (!card) return
+
     const localCardPath = sdk?.getLocalCardPath(card)
     if (!localCardPath) {
       await this._openCardInTempFile(card)
@@ -1094,8 +1170,13 @@ export class KanbanPanel {
   }
 
   private async _sendCardContent(cardId: string): Promise<void> {
-    const card = this._cards.find(f => f.id === cardId)
-    if (!card) return
+    const card = await this._getCardForCurrentAuth(cardId)
+    if (!card) {
+      if (this._currentEditingCardId === cardId) {
+        this._currentEditingCardId = null
+      }
+      return
+    }
 
     this._currentEditingCardId = cardId
 
@@ -1173,11 +1254,13 @@ export class KanbanPanel {
 
   private async _openAttachment(cardId: string, attachment: string): Promise<void> {
     const sdk = this._getSDK()
-    const card = this._cards.find(f => f.id === cardId)
+    if (!sdk) return
+
+    const card = await this._getCardForCurrentAuth(cardId)
     if (!card) return
 
     // Resolve attachment directory via SDK (handles both markdown and SQLite paths)
-    const attachmentDir = sdk ? await sdk.getAttachmentDir(cardId, this._currentBoardId) : null
+    const attachmentDir = await this._runWithAuth(sdk, () => sdk.getAttachmentDir(cardId, this._currentBoardId))
     if (!attachmentDir) {
       vscode.window.showWarningMessage('The active attachment provider does not expose a local file path to open.')
       return
@@ -1279,11 +1362,11 @@ export class KanbanPanel {
     }
   }
 
-  private async _getLogsForCard(cardId: string): Promise<import('../shared/types').LogEntry[]> {
+  private async _getLogsForCard(cardId: string): Promise<LogEntry[]> {
     const sdk = this._getSDK()
     if (!sdk) return []
     try {
-      return await sdk.listLogs(cardId, this._currentBoardId)
+      return await this._runWithAuth(sdk, () => sdk.listLogs(cardId, this._currentBoardId))
     } catch {
       return []
     }

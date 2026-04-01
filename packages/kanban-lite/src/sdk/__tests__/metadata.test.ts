@@ -36,7 +36,6 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    compactMode: false,
     markdownEditorMode: false,
     showDeletedColumn: false,
     boardZoom: 100,

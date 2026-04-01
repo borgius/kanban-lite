@@ -132,10 +132,11 @@ describe('normalizeStorageCapabilities', () => {
 })
 
 describe('normalizeAuthCapabilities', () => {
-  it('defaults both namespaces to noop when auth is absent', () => {
+  it('defaults identity/policy to noop and visibility to none when auth is absent', () => {
     const result = normalizeAuthCapabilities(makeConfig())
     expect(result['auth.identity']).toEqual({ provider: 'noop' })
     expect(result['auth.policy']).toEqual({ provider: 'noop' })
+    expect(result['auth.visibility']).toEqual({ provider: 'none' })
   })
 
   it('defaults auth.policy to noop when only auth.identity is configured', () => {
@@ -167,10 +168,35 @@ describe('normalizeAuthCapabilities', () => {
     expect(result['auth.policy']).toEqual({ provider: 'my-policy', options: { strict: true } })
   })
 
-  it('both namespaces always present in output', () => {
+  it('plugins["auth.visibility"] takes precedence over legacy auth visibility config', () => {
+    const result = normalizeAuthCapabilities(
+      makeConfig({
+        plugins: {
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: { mode: 'rules' },
+          },
+        },
+        auth: {
+          'auth.visibility': {
+            provider: 'legacy-auth-visibility',
+            options: { legacy: true },
+          },
+        },
+      })
+    )
+
+    expect(result['auth.visibility']).toEqual({
+      provider: 'kl-plugin-auth-visibility',
+      options: { mode: 'rules' },
+    })
+  })
+
+  it('all auth namespaces are always present in output', () => {
     const result = normalizeAuthCapabilities(makeConfig())
     expect(result).toHaveProperty('auth.identity')
     expect(result).toHaveProperty('auth.policy')
+    expect(result).toHaveProperty('auth.visibility')
   })
 
   it('does not mutate the input config', () => {
@@ -184,6 +210,7 @@ describe('normalizeAuthCapabilities', () => {
     const result = normalizeAuthCapabilities({})
     expect(result['auth.identity']).toEqual({ provider: 'noop' })
     expect(result['auth.policy']).toEqual({ provider: 'noop' })
+    expect(result['auth.visibility']).toEqual({ provider: 'none' })
   })
 })
 
@@ -412,6 +439,26 @@ describe('collectActiveExternalPackageNames', () => {
       expect(result).toContain('kl-plugin-auth')
       expect(result).not.toContain('custom-auth')
     })
+
+    it('configured auth.visibility providers are included while the default disabled state is ignored', () => {
+      expect(collectActiveExternalPackageNames({})).not.toContain('kl-plugin-auth-visibility')
+
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'auth.visibility': { provider: 'kl-plugin-auth-visibility' } },
+      })
+
+      expect(result).toContain('kl-plugin-auth-visibility')
+    })
+
+    it('plugins auth.visibility key takes precedence over legacy auth visibility config', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'auth.visibility': { provider: 'kl-plugin-auth-visibility' } },
+        auth: { 'auth.visibility': { provider: 'legacy-auth-visibility' } },
+      })
+
+      expect(result).toContain('kl-plugin-auth-visibility')
+      expect(result).not.toContain('legacy-auth-visibility')
+    })
   })
 
   describe('storage provider discovery', () => {
@@ -496,6 +543,7 @@ describe('plugin settings contract helpers', () => {
       'card.state',
       'auth.identity',
       'auth.policy',
+      'auth.visibility',
       'webhook.delivery',
       'callback.runtime',
     ])

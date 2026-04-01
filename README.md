@@ -1212,7 +1212,7 @@ For first-party storage plugins, `attachment.storage` now follows the active `ca
 
 ## Plugin Settings
 
-Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
+Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel in standalone and VS Code, the CLI, REST API, and MCP surfaces.
 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
 - **Storage-backed `attachment.storage` reuse**: when attachments come from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
@@ -1221,7 +1221,9 @@ Kanban Lite now exposes one shared plugin-settings workflow across the Settings 
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
 - **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
 - **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers, and the inline `source` field now renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
-- **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
+- **Masked secret behavior**: allowed read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
+- **Authorization split**: `plugin-settings.read` gates plugin-settings inventory/detail reads before any payload is returned. `plugin-settings.update` gates `select`, `update-options`, and `install` mutations. The same checks are reused by the Settings panel hosts, the standalone websocket settings bridge, REST routes, CLI commands, and the current MCP tool set (`list_plugin_settings` for reads plus the mutation tools for updates).
+- **Redaction is not authorization**: allowed reads still use the existing redaction contract (`••••••` placeholders plus redacted errors), but redaction does not grant plugin-settings access on its own.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
 The same nouns are used everywhere:
@@ -1572,7 +1574,7 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`, enforced through listener-only before-events that run before a write is committed.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. Most protected operations are enforced through listener-only before-events before a write is committed, while shared plugin-settings reads/mutations use the SDK auth actions `plugin-settings.read` and `plugin-settings.update`.
 
 Auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host.
 
@@ -1591,7 +1593,7 @@ The shipped provider ids behave as before:
 - `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
 - `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
 
-When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface used by the Node-hosted adapters (standalone server, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
+When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface plus shared plugin-settings inventory/detail reads used by the Node-hosted adapters (standalone REST + websocket settings bridge, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
 
 Provider references for both namespaces are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
 
@@ -1629,9 +1631,11 @@ Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pa
 |------|-------------------|
 | `user` | `form.submit`, `comment.create`, `comment.update`, `comment.delete`, `attachment.add`, `attachment.remove`, `card.action.trigger`, `log.add` |
 | `manager` | All `user` actions plus `card.create`, `card.update`, `card.move`, `card.transfer`, `card.delete`, `board.action.trigger`, `log.clear`, `board.log.add` |
-| `admin` | All `manager` actions plus all board/config mutations: `board.create`, `board.update`, `board.delete`, `settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
+| `admin` | All `manager` actions plus board/config and plugin-settings actions: `board.create`, `board.update`, `board.delete`, `settings.update`, `plugin-settings.read`, `plugin-settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
 
 Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
+
+Concretely, in the shipped RBAC matrix a default `user` cannot open the Plugin Options inventory or run `kl plugin-settings list`, while an `admin` can list/show redacted plugin settings via `plugin-settings.read` and can also select, update, and install providers via `plugin-settings.update`. Allowed reads still use masked placeholders and redacted errors; redaction does not replace authorization.
 
 When you enable `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the shared Plugin Options UI and no saved policy options exist yet, Kanban Lite now materializes the default `permissions` matrix from the built-in `RBAC_ROLE_MATRIX` into `.kanban.json` so you start from an editable baseline instead of an empty config block. The same backfill also runs when plugin-settings refresh sees a selected auth-policy provider with an empty options object.
 
@@ -1687,7 +1691,7 @@ This command hashes the password, appends the user entry to `plugins["auth.ident
 
 The shared settings UI now exposes that `roles[]` catalog directly beside `users[]`, seeds it with `user`, `manager`, and `admin` by default, and uses it as the live enum source for both `users[].role` and `auth.policy.permissions[].role`. The `local` policy itself remains permissive for any authenticated identity unless you configure an explicit `auth.policy.options.permissions[]` matrix. Anonymous callers are still denied with `auth.identity.missing`.
 
-To override the default role behavior, add a custom permission matrix on `auth.policy`. In the shared Plugin Options UI, each row now picks one role plus the before-events that role may run:
+To override the default role behavior, add a custom permission matrix on `auth.policy`. In the shared Plugin Options UI, each row now picks one role plus the auth actions that role may run (the SDK before-event catalog plus `plugin-settings.read` and `plugin-settings.update`):
 
 ```json
 {
@@ -1707,7 +1711,7 @@ To override the default role behavior, add a custom permission matrix on `auth.p
 }
 ```
 
-Legacy `options.matrix` role maps remain supported for backward compatibility, and the shared Plugin Options UI now edits the simpler role-based `permissions` format while sourcing its action picker from the before-event catalog.
+Legacy `options.matrix` role maps remain supported for backward compatibility, and the shared Plugin Options UI now edits the simpler role-based `permissions` format while sourcing its action picker from the shared auth action catalog.
 
 
 

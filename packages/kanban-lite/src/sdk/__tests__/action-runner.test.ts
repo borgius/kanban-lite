@@ -812,7 +812,6 @@ describe('KanbanSDK – settings and storage-migration event flow', () => {
     showLabels: true,
     showBuildWithAI: false,
     showFileName: false,
-    compactMode: false,
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium' as const,

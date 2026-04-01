@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { KanbanColumn, CardDisplaySettings, Priority, LabelDefinition } from './types'
+import type { KanbanColumn, CardDisplaySettings, CardViewMode, Priority, LabelDefinition } from './types'
 import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from './types'
 
 /** Capability namespaces supported by the storage plugin system. */
@@ -30,7 +30,7 @@ export type CardStateCapabilitySelections = Partial<Record<CardStateCapabilityNa
 export type ResolvedCardStateCapabilities = Record<CardStateCapabilityNamespace, ProviderRef>
 
 /** Capability namespaces supported by the auth plugin system. */
-export type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'
+export type AuthCapabilityNamespace = 'auth.identity' | 'auth.policy' | 'auth.visibility'
 
 /** Partial auth capability selections from config or constructor overrides. */
 export type AuthCapabilitySelections = Partial<Record<AuthCapabilityNamespace, ProviderRef>>
@@ -71,6 +71,7 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
   'card.state',
   'auth.identity',
   'auth.policy',
+  'auth.visibility',
   'webhook.delivery',
   'callback.runtime',
 ]
@@ -234,8 +235,10 @@ export interface KanbanConfig {
   showBuildWithAI: boolean
   /** Whether to display the source filename on cards. */
   showFileName: boolean
-  /** Whether to use a compact card layout with reduced spacing. */
-  compactMode: boolean
+  /**
+   * How much detail to show on each card.
+   */
+  cardViewMode?: CardViewMode
   /** Whether to use the markdown editor when editing card content. */
   markdownEditorMode: boolean
   /** Whether to show the deleted column in the UI. */
@@ -244,6 +247,8 @@ export interface KanbanConfig {
   boardZoom: number
   /** Zoom level for the card detail panel (75–150). */
   cardZoom: number
+  /** Column width in pixels (200–500). Default 288. */
+  columnWidth?: number
   /** Whether the board canvas uses a plain or fancy background preset. */
   boardBackgroundMode: import('./types').BoardBackgroundMode
   /** Selected board background preset within the active background mode. */
@@ -304,8 +309,8 @@ export interface KanbanConfig {
      * They require the matching `card.storage` provider and do not change the
      * legacy omitted-default behavior, which remains `attachment.storage: localfs`.
      *
-     * Auth capabilities (`auth.identity`, `auth.policy`) can also be declared
-     * here using the npm package name as the provider id (e.g.
+     * Auth capabilities (`auth.identity`, `auth.policy`, `auth.visibility`)
+     * can also be declared here using the npm package name as the provider id (e.g.
      * `"provider": "kl-plugin-auth"`). When present they take precedence over
      * any value in the legacy {@link auth} key.
    */
@@ -320,7 +325,8 @@ export interface KanbanConfig {
   pluginOptions?: PluginOptionsStore
   /**
    * Legacy auth provider selections.
-   * @deprecated Prefer declaring `auth.identity` and `auth.policy` inside the
+    * @deprecated Prefer declaring `auth.identity`, `auth.policy`, and
+    * `auth.visibility` inside the
    * `plugins` key using the package name as provider id. This field is still
    * supported for backward compatibility but `plugins` takes precedence.
    */
@@ -368,7 +374,8 @@ interface KanbanConfigV1 {
   showLabels: boolean
   showBuildWithAI: boolean
   showFileName: boolean
-  compactMode: boolean
+  /** @deprecated replaced by `cardViewMode` */
+  compactMode?: boolean
   markdownEditorMode: boolean
 }
 
@@ -402,7 +409,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: false,
+  cardViewMode: 'large' as CardViewMode,
   markdownEditorMode: false,
   showDeletedColumn: false,
   boardZoom: 100,
@@ -446,7 +453,6 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    compactMode: false,
     markdownEditorMode: false
   }
   const v1 = { ...v1Defaults, ...raw } as KanbanConfigV1
@@ -473,7 +479,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     showLabels: v1.showLabels,
     showBuildWithAI: v1.showBuildWithAI,
     showFileName: v1.showFileName,
-    compactMode: v1.compactMode,
+    cardViewMode: (v1.compactMode ? 'normal' : 'large') as CardViewMode,
     markdownEditorMode: v1.markdownEditorMode,
     showDeletedColumn: false,
     boardZoom: 100,
@@ -488,7 +494,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'pluginOptions', 'auth',
     'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
     'boardBackgroundMode', 'boardBackgroundPreset',
-    'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'port'
+    'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'columnWidth', 'port'
   ]
   const passthrough = v2 as unknown as Record<string, unknown>
   for (const key of modernPassthroughKeys) {
@@ -779,7 +785,7 @@ export function syncCardIdCounter(workspaceRoot: string, boardId: string, existi
  * @example
  * const config = readConfig('/home/user/my-project')
  * const settings = configToSettings(config)
- * console.log(settings.compactMode) // => true
+ * console.log(settings.cardViewMode) // => 'large'
  */
 export function configToSettings(config: KanbanConfig): CardDisplaySettings {
   const background = normalizeBoardBackgroundSettings(config.boardBackgroundMode, config.boardBackgroundPreset)
@@ -791,13 +797,14 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     showLabels: config.showLabels,
     showBuildWithAI: config.showBuildWithAI,
     showFileName: config.showFileName,
-    compactMode: config.compactMode,
+    cardViewMode: config.cardViewMode ?? 'large',
     markdownEditorMode: config.markdownEditorMode,
     showDeletedColumn: config.showDeletedColumn,
     defaultPriority: config.defaultPriority,
     defaultStatus: config.defaultStatus,
     boardZoom: config.boardZoom ?? 100,
     cardZoom: config.cardZoom ?? 100,
+    columnWidth: config.columnWidth,
     boardBackgroundMode: background.boardBackgroundMode,
     boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: config.panelMode,
@@ -816,7 +823,7 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
  *
  * @example
  * const config = readConfig('/home/user/my-project')
- * const updated = settingsToConfig(config, { ...configToSettings(config), compactMode: true })
+ * const updated = settingsToConfig(config, { ...configToSettings(config), cardViewMode: 'normal' })
  * writeConfig('/home/user/my-project', updated)
  */
 export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySettings): KanbanConfig {
@@ -829,12 +836,13 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     showDueDate: settings.showDueDate,
     showLabels: settings.showLabels,
     showFileName: settings.showFileName,
-    compactMode: settings.compactMode,
+    cardViewMode: settings.cardViewMode,
     showDeletedColumn: settings.showDeletedColumn,
     defaultPriority: settings.defaultPriority,
     defaultStatus: settings.defaultStatus,
     boardZoom: settings.boardZoom,
     cardZoom: settings.cardZoom,
+    columnWidth: settings.columnWidth,
     boardBackgroundMode: background.boardBackgroundMode,
     boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: settings.panelMode,
@@ -873,6 +881,11 @@ export function normalizeAuthCapabilities(
       : config.auth?.['auth.policy']
         ? cloneProviderRef(config.auth['auth.policy'])
         : { provider: 'noop' },
+    'auth.visibility': config.plugins?.['auth.visibility']
+      ? cloneProviderRef(config.plugins['auth.visibility'])
+      : config.auth?.['auth.visibility']
+        ? cloneProviderRef(config.auth['auth.visibility'])
+        : { provider: 'none' },
   }
 }
 

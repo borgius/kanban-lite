@@ -60,7 +60,6 @@ function createTempWorkspace(): { workspaceDir: string; kanbanDir: string; clean
         showLabels: true,
         showBuildWithAI: true,
         showFileName: false,
-        compactMode: false,
         markdownEditorMode: false,
         showDeletedColumn: false,
         boardZoom: 100,

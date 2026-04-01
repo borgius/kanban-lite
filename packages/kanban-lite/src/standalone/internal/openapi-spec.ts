@@ -1100,7 +1100,6 @@ export const KANBAN_OPENAPI_SPEC = {
                   showDueDate: { type: 'boolean' },
                   showLabels: { type: 'boolean' },
                   showFileName: { type: 'boolean' },
-                  compactMode: { type: 'boolean' },
                   showDeletedColumn: { type: 'boolean' },
                   defaultPriority: { type: 'string' },
                   defaultStatus: { type: 'string' },
@@ -1118,18 +1117,25 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Plugins'],
         summary: 'List plugin providers',
-        description: 'Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload.',
-        responses: { 200: { description: 'Capability-grouped plugin inventory.' }, 500: { description: 'Unable to list plugin settings.' } },
+        description: 'Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.',
+        responses: {
+          200: { description: 'Capability-grouped plugin inventory.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Authenticated caller is not allowed to perform `plugin-settings.read`.' },
+          500: { description: 'Unable to list plugin settings.' },
+        },
       },
     },
     '/api/plugin-settings/{capability}/{providerId}': {
       get: {
         tags: ['Plugins'],
         summary: 'Read plugin settings',
-        description: 'Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders.',
+        description: 'Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         responses: {
           200: { description: 'Redacted provider read model.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Authenticated caller is not allowed to perform `plugin-settings.read`.' },
           404: { description: 'Provider not found for the requested capability.' },
           500: { description: 'Unable to read plugin settings.' },
         },

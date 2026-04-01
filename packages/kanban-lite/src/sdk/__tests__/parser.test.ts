@@ -581,4 +581,21 @@ Second comment`
     expect(parsed?.comments).toHaveLength(1)
     expect(parsed?.comments[0]).toEqual(original.comments[0])
   })
+
+  it('should not consume body sections that start with "comment:" but are not valid comment blocks', () => {
+    const content = frontmatter + `Line 1
+
+---
+
+comment: this is just text about commenting
+
+---
+
+Line after`
+
+    const card = parseCardFile(content, '/tmp/hr-test.md')
+    expect(card).not.toBeNull()
+    expect(card?.content).toBe('Line 1\n\n---\n\ncomment: this is just text about commenting\n\n---\n\nLine after')
+    expect(card?.comments).toEqual([])
+  })
 })

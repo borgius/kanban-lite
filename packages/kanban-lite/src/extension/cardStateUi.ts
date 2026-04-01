@@ -82,7 +82,6 @@ export async function performExplicitCardOpen(
   cardId: string,
   boardId?: string,
 ): Promise<CardStateErrorTransport | null> {
-  let unexpectedError: unknown = null
   let mappedError: CardStateErrorTransport | null = null
 
   try {
@@ -90,15 +89,11 @@ export async function performExplicitCardOpen(
   } catch (error) {
     mappedError = toCardStateError(error)
     if (!mappedError) {
-      unexpectedError = error
+      throw error
     }
   }
 
-  await sdk.setActiveCard(cardId, boardId)
-
-  if (unexpectedError) {
-    throw unexpectedError
-  }
+  await runWithAuth(() => sdk.setActiveCard(cardId, boardId))
 
   return mappedError
 }

@@ -86,6 +86,7 @@ export function createStandaloneRuntime(kanbanDir: string, webviewDir?: string, 
     currentBoardId: undefined,
     tempFilePath: undefined,
     tempFileCardId: undefined,
+    tempFileAuthContext: undefined,
     tempFileWatcher: undefined,
     tempFileWriting: false,
   })

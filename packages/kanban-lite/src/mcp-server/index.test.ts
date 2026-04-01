@@ -10,6 +10,8 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Client } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+import { StdioClientTransport } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { createMcpPluginContext, registerCardStateMcpTools, registerPluginMcpTools, registerPluginSettingsMcpTools } from './index'
 import { createPluginSettingsErrorPayload, KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
 import * as pluginRegistry from '../sdk/plugins'
@@ -21,7 +23,214 @@ import type { SDKEventListenerPlugin } from '../sdk/types'
 import type { Webhook } from '../shared/config'
 import { mcpPlugin } from '../../../kl-plugin-webhook/src/index'
 
+const REPO_ROOT = path.resolve(__dirname, '../../../..')
+const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/index.ts')
+
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
+
+type McpTextResult = {
+  content?: Array<{ type?: string; text?: string }>
+  isError?: boolean
+}
+
+function makeMcpCardContent(opts: {
+  id: string
+  title: string
+  labels: string[]
+  order: string
+}): string {
+  const { id, title, labels, order } = opts
+  return `---
+id: "${id}"
+status: "backlog"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2026-03-31T00:00:00.000Z"
+modified: "2026-03-31T00:00:00.000Z"
+completedAt: null
+labels: [${labels.map((label) => `"${label}"`).join(', ')}]
+attachments: []
+order: "${order}"
+---
+# ${title}
+
+MCP visibility fixture.
+`
+}
+
+function writeMcpCardFile(kanbanDir: string, filename: string, content: string, status = 'backlog'): string {
+  const targetDir = path.join(kanbanDir, 'boards', 'default', status)
+  fs.mkdirSync(targetDir, { recursive: true })
+  const filePath = path.join(targetDir, filename)
+  fs.writeFileSync(filePath, content, 'utf-8')
+  return filePath
+}
+
+function installTempMcpPlugin(packageName: string, entrySource: string): () => void {
+  const packageDir = path.join(REPO_ROOT, 'node_modules', packageName)
+  fs.mkdirSync(packageDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify({ name: packageName, main: 'index.js' }, null, 2),
+    'utf-8',
+  )
+  fs.writeFileSync(path.join(packageDir, 'index.js'), entrySource, 'utf-8')
+  return () => fs.rmSync(packageDir, { recursive: true, force: true })
+}
+
+function createVisibilityScopedAuthIdentityPluginSource(packageName: string): string {
+  return `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      const rawToken = context && typeof context.token === 'string' ? context.token : ''
+      const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7) : rawToken
+      if (token === 'reader-token') return { subject: 'alice', roles: ['reader'] }
+      if (token === 'writer-token') return { subject: 'casey', roles: ['writer'] }
+      return null
+    },
+  },
+}
+`
+}
+
+function readMcpTextContent(result: unknown): string {
+  if (!result || typeof result !== 'object') return 'null'
+  const content = (result as McpTextResult).content
+  if (!Array.isArray(content) || content.length === 0) return 'null'
+  const first = content[0]
+  return first?.type === 'text' && typeof first.text === 'string' ? first.text : 'null'
+}
+
+async function createMcpVisibilityWorkspace(packageName: string): Promise<{
+  workspaceRoot: string
+  kanbanDir: string
+  configPath: string
+  publicCardId: string
+  privateCardId: string
+  cleanup: () => void
+}> {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-auth-visibility-'))
+  const kanbanDir = path.join(workspaceRoot, '.kanban')
+  const configPath = path.join(workspaceRoot, '.kanban.json')
+  const publicCardId = 'public-card'
+  const privateCardId = 'private-card'
+  const hiddenAttachmentPath = path.join(workspaceRoot, 'hidden-attachment.txt')
+
+  fs.mkdirSync(kanbanDir, { recursive: true })
+  writeMcpCardFile(
+    kanbanDir,
+    `${publicCardId}.md`,
+    makeMcpCardContent({
+      id: publicCardId,
+      title: 'Public card',
+      labels: ['public'],
+      order: 'a0',
+    }),
+  )
+  writeMcpCardFile(
+    kanbanDir,
+    `${privateCardId}.md`,
+    makeMcpCardContent({
+      id: privateCardId,
+      title: 'Private card',
+      labels: ['private'],
+      order: 'a1',
+    }),
+  )
+  fs.writeFileSync(hiddenAttachmentPath, 'hidden attachment', 'utf-8')
+  fs.writeFileSync(
+    path.join(kanbanDir, '.active-card.json'),
+    JSON.stringify({
+      cardId: privateCardId,
+      boardId: 'default',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    }),
+    'utf-8',
+  )
+
+  const sdk = new KanbanSDK(kanbanDir)
+  await sdk.init()
+  try {
+    await sdk.addComment(privateCardId, 'seed-user', 'Hidden comment')
+    await sdk.addLog(privateCardId, 'Hidden log')
+    await sdk.addAttachment(privateCardId, hiddenAttachmentPath)
+  } finally {
+    sdk.close()
+  }
+
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 2,
+      defaultBoard: 'default',
+      kanbanDirectory: '.kanban',
+      boards: {
+        default: {
+          name: 'Default',
+          columns: [{ id: 'backlog', name: 'Backlog' }],
+          nextCardId: 1,
+          defaultStatus: 'backlog',
+          defaultPriority: 'medium',
+        },
+      },
+      plugins: {
+        'auth.identity': { provider: packageName },
+        'auth.policy': { provider: 'noop' },
+        'auth.visibility': {
+          provider: 'kl-plugin-auth-visibility',
+          options: {
+            rules: [
+              { roles: ['writer'], labels: ['public', 'private'] },
+              { roles: ['reader'], labels: ['public'] },
+            ],
+          },
+        },
+      },
+    }, null, 2) + '\n',
+    'utf-8',
+  )
+
+  return {
+    workspaceRoot,
+    kanbanDir,
+    configPath,
+    publicCardId,
+    privateCardId,
+    cleanup: () => fs.rmSync(workspaceRoot, { recursive: true, force: true }),
+  }
+}
+
+async function withMcpClient<T>(
+  workspace: { workspaceRoot: string; kanbanDir: string; configPath: string },
+  token: string,
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      TSX_CLI_PATH,
+      MCP_ENTRYPOINT,
+      '--dir',
+      workspace.kanbanDir,
+      '--config',
+      workspace.configPath,
+    ],
+    cwd: workspace.workspaceRoot,
+    env: { ...process.env, NO_COLOR: '1', KANBAN_LITE_TOKEN: token, KANBAN_TOKEN: '' },
+    stderr: 'pipe',
+  })
+  const client = new Client({ name: 'kanban-lite-auth-visibility-test-client', version: '1.0.0' })
+
+  try {
+    await client.connect(transport)
+    return await fn(client)
+  } finally {
+    await transport.close().catch(() => undefined)
+  }
+}
 
 function setCapabilities(sdk: KanbanSDK, bag: CapabilityBag): void {
   const internal = sdk as unknown as {
@@ -811,6 +1020,46 @@ describe('MCP plugin-settings parity tools', () => {
     expect(updateResult.content[0].text).not.toContain('$2b$12$updated-hash')
   })
 
+  it('routes list_plugin_settings through scoped auth and preserves MCP auth errors', async () => {
+    const tools: Array<{
+      name: string
+      description: string
+      schema: Record<string, unknown>
+      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+    }> = []
+
+    const server = {
+      tool(
+        name: string,
+        description: string,
+        schema: Record<string, unknown>,
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+      ) {
+        tools.push({ name, description, schema, handler })
+      },
+    }
+    const runWithAuth = vi.fn(async <T>(fn: () => Promise<T>): Promise<T> => {
+      void fn
+      throw new AuthError('auth.policy.denied', 'plugin-settings.read denied for MCP')
+    })
+
+    registerPluginSettingsMcpTools(server, {
+      sdk,
+      runWithAuth,
+    })
+
+    const listTool = tools.find((tool) => tool.name === 'list_plugin_settings')
+    expect(listTool).toBeDefined()
+
+    const result = await listTool!.handler({})
+
+    expect(runWithAuth).toHaveBeenCalledOnce()
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'plugin-settings.read denied for MCP' }],
+      isError: true,
+    })
+  })
+
   it('returns structured redacted install errors instead of raw exception strings', async () => {
     const { tools } = capturePluginSettingsTools(sdk)
     const installTool = tools.find((tool) => tool.name === 'install_plugin_settings_package')
@@ -927,7 +1176,7 @@ describe('MCP card-state parity tools', () => {
 
     const statusResult = await statusTool!.handler({})
     expect(JSON.parse(statusResult.content[0].text)).toMatchObject({
-      provider: 'builtin',
+      provider: 'localfs',
       backend: 'builtin',
       availability: 'available',
       defaultActorAvailable: true,
@@ -1020,6 +1269,83 @@ describe('MCP card-state parity tools', () => {
       }
     } finally {
       identitySdk.close()
+    }
+  })
+})
+
+describe('MCP auth visibility parity', () => {
+  it('uses MCP auth scope for list_cards, get_card, and get_active_card while preserving visible multiple-match UX', async () => {
+    const packageName = `kanban-mcp-auth-visibility-${Date.now()}-reads`
+    const cleanupPlugin = installTempMcpPlugin(
+      packageName,
+      createVisibilityScopedAuthIdentityPluginSource(packageName),
+    )
+    const workspace = await createMcpVisibilityWorkspace(packageName)
+
+    try {
+      await withMcpClient(workspace, 'reader-token', async (client) => {
+        const listResult = await client.callTool({ name: 'list_cards', arguments: {} })
+        expect(JSON.parse(readMcpTextContent(listResult))).toEqual([
+          expect.objectContaining({ id: workspace.publicCardId }),
+        ])
+
+        const activeResult = await client.callTool({ name: 'get_active_card', arguments: {} })
+        expect(JSON.parse(readMcpTextContent(activeResult))).toBeNull()
+
+        const getResult = await client.callTool({ name: 'get_card', arguments: { cardId: 'card' } })
+        expect(JSON.parse(readMcpTextContent(getResult))).toMatchObject({ id: workspace.publicCardId })
+      })
+
+      await withMcpClient(workspace, 'writer-token', async (client) => {
+        const getResult = await client.callTool({ name: 'get_card', arguments: { cardId: 'card' } })
+        expect((getResult as McpTextResult).isError).toBe(true)
+        expect(readMcpTextContent(getResult)).toContain('Multiple cards match "card": public-card, private-card')
+      })
+    } finally {
+      workspace.cleanup()
+      cleanupPlugin()
+    }
+  })
+
+  it('uses MCP auth scope for card-targeted list tools and mutation preflight resolution', async () => {
+    const packageName = `kanban-mcp-auth-visibility-${Date.now()}-targets`
+    const cleanupPlugin = installTempMcpPlugin(
+      packageName,
+      createVisibilityScopedAuthIdentityPluginSource(packageName),
+    )
+    const workspace = await createMcpVisibilityWorkspace(packageName)
+
+    try {
+      await withMcpClient(workspace, 'reader-token', async (client) => {
+        for (const toolName of ['list_attachments', 'list_comments', 'list_logs']) {
+          const result = await client.callTool({ name: toolName, arguments: { cardId: workspace.privateCardId } })
+          expect((result as McpTextResult).isError).toBe(true)
+          expect(readMcpTextContent(result)).toBe(`Card not found: ${workspace.privateCardId}`)
+        }
+
+        const addComment = await client.callTool({
+          name: 'add_comment',
+          arguments: {
+            cardId: 'card',
+            author: 'reader',
+            content: 'partial visible comment',
+          },
+        })
+        expect((addComment as McpTextResult).isError).toBeUndefined()
+        expect(JSON.parse(readMcpTextContent(addComment))).toMatchObject({
+          author: 'reader',
+          content: 'partial visible comment',
+        })
+
+        const publicCard = await client.callTool({ name: 'get_card', arguments: { cardId: workspace.publicCardId } })
+        expect(JSON.parse(readMcpTextContent(publicCard))).toMatchObject({
+          id: workspace.publicCardId,
+          comments: [expect.objectContaining({ author: 'reader', content: 'partial visible comment' })],
+        })
+      })
+    } finally {
+      workspace.cleanup()
+      cleanupPlugin()
     }
   })
 })

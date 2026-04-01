@@ -108,7 +108,6 @@ const DEFAULT_CONFIG: KanbanConfig = {
   showLabels: true,
   showBuildWithAI: true,
   showFileName: false,
-  compactMode: false,
   markdownEditorMode: false,
   showDeletedColumn: false,
   boardZoom: 100,
@@ -386,7 +385,6 @@ export class SqliteStorageEngine implements StorageEngine {
       this._setWorkspaceKey('showLabels', String(def.showLabels))
       this._setWorkspaceKey('showBuildWithAI', String(def.showBuildWithAI))
       this._setWorkspaceKey('showFileName', String(def.showFileName))
-      this._setWorkspaceKey('compactMode', String(def.compactMode))
       this._setWorkspaceKey('markdownEditorMode', String(def.markdownEditorMode))
       this._setWorkspaceKey('showDeletedColumn', String(def.showDeletedColumn))
       this._setWorkspaceKey('boardZoom', String(def.boardZoom))
@@ -445,7 +443,6 @@ export class SqliteStorageEngine implements StorageEngine {
       showLabels: this._bool(ws['showLabels'], true),
       showBuildWithAI: this._bool(ws['showBuildWithAI'], true),
       showFileName: this._bool(ws['showFileName'], false),
-      compactMode: this._bool(ws['compactMode'], false),
       markdownEditorMode: this._bool(ws['markdownEditorMode'], false),
       showDeletedColumn: this._bool(ws['showDeletedColumn'], false),
       boardZoom: Number(ws['boardZoom']) || 100,
@@ -515,7 +512,6 @@ export class SqliteStorageEngine implements StorageEngine {
       this._setWorkspaceKey('showLabels', String(config.showLabels))
       this._setWorkspaceKey('showBuildWithAI', String(config.showBuildWithAI))
       this._setWorkspaceKey('showFileName', String(config.showFileName))
-      this._setWorkspaceKey('compactMode', String(config.compactMode))
       this._setWorkspaceKey('markdownEditorMode', String(config.markdownEditorMode))
       this._setWorkspaceKey('showDeletedColumn', String(config.showDeletedColumn))
       this._setWorkspaceKey('boardZoom', String(config.boardZoom))

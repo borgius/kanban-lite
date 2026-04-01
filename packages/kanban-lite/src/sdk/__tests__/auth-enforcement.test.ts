@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
-import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../plugins'
+import { RBAC_ADMIN_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_USER_ACTIONS, createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../plugins'
 import { AuthError } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
@@ -133,7 +133,7 @@ describe('auth enforcement: deny-all policy causes AuthError on every mutating m
     ['updateColumn', s => s.updateColumn('backlog', { name: 'Updated' })],
     ['reorderColumns', s => s.reorderColumns(['backlog'])],
     ['setMinimizedColumns', s => s.setMinimizedColumns(['backlog'])],
-    ['updateSettings', s => s.updateSettings({ showPriorityBadges: true, showAssignee: true, showDueDate: false, showLabels: true, showBuildWithAI: false, showFileName: false, compactMode: false, markdownEditorMode: false, showDeletedColumn: false, defaultPriority: 'medium', defaultStatus: 'backlog', boardZoom: 100, cardZoom: 100, boardBackgroundMode: 'fancy', boardBackgroundPreset: 'aurora' })],
+    ['updateSettings', s => s.updateSettings({ showPriorityBadges: true, showAssignee: true, showDueDate: false, showLabels: true, showBuildWithAI: false, showFileName: false, markdownEditorMode: false, showDeletedColumn: false, defaultPriority: 'medium', defaultStatus: 'backlog', boardZoom: 100, cardZoom: 100, boardBackgroundMode: 'fancy', boardBackgroundPreset: 'aurora' })],
     ['setDefaultBoard', s => s.setDefaultBoard('default')],
     ['createWebhook', s => s.createWebhook({ url: 'https://example.com', events: ['*'] })],
     ['updateWebhook', s => s.updateWebhook('wh-1', { url: 'https://updated.com' })],
@@ -190,6 +190,99 @@ describe('auth enforcement: AuthError category', () => {
       expect((err as AuthError).category).toBe('auth.policy.denied')
     }
   })
+})
+
+describe('auth enforcement: plugin settings methods use direct SDK auth actions', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+  let captured: string[]
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+    captured = injectDenyAll(sdk, kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it.each([
+    ['listPluginSettings', 'plugin-settings.read', async (instance: KanbanSDK) => instance.listPluginSettings()],
+    ['getPluginSettings', 'plugin-settings.read', async (instance: KanbanSDK) => instance.getPluginSettings('auth.identity', 'local')],
+  ])('%s throws AuthError before materializing plugin-settings payloads', async (_label, expectedAction, invoke) => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
+      'utf-8',
+    )
+
+    await expect(invoke(sdk)).rejects.toBeInstanceOf(AuthError)
+    expect(captured).toContain(expectedAction)
+  })
+
+  it('selectPluginSettingsProvider throws AuthError before persisting plugin selection', async () => {
+    const configPath = path.join(workspaceDir, '.kanban.json')
+    const initialConfig = JSON.stringify({ version: 2 }, null, 2) + '\n'
+    fs.writeFileSync(configPath, initialConfig, 'utf-8')
+
+    await expect(sdk.selectPluginSettingsProvider('auth.identity', 'local')).rejects.toBeInstanceOf(AuthError)
+
+    expect(captured).toContain('plugin-settings.update')
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(initialConfig)
+  })
+
+  it('updatePluginSettingsOptions throws AuthError before persisting provider options', async () => {
+    const configPath = path.join(workspaceDir, '.kanban.json')
+    const initialConfig = JSON.stringify({ version: 2 }, null, 2) + '\n'
+    fs.writeFileSync(configPath, initialConfig, 'utf-8')
+
+    await expect(
+      sdk.updatePluginSettingsOptions('auth.identity', 'local', { apiToken: 'super-secret-token' }),
+    ).rejects.toBeInstanceOf(AuthError)
+
+    expect(captured).toContain('plugin-settings.update')
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(initialConfig)
+  })
+
+  it('installPluginSettingsPackage throws AuthError before invoking npm', async () => {
+    const installRunner = vi.fn(async () => ({
+      exitCode: 0,
+      signal: null,
+      stdout: 'added 1 package\n',
+      stderr: '',
+    }))
+    sdk.close()
+    sdk = new KanbanSDK(kanbanDir, { pluginInstallRunner: installRunner })
+    captured = injectDenyAll(sdk, kanbanDir)
+
+    await expect(
+      sdk.installPluginSettingsPackage({ packageName: 'kl-plugin-auth', scope: 'workspace' }),
+    ).rejects.toBeInstanceOf(AuthError)
+
+    expect(captured).toContain('plugin-settings.update')
+    expect(installRunner).not.toHaveBeenCalled()
+  })
+})
+
+describe('auth enforcement: plugin settings fallback RBAC actions', () => {
+  for (const action of ['plugin-settings.read', 'plugin-settings.update']) {
+    it(`admin role includes '${action}'`, () => {
+      expect(RBAC_ADMIN_ACTIONS.has(action)).toBe(true)
+    })
+
+    it(`manager role does NOT include '${action}'`, () => {
+      expect(RBAC_MANAGER_ACTIONS.has(action)).toBe(false)
+    })
+
+    it(`user role does NOT include '${action}'`, () => {
+      expect(RBAC_USER_ACTIONS.has(action)).toBe(false)
+    })
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -249,7 +342,7 @@ describe('auth enforcement: action names dispatched to policy plugin', () => {
     ['column.update',              s => s.updateColumn('backlog', { name: 'Updated' })],
     ['column.reorder',             s => s.reorderColumns(['backlog'])],
     ['column.setMinimized',        s => s.setMinimizedColumns(['backlog'])],
-    ['settings.update',            s => s.updateSettings({ showPriorityBadges: true, showAssignee: true, showDueDate: false, showLabels: true, showBuildWithAI: false, showFileName: false, compactMode: false, markdownEditorMode: false, showDeletedColumn: false, defaultPriority: 'medium', defaultStatus: 'backlog', boardZoom: 100, cardZoom: 100, boardBackgroundMode: 'fancy', boardBackgroundPreset: 'aurora' })],
+    ['settings.update',            s => s.updateSettings({ showPriorityBadges: true, showAssignee: true, showDueDate: false, showLabels: true, showBuildWithAI: false, showFileName: false, markdownEditorMode: false, showDeletedColumn: false, defaultPriority: 'medium', defaultStatus: 'backlog', boardZoom: 100, cardZoom: 100, boardBackgroundMode: 'fancy', boardBackgroundPreset: 'aurora' })],
     ['board.setDefault',           s => s.setDefaultBoard('default')],
     ['webhook.create',             s => s.createWebhook({ url: 'https://example.com', events: ['*'] })],
     ['webhook.update',             s => s.updateWebhook('wh-1', { url: 'https://updated.com' })],

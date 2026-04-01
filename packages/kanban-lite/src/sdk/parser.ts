@@ -121,8 +121,13 @@ export function parseCardFile(content: string, filePath: string): Card | null {
     if (section?.trimStart().startsWith('comment:')) {
       const commentBody = sections[i + 1] || ''
       const comment = parseCommentBlock(section, commentBody)
-      if (comment) comments.push(comment)
-      i += 2
+      if (comment) {
+        comments.push(comment)
+        i += 2
+      } else {
+        body += `\n---\n${section}`
+        i += 1
+      }
     } else {
       body += `\n---\n${section}`
       i += 1

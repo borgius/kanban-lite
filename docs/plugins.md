@@ -90,12 +90,12 @@ The runtime model in this document now has a matching public management surface 
 
 That workflow is exposed consistently through:
 
-- the Settings panel's **Plugin Options** tab,
+- the Settings panel's **Plugin Options** tab in standalone and VS Code (backed by the standalone websocket settings bridge in the web UI),
 - the CLI's top-level `plugin-settings` command,
 - the REST API's `/api/plugin-settings` routes,
 - and the MCP tools `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`.
 
-All four surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, and guarded install behavior.
+All of those surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, guarded install behavior, and auth checks.
 
 ### Capability-grouped inventory and selected-provider semantics
 
@@ -161,11 +161,13 @@ If a provider does not expose `optionsSchema()`, it can still be selected, but t
 
 ### Redacted read/list behavior
 
-Plugin settings read/list flows are safe to surface directly because redaction happens in the SDK contract, not only in the UI.
+Plugin settings read/list flows are safe to surface to authorized callers because redaction happens in the SDK contract, not only in the UI.
 
 - Inventory/list responses expose capability rows, selected-provider state, package names, discovery sources, and optional schema metadata.
 - Provider read/update responses use the shared redacted read model.
 - Persisted secrets are never re-read in plain text.
+- `plugin-settings.read` authorizes inventory/list/detail reads before any inventory or provider payload is materialized.
+- `plugin-settings.update` authorizes selected-provider changes, option updates, and guarded installs.
 
 Secret fields declared through `optionsSchema().secrets` reopen as masked write-only placeholders (`••••••`). The public behavior is:
 
@@ -174,7 +176,9 @@ Secret fields declared through `optionsSchema().secrets` reopen as masked write-
 - entering a new value replaces the stored secret,
 - and surfaced errors reuse the same redaction policy instead of echoing raw option payloads.
 
-This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely.
+The settings panel hosts, standalone websocket bridge, REST routes, CLI commands, and MCP tools reuse those same SDK checks. MCP currently exposes `plugin-settings.read` through `list_plugin_settings`, while its mutation tools use `plugin-settings.update`.
+
+This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely. Redaction does not replace authorization; it only limits what an allowed caller can see.
 
 ---
 
@@ -294,9 +298,9 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed before-events for that role. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
+Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed auth actions for that role. The picker starts from the SDK before-event catalog and supplements it with `plugin-settings.read` and `plugin-settings.update`. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
 
-> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
+> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters, plus direct SDK checks for `plugin-settings.read` / `plugin-settings.update` on the shared plugin-settings workflows. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
 ---
 

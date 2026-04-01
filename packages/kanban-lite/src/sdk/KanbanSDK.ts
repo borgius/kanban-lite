@@ -406,6 +406,10 @@ function toPluginSettingsOperationError(input: {
   capability?: PluginCapabilityNamespace
   providerId?: string
 }): PluginSettingsOperationError {
+  if (input.error instanceof AuthError) {
+    throw input.error
+  }
+
   if (input.error instanceof PluginSettingsOperationError) {
     return input.error
   }
@@ -982,10 +986,13 @@ export class KanbanSDK {
    * reflect providers that the SDK can actually resolve at runtime. Selected
    * state is derived from `.kanban.json`, and the payload carries the shared
    * plugin-settings redaction policy for downstream UI/API/CLI/MCP reuse.
+   * Requires the `plugin-settings.read` auth action before any inventory is materialized.
    *
    * @returns A capability-grouped plugin settings inventory payload.
    */
   async listPluginSettings(): Promise<PluginSettingsPayload> {
+    await this._authorizeAction('plugin-settings.read')
+
     try {
       return await discoverPluginSettingsInventory(this.workspaceRoot, DEFAULT_PLUGIN_SETTINGS_REDACTION, this)
     } catch (error) {
@@ -1003,6 +1010,7 @@ export class KanbanSDK {
    * The read model includes the provider's discovery source, current selected
    * state for the capability, any discovered options schema metadata, and a
    * redacted snapshot of persisted options when this provider is selected.
+  * Requires the `plugin-settings.read` auth action before any provider payload is materialized.
    *
    * @param capability - The capability namespace to inspect.
    * @param providerId - Provider identifier within that capability.
@@ -1012,6 +1020,8 @@ export class KanbanSDK {
     capability: PluginCapabilityNamespace,
     providerId: string,
   ): Promise<PluginSettingsProviderReadModel | null> {
+    await this._authorizeAction('plugin-settings.read')
+
     try {
       return await readPluginSettingsProvider(
         this.workspaceRoot,
@@ -1039,6 +1049,8 @@ export class KanbanSDK {
    * switching to a different provider replaces the previous single-provider entry.
    * Selecting `none` for `webhook.delivery` disables webhook runtime loading while
    * preserving any stored webhook options for later re-enable.
+  * Requires the `plugin-settings.update` auth action before any persistence or
+  * provider readback occurs.
    *
    * @param capability - Capability namespace to update.
    * @param providerId - Provider identifier to select.
@@ -1049,6 +1061,8 @@ export class KanbanSDK {
     capability: PluginCapabilityNamespace,
     providerId: string,
   ): Promise<PluginSettingsProviderReadModel | null> {
+    await this._authorizeAction('plugin-settings.update')
+
     try {
       return await persistPluginSettingsProviderSelection(
         this.workspaceRoot,
@@ -1079,6 +1093,8 @@ export class KanbanSDK {
     * shared plugin-options store so hosts can save and reopen schema-driven forms
     * without changing enablement; selecting that provider later restores the
     * cached options into `plugins[capability]`.
+    * Requires the `plugin-settings.update` auth action before any persistence or
+    * provider readback occurs.
    *
    * @param capability - Capability namespace to update.
    * @param providerId - Provider identifier whose options are being updated.
@@ -1090,6 +1106,8 @@ export class KanbanSDK {
     providerId: string,
     options: Record<string, unknown>,
   ): Promise<PluginSettingsProviderReadModel> {
+    await this._authorizeAction('plugin-settings.update')
+
     try {
       return await persistPluginSettingsProviderOptions(
         this.workspaceRoot,
@@ -1117,6 +1135,8 @@ export class KanbanSDK {
    * unscoped `kl-*` package names, always disables lifecycle scripts for in-product
    * installs, and redacts stdout/stderr before surfacing either the success payload
    * or a structured failure payload.
+   * Requires the `plugin-settings.update` auth action before validation or install
+   * subprocess work begins.
    *
    * @param input - Candidate package name and install scope to validate and install.
    * @returns Structured redacted success payload describing the executed npm command.
@@ -1126,6 +1146,8 @@ export class KanbanSDK {
     packageName: unknown
     scope: unknown
   }): Promise<PluginSettingsInstallResult> {
+    await this._authorizeAction('plugin-settings.update')
+
     let request: PluginSettingsInstallRequest
 
     try {

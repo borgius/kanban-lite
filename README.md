@@ -1214,10 +1214,10 @@ For first-party storage plugins, `attachment.storage` now follows the active `ca
 
 Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel in standalone and VS Code, the CLI, REST API, and MCP surfaces.
 
-- **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
+- **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, `auth.visibility`, and `webhook.delivery`.
 - **Storage-backed `attachment.storage` reuse**: when attachments come from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Storage-backed `card.state` reuse**: when `card.state` comes from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
-- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
+- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, `auth.visibility` stays disabled until selected (its normalized default is `provider: "none"`), and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
 - **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
 - **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers, and the inline `source` field now renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
@@ -1574,16 +1574,17 @@ If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibi
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`. Most protected operations are enforced through listener-only before-events before a write is committed, while shared plugin-settings reads/mutations use the SDK auth actions `plugin-settings.read` and `plugin-settings.update`.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity`, `auth.policy`, and opt-in `auth.visibility`. Most protected operations are enforced through listener-only before-events before a write is committed, shared plugin-settings reads/mutations use the SDK auth actions `plugin-settings.read` and `plugin-settings.update`, and `auth.visibility` filters card reads through the canonical SDK cards seam so hidden cards behave like ordinary not-found / no-match results across SDK, REST, CLI, MCP, and UI surfaces.
 
 Auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host.
 
 Host surfaces now install request-scoped auth with `sdk.runWithAuth(authContext, fn)` before calling SDK mutators. The first-party auth listener resolves identity/policy from that scoped carrier plus the before-event's actor/board hints; auth is no longer threaded through positional mutation args or a `BeforeEventPayload.auth` field.
 
-Install the package in the environment that loads Kanban Lite:
+Install `kl-plugin-auth` in the environment that loads Kanban Lite. If you also want card visibility filtering, install `kl-plugin-auth-visibility` alongside it:
 
 ```bash
 npm install kl-plugin-auth
+npm install kl-plugin-auth-visibility
 ```
 
 For local sibling-repo development, a checkout at `../kl-plugin-auth` is resolved automatically. `npm link ../kl-plugin-auth` is optional, but useful when you want an explicit local package link.
@@ -1595,7 +1596,7 @@ The shipped provider ids behave as before:
 
 When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface plus shared plugin-settings inventory/detail reads used by the Node-hosted adapters (standalone REST + websocket settings bridge, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
 
-Provider references for both namespaces are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
+Provider references for the auth family are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
 
 ```json
 {
@@ -1607,6 +1608,33 @@ Provider references for both namespaces are read from `.kanban.json` via the `pl
 ```
 
 Raw bearer tokens, token-to-role maps, and other live secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory or cookies for standalone). Password *hashes* for the `local` provider may be stored in config.
+
+### `auth.visibility` provider
+
+`auth.visibility` is opt-in and normalizes to `{ provider: "none" }` when omitted. `kl-plugin-auth` still owns identity resolution and role lookup; `kl-plugin-auth-visibility` only filters cards after the SDK resolves the caller.
+
+```json
+{
+  "plugins": {
+    "auth.identity": { "provider": "kl-plugin-auth" },
+    "auth.policy": { "provider": "kl-plugin-auth" },
+    "auth.visibility": {
+      "provider": "kl-plugin-auth-visibility",
+      "options": {
+        "rules": [
+          {
+            "roles": ["design"],
+            "statuses": ["backlog"],
+            "labels": ["ux"]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+The rule model is deliberately small: matching is role-only, cards granted by multiple matching rules are unioned, different fields inside one rule use AND semantics, values inside a field use OR semantics, `assignees` supports `@me`, and there is no implicit admin/manager bypass. If a caller matches no rules, they see no cards. When enabled, hidden cards behave as standard not-found / no-match results rather than permission-specific reveals.
 
 ### `rbac` provider
 
@@ -1641,9 +1669,9 @@ When you enable `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the
 
 **Scope limits (v1):**
 
-- **Action-level only**: access decisions are made per-action, not per-row or per-card.
+- **Policy-side action-level only**: access decisions in `auth.policy` are made per-action, not per-row or per-card.
 - **No login flow**: the provider has no interactive authentication UI.
-- **No row filtering**: a denied action blocks the write; no partial result filtering is performed.
+- **Row filtering lives in `auth.visibility`**: denied writes still fail normally; optional partial card filtering is handled separately by `kl-plugin-auth-visibility` when `auth.visibility` is selected.
 - **Node-hosted only**: the RBAC provider runs exclusively in the Node host layer; no browser execution is performed.
 - Tokens are resolved from the host token source at call time and are **never** persisted to `.kanban.json`, returned in API responses, or echoed in error bodies or logs.
 

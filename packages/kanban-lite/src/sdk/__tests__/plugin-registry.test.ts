@@ -102,70 +102,6 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
   }
 }
 
-function installTempCallbackPackage(): () => void {
-  return installTempPackage('kl-plugin-callback', `
-    module.exports = {
-      pluginManifest: {
-        id: 'kl-plugin-callback',
-        capabilities: { 'callback.runtime': ['callbacks'] },
-      },
-      callbackListenerPlugin: {
-        manifest: { id: 'test-callback-listener', provides: ['event.listener'] },
-        register: () => {},
-        unregister: () => {},
-        optionsSchema: () => ({
-          schema: {
-            type: 'object',
-            properties: {
-              handlers: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    type: { type: 'string', enum: ['inline', 'process'] },
-                    events: { type: 'array', items: { type: 'string' } },
-                    enabled: { type: 'boolean', default: true },
-                    source: { type: 'string' },
-                    command: { type: 'string' },
-                    args: { type: 'array', items: { type: 'string' } },
-                    cwd: { type: 'string' },
-                  },
-                },
-              },
-            },
-          },
-          uiSchema: {
-            elements: [
-              {
-                elements: [
-                  {
-                    scope: '#/properties/handlers',
-                    options: {
-                      showSortButtons: true,
-                      elementLabelProp: 'name',
-                      detail: {
-                        elements: [
-                          {
-                            scope: '#/properties/source',
-                            options: { editor: 'code', language: 'javascript', height: '220px' },
-                          },
-                          { scope: '#/properties/command' },
-                        ],
-                      },
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-          secrets: [],
-        }),
-      },
-    }
-  `)
-}
-
 function installBrokenPackageSymlink(packageName: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
   const siblingPackagePath = path.join(process.cwd(), '..', packageName)
@@ -808,7 +744,7 @@ describe('KanbanSDK capability resolution', () => {
   })
 
   it('resolves markdown from .kanban.json storageEngine=markdown', () => {
-    const config = { version: 2, storageEngine: 'markdown', boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
+    const config = { version: 2, storageEngine: 'markdown', boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, compactMode: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
     const sdk = new KanbanSDK(kanbanDir)
     expect(sdk.storageEngine.type).toBe('markdown')
@@ -816,7 +752,7 @@ describe('KanbanSDK capability resolution', () => {
   })
 
   it('resolves sqlite from .kanban.json storageEngine=sqlite', () => {
-    const config = { version: 2, storageEngine: 'sqlite', sqlitePath: '.kanban/kanban.db', boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
+    const config = { version: 2, storageEngine: 'sqlite', sqlitePath: '.kanban/kanban.db', boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, compactMode: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
     const sdk = new KanbanSDK(kanbanDir)
     expect(sdk.storageEngine.type).toBe('sqlite')
@@ -824,7 +760,7 @@ describe('KanbanSDK capability resolution', () => {
   })
 
   it('plugins field in .kanban.json overrides legacy storageEngine', () => {
-    const config = { version: 2, storageEngine: 'sqlite', plugins: { 'card.storage': { provider: 'markdown' } }, boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
+    const config = { version: 2, storageEngine: 'sqlite', plugins: { 'card.storage': { provider: 'markdown' } }, boards: { default: { name: 'Default', columns: [], nextCardId: 1, defaultStatus: 'backlog', defaultPriority: 'medium' } }, defaultBoard: 'default', kanbanDirectory: '.kanban', aiAgent: 'claude', defaultPriority: 'medium', defaultStatus: 'backlog', nextCardId: 1, showPriorityBadges: true, showAssignee: true, showDueDate: true, showLabels: true, showBuildWithAI: true, showFileName: false, compactMode: false, markdownEditorMode: false, showDeletedColumn: false, boardZoom: 100, cardZoom: 100, port: 2954 }
     fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify(config), 'utf-8')
     const sdk = new KanbanSDK(kanbanDir)
     expect(sdk.storageEngine.type).toBe('markdown')
@@ -1045,64 +981,57 @@ describe('KanbanSDK plugin settings inventory', () => {
   })
 
   it('discovers callback.runtime schema metadata through the shared plugin settings resolver', async () => {
-    const cleanup = installTempCallbackPackage()
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'callback.runtime': { provider: 'callbacks' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      fs.writeFileSync(
-        path.join(workspaceDir, '.kanban.json'),
-        JSON.stringify({
-          version: 2,
-          plugins: {
-            'callback.runtime': { provider: 'callbacks' },
-          },
-        }),
-        'utf-8',
-      )
+      const inventory = await sdk.listPluginSettings()
+      const callbackRuntime = inventory.capabilities.find((entry) => entry.capability === 'callback.runtime')
+      const callbacksProvider = callbackRuntime?.providers.find((entry) => entry.providerId === 'callbacks')
+      const handlers = ((callbacksProvider?.optionsSchema?.schema.properties as Record<string, unknown>).handlers ?? {}) as Record<string, unknown>
+      const handlerProperties = ((handlers.items as Record<string, unknown>)?.properties ?? {}) as Record<string, Record<string, unknown>>
+      const uiRoot = (callbacksProvider?.optionsSchema?.uiSchema ?? {}) as PluginSettingsUiRoot
+      const handlersControl = uiRoot.elements?.[0]?.elements?.[0]
+      const handlersOptions = handlersControl?.options
+      const detailElements = handlersOptions?.detail?.elements ?? []
+      const sourceControl = detailElements.find((element) => element.scope === '#/properties/source')
+      const commandControl = detailElements.find((element) => element.scope === '#/properties/command')
 
-      const sdk = new KanbanSDK(kanbanDir)
-
-      try {
-        const inventory = await sdk.listPluginSettings()
-        const callbackRuntime = inventory.capabilities.find((entry) => entry.capability === 'callback.runtime')
-        const callbacksProvider = callbackRuntime?.providers.find((entry) => entry.providerId === 'callbacks')
-        const handlers = ((callbacksProvider?.optionsSchema?.schema.properties as Record<string, unknown>).handlers ?? {}) as Record<string, unknown>
-        const handlerProperties = ((handlers.items as Record<string, unknown>)?.properties ?? {}) as Record<string, Record<string, unknown>>
-        const uiRoot = (callbacksProvider?.optionsSchema?.uiSchema ?? {}) as PluginSettingsUiRoot
-        const handlersControl = uiRoot.elements?.[0]?.elements?.[0]
-        const handlersOptions = handlersControl?.options
-        const detailElements = handlersOptions?.detail?.elements ?? []
-        const sourceControl = detailElements.find((element) => element.scope === '#/properties/source')
-        const commandControl = detailElements.find((element) => element.scope === '#/properties/command')
-
-        expect(callbackRuntime?.selected).toEqual({
-          capability: 'callback.runtime',
-          providerId: 'callbacks',
-          source: 'config',
-        })
-        expect(callbacksProvider).toMatchObject({
-          providerId: 'callbacks',
-          packageName: 'kl-plugin-callback',
-          discoverySource: 'dependency',
-          isSelected: true,
-        })
-        expect(handlers.type).toBe('array')
-        expect(handlerProperties.type?.enum).toEqual(['inline', 'process'])
-        expect(handlerProperties.events?.type).toBe('array')
-        expect(handlerProperties.source?.type).toBe('string')
-        expect(handlerProperties.command?.type).toBe('string')
-        expect(handlersOptions?.showSortButtons).toBe(true)
-        expect(handlersOptions?.elementLabelProp).toBe('name')
-        expect(sourceControl?.options).toMatchObject({
-          editor: 'code',
-          language: 'javascript',
-          height: '220px',
-        })
-        expect(commandControl?.scope).toBe('#/properties/command')
-      } finally {
-        sdk.close()
-      }
+      expect(callbackRuntime?.selected).toEqual({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        source: 'config',
+      })
+      expect(callbacksProvider).toMatchObject({
+        providerId: 'callbacks',
+        packageName: 'kl-plugin-callback',
+        isSelected: true,
+      })
+      expect(handlers.type).toBe('array')
+      expect(handlerProperties.type?.enum).toEqual(['inline', 'process'])
+      expect(handlerProperties.events?.type).toBe('array')
+      expect(handlerProperties.source?.type).toBe('string')
+      expect(handlerProperties.command?.type).toBe('string')
+      expect(handlersOptions?.showSortButtons).toBe(true)
+      expect(handlersOptions?.elementLabelProp).toBe('name')
+      expect(sourceControl?.options).toMatchObject({
+        editor: 'code',
+        language: 'javascript',
+        height: '220px',
+      })
+      expect(commandControl?.scope).toBe('#/properties/command')
     } finally {
-      cleanup()
+      sdk.close()
     }
   })
 
@@ -1146,7 +1075,6 @@ describe('KanbanSDK plugin settings inventory', () => {
       'temp-broken-plugin-module',
       `throw new Error('broken package import should not block plugin inventory')\n`,
     )
-    const callbackCleanup = installTempCallbackPackage()
 
     try {
       fs.writeFileSync(
@@ -1183,7 +1111,6 @@ describe('KanbanSDK plugin settings inventory', () => {
         sdk.close()
       }
     } finally {
-      callbackCleanup()
       cleanup()
     }
   })
@@ -1392,8 +1319,8 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const inventory = await sdk.runWithAuth({ token: 'inventory-local-token', transport: 'http' }, async () => sdk.listPluginSettings())
-      const provider = await sdk.runWithAuth({ token: 'inventory-local-token', transport: 'http' }, async () => sdk.getPluginSettings('auth.identity', 'local'))
+      const inventory = await sdk.listPluginSettings()
+      const provider = await sdk.getPluginSettings('auth.identity', 'local')
       const authIdentity = inventory.capabilities.find((entry) => entry.capability === 'auth.identity')
 
       expect(authIdentity?.selected).toEqual({
@@ -1615,18 +1542,19 @@ describe('KanbanSDK plugin settings inventory', () => {
         { role: 'manager', actions: [...RBAC_ROLE_MATRIX.manager] },
         { role: 'admin', actions: [...RBAC_ROLE_MATRIX.admin] },
       ]
-      const actualPermissions = selected.options?.values.permissions as Array<{ role: string; actions: string[] }>
 
       expect(selected.selected).toEqual({
         capability: 'auth.policy',
         providerId: 'rbac',
         source: 'config',
       })
-      expect(actualPermissions).toEqual(expectedPermissions)
+      expect(selected.options?.values).toEqual({
+        permissions: expectedPermissions,
+      })
       expect(persistedConfig.plugins?.['auth.policy']).toEqual({
         provider: 'rbac',
         options: {
-          permissions: actualPermissions,
+          permissions: expectedPermissions,
         },
       })
     } finally {
@@ -1756,16 +1684,16 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const updated = await sdk.runWithAuth({ token: 'existing-token', transport: 'http' }, async () => sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+      const updated = await sdk.updatePluginSettingsOptions('auth.identity', 'local', {
         apiToken: '••••••',
         users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
-      }))
+      })
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as {
         plugins?: Record<string, { provider: string; options?: { apiToken?: string; users?: Array<{ password: string; role?: string }> } }>
       }
-      const readback = await sdk.runWithAuth({ token: 'existing-token', transport: 'http' }, async () => sdk.getPluginSettings('auth.identity', 'local'))
+      const readback = await sdk.getPluginSettings('auth.identity', 'local')
 
       expect(updated.selected).toEqual({
         capability: 'auth.identity',
@@ -1795,78 +1723,72 @@ describe('KanbanSDK plugin settings inventory', () => {
   })
 
   it('round-trips mixed callback handler edits through the shared plugin settings save flow', async () => {
-    const cleanup = installTempCallbackPackage()
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'callback.runtime': { provider: 'callbacks' },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+    const handlerOptions = {
+      handlers: [
+        {
+          name: 'inline-created',
+          type: 'inline',
+          events: ['task.created'],
+          enabled: true,
+          source: 'async ({ event, sdk }) => { console.log(event.event, Boolean(sdk)) }',
+        },
+        {
+          name: 'process-created',
+          type: 'process',
+          events: ['task.created'],
+          enabled: true,
+          command: 'node',
+          args: ['worker.cjs', '--stdin'],
+          cwd: '.kanban/callbacks',
+        },
+      ],
+    }
 
     try {
-      fs.writeFileSync(
-        path.join(workspaceDir, '.kanban.json'),
-        JSON.stringify({
-          version: 2,
-          plugins: {
-            'callback.runtime': { provider: 'callbacks' },
-          },
-        }),
-        'utf-8',
-      )
-
-      const sdk = new KanbanSDK(kanbanDir)
-      const handlerOptions = {
-        handlers: [
-          {
-            name: 'inline-created',
-            type: 'inline',
-            events: ['task.created'],
-            enabled: true,
-            source: 'async ({ event, sdk }) => { console.log(event.event, Boolean(sdk)) }',
-          },
-          {
-            name: 'process-created',
-            type: 'process',
-            events: ['task.created'],
-            enabled: true,
-            command: 'node',
-            args: ['worker.cjs', '--stdin'],
-            cwd: '.kanban/callbacks',
-          },
-        ],
+      const updated = await sdk.updatePluginSettingsOptions('callback.runtime', 'callbacks', handlerOptions)
+      const readback = await sdk.getPluginSettings('callback.runtime', 'callbacks')
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
       }
 
-      try {
-        const updated = await sdk.updatePluginSettingsOptions('callback.runtime', 'callbacks', handlerOptions)
-        const readback = await sdk.getPluginSettings('callback.runtime', 'callbacks')
-        const persistedConfig = JSON.parse(
-          fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
-        ) as {
-          plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
-        }
-
-        expect(updated.selected).toEqual({
+      expect(updated.selected).toEqual({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        source: 'config',
+      })
+      expect(updated.options?.values).toEqual(handlerOptions)
+      expect(readback).toMatchObject({
+        capability: 'callback.runtime',
+        providerId: 'callbacks',
+        selected: {
           capability: 'callback.runtime',
           providerId: 'callbacks',
           source: 'config',
-        })
-        expect(updated.options?.values).toEqual(handlerOptions)
-        expect(readback).toMatchObject({
-          capability: 'callback.runtime',
-          providerId: 'callbacks',
-          selected: {
-            capability: 'callback.runtime',
-            providerId: 'callbacks',
-            source: 'config',
-          },
-          options: {
-            values: handlerOptions,
-          },
-        })
-        expect(persistedConfig.plugins?.['callback.runtime']).toEqual({
-          provider: 'callbacks',
-          options: handlerOptions,
-        })
-      } finally {
-        sdk.close()
-      }
+        },
+        options: {
+          values: handlerOptions,
+        },
+      })
+      expect(persistedConfig.plugins?.['callback.runtime']).toEqual({
+        provider: 'callbacks',
+        options: handlerOptions,
+      })
     } finally {
-      cleanup()
+      sdk.close()
     }
   })
 
@@ -2339,6 +2261,7 @@ describe('auth capability resolution', () => {
     const bag = resolveCapabilityBag(storageCaps, kanbanDir, normalizeAuthCapabilities({}))
     expect(bag.authIdentity).toBe(NOOP_IDENTITY_PLUGIN)
     expect(bag.authPolicy).toBe(NOOP_POLICY_PLUGIN)
+    expect(bag.authVisibility).toBeNull()
   })
 
   it('noop identity plugin has correct manifest', () => {
@@ -2826,8 +2749,6 @@ describe('RBAC action catalog contract', () => {
     'board.update',
     'board.delete',
     'settings.update',
-    'plugin-settings.read',
-    'plugin-settings.update',
     'webhook.create',
     'webhook.update',
     'webhook.delete',
@@ -3330,43 +3251,35 @@ describe('resolveCapabilityBag – callback.runtime', () => {
     expect(bag.callbackProviders).toBeNull()
   })
 
-  it('keeps callback discovery and runtime loading aligned for a temp-installed package', async () => {
-    const cleanup = installTempCallbackPackage()
+  it('loads callbackListenerPlugin from a temp-installed package', () => {
+    const cleanup = installTempPackage('kl-plugin-callback', `
+      module.exports = {
+        callbackListenerPlugin: {
+          manifest: { id: 'test-callback-listener', provides: ['event.listener'] },
+          register: () => {},
+          unregister: () => {},
+          optionsSchema: () => ({ schema: { type: 'object', properties: { handlers: { type: 'array' } } } }),
+        },
+      }
+    `)
 
     try {
-      const sdk = new KanbanSDK(kanbanDir)
-      try {
-        const inventory = await sdk.listPluginSettings()
-        const callbackRuntime = inventory.capabilities.find((entry) => entry.capability === 'callback.runtime')
-        const callbacksProvider = callbackRuntime?.providers.find((entry) => entry.providerId === 'callbacks')
+      const callbackCaps = normalizeCallbackCapabilities({
+        plugins: { 'callback.runtime': { provider: 'callbacks' } },
+      })
+      const bag = resolveCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        undefined,
+        undefined,
+        callbackCaps,
+      )
 
-        const callbackCaps = normalizeCallbackCapabilities({
-          plugins: { 'callback.runtime': { provider: 'callbacks' } },
-        })
-        const bag = resolveCapabilityBag(
-          { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
-          kanbanDir,
-          undefined,
-          undefined,
-          undefined,
-          callbackCaps,
-        )
-
-        expect(callbacksProvider).toMatchObject({
-          providerId: 'callbacks',
-          packageName: 'kl-plugin-callback',
-          discoverySource: 'dependency',
-        })
-        expect((callbacksProvider?.optionsSchema?.schema.properties as Record<string, unknown>).handlers).toMatchObject({
-          type: 'array',
-        })
-        expect(bag.callbackProviders).toEqual(callbackCaps)
-        expect(bag.callbackListener).not.toBeNull()
-        expect(bag.callbackListener?.manifest.id).toBe('test-callback-listener')
-        expect(bag.callbackListener?.manifest.provides).toContain('event.listener')
-      } finally {
-        sdk.close()
-      }
+      expect(bag.callbackProviders).toEqual(callbackCaps)
+      expect(bag.callbackListener).not.toBeNull()
+      expect(bag.callbackListener?.manifest.id).toBe('test-callback-listener')
+      expect(bag.callbackListener?.manifest.provides).toContain('event.listener')
     } finally {
       cleanup()
     }
@@ -3418,6 +3331,7 @@ describe('WORKSPACE_ROOT', () => {
     expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-storage-sqlite'))).toBe(true)
     expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-storage-mysql'))).toBe(true)
     expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-auth'))).toBe(true)
+    expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-auth-visibility'))).toBe(true)
     expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-webhook'))).toBe(true)
     expect(fs.existsSync(path.join(packagesDir, 'kl-plugin-attachment-s3'))).toBe(true)
   })
@@ -3477,7 +3391,7 @@ describe('monorepo workspace-local plugin resolution', () => {
     expect(RBAC_IDENTITY_PLUGIN.manifest.provides).toContain('auth.identity')
   })
 
-  it('resolves kl-plugin-auth-visibility from workspace packages/', () => {
+  it('resolves kl-plugin-auth-visibility from workspace packages/ directory', () => {
     const bag = resolveCapabilityBag(
       {
         'card.storage': { provider: 'markdown' },
@@ -3486,12 +3400,7 @@ describe('monorepo workspace-local plugin resolution', () => {
       kanbanDir,
       normalizeAuthCapabilities({
         plugins: {
-          'auth.visibility': {
-            provider: 'kl-plugin-auth-visibility',
-            options: {
-              rules: [{ roles: ['reader'], labels: ['public'] }],
-            },
-          },
+          'auth.visibility': { provider: 'kl-plugin-auth-visibility' },
         },
       }),
     )

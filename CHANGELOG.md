@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auth visibility plugin** (`kl-plugin-auth-visibility`): Added a new first-party `auth.visibility` package that filters cards with role-only rules after `kl-plugin-auth` resolves identity and roles. The capability is opt-in, defaults to `provider: "none"`, matches by role only, unions cards across matching rules, applies AND across fields / OR within a field, supports `assignees: ["@me"]`, and does not grant implicit admin/manager bypass.
+
 - **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk })`; process handlers receive serialized event JSON on stdin only; per-handler failures are logged while later matches continue.
 
 - **Async plugin option-schema resolution helper**: Plugin settings discovery now resolves sync/async `optionsSchema()` metadata before it reaches SDK/UI/API/CLI/MCP consumers, and plugin authors can use the shared SDK helper to populate schema or UI values from runtime data such as the live available-event catalog.
@@ -42,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Hidden-as-not-found parity for `auth.visibility`**: Card-targeted SDK, standalone REST/websocket, CLI, MCP, and extension-hosted reads now treat hidden cards exactly like missing cards, so caller-specific visibility filtering does not leak card existence or content through direct reads, helper resolution, or actor-scoped fan-out.
 
 - **CLI/MCP auth-visibility card lookups now stay caller-scoped**: CLI `list` / `active` / `show`, card-targeted partial-id and existence preflights, MCP `list_cards` / `get_card` / `get_active_card`, and card-targeted MCP helper/tool resolution now all run inside the caller auth scope so hidden cards behave exactly like missing cards while existing multiple-match UX remains unchanged for visible cards.
 

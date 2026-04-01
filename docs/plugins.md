@@ -27,6 +27,7 @@ Today the core capability namespaces are:
 - `callback.runtime`
 - `auth.identity`
 - `auth.policy`
+- `auth.visibility`
 
 That means:
 
@@ -35,7 +36,7 @@ That means:
 - card-state can stay actor-scoped without being mixed into shared card content,
 - a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,
 - a callback provider can run trusted inline JavaScript or subprocess handlers for committed after-events through the shared plugin-settings flow,
-- auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,
+- auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision, and an opt-in visibility provider can filter card reads after identity resolution,
 - or one provider can implement multiple capabilities explicitly in the plugin layer.
 
 This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, fully external npm packages, and listener-only runtime plugins to coexist behind one SDK-owned action pipeline.
@@ -109,6 +110,7 @@ Today that means the UI/API/CLI/MCP inventory can show providers for capabilitie
 - `callback.runtime`
 - `auth.identity`
 - `auth.policy`
+- `auth.visibility`
 - `webhook.delivery`
 
 Each provider row includes:
@@ -300,6 +302,31 @@ The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, 
 
 Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed auth actions for that role. The picker starts from the SDK before-event catalog and supplements it with `plugin-settings.read` and `plugin-settings.update`. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
 
+### `auth.visibility`
+
+This capability filters the visible subset of an already-loaded card set.
+
+Compatibility/default provider id:
+
+- `none` (default) — disabled; card reads remain unfiltered.
+
+External package:
+
+- `kl-plugin-auth-visibility`
+
+Behavior:
+
+- is selected through the shared plugin-settings path at `plugins["auth.visibility"]`,
+- consumes the SDK-resolved identity and normalized role list; it does **not** resolve tokens, sessions, or roles itself,
+- matches rules by roles only,
+- unions cards granted by multiple matching rules,
+- applies **AND** semantics across different fields and **OR** semantics within one field,
+- supports `@me` for assignee matching,
+- returns no visible cards when the caller matches no rules,
+- gives no implicit admin/manager bypass.
+
+The canonical runtime seam lives in `src/sdk/modules/cards.ts`, where the SDK filters list/get flows before host surfaces consume them. Hidden cards therefore behave as ordinary not-found or no-match results in REST, CLI, MCP, and UI flows that already resolve cards through the SDK.
+
 > **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters, plus direct SDK checks for `plugin-settings.read` / `plugin-settings.update` on the shared plugin-settings workflows. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
 ---
@@ -343,6 +370,8 @@ Example:
 ```
 
 The plugin-settings model does not add a second `enabled` boolean. Switching providers means changing the selected provider reference for that capability.
+
+`auth.visibility` uses the same explicit disabled form, and runtime normalization resolves the capability to `{ provider: "none" }` when it is omitted so existing workspaces do not start filtering cards accidentally.
 
 For `webhook.delivery`, plugin settings also support an explicit disabled state by persisting:
 

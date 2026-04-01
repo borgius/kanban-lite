@@ -18,30 +18,39 @@ This guide is deliberately more detailed than the short auth section in `README.
 
 ## Executive summary
 
-Kanban Lite models auth as **two capability namespaces**:
+Kanban Lite models auth as **three related capability namespaces**:
 
 - `auth.identity`
 - `auth.policy`
+- `auth.visibility`
 
-Those capabilities are resolved by the SDK in the same general style as storage capabilities.
+Those capabilities are resolved by the SDK in the same general style as storage capabilities, but they split responsibilities intentionally:
+
+- `auth.identity` resolves the caller and role list,
+- `auth.policy` authorizes protected actions,
+- `auth.visibility` optionally filters card reads after identity resolution.
 
 The key rule is:
 
 > If no auth plugin is configured, behavior must not change.
 
-That rule is preserved by **no-op** providers resolved from `kl-plugin-auth` when available (with a core compatibility fallback when the package is absent):
+That rule is preserved by **no-op** providers resolved from `kl-plugin-auth` when available (with a core compatibility fallback when the package is absent) plus a disabled-by-default visibility slot:
 
 - `auth.identity: noop` → always resolves to anonymous (`null` identity)
 - `auth.policy: noop` → always allows the action
+- `auth.visibility: none` → disabled; card reads are unfiltered
 
-The current release also ships a **starter RBAC** provider pair through `kl-plugin-auth`:
+The current release also ships a **starter RBAC** provider pair through `kl-plugin-auth` plus a separate first-party visibility package:
 
 - `auth.identity: rbac` → validates opaque tokens against a runtime-owned principal registry
 - `auth.policy: rbac` → enforces a fixed cumulative role matrix for `user`, `manager`, and `admin`
+- `auth.visibility: kl-plugin-auth-visibility` → filters cards with role-only rules after the SDK resolves identity and roles
+
+`kl-plugin-auth` still owns identity resolution, tokens, sessions, and role lookup. `kl-plugin-auth-visibility` only filters the card set the SDK is about to return.
 
 So a workspace with no auth configuration continues to behave exactly like an open-access workspace.
 
-When a non-noop auth provider is active, the SDK performs **pre-action authorization** at the SDK method boundary before protected work executes.
+When a non-noop auth provider is active, the SDK performs **pre-action authorization** at the SDK method boundary before protected work executes. When `auth.visibility` is selected, the canonical cards read seam filters list/get flows so hidden cards behave as ordinary not-found or no-match results across host surfaces.
 
 ---
 
@@ -66,6 +75,8 @@ npm init -y
 ```bash
 npm install kanban-lite kl-plugin-auth
 ```
+
+`auth.visibility` is optional and disabled by default. Install `kl-plugin-auth-visibility` only if you also want card filtering layered on top of identity/policy enforcement.
 
 The standalone server binary is installed at `node_modules/.bin/kanban-lite` (or at the `kanban-lite` bin if you use npm scripts).
 
@@ -110,7 +121,7 @@ What each field does:
 | Field | Purpose |
 |-------|---------|
 | `auth.identity.provider = "local"` | Resolves identity from a browser session cookie (set after `/auth/login`) or from the `Authorization: Bearer <token>` header |
-| `auth.identity.options.users` | List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional `role` (`user`, `manager`, or `admin`) to enforce RBAC permissions |
+| `auth.identity.options.users` | List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional `role` (`user`, `manager`, or `admin`) for downstream `auth.policy` and `auth.visibility` evaluation |
 | `auth.policy.provider = "local"` | Allows any authenticated caller; denies anonymous requests |
 
 ### Step 5 — set the API bearer token in `.env`
@@ -183,9 +194,9 @@ The auth design is built around a few principles:
 	 - Workspace config persists selected provider ids and documented provider options.
 	 - Shared Plugin Options read/list/error flows redact secret fields and reopen them as masked write-only placeholders instead of redisplaying raw values.
 
-4. **Action-level authorization only**
-	 - Current authorization is based on named SDK actions.
-	 - It does not do partial filtering of card lists or board lists.
+4. **Separate action authorization from card visibility**
+	 - `auth.policy` authorization is based on named SDK actions.
+	 - Optional partial filtering of card reads lives in `auth.visibility`, not inside `auth.policy`.
 
 5. **No-plugin = no behavior change**
 	 - The default path remains anonymous + allow-all via `noop`, with a compatibility fallback when `kl-plugin-auth` is not installed yet.
@@ -194,9 +205,9 @@ The auth design is built around a few principles:
 
 ## Capability model
 
-Auth uses two capability namespaces defined in `src/shared/config.ts`:
+Auth uses three capability namespaces defined in `src/shared/config.ts`:
 
-- `AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'`
+- `AuthCapabilityNamespace = 'auth.identity' | 'auth.policy' | 'auth.visibility'`
 - `AuthCapabilitySelections = Partial<Record<AuthCapabilityNamespace, ProviderRef>>`
 - `ResolvedAuthCapabilities = Record<AuthCapabilityNamespace, ProviderRef>`
 
@@ -213,7 +224,7 @@ That means auth provider selection looks structurally like storage provider sele
 
 ---
 
-## The two auth capabilities
+## The auth capabilities
 
 ### `auth.identity`
 
@@ -321,6 +332,51 @@ Current `local` behavior:
 - does **not** enforce role distinctions — every authenticated caller has equal access
 - intended for single-operator setups or when role separation is not required
 
+### `auth.visibility`
+
+Responsibility:
+
+- receive the SDK-resolved identity,
+- receive the normalized role list,
+- receive the active `AuthContext`,
+- filter a provided card set without re-resolving identity or sessions.
+
+The normalized visibility input shape is defined in `src/sdk/plugins/index.ts`:
+
+```ts
+export interface AuthVisibilityFilterInput {
+	identity: AuthIdentity | null
+	roles: readonly string[]
+	auth: AuthContext
+}
+```
+
+Current shipped provider ids:
+
+- `none`
+- `kl-plugin-auth-visibility`
+
+Current `none` behavior:
+
+- disables visibility filtering entirely
+- preserves existing open card-read behavior when the capability is omitted
+
+Current `kl-plugin-auth-visibility` behavior:
+
+- selects rules by roles only
+- unions cards granted by multiple matching rules
+- applies **AND** semantics across different fields in one rule
+- applies **OR** semantics within one field
+- supports `@me` inside assignee matching
+- does **not** grant implicit admin/manager bypass
+- returns no visible cards when the caller matches no rules
+
+Important implementation details:
+
+- the canonical runtime seam lives in `src/sdk/modules/cards.ts`
+- the SDK resolves identity once, normalizes missing or empty roles to `[]`, and passes that input into the visibility provider
+- downstream direct card reads and card-targeted host flows inherit hidden-as-not-found behavior because they resolve through visibility-scoped `listCards()` / `getCard()`
+
 ---
 
 ## Current implementation status
@@ -345,8 +401,11 @@ Today the codebase includes:
 - the `ProviderBackedAuthListenerPlugin` class for custom listener wiring,
 - `authListenerPluginFactories` convenience map,
 - `authIdentityPlugins` and `authPolicyPlugins` provider registries,
+- auth visibility provider loading and capability wiring,
+- the `kl-plugin-auth-visibility` package with shared rule authoring metadata,
 - SDK auth status reporting,
 - SDK pre-action authorization hooks,
+- SDK card-read visibility filtering in `src/sdk/modules/cards.ts`,
 - normalized host `AuthContext` wiring for standalone, CLI, MCP, and extension host surfaces,
 - auth diagnostics/status endpoints and commands,
 - tests for the auth seam and host wiring.
@@ -357,6 +416,7 @@ The shipped auth provider ids are:
 
 - `auth.identity.provider = "noop" | "rbac" | "local"`
 - `auth.policy.provider = "noop" | "rbac" | "local"`
+- `auth.visibility.provider = "none" | "kl-plugin-auth-visibility"`
 
 If another provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.
 
@@ -366,6 +426,8 @@ So the system now has:
 - the **SDK enforcement seam**,
 - the built-in **`noop`** open-access default,
 - the built-in **starter `rbac`** policy implementation,
+- the opt-in **`auth.visibility`** seam with a disabled default,
+- the standalone **`kl-plugin-auth-visibility`** package for role-based card filtering,
 - the turnkey **`local`** username/password + API token provider with a browser login UI,
 - and the **host integration path for token acquisition**.
 
@@ -379,15 +441,15 @@ One remaining limitation:
 
 Auth now participates in the same shared **Plugin Options** workflow as other plugin-backed capabilities. The settings UI discovers auth providers from installed packages, shows the supplying package separately from the provider id, and persists the selected provider id plus its options under `.kanban.json -> plugins`.
 
-For auth, the package is typically `kl-plugin-auth`, while the selected provider ids are usually `local`, `rbac`, or `noop`. The legacy `provider: "kl-plugin-auth"` alias remains available for compatibility, but the shared workflow selects the explicit provider rows and does not use a separate auth-enabled boolean.
+For `auth.identity` / `auth.policy`, the package is typically `kl-plugin-auth`, while the selected provider ids are usually `local`, `rbac`, or `noop`. `auth.visibility` is supplied by `kl-plugin-auth-visibility` and defaults to disabled (`provider: "none"`) until selected. The legacy `provider: "kl-plugin-auth"` alias remains available for compatibility, but the shared workflow selects the explicit provider rows and does not use a separate auth-enabled boolean.
 
 ### Shared Plugin Options workflow
 
-- Install or discover `kl-plugin-auth`.
+- Install or discover `kl-plugin-auth`, and add `kl-plugin-auth-visibility` only if you want card filtering.
 - Open **Settings → Plugin Options**.
-- Select a provider row for `auth.identity` and `auth.policy` (for example `local` or `rbac`).
+- Select a provider row for `auth.identity` and `auth.policy` (for example `local` or `rbac`), and optionally for `auth.visibility`.
 - Save provider options from the schema-driven form generated by the provider's `optionsSchema()` output.
-- The selected provider id is persisted at `plugins["auth.identity"].provider` / `plugins["auth.policy"].provider`; selecting a provider is the enablement state.
+- The selected provider id is persisted at `plugins["auth.identity"].provider` / `plugins["auth.policy"].provider` / `plugins["auth.visibility"].provider`; selecting a provider is the enablement state. Leaving `auth.visibility` omitted (or set to `provider: "none"`) keeps filtering disabled.
 
 Secret-bearing auth fields participate in the same masked edit flow as other providers:
 
@@ -409,7 +471,7 @@ In the shipped RBAC defaults, only `admin` gets these actions automatically. A d
 
 ### Default (no auth)
 
-Omit auth namespaces entirely — the SDK defaults both to `noop` (open-access).
+Omit auth namespaces entirely — the SDK defaults `auth.identity` and `auth.policy` to `noop` (open-access) and `auth.visibility` to `none` (disabled).
 
 ### Local provider config
 
@@ -462,6 +524,33 @@ What this does **not** do:
 - it does not create a login flow
 - it does not make the empty-registry `RBAC_IDENTITY_PLUGIN` singleton accept arbitrary token text
 
+### Visibility provider config
+
+Requires `kl-plugin-auth-visibility` installed alongside whichever identity/policy provider resolves the caller.
+
+```json
+{
+	"plugins": {
+		"auth.identity": { "provider": "local" },
+		"auth.policy": { "provider": "local" },
+		"auth.visibility": {
+			"provider": "kl-plugin-auth-visibility",
+			"options": {
+				"rules": [
+					{
+						"roles": ["design"],
+						"statuses": ["backlog"],
+						"labels": ["ux"]
+					}
+				]
+			}
+		}
+	}
+}
+```
+
+If `auth.visibility` is omitted, `normalizeAuthCapabilities()` resolves it to `{ provider: "none" }`. When enabled, callers only see cards granted by matching role rules, and hidden cards behave as standard not-found / no-match results across SDK, REST, CLI, MCP, and UI surfaces.
+
 ### Shape of auth config (full example)
 
 ```json
@@ -474,6 +563,9 @@ What this does **not** do:
 		"auth.policy": {
 			"provider": "local",
 			"options": {}
+		},
+		"auth.visibility": {
+			"provider": "none"
 		}
 	}
 }
@@ -481,16 +573,21 @@ What this does **not** do:
 
 ### Normalization behavior
 
-`normalizeAuthCapabilities()` in `src/shared/config.ts` guarantees that both auth namespaces are always resolved.
+`normalizeAuthCapabilities()` in `src/shared/config.ts` guarantees that all three auth namespaces are always resolved.
 
-Lookup order: `plugins["auth.identity"]` → `{ provider: "noop" }`.
+Lookup order:
+
+- `plugins["auth.identity"]` → `{ provider: "noop" }`
+- `plugins["auth.policy"]` → `{ provider: "noop" }`
+- `plugins["auth.visibility"]` → `{ provider: "none" }`
 
 If both `plugins` auth keys and the `auth` key are omitted entirely, the normalized result is:
 
 ```json
 {
 	"auth.identity": { "provider": "noop" },
-	"auth.policy": { "provider": "noop" }
+	"auth.policy": { "provider": "noop" },
+	"auth.visibility": { "provider": "none" }
 }
 ```
 
@@ -1448,6 +1545,7 @@ Normalized auth result:
 
 - `auth.identity = noop`
 - `auth.policy = noop`
+- `auth.visibility = none`
 
 ### Explicitly declaring noop auth
 
@@ -1455,7 +1553,8 @@ Normalized auth result:
 {
 	"auth": {
 		"auth.identity": { "provider": "noop" },
-		"auth.policy": { "provider": "noop" }
+		"auth.policy": { "provider": "noop" },
+		"auth.visibility": { "provider": "none" }
 	}
 }
 ```
@@ -1564,11 +1663,12 @@ Current auth capabilities:
 
 - `auth.identity`
 - `auth.policy`
+- `auth.visibility`
 
 They share the same broad configuration style and capability-resolution pattern, but they solve different problems:
 
 - storage decides **where data lives**
-- auth decides **who may perform protected actions**
+- auth decides **who may perform protected actions** and, when `auth.visibility` is enabled, **which cards are visible to that caller**
 
 ---
 

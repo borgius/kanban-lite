@@ -38,7 +38,6 @@ import type {
   ResolvedCapabilities,
   CapabilityNamespace,
   ProviderRef,
-  AuthCapabilitySelections,
   AuthCapabilityNamespace,
   ResolvedAuthCapabilities,
   ResolvedCallbackCapabilities,
@@ -513,9 +512,8 @@ export const RBAC_MANAGER_ACTIONS: ReadonlySet<string> = new Set([
  * Actions available to the `admin` role (includes all `manager` and `user` actions).
  *
  * Adds all destructive and configuration operations: board create/update/delete,
- * settings, plugin-settings reads/updates, webhooks, labels, columns,
- * board-action config edits, board-log clearing, migrations, default-board
- * changes, and deleted-card purge.
+ * settings, webhooks, labels, columns, board-action config edits, board-log
+ * clearing, migrations, default-board changes, and deleted-card purge.
  */
 export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   ...RBAC_MANAGER_ACTIONS,
@@ -523,8 +521,6 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
-  'plugin-settings.read',
-  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',
@@ -1150,11 +1146,6 @@ function isStaleResolvedModuleEntry(resolvedPath: string, err: unknown): boolean
   return !fs.existsSync(resolvedPath) || !fs.existsSync(path.dirname(resolvedPath))
 }
 
-function isPathWithin(parentPath: string, candidatePath: string): boolean {
-  const relative = path.relative(parentPath, candidatePath)
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
-}
-
 /**
  * Tries to load an external plugin from the global npm node_modules directory.
  * The global prefix is derived from the Node.js binary path ({@link process.execPath}).
@@ -1235,23 +1226,6 @@ interface DiscoveredPluginProvider {
   packageName: string
   discoverySource: PluginSettingsDiscoverySource
   optionsSchema?: PluginSettingsOptionsSchemaMetadata
-}
-
-function resolveInstalledModuleSource(request: string, resolvedPath: string): ExternalPluginDiscoverySource {
-  if (!WORKSPACE_ROOT) return 'dependency'
-
-  const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
-  const resolvedCandidates = [resolvedPath]
-
-  try {
-    resolvedCandidates.push(fs.realpathSync(resolvedPath))
-  } catch {
-    // Keep the original resolved path classification when realpath lookup fails.
-  }
-
-  return resolvedCandidates.some((candidatePath) => isPathWithin(workspacePackagePath, candidatePath))
-    ? 'workspace'
-    : 'dependency'
 }
 
 /**
@@ -1852,18 +1826,17 @@ function getDiscoveredPluginSettingsProvider(
   capability: PluginCapabilityNamespace,
   providerId: string,
 ): DiscoveredPluginProvider {
-  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
-  const provider = inventory.get(capability)?.get(normalizedProviderId)
+  const provider = inventory.get(capability)?.get(providerId)
   if (provider) return provider
 
   // Alias fallback: resolve provider aliases (e.g. "local" → kl-plugin-auth)
-  const aliasedPackage = resolveExternalPackageName(capability, normalizedProviderId)
-  if (aliasedPackage !== normalizedProviderId) {
+  const aliasedPackage = resolveExternalPackageName(capability, providerId)
+  if (aliasedPackage !== providerId) {
     const byCapability = inventory.get(capability)
     if (byCapability) {
       for (const candidate of byCapability.values()) {
         if (candidate.packageName === aliasedPackage) {
-          return { ...candidate, providerId: normalizedProviderId }
+          return { ...candidate, providerId }
         }
       }
     }
@@ -1928,18 +1901,6 @@ function getGlobalNodeModulesDir(): string {
 }
 
 function resolveExternalModuleWithSource(request: string): ResolvedExternalModule {
-  const resolvedInstalledEntry = resolveInstalledModuleEntry(request)
-  if (resolvedInstalledEntry) {
-    try {
-      return {
-        module: runtimeRequire(resolvedInstalledEntry),
-        source: resolveInstalledModuleSource(request, resolvedInstalledEntry),
-      }
-    } catch (err: unknown) {
-      if (!isStaleResolvedModuleEntry(resolvedInstalledEntry, err)) throw err
-    }
-  }
-
   if (WORKSPACE_ROOT) {
     const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
     try {
@@ -1947,6 +1908,12 @@ function resolveExternalModuleWithSource(request: string): ResolvedExternalModul
     } catch (workspaceErr: unknown) {
       if (!isRecoverableMissingModuleError(workspaceErr, workspacePackagePath)) throw workspaceErr
     }
+  }
+
+  try {
+    return { module: runtimeRequire(request), source: 'dependency' }
+  } catch (err: unknown) {
+    if (!isRecoverableMissingModuleError(err, request, path.join('node_modules', request))) throw err
   }
 
   try {
@@ -2445,9 +2412,7 @@ function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capabi
             ? 'none'
             : 'config'
           : config.auth?.['auth.visibility']
-            ? selected.provider === 'none'
-              ? 'none'
-              : 'legacy'
+            ? 'legacy'
             : 'default',
       }
     }
@@ -2652,12 +2617,11 @@ export async function persistPluginSettingsProviderSelection(
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   pruneRedundantDerivedStorageConfig(config)
-  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
   const configuredRef = config.plugins?.[capability]
     ? cloneProviderRef(config.plugins[capability])
     : null
 
-  if ((capability === 'auth.visibility' || capability === 'webhook.delivery' || capability === 'callback.runtime') && normalizedProviderId === 'none') {
+  if ((capability === 'auth.visibility' || capability === 'webhook.delivery' || capability === 'callback.runtime') && providerId === 'none') {
     getMutablePluginsRecord(config)[capability] = configuredRef?.options !== undefined
       ? { provider: 'none', options: structuredClone(configuredRef.options) }
       : { provider: 'none' }
@@ -2666,16 +2630,16 @@ export async function persistPluginSettingsProviderSelection(
   }
 
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
-  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, normalizedProviderId)
-  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, normalizedProviderId)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, providerId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
   if (selectedRef?.provider && isRecord(selectedRef.options)) {
     setCachedPluginProviderOptions(config, capability, selectedRef.provider, selectedRef.options)
   }
 
-  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, normalizedProviderId)
-  const selectedTargetOptions = selectedRef?.provider === normalizedProviderId && isRecord(selectedRef.options)
+  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, providerId)
+  const selectedTargetOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
     ? structuredClone(selectedRef.options)
     : undefined
   const nextOptions = selectedTargetOptions
@@ -2692,7 +2656,7 @@ export async function persistPluginSettingsProviderSelection(
     ? normalizePluginSettingsProviderOptionsForPersistence(capability, currentTargetOptions, nextOptions)
     : undefined
   const nextRef = {
-    provider: normalizedProviderId,
+    provider: providerId,
     ...(persistedOptions !== undefined ? { options: persistedOptions } : {}),
   }
 
@@ -2700,7 +2664,7 @@ export async function persistPluginSettingsProviderSelection(
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(
@@ -3759,8 +3723,7 @@ export function collectActiveExternalPackageNames(config: {
 
   const visibilityProvider = config.plugins?.['auth.visibility']?.provider
     ?? config.auth?.['auth.visibility']?.provider
-    ?? 'none'
-  if (visibilityProvider !== 'none') {
+  if (visibilityProvider && visibilityProvider !== 'none') {
     add(AUTH_PROVIDER_ALIASES.get(visibilityProvider) ?? visibilityProvider)
   }
 
@@ -3836,13 +3799,13 @@ function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
  * 3. Built-in `localfs`
  *
  * Auth plugins default to the `noop` compatibility providers (anonymous identity,
- * allow-all policy) plus disabled visibility filtering when `authCapabilities`
- * is not supplied, preserving the current open-access behavior.
+ * allow-all policy) when `authCapabilities` is not supplied, preserving
+ * the current open-access behavior.
  *
  * @param capabilities     - Normalized provider selections from {@link normalizeStorageCapabilities}.
  * @param kanbanDir        - Absolute path to the `.kanban` directory.
- * @param authCapabilities - Optional auth provider selections. Missing auth
- *                           namespaces are normalized to noop/no-provider defaults.
+ * @param authCapabilities - Optional normalized auth provider selections from
+ *                           {@link normalizeAuthCapabilities}. Defaults to noop providers.
  * @param webhookCapabilities - Optional normalized webhook provider selections from
  *                           {@link normalizeWebhookCapabilities}. When omitted, webhook
  *                           provider resolution is skipped and `bag.webhookProvider` is `null`.
@@ -3855,7 +3818,7 @@ function resolveAttachmentPlugin(ref: ProviderRef): AttachmentStoragePlugin {
 export function resolveCapabilityBag(
   capabilities: ResolvedCapabilities,
   kanbanDir: string,
-  authCapabilities?: AuthCapabilitySelections,
+  authCapabilities?: ResolvedAuthCapabilities,
   webhookCapabilities?: ResolvedWebhookCapabilities,
   cardStateCapabilities?: ResolvedCardStateCapabilities,
   callbackCapabilities?: ResolvedCallbackCapabilities,
@@ -3900,15 +3863,9 @@ export function resolveCapabilityBag(
   }
 
   const resolvedAuth: ResolvedAuthCapabilities = {
-    'auth.identity': authCapabilities?.['auth.identity']
-      ? cloneProviderRef(authCapabilities['auth.identity'])
-      : { provider: 'noop' },
-    'auth.policy': authCapabilities?.['auth.policy']
-      ? cloneProviderRef(authCapabilities['auth.policy'])
-      : { provider: 'noop' },
-    'auth.visibility': authCapabilities?.['auth.visibility']
-      ? cloneProviderRef(authCapabilities['auth.visibility'])
-      : { provider: 'none' },
+    'auth.identity': authCapabilities?.['auth.identity'] ?? { provider: 'noop' },
+    'auth.policy': authCapabilities?.['auth.policy'] ?? { provider: 'noop' },
+    'auth.visibility': authCapabilities?.['auth.visibility'] ?? { provider: 'none' },
   }
 
   // Card-state is auto-derived from the storage plugin when not explicitly

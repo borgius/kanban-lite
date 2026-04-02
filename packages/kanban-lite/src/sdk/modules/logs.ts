@@ -121,7 +121,9 @@ async function appendPersistedLogEntry(
   },
 ): Promise<{ card: Card; boardId: string; entry: LogEntry }> {
   if (!text?.trim()) throw new Error('Log text cannot be empty')
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
@@ -284,7 +286,9 @@ export async function appendActivityLog(
  * Clears all log entries for a card by deleting the `.log` file.
  */
 export async function clearLogs(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const logFileName = getLogFileName(card)

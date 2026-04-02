@@ -119,7 +119,13 @@ The core MCP server currently registers the following built-in tools. Active plu
 | `list_cards` | List card summaries with filtering and search support. |
 | `get_card` | Return the full card payload; supports partial card IDs. |
 | `get_active_card` | Return the currently active/open card, or `null` if none is active. |
-| `create_card` | Create a card with title/body plus optional status, priority, assignee, labels, metadata, actions, forms, and `formData`. |
+| `create_card` | Create a card with title/body plus optional status, priority, assignee, labels, seeded checklist `tasks`, metadata, actions, forms, and `formData`. |
+| `list_card_checklist_items` | Return the shared checklist read model for a card, including the checklist-wide add token. |
+| `add_card_checklist_item` | Append one checklist item to a card using the latest `expectedToken` from `list_card_checklist_items`. |
+| `edit_card_checklist_item` | Edit one checklist item with optional `expectedRaw` optimistic-concurrency checks. |
+| `delete_card_checklist_item` | Remove one checklist item with optional `expectedRaw` optimistic-concurrency checks. |
+| `check_card_checklist_item` | Mark one checklist item complete with optional `expectedRaw` optimistic-concurrency checks. |
+| `uncheck_card_checklist_item` | Mark one checklist item incomplete with optional `expectedRaw` optimistic-concurrency checks. |
 | `update_card` | Patch selected card fields; also supports replacing forms and `formData`. |
 | `submit_card_form` | Validate and persist a card form submission through the shared SDK form pipeline. |
 | `move_card` | Move a card to a new status column. |
@@ -229,6 +235,7 @@ Tool: `create_card`
   "body": "Collect incident details and assign an owner.",
   "status": "todo",
   "priority": "high",
+  "tasks": ["Draft incident summary", "- [x] Page on-call"],
   "actions": ["retry", "notify"],
   "forms": [
     { "name": "incident-report" }

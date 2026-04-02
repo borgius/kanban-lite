@@ -93,7 +93,7 @@ beforeEach(() => {
     reloadState: vi.fn(async () => undefined),
     onDispose: vi.fn(),
     refresh: vi.fn(),
-  }
+  } as unknown as Exclude<typeof KanbanPanel.currentPanel, undefined>
 })
 
 describe('extension auth token commands', () => {

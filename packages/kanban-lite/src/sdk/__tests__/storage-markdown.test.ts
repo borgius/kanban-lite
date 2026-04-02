@@ -26,6 +26,7 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     completedAt: null,
     labels: [],
     attachments: [],
+    tasks: undefined,
     comments: [],
     order: 'a0',
     content: '# Test Card\n\nDescription.',
@@ -110,6 +111,24 @@ describe('MarkdownStorageEngine', () => {
       const cards = await engine.scanCards(boardDir, 'default')
       expect(cards).toHaveLength(1)
       expect(cards[0].priority).toBe('high')
+    })
+
+    it('round-trips checklist tasks through markdown storage', async () => {
+      await engine.init()
+      const boardDir = path.join(kanbanDir, 'boards', 'default')
+      await engine.ensureBoardDirs(boardDir, ['backlog'])
+
+      const card = makeCard({
+        labels: ['tasks', 'in-progress'],
+        tasks: ['- [ ] reproduce', '- [x] ship fix'],
+        filePath: path.join(boardDir, 'backlog', '1-test-card-2025-01-01.md'),
+      })
+      await engine.writeCard(card)
+
+      const cards = await engine.scanCards(boardDir, 'default')
+      expect(cards).toHaveLength(1)
+      expect(cards[0].tasks).toEqual(card.tasks)
+      expect(cards[0].labels).toEqual(card.labels)
     })
   })
 

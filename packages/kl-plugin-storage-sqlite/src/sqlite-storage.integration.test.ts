@@ -24,6 +24,7 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     completedAt: null,
     labels: [],
     attachments: [],
+    tasks: undefined,
     comments: [],
     order: 'a0',
     content: '# Test Card\n\nDescription.',
@@ -75,9 +76,10 @@ describe('kl-plugin-storage-sqlite integration', () => {
     const db = new Database(dbPath, { readonly: true })
     const versionRow = db.prepare('SELECT version FROM schema_version').get() as { version: number }
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name)
+    const cardColumns = (db.prepare('PRAGMA table_info(cards)').all() as Array<{ name: string }>).map((row) => row.name)
     db.close()
 
-    expect(versionRow.version).toBe(2)
+    expect(versionRow.version).toBe(3)
     expect(tables).toEqual(expect.arrayContaining([
       'schema_version',
       'workspace',
@@ -87,6 +89,7 @@ describe('kl-plugin-storage-sqlite integration', () => {
       'labels',
       'webhooks',
     ]))
+    expect(cardColumns).toContain('tasks')
   })
 
   it('writes a card and reads it back', async () => {
@@ -118,6 +121,18 @@ describe('kl-plugin-storage-sqlite integration', () => {
     const cards = await engine.scanCards(boardDir, 'default')
     expect(cards[0].labels).toEqual(['bug', 'urgent'])
     expect(cards[0].metadata).toEqual({ sprint: '2026-Q1', estimate: 5 })
+  })
+
+  it('round-trips checklist tasks', async () => {
+    const boardDir = path.join(kanbanDir, 'boards', 'default')
+    await engine.writeCard(makeCard({
+      labels: ['tasks', 'in-progress'],
+      tasks: ['- [ ] reproduce', '- [x] verify'],
+    }))
+
+    const cards = await engine.scanCards(boardDir, 'default')
+    expect(cards[0].tasks).toEqual(['- [ ] reproduce', '- [x] verify'])
+    expect(cards[0].labels).toEqual(['tasks', 'in-progress'])
   })
 
   it('round-trips forms and formData', async () => {

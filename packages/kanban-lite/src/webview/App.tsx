@@ -101,6 +101,7 @@ function buildCardFrontmatter(card: Card): CardFrontmatter {
     actions: card.actions,
     forms: card.forms,
     formData: card.formData,
+    ...(card.tasks !== undefined ? { tasks: card.tasks } : {}),
   }
 }
 
@@ -644,25 +645,7 @@ function App(): React.JSX.Element {
       setEditingCard({
         id: card.id,
         content: card.content,
-        frontmatter: {
-          version: card.version,
-          id: card.id,
-          boardId: card.boardId,
-          status: card.status,
-          priority: card.priority,
-          assignee: card.assignee,
-          dueDate: card.dueDate,
-          created: card.created,
-          modified: card.modified,
-          completedAt: card.completedAt,
-          labels: card.labels,
-          attachments: card.attachments,
-          order: card.order,
-          metadata: card.metadata,
-          actions: card.actions,
-          forms: card.forms,
-          formData: card.formData,
-        },
+        frontmatter: buildCardFrontmatter(card),
         comments: card.comments || [],
         logs: [],
         contentVersion: contentVersionRef.current,
@@ -773,6 +756,62 @@ function App(): React.JSX.Element {
     if (!editingCard) return
     vscode.postMessage({ type: 'deleteComment', cardId: editingCard.id, commentId })
   }
+
+  const handleAddChecklistItem = useCallback((text: string, expectedToken: string): void => {
+    if (!editingCard) return
+    vscode.postMessage({
+      type: 'addChecklistItem',
+      cardId: editingCard.id,
+      text,
+      expectedToken,
+      boardId: editingCard.frontmatter.boardId,
+    })
+  }, [editingCard])
+
+  const handleEditChecklistItem = useCallback((index: number, text: string, expectedRaw?: string): void => {
+    if (!editingCard) return
+    vscode.postMessage({
+      type: 'editChecklistItem',
+      cardId: editingCard.id,
+      index,
+      text,
+      expectedRaw,
+      boardId: editingCard.frontmatter.boardId,
+    })
+  }, [editingCard])
+
+  const handleDeleteChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+    if (!editingCard) return
+    vscode.postMessage({
+      type: 'deleteChecklistItem',
+      cardId: editingCard.id,
+      index,
+      expectedRaw,
+      boardId: editingCard.frontmatter.boardId,
+    })
+  }, [editingCard])
+
+  const handleCheckChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+    if (!editingCard) return
+    vscode.postMessage({
+      type: 'checkChecklistItem',
+      cardId: editingCard.id,
+      index,
+      expectedRaw,
+      boardId: editingCard.frontmatter.boardId,
+    })
+  }, [editingCard])
+
+  const handleUncheckChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+    if (!editingCard) return
+    vscode.postMessage({
+      type: 'uncheckChecklistItem',
+      cardId: editingCard.id,
+      index,
+      expectedRaw,
+      boardId: editingCard.frontmatter.boardId,
+    })
+  }, [editingCard])
 
   const handleClearLogs = (): void => {
     if (!editingCard) return
@@ -1164,6 +1203,11 @@ function App(): React.JSX.Element {
                     onUpdateComment={handleUpdateComment}
                     onDeleteComment={handleDeleteComment}
                     onTransferToBoard={handleTransferToBoard}
+                    onAddChecklistItem={handleAddChecklistItem}
+                    onEditChecklistItem={handleEditChecklistItem}
+                    onDeleteChecklistItem={handleDeleteChecklistItem}
+                    onCheckChecklistItem={handleCheckChecklistItem}
+                    onUncheckChecklistItem={handleUncheckChecklistItem}
                     onTriggerAction={handleTriggerAction}
                     logs={editingCard.logs}
                     onClearLogs={handleClearLogs}

@@ -1319,8 +1319,10 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const inventory = await sdk.listPluginSettings()
-      const provider = await sdk.getPluginSettings('auth.identity', 'local')
+      const { inventory, provider } = await sdk.runWithAuth({ actorHint: 'inventory-reader' }, async () => ({
+        inventory: await sdk.listPluginSettings(),
+        provider: await sdk.getPluginSettings('auth.identity', 'local'),
+      }))
       const authIdentity = inventory.capabilities.find((entry) => entry.capability === 'auth.identity')
 
       expect(authIdentity?.selected).toEqual({
@@ -1684,16 +1686,16 @@ describe('KanbanSDK plugin settings inventory', () => {
     const sdk = new KanbanSDK(kanbanDir)
 
     try {
-      const updated = await sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+      const updated = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () => sdk.updatePluginSettingsOptions('auth.identity', 'local', {
         apiToken: '••••••',
         users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
-      })
+      }))
       const persistedConfig = JSON.parse(
         fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
       ) as {
         plugins?: Record<string, { provider: string; options?: { apiToken?: string; users?: Array<{ password: string; role?: string }> } }>
       }
-      const readback = await sdk.getPluginSettings('auth.identity', 'local')
+      const readback = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () => sdk.getPluginSettings('auth.identity', 'local'))
 
       expect(updated.selected).toEqual({
         capability: 'auth.identity',
@@ -2302,6 +2304,7 @@ describe('auth capability resolution', () => {
       resolveCapabilityBag(storageCaps, kanbanDir, {
         'auth.identity': { provider: 'unknown-provider' },
         'auth.policy': { provider: 'noop' },
+        'auth.visibility': { provider: 'none' },
       })
     ).toThrow(/npm install unknown-provider/i)
   })
@@ -2311,6 +2314,7 @@ describe('auth capability resolution', () => {
       resolveCapabilityBag(storageCaps, kanbanDir, {
         'auth.identity': { provider: 'noop' },
         'auth.policy': { provider: 'unknown-provider' },
+        'auth.visibility': { provider: 'none' },
       })
     ).toThrow(/npm install unknown-provider/i)
   })
@@ -2382,6 +2386,7 @@ describe('card.state public contract', () => {
       canUseDefaultCardStateActor({
         'auth.identity': { provider: 'custom-identity' },
         'auth.policy': { provider: 'noop' },
+        'auth.visibility': { provider: 'none' },
       })
     ).toBe(false)
   })
@@ -2438,6 +2443,7 @@ describe('KanbanSDK auth wiring', () => {
           },
         },
         'auth.policy': { provider: 'local' },
+        'auth.visibility': { provider: 'none' },
       },
     )
     expect(bag.standaloneHttpPlugins.some((plugin) => plugin.manifest.id === 'kl-plugin-auth-standalone')).toBe(true)
@@ -2595,7 +2601,11 @@ describe('KanbanSDK._authorizeAction', () => {
     const bag = resolveCapabilityBag(
       { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
       kanbanDir,
-      { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
+      {
+        'auth.identity': { provider: 'noop' },
+        'auth.policy': { provider: 'noop' },
+        'auth.visibility': { provider: 'none' },
+      },
     )
     // Patch bag's authPolicy with our deny-all override
     Object.assign(bag, { authPolicy: denyAllPolicy })
@@ -2617,7 +2627,11 @@ describe('KanbanSDK._authorizeAction', () => {
     const bag = resolveCapabilityBag(
       { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
       kanbanDir,
-      { 'auth.identity': { provider: 'noop' }, 'auth.policy': { provider: 'noop' } },
+      {
+        'auth.identity': { provider: 'noop' },
+        'auth.policy': { provider: 'noop' },
+        'auth.visibility': { provider: 'none' },
+      },
     )
     Object.assign(bag, { authPolicy: denyAllPolicy })
 
@@ -2822,6 +2836,7 @@ describe('RBAC built-in provider pair', () => {
   const rbacAuthCaps = {
     'auth.identity': { provider: 'rbac' },
     'auth.policy': { provider: 'rbac' },
+    'auth.visibility': { provider: 'none' },
   } as const
 
   // -------------------------------------------------------------------------

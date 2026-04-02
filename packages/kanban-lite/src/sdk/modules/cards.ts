@@ -12,6 +12,7 @@ import type { AuthIdentity, AuthVisibilityFilterInput } from '../plugins'
 import { sanitizeCard } from '../types'
 import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
 import type { SDKContext } from './context'
+import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistSeedTasks, normalizeChecklistTaskLine, normalizeChecklistTasks, projectCardChecklistState } from './checklist'
 import { appendActivityLog } from './logs'
 
 interface ActiveCardState {
@@ -38,6 +39,30 @@ type AuthScopedCardsContext = SDKContext & {
   readonly _currentAuthContext?: AuthContext
 }
 
+function setChecklistTaskChecked(task: string, checked: boolean): string {
+  return normalizeChecklistTaskLine(task).replace(/^- \[(?: |x)\]/, `- [${checked ? 'x' : ' '}]`)
+}
+
+function requireExpectedRaw(current: string, expectedRaw: string | undefined): void {
+  if (typeof expectedRaw !== 'string' || expectedRaw.trim().length === 0) {
+    throw new Error('Checklist mutations for existing items require expectedRaw')
+  }
+
+  if (normalizeChecklistTaskLine(expectedRaw) !== current) {
+    throw new Error('Checklist item is stale: expectedRaw does not match current value')
+  }
+}
+
+function requireExpectedChecklistToken(currentTasks: readonly string[] | undefined, expectedToken: string | undefined): void {
+  if (typeof expectedToken !== 'string' || expectedToken.trim().length === 0) {
+    throw new Error('Checklist additions require expectedToken from the latest checklist read model')
+  }
+
+  if (expectedToken !== buildChecklistToken(currentTasks)) {
+    throw new Error('Checklist is stale: expectedToken does not match current checklist state')
+  }
+}
+
 const CARD_EDIT_ACTIVITY_FIELDS = new Set<keyof Card>([
   'content',
   'priority',
@@ -49,6 +74,33 @@ const CARD_EDIT_ACTIVITY_FIELDS = new Set<keyof Card>([
 
 function getQualifyingCardEditFields(updates: Partial<Card>): string[] {
   return Object.keys(updates).filter((key) => CARD_EDIT_ACTIVITY_FIELDS.has(key as keyof Card))
+}
+
+function hasSameReservedChecklistLabels(left: readonly string[], right: readonly string[]): boolean {
+  const leftReserved = new Set(left.filter((label) => isReservedChecklistLabel(label)))
+  const rightReserved = new Set(right.filter((label) => isReservedChecklistLabel(label)))
+
+  if (leftReserved.size !== rightReserved.size) {
+    return false
+  }
+
+  for (const label of leftReserved) {
+    if (!rightReserved.has(label)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+async function assertChecklistReservedLabelUpdateAllowed(ctx: SDKContext, card: Card, labels: readonly string[]): Promise<void> {
+  const visibleReservedLabels = (await canShowChecklist(ctx))
+    ? card.labels.filter((label) => isReservedChecklistLabel(label))
+    : []
+
+  if (!hasSameReservedChecklistLabels(labels, visibleReservedLabels)) {
+    throw new Error('Checklist-derived labels cannot be edited directly')
+  }
 }
 
 function getSchemaProperties(schema: Record<string, unknown>): Set<string> {
@@ -195,7 +247,8 @@ function buildVisibilityAuthContext(
   identity: AuthIdentity | null,
   roles: readonly string[],
 ): AuthContext {
-  const { identity: _ignoredIdentity, ...restAuth } = auth
+  const restAuth = { ...auth }
+  delete restAuth.identity
   if (!identity?.subject) return restAuth
 
   const groups = Array.isArray(identity.groups)
@@ -222,6 +275,10 @@ async function applyCardVisibilityFilter(ctx: SDKContext, cards: Card[]): Promis
   }
 
   const activeAuthContext = (ctx as AuthScopedCardsContext)._currentAuthContext ?? {}
+  if (Object.keys(activeAuthContext).length === 0) {
+    return cards
+  }
+
   const identity = await capabilities.authIdentity.resolveIdentity(activeAuthContext)
   const roles = normalizeResolvedRoles(identity)
   const input: AuthVisibilityFilterInput = {
@@ -231,6 +288,23 @@ async function applyCardVisibilityFilter(ctx: SDKContext, cards: Card[]): Promis
   }
 
   return visibilityProvider.filterVisibleCards(cards, input)
+}
+
+async function canShowChecklist(ctx: SDKContext): Promise<boolean> {
+  const capabilities = ctx.capabilities
+  if (!capabilities) {
+    return true
+  }
+
+  const activeAuthContext = (ctx as AuthScopedCardsContext)._currentAuthContext ?? {}
+
+  try {
+    const identity = await capabilities.authIdentity.resolveIdentity(activeAuthContext)
+    const decision = await capabilities.authPolicy.checkPolicy(identity, 'card.checklist.show', activeAuthContext)
+    return decision.allowed
+  } catch {
+    return false
+  }
 }
 
 async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardState | null> {
@@ -270,13 +344,42 @@ export async function listCards(
     fuzzy?: boolean
   } = {}
 ): Promise<Card[]> {
+  const cards = await listCardsRaw(ctx, { columns, boardId })
+  const checklistVisible = await canShowChecklist(ctx)
+  const projectedCards = cards.map((card) => projectCardChecklistState(card, checklistVisible))
+
+  const visibleCards = await applyCardVisibilityFilter(ctx, projectedCards)
+
+  const hasSearch = Boolean(searchQuery && searchQuery.trim().length > 0)
+  const hasMetaFilter = Boolean(metaFilter && Object.keys(metaFilter).length > 0)
+  const filtered = hasMetaFilter || hasSearch
+    ? visibleCards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
+    : visibleCards
+  if (sort) {
+    const [field, dir] = sort.split(':')
+    return filtered.sort((a, b) => {
+      const aVal = field === 'created' ? a.created : a.modified
+      const bVal = field === 'created' ? b.created : b.modified
+      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    })
+  }
+  return filtered.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+}
+
+export async function listCardsRaw(
+  ctx: SDKContext,
+  { columns, boardId }: {
+    columns?: string[]
+    boardId?: string
+  } = {}
+): Promise<Card[]> {
   await ctx._ensureMigrated()
   const boardDir = ctx._boardDir(boardId)
   const resolvedBoardId = ctx._resolveBoardId(boardId)
 
   await ctx._storage.ensureBoardDirs(boardDir, columns)
 
-  const cards = await ctx._storage.scanCards(boardDir, resolvedBoardId)
+  const cards = (await ctx._storage.scanCards(boardDir, resolvedBoardId)).map((card) => normalizeCardChecklistState(card))
 
   // Migrate legacy integer order values to fractional indices
   const hasLegacyOrder = cards.some(c => /^\d+$/.test(c.order))
@@ -305,22 +408,7 @@ export async function listCards(
     syncCardIdCounter(ctx.workspaceRoot, resolvedBoardId, numericIds)
   }
 
-  const visibleCards = await applyCardVisibilityFilter(ctx, cards)
-
-  const hasSearch = Boolean(searchQuery && searchQuery.trim().length > 0)
-  const hasMetaFilter = Boolean(metaFilter && Object.keys(metaFilter).length > 0)
-  const filtered = hasMetaFilter || hasSearch
-    ? visibleCards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
-    : visibleCards
-  if (sort) {
-    const [field, dir] = sort.split(':')
-    return filtered.sort((a, b) => {
-      const aVal = field === 'created' ? a.created : a.modified
-      const bVal = field === 'created' ? b.created : b.modified
-      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
-    })
-  }
-  return filtered.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+  return cards
 }
 
 /**
@@ -329,6 +417,20 @@ export async function listCards(
 export async function getCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
   const cards = await listCards(ctx, { boardId })
   return cards.find(c => c.id === cardId) || null
+}
+
+export async function getCardRaw(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+  const cards = await listCardsRaw(ctx, { boardId })
+  return cards.find(c => c.id === cardId) || null
+}
+
+async function getMutableCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+  const visibleCard = await getCard(ctx, { cardId, boardId })
+  if (!visibleCard) {
+    return null
+  }
+
+  return getCardRaw(ctx, { cardId, boardId })
 }
 
 /**
@@ -404,15 +506,16 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
   const filename = generateCardFilename(numericId, title)
   const now = new Date().toISOString()
 
-  const cards = await listCards(ctx, { boardId: resolvedBoardId })
+  const cards = await listCardsRaw(ctx, { boardId: resolvedBoardId })
   const cardsInStatus = cards
     .filter(c => c.status === status)
     .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
   const lastOrder = cardsInStatus.length > 0
     ? cardsInStatus[cardsInStatus.length - 1].order
     : null
+  const seededTasks = normalizeChecklistSeedTasks(data.tasks)
 
-  const card: Card = {
+  const card = normalizeCardChecklistState({
     version: CARD_FORMAT_VERSION,
     id: String(numericId),
     boardId: resolvedBoardId,
@@ -425,6 +528,7 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
     completedAt: ctx._isCompletedStatus(status, resolvedBoardId) ? now : null,
     labels: data.labels || [],
     attachments: data.attachments || [],
+    ...(seededTasks ? { tasks: seededTasks } : {}),
     comments: [],
     order: generateKeyBetween(lastOrder, null),
     content: data.content,
@@ -435,7 +539,7 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
     filePath: ctx._storage.type === 'markdown'
       ? getCardFilePath(boardDir, status, filename)
       : ''
-  }
+  })
 
   await ctx._storage.writeCard(card)
 
@@ -449,7 +553,7 @@ export async function updateCard(
   ctx: SDKContext,
   { cardId, updates, boardId }: { cardId: string; updates: Partial<Card>; boardId?: string }
 ): Promise<Card> {
-  const card = await getCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
@@ -461,6 +565,12 @@ export async function updateCard(
   delete safeUpdates.filePath
   delete safeUpdates.id
   delete safeUpdates.boardId
+  if (Object.prototype.hasOwnProperty.call(safeUpdates, 'tasks')) {
+    throw new Error('Card tasks can only be changed through checklist operations')
+  }
+  if (Array.isArray(safeUpdates.labels)) {
+    await assertChecklistReservedLabelUpdateAllowed(ctx, card, safeUpdates.labels)
+  }
   const qualifyingFields = getQualifyingCardEditFields(safeUpdates)
   Object.assign(card, safeUpdates)
   card.modified = new Date().toISOString()
@@ -469,35 +579,37 @@ export async function updateCard(
     card.completedAt = ctx._isCompletedStatus(card.status, resolvedBoardId) ? new Date().toISOString() : null
   }
 
-  await ctx._storage.writeCard(card)
+  const nextCard = normalizeCardChecklistState(card)
 
-  const newTitle = getTitleFromContent(card.content)
-  const numericId = extractNumericId(card.id)
+  await ctx._storage.writeCard(nextCard)
+
+  const newTitle = getTitleFromContent(nextCard.content)
+  const numericId = extractNumericId(nextCard.id)
   if (numericId !== null && newTitle !== oldTitle) {
     const newFilename = generateCardFilename(numericId, newTitle)
-    const newPath = await ctx._storage.renameCard(card, newFilename)
-    if (newPath) card.filePath = newPath
+    const newPath = await ctx._storage.renameCard(nextCard, newFilename)
+    if (newPath) nextCard.filePath = newPath
   }
 
-  if (oldStatus !== card.status) {
-    const newPath = await ctx._storage.moveCard(card, boardDir, card.status)
-    if (newPath) card.filePath = newPath
+  if (oldStatus !== nextCard.status) {
+    const newPath = await ctx._storage.moveCard(nextCard, boardDir, nextCard.status)
+    if (newPath) nextCard.filePath = newPath
   }
 
-  if (oldStatus !== card.status) {
+  if (oldStatus !== nextCard.status) {
     await appendActivityLog(ctx, {
-      cardId: card.id,
+      cardId: nextCard.id,
       boardId: resolvedBoardId,
       eventType: 'card.status.changed',
-      text: `Status changed: \`${oldStatus}\` → \`${card.status}\``,
+      text: `Status changed: \`${oldStatus}\` → \`${nextCard.status}\``,
       metadata: {
         previousStatus: oldStatus,
-        status: card.status,
+        status: nextCard.status,
       },
     }).catch(() => {})
   } else if (qualifyingFields.length > 0) {
     await appendActivityLog(ctx, {
-      cardId: card.id,
+      cardId: nextCard.id,
       boardId: resolvedBoardId,
       eventType: 'card.updated',
       text: `Card updated: ${qualifyingFields.join(', ')}`,
@@ -506,7 +618,111 @@ export async function updateCard(
       },
     }).catch(() => {})
   }
-  return card
+  return nextCard
+}
+
+function getChecklistTaskAt(card: Card, index: number): string {
+  const tasks = card.tasks ?? []
+  if (!Number.isInteger(index) || index < 0 || index >= tasks.length) {
+    throw new Error(`Checklist item not found at index ${index}`)
+  }
+
+  return tasks[index]
+}
+
+async function writeChecklistCard(ctx: SDKContext, card: Card): Promise<Card> {
+  card.modified = new Date().toISOString()
+  const nextCard = normalizeCardChecklistState(card)
+  await ctx._storage.writeCard(nextCard)
+  return nextCard
+}
+
+/** Adds a new checklist item to a card. */
+export async function addChecklistItem(
+  ctx: SDKContext,
+  { cardId, text, expectedToken, boardId }: { cardId: string; text: string; expectedToken?: string; boardId?: string }
+): Promise<Card> {
+  const card = await getMutableCard(ctx, { cardId, boardId })
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const currentTasks = normalizeChecklistTasks(card.tasks) ?? []
+  requireExpectedChecklistToken(currentTasks, expectedToken)
+
+  card.tasks = [...currentTasks, buildChecklistTask(text)]
+  return writeChecklistCard(ctx, card)
+}
+
+/** Edits the text of an existing checklist item while preserving its checked state. */
+export async function editChecklistItem(
+  ctx: SDKContext,
+  { cardId, index, text, expectedRaw, boardId }: { cardId: string; index: number; text: string; expectedRaw?: string; boardId?: string }
+): Promise<Card> {
+  const card = await getMutableCard(ctx, { cardId, boardId })
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const current = getChecklistTaskAt(card, index)
+  requireExpectedRaw(current, expectedRaw)
+
+  const nextTasks = [...(card.tasks ?? [])]
+  nextTasks[index] = buildChecklistTask(text, current.startsWith('- [x]'))
+  card.tasks = nextTasks
+  return writeChecklistCard(ctx, card)
+}
+
+/** Deletes an existing checklist item by index with stale-write protection. */
+export async function deleteChecklistItem(
+  ctx: SDKContext,
+  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+): Promise<Card> {
+  const card = await getMutableCard(ctx, { cardId, boardId })
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const current = getChecklistTaskAt(card, index)
+  requireExpectedRaw(current, expectedRaw)
+
+  const nextTasks = [...(card.tasks ?? [])]
+  nextTasks.splice(index, 1)
+  if (nextTasks.length > 0) {
+    card.tasks = nextTasks
+  } else {
+    delete card.tasks
+  }
+
+  return writeChecklistCard(ctx, card)
+}
+
+/** Marks an existing checklist item complete with stale-write protection. */
+export async function checkChecklistItem(
+  ctx: SDKContext,
+  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+): Promise<Card> {
+  const card = await getMutableCard(ctx, { cardId, boardId })
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const current = getChecklistTaskAt(card, index)
+  requireExpectedRaw(current, expectedRaw)
+
+  const nextTasks = [...(card.tasks ?? [])]
+  nextTasks[index] = setChecklistTaskChecked(current, true)
+  card.tasks = nextTasks
+  return writeChecklistCard(ctx, card)
+}
+
+/** Marks an existing checklist item incomplete with stale-write protection. */
+export async function uncheckChecklistItem(
+  ctx: SDKContext,
+  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+): Promise<Card> {
+  const card = await getMutableCard(ctx, { cardId, boardId })
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+
+  const current = getChecklistTaskAt(card, index)
+  requireExpectedRaw(current, expectedRaw)
+
+  const nextTasks = [...(card.tasks ?? [])]
+  nextTasks[index] = setChecklistTaskChecked(current, false)
+  card.tasks = nextTasks
+  return writeChecklistCard(ctx, card)
 }
 
 /**
@@ -547,7 +763,7 @@ export async function triggerAction(
  * Validates and persists a card form submission, then emits `form.submit`.
  */
 export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promise<SubmitFormResult> {
-  const card = await getCard(ctx, { cardId: input.cardId, boardId: input.boardId })
+  const card = await getMutableCard(ctx, { cardId: input.cardId, boardId: input.boardId })
   if (!card) throw new Error(`Card not found: ${input.cardId}`)
 
   const resolvedBoardId = card.boardId || ctx._resolveBoardId(input.boardId)
@@ -572,9 +788,10 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
     [form.id]: submittedData,
   }
   card.modified = new Date().toISOString()
-  await ctx._storage.writeCard(card)
+  const nextCard = normalizeCardChecklistState(card)
+  await ctx._storage.writeCard(nextCard)
   await appendActivityLog(ctx, {
-    cardId: card.id,
+    cardId: nextCard.id,
     boardId: resolvedBoardId,
     eventType: 'form.submitted',
     text: `Form submitted: \`${form.name}\``,
@@ -585,7 +802,7 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
     },
   }).catch(() => {})
 
-  const persistedCard = await ctx.getCard(card.id, resolvedBoardId) ?? card
+  const persistedCard = await ctx.getCard(nextCard.id, resolvedBoardId) ?? nextCard
 
   const event: FormSubmitEvent = {
     boardId: resolvedBoardId,
@@ -604,7 +821,10 @@ export async function moveCard(
   ctx: SDKContext,
   { cardId, newStatus, position, boardId }: { cardId: string; newStatus: string; position?: number; boardId?: string }
 ): Promise<Card> {
-  const cards = await listCards(ctx, { boardId })
+  const visibleCard = await getCard(ctx, { cardId, boardId })
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+
+  const cards = await listCardsRaw(ctx, { boardId })
   const card = cards.find(c => c.id === cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
@@ -629,16 +849,18 @@ export async function moveCard(
   const after = pos < targetColumnCards.length ? targetColumnCards[pos].order : null
   card.order = generateKeyBetween(before, after)
 
-  await ctx._storage.writeCard(card)
+  const nextCard = normalizeCardChecklistState(card)
+
+  await ctx._storage.writeCard(nextCard)
 
   if (oldStatus !== newStatus) {
-    const newPath = await ctx._storage.moveCard(card, boardDir, newStatus)
-    if (newPath) card.filePath = newPath
+    const newPath = await ctx._storage.moveCard(nextCard, boardDir, newStatus)
+    if (newPath) nextCard.filePath = newPath
   }
 
   if (oldStatus !== newStatus) {
     await appendActivityLog(ctx, {
-      cardId: card.id,
+      cardId: nextCard.id,
       boardId: resolvedBoardId,
       eventType: 'card.status.changed',
       text: `Status changed: \`${oldStatus}\` → \`${newStatus}\``,
@@ -648,14 +870,14 @@ export async function moveCard(
       },
     }).catch(() => {})
   }
-  return card
+  return nextCard
 }
 
 /**
  * Soft-deletes a card by moving it to the `deleted` status column.
  */
 export async function deleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const card = await getCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   if (card.status === DELETED_STATUS_ID) return
   await updateCard(ctx, { cardId, updates: { status: DELETED_STATUS_ID }, boardId })
@@ -665,7 +887,7 @@ export async function deleteCard(ctx: SDKContext, { cardId, boardId }: { cardId:
  * Permanently deletes a card's file from disk.
  */
 export async function permanentlyDeleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const card = await getCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   await ctx._storage.deleteCard(card)
 }

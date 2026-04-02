@@ -155,4 +155,34 @@ describe('CardEditor', () => {
     expect(markup).toContain('card-attachment-tags')
     expect(markup).toContain('card-attachment-tag')
   })
+
+  it('hides checklist-derived reserved labels from the manual label editor affordances', () => {
+    const markup = renderToStaticMarkup(
+      <CardEditor
+        cardId="58"
+        content={'# Artificial Intelligence and Business Development\n\nNeed final review.'}
+        frontmatter={createFrontmatter({ labels: ['onsite', 'tasks', 'in-progress'] })}
+        comments={[]}
+        onSave={() => {}}
+        onClose={() => {}}
+        onDelete={() => {}}
+        onPermanentDelete={() => {}}
+        onRestore={() => {}}
+        onOpenFile={() => {}}
+        onDownloadCard={() => {}}
+        onStartWithAI={() => {}}
+        onAddAttachment={() => {}}
+        onOpenAttachment={() => {}}
+        onRemoveAttachment={() => {}}
+        onAddComment={() => {}}
+        onUpdateComment={() => {}}
+        onDeleteComment={() => {}}
+        onTransferToBoard={() => {}}
+      />,
+    )
+
+    expect(markup).toContain('Remove label onsite')
+    expect(markup).not.toContain('Remove label tasks')
+    expect(markup).not.toContain('Remove label in-progress')
+  })
 })

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parseCardFile, serializeCard } from '../parser'
 import { KanbanSDK } from '../KanbanSDK'
 import * as Cards from '../modules/cards'
-import { DEFAULT_COLUMNS } from '../../shared/types'
+import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset } from '../../shared/types'
 import type { Card } from '../../shared/types'
 import type { KanbanConfig } from '../../shared/config'
 
@@ -40,6 +40,8 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     showDeletedColumn: false,
     boardZoom: 100,
     cardZoom: 100,
+    boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
+    boardBackgroundPreset: getDefaultBoardBackgroundPreset(DEFAULT_BOARD_BACKGROUND_MODE),
     port: 3000,
     nextCardId: 1,
     ...overrides
@@ -528,7 +530,7 @@ describe('SDK listCards - fuzzy search with SQLite storage', () => {
   it('uses the same fuzzy metadata search path for SQLite-backed cards', async () => {
     await sdk.createCard({ content: '# O\n\nImplements API plumbing.', metadata: { team: 'backend' } })
 
-    const result = await Cards.listCards(asCardsContext(sdk), undefined, undefined, undefined, undefined, 'backnd', true)
+    const result = await Cards.listCards(asCardsContext(sdk), { searchQuery: 'backnd', fuzzy: true })
 
     expect(result).toHaveLength(1)
     expect(result[0].content).toContain('# O')

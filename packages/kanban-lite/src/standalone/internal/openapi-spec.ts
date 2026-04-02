@@ -57,6 +57,14 @@ const commentIdParam = {
   description: 'Comment identifier',
 }
 
+const checklistIndexParam = {
+  name: 'index',
+  in: 'path' as const,
+  required: true as const,
+  schema: { type: 'integer' as const, minimum: 0 },
+  description: 'Zero-based checklist item index',
+}
+
 const labelNameParam = {
   name: 'name',
   in: 'path' as const,
@@ -103,6 +111,7 @@ const createTaskBodySchema = {
     assignee: { type: 'string' as const, description: 'Assigned team member.' },
     dueDate: { type: 'string' as const, description: 'Due date (ISO 8601).' },
     labels: { type: 'array' as const, items: { type: 'string' as const }, description: 'Labels/tags.' },
+    tasks: { type: 'array' as const, items: { type: 'string' as const }, description: 'Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one.' },
     metadata: { type: 'object' as const, description: 'Arbitrary user-defined key/value metadata.' },
     forms: { type: 'array' as const, description: 'Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions.' },
     formData: { type: 'object' as const, description: 'Per-form saved data keyed by resolved form ID.' },
@@ -132,6 +141,31 @@ const cardStateReadBodySchema = {
         updatedAt: { type: 'string' as const },
       },
     },
+  },
+}
+
+const checklistCreateBodySchema = {
+  type: 'object' as const,
+  required: ['text' as const, 'expectedToken' as const],
+  properties: {
+    text: { type: 'string' as const, description: 'Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.' },
+    expectedToken: { type: 'string' as const, description: 'Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates.' },
+  },
+}
+
+const checklistEditBodySchema = {
+  type: 'object' as const,
+  required: ['text' as const],
+  properties: {
+    text: { type: 'string' as const, description: 'Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.' },
+    expectedRaw: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied.' },
+  },
+}
+
+const checklistExpectedRawBodySchema = {
+  type: 'object' as const,
+  properties: {
+    expectedRaw: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.' },
   },
 }
 
@@ -188,6 +222,7 @@ export const KANBAN_OPENAPI_SPEC = {
           assignee: { type: 'string', nullable: true },
           dueDate: { type: 'string', nullable: true, description: 'ISO 8601 date.' },
           labels: { type: 'array', items: { type: 'string' } },
+          tasks: { type: 'array', items: { type: 'string' }, description: 'Optional single-line Markdown checklist items stored on the card when checklist visibility is allowed.' },
           metadata: { type: 'object', description: 'Arbitrary user-defined key/value metadata.' },
           content: { type: 'string', description: 'Full Markdown content.' },
           comments: { type: 'array', description: 'Attached comments.' },
@@ -195,6 +230,35 @@ export const KANBAN_OPENAPI_SPEC = {
           formData: { type: 'object', description: 'Saved form data keyed by form ID.' },
           actions: { type: 'array', description: 'Action names available on the card.' },
           cardState: { $ref: '#/components/schemas/CardStateReadModel' },
+        },
+      },
+      ChecklistItemReadModel: {
+        type: 'object',
+        description: 'One checklist item returned by the shared checklist read model.',
+        properties: {
+          index: { type: 'integer' },
+          raw: { type: 'string', description: 'Canonical raw Markdown task line stored on the card.' },
+          expectedRaw: { type: 'string', description: 'Caller-visible raw Markdown task line to send back for optimistic concurrency checks.' },
+          checked: { type: 'boolean' },
+          text: { type: 'string', description: 'Task text with simple inline Markdown preserved.' },
+        },
+      },
+      ChecklistReadModel: {
+        type: 'object',
+        description: 'Shared checklist read model returned by REST, CLI, and MCP checklist surfaces.',
+        properties: {
+          cardId: { type: 'string' },
+          boardId: { type: 'string' },
+          token: { type: 'string', description: 'Opaque optimistic-concurrency token required for checklist adds.' },
+          summary: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer' },
+              completed: { type: 'integer' },
+              incomplete: { type: 'integer' },
+            },
+          },
+          items: { type: 'array', items: { $ref: '#/components/schemas/ChecklistItemReadModel' } },
         },
       },
       CardStateCursor: {
@@ -533,6 +597,96 @@ export const KANBAN_OPENAPI_SPEC = {
         responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
       },
     },
+    '/api/boards/{boardId}/tasks/{id}/checklist': {
+      get: {
+        tags: ['Board Tasks'],
+        summary: 'List checklist items (board-scoped)',
+        description: 'Returns the shared checklist read model for one task on the specified board.',
+        parameters: [boardIdParam, taskIdParam],
+        responses: { 200: { description: 'Checklist read model.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 404: { description: 'Not found.' } },
+      },
+      post: {
+        tags: ['Board Tasks'],
+        summary: 'Add checklist item (board-scoped)',
+        description: 'Appends a new checklist item to the task on the specified board and returns the refreshed checklist read model.',
+        parameters: [boardIdParam, taskIdParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: checklistCreateBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/checklist/{index}': {
+      put: {
+        tags: ['Board Tasks'],
+        summary: 'Edit checklist item (board-scoped)',
+        description: 'Edits one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [boardIdParam, taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: checklistEditBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+      delete: {
+        tags: ['Board Tasks'],
+        summary: 'Delete checklist item (board-scoped)',
+        description: 'Deletes one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [boardIdParam, taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/checklist/{index}/check': {
+      post: {
+        tags: ['Board Tasks'],
+        summary: 'Check checklist item (board-scoped)',
+        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [boardIdParam, taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/checklist/{index}/uncheck': {
+      post: {
+        tags: ['Board Tasks'],
+        summary: 'Uncheck checklist item (board-scoped)',
+        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [boardIdParam, taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
     '/api/boards/{boardId}/tasks/{id}/move': {
       patch: {
         tags: ['Board Tasks'],
@@ -735,6 +889,96 @@ export const KANBAN_OPENAPI_SPEC = {
           },
         },
         responses: { 200: { description: 'Card-state mutation result.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
+      },
+    },
+    '/api/tasks/{id}/checklist': {
+      get: {
+        tags: ['Tasks'],
+        summary: 'List checklist items',
+        description: 'Returns the shared checklist read model for the task on the default board.',
+        parameters: [taskIdParam],
+        responses: { 200: { description: 'Checklist read model.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 404: { description: 'Not found.' } },
+      },
+      post: {
+        tags: ['Tasks'],
+        summary: 'Add checklist item',
+        description: 'Appends a new checklist item to the task on the default board and returns the refreshed checklist read model.',
+        parameters: [taskIdParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: checklistCreateBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/tasks/{id}/checklist/{index}': {
+      put: {
+        tags: ['Tasks'],
+        summary: 'Edit checklist item',
+        description: 'Edits one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: checklistEditBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+      delete: {
+        tags: ['Tasks'],
+        summary: 'Delete checklist item',
+        description: 'Deletes one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/tasks/{id}/checklist/{index}/check': {
+      post: {
+        tags: ['Tasks'],
+        summary: 'Check checklist item',
+        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/tasks/{id}/checklist/{index}/uncheck': {
+      post: {
+        tags: ['Tasks'],
+        summary: 'Uncheck checklist item',
+        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        parameters: [taskIdParam, checklistIndexParam],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: checklistExpectedRawBodySchema,
+            },
+          },
+        },
+        responses: { 200: { description: 'Updated checklist.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ChecklistReadModel' } } } }, 400: { description: 'Validation error.' }, 404: { description: 'Not found.' } },
       },
     },
     '/api/tasks/{id}/forms/{formId}/submit': {

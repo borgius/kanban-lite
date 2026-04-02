@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Card } from '../shared/types'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
-import { cmdActive, cmdAdd, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdPluginSettings, parseArgs, showHelp } from './index'
+import { cmdActive, cmdAdd, cmdChecklist, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdPluginSettings, parseArgs, showHelp } from './index'
 
 const execFileAsync = promisify(execFile)
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../../..')
@@ -578,6 +578,9 @@ describe('CLI list command', () => {
     expect(helpText).toContain('plugin-settings update-options <capability> <provider>')
     expect(helpText).toContain('plugin-settings install <packageName> --scope <workspace|global>')
     expect(helpText).toContain('form submit <id> <form>')
+    expect(helpText).toContain('checklist list <id>')
+    expect(helpText).toContain('checklist add <id> --text <text> --expected-token <token>')
+    expect(helpText).toContain('checklist check <id> <index> --expected-raw')
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")
     expect(helpText).toContain("--data '<json|@file>'")
@@ -858,6 +861,122 @@ describe('CLI form-aware card commands', () => {
     await expect(cmdForm(sdk as KanbanSDK, ['submit', 'card-submit', 'bug-report'], {
       data: JSON.stringify({ severity: 'nope' }),
     })).rejects.toThrow('Invalid form submission for bug-report')
+  })
+})
+
+describe('CLI checklist commands', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('lists visible checklist items with machine-friendly expectedRaw values', async () => {
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({
+        id: 'card-checklist',
+        tasks: ['- [ ] Draft release notes', '- [x] Ship fix'],
+        labels: ['tasks'],
+      })),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'runWithAuth'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdChecklist(sdk as KanbanSDK, ['list', 'card-checklist'], { json: true })
+
+    expect(sdk.getCard).toHaveBeenCalledWith('card-checklist', undefined)
+    const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
+    expect(payload).toMatchObject({
+      cardId: 'card-checklist',
+      boardId: 'default',
+      summary: {
+        total: 2,
+        completed: 1,
+        incomplete: 1,
+      },
+      items: [
+        {
+          index: 0,
+          raw: '- [ ] Draft release notes',
+          expectedRaw: '- [ ] Draft release notes',
+          checked: false,
+          text: 'Draft release notes',
+        },
+        {
+          index: 1,
+          raw: '- [x] Ship fix',
+          expectedRaw: '- [x] Ship fix',
+          checked: true,
+          text: 'Ship fix',
+        },
+      ],
+    })
+    expect(payload.token).toMatch(/^cl1:/)
+  })
+
+  it('passes expectedToken through checklist adds and prints the refreshed checklist token', async () => {
+    const updated = makeCard({
+      id: 'card-checklist',
+      tasks: ['- [ ] Draft release notes', '- [ ] Review **docs**'],
+      labels: ['tasks', 'in-progress'],
+    })
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-checklist' })),
+      addChecklistItem: vi.fn().mockResolvedValue(updated),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'addChecklistItem' | 'runWithAuth'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdChecklist(sdk as KanbanSDK, ['add', 'card-checklist'], {
+      text: 'Review **docs**',
+      'expected-token': 'cl1:stale-proof',
+      json: true,
+    })
+
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', 'cl1:stale-proof', undefined)
+    const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
+    expect(payload.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+    expect(payload.token).toMatch(/^cl1:/)
+  })
+
+  it('passes expectedRaw through checklist edits and prints the caller-scoped result', async () => {
+    const updated = makeCard({
+      id: 'card-checklist',
+      tasks: ['- [ ] Updated copy'],
+      labels: ['tasks', 'in-progress'],
+    })
+    const sdk = {
+      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-checklist', tasks: ['- [ ] Original copy'], labels: ['tasks', 'in-progress'] })),
+      editChecklistItem: vi.fn().mockResolvedValue(updated),
+      runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
+    } as unknown as Pick<KanbanSDK, 'getCard' | 'editChecklistItem' | 'runWithAuth'>
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await cmdChecklist(sdk as KanbanSDK, ['edit', 'card-checklist', '0'], {
+      text: 'Updated copy',
+      'expected-raw': '- [ ] Original copy',
+      json: true,
+    })
+
+    expect(sdk.editChecklistItem).toHaveBeenCalledWith('card-checklist', 0, 'Updated copy', '- [ ] Original copy', undefined)
+    const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
+    expect(payload).toMatchObject({
+      cardId: 'card-checklist',
+      boardId: 'default',
+      summary: {
+        total: 1,
+        completed: 0,
+        incomplete: 1,
+      },
+      items: [
+        {
+          index: 0,
+          raw: '- [ ] Updated copy',
+          expectedRaw: '- [ ] Updated copy',
+          checked: false,
+          text: 'Updated copy',
+        },
+      ],
+    })
+    expect(payload.token).toMatch(/^cl1:/)
   })
 })
 

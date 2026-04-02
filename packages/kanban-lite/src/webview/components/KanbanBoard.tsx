@@ -331,6 +331,7 @@ export function KanbanBoard({ onCardClick, onAddCard, onMoveCard, onMoveCards, o
             onColumnDragOver={handleColumnDragOver}
             onColumnDrop={handleColumnDrop}
             onColumnDragEnd={handleColumnDragEnd}
+            onToggleMinimized={() => {}}
             layout={layout}
             isDeletedColumn
             onPurgeColumn={onPurgeDeletedCards}

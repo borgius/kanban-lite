@@ -45,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Checklist markdown hardening**: New checklist writes now reject raw HTML while still allowing simple inline Markdown such as bold, italics, code, and links; legacy stored checklist HTML is rendered inert in the web UI instead of becoming live DOM.
+
+- **Checklist link allowlist hardening**: New checklist writes now only allow explicit `http:`, `https:`, and `mailto:` links, reject protocol-relative/relative or HTML-entity-obfuscated schemes such as `javas&#x63;ript:`, and still allow those examples inside inline code spans.
+
+- **Checklist-hidden label cascades now stay caller-scoped**: `renameLabel` / `deleteLabel` continue enumerating raw card membership, but the cascade updates now send caller-visible labels into card mutations so checklist-hidden reserved labels no longer block ordinary label renames or deletes on visible cards.
+
+- **Checklist reserved-label hardening and add-token concurrency**: `setLabel` now rejects manual definitions for the reserved checklist-derived labels `tasks` and `in-progress`, `getLabels()` filters those names back out of dirty legacy config before REST/CLI/MCP/init surfaces can leak them, and checklist read models now expose a checklist-wide add token that callers must send back as `expectedToken` so stale concurrent checklist appends fail clearly instead of silently overwriting each other.
+
+- **Checklist host-surface parity**: Default-board and board-scoped REST routes now expose dedicated checklist CRUD/check/uncheck endpoints plus seeded `tasks` support on create, CLI and MCP checklist flows share the same caller-visible read model and `expectedRaw` semantics, standalone/extension editors now refresh from authoritative checklist snapshots, and the web UI shows a fixed `Tasks X/N` tab while hiding checklist-derived reserved labels from manual label-edit affordances.
+
+- **Checklist mutation projection and seeded-task validation**: Card-returning SDK mutation methods now return the same caller-scoped projection as `getCard(...)` so hidden checklist tasks and reserved labels do not leak after writes, seeded `createCard({ tasks })` inputs now reject blank or multiline items while preserving checked seed lines with canonical formatting, and `updateCard({ labels })` now throws when callers explicitly try to change checklist-derived reserved labels.
+
 - **Hidden-as-not-found parity for `auth.visibility`**: Card-targeted SDK, standalone REST/websocket, CLI, MCP, and extension-hosted reads now treat hidden cards exactly like missing cards, so caller-specific visibility filtering does not leak card existence or content through direct reads, helper resolution, or actor-scoped fan-out.
 
 - **CLI/MCP auth-visibility card lookups now stay caller-scoped**: CLI `list` / `active` / `show`, card-targeted partial-id and existence preflights, MCP `list_cards` / `get_card` / `get_active_card`, and card-targeted MCP helper/tool resolution now all run inside the caller auth scope so hidden cards behave exactly like missing cards while existing multiple-match UX remains unchanged for visible cards.

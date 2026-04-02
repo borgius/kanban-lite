@@ -7,6 +7,7 @@ import { CopyableValue } from '../lib/CopyableValue'
 import { useStore } from '../store'
 import { NEXT_POSITION, type DrawerPosition } from '../drawerPositionHelpers'
 import { getVsCodeApi } from '../vsCodeApi'
+import { isReservedChecklistLabel } from '../../sdk/modules/checklist'
 import { MarkdownEditor } from './MarkdownEditor'
 
 type AIAgent = 'claude' | 'codex' | 'opencode'
@@ -34,6 +35,11 @@ interface CardEditorProps {
   onUpdateComment: (commentId: string, content: string) => void
   onDeleteComment: (commentId: string) => void
   onTransferToBoard: (toBoard: string, targetStatus: string) => void
+  onAddChecklistItem?: (text: string, expectedToken: string) => void
+  onEditChecklistItem?: (index: number, text: string, expectedRaw?: string) => void
+  onDeleteChecklistItem?: (index: number, expectedRaw?: string) => void
+  onCheckChecklistItem?: (index: number, expectedRaw?: string) => void
+  onUncheckChecklistItem?: (index: number, expectedRaw?: string) => void
   onTriggerAction?: (action: string) => void
   logs?: LogEntry[]
   onClearLogs?: () => void
@@ -664,36 +670,54 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   const allCards = useStore(s => s.cards)
   const labelDefs = useStore(s => s.labelDefs)
   const applyLabelFilter = useStore(s => s.applyLabelFilter)
+  const reservedLabels = useMemo(
+    () => labels.filter(isReservedChecklistLabel),
+    [labels],
+  )
+  const editableLabels = useMemo(
+    () => labels.filter((label) => !isReservedChecklistLabel(label)),
+    [labels],
+  )
+
+  const updateEditableLabels = useCallback((nextEditableLabels: string[]) => {
+    onChange([...nextEditableLabels, ...reservedLabels])
+  }, [onChange, reservedLabels])
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
-    allCards.forEach(f => f.labels.forEach(l => labelSet.add(l)))
+    allCards.forEach((card) => {
+      card.labels.forEach((label) => {
+        if (!isReservedChecklistLabel(label)) {
+          labelSet.add(label)
+        }
+      })
+    })
     return Array.from(labelSet).sort()
   }, [allCards])
 
   const suggestions = useMemo(() => {
-    const available = existingLabels.filter(l => !labels.includes(l))
+    const available = existingLabels.filter((label) => !editableLabels.includes(label))
     if (!newLabel.trim()) return available
-    return available.filter(l => l.toLowerCase().includes(newLabel.toLowerCase()))
-  }, [newLabel, existingLabels, labels])
+    return available.filter((label) => label.toLowerCase().includes(newLabel.toLowerCase()))
+  }, [newLabel, existingLabels, editableLabels])
 
   const showSuggestions = isFocused && suggestions.length > 0
 
   const addLabel = (label?: string) => {
     const l = (label || newLabel).trim()
-    if (l && !labels.includes(l)) {
-      onChange([...labels, l])
+    if (l && !editableLabels.includes(l) && !isReservedChecklistLabel(l)) {
+      updateEditableLabels([...editableLabels, l])
     }
     setNewLabel('')
   }
 
   const removeLabel = (label: string) => {
-    onChange(labels.filter(l => l !== label))
+    updateEditableLabels(editableLabels.filter((existing) => existing !== label))
   }
 
   return (
     <div className={cn('relative flex items-center gap-2 flex-wrap', showSuggestions && 'z-30')}>
-      {labels.map(label => {
+      {editableLabels.map(label => {
         const def = labelDefs[label]
         return (
           <span
@@ -744,12 +768,12 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
         onBlur={() => setTimeout(() => setIsFocused(false), 150)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); addLabel() }
-          if (e.key === 'Backspace' && !newLabel && labels.length > 0) {
-            onChange(labels.slice(0, -1))
+          if (e.key === 'Backspace' && !newLabel && editableLabels.length > 0) {
+            updateEditableLabels(editableLabels.slice(0, -1))
           }
           if (e.key === 'Escape') { setNewLabel(''); inputRef.current?.blur() }
         }}
-        placeholder={labels.length === 0 ? 'Add labels...' : ''}
+        placeholder={editableLabels.length === 0 ? 'Add labels...' : ''}
         className="card-label-input"
         style={{ color: 'var(--vscode-foreground)', display: isFocused || newLabel ? 'block' : 'none' }}
       />
@@ -789,7 +813,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
   const { cardSettings, boards, currentBoard, setCardSettings } = useStore()
   const pinnedMetadataKeys = useMemo(
     () => boards.find(b => b.id === currentBoard)?.metadata ?? [],
@@ -1157,6 +1181,11 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 cardId={cardId}
                 frontmatter={currentFrontmatter}
                 onFormSubmitSuccess={handleFormSubmitSuccess}
+                onAddChecklistItem={onAddChecklistItem}
+                onEditChecklistItem={onEditChecklistItem}
+                onDeleteChecklistItem={onDeleteChecklistItem}
+                onCheckChecklistItem={onCheckChecklistItem}
+                onUncheckChecklistItem={onUncheckChecklistItem}
               />
             </section>
           </div>

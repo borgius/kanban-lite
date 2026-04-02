@@ -25,6 +25,8 @@ export interface CreateCardInput {
   labels?: string[]
   /** An array of attachment filenames associated with the card. */
   attachments?: string[]
+  /** Optional initial single-line markdown checklist items to seed on the card. */
+  tasks?: string[]
   /** The board identifier when working with multiple boards. */
   boardId?: string
   /** Arbitrary user-defined metadata to store in the card's frontmatter. */
@@ -58,6 +60,11 @@ export type SDKBeforeEventType =
   | 'card.delete'
   | 'card.transfer'
   | 'card.action.trigger'
+  | 'card.checklist.add'
+  | 'card.checklist.edit'
+  | 'card.checklist.delete'
+  | 'card.checklist.check'
+  | 'card.checklist.uncheck'
   | 'card.purgeDeleted'
   | 'comment.create'
   | 'comment.update'

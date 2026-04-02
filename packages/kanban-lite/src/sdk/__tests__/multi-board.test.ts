@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
-import { DEFAULT_COLUMNS } from '../../shared/types'
+import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset } from '../../shared/types'
 import type { KanbanConfig } from '../../shared/config'
 
 function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
@@ -33,6 +33,8 @@ function createV2Config(overrides?: Partial<KanbanConfig>): KanbanConfig {
     showDeletedColumn: false,
     boardZoom: 100,
     cardZoom: 100,
+    boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
+    boardBackgroundPreset: getDefaultBoardBackgroundPreset(DEFAULT_BOARD_BACKGROUND_MODE),
     port: 3000,
     nextCardId: 1,
     ...overrides

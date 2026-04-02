@@ -187,6 +187,8 @@ export interface Card {
   labels: string[]
   /** File paths of attachments associated with the card. */
   attachments: string[]
+  /** Optional single-line markdown checklist items stored on the card. */
+  tasks?: string[]
   /** Discussion comments on the card. */
   comments: Comment[]
   /** Fractional index (base-62) controlling sort order within a column. */
@@ -716,6 +718,8 @@ export interface CardFrontmatter {
   labels: string[]
   /** File paths of attachments. */
   attachments: string[]
+  /** Optional single-line markdown checklist items stored on the card. */
+  tasks?: string[]
   /** Fractional index (base-62) for ordering within a column. */
   order: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
@@ -909,6 +913,7 @@ export interface CreateCardPayload {
   assignee: string | null
   dueDate: string | null
   labels: string[]
+  tasks?: string[]
   metadata?: Record<string, unknown>
   actions?: string[] | Record<string, string>
   forms?: CardFormAttachment[]
@@ -924,6 +929,47 @@ export interface SubmitFormMessage {
   formId: string
   data: Record<string, unknown>
   callbackKey: string
+  boardId?: string
+}
+
+export interface AddChecklistItemMessage {
+  type: 'addChecklistItem'
+  cardId: string
+  text: string
+  expectedToken: string
+  boardId?: string
+}
+
+export interface EditChecklistItemMessage {
+  type: 'editChecklistItem'
+  cardId: string
+  index: number
+  text: string
+  expectedRaw?: string
+  boardId?: string
+}
+
+export interface DeleteChecklistItemMessage {
+  type: 'deleteChecklistItem'
+  cardId: string
+  index: number
+  expectedRaw?: string
+  boardId?: string
+}
+
+export interface CheckChecklistItemMessage {
+  type: 'checkChecklistItem'
+  cardId: string
+  index: number
+  expectedRaw?: string
+  boardId?: string
+}
+
+export interface UncheckChecklistItemMessage {
+  type: 'uncheckChecklistItem'
+  cardId: string
+  index: number
+  expectedRaw?: string
   boardId?: string
 }
 
@@ -984,12 +1030,20 @@ export type WebviewMessage =
   | { type: 'updateCard'; cardId: string; updates: Partial<Card> }
   | { type: 'openCard'; cardId: string }
   | { type: 'saveCardContent'; cardId: string; content: string; frontmatter: CardFrontmatter }
+  | AddChecklistItemMessage
+  | EditChecklistItemMessage
+  | DeleteChecklistItemMessage
+  | CheckChecklistItemMessage
+  | UncheckChecklistItemMessage
   | { type: 'closeCard' }
   | { type: 'openFile'; cardId: string }
+  | { type: 'openMetadataFile'; path: string }
+  | { type: 'downloadCard'; cardId: string }
   | { type: 'addAttachment'; cardId: string }
   | { type: 'openAttachment'; cardId: string; attachment: string }
   | { type: 'removeAttachment'; cardId: string; attachment: string }
   | { type: 'openSettings' }
+  | { type: 'toggleTheme' }
   | { type: 'loadPluginSettings' }
   | { type: 'readPluginSettings'; capability: PluginCapabilityNamespace; providerId: string }
   | { type: 'selectPluginSettingsProvider'; capability: PluginCapabilityNamespace; providerId: string }

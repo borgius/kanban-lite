@@ -2,6 +2,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
+import { buildChecklistReadModel } from '../sdk/modules/checklist'
 import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getDisplayTitleFromContent, getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
@@ -249,8 +250,21 @@ function printCardStateMutationModel(label: string, payload: {
   })
 }
 
-type PluginSettingsListModel = ReturnType<KanbanSDK['listPluginSettings']>
-type PluginSettingsReadModel = NonNullable<ReturnType<KanbanSDK['getPluginSettings']>>
+function printChecklistReadModel(payload: ReturnType<typeof buildChecklistReadModel>): void {
+  console.log(`${bold(payload.cardId)} (${payload.summary.completed}/${payload.summary.total} complete)`)
+  console.log(`  Token:            ${payload.token}`)
+  if (payload.items.length === 0) {
+    console.log(dim('  No checklist items.'))
+    return
+  }
+
+  for (const item of payload.items) {
+    console.log(`  ${bold(String(item.index))}. ${item.checked ? green('[x]') : dim('[ ]')} ${item.text || dim('(empty)')}`)
+  }
+}
+
+type PluginSettingsListModel = Awaited<ReturnType<KanbanSDK['listPluginSettings']>>
+type PluginSettingsReadModel = NonNullable<Awaited<ReturnType<KanbanSDK['getPluginSettings']>>>
 type PluginSettingsInstallModel = Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
 
 const PLUGIN_SETTINGS_GLOBAL_FLAG_NAMES = ['config', 'dir', 'json', 'token'] as const
@@ -615,10 +629,13 @@ export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const formData = hasFormDataFlag
     ? await parseJsonObjectFlag(flags['form-data'] as string, 'form-data') as Card['formData']
     : undefined
+  const tasks = typeof flags.tasks === 'string'
+    ? await parseJsonArrayFlag<string>(flags.tasks, 'tasks')
+    : undefined
 
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
-  const card = await runWithCliAuth(sdk, flags, () => sdk.createCard({ content, status, priority, assignee, dueDate, labels, metadata, actions, boardId, forms, formData }))
+  const card = await runWithCliAuth(sdk, flags, () => sdk.createCard({ content, status, priority, assignee, dueDate, labels, tasks, metadata, actions, boardId, forms, formData }))
 
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
@@ -748,6 +765,138 @@ export async function cmdForm(sdk: KanbanSDK, positional: string[], flags: Flags
     default:
       console.error(red(`Unknown form subcommand: ${subcommand}`))
       console.error('Available: submit')
+      process.exit(1)
+  }
+}
+
+function parseChecklistIndex(value: string | undefined): number {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    console.error(red('Error: checklist item index is required'))
+    process.exit(1)
+  }
+
+  const index = Number.parseInt(value, 10)
+  if (!Number.isInteger(index) || index < 0) {
+    console.error(red(`Error: invalid checklist index: ${value}`))
+    process.exit(1)
+  }
+
+  return index
+}
+
+function printOrEmitChecklist(payload: ReturnType<typeof buildChecklistReadModel>, flags: Flags): void {
+  if (flags.json) {
+    console.log(JSON.stringify(payload, null, 2))
+    return
+  }
+
+  printChecklistReadModel(payload)
+}
+
+export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
+  const subcommand = positional[0] || 'list'
+  const boardId = getBoardId(flags)
+
+  switch (subcommand) {
+    case 'list': {
+      const cardId = positional[1]
+      if (!cardId) {
+        console.error(red('Usage: kl checklist list <card-id>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId, boardId))
+      if (!card) {
+        console.error(red(`Card not found: ${cardId}`))
+        process.exit(1)
+      }
+
+      printOrEmitChecklist(buildChecklistReadModel(card), flags)
+      break
+    }
+
+    case 'add': {
+      const cardId = positional[1]
+      const text = typeof flags.text === 'string' ? flags.text : undefined
+      const expectedToken = typeof flags['expected-token'] === 'string' ? flags['expected-token'] : undefined
+      if (!cardId || !text || !expectedToken) {
+        console.error(red('Usage: kl checklist add <card-id> --text <text> --expected-token <token>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.addChecklistItem(resolvedId, text, expectedToken, boardId))
+      printOrEmitChecklist(buildChecklistReadModel(updated), flags)
+      break
+    }
+
+    case 'edit': {
+      const cardId = positional[1]
+      const index = parseChecklistIndex(positional[2])
+      const text = typeof flags.text === 'string' ? flags.text : undefined
+      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      if (!cardId || !text) {
+        console.error(red('Usage: kl checklist edit <card-id> <index> --text <text> --expected-raw <line>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.editChecklistItem(resolvedId, index, text, expectedRaw, boardId))
+      printOrEmitChecklist(buildChecklistReadModel(updated), flags)
+      break
+    }
+
+    case 'delete':
+    case 'remove':
+    case 'rm': {
+      const cardId = positional[1]
+      const index = parseChecklistIndex(positional[2])
+      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      if (!cardId) {
+        console.error(red('Usage: kl checklist delete <card-id> <index> --expected-raw <line>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.deleteChecklistItem(resolvedId, index, expectedRaw, boardId))
+      printOrEmitChecklist(buildChecklistReadModel(updated), flags)
+      break
+    }
+
+    case 'check': {
+      const cardId = positional[1]
+      const index = parseChecklistIndex(positional[2])
+      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      if (!cardId) {
+        console.error(red('Usage: kl checklist check <card-id> <index> --expected-raw <line>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.checkChecklistItem(resolvedId, index, expectedRaw, boardId))
+      printOrEmitChecklist(buildChecklistReadModel(updated), flags)
+      break
+    }
+
+    case 'uncheck': {
+      const cardId = positional[1]
+      const index = parseChecklistIndex(positional[2])
+      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      if (!cardId) {
+        console.error(red('Usage: kl checklist uncheck <card-id> <index> --expected-raw <line>'))
+        process.exit(1)
+      }
+
+      const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.uncheckChecklistItem(resolvedId, index, expectedRaw, boardId))
+      printOrEmitChecklist(buildChecklistReadModel(updated), flags)
+      break
+    }
+
+    default:
+      console.error(red(`Unknown checklist subcommand: ${subcommand}`))
+      console.error('Available: list, add, edit, delete, check, uncheck')
       process.exit(1)
   }
 }
@@ -1788,6 +1937,18 @@ ${bold('Label Commands:')}
 ${bold('Form Commands:')}
   form submit <id> <form>     Submit a card form (--data <json|@file>)
 
+${bold('Checklist Commands:')}
+  checklist list <id>         List checklist items on a card
+  checklist add <id> --text <text> --expected-token <token>
+                              Add a checklist item to a card
+  checklist edit <id> <index> Edit a checklist item (--text, --expected-raw)
+  checklist delete <id> <index>
+                              Delete a checklist item (--expected-raw)
+  checklist check <id> <index> --expected-raw <line>
+                              Check a checklist item
+  checklist uncheck <id> <index> --expected-raw <line>
+                              Uncheck a checklist item
+
 ${bold('Settings Commands:')}
   settings                    Show current settings
   settings update             Update settings (--<key> <value>)
@@ -1838,12 +1999,18 @@ ${bold('Add/Edit Options:')}
   --assignee <name>           Assignee
   --due <date>                Due date
   --label <l1,l2>             Labels (comma-separated)
+  --tasks '<json|@file>'      Seed checklist items as a JSON array of markdown lines
   --metadata '<json>'         Metadata as JSON string
   --forms '<json|@file>'      Form attachments as a JSON array
   --form-data '<json|@file>'  Per-form data map as a JSON object
 
 ${bold('Form Options:')}
   --data '<json|@file>'       Form submission payload as a JSON object
+
+${bold('Checklist Options:')}
+  --text <text>               Checklist item text for add/edit
+  --expected-token <token>   Latest checklist token required for add optimistic concurrency
+  --expected-raw <line>       Current raw checklist line for optimistic concurrency
 
 ${bold('Transfer Options:')}
   --from <board>              Source board (required)
@@ -2314,6 +2481,10 @@ async function main(): Promise<void> {
     case 'form':
     case 'forms':
       await cmdForm(sdk, positional, flags)
+      break
+    case 'checklist':
+    case 'checklists':
+      await cmdChecklist(sdk, positional, flags)
       break
     case 'webhooks':
     case 'webhook':

@@ -170,6 +170,8 @@ function getPluginCapabilityFallbackProviderId(capability: PluginCapabilityNames
     case 'auth.identity':
     case 'auth.policy':
       return 'noop'
+    case 'auth.visibility':
+      return 'none'
     case 'webhook.delivery':
       return 'none'
   }

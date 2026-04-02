@@ -9,6 +9,7 @@ import { vi } from 'vitest'
 import { startServer } from '../server'
 import { broadcast } from '../broadcastService'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../../sdk/KanbanSDK'
+import { buildChecklistReadModel } from '../../sdk/modules/checklist'
 import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
 
 type CardStateReadPayload = {
@@ -4217,6 +4218,189 @@ describe('Standalone Server Integration', () => {
       expect(files.length).toBe(1)
     })
 
+    it('supports default-board checklist REST routes and rejects generic task updates for raw tasks', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# REST Checklist Task',
+        status: 'todo',
+        tasks: ['- [ ] Draft release notes'],
+      })
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id as string
+      expect(created.data.tasks).toEqual(['- [ ] Draft release notes'])
+
+      const listRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}/checklist`)
+      expect(listRes.status).toBe(200)
+      const listed = JSON.parse(listRes.body).data
+      expect(listed).toMatchObject({
+        cardId,
+        boardId: 'default',
+        summary: {
+          total: 1,
+          completed: 0,
+          incomplete: 1,
+        },
+        items: [
+          {
+            index: 0,
+            raw: '- [ ] Draft release notes',
+            expectedRaw: '- [ ] Draft release notes',
+            checked: false,
+            text: 'Draft release notes',
+          },
+        ],
+      })
+      expect(listed.token).toMatch(/^cl1:/)
+
+      const missingTokenAddRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
+        text: 'Review **docs**',
+      })
+      expect(missingTokenAddRes.status).toBe(400)
+      expect(JSON.parse(missingTokenAddRes.body).error).toContain('expectedToken')
+
+      const addRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
+        text: 'Review **docs**',
+        expectedToken: listed.token,
+      })
+      expect(addRes.status).toBe(200)
+      expect(JSON.parse(addRes.body).data.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+
+      const staleAddRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
+        text: 'Lost update',
+        expectedToken: listed.token,
+      })
+      expect(staleAddRes.status).toBe(400)
+      expect(JSON.parse(staleAddRes.body).error).toContain('stale')
+
+      const editRes = await httpRequest('PUT', `http://localhost:${port}/api/tasks/${cardId}/checklist/0`, {
+        text: 'Update release notes',
+        expectedRaw: '- [ ] Draft release notes',
+      })
+      expect(editRes.status).toBe(200)
+      expect(JSON.parse(editRes.body).data.items[0]).toEqual({
+        index: 0,
+        raw: '- [ ] Update release notes',
+        expectedRaw: '- [ ] Update release notes',
+        checked: false,
+        text: 'Update release notes',
+      })
+
+      const checkRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist/1/check`, {
+        expectedRaw: '- [ ] Review **docs**',
+      })
+      expect(checkRes.status).toBe(200)
+      expect(JSON.parse(checkRes.body).data.summary).toEqual({ total: 2, completed: 1, incomplete: 1 })
+
+      const uncheckRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist/1/uncheck`, {
+        expectedRaw: '- [x] Review **docs**',
+      })
+      expect(uncheckRes.status).toBe(200)
+      expect(JSON.parse(uncheckRes.body).data.items[1]).toEqual({
+        index: 1,
+        raw: '- [ ] Review **docs**',
+        expectedRaw: '- [ ] Review **docs**',
+        checked: false,
+        text: 'Review **docs**',
+      })
+
+      const deleteRes = await httpRequest('DELETE', `http://localhost:${port}/api/tasks/${cardId}/checklist/0`, {
+        expectedRaw: '- [ ] Update release notes',
+      })
+      expect(deleteRes.status).toBe(200)
+      const deleted = JSON.parse(deleteRes.body).data
+      expect(deleted).toMatchObject({
+        cardId,
+        boardId: 'default',
+        summary: {
+          total: 1,
+          completed: 0,
+          incomplete: 1,
+        },
+        items: [
+          {
+            index: 0,
+            raw: '- [ ] Review **docs**',
+            expectedRaw: '- [ ] Review **docs**',
+            checked: false,
+            text: 'Review **docs**',
+          },
+        ],
+      })
+      expect(deleted.token).toMatch(/^cl1:/)
+
+      const rejectedUpdate = await httpRequest('PUT', `http://localhost:${port}/api/tasks/${cardId}`, {
+        tasks: ['- [ ] bypass'],
+      })
+      expect(rejectedUpdate.status).toBe(400)
+      expect(JSON.parse(rejectedUpdate.body).error).toContain('Card tasks can only be changed through checklist operations')
+    })
+
+    it('board-scoped checklist routes preserve parity with the default-board checklist API', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const boardRes = await httpRequest('POST', `http://localhost:${port}/api/boards`, {
+        id: 'qa-checklist',
+        name: 'QA Checklist Board',
+      })
+      expect(boardRes.status).toBe(201)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-checklist/tasks`, {
+        content: '# Board Checklist Task',
+        status: 'todo',
+        tasks: ['- [ ] Verify build'],
+      })
+      expect(createRes.status).toBe(201)
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id as string
+
+      const listRes = await httpGet(`http://localhost:${port}/api/boards/qa-checklist/tasks/${cardId}/checklist`)
+      expect(listRes.status).toBe(200)
+      const listed = JSON.parse(listRes.body).data
+      expect(listed.summary).toEqual({ total: 1, completed: 0, incomplete: 1 })
+      expect(listed.token).toMatch(/^cl1:/)
+
+      const addRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-checklist/tasks/${cardId}/checklist`, {
+        text: 'Ship release notes',
+        expectedToken: listed.token,
+      })
+      expect(addRes.status).toBe(200)
+      expect(JSON.parse(addRes.body).data.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+
+      const checkRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-checklist/tasks/${cardId}/checklist/0/check`, {
+        expectedRaw: '- [ ] Verify build',
+      })
+      expect(checkRes.status).toBe(200)
+      expect(JSON.parse(checkRes.body).data).toMatchObject({
+        cardId,
+        boardId: 'qa-checklist',
+        summary: {
+          total: 2,
+          completed: 1,
+          incomplete: 1,
+        },
+        items: [
+          {
+            index: 0,
+            raw: '- [x] Verify build',
+            expectedRaw: '- [x] Verify build',
+            checked: true,
+            text: 'Verify build',
+          },
+          {
+            index: 1,
+            raw: '- [ ] Ship release notes',
+            expectedRaw: '- [ ] Ship release notes',
+            checked: false,
+            text: 'Ship release notes',
+          },
+        ],
+      })
+    })
+
     it('PUT /api/tasks/:id should update a task', async () => {
       writeCardFile(tempDir, 'update-api.md', makeCardContent({
         id: 'update-api',
@@ -4658,6 +4842,40 @@ describe('Standalone Server Integration', () => {
       expect(errorResponse.callbackKey).toBe('submit-error')
       expect(errorResponse.result).toBeUndefined()
       expect(String(errorResponse.error)).toContain('Invalid form submission')
+    })
+
+    it('websocket checklist mutations refresh the active editor from the authoritative card snapshot', async () => {
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init', 10000)
+
+      const createRes = await httpRequest('POST', `http://localhost:${port}/api/tasks`, {
+        content: '# Socket Checklist Task',
+        status: 'backlog',
+      })
+      const created = JSON.parse(createRes.body)
+      const cardId = created.data.id as string
+
+      const opened = await sendAndReceiveMatching(
+        ws,
+        { type: 'openCard', cardId },
+        'cardContent',
+        (payload) => payload.cardId === cardId,
+      )
+
+      const checklistToken = buildChecklistReadModel({
+        id: cardId,
+        boardId: 'default',
+        tasks: (opened.frontmatter as { tasks?: string[] } | undefined)?.tasks,
+      }).token
+
+      const refreshed = await sendAndReceiveMatching(
+        ws,
+        { type: 'addChecklistItem', cardId, text: 'Review websocket flow', expectedToken: checklistToken },
+        'cardContent',
+        (payload) => payload.cardId === cardId && Array.isArray((payload.frontmatter as { tasks?: unknown[] } | undefined)?.tasks),
+      )
+
+      expect((refreshed.frontmatter as { tasks?: string[] }).tasks).toEqual(['- [ ] Review websocket flow'])
     })
 
     it('PUT /api/tasks/:id should return 404 for non-existent task', async () => {

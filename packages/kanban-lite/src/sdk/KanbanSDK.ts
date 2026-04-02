@@ -1559,6 +1559,29 @@ export class KanbanSDK {
   }
 
   /**
+   * Resolves caller identity and returns whether the named action is permitted.
+   *
+   * Unlike {@link _authorizeAction}, this helper never emits auth lifecycle
+   * events and never throws for a normal policy denial. It is intended for
+   * side-effect-free host/UI capability checks such as deciding whether to
+   * expose checklist affordances for the current caller.
+   *
+   * @param action  - Canonical action name (e.g. `'card.checklist.show'`).
+   * @param context - Optional auth context from the inbound request.
+   * @returns `true` when the action is permitted for the resolved caller.
+   */
+  async canPerformAction(action: string, context?: AuthContext): Promise<boolean> {
+    if (!this._capabilities) {
+      return true
+    }
+
+    const resolvedContext: AuthContext = context ?? this._currentAuthContext ?? {}
+    const identity = await this._capabilities.authIdentity.resolveIdentity(resolvedContext)
+    const decision = await this._capabilities.authPolicy.checkPolicy(identity, action, resolvedContext)
+    return decision.allowed
+  }
+
+  /**
    * Runs `fn` within an async scope where `auth` is the active auth context.
    *
    * Use this on host surfaces (REST routes, CLI commands, MCP handlers) to
@@ -2191,7 +2214,7 @@ export class KanbanSDK {
       toBoard: mergedInput.toBoardId,
       transfer: true,
     })
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   // --- Card CRUD ---
@@ -2287,6 +2310,11 @@ export class KanbanSDK {
     )
   }
 
+  /** @internal */
+  async _listCardsRaw(columns?: string[], boardId?: string): Promise<Card[]> {
+    return Cards.listCardsRaw(this, { columns, boardId })
+  }
+
   /**
    * Retrieves a single card by its ID.
    *
@@ -2307,6 +2335,24 @@ export class KanbanSDK {
    */
   async getCard(cardId: string, boardId?: string): Promise<Card | null> {
     return Cards.getCard(this, { cardId, boardId })
+  }
+
+  /** @internal */
+  async _getCardRaw(cardId: string, boardId?: string): Promise<Card | null> {
+    return Cards.getCardRaw(this, { cardId, boardId })
+  }
+
+  private async _getScopedMutationCard(card: Card): Promise<Card> {
+    const visibleCard = await this.getCard(card.id, card.boardId)
+    if (visibleCard) {
+      return visibleCard
+    }
+
+    if (this._currentAuthContext) {
+      throw new Error(`Card not found: ${card.id}`)
+    }
+
+    return card
   }
 
   /**
@@ -2379,9 +2425,12 @@ export class KanbanSDK {
    */
   async createCard(data: CreateCardInput): Promise<Card> {
     const mergedInput = await this._runBeforeEvent<CreateCardInput & Record<string, unknown>>('card.create', { ...data } as CreateCardInput & Record<string, unknown>, undefined, data.boardId)
+    if (Array.isArray(mergedInput.tasks) && mergedInput.tasks.length > 0) {
+      await this._authorizeAction('card.checklist.add')
+    }
     const card = await Cards.createCard(this, mergedInput)
     this._runAfterEvent('task.created', sanitizeCard(card), undefined, card.boardId)
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2415,7 +2464,78 @@ export class KanbanSDK {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.updateCard>>('card.update', { cardId, updates, boardId }, undefined, boardId)
     const card = await Cards.updateCard(this, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
-    return card
+    return this._getScopedMutationCard(card)
+  }
+
+  /**
+   * Adds a new checklist item to a card using checklist-wide optimistic concurrency.
+   *
+   * Callers must provide the latest checklist `token` from the shared checklist read
+   * model. This prevents concurrent append operations from silently overwriting one
+   * another when two callers read the same checklist snapshot.
+   */
+  async addChecklistItem(cardId: string, text: string, expectedToken: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.addChecklistItem>>(
+      'card.checklist.add',
+      { cardId, text, expectedToken, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Cards.addChecklistItem(this, mergedInput)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
+    return this._getScopedMutationCard(card)
+  }
+
+  /** Edits an existing checklist item's text while preserving its checked state. */
+  async editChecklistItem(cardId: string, index: number, text: string, expectedRaw?: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.editChecklistItem>>(
+      'card.checklist.edit',
+      { cardId, index, text, expectedRaw, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Cards.editChecklistItem(this, mergedInput)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
+    return this._getScopedMutationCard(card)
+  }
+
+  /** Deletes a checklist item using stale-write protection via `expectedRaw`. */
+  async deleteChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteChecklistItem>>(
+      'card.checklist.delete',
+      { cardId, index, expectedRaw, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Cards.deleteChecklistItem(this, mergedInput)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
+    return this._getScopedMutationCard(card)
+  }
+
+  /** Marks a checklist item complete using stale-write protection via `expectedRaw`. */
+  async checkChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.checkChecklistItem>>(
+      'card.checklist.check',
+      { cardId, index, expectedRaw, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Cards.checkChecklistItem(this, mergedInput)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
+    return this._getScopedMutationCard(card)
+  }
+
+  /** Marks a checklist item incomplete using stale-write protection via `expectedRaw`. */
+  async uncheckChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.uncheckChecklistItem>>(
+      'card.checklist.uncheck',
+      { cardId, index, expectedRaw, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Cards.uncheckChecklistItem(this, mergedInput)
+    this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2525,7 +2645,7 @@ export class KanbanSDK {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.moveCard>>('card.move', { cardId, newStatus, position, boardId }, undefined, boardId)
     const card = await Cards.moveCard(this, mergedInput)
     this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId)
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2631,6 +2751,8 @@ export class KanbanSDK {
    *
    * Label definitions map label names to their color and optional group.
    * Labels on cards that have no definition will render with default gray styling.
+    * Reserved checklist-derived labels such as `tasks` and `in-progress` are filtered
+    * out so dirty legacy config cannot leak them back through host surfaces.
    *
    * @returns A record mapping label names to {@link LabelDefinition} objects.
    *
@@ -2649,6 +2771,8 @@ export class KanbanSDK {
    *
    * If the label already exists, its definition is replaced entirely.
    * The change is persisted to `.kanban.json` immediately.
+    * Reserved checklist-derived labels such as `tasks` and `in-progress` cannot be
+    * defined manually.
    *
    * @param name - The label name (e.g. `'bug'`, `'frontend'`).
    * @param definition - The label definition with color and optional group.
@@ -2768,7 +2892,7 @@ export class KanbanSDK {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Attachments.addAttachment>>('attachment.add', { cardId, sourcePath, boardId }, undefined, boardId)
     const card = await Attachments.addAttachment(this, mergedInput)
     this._runAfterEvent('attachment.added', { cardId: mergedInput.cardId, attachment: path.basename(mergedInput.sourcePath) }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2792,7 +2916,7 @@ export class KanbanSDK {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Attachments.removeAttachment>>('attachment.remove', { cardId, attachment, boardId }, undefined, boardId)
     const card = await Attachments.removeAttachment(this, mergedInput)
     this._runAfterEvent('attachment.removed', { cardId: mergedInput.cardId, attachment: mergedInput.attachment }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2880,7 +3004,7 @@ export class KanbanSDK {
     const card = await Comments.addComment(this, mergedInput)
     const newComment = card.comments[card.comments.length - 1]
     if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2904,7 +3028,7 @@ export class KanbanSDK {
     const card = await Comments.updateComment(this, mergedInput)
     const updatedComment = card.comments?.find(c => c.id === mergedInput.commentId)
     if (updatedComment) this._runAfterEvent('comment.updated', { ...updatedComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2927,7 +3051,7 @@ export class KanbanSDK {
     const deletedComment = cardBefore?.comments?.find(c => c.id === mergedInput.commentId)
     const card = await Comments.deleteComment(this, mergedInput)
     if (deletedComment) this._runAfterEvent('comment.deleted', { ...deletedComment, cardId: mergedInput.cardId }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
   /**
@@ -2977,7 +3101,7 @@ export class KanbanSDK {
     const card = await Comments.streamComment(this, { cardId, author, boardId, stream, onStart, onChunk })
     const newComment = card.comments?.[card.comments.length - 1]
     if (newComment) this._runAfterEvent('comment.created', { ...newComment, cardId }, undefined, card.boardId ?? this._resolveBoardId(boardId))
-    return card
+    return this._getScopedMutationCard(card)
   }
 
 

@@ -12,7 +12,7 @@ import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
-import { createMcpPluginContext, registerCardStateMcpTools, registerPluginMcpTools, registerPluginSettingsMcpTools } from './index'
+import { createMcpPluginContext, registerCardStateMcpTools, registerChecklistMcpTools, registerPluginMcpTools, registerPluginSettingsMcpTools } from './index'
 import { createPluginSettingsErrorPayload, KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
 import * as pluginRegistry from '../sdk/plugins'
 import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../sdk/plugins'
@@ -32,6 +32,19 @@ type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 type McpTextResult = {
   content?: Array<{ type?: string; text?: string }>
   isError?: boolean
+}
+
+type PluginSettingsRunWithAuth = Parameters<typeof registerPluginSettingsMcpTools>[1]['runWithAuth']
+type PluginSettingsRunWithAuthMock = PluginSettingsRunWithAuth & ReturnType<typeof vi.fn<(fn: () => Promise<unknown>) => Promise<unknown>>>
+
+function createPluginSettingsRunWithAuthMock(
+  implementation: (fn: () => Promise<unknown>) => Promise<unknown>,
+): PluginSettingsRunWithAuthMock {
+  const mock = vi.fn<(fn: () => Promise<unknown>) => Promise<unknown>>(implementation)
+  return Object.assign(
+    ((fn: () => Promise<unknown>) => mock(fn)) as PluginSettingsRunWithAuth,
+    mock,
+  )
 }
 
 function makeMcpCardContent(opts: {
@@ -392,6 +405,33 @@ function capturePluginSettingsTools(targetSdk: KanbanSDK) {
   }
 
   const registered = registerPluginSettingsMcpTools(server, {
+    sdk: targetSdk,
+    runWithAuth: (fn) => targetSdk.runWithAuth({ transport: 'mcp' }, fn),
+  })
+
+  return { registered, tools }
+}
+
+function captureChecklistTools(targetSdk: KanbanSDK) {
+  const tools: Array<{
+    name: string
+    description: string
+    schema: Record<string, unknown>
+    handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>
+  }> = []
+
+  const server = {
+    tool(
+      name: string,
+      description: string,
+      schema: Record<string, unknown>,
+      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+    ) {
+      tools.push({ name, description, schema, handler })
+    },
+  }
+
+  const registered = registerChecklistMcpTools(server, {
     sdk: targetSdk,
     runWithAuth: (fn) => targetSdk.runWithAuth({ transport: 'mcp' }, fn),
   })
@@ -1038,7 +1078,7 @@ describe('MCP plugin-settings parity tools', () => {
         tools.push({ name, description, schema, handler })
       },
     }
-    const runWithAuth = vi.fn(async <T>(fn: () => Promise<T>): Promise<T> => {
+    const runWithAuth = createPluginSettingsRunWithAuthMock(async (fn) => {
       void fn
       throw new AuthError('auth.policy.denied', 'plugin-settings.read denied for MCP')
     })
@@ -1270,6 +1310,116 @@ describe('MCP card-state parity tools', () => {
     } finally {
       identitySdk.close()
     }
+  })
+})
+
+describe('MCP checklist tools', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-mcp-checklist-'))
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('registers checklist MCP tools with explicit expectedRaw contracts', () => {
+    const { registered, tools } = captureChecklistTools(sdk)
+
+    expect(registered).toEqual([
+      'list_card_checklist_items',
+      'add_card_checklist_item',
+      'edit_card_checklist_item',
+      'delete_card_checklist_item',
+      'check_card_checklist_item',
+      'uncheck_card_checklist_item',
+    ])
+    expect(tools.map((tool) => tool.name)).toEqual(registered)
+    expect(Object.keys(tools.find((tool) => tool.name === 'list_card_checklist_items')?.schema ?? {})).toEqual(['boardId', 'cardId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'add_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'text', 'expectedToken'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'edit_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'text', 'expectedRaw'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'check_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'expectedRaw'])
+  })
+
+  it('returns checklist items plus optimistic-concurrency values through the MCP checklist tools', async () => {
+    const card = await sdk.createCard({ content: '# MCP checklist', tasks: ['- [ ] First task'] })
+    const { tools } = captureChecklistTools(sdk)
+
+    const listTool = tools.find((tool) => tool.name === 'list_card_checklist_items')
+    const addTool = tools.find((tool) => tool.name === 'add_card_checklist_item')
+    const checkTool = tools.find((tool) => tool.name === 'check_card_checklist_item')
+
+    expect(listTool).toBeDefined()
+    expect(addTool).toBeDefined()
+    expect(checkTool).toBeDefined()
+
+    const listed = JSON.parse(readMcpTextContent(await listTool!.handler({ cardId: card.id })))
+    expect(listed).toMatchObject({
+      cardId: card.id,
+      boardId: 'default',
+      summary: {
+        total: 1,
+        completed: 0,
+        incomplete: 1,
+      },
+      items: [
+        {
+          index: 0,
+          raw: '- [ ] First task',
+          expectedRaw: '- [ ] First task',
+          checked: false,
+          text: 'First task',
+        },
+      ],
+    })
+    expect(listed.token).toMatch(/^cl1:/)
+
+    const added = JSON.parse(readMcpTextContent(await addTool!.handler({
+      cardId: card.id,
+      text: 'Second task',
+      expectedToken: listed.token,
+    })))
+    expect(added.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+    expect(added.token).toMatch(/^cl1:/)
+
+    const checked = JSON.parse(readMcpTextContent(await checkTool!.handler({
+      cardId: card.id,
+      index: 1,
+      expectedRaw: '- [ ] Second task',
+    })))
+    expect(checked).toMatchObject({
+      cardId: card.id,
+      boardId: 'default',
+      summary: {
+        total: 2,
+        completed: 1,
+        incomplete: 1,
+      },
+      items: [
+        {
+          index: 0,
+          raw: '- [ ] First task',
+          expectedRaw: '- [ ] First task',
+          checked: false,
+          text: 'First task',
+        },
+        {
+          index: 1,
+          raw: '- [x] Second task',
+          expectedRaw: '- [x] Second task',
+          checked: true,
+          text: 'Second task',
+        },
+      ],
+    })
+    expect(checked.token).toMatch(/^cl1:/)
   })
 })
 

@@ -12,7 +12,7 @@ import * as http from 'http'
 import * as https from 'https'
 import { readConfig, writeConfig } from '../shared/config'
 import type { Webhook } from '../shared/config'
-import type { SDKEventType } from './types'
+import type { SDKEventType, AfterEventPayload } from './types'
 
 /**
  * Fires matching webhooks for an event.
@@ -42,10 +42,15 @@ export function fireWebhooks(workspaceRoot: string, event: SDKEventType, data: u
   }
   console.log(`[kanban-lite/webhooks] firing ${matching.length} webhook(s) for event=${event}: ${matching.map(w => w.id).join(', ')}`)
 
+  const isEnvelope = data !== null && typeof data === 'object' && 'data' in (data as object)
+  const ap = isEnvelope ? (data as AfterEventPayload) : undefined
   const payload = JSON.stringify({
     event,
-    timestamp: new Date().toISOString(),
-    data
+    timestamp: ap?.timestamp ?? new Date().toISOString(),
+    actor: ap?.actor,
+    boardId: ap?.boardId,
+    meta: ap?.meta,
+    data: isEnvelope ? ap!.data : data,
   })
 
   for (const webhook of matching) {

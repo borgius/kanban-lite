@@ -186,6 +186,7 @@ function collectStandaloneHttpHandlers(
     authCapabilities: ctx.sdk.capabilities?.authProviders ?? {
       'auth.identity': { provider: 'noop' },
       'auth.policy': { provider: 'noop' },
+      'auth.visibility': { provider: 'none' },
     },
     webhookCapabilities: ctx.sdk.capabilities?.webhookProviders ?? null,
   } as const

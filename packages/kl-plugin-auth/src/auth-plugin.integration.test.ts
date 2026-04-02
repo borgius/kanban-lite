@@ -104,10 +104,20 @@ describe('kl-plugin-auth: manifest shape (kanban-lite loader contract)', () => {
 describe('kl-plugin-auth: RBAC role action sets (kanban-lite action catalog)', () => {
   it('RBAC_USER_ACTIONS is a Set of strings covering card-interaction operations', () => {
     expect(RBAC_USER_ACTIONS).toBeInstanceOf(Set)
-    expect(RBAC_USER_ACTIONS.has('form.submit')).toBe(true)
-    expect(RBAC_USER_ACTIONS.has('comment.create')).toBe(true)
-    expect(RBAC_USER_ACTIONS.has('attachment.add')).toBe(true)
-    expect(RBAC_USER_ACTIONS.has('log.add')).toBe(true)
+    for (const action of [
+      'card.checklist.show',
+      'card.checklist.add',
+      'card.checklist.edit',
+      'card.checklist.delete',
+      'card.checklist.check',
+      'card.checklist.uncheck',
+      'form.submit',
+      'comment.create',
+      'attachment.add',
+      'log.add',
+    ]) {
+      expect(RBAC_USER_ACTIONS.has(action)).toBe(true)
+    }
   })
 
   it('RBAC_MANAGER_ACTIONS is a superset of RBAC_USER_ACTIONS', () => {
@@ -271,7 +281,18 @@ describe('kl-plugin-auth: RBAC policy provider (mirrors KanbanSDK._authorizeActi
 
   it('allows user role to perform card-interaction actions', async () => {
     const identity: AuthIdentity = { subject: 'alice', roles: ['user'] }
-    for (const action of ['form.submit', 'comment.create', 'attachment.add', 'log.add']) {
+    for (const action of [
+      'card.checklist.show',
+      'card.checklist.add',
+      'card.checklist.edit',
+      'card.checklist.delete',
+      'card.checklist.check',
+      'card.checklist.uncheck',
+      'form.submit',
+      'comment.create',
+      'attachment.add',
+      'log.add',
+    ]) {
       const d = await RBAC_POLICY_PLUGIN.checkPolicy(identity, action, ctx)
       expect(d.allowed).toBe(true)
       expect(d.actor).toBe('alice')
@@ -942,7 +963,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
       type: 'string',
       title: 'Action',
-      enum: ['card.create', 'plugin-settings.read', 'plugin-settings.update', 'settings.update'],
+      enum: ['card.checklist.show', 'card.create', 'plugin-settings.read', 'plugin-settings.update', 'settings.update'],
       minLength: 1,
     })
     expect(sdk.listAvailableEvents).toHaveBeenCalledTimes(1)

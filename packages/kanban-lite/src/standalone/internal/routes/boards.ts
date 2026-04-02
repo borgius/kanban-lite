@@ -1,10 +1,18 @@
 import type { KanbanColumn, CreateCardPayload, Priority, Card } from '../../../shared/types'
 import { readConfig } from '../../../shared/config'
 import type { CardStateCursor } from '../../../sdk/plugins'
+import { buildChecklistReadModel } from '../../../sdk/modules/checklist'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { buildInitMessage, broadcast, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
-import { doSubmitForm } from '../../mutationService'
+import {
+  doAddChecklistItem,
+  doCheckChecklistItem,
+  doDeleteChecklistItem,
+  doEditChecklistItem,
+  doSubmitForm,
+  doUncheckChecklistItem,
+} from '../../mutationService'
 import { authErrorToHttpStatus, extractAuthContext, getAuthErrorLike, getCardStateErrorLike } from '../../authUtils'
 import { jsonError, jsonOk, readBody } from '../../httpUtils'
 import {
@@ -23,6 +31,13 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
   const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
   const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
+  const parseChecklistIndex = (value: string): number => {
+    const index = Number.parseInt(value, 10)
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error('Checklist index must be a non-negative integer')
+    }
+    return index
+  }
   const handleKnownError = (err: unknown): void => {
     const authErr = getAuthErrorLike(err)
     if (authErr) {
@@ -228,10 +243,11 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('GET', '/api/boards/:boardId/tasks')
   if (params) {
     try {
-      const boardColumns = sdk.listColumns(params.boardId)
+      const { boardId } = params
+      const boardColumns = sdk.listColumns(boardId)
       const tasks = await runWithRequestAuth(() => sdk.listCards(
         boardColumns.map(column => column.id),
-        params.boardId,
+        boardId,
         getListCardsOptions(url.searchParams),
       ))
       jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
@@ -244,7 +260,8 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
   params = route('GET', '/api/boards/:boardId/tasks/active')
   if (params) {
     try {
-      const card = await runWithRequestAuth(() => sdk.getActiveCard(params.boardId))
+      const { boardId } = params
+      const card = await runWithRequestAuth(() => sdk.getActiveCard(boardId))
       jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
@@ -269,6 +286,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         assignee: (body.assignee as string) || null,
         dueDate: (body.dueDate as string) || null,
         labels: (body.labels as string[]) || [],
+        tasks: body.tasks as string[] | undefined,
         metadata: body.metadata as Record<string, unknown> | undefined,
         actions: body.actions as string[] | Record<string, string> | undefined,
         forms: body.forms as CreateCardPayload['forms'],
@@ -276,6 +294,144 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         boardId,
       }))
       jsonOk(res, sanitizeCard(card), 201)
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('GET', '/api/boards/:boardId/tasks/:id/checklist')
+  if (params) {
+    try {
+      const { boardId, id } = params
+      const card = await getRequestScopedCard(id, boardId)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/checklist')
+  if (params) {
+    try {
+      const { boardId, id } = params
+      const body = await readBody(req)
+      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
+        jsonError(res, 400, 'text is required')
+        return true
+      }
+      if (typeof body.expectedToken !== 'string' || body.expectedToken.trim().length === 0) {
+        jsonError(res, 400, 'expectedToken is required')
+        return true
+      }
+      const card = await runWithRequestAuth(() => doAddChecklistItem(ctx, id, body.text as string, body.expectedToken as string, boardId))
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('PUT', '/api/boards/:boardId/tasks/:id/checklist/:index')
+  if (params) {
+    try {
+      const { boardId, id, index } = params
+      const body = await readBody(req)
+      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
+        jsonError(res, 400, 'text is required')
+        return true
+      }
+      const card = await runWithRequestAuth(() => doEditChecklistItem(
+        ctx,
+        id,
+        parseChecklistIndex(index),
+        body.text as string,
+        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        boardId,
+      ))
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('DELETE', '/api/boards/:boardId/tasks/:id/checklist/:index')
+  if (params) {
+    try {
+      const { boardId, id, index } = params
+      const body = await readBody(req)
+      const card = await runWithRequestAuth(() => doDeleteChecklistItem(
+        ctx,
+        id,
+        parseChecklistIndex(index),
+        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        boardId,
+      ))
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/checklist/:index/check')
+  if (params) {
+    try {
+      const { boardId, id, index } = params
+      const body = await readBody(req)
+      const card = await runWithRequestAuth(() => doCheckChecklistItem(
+        ctx,
+        id,
+        parseChecklistIndex(index),
+        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        boardId,
+      ))
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/checklist/:index/uncheck')
+  if (params) {
+    try {
+      const { boardId, id, index } = params
+      const body = await readBody(req)
+      const card = await runWithRequestAuth(() => doUncheckChecklistItem(
+        ctx,
+        id,
+        parseChecklistIndex(index),
+        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        boardId,
+      ))
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, buildChecklistReadModel(card))
+      }
     } catch (err) {
       handleKnownError(err)
     }

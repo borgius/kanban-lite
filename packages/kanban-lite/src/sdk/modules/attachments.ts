@@ -8,7 +8,9 @@ import type { SDKContext } from './context'
  * Adds a file attachment to a card.
  */
 export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: { cardId: string; sourcePath: string; boardId?: string }): Promise<Card> {
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const fileName = path.basename(sourcePath)
@@ -29,7 +31,9 @@ export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, board
  * Removes an attachment reference from a card's metadata.
  */
 export async function removeAttachment(ctx: SDKContext, { cardId, attachment, boardId }: { cardId: string; attachment: string; boardId?: string }): Promise<Card> {
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   card.attachments = card.attachments.filter(a => a !== attachment)

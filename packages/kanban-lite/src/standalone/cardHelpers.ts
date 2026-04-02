@@ -13,6 +13,7 @@ export function buildCardFrontmatter(card: Card): CardFrontmatter {
     completedAt: card.completedAt,
     labels: card.labels,
     attachments: card.attachments,
+    tasks: card.tasks,
     order: card.order,
     metadata: card.metadata,
     actions: card.actions,

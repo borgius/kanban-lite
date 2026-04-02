@@ -8,6 +8,7 @@ import { DatePicker } from './DatePicker'
 import { MarkdownEditor } from './MarkdownEditor'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
 import type { CardDisplaySettings } from '../../shared/types'
+import { isReservedChecklistLabel } from '../../sdk/modules/checklist'
 
 interface CreateCardDialogProps {
   isOpen: boolean
@@ -188,7 +189,13 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
 
   const existingLabels = useMemo(() => {
     const labelSet = new Set<string>()
-    cards.forEach(f => f.labels.forEach(l => labelSet.add(l)))
+    cards.forEach((card) => {
+      card.labels.forEach((label) => {
+        if (!isReservedChecklistLabel(label)) {
+          labelSet.add(label)
+        }
+      })
+    })
     return Array.from(labelSet).sort()
   }, [cards])
 
@@ -202,7 +209,7 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
 
   const addLabel = (label?: string) => {
     const l = (label || newLabel).trim()
-    if (l && !labels.includes(l)) {
+    if (l && !labels.includes(l) && !isReservedChecklistLabel(l)) {
       onChange([...labels, l])
     }
     setNewLabel('')

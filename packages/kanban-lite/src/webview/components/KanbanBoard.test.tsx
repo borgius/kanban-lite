@@ -1,6 +1,36 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Card } from '../../shared/types'
+import type { LayoutMode, SortOrder } from '../store'
+
+type ColumnDragTransfer = {
+  effectAllowed?: string
+  dropEffect?: string
+  types?: string[]
+  setData?: (type: string, value: string) => void
+}
+
+type RenderedKanbanColumnProps = {
+  column: { id: string }
+  isMinimized?: boolean
+  onColumnDragStart?: (event: { dataTransfer: ColumnDragTransfer }, columnId: string) => void
+  onColumnDragOver?: (event: {
+    preventDefault: () => void
+    clientX: number
+    clientY?: number
+    currentTarget: {
+      getBoundingClientRect: () => {
+        left?: number
+        width?: number
+        top?: number
+        height?: number
+      }
+    }
+    dataTransfer: ColumnDragTransfer
+  }, columnIndex: number) => void
+  onColumnDrop?: (event: { preventDefault: () => void }) => void
+}
 
 const hookRuntime = {
   values: [] as unknown[],
@@ -20,7 +50,7 @@ const hookRuntime = {
   },
 }
 
-const renderedColumnProps: Array<Record<string, unknown>> = []
+const renderedColumnProps: RenderedKanbanColumnProps[] = []
 
 const storeState = {
   columns: [
@@ -35,14 +65,14 @@ const storeState = {
     drawerWidth: 50,
   },
   effectiveDrawerWidth: 50,
-  getFilteredCardsByStatus: vi.fn(() => []),
-  getCardsByStatus: vi.fn(() => []),
-  getHiddenColumnIds: vi.fn(() => ['hidden']),
-  getMinimizedColumnIds: vi.fn(() => []),
-  toggleColumnMinimized: vi.fn(),
-  layout: 'horizontal' as const,
-  columnSorts: {},
-  setColumnSort: vi.fn(),
+  getFilteredCardsByStatus: vi.fn<(status: string) => Card[]>(() => []),
+  getCardsByStatus: vi.fn<(status: string) => Card[]>(() => []),
+  getHiddenColumnIds: vi.fn<(boardId: string) => string[]>(() => ['hidden']),
+  getMinimizedColumnIds: vi.fn<(boardId: string) => string[]>(() => []),
+  toggleColumnMinimized: vi.fn<(boardId: string, columnId: string) => void>(),
+  layout: 'horizontal' as LayoutMode,
+  columnSorts: {} as Record<string, SortOrder>,
+  setColumnSort: vi.fn<(columnId: string, sort: SortOrder) => void>(),
 }
 
 vi.mock('react', async (importOriginal) => {
@@ -92,7 +122,7 @@ vi.mock('lucide-react', () => ({
 }))
 
 vi.mock('./KanbanColumn', () => ({
-  KanbanColumn: (props: Record<string, unknown>) => {
+  KanbanColumn: (props: RenderedKanbanColumnProps) => {
     renderedColumnProps.push(props)
     return null
   },
@@ -162,7 +192,7 @@ describe('KanbanBoard hidden column reorder behavior', () => {
   it('keeps hidden columns out of the rendered board while preserving them in reorder callbacks', () => {
     const { columns: initialColumns } = renderBoard()
 
-    expect(initialColumns.map((props) => props.column && (props.column as { id: string }).id)).toEqual(['todo', 'done'])
+    expect(initialColumns.map((props) => props.column.id)).toEqual(['todo', 'done'])
 
     const doneColumn = initialColumns[1]
     doneColumn.onColumnDragStart?.({
@@ -259,10 +289,11 @@ describe('KanbanBoard hidden column reorder behavior', () => {
       if (typeof callback === 'function') {
         callback()
       }
-      return 1 as ReturnType<typeof setTimeout>
-    }) as typeof setTimeout)
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    }) as unknown as typeof setTimeout)
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => {})
     const scrollBy = vi.fn()
+    const scrollIntoView = vi.fn()
 
     const { effects, refs } = renderBoard({ selectedCardId: 'card-1' })
 
@@ -270,6 +301,7 @@ describe('KanbanBoard hidden column reorder behavior', () => {
       getBoundingClientRect: () => ({ left: 0, right: 300 }),
       querySelector: () => ({
         getBoundingClientRect: () => ({ left: 600, right: 750 }),
+        scrollIntoView,
       }),
       scrollBy,
     }
@@ -290,8 +322,8 @@ describe('KanbanBoard minimized column prop propagation', () => {
   it('passes isMinimized=true only to columns present in the minimized set', () => {
     storeState.getMinimizedColumnIds.mockReturnValueOnce(['todo'])
     const { columns } = renderBoard()
-    const todoProps = columns.find((p) => (p.column as { id: string }).id === 'todo')
-    const doneProps = columns.find((p) => (p.column as { id: string }).id === 'done')
+    const todoProps = columns.find((p) => p.column.id === 'todo')
+    const doneProps = columns.find((p) => p.column.id === 'done')
     expect(todoProps?.isMinimized).toBe(true)
     expect(doneProps?.isMinimized).toBe(false)
   })
@@ -299,7 +331,7 @@ describe('KanbanBoard minimized column prop propagation', () => {
   it('renders all visible (non-hidden) columns regardless of minimized state', () => {
     storeState.getMinimizedColumnIds.mockReturnValueOnce(['todo'])
     const { columns } = renderBoard()
-    const ids = columns.map((p) => (p.column as { id: string }).id)
+    const ids = columns.map((p) => p.column.id)
     expect(ids).toEqual(['todo', 'done'])
   })
 })

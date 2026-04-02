@@ -31,9 +31,14 @@ import {
 } from './broadcastService'
 import { parseSubmitData } from './cardHelpers'
 import {
+  doAddChecklistItem,
   doCreateCard,
   doMoveCard,
   doUpdateCard,
+  doEditChecklistItem,
+  doDeleteChecklistItem,
+  doCheckChecklistItem,
+  doUncheckChecklistItem,
   doDeleteCard,
   doPermanentDeleteCard,
   doPurgeDeletedCards,
@@ -209,6 +214,15 @@ async function sendSettingsBridgePayload(
 export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, message: unknown, authContext: AuthContext): Promise<void> {
   const msg = message as Record<string, unknown>
   const runWithScopedAuth = <T>(fn: () => Promise<T>): Promise<T> => ctx.sdk.runWithAuth(authContext, fn)
+  const parseChecklistIndex = (value: unknown): number => {
+    const index = typeof value === 'number'
+      ? value
+      : Number.parseInt(String(value), 10)
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error('Checklist index must be a non-negative integer')
+    }
+    return index
+  }
   switch (msg.type) {
     case 'ready':
       ctx.migrating = true
@@ -299,6 +313,77 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         forms: fm.forms,
         formData: fm.formData,
       }))
+      break
+    }
+
+    case 'addChecklistItem': {
+      const updatedCard = await runWithScopedAuth(() => doAddChecklistItem(
+        ctx,
+        msg.cardId as string,
+        msg.text as string,
+        msg.expectedToken as string,
+        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
+      ))
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
+      break
+    }
+
+    case 'editChecklistItem': {
+      const updatedCard = await runWithScopedAuth(() => doEditChecklistItem(
+        ctx,
+        msg.cardId as string,
+        parseChecklistIndex(msg.index),
+        msg.text as string,
+        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
+      ))
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
+      break
+    }
+
+    case 'deleteChecklistItem': {
+      const updatedCard = await runWithScopedAuth(() => doDeleteChecklistItem(
+        ctx,
+        msg.cardId as string,
+        parseChecklistIndex(msg.index),
+        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
+      ))
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
+      break
+    }
+
+    case 'checkChecklistItem': {
+      const updatedCard = await runWithScopedAuth(() => doCheckChecklistItem(
+        ctx,
+        msg.cardId as string,
+        parseChecklistIndex(msg.index),
+        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
+      ))
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
+      break
+    }
+
+    case 'uncheckChecklistItem': {
+      const updatedCard = await runWithScopedAuth(() => doUncheckChecklistItem(
+        ctx,
+        msg.cardId as string,
+        parseChecklistIndex(msg.index),
+        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
+      ))
+      if (updatedCard) {
+        await broadcastCardContentToEditingClients(ctx, updatedCard)
+      }
       break
     }
 

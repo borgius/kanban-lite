@@ -141,6 +141,7 @@ interface CardDoc {
   completed_at: string | null
   labels: string[]
   attachments: string[]
+  tasks: string[] | null
   order_key: string
   content: string
   metadata: Record<string, unknown> | null
@@ -316,6 +317,7 @@ export class MongodbStorageEngine implements StorageEngine {
       completed_at: card.completedAt ?? null,
       labels: card.labels ?? [],
       attachments: card.attachments ?? [],
+      tasks: card.tasks && card.tasks.length > 0 ? [...card.tasks] : null,
       order_key: card.order ?? 'a0',
       content: card.content ?? '',
       metadata: hasMetadata ? (card.metadata as Record<string, unknown>) : null,
@@ -405,6 +407,7 @@ export class MongodbStorageEngine implements StorageEngine {
       completedAt: doc.completed_at ?? null,
       labels: doc.labels ?? [],
       attachments: doc.attachments ?? [],
+      ...(doc.tasks ? { tasks: doc.tasks } : {}),
       order: doc.order_key,
       content: doc.content,
       comments,

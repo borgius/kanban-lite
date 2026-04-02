@@ -1,5 +1,5 @@
 prd_id: prd-card-tasks
-version: 0.1.0
+version: 0.2.0
 status: final
 
 user_stories:
@@ -12,6 +12,12 @@ user_stories:
   - as_a: policy author
     i_want: task visibility and task actions to be authorized separately
     so_that: users can be allowed to open a card without automatically seeing or mutating its tasks
+  - as_a: card collaborator
+    i_want: checklist state to automatically maintain reserved labels `tasks` and `in-progress`
+    so_that: label-driven organization reflects checklist state without requiring manual label edits
+  - as_a: policy author
+    i_want: checklist-hidden callers to receive cards without checklist-derived labels
+    so_that: checklist existence cannot leak through labels, visibility rules, search, or filters
   - as_a: platform maintainer
     i_want: tasks to behave the same across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins
     so_that: card task workflows stay portable across every supported interface and backend
@@ -23,16 +29,21 @@ scope:
     - Add a fixed card-detail tab labeled `Tasks X/N`, where X is the completed count and N is the total count.
     - Support classic todo-list interactions: add, delete, check, uncheck, and inline text editing.
     - Support simple inline markdown in task text while editing and rendering: bold, italic, code, and links.
+    - Automatically derive reserved labels from checklist state: any tasks add `tasks`, any incomplete tasks add `in-progress`, all-complete checklists remove `in-progress`, and no tasks remove both reserved labels.
+    - Treat `tasks` and `in-progress` as reserved checklist-derived labels rather than user-owned label membership.
     - Let the auth plugin authorize `show`, `add`, `edit`, `delete`, `check`, and `uncheck` task actions independently.
-    - Protect task visibility separately from general card visibility even though tasks live on the shared card object.
-    - Omit the `tasks` field entirely from card payloads when the caller lacks task-show permission.
-    - Keep SDK-owned task auth and redaction as the canonical behavior, with hosts rendering already-scoped data.
+    - Protect task visibility separately from general card visibility even though tasks live on the shared card object and reserved checklist-derived labels live in shared card labels.
+    - Omit the `tasks` field entirely from caller-visible card payloads when checklist-show / task-show permission is denied.
+    - Strip reserved checklist-derived labels from caller-scoped card projections when checklist-show / task-show permission is denied, before auth.visibility evaluation, search, label filtering, and output shaping.
+    - Keep SDK-owned task auth, reserved-label derivation, and redaction as the canonical behavior, with hosts rendering already-scoped data.
+    - Preserve the naming distinction between reserved label `in-progress` and workflow status/column `in-progress`.
     - Support tasks across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
     - Preserve backward compatibility so cards without tasks remain valid.
   out_of_scope:
     - Nested subtasks, task-level assignees, due dates, priorities, attachments, or comments.
     - Rich markdown blocks, HTML, embeds, or other formatting beyond simple inline markdown.
     - Separate standalone task entities, task IDs, or task metadata outside the stored markdown task line.
+    - User-owned membership, rename, or delete semantics for reserved checklist-derived labels `tasks` and `in-progress`.
     - Host-local task auth or redaction rules that diverge from SDK behavior.
     - Breaking schema changes or mandatory migration for cards that do not use tasks.
 
@@ -47,12 +58,18 @@ acceptance_criteria:
     verification: Exercise each task action and confirm the resulting `card.tasks` entries update correctly.
   - criterion: Task text supports simple inline markdown while editing and rendering.
     verification: Author tasks containing bold, italic, code, and links and confirm raw markdown is preserved while rendered views display the supported inline formatting.
+  - criterion: Checklist state automatically manages reserved labels `tasks` and `in-progress`.
+    verification: Exercise zero-task, incomplete-task, all-complete, and final-task-removed flows and confirm any tasks add `tasks`, incomplete tasks add `in-progress`, all-complete checklists remove `in-progress`, and no tasks leave neither reserved label.
+  - criterion: Reserved checklist-derived labels are not user-owned label membership.
+    verification: Attempt manual label add/remove/rename/delete flows touching `tasks` or `in-progress` and confirm the system preserves checklist-derived membership semantics instead of treating those labels as ordinary user-owned labels.
   - criterion: The auth plugin authorizes `show`, `add`, `edit`, `delete`, `check`, and `uncheck` independently.
     verification: Configure distinct allow and deny cases per action and confirm each surface enforces the same action-specific outcomes.
   - criterion: Task visibility is protected separately from general card visibility.
-    verification: Use a caller who can view a card but lacks task-show permission and confirm the card remains visible while the `tasks` field is omitted rather than returned as an empty array.
-  - criterion: The SDK owns task auth and redaction behavior and hosts do not re-scope task data locally.
-    verification: Review the cross-surface flow and confirm hosts consume SDK-scoped payloads instead of applying their own task-visibility logic.
+    verification: Use a caller who can view a card but lacks checklist-show / task-show permission and confirm the card remains visible while the `tasks` field is omitted, reserved checklist-derived labels are stripped from the caller-visible label set, and visibility/search/filter outcomes match a projection with no checklist data.
+  - criterion: The SDK owns task auth, reserved-label derivation, and redaction behavior and hosts do not re-scope task data locally.
+    verification: Review the cross-surface flow and confirm hosts consume SDK-scoped payloads instead of applying their own task-visibility or checklist-derived label logic.
+  - criterion: The naming distinction between label `in-progress` and status/column `in-progress` remains explicit.
+    verification: Exercise cards where workflow status/column and checklist-derived label state differ and confirm docs, UI copy, and behavior treat them as separate concepts.
   - criterion: Tasks are supported consistently across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
     verification: Persist and retrieve task-bearing cards through each supported interface and backend and confirm parity of stored values, counts, and omission semantics.
 
@@ -74,8 +91,11 @@ features:
   - name: Simple inline markdown task text
     overview: Support bold, italic, code, and links in task text during editing and rendering.
     status: planned
+  - name: Reserved checklist-derived labels
+    overview: Auto-manage reserved labels `tasks` and `in-progress` from checklist state, while treating label `in-progress` as distinct from workflow status/column `in-progress`.
+    status: planned
   - name: Separate task auth and redaction
-    overview: Authorize `show`, `add`, `edit`, `delete`, `check`, and `uncheck` independently and omit `tasks` entirely when `show` is denied.
+    overview: Authorize `show`, `add`, `edit`, `delete`, `check`, and `uncheck` independently and omit `tasks` plus strip reserved checklist-derived labels when checklist visibility is denied.
     status: planned
   - name: Cross-surface and cross-storage parity
     overview: Keep task behavior consistent across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
@@ -90,15 +110,23 @@ decisions:
     rationale: A fixed tab makes checklist state discoverable and provides a stable home for card task management.
   - decision: Task text supports only simple inline markdown.
     rationale: Bold, italic, code, and links cover common task authoring needs without expanding into rich-text or block-markdown editing.
+  - decision: Labels `tasks` and `in-progress` are reserved checklist-derived labels, not user-owned label membership.
+    rationale: Checklist state must remain canonical and self-healing instead of depending on manual label edits to stay in sync.
+  - decision: Reserved checklist-derived labels follow a fixed derivation contract.
+    rationale: Any tasks must add `tasks`, any incomplete tasks must add `in-progress`, all-complete checklists must remove `in-progress`, and no-task cards must remove both reserved labels so label state is deterministic.
   - decision: Task permissions are authorized separately for `show`, `add`, `edit`, `delete`, `check`, and `uncheck`.
     rationale: Operators need fine-grained control over who can view tasks at all and which task mutations each caller may perform.
-  - decision: When task-show permission is denied, card payloads omit the `tasks` field entirely rather than returning an empty array.
-    rationale: Omission preserves separate visibility semantics and avoids conflating hidden tasks with visible-but-empty tasks.
-  - decision: The SDK owns task auth and redaction behavior.
-    rationale: Centralizing scoping in the SDK keeps REST API, CLI, MCP, UI, and storage integrations consistent and prevents host-specific leaks or drift.
+  - decision: When checklist-show / task-show permission is denied, caller-scoped card projections omit `tasks` and strip reserved checklist-derived labels before auth.visibility, search, label filtering, and output shaping.
+    rationale: Caller-visible cards must not leak checklist existence or have visibility/search behavior altered by checklist-derived labels the caller is not allowed to observe.
+  - decision: The reserved label `in-progress` and workflow status/column `in-progress` are distinct concepts.
+    rationale: The label tracks checklist completion state while the status/column tracks workflow position, so docs and behavior must keep them separate.
+  - decision: The SDK owns task auth, reserved-label derivation, and redaction behavior.
+    rationale: Centralizing scoping and derived-label canonicalization in the SDK keeps REST API, CLI, MCP, UI, and storage integrations consistent and prevents host-specific leaks or drift.
   - decision: The feature is additive and backward-compatible.
     rationale: Existing cards remain valid without migration because `tasks` is optional and absent unless used.
 
 changes:
+  - version: 0.2.0
+    change: Revise the card-tasks PRD so checklist state automatically manages the reserved labels `tasks` and `in-progress`, those labels are treated as system-managed rather than user-owned membership, checklist-hidden callers have both `tasks` and the reserved checklist-derived labels stripped from their caller-scoped projections before visibility/search/filtering/output shaping, and the naming distinction between label `in-progress` and status/column `in-progress` is documented explicitly.
   - version: 0.1.0
     change: Replace the active PRD with the initial card-tasks PRD covering shared `card.tasks` storage, fixed `Tasks X/N` UI, classic todo-list interactions, simple inline markdown, separate task auth and redaction, SDK-owned scoping, backward compatibility, and parity across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.

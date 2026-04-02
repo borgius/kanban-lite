@@ -480,6 +480,12 @@ export type RbacRole = 'user' | 'manager' | 'admin'
  * comments, attachments, action triggers, and card-level log writes.
  */
 export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
+  'card.checklist.show',
+  'card.checklist.add',
+  'card.checklist.edit',
+  'card.checklist.delete',
+  'card.checklist.check',
+  'card.checklist.uncheck',
   'form.submit',
   'comment.create',
   'comment.update',
@@ -521,6 +527,8 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
+  'plugin-settings.read',
+  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',
@@ -783,6 +791,7 @@ export interface McpToolContext {
 
 /** Canonical MCP tool result shape used by plugin-contributed tool handlers. */
 export interface McpToolResult {
+  readonly [key: string]: unknown
   readonly content: Array<{ type: 'text'; text: string }>
   readonly isError?: boolean
 }
@@ -1826,6 +1835,14 @@ function getDiscoveredPluginSettingsProvider(
   capability: PluginCapabilityNamespace,
   providerId: string,
 ): DiscoveredPluginProvider {
+  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
+  if (normalizedProviderId !== providerId) {
+    const normalizedProvider = inventory.get(capability)?.get(normalizedProviderId)
+    if (normalizedProvider) {
+      return { ...normalizedProvider, providerId: normalizedProviderId }
+    }
+  }
+
   const provider = inventory.get(capability)?.get(providerId)
   if (provider) return provider
 
@@ -2615,6 +2632,7 @@ export async function persistPluginSettingsProviderSelection(
   redaction: PluginSettingsRedactionPolicy,
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel | null> {
+  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   pruneRedundantDerivedStorageConfig(config)
   const configuredRef = config.plugins?.[capability]
@@ -2630,16 +2648,16 @@ export async function persistPluginSettingsProviderSelection(
   }
 
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
-  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
-  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, providerId)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, normalizedProviderId)
+  const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, normalizedProviderId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
   if (selectedRef?.provider && isRecord(selectedRef.options)) {
     setCachedPluginProviderOptions(config, capability, selectedRef.provider, selectedRef.options)
   }
 
-  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, providerId)
-  const selectedTargetOptions = selectedRef?.provider === providerId && isRecord(selectedRef.options)
+  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, normalizedProviderId)
+  const selectedTargetOptions = selectedRef?.provider === normalizedProviderId && isRecord(selectedRef.options)
     ? structuredClone(selectedRef.options)
     : undefined
   const nextOptions = selectedTargetOptions
@@ -2656,7 +2674,7 @@ export async function persistPluginSettingsProviderSelection(
     ? normalizePluginSettingsProviderOptionsForPersistence(capability, currentTargetOptions, nextOptions)
     : undefined
   const nextRef = {
-    provider: providerId,
+    provider: normalizedProviderId,
     ...(persistedOptions !== undefined ? { options: persistedOptions } : {}),
   }
 
@@ -2664,13 +2682,13 @@ export async function persistPluginSettingsProviderSelection(
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(
     'plugin-settings-provider-not-found',
     'The requested plugin provider is not available for this capability.',
-    { capability, providerId },
+    { capability, providerId: normalizedProviderId },
   )
 }
 
@@ -2682,13 +2700,14 @@ export async function persistPluginSettingsProviderOptions(
   redaction: PluginSettingsRedactionPolicy,
   sdk: KanbanSDK,
 ): Promise<PluginSettingsProviderReadModel> {
+  const normalizedProviderId = normalizeProviderIdForComparison(capability, providerId)
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   pruneRedundantDerivedStorageConfig(config)
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
-  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, providerId)
+  const provider = getDiscoveredPluginSettingsProvider(inventory, capability, normalizedProviderId)
   const nextOptions = ensurePluginSettingsOptionsRecord(options, capability, providerId)
   const selectedRef = getSelectedProviderRef(config, capability)
-  const currentOptions = getPersistedPluginProviderOptions(config, capability, providerId)
+  const currentOptions = getPersistedPluginProviderOptions(config, capability, normalizedProviderId)
   const secretPaths = provider.optionsSchema?.secrets.map((secret) => secret.path) ?? []
   const mergedOptions = mergeProviderOptionsUpdate(currentOptions, nextOptions, '', secretPaths, redaction)
   const persistedOptions = normalizePluginSettingsProviderOptionsForPersistence(
@@ -2697,24 +2716,24 @@ export async function persistPluginSettingsProviderOptions(
     isRecord(mergedOptions) ? mergedOptions : {},
   )
 
-  setCachedPluginProviderOptions(config, capability, providerId, persistedOptions)
+  setCachedPluginProviderOptions(config, capability, normalizedProviderId, persistedOptions)
 
-  if (selectedRef?.provider === providerId) {
+  if (selectedRef?.provider === normalizedProviderId) {
     getMutablePluginsRecord(config)[capability] = {
-      provider: providerId,
+      provider: normalizedProviderId,
       options: persistedOptions,
     }
   }
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, providerId, redaction, sdk)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
   if (nextProvider) return nextProvider
 
   throw new PluginSettingsStoreError(
     'plugin-settings-provider-not-found',
     'The requested plugin provider is not available for this capability.',
-    { capability, providerId },
+    { capability, providerId: normalizedProviderId },
   )
 }
 
@@ -3492,6 +3511,11 @@ const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
   'card.delete',
   'card.transfer',
   'card.action.trigger',
+  'card.checklist.add',
+  'card.checklist.edit',
+  'card.checklist.delete',
+  'card.checklist.check',
+  'card.checklist.uncheck',
   'card.purgeDeleted',
   'comment.create',
   'comment.update',

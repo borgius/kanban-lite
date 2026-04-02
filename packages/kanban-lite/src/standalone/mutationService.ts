@@ -12,6 +12,10 @@ import { buildCardFrontmatter } from './cardHelpers'
 type CreateCardData = CreateCardPayload
 
 export async function doCreateCard(ctx: StandaloneContext, data: CreateCardData): Promise<Card> {
+  return doCreateCardForBoard(ctx, data)
+}
+
+export async function doCreateCardForBoard(ctx: StandaloneContext, data: CreateCardData, boardId = ctx.currentBoardId): Promise<Card> {
   ctx.migrating = true
   try {
     const card = await ctx.sdk.createCard({
@@ -21,11 +25,12 @@ export async function doCreateCard(ctx: StandaloneContext, data: CreateCardData)
       assignee: data.assignee,
       dueDate: data.dueDate,
       labels: data.labels,
+      tasks: data.tasks,
       metadata: data.metadata,
       actions: data.actions,
       forms: data.forms,
       formData: data.formData,
-      boardId: ctx.currentBoardId,
+      boardId,
     })
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await loadCards(ctx)
@@ -53,12 +58,21 @@ export async function doMoveCard(ctx: StandaloneContext, cardId: string, newStat
 }
 
 export async function doUpdateCard(ctx: StandaloneContext, cardId: string, updates: Partial<Card>): Promise<Card | null> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
+  return doUpdateCardForBoard(ctx, cardId, updates)
+}
+
+export async function doUpdateCardForBoard(
+  ctx: StandaloneContext,
+  cardId: string,
+  updates: Partial<Card>,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  const card = await ctx.sdk.getCard(cardId, boardId)
   if (!card) return null
 
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.updateCard(cardId, updates, ctx.currentBoardId)
+    const updated = await ctx.sdk.updateCard(cardId, updates, boardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await loadCards(ctx)
@@ -67,6 +81,79 @@ export async function doUpdateCard(ctx: StandaloneContext, cardId: string, updat
   } finally {
     ctx.migrating = false
   }
+}
+
+async function doChecklistMutationForBoard(
+  ctx: StandaloneContext,
+  cardId: string,
+  mutate: () => Promise<Card>,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  const card = await ctx.sdk.getCard(cardId, boardId)
+  if (!card) return null
+
+  ctx.migrating = true
+  try {
+    const updated = await mutate()
+    ctx.lastWrittenContent = serializeCard(updated)
+    ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
+    await loadCards(ctx)
+    broadcast(ctx, buildInitMessage(ctx))
+    return updated
+  } finally {
+    ctx.migrating = false
+  }
+}
+
+export async function doAddChecklistItem(
+  ctx: StandaloneContext,
+  cardId: string,
+  text: string,
+  expectedToken: string,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.addChecklistItem(cardId, text, expectedToken, boardId), boardId)
+}
+
+export async function doEditChecklistItem(
+  ctx: StandaloneContext,
+  cardId: string,
+  index: number,
+  text: string,
+  expectedRaw?: string,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.editChecklistItem(cardId, index, text, expectedRaw, boardId), boardId)
+}
+
+export async function doDeleteChecklistItem(
+  ctx: StandaloneContext,
+  cardId: string,
+  index: number,
+  expectedRaw?: string,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.deleteChecklistItem(cardId, index, expectedRaw, boardId), boardId)
+}
+
+export async function doCheckChecklistItem(
+  ctx: StandaloneContext,
+  cardId: string,
+  index: number,
+  expectedRaw?: string,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.checkChecklistItem(cardId, index, expectedRaw, boardId), boardId)
+}
+
+export async function doUncheckChecklistItem(
+  ctx: StandaloneContext,
+  cardId: string,
+  index: number,
+  expectedRaw?: string,
+  boardId = ctx.currentBoardId,
+): Promise<Card | null> {
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.uncheckChecklistItem(cardId, index, expectedRaw, boardId), boardId)
 }
 
 export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInput): Promise<SubmitFormResult> {

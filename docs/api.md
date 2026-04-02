@@ -311,6 +311,7 @@ Required: Yes
 | `assignee` | string | No | Assigned team member. |
 | `dueDate` | string | No | Due date (ISO 8601). |
 | `labels` | string[] | No | Labels/tags. |
+| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 | `metadata` | object | No | Arbitrary user-defined key/value metadata. |
 | `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
 | `formData` | object | No | Per-form saved data keyed by resolved form ID. |
@@ -445,6 +446,171 @@ Required: No
 |--------|-------------|
 | `200` | Card-state mutation result. |
 | `400` | Error. |
+| `404` | Not found. |
+
+### GET `/api/tasks/{id}/checklist`
+
+**List checklist items**
+
+Returns the shared checklist read model for the task on the default board.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Checklist read model. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/checklist`
+
+**Add checklist item**
+
+Appends a new checklist item to the task on the default board and returns the refreshed checklist read model.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Single-line checklist item text. Markdown task markers are optional on input and are canonicalized. |
+| `expectedToken` | string | Yes | Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### PUT `/api/tasks/{id}/checklist/{index}`
+
+**Edit checklist item**
+
+Edits one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Single-line checklist item text. Markdown task markers are optional on input and are canonicalized. |
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### DELETE `/api/tasks/{id}/checklist/{index}`
+
+**Delete checklist item**
+
+Deletes one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/checklist/{index}/check`
+
+**Check checklist item**
+
+Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### POST `/api/tasks/{id}/checklist/{index}/uncheck`
+
+**Uncheck checklist item**
+
+Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
 | `404` | Not found. |
 
 ### POST `/api/tasks/{id}/forms/{formId}/submit`
@@ -599,6 +765,7 @@ Required: Yes
 | `assignee` | string | No | Assigned team member. |
 | `dueDate` | string | No | Due date (ISO 8601). |
 | `labels` | string[] | No | Labels/tags. |
+| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 | `metadata` | object | No | Arbitrary user-defined key/value metadata. |
 | `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
 | `formData` | object | No | Per-form saved data keyed by resolved form ID. |
@@ -744,6 +911,177 @@ Required: No
 |--------|-------------|
 | `200` | Card-state mutation result. |
 | `400` | Error. |
+| `404` | Not found. |
+
+### GET `/api/boards/{boardId}/tasks/{id}/checklist`
+
+**List checklist items (board-scoped)**
+
+Returns the shared checklist read model for one task on the specified board.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Checklist read model. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/checklist`
+
+**Add checklist item (board-scoped)**
+
+Appends a new checklist item to the task on the specified board and returns the refreshed checklist read model.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Single-line checklist item text. Markdown task markers are optional on input and are canonicalized. |
+| `expectedToken` | string | Yes | Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### PUT `/api/boards/{boardId}/tasks/{id}/checklist/{index}`
+
+**Edit checklist item (board-scoped)**
+
+Edits one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `text` | string | Yes | Single-line checklist item text. Markdown task markers are optional on input and are canonicalized. |
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### DELETE `/api/boards/{boardId}/tasks/{id}/checklist/{index}`
+
+**Delete checklist item (board-scoped)**
+
+Deletes one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/checklist/{index}/check`
+
+**Check checklist item (board-scoped)**
+
+Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
+| `404` | Not found. |
+
+### POST `/api/boards/{boardId}/tasks/{id}/checklist/{index}/uncheck`
+
+**Uncheck checklist item (board-scoped)**
+
+Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+| `id` | path | string | Yes | Task/card identifier (supports partial ID matching) |
+| `index` | path | integer | Yes | Zero-based checklist item index |
+
+#### Request Body
+
+Required: No
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `expectedRaw` | string | No | Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Updated checklist. |
+| `400` | Validation error. |
 | `404` | Not found. |
 
 ### PATCH `/api/boards/{boardId}/tasks/{id}/move`
@@ -1360,7 +1698,6 @@ Required: Yes
 | `showDueDate` | boolean | No | — |
 | `showLabels` | boolean | No | — |
 | `showFileName` | boolean | No | — |
-| `compactMode` | boolean | No | — |
 | `showDeletedColumn` | boolean | No | — |
 | `defaultPriority` | string | No | — |
 | `defaultStatus` | string | No | — |

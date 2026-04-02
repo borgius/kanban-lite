@@ -64,6 +64,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
+- **Fixed checklist tab**: Cards with checklist visibility show a dedicated `Tasks X/N` tab for task progress, inline markdown task text, and checklist mutations without mixing checklist state into the main markdown body
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
@@ -96,6 +97,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Assignees**: Assign team members to cards
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)
 - **Labels**: Tag cards with multiple labels
+- **Checklist items**: Store optional single-line markdown checklist items directly on the card, manage them from the dedicated Tasks tab, seed them at create time from the CLI / REST API / MCP server, and allow inline links only for explicit `http:`, `https:`, and `mailto:` URLs
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
 - **Streaming comments**: AI agents can stream a comment live — a blinking-cursor indicator and `streaming` badge are shown to all connected viewers while text is being written; the comment is persisted once the stream completes (see [REST API](#comments) and [`sdk.streamComment`](#sdkstreamcomment))
@@ -156,8 +158,19 @@ kl add --title "Deploy service" --actions "retry,rollback,notify"
 # Create a card with attached forms
 kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
 
+# Seed a checklist when creating a card
+kl add --title "Ship release" --tasks '["Draft release notes","- [x] Cut RC"]'
+
 # Update form attachments or persisted per-form data
 kl edit investigate-outage --forms @forms.json --form-data @form-data.json
+
+# Checklist items
+kl checklist list ship-release --json
+kl checklist add ship-release --text "Review **docs**" --expected-token "<token-from-checklist-list>"
+kl checklist edit ship-release 0 --text "Update release notes" --expected-raw "- [ ] Draft release notes"
+kl checklist check ship-release 1 --expected-raw "- [ ] Review **docs**"
+kl checklist uncheck ship-release 1 --expected-raw "- [x] Review **docs**"
+kl checklist remove ship-release 0 --expected-raw "- [ ] Update release notes"
 
 # Show card details
 kl show implement-search
@@ -294,7 +307,7 @@ kl help api                                             # Show REST API document
 
 Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
 
-`--forms` accepts a JSON array of attached form descriptors, and `--form-data` accepts a JSON object keyed by resolved form id. Both flags also support `@path/to/file.json`.
+`--forms` accepts a JSON array of attached form descriptors, `--form-data` accepts a JSON object keyed by resolved form id, and `--tasks` accepts a JSON array of seeded checklist items. All three flags also support `@path/to/file.json`.
 
 ## Standalone Server
 
@@ -351,13 +364,19 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `GET` | `/api/tasks` | List all tasks (query: `?q=&fuzzy=&meta.<field>=&status=&priority=&assignee=&label=`) |
 | `GET` | `/api/tasks/active` | Get the currently active/open task |
 | `GET` | `/api/tasks/:id` | Get a single task |
-| `POST` | `/api/tasks` | Create a task, including optional `forms` and `formData` |
-| `PUT` | `/api/tasks/:id` | Update task properties, including `forms` and `formData` |
+| `POST` | `/api/tasks` | Create a task, including optional seeded `tasks`, `forms`, and `formData` |
+| `PUT` | `/api/tasks/:id` | Update task properties, including `forms` and `formData` (generic task updates do not edit checklist items) |
+| `GET` | `/api/tasks/:id/checklist` | Get the shared checklist read model for a task |
+| `POST` | `/api/tasks/:id/checklist` | Add a checklist item (`{ text, expectedToken }`) |
+| `PUT` | `/api/tasks/:id/checklist/:index` | Edit a checklist item (`{ text, expectedRaw? }`) |
+| `DELETE` | `/api/tasks/:id/checklist/:index` | Remove a checklist item (`{ expectedRaw? }`) |
+| `POST` | `/api/tasks/:id/checklist/:index/check` | Mark a checklist item complete (`{ expectedRaw? }`) |
+| `POST` | `/api/tasks/:id/checklist/:index/uncheck` | Mark a checklist item incomplete (`{ expectedRaw? }`) |
 | `POST` | `/api/tasks/:id/forms/:formId/submit` | Validate and submit a card form payload |
 | `PATCH` | `/api/tasks/:id/move` | Move task to column/position |
 | `DELETE` | `/api/tasks/:id` | Delete a task |
 
-Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, including `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`.
+Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, including checklist routes and `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`. Checklist read models now include an opaque `token` value that callers must echo back as `expectedToken` when appending a new checklist item.
 
 `q` is the free-text search input, `fuzzy=true` enables typo-tolerant matching, and `meta.<field>=value` keeps metadata filtering field-scoped. The same search semantics are shared with `kl list --search ... --fuzzy` and the MCP `list_cards` tool.
 
@@ -1006,7 +1025,13 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `open_card` | Explicitly acknowledge unread activity and persist actor-scoped open-card state |
 | `read_card` | Explicitly acknowledge unread activity without changing open-card state |
 | `get_active_card` | Get the currently active/open card, or `null` if none is active |
-| `create_card` | Create a new card with title, body, status, priority, metadata, forms, and formData |
+| `create_card` | Create a new card with title, body, status, priority, optional seeded tasks, metadata, forms, and formData |
+| `list_card_checklist_items` | Return the shared checklist read model for a card, including the checklist-wide add token |
+| `add_card_checklist_item` | Add a checklist item to a card using the latest `expectedToken` |
+| `edit_card_checklist_item` | Edit one checklist item with optional `expectedRaw` concurrency checks |
+| `delete_card_checklist_item` | Remove one checklist item with optional `expectedRaw` concurrency checks |
+| `check_card_checklist_item` | Mark one checklist item complete with optional `expectedRaw` concurrency checks |
+| `uncheck_card_checklist_item` | Mark one checklist item incomplete with optional `expectedRaw` concurrency checks |
 | `update_card` | Update fields of an existing card, including forms and formData |
 | `submit_card_form` | Validate and submit a card form payload through the shared SDK workflow |
 | `move_card` | Move a card to a different status column |

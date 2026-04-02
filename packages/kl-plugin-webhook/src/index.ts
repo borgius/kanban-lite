@@ -20,7 +20,8 @@ import type {
   StandaloneHttpPlugin,
   Webhook,
   WebhookProviderPlugin,
-  KanbanSDK
+  KanbanSDK,
+  AfterEventPayload,
 } from 'kanban-lite/sdk'
 
 export type {
@@ -236,10 +237,15 @@ function fireWebhooks(workspaceRoot: string, event: string, data: unknown): void
     `[kl-plugin-webhook] firing ${matching.length} webhook(s) for event=${event}: ${matching.map((w) => w.id).join(', ')}`
   )
 
+  const isEnvelope = data !== null && typeof data === 'object' && 'data' in (data as object)
+  const ap = isEnvelope ? (data as AfterEventPayload) : undefined
   const payload = JSON.stringify({
     event,
-    timestamp: new Date().toISOString(),
-    data
+    timestamp: ap?.timestamp ?? new Date().toISOString(),
+    actor: ap?.actor,
+    boardId: ap?.boardId,
+    meta: ap?.meta,
+    data: isEnvelope ? ap!.data : data,
   })
 
   for (const webhook of matching) {

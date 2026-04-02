@@ -47,7 +47,11 @@ export interface SDKContext {
     searchQuery?: string,
     fuzzy?: boolean
   ): Promise<Card[]>
+  /** @internal Raw card listing that bypasses caller-scoped checklist projection and visibility filtering. */
+  _listCardsRaw(columns?: string[], boardId?: string): Promise<Card[]>
   getCard(cardId: string, boardId?: string): Promise<Card | null>
+  /** @internal Raw card lookup that bypasses caller-scoped checklist projection and visibility filtering. */
+  _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
   getActiveCard(boardId?: string): Promise<Card | null>
   setActiveCard(cardId: string, boardId?: string): Promise<Card>
   clearActiveCard(boardId?: string): Promise<void>

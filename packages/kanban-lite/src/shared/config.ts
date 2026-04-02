@@ -613,7 +613,11 @@ function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = 
  */
 export function readConfig(workspaceRoot: string): KanbanConfig {
   const filePath = configPath(workspaceRoot)
-  const defaults = { ...DEFAULT_CONFIG, boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } } }
+  const defaults = {
+    ...DEFAULT_CONFIG,
+    boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } },
+    labels: { ...(DEFAULT_CONFIG.labels ?? {}) },
+  }
 
   // Parse the file first; fall back to defaults only for read/parse failures.
   let raw: Record<string, unknown>

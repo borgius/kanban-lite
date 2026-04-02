@@ -13,6 +13,8 @@ import {
   ERR_CARD_STATE_UNAVAILABLE,
 } from '../types'
 import type { StorageEngine } from '../plugins/types'
+import type { Card } from '../../shared/types'
+import { buildChecklistReadModel } from '../modules/checklist'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-sdk-test-'))
@@ -107,6 +109,7 @@ function installTempAuthVisibilityRuntimePackage(): () => void {
     id: 'temp-auth-visibility-runtime',
     capabilities: {
       'auth.identity': ['temp-auth-visibility-runtime'],
+      'auth.policy': ['temp-auth-visibility-runtime'],
       'auth.visibility': ['temp-auth-visibility-runtime'],
     },
   },
@@ -117,7 +120,21 @@ function installTempAuthVisibilityRuntimePackage(): () => void {
       if (context.token === 'noroles-token') return { subject: 'alice' }
       if (context.token === 'emptyroles-token') return { subject: 'alice', roles: [] }
       if (context.token === 'manager-token') return { subject: 'manager', roles: ['manager'] }
+      if (context.token === 'checklist-probe-token') return { subject: 'probe', roles: ['reader'] }
+      if (context.token === 'checklist-deny-token') return { subject: 'blocked', roles: ['reader'] }
       return null
+    },
+  },
+  authPolicyPlugin: {
+    manifest: { id: 'temp-auth-visibility-runtime', provides: ['auth.policy'] },
+    async checkPolicy(identity, action, context) {
+      if ((context.token === 'reader-token' || context.token === 'checklist-probe-token') && action === 'card.checklist.show') {
+        return { allowed: false, reason: 'auth.policy.denied', actor: identity?.subject }
+      }
+      if (context.token === 'checklist-deny-token' && action === 'card.checklist.add') {
+        return { allowed: false, reason: 'auth.policy.denied', actor: identity?.subject }
+      }
+      return { allowed: true, actor: identity?.subject }
     },
   },
   authVisibilityPlugin: {
@@ -130,6 +147,10 @@ function installTempAuthVisibilityRuntimePackage(): () => void {
         authIdentityRoles: Array.isArray(input.auth?.identity?.roles) ? [...input.auth.identity.roles] : null,
         cardIds: cards.map((card) => card.id),
       })
+
+      if (input.auth?.token === 'checklist-probe-token') {
+        return cards.filter((card) => card.labels.includes('tasks'))
+      }
 
       if (input.roles.includes('reader')) {
         return cards.filter((card) => card.labels.includes('public'))
@@ -181,6 +202,7 @@ function makeCardContent(opts: {
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
+  tasks?: string[]
   created?: string
   modified?: string
 }): string {
@@ -193,6 +215,7 @@ function makeCardContent(opts: {
     assignee = null,
     dueDate = null,
     labels = [],
+    tasks,
     created = '2025-01-01T00:00:00.000Z',
     modified = '2025-01-01T00:00:00.000Z',
   } = opts
@@ -206,7 +229,7 @@ created: "${created}"
 modified: "${modified}"
 completedAt: null
 labels: [${labels.map(l => `"${l}"`).join(', ')}]
-order: "${order}"
+${tasks ? `tasks:\n${tasks.map((task) => `  - ${JSON.stringify(task)}`).join('\n')}\n` : ''}order: "${order}"
 ---
 # ${title}
 
@@ -691,6 +714,14 @@ module.exports = { CallbackListenerPlugin }
           apiAfter: false,
         }),
         expect.objectContaining({
+          event: 'card.checklist.add',
+          phase: 'before',
+          source: 'core',
+          sdkBefore: true,
+          sdkAfter: false,
+          apiAfter: false,
+        }),
+        expect.objectContaining({
           event: 'task.created',
           phase: 'after',
           source: 'core',
@@ -809,6 +840,469 @@ module.exports = { CallbackListenerPlugin }
       } finally {
         cleanup()
       }
+    })
+  })
+
+  describe('checklist support', () => {
+    it('hides checklist tasks and reserved labels when checklist-show is denied', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        writeCardFile(
+          tempDir,
+          'public-checklist.md',
+          makeCardContent({
+            id: 'public-checklist',
+            labels: ['public', 'tasks', 'in-progress'],
+            tasks: ['- [ ] hidden work'],
+          }),
+          'backlog',
+        )
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const listed = await sdk.listCards()
+          expect(listed).toHaveLength(1)
+          expect(listed[0].id).toBe('public-checklist')
+          expect(listed[0].tasks).toBeUndefined()
+          expect(listed[0].labels).toEqual(['public'])
+
+          const single = expectPresent(await sdk.getCard('public-checklist'), 'expected public checklist card')
+          expect(single.tasks).toBeUndefined()
+          expect(single.labels).toEqual(['public'])
+
+          await expect(sdk.getUniqueLabels()).resolves.toEqual(['public'])
+          await expect(sdk.listCards(undefined, undefined, { searchQuery: 'tasks' })).resolves.toEqual([])
+        })
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('applies checklist projection before auth.visibility matching', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        writeCardFile(
+          tempDir,
+          'probe-checklist.md',
+          makeCardContent({
+            id: 'probe-checklist',
+            labels: ['tasks', 'in-progress'],
+            tasks: ['- [ ] leaked only through reserved labels'],
+          }),
+          'backlog',
+        )
+
+        await sdk.runWithAuth({ token: 'checklist-probe-token' }, async () => {
+          await expect(sdk.listCards()).resolves.toEqual([])
+        })
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('requires checklist-add auth when createCard seeds initial tasks', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        await sdk.runWithAuth({ token: 'checklist-deny-token' }, async () => {
+          await expect(sdk.createCard({
+            content: '# Seeded checklist',
+            labels: ['public'],
+            tasks: ['- [ ] seed me'],
+          })).rejects.toBeInstanceOf(AuthError)
+        })
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('rejects direct tasks mutation through updateCard', async () => {
+      const card = await sdk.createCard({ content: '# Update guard' })
+
+      await expect(sdk.updateCard(card.id, {
+        tasks: ['- [ ] nope'],
+      } as Partial<Card>)).rejects.toThrow('Card tasks can only be changed through checklist operations')
+    })
+
+    it('returns checklist mutations through the same caller-scoped projection as reads', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        const card = await sdk.createCard({ content: '# Public checklist card', labels: ['public'] })
+        const checklist = buildChecklistReadModel(card)
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const updated = await sdk.addChecklistItem(card.id, 'Hidden task', checklist.token)
+          expect(updated.tasks).toBeUndefined()
+          expect(updated.labels).toEqual(['public'])
+        })
+
+        const stored = expectPresent(await sdk.getCard(card.id), 'expected stored card')
+        expect(stored.tasks).toEqual(['- [ ] Hidden task'])
+        expect(stored.labels).toEqual(['public', 'tasks', 'in-progress'])
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('returns non-checklist card mutations through the same caller-scoped projection as reads', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        const sourceAttachment = path.join(workspaceDir, 'checklist-proof.txt')
+        fs.writeFileSync(sourceAttachment, 'proof', 'utf-8')
+
+        const seeded = await sdk.createCard({
+          content: '# Hidden checklist payload',
+          labels: ['public'],
+          tasks: ['- [ ] hidden work'],
+        })
+
+        await sdk.createBoard('bugs', 'Bugs')
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const expectProjectedMutation = async (card: Card, expectedBoardId?: string) => {
+            const visible = expectPresent(
+              await sdk.getCard(card.id, expectedBoardId),
+              `expected visible card ${card.id}`,
+            )
+
+            expect(card).toEqual(visible)
+            expect(card.tasks).toBeUndefined()
+            expect(card.labels).toEqual(expect.not.arrayContaining(['tasks', 'in-progress']))
+          }
+
+          const created = await sdk.createCard({
+            content: '# Hidden create response',
+            labels: ['public'],
+            tasks: ['- [ ] seed me'],
+          })
+          await expectProjectedMutation(created)
+
+          const updated = await sdk.updateCard(seeded.id, {
+            content: '# Hidden checklist payload updated',
+            labels: ['public', 'bug'],
+          })
+          await expectProjectedMutation(updated)
+
+          const moved = await sdk.moveCard(seeded.id, 'done')
+          await expectProjectedMutation(moved)
+
+          const attached = await sdk.addAttachment(seeded.id, sourceAttachment)
+          await expectProjectedMutation(attached)
+
+          const detached = await sdk.removeAttachment(seeded.id, 'checklist-proof.txt')
+          await expectProjectedMutation(detached)
+
+          const commented = await sdk.addComment(seeded.id, 'alice', 'First hidden comment')
+          await expectProjectedMutation(commented)
+          const commentId = expectPresent(commented.comments?.[0]?.id, 'expected created comment id')
+
+          const updatedComment = await sdk.updateComment(seeded.id, commentId, 'Updated hidden comment')
+          await expectProjectedMutation(updatedComment)
+
+          async function* streamedChunks(): AsyncIterable<string> {
+            yield 'Streamed '
+            yield 'hidden comment'
+          }
+
+          const streamed = await sdk.streamComment(seeded.id, 'ai-agent', streamedChunks())
+          await expectProjectedMutation(streamed)
+          const streamedCommentId = expectPresent(streamed.comments?.[1]?.id, 'expected streamed comment id')
+
+          const deletedComment = await sdk.deleteComment(seeded.id, streamedCommentId)
+          await expectProjectedMutation(deletedComment)
+
+          const transferred = await sdk.transferCard(seeded.id, 'default', 'bugs', 'backlog')
+          await expectProjectedMutation(transferred, 'bugs')
+        })
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('validates seeded create tasks like checklist add and canonicalizes checked seed lines', async () => {
+      const host = await sdk.createCard({ content: '# Checklist host' })
+      const checklist = buildChecklistReadModel(host)
+
+      await expect(sdk.addChecklistItem(host.id, '   ', checklist.token)).rejects.toThrow('Checklist task text must not be empty')
+      await expect(sdk.createCard({
+        content: '# Invalid blank seeded checklist',
+        tasks: ['   '],
+      })).rejects.toThrow('Checklist task text must not be empty')
+
+      await expect(sdk.addChecklistItem(host.id, 'line 1\nline 2', checklist.token)).rejects.toThrow('Checklist task text must be a single line')
+      await expect(sdk.createCard({
+        content: '# Invalid multiline seeded checklist',
+        tasks: ['line 1\nline 2'],
+      })).rejects.toThrow('Checklist task text must be a single line')
+
+      const seeded = await sdk.createCard({
+        content: '# Canonical seeded checklist',
+        tasks: [' [X] done ', '-[ ]todo'],
+      })
+
+      expect(seeded.tasks).toEqual(['- [x] done', '- [ ] todo'])
+      expect(seeded.labels).toEqual(['tasks', 'in-progress'])
+    })
+
+    it('rejects raw HTML, markdown images, and unsafe links for seeded, added, and edited checklist writes while preserving safe markdown', async () => {
+      const host = await sdk.createCard({
+        content: '# Checklist html host',
+        tasks: ['Review **docs**'],
+      })
+      const checklist = buildChecklistReadModel(host)
+
+      await expect(sdk.createCard({
+        content: '# Invalid HTML seeded checklist',
+        tasks: ['<img src=x onerror="alert(1)"> **docs**'],
+      })).rejects.toThrow('Checklist task text must not contain raw HTML')
+
+      await expect(sdk.createCard({
+        content: '# Invalid javascript seeded checklist',
+        tasks: ['Review [bad-js](javascript:alert(1))'],
+      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.createCard({
+        content: '# Invalid entity javascript seeded checklist',
+        tasks: ['Review [bad-entity](javas&#x63;ript:alert(1))'],
+      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.createCard({
+        content: '# Invalid protocol-relative seeded checklist',
+        tasks: ['Review [bad-protocol-relative](//example.com)'],
+      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.createCard({
+        content: '# Invalid image seeded checklist',
+        tasks: ['![logo](https://example.com/logo.png)'],
+      })).rejects.toThrow('Checklist task text must not contain markdown images')
+
+      await expect(sdk.createCard({
+        content: '# Invalid data image seeded checklist',
+        tasks: ['![bad](data:text/html,hi)'],
+      })).rejects.toThrow('Checklist task text must not contain markdown images')
+
+      await expect(sdk.addChecklistItem(
+        host.id,
+        '<img src=x onerror="alert(1)"> **docs**',
+        checklist.token,
+      )).rejects.toThrow('Checklist task text must not contain raw HTML')
+
+      await expect(sdk.addChecklistItem(
+        host.id,
+        '![logo](https://example.com/logo.png)',
+        checklist.token,
+      )).rejects.toThrow('Checklist task text must not contain markdown images')
+
+      await expect(sdk.addChecklistItem(
+        host.id,
+        'Review [bad-data](data:text/html,hi)',
+        checklist.token,
+      )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.addChecklistItem(
+        host.id,
+        'Review [bad-relative](/docs)',
+        checklist.token,
+      )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.editChecklistItem(
+        host.id,
+        0,
+        '<img src=x onerror="alert(1)"> [guide](https://example.com)',
+        '- [ ] Review **docs**',
+      )).rejects.toThrow('Checklist task text must not contain raw HTML')
+
+      await expect(sdk.editChecklistItem(
+        host.id,
+        0,
+        '![bad](data:text/html,hi) [guide](https://example.com)',
+        '- [ ] Review **docs**',
+      )).rejects.toThrow('Checklist task text must not contain markdown images')
+
+      await expect(sdk.editChecklistItem(
+        host.id,
+        0,
+        'Review [bad-js](javascript:alert(1)) [guide](https://example.com)',
+        '- [ ] Review **docs**',
+      )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      await expect(sdk.editChecklistItem(
+        host.id,
+        0,
+        'Review [bad-colon](javascript&colon;alert(1)) [guide](https://example.com)',
+        '- [ ] Review **docs**',
+      )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
+
+      const updated = await sdk.editChecklistItem(
+        host.id,
+        0,
+        'Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
+        '- [ ] Review **docs**',
+      )
+
+      expect(updated.tasks).toEqual([
+        '- [ ] Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
+      ])
+
+      const literalImage = await sdk.editChecklistItem(
+        host.id,
+        0,
+        'Review `![logo](https://example.com/logo.png)` literally',
+        '- [ ] Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
+      )
+
+      expect(literalImage.tasks).toEqual([
+        '- [ ] Review `![logo](https://example.com/logo.png)` literally',
+      ])
+
+      const literalObfuscated = await sdk.editChecklistItem(
+        host.id,
+        0,
+        'Review `[bad-entity](javas&#x63;ript:alert(1))` literally',
+        '- [ ] Review `![logo](https://example.com/logo.png)` literally',
+      )
+
+      expect(literalObfuscated.tasks).toEqual([
+        '- [ ] Review `[bad-entity](javas&#x63;ript:alert(1))` literally',
+      ])
+    })
+
+    it('requires checklist tokens for adds and rejects stale add tokens instead of silently overwriting', async () => {
+      const host = await sdk.createCard({ content: '# Checklist add token host' })
+      const initial = buildChecklistReadModel(host)
+
+      const addChecklistItemWithoutToken = sdk.addChecklistItem.bind(sdk) as unknown as (
+        cardId: string,
+        text: string,
+      ) => ReturnType<KanbanSDK['addChecklistItem']>
+
+      await expect(addChecklistItemWithoutToken(host.id, 'First add')).rejects.toThrow('expectedToken')
+
+      const first = await sdk.addChecklistItem(host.id, 'First add', initial.token)
+      expect(first.tasks).toEqual(['- [ ] First add'])
+
+      await expect(sdk.addChecklistItem(host.id, 'Second add', initial.token)).rejects.toThrow('stale')
+
+      const refreshedCard = expectPresent(await sdk.getCard(host.id), 'expected refreshed checklist host')
+      const refreshed = buildChecklistReadModel(refreshedCard)
+      const second = await sdk.addChecklistItem(host.id, 'Second add', refreshed.token)
+
+      expect(second.tasks).toEqual(['- [ ] First add', '- [ ] Second add'])
+    })
+
+    it('guards checklist writes with expectedRaw and self-heals dirty data on write', async () => {
+      writeCardFile(
+        tempDir,
+        'dirty-checklist.md',
+        makeCardContent({
+          id: 'dirty-checklist',
+          labels: ['public'],
+          tasks: [' [X] shipped ', '- [ ] follow up'],
+        }),
+        'backlog',
+      )
+
+      await expect(sdk.editChecklistItem('dirty-checklist', 0, 'Still shipped')).rejects.toThrow('expectedRaw')
+      await expect(sdk.checkChecklistItem('dirty-checklist', 1, '- [ ] stale')).rejects.toThrow('stale')
+
+      const updated = await sdk.checkChecklistItem('dirty-checklist', 1, '- [ ] follow up')
+      expect(updated.tasks).toEqual(['- [x] shipped', '- [x] follow up'])
+      expect(updated.labels).toEqual(['public', 'tasks'])
+
+      const stored = expectPresent(await sdk.getCard('dirty-checklist'), 'expected dirty checklist card')
+      expect(stored.tasks).toEqual(['- [x] shipped', '- [x] follow up'])
+      expect(stored.labels).toEqual(['public', 'tasks'])
+    })
+
+    it('prevents reserved checklist label renames and deletes', async () => {
+      await sdk.setLabel('bug', { color: '#e11d48' })
+
+      await expect(sdk.deleteLabel('tasks')).rejects.toThrow('reserved')
+      await expect(sdk.renameLabel('tasks', 'work')).rejects.toThrow('reserved')
+      await expect(sdk.renameLabel('bug', 'in-progress')).rejects.toThrow('reserved')
+    })
+
+    it('rejects updateCard label edits that try to change checklist-derived reserved labels', async () => {
+      const withChecklist = await sdk.createCard({
+        content: '# Reserved labels checklist',
+        labels: ['public'],
+        tasks: ['- [ ] task'],
+      })
+      const plain = await sdk.createCard({
+        content: '# Plain labels card',
+        labels: ['public'],
+      })
+
+      await expect(sdk.updateCard(withChecklist.id, {
+        labels: ['public'],
+      })).rejects.toThrow('Checklist-derived labels cannot be edited directly')
+
+      await expect(sdk.updateCard(plain.id, {
+        labels: ['public', 'tasks'],
+      })).rejects.toThrow('Checklist-derived labels cannot be edited directly')
+
+      const allowed = await sdk.updateCard(withChecklist.id, {
+        labels: ['public', 'bug', 'tasks', 'in-progress'],
+      })
+
+      expect(allowed.labels).toEqual(['public', 'bug', 'tasks', 'in-progress'])
     })
   })
 
@@ -1520,6 +2014,25 @@ module.exports = { CallbackListenerPlugin }
       expect(labels['bug']).toEqual({ color: '#2563eb', group: 'Type' })
     })
 
+    it('rejects reserved checklist label definitions', async () => {
+      await expect(sdk.setLabel('tasks', { color: '#e11d48' })).rejects.toThrow('reserved checklist label')
+      await expect(sdk.setLabel('in-progress', { color: '#2563eb' })).rejects.toThrow('reserved checklist label')
+    })
+
+    it('filters reserved checklist label definitions from dirty config reads', async () => {
+      writeWorkspaceConfig(workspaceDir, {
+        labels: {
+          bug: { color: '#e11d48' },
+          tasks: { color: '#111111' },
+          'in-progress': { color: '#222222' },
+        },
+      })
+
+      expect(sdk.getLabels()).toEqual({
+        bug: { color: '#e11d48' },
+      })
+    })
+
     it('deleteLabel removes label definition from config', async () => {
       sdk.setLabel('bug', { color: '#e11d48' })
       await sdk.deleteLabel('bug')
@@ -1559,6 +2072,109 @@ module.exports = { CallbackListenerPlugin }
       expect(cards[0].labels).toContain('defect')
       expect(cards[0].labels).not.toContain('bug')
       expect(cards[0].labels).toContain('frontend')
+    })
+
+    it('deleteLabel succeeds for checklist-hidden callers on visible cards with reserved labels', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        writeCardFile(
+          tempDir,
+          'public-checklist.md',
+          makeCardContent({
+            id: 'public-checklist',
+            labels: ['public', 'bug', 'tasks', 'in-progress'],
+            tasks: ['- [ ] hidden work'],
+          }),
+          'backlog',
+        )
+        await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const before = expectPresent(await sdk.getCard('public-checklist'), 'expected visible checklist card before delete')
+          expect(before.tasks).toBeUndefined()
+          expect(before.labels).toEqual(['public', 'bug'])
+
+          await expect(sdk.deleteLabel('bug')).resolves.toBeUndefined()
+
+          const after = expectPresent(await sdk.getCard('public-checklist'), 'expected visible checklist card after delete')
+          expect(after.tasks).toBeUndefined()
+          expect(after.labels).toEqual(['public'])
+        })
+
+        const rawSdk = sdk as unknown as {
+          _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
+        }
+        const stored = expectPresent(await rawSdk._getCardRaw('public-checklist'), 'expected stored checklist card after delete')
+        expect(stored.tasks).toEqual(['- [ ] hidden work'])
+        expect(stored.labels).toEqual(['public', 'tasks', 'in-progress'])
+      } finally {
+        cleanup()
+      }
+    })
+
+    it('renameLabel succeeds for checklist-hidden callers on visible cards with reserved labels', async () => {
+      const cleanup = installTempAuthVisibilityRuntimePackage()
+
+      try {
+        writeWorkspaceConfig(workspaceDir, {
+          plugins: {
+            'auth.identity': { provider: 'temp-auth-visibility-runtime' },
+            'auth.policy': { provider: 'temp-auth-visibility-runtime' },
+            'auth.visibility': { provider: 'temp-auth-visibility-runtime' },
+          },
+        })
+
+        sdk.close()
+        sdk = new KanbanSDK(tempDir)
+
+        writeCardFile(
+          tempDir,
+          'public-checklist.md',
+          makeCardContent({
+            id: 'public-checklist',
+            labels: ['public', 'bug', 'tasks', 'in-progress'],
+            tasks: ['- [ ] hidden work'],
+          }),
+          'backlog',
+        )
+        await sdk.setLabel('bug', { color: '#e11d48', group: 'Type' })
+
+        await sdk.runWithAuth({ token: 'reader-token' }, async () => {
+          const before = expectPresent(await sdk.getCard('public-checklist'), 'expected visible checklist card before rename')
+          expect(before.tasks).toBeUndefined()
+          expect(before.labels).toEqual(['public', 'bug'])
+
+          await expect(sdk.renameLabel('bug', 'defect')).resolves.toBeUndefined()
+
+          const after = expectPresent(await sdk.getCard('public-checklist'), 'expected visible checklist card after rename')
+          expect(after.tasks).toBeUndefined()
+          expect(after.labels).toEqual(['public', 'defect'])
+        })
+
+        expect(sdk.getLabels()['bug']).toBeUndefined()
+        expect(sdk.getLabels()['defect']).toEqual({ color: '#e11d48', group: 'Type' })
+
+        const rawSdk = sdk as unknown as {
+          _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
+        }
+        const stored = expectPresent(await rawSdk._getCardRaw('public-checklist'), 'expected stored checklist card after rename')
+        expect(stored.tasks).toEqual(['- [ ] hidden work'])
+        expect(stored.labels).toEqual(['public', 'defect', 'tasks', 'in-progress'])
+      } finally {
+        cleanup()
+      }
     })
   })
 

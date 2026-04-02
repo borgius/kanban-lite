@@ -181,6 +181,21 @@ export class KanbanPanel {
           case 'saveCardContent':
             await this._saveCardContent(message.cardId, message.content, message.frontmatter)
             break
+          case 'addChecklistItem':
+            await this._addChecklistItem(message.cardId, message.text, message.expectedToken, message.boardId)
+            break
+          case 'editChecklistItem':
+            await this._editChecklistItem(message.cardId, message.index, message.text, message.expectedRaw, message.boardId)
+            break
+          case 'deleteChecklistItem':
+            await this._deleteChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            break
+          case 'checkChecklistItem':
+            await this._checkChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            break
+          case 'uncheckChecklistItem':
+            await this._uncheckChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            break
           case 'closeCard':
             this._currentEditingCardId = null
             {
@@ -1179,12 +1194,13 @@ export class KanbanPanel {
     }
 
     this._currentEditingCardId = cardId
+    const canShowChecklist = await this._canShowChecklist()
 
     this._panel.webview.postMessage({
       type: 'cardContent',
       cardId: card.id,
       content: card.content,
-      frontmatter: this._buildCardFrontmatter(card),
+      frontmatter: this._buildCardFrontmatter(card, canShowChecklist),
       comments: card.comments || [],
       logs: await this._getLogsForCard(card.id)
     })
@@ -1219,6 +1235,99 @@ export class KanbanPanel {
       this._sendCardsToWebview()
     } finally {
       this._migrating = false
+    }
+  }
+
+  private async _mutateChecklistCard(
+    cardId: string,
+    mutate: (sdk: KanbanSDK, boardId: string | undefined) => Promise<Card>,
+    boardId?: string,
+  ): Promise<void> {
+    const sdk = this._getSDK()
+    if (!sdk) return
+
+    this._migrating = true
+    try {
+      const updated = typeof (sdk as unknown as { runWithAuth?: unknown }).runWithAuth === 'function'
+        ? await sdk.runWithAuth(await this._getAuthContext(), () => mutate(sdk, boardId))
+        : await mutate(sdk, boardId)
+      const idx = this._cards.findIndex((card) => card.id === cardId)
+      if (idx !== -1) {
+        this._cards[idx] = updated
+      }
+
+      this._sendCardsToWebview()
+      await this._sendCardContent(cardId)
+    } finally {
+      this._migrating = false
+    }
+  }
+
+  private async _addChecklistItem(cardId: string, text: string, expectedToken: string, boardId?: string): Promise<void> {
+    await this._mutateChecklistCard(cardId, (sdk, activeBoardId) => sdk.addChecklistItem(cardId, text, expectedToken, activeBoardId), boardId)
+  }
+
+  private async _editChecklistItem(
+    cardId: string,
+    index: number,
+    text: string,
+    expectedRaw?: string,
+    boardId?: string,
+  ): Promise<void> {
+    await this._mutateChecklistCard(
+      cardId,
+      (sdk, activeBoardId) => sdk.editChecklistItem(cardId, index, text, expectedRaw, activeBoardId),
+      boardId,
+    )
+  }
+
+  private async _deleteChecklistItem(
+    cardId: string,
+    index: number,
+    expectedRaw?: string,
+    boardId?: string,
+  ): Promise<void> {
+    await this._mutateChecklistCard(
+      cardId,
+      (sdk, activeBoardId) => sdk.deleteChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      boardId,
+    )
+  }
+
+  private async _checkChecklistItem(
+    cardId: string,
+    index: number,
+    expectedRaw?: string,
+    boardId?: string,
+  ): Promise<void> {
+    await this._mutateChecklistCard(
+      cardId,
+      (sdk, activeBoardId) => sdk.checkChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      boardId,
+    )
+  }
+
+  private async _uncheckChecklistItem(
+    cardId: string,
+    index: number,
+    expectedRaw?: string,
+    boardId?: string,
+  ): Promise<void> {
+    await this._mutateChecklistCard(
+      cardId,
+      (sdk, activeBoardId) => sdk.uncheckChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      boardId,
+    )
+  }
+
+  private async _canShowChecklist(): Promise<boolean> {
+    const sdk = this._getSDK()
+    if (!sdk) return true
+
+    try {
+      return await sdk.canPerformAction('card.checklist.show', await this._getAuthContext())
+    } catch {
+      return false
     }
   }
 
@@ -1650,7 +1759,7 @@ export class KanbanPanel {
     }
   }
 
-  private _buildCardFrontmatter(card: Card): CardFrontmatter {
+  private _buildCardFrontmatter(card: Card, canShowChecklist = false): CardFrontmatter {
     return {
       version: card.version ?? CARD_FORMAT_VERSION,
       id: card.id,
@@ -1668,6 +1777,7 @@ export class KanbanPanel {
       actions: card.actions,
       forms: card.forms,
       formData: card.formData,
+      ...(canShowChecklist ? { tasks: card.tasks ?? [] } : {}),
     }
   }
 }

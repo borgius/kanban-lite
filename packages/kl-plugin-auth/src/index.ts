@@ -137,6 +137,7 @@ function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
 }
 
 const AUTH_POLICY_ACTION_SUPPLEMENTS = [
+  'card.checklist.show',
   'plugin-settings.read',
   'plugin-settings.update',
 ] as const
@@ -920,6 +921,12 @@ export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 }
 
 export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
+  'card.checklist.show',
+  'card.checklist.add',
+  'card.checklist.edit',
+  'card.checklist.delete',
+  'card.checklist.check',
+  'card.checklist.uncheck',
   'form.submit',
   'comment.create',
   'comment.update',
@@ -1142,6 +1149,11 @@ const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
   'card.delete',
   'card.transfer',
   'card.action.trigger',
+  'card.checklist.add',
+  'card.checklist.edit',
+  'card.checklist.delete',
+  'card.checklist.check',
+  'card.checklist.uncheck',
   'card.purgeDeleted',
   'comment.create',
   'comment.update',

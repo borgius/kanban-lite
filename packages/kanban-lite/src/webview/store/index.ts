@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport } from '../../shared/types'
+import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport, CardViewMode } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
@@ -8,7 +8,7 @@ import type { SettingsTab } from '../settingsTabs'
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
-export const FIXED_CARD_TABS = ['write', 'preview', 'comments', 'logs'] as const
+export const FIXED_CARD_TABS = ['write', 'preview', 'tasks', 'comments', 'logs'] as const
 export const DEFAULT_CARD_TAB = 'preview'
 
 export type FixedCardTab = (typeof FIXED_CARD_TABS)[number]
@@ -369,7 +369,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     showLabels: true,
     showBuildWithAI: true,
     showFileName: false,
-    cardViewMode: 'large' as import('../../../shared/types').CardViewMode,
+    cardViewMode: 'large' as CardViewMode,
     markdownEditorMode: false,
     showDeletedColumn: false,
     defaultPriority: 'medium',

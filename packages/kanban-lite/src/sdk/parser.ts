@@ -2,6 +2,7 @@ import * as path from 'path'
 import * as yaml from 'js-yaml'
 import type { Comment, Card, CardStatus, Priority, CardFormAttachment, CardFormDataMap } from '../shared/types'
 import { CARD_FORMAT_VERSION } from '../shared/types'
+import { normalizeChecklistTasks } from './modules/checklist'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
@@ -148,6 +149,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
   const meta = rawMeta != null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
     ? rawMeta as Record<string, unknown>
     : undefined
+  const tasks = normalizeChecklistTasks(arr('tasks'))
   const forms = parseForms(parsed.forms)
   const formData = parseFormData(parsed.formData)
 
@@ -163,6 +165,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
     completedAt: parsed.completedAt != null ? String(parsed.completedAt) : null,
     labels: arr('labels'),
     attachments: arr('attachments'),
+    ...(tasks ? { tasks } : {}),
     comments,
     order: str('order') || 'a0',
     content: body.trim(),
@@ -185,6 +188,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
  * @returns The complete markdown string ready to be written to a `.md` file.
  */
 export function serializeCard(card: Card): string {
+  const tasks = normalizeChecklistTasks(card.tasks)
   const frontmatterObj: Record<string, unknown> = {
     version: card.version ?? CARD_FORMAT_VERSION,
     id: card.id,
@@ -197,6 +201,7 @@ export function serializeCard(card: Card): string {
     completedAt: card.completedAt ?? null,
     labels: card.labels,
     attachments: card.attachments || [],
+    ...(tasks ? { tasks } : {}),
     order: card.order,
     ...(card.actions && (Array.isArray(card.actions) ? card.actions.length > 0 : Object.keys(card.actions).length > 0) ? { actions: card.actions } : {}),
     ...(card.metadata && Object.keys(card.metadata).length > 0 ? { metadata: card.metadata } : {}),

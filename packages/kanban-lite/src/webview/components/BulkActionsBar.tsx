@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { X, ArrowRight, Tag, Trash2, User, Signal, ChevronDown, Check, Minus } from 'lucide-react'
 import { useStore } from '../store'
 import type { Priority, KanbanColumn } from '../../shared/types'
+import { isReservedChecklistLabel } from '../../sdk/modules/checklist'
 
 const priorities: Priority[] = ['critical', 'high', 'medium', 'low']
 const priorityLabels: Record<Priority, string> = {
@@ -51,7 +52,13 @@ export function BulkActionsBar({
 
   const allLabels = useMemo(() => {
     const s = new Set<string>()
-    cards.forEach(c => c.labels.forEach(l => s.add(l)))
+    cards.forEach((card) => {
+      card.labels.forEach((label) => {
+        if (!isReservedChecklistLabel(label)) {
+          s.add(label)
+        }
+      })
+    })
     return Array.from(s).sort()
   }, [cards])
 

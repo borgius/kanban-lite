@@ -138,6 +138,7 @@ const SCHEMA_STATEMENTS: readonly string[] = [
     completed_at VARCHAR(50)   DEFAULT NULL,
     labels       TEXT          NOT NULL,
     attachments  TEXT          NOT NULL,
+    tasks        TEXT          DEFAULT NULL,
     order_key    VARCHAR(100)  NOT NULL DEFAULT 'a0',
     content      TEXT          NOT NULL,
     metadata     TEXT          DEFAULT NULL,
@@ -176,6 +177,7 @@ interface CardRow {
   completed_at: string | null
   labels: string
   attachments: string
+  tasks: string | null
   order_key: string
   content: string
   metadata: string | null
@@ -280,9 +282,10 @@ export class PostgresqlStorageEngine implements StorageEngine {
   private async ensureOptionalCardColumns(): Promise<void> {
     await this.ensureCardColumn('forms', 'TEXT DEFAULT NULL')
     await this.ensureCardColumn('form_data', 'TEXT DEFAULT NULL')
+    await this.ensureCardColumn('tasks', 'TEXT DEFAULT NULL')
   }
 
-  private async ensureCardColumn(columnName: 'forms' | 'form_data', definitionSql: string): Promise<void> {
+  private async ensureCardColumn(columnName: 'forms' | 'form_data' | 'tasks', definitionSql: string): Promise<void> {
     const { rows } = await this.pool.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name = 'kanban_cards' AND column_name = $1`,
       [columnName],
@@ -346,9 +349,9 @@ export class PostgresqlStorageEngine implements StorageEngine {
     const UPSERT_SQL = `
       INSERT INTO kanban_cards
         (id, board_id, version, status, priority, assignee, due_date,
-         created, modified, completed_at, labels, attachments, order_key,
+         created, modified, completed_at, labels, attachments, tasks, order_key,
          content, metadata, actions, forms, form_data)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       ON CONFLICT (id, board_id) DO UPDATE SET
         version      = EXCLUDED.version,
         status       = EXCLUDED.status,
@@ -359,6 +362,7 @@ export class PostgresqlStorageEngine implements StorageEngine {
         completed_at = EXCLUDED.completed_at,
         labels       = EXCLUDED.labels,
         attachments  = EXCLUDED.attachments,
+        tasks        = EXCLUDED.tasks,
         order_key    = EXCLUDED.order_key,
         content      = EXCLUDED.content,
         metadata     = EXCLUDED.metadata,
@@ -380,6 +384,7 @@ export class PostgresqlStorageEngine implements StorageEngine {
       card.completedAt ?? null,
       JSON.stringify(card.labels ?? []),
       JSON.stringify(card.attachments ?? []),
+      card.tasks && card.tasks.length > 0 ? JSON.stringify(card.tasks) : null,
       card.order ?? 'a0',
       card.content ?? '',
       hasMetadata ? JSON.stringify(card.metadata) : null,
@@ -464,6 +469,7 @@ export class PostgresqlStorageEngine implements StorageEngine {
       completedAt: row.completed_at ?? null,
       labels: this._parseJson<string[]>(row.labels, []),
       attachments: this._parseJson<string[]>(row.attachments, []),
+      ...(row.tasks ? { tasks: this._parseJson<string[]>(row.tasks, []) } : {}),
       order: row.order_key,
       content: row.content,
       comments,

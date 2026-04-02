@@ -89,7 +89,7 @@ export async function deleteBoard(ctx: SDKContext, { boardId }: { boardId: strin
     throw new Error(`Cannot delete the default board: ${boardId}`)
   }
 
-  const cards = await ctx.listCards(undefined, boardId)
+  const cards = await ctx._listCardsRaw(undefined, boardId)
   if (cards.length > 0) {
     throw new Error(`Cannot delete board "${boardId}": ${cards.length} card(s) still exist`)
   }
@@ -202,7 +202,9 @@ export async function transferCard(
   if (!config.boards[fromBoardId]) throw new Error(`Board not found: ${fromBoardId}`)
   if (!config.boards[toBoardId]) throw new Error(`Board not found: ${toBoardId}`)
 
-  const card = await ctx.getCard(cardId, fromBoardId)
+  const visibleCard = await ctx.getCard(cardId, fromBoardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
+  const card = await ctx._getCardRaw(cardId, fromBoardId)
   if (!card) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
   const previousStatus = card.status
 
@@ -226,7 +228,7 @@ export async function transferCard(
     card.filePath = ''
   }
 
-  const targetCards = await ctx.listCards(undefined, toBoardId)
+  const targetCards = await ctx._listCardsRaw(undefined, toBoardId)
   const cardsInStatus = targetCards
     .filter(c => c.status === newStatus && c.id !== cardId)
     .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))

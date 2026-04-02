@@ -63,12 +63,17 @@ export function getClientsEditingCard(ctx: StandaloneContext, cardId: string): W
   return matches
 }
 
-function buildCardContentMessage(card: Card, logs: LogEntry[]): unknown {
+function buildCardContentMessage(card: Card, logs: LogEntry[], canShowChecklist: boolean): unknown {
+  const frontmatter = buildCardFrontmatter(card)
+  if (canShowChecklist) {
+    frontmatter.tasks = card.tasks ?? []
+  }
+
   return {
     type: 'cardContent',
     cardId: card.id,
     content: card.content,
-    frontmatter: buildCardFrontmatter(card),
+    frontmatter,
     comments: card.comments || [],
     logs,
   }
@@ -216,7 +221,8 @@ export async function sendCardContent(
   if (!visibleCard) return false
 
   const logs = await resolveVisibleCardLogs(ctx, visibleCard.id, scopedAuth, visibleCard.boardId)
-  ws.send(JSON.stringify(buildCardContentMessage(visibleCard, logs)))
+  const canShowChecklist = await ctx.sdk.canPerformAction('card.checklist.show', scopedAuth)
+  ws.send(JSON.stringify(buildCardContentMessage(visibleCard, logs, canShowChecklist)))
   return true
 }
 

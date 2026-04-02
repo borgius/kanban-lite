@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react'
 import { Calendar, Check, Clock, FileText, Paperclip } from 'lucide-react'
-import { getTitleFromContent } from '../../shared/types'
+import { getDisplayTitleFromContent } from '../../shared/types'
 import type { Card, Priority } from '../../shared/types'
 import { useStore } from '../store'
 import { formatRelativeCompact, buildDateTooltip } from '../lib/utils'
@@ -57,6 +57,9 @@ function getPlainTextExcerpt(text: string): string {
 export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProps) {
   const cardSettings = useStore(s => s.cardSettings)
   const labelDefs = useStore(s => s.labelDefs)
+  const boards = useStore(s => s.boards)
+  const currentBoard = useStore(s => s.currentBoard)
+  const applyLabelFilter = useStore(s => s.applyLabelFilter)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -75,7 +78,8 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
     observer.observe(el)
     return () => observer.disconnect()
   }, [card.id, card.cardState])
-  const title = getTitleFromContent(card.content)
+  const titleMetadataKeys = boards.find((board) => board.id === currentBoard)?.title ?? []
+  const title = getDisplayTitleFromContent(card.content, card.metadata, titleMetadataKeys)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
   const viewMode = cardSettings.cardViewMode ?? 'large'
@@ -233,13 +237,20 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
             {(viewMode === 'xxlarge' ? card.labels : card.labels.slice(0, 4)).map((label) => {
               const def = labelDefs[label]
               return (
-                <span
+                <button
                   key={label}
+                  type="button"
                   className={`text-xs px-1.5 py-0.5 rounded ${!def ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' : ''}`}
                   style={def ? { backgroundColor: `${def.color}20`, color: def.color } : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    applyLabelFilter(label)
+                  }}
+                  title={`Filter cards by label ${label}`}
+                  aria-label={`Filter cards by label ${label}`}
                 >
                   {label}
-                </span>
+                </button>
               )
             })}
             {viewMode !== 'xxlarge' && card.labels.length > 4 && (

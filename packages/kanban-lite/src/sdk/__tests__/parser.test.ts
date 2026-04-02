@@ -185,6 +185,30 @@ forms:
       { name: 'incident-report' },
     ])
   })
+
+  it('should normalize checklist task lines from frontmatter on read', () => {
+    const content = `---
+id: "task-card"
+status: "todo"
+priority: "medium"
+assignee: null
+dueDate: null
+created: "2025-01-01T00:00:00.000Z"
+modified: "2025-01-01T00:00:00.000Z"
+completedAt: null
+labels: ["tasks", "in-progress"]
+attachments: []
+order: "a0"
+tasks:
+  - " [X] done"
+  - "-[ ]todo"
+---
+# Task Card`
+
+    const card = parseCardFile(content, '/tmp/task-card.md')
+
+    expect(card?.tasks).toEqual(['- [x] done', '- [ ] todo'])
+  })
 })
 
 describe('serializeCard', () => {
@@ -201,6 +225,7 @@ describe('serializeCard', () => {
       completedAt: null,
       labels: ['backend', 'api'],
       attachments: ['design.png', 'notes.txt'],
+      tasks: ['- [ ] draft release notes', '- [x] update changelog'],
       comments: [],
       order: 'a1',
       content: '# Round Trip\n\nTest content.',
@@ -219,6 +244,7 @@ describe('serializeCard', () => {
     expect(parsed?.completedAt).toBe(original.completedAt)
     expect(parsed?.labels).toEqual(original.labels)
     expect(parsed?.attachments).toEqual(original.attachments)
+    expect(parsed?.tasks).toEqual(original.tasks)
     expect(parsed?.order).toBe(original.order)
     expect(parsed?.content).toBe(original.content)
   })

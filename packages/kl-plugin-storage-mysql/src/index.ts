@@ -132,6 +132,7 @@ const SCHEMA_STATEMENTS: readonly string[] = [
     completed_at VARCHAR(50)   DEFAULT NULL,
     labels       TEXT          NOT NULL,
     attachments  TEXT          NOT NULL,
+    tasks        TEXT          DEFAULT NULL,
     order_key    VARCHAR(100)  NOT NULL DEFAULT 'a0',
     content      MEDIUMTEXT    NOT NULL,
     metadata     TEXT          DEFAULT NULL,
@@ -170,6 +171,7 @@ interface CardRow {
   completed_at: string | null
   labels: string
   attachments: string
+  tasks: string | null
   order_key: string
   content: string
   metadata: string | null
@@ -275,9 +277,10 @@ export class MysqlStorageEngine implements StorageEngine {
   private async ensureOptionalCardColumns(): Promise<void> {
     await this.ensureCardColumn('forms', 'TEXT DEFAULT NULL')
     await this.ensureCardColumn('form_data', 'TEXT DEFAULT NULL')
+    await this.ensureCardColumn('tasks', 'TEXT DEFAULT NULL')
   }
 
-  private async ensureCardColumn(columnName: 'forms' | 'form_data', definitionSql: string): Promise<void> {
+  private async ensureCardColumn(columnName: 'forms' | 'form_data' | 'tasks', definitionSql: string): Promise<void> {
     const [rows] = await this.pool.execute(
       'SHOW COLUMNS FROM kanban_cards LIKE ?',
       [columnName],
@@ -341,9 +344,9 @@ export class MysqlStorageEngine implements StorageEngine {
     const UPSERT_SQL = `
       INSERT INTO kanban_cards
         (id, board_id, version, status, priority, assignee, due_date,
-         created, modified, completed_at, labels, attachments, order_key,
+         created, modified, completed_at, labels, attachments, tasks, order_key,
          content, metadata, actions, forms, form_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         version      = VALUES(version),
         status       = VALUES(status),
@@ -354,6 +357,7 @@ export class MysqlStorageEngine implements StorageEngine {
         completed_at = VALUES(completed_at),
         labels       = VALUES(labels),
         attachments  = VALUES(attachments),
+        tasks        = VALUES(tasks),
         order_key    = VALUES(order_key),
         content      = VALUES(content),
         metadata     = VALUES(metadata),
@@ -375,6 +379,7 @@ export class MysqlStorageEngine implements StorageEngine {
       card.completedAt ?? null,
       JSON.stringify(card.labels ?? []),
       JSON.stringify(card.attachments ?? []),
+      card.tasks && card.tasks.length > 0 ? JSON.stringify(card.tasks) : null,
       card.order ?? 'a0',
       card.content ?? '',
       hasMetadata ? JSON.stringify(card.metadata) : null,
@@ -459,6 +464,7 @@ export class MysqlStorageEngine implements StorageEngine {
       completedAt: row.completed_at ?? null,
       labels: this._parseJson<string[]>(row.labels, []),
       attachments: this._parseJson<string[]>(row.attachments, []),
+      ...(row.tasks ? { tasks: this._parseJson<string[]>(row.tasks, []) } : {}),
       order: row.order_key,
       content: row.content,
       comments,

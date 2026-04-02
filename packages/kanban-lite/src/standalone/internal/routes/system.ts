@@ -265,9 +265,10 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
 
   params = route('GET', '/api/plugin-settings/:capability/:providerId')
   if (params) {
+    const { capability, providerId } = params
     try {
       const provider = await runWithRequestAuth(() =>
-        sdk.getPluginSettings(params.capability as never, params.providerId),
+        sdk.getPluginSettings(capability as never, providerId),
       )
       if (!provider) {
         jsonError(res, 404, 'Plugin provider not found')
@@ -519,7 +520,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       if (!card) {
         res.writeHead(404, { 'Content-Type': 'text/plain' })
         res.end('Card not found')
-        return
+        return true
       }
       const attachmentPath = await sdk.materializeAttachment(card, filename)
       if (!attachmentPath) {

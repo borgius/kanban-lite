@@ -21,7 +21,9 @@ export async function addComment(
   { cardId, author, content, boardId }: { cardId: string; author: string; content: string; boardId?: string }
 ): Promise<Card> {
   if (!content?.trim()) throw new Error('Comment content cannot be empty')
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   if (!card.comments) card.comments = []
@@ -63,7 +65,9 @@ export async function updateComment(
   ctx: SDKContext,
   { cardId, commentId, content, boardId }: { cardId: string; commentId: string; content: string; boardId?: string }
 ): Promise<Card> {
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const comment = (card.comments || []).find(c => c.id === commentId)
@@ -134,7 +138,9 @@ export async function streamComment(
 ): Promise<Card> {
   if (!author?.trim()) throw new Error('Comment author cannot be empty')
 
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   if (!card.comments) card.comments = []
@@ -187,7 +193,9 @@ export async function deleteComment(
   ctx: SDKContext,
   { cardId, commentId, boardId }: { cardId: string; commentId: string; boardId?: string }
 ): Promise<Card> {
-  const card = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const comment = (card.comments || []).find(c => c.id === commentId)

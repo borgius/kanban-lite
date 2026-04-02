@@ -122,7 +122,7 @@ const DEFAULT_CONFIG: KanbanConfig = {
 // SQL schema
 // ---------------------------------------------------------------------------
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const CREATE_SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS cards (
   completed_at TEXT,
   labels       TEXT    NOT NULL DEFAULT '[]',
   attachments  TEXT    NOT NULL DEFAULT '[]',
+  tasks        TEXT,
   order_key    TEXT    NOT NULL DEFAULT 'a0',
   content      TEXT    NOT NULL DEFAULT '',
   metadata     TEXT,
@@ -224,6 +225,7 @@ interface CardRow {
   completed_at: string | null
   labels: string
   attachments: string
+  tasks: string | null
   order_key: string
   content: string
   metadata: string | null
@@ -351,14 +353,16 @@ export class SqliteStorageEngine implements StorageEngine {
       return
     }
 
-    if (versionRow.version < 2) {
+    if (versionRow.version < SCHEMA_VERSION) {
       const cardColumns = this.db.prepare('PRAGMA table_info(cards)').all() as Array<{ name: string }>
       const hasForms = cardColumns.some((col) => col.name === 'forms')
       const hasFormData = cardColumns.some((col) => col.name === 'form_data')
+      const hasTasks = cardColumns.some((col) => col.name === 'tasks')
 
       const upgrade = this.db.transaction(() => {
         if (!hasForms) this.db.exec('ALTER TABLE cards ADD COLUMN forms TEXT')
         if (!hasFormData) this.db.exec('ALTER TABLE cards ADD COLUMN form_data TEXT')
+        if (!hasTasks) this.db.exec('ALTER TABLE cards ADD COLUMN tasks TEXT')
         this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
       })
       upgrade()
@@ -595,9 +599,9 @@ export class SqliteStorageEngine implements StorageEngine {
     const upsertCard = this.db.prepare(`
       INSERT INTO cards (
         id, board_id, version, status, priority, assignee, due_date,
-        created, modified, completed_at, labels, attachments, order_key,
+        created, modified, completed_at, labels, attachments, tasks, order_key,
         content, metadata, actions, forms, form_data
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id, board_id) DO UPDATE SET
         version      = excluded.version,
         status       = excluded.status,
@@ -608,6 +612,7 @@ export class SqliteStorageEngine implements StorageEngine {
         completed_at = excluded.completed_at,
         labels       = excluded.labels,
         attachments  = excluded.attachments,
+        tasks        = excluded.tasks,
         order_key    = excluded.order_key,
         content      = excluded.content,
         metadata     = excluded.metadata,
@@ -632,6 +637,7 @@ export class SqliteStorageEngine implements StorageEngine {
         card.completedAt ?? null,
         JSON.stringify(card.labels || []),
         JSON.stringify(card.attachments || []),
+        card.tasks && card.tasks.length > 0 ? JSON.stringify(card.tasks) : null,
         card.order || 'a0',
         card.content || '',
         card.metadata && Object.keys(card.metadata).length > 0 ? JSON.stringify(card.metadata) : null,
@@ -698,6 +704,7 @@ export class SqliteStorageEngine implements StorageEngine {
       completedAt: row.completed_at ?? null,
       labels: JSON.parse(row.labels || '[]') as string[],
       attachments: JSON.parse(row.attachments || '[]') as string[],
+      ...(row.tasks ? { tasks: JSON.parse(row.tasks) as string[] } : {}),
       order: row.order_key,
       content: row.content,
       comments,

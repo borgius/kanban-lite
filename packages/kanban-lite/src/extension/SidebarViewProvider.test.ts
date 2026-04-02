@@ -3,7 +3,7 @@ import * as vscode from 'vscode'
 import type { Card } from '../shared/types'
 
 const runWithAuth = vi.fn(async (_auth: unknown, fn: () => Promise<unknown>) => fn())
-const listCards = vi.fn(async () => [])
+const listCards = vi.fn<( ) => Promise<Card[]>>(async () => [])
 
 vi.mock('vscode', () => {
   class RelativePattern {
@@ -50,6 +50,13 @@ vi.mock('./auth', () => ({
 import { resolveExtensionAuthContext } from './auth'
 import { SidebarViewProvider } from './SidebarViewProvider'
 
+function setWorkspaceFolders(workspaceFolders: typeof vscode.workspace.workspaceFolders): void {
+  Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+    value: workspaceFolders,
+    configurable: true,
+  })
+}
+
 function makeCard(overrides: Partial<Card> = {}): Card {
   return {
     version: 1,
@@ -72,7 +79,7 @@ function makeCard(overrides: Partial<Card> = {}): Card {
 }
 
 afterEach(() => {
-  vscode.workspace.workspaceFolders = undefined
+  setWorkspaceFolders(undefined)
   listCards.mockReset()
   runWithAuth.mockClear()
   vi.clearAllMocks()
@@ -82,7 +89,7 @@ describe('SidebarViewProvider auth-scoped loading', () => {
   it('loads summary cards through the extension auth context', async () => {
     listCards.mockResolvedValueOnce([makeCard({ id: 'visible-card', content: '# Visible card' })])
     const context = { secrets: { get: vi.fn() } }
-    vscode.workspace.workspaceFolders = [{ uri: { fsPath: '/tmp/workspace' } }] as never
+    setWorkspaceFolders([{ uri: { fsPath: '/tmp/workspace' } }] as never)
     const provider = new SidebarViewProvider({ fsPath: '/tmp/extension' } as never, context as never) as unknown as {
       _cards: Array<{ id: string; title: string }>
       _loadCards(): Promise<void>

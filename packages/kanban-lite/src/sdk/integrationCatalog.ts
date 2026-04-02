@@ -96,6 +96,11 @@ const BEFORE_ENTRIES = [
   { event: 'card.delete'               as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before card delete' },
   { event: 'card.transfer'             as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before card transfer' },
   { event: 'card.action.trigger'       as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before card action trigger' },
+  { event: 'card.checklist.add'        as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before checklist item add' },
+  { event: 'card.checklist.edit'       as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before checklist item edit' },
+  { event: 'card.checklist.delete'     as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before checklist item delete' },
+  { event: 'card.checklist.check'      as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before checklist item check' },
+  { event: 'card.checklist.uncheck'    as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before checklist item uncheck' },
   { event: 'card.purgeDeleted'         as SDKBeforeEventType, resource: 'card'       as KanbanResource, label: 'Before purge deleted cards' },
   // comment
   { event: 'comment.create'            as SDKBeforeEventType, resource: 'comment'    as KanbanResource, label: 'Before comment create' },

@@ -11,7 +11,7 @@ import type {
   ShowSettingsMessage,
   WebviewMessage,
 } from '../shared/types'
-import { PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
+import { PluginSettingsOperationError, createPluginSettingsErrorPayload, type KanbanSDK } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
 
 vi.mock('vscode', () => {
@@ -228,28 +228,40 @@ function makeCard(overrides: Partial<Card> = {}): Card {
   }
 }
 
+function createTypedMock<T extends (...args: never[]) => unknown>(implementation: T) {
+  return vi.fn<T>(implementation)
+}
+
 function createSdkStub() {
   return {
-    getSettings: vi.fn(() => ({
+    getSettings: createTypedMock<KanbanSDK['getSettings']>(() => ({
       ...configToSettings(DEFAULT_CONFIG),
       showLabels: false,
       markdownEditorMode: true,
     })),
-    listCards: vi.fn(async () => []),
-    getCard: vi.fn(async (cardId: string) => makeCard({ id: cardId })),
-    listLogs: vi.fn(async () => []),
-    listColumns: vi.fn(() => [...DEFAULT_CONFIG.boards.default.columns]),
-    listBoards: vi.fn(() => []),
-    getLabels: vi.fn(() => ({})),
-    getMinimizedColumns: vi.fn(() => []),
-    getStorageStatus: vi.fn(() => ({ watchGlob: null })),
-    getLocalCardPath: vi.fn((card: Card) => card.filePath),
-    getAttachmentDir: vi.fn(async () => null),
-    listPluginSettings: vi.fn(async () => pluginSettingsPayload),
-    getPluginSettings: vi.fn(async () => providerTransport),
-    selectPluginSettingsProvider: vi.fn(async () => providerTransport),
-    updatePluginSettingsOptions: vi.fn(async () => providerTransport),
-    installPluginSettingsPackage: vi.fn(async () => installTransport),
+    listCards: createTypedMock<KanbanSDK['listCards']>(async () => []),
+    getCard: createTypedMock<KanbanSDK['getCard']>(async (cardId: string) => makeCard({ id: cardId })),
+    listLogs: createTypedMock<KanbanSDK['listLogs']>(async () => []),
+    listColumns: createTypedMock<KanbanSDK['listColumns']>(() => [...DEFAULT_CONFIG.boards.default.columns]),
+    listBoards: createTypedMock<KanbanSDK['listBoards']>(() => []),
+    getLabels: createTypedMock<KanbanSDK['getLabels']>(() => ({})),
+    getMinimizedColumns: createTypedMock<KanbanSDK['getMinimizedColumns']>(() => []),
+    getStorageStatus: createTypedMock<KanbanSDK['getStorageStatus']>(() => ({
+      storageEngine: 'markdown',
+      providers: null,
+      isFileBacked: true,
+      watchGlob: null,
+    })),
+    getLocalCardPath: createTypedMock<KanbanSDK['getLocalCardPath']>((card: Card) => card.filePath),
+    getAttachmentDir: createTypedMock<KanbanSDK['getAttachmentDir']>(async () => null),
+    canPerformAction: createTypedMock<KanbanSDK['canPerformAction']>(async () => true),
+    addChecklistItem: createTypedMock<KanbanSDK['addChecklistItem']>(async (cardId: string) => makeCard({ id: cardId })),
+    updateCard: createTypedMock<KanbanSDK['updateCard']>(async (cardId: string) => makeCard({ id: cardId })),
+    listPluginSettings: createTypedMock<KanbanSDK['listPluginSettings']>(async () => pluginSettingsPayload),
+    getPluginSettings: createTypedMock<KanbanSDK['getPluginSettings']>(async () => providerTransport),
+    selectPluginSettingsProvider: createTypedMock<KanbanSDK['selectPluginSettingsProvider']>(async () => providerTransport),
+    updatePluginSettingsOptions: createTypedMock<KanbanSDK['updatePluginSettingsOptions']>(async () => providerTransport),
+    installPluginSettingsPackage: createTypedMock<KanbanSDK['installPluginSettingsPackage']>(async () => installTransport),
   }
 }
 
@@ -706,7 +718,7 @@ describe('KanbanPanel auth-scoped card flows', () => {
     const freshCard = makeCard({
       id: 'card-live',
       content: '# Fresh card',
-      comments: [{ id: 'c1', author: 'alice', content: 'fresh comment', created: '2026-03-24T00:00:00.000Z', updated: '2026-03-24T00:00:00.000Z' }],
+      comments: [{ id: 'c1', author: 'alice', content: 'fresh comment', created: '2026-03-24T00:00:00.000Z' }],
     })
     sdk.getCard.mockResolvedValueOnce(freshCard)
     sdk.listLogs.mockResolvedValueOnce([])
@@ -723,6 +735,73 @@ describe('KanbanPanel auth-scoped card flows', () => {
       content: '# Fresh card',
       comments: freshCard.comments,
     }))
+  })
+
+  it('routes checklist mutations through the auth-scoped bridge and refreshes frontmatter tasks', async () => {
+    const { harness, panel, sdk } = createSubject()
+    panel._cards = [makeCard({ id: 'card-checklist', content: '# Stale checklist' })]
+    const freshCard = makeCard({
+      id: 'card-checklist',
+      content: '# Fresh checklist',
+      tasks: ['- [ ] Review **docs**'],
+      labels: ['tasks', 'in-progress'],
+    })
+    sdk.addChecklistItem.mockResolvedValueOnce(freshCard)
+    sdk.getCard.mockResolvedValueOnce(freshCard)
+    sdk.listLogs.mockResolvedValueOnce([])
+    harness.postMessage.mockClear()
+
+    await harness.dispatch({ type: 'addChecklistItem', cardId: 'card-checklist', text: 'Review **docs**' } as Extract<WebviewMessage, { type: 'addChecklistItem' }>)
+
+    expect(panel._runWithAuth).toHaveBeenCalledTimes(2)
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', undefined, undefined)
+    expect(harness.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'cardContent',
+      cardId: 'card-checklist',
+      frontmatter: expect.objectContaining({
+        tasks: ['- [ ] Review **docs**'],
+      }),
+    }))
+  })
+
+  it('keeps generic saveCardContent checklist-blind even when the webview includes task frontmatter', async () => {
+    const { harness, sdk } = createSubject()
+    sdk.updateCard.mockResolvedValueOnce(makeCard({ id: 'card-save', content: '# Saved', tasks: ['- [ ] Keep derived task'], labels: ['tasks', 'in-progress'] }))
+
+    await harness.dispatch({
+      type: 'saveCardContent',
+      cardId: 'card-save',
+      content: '# Saved',
+      frontmatter: {
+        version: 1,
+        id: 'card-save',
+        status: 'todo',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2026-03-24T00:00:00.000Z',
+        modified: '2026-03-24T00:00:00.000Z',
+        completedAt: null,
+        labels: ['tasks', 'in-progress'],
+        attachments: [],
+        tasks: ['- [ ] Keep derived task'],
+        order: 'a0',
+      },
+    })
+
+    expect(sdk.updateCard).toHaveBeenCalledWith('card-save', {
+      content: '# Saved',
+      status: 'todo',
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      labels: ['tasks', 'in-progress'],
+      attachments: [],
+      metadata: undefined,
+      actions: undefined,
+      forms: undefined,
+      formData: undefined,
+    }, undefined)
   })
 
   it('does not emit card content when an explicit open resolves to not found', async () => {

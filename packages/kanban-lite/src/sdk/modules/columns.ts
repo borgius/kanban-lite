@@ -70,7 +70,7 @@ export async function removeColumn(ctx: SDKContext, { columnId, boardId }: { col
   const idx = board.columns.findIndex(c => c.id === columnId)
   if (idx === -1) throw new Error(`Column not found: ${columnId}`)
 
-  const cards = await ctx.listCards(undefined, resolvedId)
+  const cards = await ctx._listCardsRaw(undefined, resolvedId)
   const cardsInColumn = cards.filter(c => c.status === columnId)
   if (cardsInColumn.length > 0) {
     throw new Error(`Cannot remove column "${columnId}": ${cardsInColumn.length} card(s) still in this column`)
@@ -86,7 +86,7 @@ export async function removeColumn(ctx: SDKContext, { columnId, boardId }: { col
  */
 export async function cleanupColumn(ctx: SDKContext, { columnId, boardId }: { columnId: string; boardId?: string }): Promise<number> {
   if (columnId === DELETED_STATUS_ID) return 0
-  const cards = await ctx.listCards(undefined, boardId)
+  const cards = await ctx._listCardsRaw(undefined, boardId)
   const cardsToMove = cards.filter(c => c.status === columnId)
   for (const card of cardsToMove) {
     await ctx.moveCard(card.id, DELETED_STATUS_ID, 0, boardId)
@@ -98,7 +98,7 @@ export async function cleanupColumn(ctx: SDKContext, { columnId, boardId }: { co
  * Permanently deletes all cards currently in the `deleted` column.
  */
 export async function purgeDeletedCards(ctx: SDKContext, { boardId }: { boardId?: string } = {}): Promise<number> {
-  const cards = await ctx.listCards(undefined, boardId)
+  const cards = await ctx._listCardsRaw(undefined, boardId)
   const deleted = cards.filter(c => c.status === DELETED_STATUS_ID)
   for (const card of deleted) {
     await ctx.permanentlyDeleteCard(card.id, boardId)

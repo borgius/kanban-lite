@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
+import { buildChecklistReadModel } from '../sdk/modules/checklist'
 import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, type Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
@@ -76,8 +77,8 @@ interface McpCardStateMutationModel {
   cardState: McpCardStateReadModel['cardState']
 }
 
-type McpPluginSettingsListModel = ReturnType<KanbanSDK['listPluginSettings']>
-type McpPluginSettingsReadModel = NonNullable<ReturnType<KanbanSDK['getPluginSettings']>>
+type McpPluginSettingsListModel = Awaited<ReturnType<KanbanSDK['listPluginSettings']>>
+type McpPluginSettingsReadModel = NonNullable<Awaited<ReturnType<KanbanSDK['getPluginSettings']>>>
 type McpPluginSettingsInstallModel = Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
 
 function createMcpJsonResult(body: unknown): McpToolResult {
@@ -376,6 +377,154 @@ export function createMcpErrorResult(err: unknown): McpToolResult {
   return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
 }
 
+export function registerChecklistMcpTools(
+  server: McpToolRegistrar,
+  options: {
+    sdk: KanbanSDK
+    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
+  },
+): string[] {
+  const registeredNames = [
+    'list_card_checklist_items',
+    'add_card_checklist_item',
+    'edit_card_checklist_item',
+    'delete_card_checklist_item',
+    'check_card_checklist_item',
+    'uncheck_card_checklist_item',
+  ]
+
+  const resolveBoardId = (boardId: unknown): string | undefined => typeof boardId === 'string' ? boardId : undefined
+
+  server.tool(
+    'list_card_checklist_items',
+    'List the checklist items for a card, including expectedRaw values for optimistic concurrency.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+    },
+    async ({ boardId, cardId }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) => {
+          const card = await options.sdk.getCard(resolvedId, resolveBoardId(boardId))
+          if (!card) throw new Error(`Card not found: ${cardId}`)
+          return buildChecklistReadModel(card)
+        })
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'add_card_checklist_item',
+    'Add a checklist item to a card and return the caller-scoped checklist payload. expectedToken is required to avoid lost concurrent appends.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      text: z.string().describe('Checklist item text to add.'),
+      expectedToken: z.string().describe('Checklist token from list_card_checklist_items required for optimistic concurrency.'),
+    },
+    async ({ boardId, cardId, text, expectedToken }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
+          buildChecklistReadModel(await options.sdk.addChecklistItem(resolvedId, String(text), String(expectedToken), resolveBoardId(boardId)))
+        )
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'edit_card_checklist_item',
+    'Edit an existing checklist item. expectedRaw is required to avoid stale overwrites.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      index: z.number().int().nonnegative().describe('Checklist item index.'),
+      text: z.string().describe('Replacement checklist item text.'),
+      expectedRaw: z.string().describe('Current raw checklist line expected by the caller.'),
+    },
+    async ({ boardId, cardId, index, text, expectedRaw }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
+          buildChecklistReadModel(await options.sdk.editChecklistItem(resolvedId, index as number, String(text), String(expectedRaw), resolveBoardId(boardId)))
+        )
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'delete_card_checklist_item',
+    'Delete an existing checklist item. expectedRaw is required to avoid stale deletes.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      index: z.number().int().nonnegative().describe('Checklist item index.'),
+      expectedRaw: z.string().describe('Current raw checklist line expected by the caller.'),
+    },
+    async ({ boardId, cardId, index, expectedRaw }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
+          buildChecklistReadModel(await options.sdk.deleteChecklistItem(resolvedId, index as number, String(expectedRaw), resolveBoardId(boardId)))
+        )
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'check_card_checklist_item',
+    'Mark a checklist item as checked. expectedRaw is required to avoid stale writes.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      index: z.number().int().nonnegative().describe('Checklist item index.'),
+      expectedRaw: z.string().describe('Current raw unchecked checklist line expected by the caller.'),
+    },
+    async ({ boardId, cardId, index, expectedRaw }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
+          buildChecklistReadModel(await options.sdk.checkChecklistItem(resolvedId, index as number, String(expectedRaw), resolveBoardId(boardId)))
+        )
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'uncheck_card_checklist_item',
+    'Mark a checklist item as unchecked. expectedRaw is required to avoid stale writes.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+      cardId: z.string().describe('Card ID (or partial ID)'),
+      index: z.number().int().nonnegative().describe('Checklist item index.'),
+      expectedRaw: z.string().describe('Current raw checked checklist line expected by the caller.'),
+    },
+    async ({ boardId, cardId, index, expectedRaw }) => {
+      try {
+        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
+          buildChecklistReadModel(await options.sdk.uncheckChecklistItem(resolvedId, index as number, String(expectedRaw), resolveBoardId(boardId)))
+        )
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  return registeredNames
+}
+
 export function createMcpPluginContext(options: {
   sdk: KanbanSDK
   workspaceRoot: string
@@ -639,12 +788,13 @@ async function main(): Promise<void> {
       assignee: z.string().optional().describe('Assignee name'),
       dueDate: z.string().optional().describe('Due date (ISO format or YYYY-MM-DD)'),
       labels: z.array(z.string()).optional().describe('Labels/tags'),
+      tasks: z.array(z.string()).optional().describe('Optional checklist items seeded as raw markdown task lines (for example "- [ ] Review docs").'),
       metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata as key-value pairs (supports nested objects)'),
       actions: z.array(z.string()).optional().describe('Action names available on this card (e.g. ["retry", "sendEmail"])'),
       forms: z.array(cardFormAttachmentSchema).optional().describe('Optional forms attached to this card. Each item may reference a named workspace form and/or provide an inline schema/ui/data override.'),
       formData: cardFormDataMapSchema.optional().describe('Optional persisted per-form data keyed by resolved form id. Useful when seeding card-scoped form state at creation time.'),
     },
-    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, metadata, actions, forms, formData }) => {
+    async ({ boardId, title, body, status, priority, assignee, dueDate, labels, tasks, metadata, actions, forms, formData }) => {
       const content = `# ${title}${body ? '\n\n' + body : ''}`
 
       try {
@@ -655,6 +805,7 @@ async function main(): Promise<void> {
           assignee: assignee || null,
           dueDate: dueDate || null,
           labels: labels || [],
+          tasks: tasks || undefined,
           metadata,
           actions,
           boardId,
@@ -1504,6 +1655,11 @@ async function main(): Promise<void> {
   )
 
   registerPluginSettingsMcpTools(server as unknown as McpToolRegistrar, {
+    sdk,
+    runWithAuth: runWithMcpAuth,
+  })
+
+  registerChecklistMcpTools(server as unknown as McpToolRegistrar, {
     sdk,
     runWithAuth: runWithMcpAuth,
   })

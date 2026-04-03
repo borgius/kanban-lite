@@ -172,6 +172,26 @@ const AUTH_POLICY_ACTION_SUPPLEMENTS = [
   'plugin-settings.update',
 ] as const
 
+function actionMatchesPattern(action: string, pattern: string): boolean {
+  if (pattern === action) return true
+  if (pattern.endsWith('.*')) {
+    const prefix = pattern.slice(0, -2)
+    return action.startsWith(`${prefix}.`)
+  }
+  return false
+}
+
+function deriveWildcardPatterns(actions: readonly string[]): string[] {
+  const prefixes = new Set<string>()
+  for (const action of actions) {
+    const parts = action.split('.')
+    for (let i = 1; i < parts.length; i++) {
+      prefixes.add(parts.slice(0, i).join('.'))
+    }
+  }
+  return [...prefixes].sort((a, b) => a.localeCompare(b)).map((prefix) => `${prefix}.*`)
+}
+
 async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]> {
   const events = typeof sdk?.listAvailableEvents === 'function'
     ? await sdk.listAvailableEvents({ type: 'before' })
@@ -182,7 +202,9 @@ async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]>
   const names = configuredEvents && configuredEvents.length > 0
     ? configuredEvents
     : [...SDK_BEFORE_EVENT_NAMES]
-  return [...new Set([...names, ...AUTH_POLICY_ACTION_SUPPLEMENTS])]
+  const all = [...new Set([...names, ...AUTH_POLICY_ACTION_SUPPLEMENTS])]
+  const wildcards = deriveWildcardPatterns(all)
+  return [...new Set([...wildcards, ...all])]
     .sort((left, right) => left.localeCompare(right))
 }
 
@@ -651,7 +673,7 @@ function checkPermissionMatrixPolicy(
 
   const roles = new Set(identity.roles ?? [])
   for (const entry of entries) {
-    if (roles.has(entry.role) && entry.actions.includes(action)) {
+    if (roles.has(entry.role) && entry.actions.some((pattern) => actionMatchesPattern(action, pattern))) {
       return { allowed: true, actor: identity.subject }
     }
   }

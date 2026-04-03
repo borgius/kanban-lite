@@ -633,12 +633,6 @@ export function useVisibleWorkfeed(
 
   useEffect(() => {
     if (!options.authState.isProtectedReady || !options.authState.sessionStatus) {
-      setLoadState({
-        errorMessage: null,
-        phase: 'blocked',
-        source: 'none',
-        tasks: [],
-      })
       loadIdRef.current += 1
       return
     }

@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Mobile SecureStore key normalization**: `@kanban-lite/mobile` now maps logical session and cache keys onto Expo SecureStore-safe physical keys before any read/write/delete call, preventing startup/auth restore crashes from `/`, `:`, and percent-encoded cache namespace separators while preserving the existing logical storage contracts in app code and tests.
+
 - **Mobile durable-draft Node-safe validation**: `@kanban-lite/mobile` durable attachment helpers now lazy-load Expo file-system defaults at runtime so Node/Vitest imports stay safe while preserving the injected file-system seam, the visible-workfeed cache cleanup path no longer eagerly imports attachment runtime code in pure model tests, and the default mobile lint script now covers both `app/**` and `src/**`.
 
 - **MF8 mobile auth/runtime handoff**: `@kanban-lite/mobile` now shares one root-scoped session controller across the Expo route tree, runs restore/deep-link handling once from the root shell, exits `/(auth)` into the protected app shell after successful auth, preserves pending deep-link targets across that handoff, and removes the dead duplicate `FormSheet` route/source files that were producing editor noise.

@@ -4,6 +4,24 @@ import { useEffect } from 'react'
 
 import { useSessionController } from './session-store'
 
+/**
+ * Returns true only when `url` looks like an intentional mobile entry link —
+ * i.e. it carries a `workspaceOrigin`/`bootstrapToken` query parameter or uses
+ * a non-http custom scheme.  On web, `Linking.getInitialURL()` returns the
+ * browser's current `window.location.href` (e.g. `http://localhost:8081`),
+ * which must NOT be treated as a workspace URL.
+ */
+function isMobileEntryUrl(url: string | null): boolean {
+  if (!url) return false
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true
+    return parsed.searchParams.has('workspaceOrigin') || parsed.searchParams.has('bootstrapToken')
+  } catch {
+    return url.trim().length > 0
+  }
+}
+
 export function SessionRuntimeBridge() {
   const router = useRouter()
   const segments = useSegments()
@@ -20,7 +38,7 @@ export function SessionRuntimeBridge() {
         return
       }
 
-      await controller.initialize(initialUrl)
+      await controller.initialize(isMobileEntryUrl(initialUrl) ? initialUrl : null)
     }
 
     void start()

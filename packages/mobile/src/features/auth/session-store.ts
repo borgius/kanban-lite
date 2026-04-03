@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 
+import { createExpoSecureStoreStorage } from '../../lib/expo-secure-store'
 import {
   DEFAULT_SESSION_NAMESPACE,
   createCacheStore,
@@ -509,20 +510,7 @@ export function createFetchMobileSessionClient(
 }
 
 export function createExpoSessionStorage(): MobileSessionStorage {
-  return {
-    async getItem(key) {
-      const secureStore = await import('expo-secure-store')
-      return secureStore.getItemAsync(key)
-    },
-    async setItem(key, value) {
-      const secureStore = await import('expo-secure-store')
-      await secureStore.setItemAsync(key, value)
-    },
-    async removeItem(key) {
-      const secureStore = await import('expo-secure-store')
-      await secureStore.deleteItemAsync(key)
-    },
-  }
+  return createExpoSecureStoreStorage()
 }
 
 export function createMemorySessionStorage(initial: Record<string, string> = {}): MemorySessionStorage {

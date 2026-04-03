@@ -124,11 +124,12 @@ export default function HomeScreen() {
   const { colors } = useTheme()
   const router = useRouter()
   const { controller, state } = useSessionController()
+  const onProtectedError = useCallback(async (status: 401 | 403) => {
+    await controller.logout({ reason: 'session-revoked', status })
+  }, [controller])
   const workfeed = useVisibleWorkfeed({
     authState: state,
-    onProtectedError: async (status) => {
-      await controller.logout({ reason: 'session-revoked', status })
-    },
+    onProtectedError,
   })
   const activeTask = findTaskById(workfeed.tasks, workfeed.landing.activeTaskId)
   const isBusy = state.phase === 'restoring' || state.phase === 'signing-in'

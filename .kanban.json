@@ -58,7 +58,7 @@
   "showLabels": true,
   "showBuildWithAI": true,
   "showFileName": false,
-  "cardViewMode": "xxlarge",
+  "cardViewMode": "compact",
   "markdownEditorMode": false,
   "showDeletedColumn": false,
   "boardZoom": 120,
@@ -69,7 +69,7 @@
   "labels": {},
   "compactMode": false,
   "panelMode": "drawer",
-  "drawerWidth": 44.868629758493654,
+  "drawerWidth": 54.22997754491018,
   "forms": {
     "editorial-review": {
       "name": "Editorial Review",
@@ -219,10 +219,119 @@
       }
     },
     "auth.identity": {
-      "provider": "noop"
+      "provider": "kl-plugin-auth",
+      "options": {
+        "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
+        "users": [
+          {
+            "username": "admin",
+            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
+            "role": "admin"
+          },
+          {
+            "username": "manager",
+            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
+            "role": "manager"
+          },
+          {
+            "username": "user",
+            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
+            "role": "user"
+          }
+        ],
+        "roles": [
+          "user",
+          "manager",
+          "admin"
+        ]
+      }
     },
     "auth.policy": {
-      "provider": "noop"
+      "provider": "kl-plugin-auth",
+      "options": {
+        "permissions": [
+          {
+            "role": "user",
+            "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
+              "attachment.add",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add",
+              "card.checklist.show"
+            ]
+          },
+          {
+            "role": "manager",
+            "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
+              "attachment.add",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add",
+              "card.create",
+              "card.update",
+              "card.move",
+              "card.transfer",
+              "card.delete",
+              "board.action.trigger",
+              "log.clear",
+              "board.log.add",
+              "card.checklist.show"
+            ]
+          },
+          {
+            "role": "admin",
+            "actions": [
+              "form.submit",
+              "comment.create",
+              "comment.update",
+              "comment.delete",
+              "attachment.add",
+              "attachment.remove",
+              "card.action.trigger",
+              "log.add",
+              "card.create",
+              "card.update",
+              "card.move",
+              "card.transfer",
+              "card.delete",
+              "board.action.trigger",
+              "log.clear",
+              "board.log.add",
+              "board.create",
+              "board.update",
+              "board.delete",
+              "settings.update",
+              "webhook.create",
+              "webhook.update",
+              "webhook.delete",
+              "label.set",
+              "label.rename",
+              "label.delete",
+              "column.create",
+              "column.update",
+              "column.reorder",
+              "column.setMinimized",
+              "column.delete",
+              "column.cleanup",
+              "board.action.config.add",
+              "board.action.config.remove",
+              "board.log.clear",
+              "board.setDefault",
+              "storage.migrate",
+              "card.purgeDeleted",
+              "card.checklist.show"
+            ]
+          }
+        ]
+      }
     },
     "card.storage": {
       "provider": "localfs"

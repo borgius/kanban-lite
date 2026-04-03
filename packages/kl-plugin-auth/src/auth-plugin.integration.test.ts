@@ -963,7 +963,17 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
       type: 'string',
       title: 'Action',
-      enum: ['card.checklist.show', 'card.create', 'plugin-settings.read', 'plugin-settings.update', 'settings.update'],
+      enum: [
+        'card.*',
+        'card.checklist.*',
+        'card.checklist.show',
+        'card.create',
+        'plugin-settings.*',
+        'plugin-settings.read',
+        'plugin-settings.update',
+        'settings.*',
+        'settings.update',
+      ],
       minLength: 1,
     })
     expect(sdk.listAvailableEvents).toHaveBeenCalledTimes(1)

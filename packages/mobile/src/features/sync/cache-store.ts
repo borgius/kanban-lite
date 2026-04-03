@@ -3,6 +3,7 @@ import type {
   JsonValue,
   MobileCacheSnapshots,
 } from '../../lib/api/contracts'
+import { createExpoSecureStoreStorage } from '../../lib/expo-secure-store'
 
 export type {
   MobileCacheSnapshots,
@@ -862,20 +863,7 @@ function upsertByDraftId<T extends AnyDraftRecord>(items: T[], nextItem: T): T[]
 }
 
 export function createExpoCacheStorage(): CacheStorage {
-  return {
-    async getItem(key) {
-      const secureStore = await import('expo-secure-store')
-      return secureStore.getItemAsync(key)
-    },
-    async setItem(key, value) {
-      const secureStore = await import('expo-secure-store')
-      await secureStore.setItemAsync(key, value)
-    },
-    async removeItem(key) {
-      const secureStore = await import('expo-secure-store')
-      await secureStore.deleteItemAsync(key)
-    },
-  }
+  return createExpoSecureStoreStorage()
 }
 
 export function createMemoryCacheStorage(initial: Record<string, string> = {}): MemoryCacheStorage {

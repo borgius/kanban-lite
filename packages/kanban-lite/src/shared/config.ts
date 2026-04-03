@@ -357,6 +357,12 @@ export interface KanbanConfig {
    * served under this prefix. Only applies to the standalone server.
    */
   basePath?: string
+  /**
+   * Log level for the standalone HTTP server. Defaults to `'silent'` (no log output).
+   * Set to `'debug'` for verbose output or `'error'` to see only errors in the console.
+   * Only applies to the standalone server.
+   */
+  logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'silent'
 }
 
 // Legacy v1 config (for migration)

@@ -266,15 +266,15 @@ function resolveSwaggerUiStaticDir(): string | undefined {
 }
 
 export function startServer(kanbanDir: string, port: number, webviewDir?: string, resolvedConfigPath?: string): http.Server {
-  const fastify = Fastify({ logger: false, forceCloseConnections: true })
+  const workspaceRoot = path.dirname(path.resolve(kanbanDir))
+  const config = readConfig(workspaceRoot)
+  const fastify = Fastify({ logger: config.logLevel ? { level: config.logLevel } : false, forceCloseConnections: true })
   const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
   const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
   const swaggerUiLogo = swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
     ? { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) }
     : undefined
 
-  const workspaceRoot = path.dirname(path.resolve(kanbanDir))
-  const config = readConfig(workspaceRoot)
   const rawBase = config.basePath ?? ''
   const basePath = rawBase ? (rawBase.startsWith('/') ? rawBase : '/' + rawBase).replace(/\/+$/, '') : ''
 

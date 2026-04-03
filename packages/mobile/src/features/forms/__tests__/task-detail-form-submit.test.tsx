@@ -4,6 +4,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SESSION_STORAGE_KEY } from '../../auth/session-store'
+import { toExpoSecureStoreKey } from '../../../lib/expo-secure-store'
 import type { MobileApiClient, MobileTaskDetail } from '../../../lib/api/client'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean; React?: typeof React }).IS_REACT_ACT_ENVIRONMENT = true
@@ -466,7 +467,10 @@ describe('mobile task detail resolved-form submit path', () => {
       setItemAsync: (key: string, value: string) => Promise<void>
     }
     secureStore.__reset()
-    await secureStore.setItemAsync(SESSION_STORAGE_KEY, createStoredSessionJson())
+    await secureStore.setItemAsync(
+      toExpoSecureStoreKey(SESSION_STORAGE_KEY),
+      createStoredSessionJson(),
+    )
   })
 
   afterEach(async () => {

@@ -120,7 +120,10 @@ describe('MarkdownStorageEngine', () => {
 
       const card = makeCard({
         labels: ['tasks', 'in-progress'],
-        tasks: ['- [ ] reproduce', '- [x] ship fix'],
+        tasks: [
+          { title: 'reproduce', description: '', checked: false, createdAt: '2025-01-01T00:00:00.000Z', modifiedAt: '2025-01-01T00:00:00.000Z', createdBy: '', modifiedBy: '' },
+          { title: 'ship fix', description: '', checked: true, createdAt: '2025-01-01T00:00:00.000Z', modifiedAt: '2025-01-01T00:00:00.000Z', createdBy: '', modifiedBy: '' },
+        ],
         filePath: path.join(boardDir, 'backlog', '1-test-card-2025-01-01.md'),
       })
       await engine.writeCard(card)

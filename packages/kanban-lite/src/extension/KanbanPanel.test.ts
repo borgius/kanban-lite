@@ -740,10 +740,11 @@ describe('KanbanPanel auth-scoped card flows', () => {
   it('routes checklist mutations through the auth-scoped bridge and refreshes frontmatter tasks', async () => {
     const { harness, panel, sdk } = createSubject()
     panel._cards = [makeCard({ id: 'card-checklist', content: '# Stale checklist' })]
+    const taskObj = { title: 'Review docs', description: '', checked: false, createdAt: '2025-01-01T00:00:00.000Z', modifiedAt: '2025-01-01T00:00:00.000Z', createdBy: '', modifiedBy: '' }
     const freshCard = makeCard({
       id: 'card-checklist',
       content: '# Fresh checklist',
-      tasks: ['- [ ] Review **docs**'],
+      tasks: [taskObj],
       labels: ['tasks', 'in-progress'],
     })
     sdk.addChecklistItem.mockResolvedValueOnce(freshCard)
@@ -751,22 +752,23 @@ describe('KanbanPanel auth-scoped card flows', () => {
     sdk.listLogs.mockResolvedValueOnce([])
     harness.postMessage.mockClear()
 
-    await harness.dispatch({ type: 'addChecklistItem', cardId: 'card-checklist', text: 'Review **docs**' } as Extract<WebviewMessage, { type: 'addChecklistItem' }>)
+    await harness.dispatch({ type: 'addChecklistItem', cardId: 'card-checklist', title: 'Review docs', description: '', expectedToken: '' } as Extract<WebviewMessage, { type: 'addChecklistItem' }>)
 
     expect(panel._runWithAuth).toHaveBeenCalledTimes(2)
-    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', undefined, undefined)
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review docs', '', '', undefined)
     expect(harness.postMessage).toHaveBeenCalledWith(expect.objectContaining({
       type: 'cardContent',
       cardId: 'card-checklist',
       frontmatter: expect.objectContaining({
-        tasks: ['- [ ] Review **docs**'],
+        tasks: [taskObj],
       }),
     }))
   })
 
   it('keeps generic saveCardContent checklist-blind even when the webview includes task frontmatter', async () => {
     const { harness, sdk } = createSubject()
-    sdk.updateCard.mockResolvedValueOnce(makeCard({ id: 'card-save', content: '# Saved', tasks: ['- [ ] Keep derived task'], labels: ['tasks', 'in-progress'] }))
+    const savedTask = { title: 'Keep derived task', description: '', checked: false, createdAt: '2026-03-24T00:00:00.000Z', modifiedAt: '2026-03-24T00:00:00.000Z', createdBy: '', modifiedBy: '' }
+    sdk.updateCard.mockResolvedValueOnce(makeCard({ id: 'card-save', content: '# Saved', tasks: [savedTask], labels: ['tasks', 'in-progress'] }))
 
     await harness.dispatch({
       type: 'saveCardContent',
@@ -784,7 +786,7 @@ describe('KanbanPanel auth-scoped card flows', () => {
         completedAt: null,
         labels: ['tasks', 'in-progress'],
         attachments: [],
-        tasks: ['- [ ] Keep derived task'],
+        tasks: [savedTask],
         order: 'a0',
       },
     })

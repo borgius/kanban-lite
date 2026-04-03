@@ -1,4 +1,4 @@
-import type { Card } from '../../shared/types'
+import type { Card, CardTask } from '../../shared/types'
 
 export const CHECKLIST_RESERVED_LABELS = ['tasks', 'in-progress'] as const
 
@@ -14,10 +14,13 @@ export interface ChecklistStats {
 
 export interface ChecklistItemReadModel {
   index: number
-  raw: string
-  expectedRaw: string
   checked: boolean
-  text: string
+  title: string
+  description: string
+  createdAt: string
+  modifiedAt: string
+  createdBy: string
+  modifiedBy: string
 }
 
 export interface ChecklistReadModel {
@@ -51,22 +54,6 @@ function dedupeLabels(labels: readonly string[]): string[] {
   }
 
   return deduped
-}
-
-function collapseTaskWhitespace(value: string): string {
-  return value
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function extractNormalizedChecklistText(task: string): string {
-  const match = task.match(/^- \[(?: |x)\]\s*(.*)$/)
-  return match?.[1] ?? ''
 }
 
 const CHECKLIST_MARKDOWN_LINK_RE = /(?<!!)\[[^\]]*\]\(([^)]+)\)/g
@@ -216,84 +203,59 @@ export function isReservedChecklistLabel(label: string): label is ChecklistReser
   return CHECKLIST_RESERVED_LABELS.includes(label as ChecklistReservedLabel)
 }
 
-export function normalizeChecklistTaskLine(task: string): string {
-  const flattened = collapseTaskWhitespace(String(task ?? ''))
-  if (!flattened) return '- [ ]'
-
-  const match = flattened.match(/^(?:[-*+]\s*)?\[( |x|X)\]\s*(.*)$/)
-  if (match) {
-    const checked = match[1].toLowerCase() === 'x'
-    const body = match[2].trim().replace(/\s+/g, ' ')
-    return body.length > 0
-      ? `- [${checked ? 'x' : ' '}] ${body}`
-      : `- [${checked ? 'x' : ' '}]`
+function assertValidTaskTitle(title: string): void {
+  if (!title || !title.trim()) {
+    throw new Error('Checklist task title must not be empty')
   }
-
-  const body = flattened.replace(/^(?:[-*+]\s*)/, '').trim()
-  return body.length > 0 ? `- [ ] ${body}` : '- [ ]'
+  assertNoRawChecklistHtml(title)
+  assertNoChecklistMarkdownImages(title)
+  assertNoUnsafeChecklistMarkdownLinks(title)
 }
 
-export function normalizeChecklistSeedTaskLine(task: string): string {
-  if (/\r?\n/.test(String(task ?? ''))) {
-    throw new Error('Checklist task text must be a single line')
-  }
-
-  const normalized = normalizeChecklistTaskLine(task)
-  const text = extractNormalizedChecklistText(normalized)
-  if (!text) {
-    throw new Error('Checklist task text must not be empty')
-  }
-
-  assertNoRawChecklistHtml(text)
-  assertNoChecklistMarkdownImages(text)
-  assertNoUnsafeChecklistMarkdownLinks(text)
-
-  return normalized
+function assertValidTaskDescription(description: string): void {
+  if (!description) return
+  assertNoRawChecklistHtml(description)
+  assertNoChecklistMarkdownImages(description)
+  assertNoUnsafeChecklistMarkdownLinks(description)
 }
 
-export function buildChecklistTask(text: string, checked = false): string {
-  if (/\r?\n/.test(text)) {
-    throw new Error('Checklist task text must be a single line')
+export function buildChecklistTask(
+  title: string,
+  description: string,
+  createdBy: string,
+  now?: string,
+): CardTask {
+  assertValidTaskTitle(title)
+  assertValidTaskDescription(description)
+  const ts = now ?? new Date().toISOString()
+  return {
+    title: title.trim(),
+    description,
+    checked: false,
+    createdAt: ts,
+    modifiedAt: ts,
+    createdBy,
+    modifiedBy: createdBy,
   }
-
-  const normalized = normalizeChecklistTaskLine(`- [${checked ? 'x' : ' '}] ${text}`)
-  const normalizedText = extractNormalizedChecklistText(normalized)
-  if (!normalizedText) {
-    throw new Error('Checklist task text must not be empty')
-  }
-
-  assertNoRawChecklistHtml(normalizedText)
-  assertNoChecklistMarkdownImages(normalizedText)
-  assertNoUnsafeChecklistMarkdownLinks(normalizedText)
-  return normalized
 }
 
-export function normalizeChecklistTasks(tasks: readonly string[] | undefined): string[] | undefined {
+export function normalizeChecklistTasks(tasks: readonly CardTask[] | undefined): CardTask[] | undefined {
   if (!tasks || tasks.length === 0) return undefined
-
-  const normalized = tasks.map((task) => normalizeChecklistTaskLine(task))
-  return normalized.length > 0 ? normalized : undefined
+  return tasks.length > 0 ? [...tasks] : undefined
 }
 
-export function normalizeChecklistSeedTasks(tasks: readonly string[] | undefined): string[] | undefined {
-  if (!tasks || tasks.length === 0) return undefined
-
-  return tasks.map((task) => normalizeChecklistSeedTaskLine(task))
-}
-
-export function buildChecklistToken(tasks: readonly string[] | undefined): string {
-  const normalized = normalizeChecklistTasks(tasks) ?? []
-  const snapshot = JSON.stringify(normalized)
+export function buildChecklistToken(tasks: readonly CardTask[] | undefined): string {
+  const list = tasks ?? []
+  const snapshot = JSON.stringify(list)
   const primary = hashChecklistSnapshot(snapshot, 0x811c9dc5, 0x01000193)
   const secondary = hashChecklistSnapshot(snapshot, 0x9e3779b1, 0x27d4eb2d)
 
   return `cl1:${snapshot.length}:${primary}${secondary}`
 }
 
-export function getChecklistStats(tasks: readonly string[] | undefined): ChecklistStats {
-  const normalized = normalizeChecklistTasks(tasks)
-  const total = normalized?.length ?? 0
-  const completed = normalized?.filter((task) => task.startsWith('- [x]')).length ?? 0
+export function getChecklistStats(tasks: readonly CardTask[] | undefined): ChecklistStats {
+  const total = tasks?.length ?? 0
+  const completed = tasks?.filter((task) => task.checked).length ?? 0
   return {
     total,
     completed,
@@ -301,7 +263,7 @@ export function getChecklistStats(tasks: readonly string[] | undefined): Checkli
   }
 }
 
-export function syncChecklistDerivedLabels(labels: readonly string[], tasks: readonly string[] | undefined): string[] {
+export function syncChecklistDerivedLabels(labels: readonly string[], tasks: readonly CardTask[] | undefined): string[] {
   const nextLabels = dedupeLabels(labels).filter((label) => !isReservedChecklistLabel(label))
   const { total, incomplete } = getChecklistStats(tasks)
 
@@ -320,7 +282,7 @@ export function normalizeCardChecklistState<T extends ChecklistCardShape>(card: 
   const normalized = {
     ...card,
     labels: syncChecklistDerivedLabels(card.labels, normalizedTasks),
-  } as T & { tasks?: string[] }
+  } as T & { tasks?: CardTask[] }
 
   if (normalizedTasks) {
     normalized.tasks = normalizedTasks
@@ -332,26 +294,23 @@ export function normalizeCardChecklistState<T extends ChecklistCardShape>(card: 
 }
 
 export function buildChecklistReadModel(card: Pick<Card, 'id' | 'boardId' | 'tasks'>): ChecklistReadModel {
-  const normalizedTasks = normalizeChecklistTasks(card.tasks) ?? []
-  const items = normalizedTasks.map((task, index) => {
-    const match = task.match(/^- \[( |x)\]\s*(.*)$/)
-    const checked = match?.[1] === 'x'
-    const text = match?.[2] ?? ''
-
-    return {
-      index,
-      raw: task,
-      expectedRaw: task,
-      checked,
-      text,
-    }
-  })
+  const tasks = card.tasks ?? []
+  const items = tasks.map((task, index) => ({
+    index,
+    checked: task.checked,
+    title: task.title,
+    description: task.description,
+    createdAt: task.createdAt,
+    modifiedAt: task.modifiedAt,
+    createdBy: task.createdBy,
+    modifiedBy: task.modifiedBy,
+  }))
 
   return {
     cardId: card.id,
     boardId: card.boardId ?? 'default',
-    token: buildChecklistToken(normalizedTasks),
-    summary: getChecklistStats(normalizedTasks),
+    token: buildChecklistToken(tasks),
+    summary: getChecklistStats(tasks),
     items,
   }
 }
@@ -365,7 +324,7 @@ export function projectCardChecklistState<T extends ChecklistCardShape>(card: T,
   const projected = {
     ...normalized,
     labels: normalized.labels.filter((label) => !isReservedChecklistLabel(label)),
-  } as T & { tasks?: string[] }
+  } as T & { tasks?: CardTask[] }
 
   delete projected.tasks
   return projected as T

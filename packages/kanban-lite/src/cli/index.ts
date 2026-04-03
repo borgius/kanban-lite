@@ -818,15 +818,16 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
 
     case 'add': {
       const cardId = positional[1]
-      const text = typeof flags.text === 'string' ? flags.text : undefined
+      const title = typeof flags.title === 'string' ? flags.title : undefined
+      const description = typeof flags.description === 'string' ? flags.description : ''
       const expectedToken = typeof flags['expected-token'] === 'string' ? flags['expected-token'] : undefined
-      if (!cardId || !text || !expectedToken) {
-        console.error(red('Usage: kl checklist add <card-id> --text <text> --expected-token <token>'))
+      if (!cardId || !title || !expectedToken) {
+        console.error(red('Usage: kl checklist add <card-id> --title <title> --expected-token <token>'))
         process.exit(1)
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.addChecklistItem(resolvedId, text, expectedToken, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.addChecklistItem(resolvedId, title, description, expectedToken, boardId))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -834,15 +835,16 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
     case 'edit': {
       const cardId = positional[1]
       const index = parseChecklistIndex(positional[2])
-      const text = typeof flags.text === 'string' ? flags.text : undefined
-      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
-      if (!cardId || !text) {
-        console.error(red('Usage: kl checklist edit <card-id> <index> --text <text> --expected-raw <line>'))
+      const title = typeof flags.title === 'string' ? flags.title : undefined
+      const description = typeof flags.description === 'string' ? flags.description : ''
+      const modifiedAt = typeof flags['modified-at'] === 'string' ? flags['modified-at'] : undefined
+      if (!cardId || !title) {
+        console.error(red('Usage: kl checklist edit <card-id> <index> --title <title> --modified-at <iso>'))
         process.exit(1)
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.editChecklistItem(resolvedId, index, text, expectedRaw, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.editChecklistItem(resolvedId, index, title, description, modifiedAt, boardId))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -852,14 +854,14 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
     case 'rm': {
       const cardId = positional[1]
       const index = parseChecklistIndex(positional[2])
-      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      const modifiedAt = typeof flags['modified-at'] === 'string' ? flags['modified-at'] : undefined
       if (!cardId) {
-        console.error(red('Usage: kl checklist delete <card-id> <index> --expected-raw <line>'))
+        console.error(red('Usage: kl checklist delete <card-id> <index> --modified-at <iso>'))
         process.exit(1)
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.deleteChecklistItem(resolvedId, index, expectedRaw, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.deleteChecklistItem(resolvedId, index, modifiedAt, boardId))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -867,14 +869,14 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
     case 'check': {
       const cardId = positional[1]
       const index = parseChecklistIndex(positional[2])
-      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      const modifiedAt = typeof flags['modified-at'] === 'string' ? flags['modified-at'] : undefined
       if (!cardId) {
-        console.error(red('Usage: kl checklist check <card-id> <index> --expected-raw <line>'))
+        console.error(red('Usage: kl checklist check <card-id> <index> --modified-at <iso>'))
         process.exit(1)
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.checkChecklistItem(resolvedId, index, expectedRaw, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.checkChecklistItem(resolvedId, index, modifiedAt, boardId))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -882,14 +884,14 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
     case 'uncheck': {
       const cardId = positional[1]
       const index = parseChecklistIndex(positional[2])
-      const expectedRaw = typeof flags['expected-raw'] === 'string' ? flags['expected-raw'] : undefined
+      const modifiedAt = typeof flags['modified-at'] === 'string' ? flags['modified-at'] : undefined
       if (!cardId) {
-        console.error(red('Usage: kl checklist uncheck <card-id> <index> --expected-raw <line>'))
+        console.error(red('Usage: kl checklist uncheck <card-id> <index> --modified-at <iso>'))
         process.exit(1)
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.uncheckChecklistItem(resolvedId, index, expectedRaw, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.uncheckChecklistItem(resolvedId, index, modifiedAt, boardId))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }

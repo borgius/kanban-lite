@@ -156,6 +156,26 @@ export interface Comment {
 }
 
 /**
+ * A single rich checklist task item stored on a card.
+ */
+export interface CardTask {
+  /** Short task title (required). */
+  title: string
+  /** Optional multi-line description. */
+  description: string
+  /** Whether the task has been completed. */
+  checked: boolean
+  /** ISO 8601 timestamp of when the task was created. */
+  createdAt: string
+  /** ISO 8601 timestamp of the last modification. */
+  modifiedAt: string
+  /** Actor who created the task. */
+  createdBy: string
+  /** Actor who last modified the task. */
+  modifiedBy: string
+}
+
+/**
  * A kanban card with all associated metadata.
  *
  * Cards are persisted as markdown files with YAML frontmatter inside the
@@ -187,8 +207,8 @@ export interface Card {
   labels: string[]
   /** File paths of attachments associated with the card. */
   attachments: string[]
-  /** Optional single-line markdown checklist items stored on the card. */
-  tasks?: string[]
+  /** Rich checklist task items stored on the card. */
+  tasks?: CardTask[]
   /** Discussion comments on the card. */
   comments: Comment[]
   /** Fractional index (base-62) controlling sort order within a column. */
@@ -817,8 +837,8 @@ export interface CardFrontmatter {
   labels: string[]
   /** File paths of attachments. */
   attachments: string[]
-  /** Optional single-line markdown checklist items stored on the card. */
-  tasks?: string[]
+  /** Rich checklist task items stored on the card. */
+  tasks?: CardTask[]
   /** Fractional index (base-62) for ordering within a column. */
   order: string
   /** Arbitrary user-defined metadata stored as YAML in the frontmatter. */
@@ -1012,7 +1032,7 @@ export interface CreateCardPayload {
   assignee: string | null
   dueDate: string | null
   labels: string[]
-  tasks?: string[]
+  tasks?: CardTask[]
   metadata?: Record<string, unknown>
   actions?: string[] | Record<string, string>
   forms?: CardFormAttachment[]
@@ -1034,7 +1054,8 @@ export interface SubmitFormMessage {
 export interface AddChecklistItemMessage {
   type: 'addChecklistItem'
   cardId: string
-  text: string
+  title: string
+  description: string
   expectedToken: string
   boardId?: string
 }
@@ -1043,8 +1064,9 @@ export interface EditChecklistItemMessage {
   type: 'editChecklistItem'
   cardId: string
   index: number
-  text: string
-  expectedRaw?: string
+  title: string
+  description: string
+  modifiedAt?: string
   boardId?: string
 }
 
@@ -1052,7 +1074,7 @@ export interface DeleteChecklistItemMessage {
   type: 'deleteChecklistItem'
   cardId: string
   index: number
-  expectedRaw?: string
+  modifiedAt?: string
   boardId?: string
 }
 
@@ -1060,7 +1082,7 @@ export interface CheckChecklistItemMessage {
   type: 'checkChecklistItem'
   cardId: string
   index: number
-  expectedRaw?: string
+  modifiedAt?: string
   boardId?: string
 }
 
@@ -1068,7 +1090,7 @@ export interface UncheckChecklistItemMessage {
   type: 'uncheckChecklistItem'
   cardId: string
   index: number
-  expectedRaw?: string
+  modifiedAt?: string
   boardId?: string
 }
 

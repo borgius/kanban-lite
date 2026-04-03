@@ -289,45 +289,7 @@
           {
             "role": "admin",
             "actions": [
-              "form.submit",
-              "comment.create",
-              "comment.update",
-              "comment.delete",
-              "attachment.add",
-              "attachment.remove",
-              "card.action.trigger",
-              "log.add",
-              "card.create",
-              "card.update",
-              "card.move",
-              "card.transfer",
-              "card.delete",
-              "board.action.trigger",
-              "log.clear",
-              "board.log.add",
-              "board.create",
-              "board.update",
-              "board.delete",
-              "settings.update",
-              "webhook.create",
-              "webhook.update",
-              "webhook.delete",
-              "label.set",
-              "label.rename",
-              "label.delete",
-              "column.create",
-              "column.update",
-              "column.reorder",
-              "column.setMinimized",
-              "column.delete",
-              "column.cleanup",
-              "board.action.config.add",
-              "board.action.config.remove",
-              "board.log.clear",
-              "board.setDefault",
-              "storage.migrate",
-              "card.purgeDeleted",
-              "card.checklist.show"
+              "*"
             ]
           }
         ]
@@ -438,6 +400,7 @@
           {
             "role": "admin",
             "actions": [
+              "*",
               "form.submit",
               "comment.create",
               "comment.update",
@@ -475,7 +438,8 @@
               "board.log.clear",
               "board.setDefault",
               "storage.migrate",
-              "card.purgeDeleted"
+              "card.purgeDeleted",
+              "plugin-settings.*"
             ]
           }
         ]
@@ -532,5 +496,6 @@
       "active": true
     }
   ],
-  "columnWidth": 208
+  "columnWidth": 208,
+  "logLevel": "debug"
 }

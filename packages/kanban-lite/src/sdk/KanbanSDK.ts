@@ -1650,6 +1650,37 @@ export class KanbanSDK {
    *
    * @internal
    */
+
+  /**
+   * Resolves the acting user for checklist mutations.
+   *
+   * When an auth plugin is active and identity resolves successfully, the
+   * identity subject (username) is returned. When no identity is available
+   * the method falls back to a transport-based default:
+   *
+   * - `'extension'` → `'user'`   (VS Code extension webview)
+   * - `'http'`      → `'api'`    (REST API / standalone WebSocket)
+   * - `'mcp'`       → `'mcp'`    (MCP server)
+   * - `'cli'`       → `'cli'`    (command-line interface)
+   * - other / none  → `'sdk'`    (direct SDK use)
+   *
+   * @internal
+   */
+  private async _resolveActorForMutation(): Promise<string> {
+    const ctx = this._currentAuthContext ?? {}
+    if (this._capabilities) {
+      const identity = await this._capabilities.authIdentity.resolveIdentity(ctx)
+      if (identity?.subject) return identity.subject
+    }
+    switch (ctx.transport) {
+      case 'http': return 'api'
+      case 'mcp': return 'mcp'
+      case 'cli': return 'cli'
+      case 'extension': return 'user'
+      default: return 'sdk'
+    }
+  }
+
   async _authorizeAction(action: string, context?: AuthContext): Promise<AuthDecision> {
     if (!this._capabilities) {
       // Pre-built storage engine injected directly — operate in noop/anonymous mode.
@@ -2634,10 +2665,11 @@ export class KanbanSDK {
    * model. This prevents concurrent append operations from silently overwriting one
    * another when two callers read the same checklist snapshot.
    */
-  async addChecklistItem(cardId: string, text: string, expectedToken: string, boardId?: string): Promise<Card> {
+  async addChecklistItem(cardId: string, title: string, description: string, expectedToken: string, boardId?: string): Promise<Card> {
+    const createdBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.addChecklistItem>>(
       'card.checklist.add',
-      { cardId, text, expectedToken, boardId },
+      { cardId, title, description, expectedToken, boardId, createdBy },
       undefined,
       boardId,
     )
@@ -2646,11 +2678,12 @@ export class KanbanSDK {
     return this._getScopedMutationCard(card)
   }
 
-  /** Edits an existing checklist item's text while preserving its checked state. */
-  async editChecklistItem(cardId: string, index: number, text: string, expectedRaw?: string, boardId?: string): Promise<Card> {
+  /** Edits an existing checklist item's title and description while preserving its checked state. */
+  async editChecklistItem(cardId: string, index: number, title: string, description: string, modifiedAt?: string, boardId?: string): Promise<Card> {
+    const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.editChecklistItem>>(
       'card.checklist.edit',
-      { cardId, index, text, expectedRaw, boardId },
+      { cardId, index, title, description, modifiedAt, boardId, modifiedBy },
       undefined,
       boardId,
     )
@@ -2659,11 +2692,11 @@ export class KanbanSDK {
     return this._getScopedMutationCard(card)
   }
 
-  /** Deletes a checklist item using stale-write protection via `expectedRaw`. */
-  async deleteChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+  /** Deletes a checklist item using stale-write protection via `modifiedAt`. */
+  async deleteChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteChecklistItem>>(
       'card.checklist.delete',
-      { cardId, index, expectedRaw, boardId },
+      { cardId, index, modifiedAt, boardId },
       undefined,
       boardId,
     )
@@ -2672,11 +2705,12 @@ export class KanbanSDK {
     return this._getScopedMutationCard(card)
   }
 
-  /** Marks a checklist item complete using stale-write protection via `expectedRaw`. */
-  async checkChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+  /** Marks a checklist item complete using stale-write protection via `modifiedAt`. */
+  async checkChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
+    const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.checkChecklistItem>>(
       'card.checklist.check',
-      { cardId, index, expectedRaw, boardId },
+      { cardId, index, modifiedAt, boardId, modifiedBy },
       undefined,
       boardId,
     )
@@ -2685,11 +2719,12 @@ export class KanbanSDK {
     return this._getScopedMutationCard(card)
   }
 
-  /** Marks a checklist item incomplete using stale-write protection via `expectedRaw`. */
-  async uncheckChecklistItem(cardId: string, index: number, expectedRaw?: string, boardId?: string): Promise<Card> {
+  /** Marks a checklist item incomplete using stale-write protection via `modifiedAt`. */
+  async uncheckChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
+    const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.uncheckChecklistItem>>(
       'card.checklist.uncheck',
-      { cardId, index, expectedRaw, boardId },
+      { cardId, index, modifiedAt, boardId, modifiedBy },
       undefined,
       boardId,
     )

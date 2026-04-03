@@ -13,7 +13,7 @@ import {
   ERR_CARD_STATE_UNAVAILABLE,
 } from '../types'
 import type { StorageEngine } from '../plugins/types'
-import type { Card } from '../../shared/types'
+import type { Card, CardTask } from '../../shared/types'
 import { buildChecklistReadModel } from '../modules/checklist'
 
 function createTempDir(): string {
@@ -202,7 +202,7 @@ function makeCardContent(opts: {
   assignee?: string | null
   dueDate?: string | null
   labels?: string[]
-  tasks?: string[]
+  tasks?: CardTask[]
   created?: string
   modified?: string
 }): string {
@@ -229,11 +229,24 @@ created: "${created}"
 modified: "${modified}"
 completedAt: null
 labels: [${labels.map(l => `"${l}"`).join(', ')}]
-${tasks ? `tasks:\n${tasks.map((task) => `  - ${JSON.stringify(task)}`).join('\n')}\n` : ''}order: "${order}"
+${tasks ? `tasks:\n${tasks.map((t) => `  - title: ${JSON.stringify(t.title)}\n    description: ${JSON.stringify(t.description)}\n    checked: ${t.checked}\n    createdAt: ${JSON.stringify(t.createdAt)}\n    modifiedAt: ${JSON.stringify(t.modifiedAt)}\n    createdBy: ${JSON.stringify(t.createdBy)}\n    modifiedBy: ${JSON.stringify(t.modifiedBy)}`).join('\n')}\n` : ''}order: "${order}"
 ---
 # ${title}
 
 Description here.`
+}
+
+function makeTask(title: string, opts?: Partial<CardTask>): CardTask {
+  return {
+    title,
+    description: '',
+    checked: false,
+    createdAt: '2025-01-01T00:00:00.000Z',
+    modifiedAt: '2025-01-01T00:00:00.000Z',
+    createdBy: '',
+    modifiedBy: '',
+    ...opts,
+  }
 }
 
 describe('KanbanSDK', () => {
@@ -865,7 +878,7 @@ module.exports = { CallbackListenerPlugin }
           makeCardContent({
             id: 'public-checklist',
             labels: ['public', 'tasks', 'in-progress'],
-            tasks: ['- [ ] hidden work'],
+            tasks: [makeTask('hidden work')],
           }),
           'backlog',
         )
@@ -910,7 +923,7 @@ module.exports = { CallbackListenerPlugin }
           makeCardContent({
             id: 'probe-checklist',
             labels: ['tasks', 'in-progress'],
-            tasks: ['- [ ] leaked only through reserved labels'],
+            tasks: [makeTask('leaked only through reserved labels')],
           }),
           'backlog',
         )
@@ -941,7 +954,7 @@ module.exports = { CallbackListenerPlugin }
           await expect(sdk.createCard({
             content: '# Seeded checklist',
             labels: ['public'],
-            tasks: ['- [ ] seed me'],
+            tasks: [makeTask('seed me')],
           })).rejects.toBeInstanceOf(AuthError)
         })
       } finally {
@@ -953,7 +966,7 @@ module.exports = { CallbackListenerPlugin }
       const card = await sdk.createCard({ content: '# Update guard' })
 
       await expect(sdk.updateCard(card.id, {
-        tasks: ['- [ ] nope'],
+        tasks: [makeTask('nope')],
       } as Partial<Card>)).rejects.toThrow('Card tasks can only be changed through checklist operations')
     })
 
@@ -976,13 +989,14 @@ module.exports = { CallbackListenerPlugin }
         const checklist = buildChecklistReadModel(card)
 
         await sdk.runWithAuth({ token: 'reader-token' }, async () => {
-          const updated = await sdk.addChecklistItem(card.id, 'Hidden task', checklist.token)
+          const updated = await sdk.addChecklistItem(card.id, 'Hidden task', '', checklist.token)
           expect(updated.tasks).toBeUndefined()
           expect(updated.labels).toEqual(['public'])
         })
 
         const stored = expectPresent(await sdk.getCard(card.id), 'expected stored card')
-        expect(stored.tasks).toEqual(['- [ ] Hidden task'])
+        expect(stored.tasks).toHaveLength(1)
+        expect(stored.tasks![0]).toMatchObject({ title: 'Hidden task', checked: false })
         expect(stored.labels).toEqual(['public', 'tasks', 'in-progress'])
       } finally {
         cleanup()
@@ -1010,7 +1024,7 @@ module.exports = { CallbackListenerPlugin }
         const seeded = await sdk.createCard({
           content: '# Hidden checklist payload',
           labels: ['public'],
-          tasks: ['- [ ] hidden work'],
+          tasks: [makeTask('hidden work')],
         })
 
         await sdk.createBoard('bugs', 'Bugs')
@@ -1030,7 +1044,7 @@ module.exports = { CallbackListenerPlugin }
           const created = await sdk.createCard({
             content: '# Hidden create response',
             labels: ['public'],
-            tasks: ['- [ ] seed me'],
+            tasks: [makeTask('seed me')],
           })
           await expectProjectedMutation(created)
 
@@ -1076,89 +1090,59 @@ module.exports = { CallbackListenerPlugin }
       }
     })
 
-    it('validates seeded create tasks like checklist add and canonicalizes checked seed lines', async () => {
-      const host = await sdk.createCard({ content: '# Checklist host' })
-      const checklist = buildChecklistReadModel(host)
+    it('validates task titles via addChecklistItem and supports direct CardTask seeding', async () => {
+      const host = await sdk.createCard({ content: '# Checklist validation host' })
+      const initial = buildChecklistReadModel(host)
 
-      await expect(sdk.addChecklistItem(host.id, '   ', checklist.token)).rejects.toThrow('Checklist task text must not be empty')
-      await expect(sdk.createCard({
-        content: '# Invalid blank seeded checklist',
-        tasks: ['   '],
-      })).rejects.toThrow('Checklist task text must not be empty')
-
-      await expect(sdk.addChecklistItem(host.id, 'line 1\nline 2', checklist.token)).rejects.toThrow('Checklist task text must be a single line')
-      await expect(sdk.createCard({
-        content: '# Invalid multiline seeded checklist',
-        tasks: ['line 1\nline 2'],
-      })).rejects.toThrow('Checklist task text must be a single line')
+      await expect(sdk.addChecklistItem(host.id, '   ', '', initial.token)).rejects.toThrow('Checklist task title must not be empty')
+      await expect(sdk.addChecklistItem(host.id, '', '', initial.token)).rejects.toThrow('Checklist task title must not be empty')
 
       const seeded = await sdk.createCard({
-        content: '# Canonical seeded checklist',
-        tasks: [' [X] done ', '-[ ]todo'],
+        content: '# Seeded checklist',
+        tasks: [
+          makeTask('done', { checked: true }),
+          makeTask('todo'),
+        ],
       })
 
-      expect(seeded.tasks).toEqual(['- [x] done', '- [ ] todo'])
+      expect(seeded.tasks).toHaveLength(2)
+      expect(seeded.tasks?.[0]).toMatchObject({ title: 'done', checked: true })
+      expect(seeded.tasks?.[1]).toMatchObject({ title: 'todo', checked: false })
       expect(seeded.labels).toEqual(['tasks', 'in-progress'])
     })
 
-    it('rejects raw HTML, markdown images, and unsafe links for seeded, added, and edited checklist writes while preserving safe markdown', async () => {
-      const host = await sdk.createCard({
-        content: '# Checklist html host',
-        tasks: ['Review **docs**'],
-      })
-      const checklist = buildChecklistReadModel(host)
-
-      await expect(sdk.createCard({
-        content: '# Invalid HTML seeded checklist',
-        tasks: ['<img src=x onerror="alert(1)"> **docs**'],
-      })).rejects.toThrow('Checklist task text must not contain raw HTML')
-
-      await expect(sdk.createCard({
-        content: '# Invalid javascript seeded checklist',
-        tasks: ['Review [bad-js](javascript:alert(1))'],
-      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
-
-      await expect(sdk.createCard({
-        content: '# Invalid entity javascript seeded checklist',
-        tasks: ['Review [bad-entity](javas&#x63;ript:alert(1))'],
-      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
-
-      await expect(sdk.createCard({
-        content: '# Invalid protocol-relative seeded checklist',
-        tasks: ['Review [bad-protocol-relative](//example.com)'],
-      })).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
-
-      await expect(sdk.createCard({
-        content: '# Invalid image seeded checklist',
-        tasks: ['![logo](https://example.com/logo.png)'],
-      })).rejects.toThrow('Checklist task text must not contain markdown images')
-
-      await expect(sdk.createCard({
-        content: '# Invalid data image seeded checklist',
-        tasks: ['![bad](data:text/html,hi)'],
-      })).rejects.toThrow('Checklist task text must not contain markdown images')
+    it('rejects raw HTML, markdown images, and unsafe links for added and edited checklist writes while preserving safe markdown', async () => {
+      const host = await sdk.createCard({ content: '# Checklist html host' })
+      const initial = buildChecklistReadModel(host)
+      const hostWithTask = await sdk.addChecklistItem(host.id, 'Review **docs**', '', initial.token)
+      const checklist = buildChecklistReadModel(hostWithTask)
+      let taskModifiedAt = checklist.items[0].modifiedAt
 
       await expect(sdk.addChecklistItem(
         host.id,
         '<img src=x onerror="alert(1)"> **docs**',
+        '',
         checklist.token,
       )).rejects.toThrow('Checklist task text must not contain raw HTML')
 
       await expect(sdk.addChecklistItem(
         host.id,
         '![logo](https://example.com/logo.png)',
+        '',
         checklist.token,
       )).rejects.toThrow('Checklist task text must not contain markdown images')
 
       await expect(sdk.addChecklistItem(
         host.id,
         'Review [bad-data](data:text/html,hi)',
+        '',
         checklist.token,
       )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
 
       await expect(sdk.addChecklistItem(
         host.id,
         'Review [bad-relative](/docs)',
+        '',
         checklist.token,
       )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
 
@@ -1166,62 +1150,77 @@ module.exports = { CallbackListenerPlugin }
         host.id,
         0,
         '<img src=x onerror="alert(1)"> [guide](https://example.com)',
-        '- [ ] Review **docs**',
+        '',
+        taskModifiedAt,
       )).rejects.toThrow('Checklist task text must not contain raw HTML')
 
       await expect(sdk.editChecklistItem(
         host.id,
         0,
         '![bad](data:text/html,hi) [guide](https://example.com)',
-        '- [ ] Review **docs**',
+        '',
+        taskModifiedAt,
       )).rejects.toThrow('Checklist task text must not contain markdown images')
 
       await expect(sdk.editChecklistItem(
         host.id,
         0,
         'Review [bad-js](javascript:alert(1)) [guide](https://example.com)',
-        '- [ ] Review **docs**',
+        '',
+        taskModifiedAt,
       )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
 
       await expect(sdk.editChecklistItem(
         host.id,
         0,
         'Review [bad-colon](javascript&colon;alert(1)) [guide](https://example.com)',
-        '- [ ] Review **docs**',
+        '',
+        taskModifiedAt,
       )).rejects.toThrow('Checklist task links must use http, https, or mailto URLs')
 
       const updated = await sdk.editChecklistItem(
         host.id,
         0,
         'Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
-        '- [ ] Review **docs**',
+        '',
+        taskModifiedAt,
       )
 
-      expect(updated.tasks).toEqual([
-        '- [ ] Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
-      ])
+      expect(updated.tasks).toHaveLength(1)
+      expect(updated.tasks![0]).toMatchObject({
+        title: 'Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
+        checked: false,
+      })
+      taskModifiedAt = updated.tasks![0].modifiedAt
 
       const literalImage = await sdk.editChecklistItem(
         host.id,
         0,
         'Review `![logo](https://example.com/logo.png)` literally',
-        '- [ ] Review _docs_ `api` [guide](https://example.com) [mail](mailto:test@example.com) `[bad-js](javascript:alert(1))`',
+        '',
+        taskModifiedAt,
       )
 
-      expect(literalImage.tasks).toEqual([
-        '- [ ] Review `![logo](https://example.com/logo.png)` literally',
-      ])
+      expect(literalImage.tasks).toHaveLength(1)
+      expect(literalImage.tasks![0]).toMatchObject({
+        title: 'Review `![logo](https://example.com/logo.png)` literally',
+        checked: false,
+      })
+      taskModifiedAt = literalImage.tasks![0].modifiedAt
 
       const literalObfuscated = await sdk.editChecklistItem(
         host.id,
         0,
         'Review `[bad-entity](javas&#x63;ript:alert(1))` literally',
-        '- [ ] Review `![logo](https://example.com/logo.png)` literally',
+        '',
+        taskModifiedAt,
       )
 
-      expect(literalObfuscated.tasks).toEqual([
-        '- [ ] Review `[bad-entity](javas&#x63;ript:alert(1))` literally',
-      ])
+      expect(literalObfuscated.tasks).toHaveLength(1)
+      expect(literalObfuscated.tasks![0]).toMatchObject({
+        title: 'Review `[bad-entity](javas&#x63;ript:alert(1))` literally',
+        checked: false,
+      })
     })
 
     it('requires checklist tokens for adds and rejects stale add tokens instead of silently overwriting', async () => {
@@ -1230,44 +1229,51 @@ module.exports = { CallbackListenerPlugin }
 
       const addChecklistItemWithoutToken = sdk.addChecklistItem.bind(sdk) as unknown as (
         cardId: string,
-        text: string,
+        title: string,
       ) => ReturnType<KanbanSDK['addChecklistItem']>
 
       await expect(addChecklistItemWithoutToken(host.id, 'First add')).rejects.toThrow('expectedToken')
 
-      const first = await sdk.addChecklistItem(host.id, 'First add', initial.token)
-      expect(first.tasks).toEqual(['- [ ] First add'])
+      const first = await sdk.addChecklistItem(host.id, 'First add', '', initial.token)
+      expect(first.tasks).toHaveLength(1)
+      expect(first.tasks![0]).toMatchObject({ title: 'First add', checked: false })
 
-      await expect(sdk.addChecklistItem(host.id, 'Second add', initial.token)).rejects.toThrow('stale')
+      await expect(sdk.addChecklistItem(host.id, 'Second add', '', initial.token)).rejects.toThrow('stale')
 
       const refreshedCard = expectPresent(await sdk.getCard(host.id), 'expected refreshed checklist host')
       const refreshed = buildChecklistReadModel(refreshedCard)
-      const second = await sdk.addChecklistItem(host.id, 'Second add', refreshed.token)
+      const second = await sdk.addChecklistItem(host.id, 'Second add', '', refreshed.token)
 
-      expect(second.tasks).toEqual(['- [ ] First add', '- [ ] Second add'])
+      expect(second.tasks).toHaveLength(2)
+      expect(second.tasks![0]).toMatchObject({ title: 'First add', checked: false })
+      expect(second.tasks![1]).toMatchObject({ title: 'Second add', checked: false })
     })
 
-    it('guards checklist writes with expectedRaw and self-heals dirty data on write', async () => {
+    it('guards checklist writes with modifiedAt', async () => {
       writeCardFile(
         tempDir,
         'dirty-checklist.md',
         makeCardContent({
           id: 'dirty-checklist',
-          labels: ['public'],
-          tasks: [' [X] shipped ', '- [ ] follow up'],
+          labels: ['public', 'tasks', 'in-progress'],
+          tasks: [makeTask('shipped', { checked: true }), makeTask('follow up', { modifiedAt: '2025-01-02T00:00:00.000Z' })],
         }),
         'backlog',
       )
 
-      await expect(sdk.editChecklistItem('dirty-checklist', 0, 'Still shipped')).rejects.toThrow('expectedRaw')
-      await expect(sdk.checkChecklistItem('dirty-checklist', 1, '- [ ] stale')).rejects.toThrow('stale')
+      await expect(sdk.editChecklistItem('dirty-checklist', 0, 'Still shipped', '')).rejects.toThrow('Checklist mutations for existing items require modifiedAt')
+      await expect(sdk.checkChecklistItem('dirty-checklist', 1, 'wrong-modifiedAt')).rejects.toThrow('stale')
 
-      const updated = await sdk.checkChecklistItem('dirty-checklist', 1, '- [ ] follow up')
-      expect(updated.tasks).toEqual(['- [x] shipped', '- [x] follow up'])
+      const updated = await sdk.checkChecklistItem('dirty-checklist', 1, '2025-01-02T00:00:00.000Z')
+      expect(updated.tasks).toHaveLength(2)
+      expect(updated.tasks![0]).toMatchObject({ title: 'shipped', checked: true })
+      expect(updated.tasks![1]).toMatchObject({ title: 'follow up', checked: true })
       expect(updated.labels).toEqual(['public', 'tasks'])
 
       const stored = expectPresent(await sdk.getCard('dirty-checklist'), 'expected dirty checklist card')
-      expect(stored.tasks).toEqual(['- [x] shipped', '- [x] follow up'])
+      expect(stored.tasks).toHaveLength(2)
+      expect(stored.tasks![0]).toMatchObject({ title: 'shipped', checked: true })
+      expect(stored.tasks![1]).toMatchObject({ title: 'follow up', checked: true })
       expect(stored.labels).toEqual(['public', 'tasks'])
     })
 
@@ -1283,7 +1289,7 @@ module.exports = { CallbackListenerPlugin }
       const withChecklist = await sdk.createCard({
         content: '# Reserved labels checklist',
         labels: ['public'],
-        tasks: ['- [ ] task'],
+        tasks: [makeTask('task')],
       })
       const plain = await sdk.createCard({
         content: '# Plain labels card',
@@ -2095,7 +2101,7 @@ module.exports = { CallbackListenerPlugin }
           makeCardContent({
             id: 'public-checklist',
             labels: ['public', 'bug', 'tasks', 'in-progress'],
-            tasks: ['- [ ] hidden work'],
+            tasks: [makeTask('hidden work')],
           }),
           'backlog',
         )
@@ -2117,7 +2123,8 @@ module.exports = { CallbackListenerPlugin }
           _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
         }
         const stored = expectPresent(await rawSdk._getCardRaw('public-checklist'), 'expected stored checklist card after delete')
-        expect(stored.tasks).toEqual(['- [ ] hidden work'])
+        expect(stored.tasks).toHaveLength(1)
+        expect(stored.tasks![0]).toMatchObject({ title: 'hidden work', checked: false })
         expect(stored.labels).toEqual(['public', 'tasks', 'in-progress'])
       } finally {
         cleanup()
@@ -2145,7 +2152,7 @@ module.exports = { CallbackListenerPlugin }
           makeCardContent({
             id: 'public-checklist',
             labels: ['public', 'bug', 'tasks', 'in-progress'],
-            tasks: ['- [ ] hidden work'],
+            tasks: [makeTask('hidden work')],
           }),
           'backlog',
         )
@@ -2170,7 +2177,8 @@ module.exports = { CallbackListenerPlugin }
           _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
         }
         const stored = expectPresent(await rawSdk._getCardRaw('public-checklist'), 'expected stored checklist card after rename')
-        expect(stored.tasks).toEqual(['- [ ] hidden work'])
+        expect(stored.tasks).toHaveLength(1)
+        expect(stored.tasks![0]).toMatchObject({ title: 'hidden work', checked: false })
         expect(stored.labels).toEqual(['public', 'defect', 'tasks', 'in-progress'])
       } finally {
         cleanup()

@@ -320,7 +320,8 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
       const updatedCard = await runWithScopedAuth(() => doAddChecklistItem(
         ctx,
         msg.cardId as string,
-        msg.text as string,
+        msg.title as string,
+        typeof msg.description === 'string' ? msg.description : '',
         msg.expectedToken as string,
         typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
@@ -335,8 +336,9 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         ctx,
         msg.cardId as string,
         parseChecklistIndex(msg.index),
-        msg.text as string,
-        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        msg.title as string,
+        typeof msg.description === 'string' ? msg.description : '',
+        typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
         typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
@@ -350,7 +352,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         ctx,
         msg.cardId as string,
         parseChecklistIndex(msg.index),
-        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
         typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
@@ -364,7 +366,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         ctx,
         msg.cardId as string,
         parseChecklistIndex(msg.index),
-        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
         typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
@@ -378,7 +380,7 @@ export async function handleMessage(ctx: StandaloneContext, ws: WebSocket, messa
         ctx,
         msg.cardId as string,
         parseChecklistIndex(msg.index),
-        typeof msg.expectedRaw === 'string' ? msg.expectedRaw : undefined,
+        typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
         typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {

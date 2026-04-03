@@ -182,19 +182,19 @@ export class KanbanPanel {
             await this._saveCardContent(message.cardId, message.content, message.frontmatter)
             break
           case 'addChecklistItem':
-            await this._addChecklistItem(message.cardId, message.text, message.expectedToken, message.boardId)
+            await this._addChecklistItem(message.cardId, message.title, message.description, message.expectedToken, message.boardId)
             break
           case 'editChecklistItem':
-            await this._editChecklistItem(message.cardId, message.index, message.text, message.expectedRaw, message.boardId)
+            await this._editChecklistItem(message.cardId, message.index, message.title, message.description, message.modifiedAt, message.boardId)
             break
           case 'deleteChecklistItem':
-            await this._deleteChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            await this._deleteChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
             break
           case 'checkChecklistItem':
-            await this._checkChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            await this._checkChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
             break
           case 'uncheckChecklistItem':
-            await this._uncheckChecklistItem(message.cardId, message.index, message.expectedRaw, message.boardId)
+            await this._uncheckChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
             break
           case 'closeCard':
             this._currentEditingCardId = null
@@ -1263,20 +1263,21 @@ export class KanbanPanel {
     }
   }
 
-  private async _addChecklistItem(cardId: string, text: string, expectedToken: string, boardId?: string): Promise<void> {
-    await this._mutateChecklistCard(cardId, (sdk, activeBoardId) => sdk.addChecklistItem(cardId, text, expectedToken, activeBoardId), boardId)
+  private async _addChecklistItem(cardId: string, title: string, description: string, expectedToken: string, boardId?: string): Promise<void> {
+    await this._mutateChecklistCard(cardId, (sdk, activeBoardId) => sdk.addChecklistItem(cardId, title, description, expectedToken, activeBoardId), boardId)
   }
 
   private async _editChecklistItem(
     cardId: string,
     index: number,
-    text: string,
-    expectedRaw?: string,
+    title: string,
+    description: string,
+    modifiedAt?: string,
     boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.editChecklistItem(cardId, index, text, expectedRaw, activeBoardId),
+      (sdk, activeBoardId) => sdk.editChecklistItem(cardId, index, title, description, modifiedAt, activeBoardId),
       boardId,
     )
   }
@@ -1284,12 +1285,12 @@ export class KanbanPanel {
   private async _deleteChecklistItem(
     cardId: string,
     index: number,
-    expectedRaw?: string,
+    modifiedAt?: string,
     boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.deleteChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      (sdk, activeBoardId) => sdk.deleteChecklistItem(cardId, index, modifiedAt, activeBoardId),
       boardId,
     )
   }
@@ -1297,12 +1298,12 @@ export class KanbanPanel {
   private async _checkChecklistItem(
     cardId: string,
     index: number,
-    expectedRaw?: string,
+    modifiedAt?: string,
     boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.checkChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      (sdk, activeBoardId) => sdk.checkChecklistItem(cardId, index, modifiedAt, activeBoardId),
       boardId,
     )
   }
@@ -1310,12 +1311,12 @@ export class KanbanPanel {
   private async _uncheckChecklistItem(
     cardId: string,
     index: number,
-    expectedRaw?: string,
+    modifiedAt?: string,
     boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.uncheckChecklistItem(cardId, index, expectedRaw, activeBoardId),
+      (sdk, activeBoardId) => sdk.uncheckChecklistItem(cardId, index, modifiedAt, activeBoardId),
       boardId,
     )
   }

@@ -108,52 +108,54 @@ async function doChecklistMutationForBoard(
 export async function doAddChecklistItem(
   ctx: StandaloneContext,
   cardId: string,
-  text: string,
+  title: string,
+  description: string,
   expectedToken: string,
   boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.addChecklistItem(cardId, text, expectedToken, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.addChecklistItem(cardId, title, description, expectedToken, boardId), boardId)
 }
 
 export async function doEditChecklistItem(
   ctx: StandaloneContext,
   cardId: string,
   index: number,
-  text: string,
-  expectedRaw?: string,
+  title: string,
+  description: string,
+  modifiedAt?: string,
   boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.editChecklistItem(cardId, index, text, expectedRaw, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.editChecklistItem(cardId, index, title, description, modifiedAt, boardId), boardId)
 }
 
 export async function doDeleteChecklistItem(
   ctx: StandaloneContext,
   cardId: string,
   index: number,
-  expectedRaw?: string,
+  modifiedAt?: string,
   boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.deleteChecklistItem(cardId, index, expectedRaw, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.deleteChecklistItem(cardId, index, modifiedAt, boardId), boardId)
 }
 
 export async function doCheckChecklistItem(
   ctx: StandaloneContext,
   cardId: string,
   index: number,
-  expectedRaw?: string,
+  modifiedAt?: string,
   boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.checkChecklistItem(cardId, index, expectedRaw, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.checkChecklistItem(cardId, index, modifiedAt, boardId), boardId)
 }
 
 export async function doUncheckChecklistItem(
   ctx: StandaloneContext,
   cardId: string,
   index: number,
-  expectedRaw?: string,
+  modifiedAt?: string,
   boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.uncheckChecklistItem(cardId, index, expectedRaw, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.uncheckChecklistItem(cardId, index, modifiedAt, boardId), boardId)
 }
 
 export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInput): Promise<SubmitFormResult> {

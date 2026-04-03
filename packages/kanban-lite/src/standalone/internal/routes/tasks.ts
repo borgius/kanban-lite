@@ -143,15 +143,21 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
     try {
       const { id } = params
       const body = await readBody(req)
-      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
-        jsonError(res, 400, 'text is required')
+      if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+        jsonError(res, 400, 'title is required')
         return true
       }
       if (typeof body.expectedToken !== 'string' || body.expectedToken.trim().length === 0) {
         jsonError(res, 400, 'expectedToken is required')
         return true
       }
-      const card = await runWithRequestAuth(() => doAddChecklistItem(ctx, id, body.text as string, body.expectedToken as string))
+      const card = await runWithRequestAuth(() => doAddChecklistItem(
+        ctx,
+        id,
+        body.title as string,
+        typeof body.description === 'string' ? body.description : '',
+        body.expectedToken as string,
+      ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -168,16 +174,17 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
     try {
       const { id, index } = params
       const body = await readBody(req)
-      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
-        jsonError(res, 400, 'text is required')
+      if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+        jsonError(res, 400, 'title is required')
         return true
       }
       const card = await runWithRequestAuth(() => doEditChecklistItem(
         ctx,
         id,
         parseChecklistIndex(index),
-        body.text as string,
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        body.title as string,
+        typeof body.description === 'string' ? body.description : '',
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -199,7 +206,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -221,7 +228,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -243,7 +250,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')

@@ -757,58 +757,60 @@ function App(): React.JSX.Element {
     vscode.postMessage({ type: 'deleteComment', cardId: editingCard.id, commentId })
   }
 
-  const handleAddChecklistItem = useCallback((text: string, expectedToken: string): void => {
+  const handleAddChecklistItem = useCallback((title: string, description: string, expectedToken: string): void => {
     if (!editingCard) return
     vscode.postMessage({
       type: 'addChecklistItem',
       cardId: editingCard.id,
-      text,
+      title,
+      description,
       expectedToken,
       boardId: editingCard.frontmatter.boardId,
     })
   }, [editingCard])
 
-  const handleEditChecklistItem = useCallback((index: number, text: string, expectedRaw?: string): void => {
+  const handleEditChecklistItem = useCallback((index: number, title: string, description: string, modifiedAt?: string): void => {
     if (!editingCard) return
     vscode.postMessage({
       type: 'editChecklistItem',
       cardId: editingCard.id,
       index,
-      text,
-      expectedRaw,
+      title,
+      description,
+      modifiedAt,
       boardId: editingCard.frontmatter.boardId,
     })
   }, [editingCard])
 
-  const handleDeleteChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+  const handleDeleteChecklistItem = useCallback((index: number, modifiedAt?: string): void => {
     if (!editingCard) return
     vscode.postMessage({
       type: 'deleteChecklistItem',
       cardId: editingCard.id,
       index,
-      expectedRaw,
+      modifiedAt,
       boardId: editingCard.frontmatter.boardId,
     })
   }, [editingCard])
 
-  const handleCheckChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+  const handleCheckChecklistItem = useCallback((index: number, modifiedAt?: string): void => {
     if (!editingCard) return
     vscode.postMessage({
       type: 'checkChecklistItem',
       cardId: editingCard.id,
       index,
-      expectedRaw,
+      modifiedAt,
       boardId: editingCard.frontmatter.boardId,
     })
   }, [editingCard])
 
-  const handleUncheckChecklistItem = useCallback((index: number, expectedRaw?: string): void => {
+  const handleUncheckChecklistItem = useCallback((index: number, modifiedAt?: string): void => {
     if (!editingCard) return
     vscode.postMessage({
       type: 'uncheckChecklistItem',
       cardId: editingCard.id,
       index,
-      expectedRaw,
+      modifiedAt,
       boardId: editingCard.frontmatter.boardId,
     })
   }, [editingCard])

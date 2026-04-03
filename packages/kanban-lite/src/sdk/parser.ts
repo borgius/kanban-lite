@@ -1,8 +1,25 @@
 import * as path from 'path'
 import * as yaml from 'js-yaml'
-import type { Comment, Card, CardStatus, Priority, CardFormAttachment, CardFormDataMap } from '../shared/types'
+import type { Comment, Card, CardStatus, Priority, CardFormAttachment, CardFormDataMap, CardTask } from '../shared/types'
 import { CARD_FORMAT_VERSION } from '../shared/types'
-import { normalizeChecklistTasks } from './modules/checklist'
+
+function parseTaskObjects(value: unknown): CardTask[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const tasks = value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.title !== 'string' || !entry.title.trim()) return []
+    const task: CardTask = {
+      title: String(entry.title).trim(),
+      description: typeof entry.description === 'string' ? entry.description : '',
+      checked: Boolean(entry.checked),
+      createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
+      modifiedAt: typeof entry.modifiedAt === 'string' ? entry.modifiedAt : new Date().toISOString(),
+      createdBy: typeof entry.createdBy === 'string' ? entry.createdBy : '',
+      modifiedBy: typeof entry.modifiedBy === 'string' ? entry.modifiedBy : '',
+    }
+    return [task]
+  })
+  return tasks.length > 0 ? tasks : undefined
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
@@ -149,7 +166,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
   const meta = rawMeta != null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
     ? rawMeta as Record<string, unknown>
     : undefined
-  const tasks = normalizeChecklistTasks(arr('tasks'))
+  const tasks = parseTaskObjects(parsed.tasks)
   const forms = parseForms(parsed.forms)
   const formData = parseFormData(parsed.formData)
 
@@ -188,7 +205,7 @@ export function parseCardFile(content: string, filePath: string): Card | null {
  * @returns The complete markdown string ready to be written to a `.md` file.
  */
 export function serializeCard(card: Card): string {
-  const tasks = normalizeChecklistTasks(card.tasks)
+  const tasks = card.tasks && card.tasks.length > 0 ? card.tasks : undefined
   const frontmatterObj: Record<string, unknown> = {
     version: card.version ?? CARD_FORMAT_VERSION,
     id: card.id,

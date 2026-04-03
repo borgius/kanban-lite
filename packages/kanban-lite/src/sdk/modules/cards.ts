@@ -2,7 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Card, CardFormAttachment, CardSortOption, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../shared/types'
+import type { Card, CardFormAttachment, CardSortOption, CardTask, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug, formatFormDisplayName } from '../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/config'
 import { buildCardInterpolationContext, prepareFormData } from '../../shared/formDataPreparation'
@@ -12,7 +12,7 @@ import type { AuthIdentity, AuthVisibilityFilterInput } from '../plugins'
 import { sanitizeCard } from '../types'
 import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../types'
 import type { SDKContext } from './context'
-import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistSeedTasks, normalizeChecklistTaskLine, normalizeChecklistTasks, projectCardChecklistState } from './checklist'
+import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from './checklist'
 import { appendActivityLog } from './logs'
 
 interface ActiveCardState {
@@ -39,21 +39,17 @@ type AuthScopedCardsContext = SDKContext & {
   readonly _currentAuthContext?: AuthContext
 }
 
-function setChecklistTaskChecked(task: string, checked: boolean): string {
-  return normalizeChecklistTaskLine(task).replace(/^- \[(?: |x)\]/, `- [${checked ? 'x' : ' '}]`)
-}
-
-function requireExpectedRaw(current: string, expectedRaw: string | undefined): void {
-  if (typeof expectedRaw !== 'string' || expectedRaw.trim().length === 0) {
-    throw new Error('Checklist mutations for existing items require expectedRaw')
+function requireExpectedModifiedAt(current: CardTask, modifiedAt: string | undefined): void {
+  if (typeof modifiedAt !== 'string' || modifiedAt.trim().length === 0) {
+    throw new Error('Checklist mutations for existing items require modifiedAt')
   }
 
-  if (normalizeChecklistTaskLine(expectedRaw) !== current) {
-    throw new Error('Checklist item is stale: expectedRaw does not match current value')
+  if (modifiedAt !== current.modifiedAt) {
+    throw new Error('Checklist item is stale: modifiedAt does not match current value')
   }
 }
 
-function requireExpectedChecklistToken(currentTasks: readonly string[] | undefined, expectedToken: string | undefined): void {
+function requireExpectedChecklistToken(currentTasks: readonly CardTask[] | undefined, expectedToken: string | undefined): void {
   if (typeof expectedToken !== 'string' || expectedToken.trim().length === 0) {
     throw new Error('Checklist additions require expectedToken from the latest checklist read model')
   }
@@ -617,7 +613,7 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
   const lastOrder = cardsInStatus.length > 0
     ? cardsInStatus[cardsInStatus.length - 1].order
     : null
-  const seededTasks = normalizeChecklistSeedTasks(data.tasks)
+  const seededTasks = data.tasks && data.tasks.length > 0 ? [...data.tasks] : undefined
 
   const card = normalizeCardChecklistState({
     version: CARD_FORMAT_VERSION,
@@ -725,7 +721,7 @@ export async function updateCard(
   return nextCard
 }
 
-function getChecklistTaskAt(card: Card, index: number): string {
+function getChecklistTaskAt(card: Card, index: number): CardTask {
   const tasks = card.tasks ?? []
   if (!Number.isInteger(index) || index < 0 || index >= tasks.length) {
     throw new Error(`Checklist item not found at index ${index}`)
@@ -744,7 +740,7 @@ async function writeChecklistCard(ctx: SDKContext, card: Card): Promise<Card> {
 /** Adds a new checklist item to a card. */
 export async function addChecklistItem(
   ctx: SDKContext,
-  { cardId, text, expectedToken, boardId }: { cardId: string; text: string; expectedToken?: string; boardId?: string }
+  { cardId, title, description = '', createdBy = '', expectedToken, boardId }: { cardId: string; title: string; description?: string; createdBy?: string; expectedToken?: string; boardId?: string }
 ): Promise<Card> {
   const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
@@ -752,23 +748,25 @@ export async function addChecklistItem(
   const currentTasks = normalizeChecklistTasks(card.tasks) ?? []
   requireExpectedChecklistToken(currentTasks, expectedToken)
 
-  card.tasks = [...currentTasks, buildChecklistTask(text)]
+  card.tasks = [...currentTasks, buildChecklistTask(title, description, createdBy)]
   return writeChecklistCard(ctx, card)
 }
 
-/** Edits the text of an existing checklist item while preserving its checked state. */
+/** Edits the title/description of an existing checklist item while preserving its checked state. */
 export async function editChecklistItem(
   ctx: SDKContext,
-  { cardId, index, text, expectedRaw, boardId }: { cardId: string; index: number; text: string; expectedRaw?: string; boardId?: string }
+  { cardId, index, title, description = '', modifiedBy = '', modifiedAt, boardId }: { cardId: string; index: number; title: string; description?: string; modifiedBy?: string; modifiedAt?: string; boardId?: string }
 ): Promise<Card> {
   const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
-  requireExpectedRaw(current, expectedRaw)
+  requireExpectedModifiedAt(current, modifiedAt)
 
+  const now = new Date().toISOString()
+  const updatedTask = buildChecklistTask(title, description, modifiedBy, now)
   const nextTasks = [...(card.tasks ?? [])]
-  nextTasks[index] = buildChecklistTask(text, current.startsWith('- [x]'))
+  nextTasks[index] = { ...updatedTask, checked: current.checked, createdAt: current.createdAt, createdBy: current.createdBy }
   card.tasks = nextTasks
   return writeChecklistCard(ctx, card)
 }
@@ -776,13 +774,13 @@ export async function editChecklistItem(
 /** Deletes an existing checklist item by index with stale-write protection. */
 export async function deleteChecklistItem(
   ctx: SDKContext,
-  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+  { cardId, index, modifiedAt, boardId }: { cardId: string; index: number; modifiedAt?: string; boardId?: string }
 ): Promise<Card> {
   const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
-  requireExpectedRaw(current, expectedRaw)
+  requireExpectedModifiedAt(current, modifiedAt)
 
   const nextTasks = [...(card.tasks ?? [])]
   nextTasks.splice(index, 1)
@@ -798,16 +796,16 @@ export async function deleteChecklistItem(
 /** Marks an existing checklist item complete with stale-write protection. */
 export async function checkChecklistItem(
   ctx: SDKContext,
-  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+  { cardId, index, modifiedAt, modifiedBy = '', boardId }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string; boardId?: string }
 ): Promise<Card> {
   const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
-  requireExpectedRaw(current, expectedRaw)
+  requireExpectedModifiedAt(current, modifiedAt)
 
   const nextTasks = [...(card.tasks ?? [])]
-  nextTasks[index] = setChecklistTaskChecked(current, true)
+  nextTasks[index] = { ...current, checked: true, modifiedAt: new Date().toISOString(), modifiedBy }
   card.tasks = nextTasks
   return writeChecklistCard(ctx, card)
 }
@@ -815,16 +813,16 @@ export async function checkChecklistItem(
 /** Marks an existing checklist item incomplete with stale-write protection. */
 export async function uncheckChecklistItem(
   ctx: SDKContext,
-  { cardId, index, expectedRaw, boardId }: { cardId: string; index: number; expectedRaw?: string; boardId?: string }
+  { cardId, index, modifiedAt, modifiedBy = '', boardId }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string; boardId?: string }
 ): Promise<Card> {
   const card = await getMutableCard(ctx, { cardId, boardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
-  requireExpectedRaw(current, expectedRaw)
+  requireExpectedModifiedAt(current, modifiedAt)
 
   const nextTasks = [...(card.tasks ?? [])]
-  nextTasks[index] = setChecklistTaskChecked(current, false)
+  nextTasks[index] = { ...current, checked: false, modifiedAt: new Date().toISOString(), modifiedBy }
   card.tasks = nextTasks
   return writeChecklistCard(ctx, card)
 }

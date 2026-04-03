@@ -1,4 +1,4 @@
-import type { Card, CardFormAttachment, CardFormDataMap, Priority, ResolvedFormDescriptor } from '../shared/types'
+import type { Card, CardFormAttachment, CardFormDataMap, CardTask, Priority, ResolvedFormDescriptor } from '../shared/types'
 import type { CapabilitySelections } from '../shared/config'
 import type { KanbanSDK } from './KanbanSDK'
 import type { StorageEngine, StorageEngineType } from './plugins/types'
@@ -25,8 +25,8 @@ export interface CreateCardInput {
   labels?: string[]
   /** An array of attachment filenames associated with the card. */
   attachments?: string[]
-  /** Optional initial single-line markdown checklist items to seed on the card. */
-  tasks?: string[]
+  /** Optional initial checklist task items to seed on the card. */
+  tasks?: CardTask[]
   /** The board identifier when working with multiple boards. */
   boardId?: string
   /** Arbitrary user-defined metadata to store in the card's frontmatter. */

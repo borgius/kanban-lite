@@ -173,6 +173,7 @@ const AUTH_POLICY_ACTION_SUPPLEMENTS = [
 ] as const
 
 function actionMatchesPattern(action: string, pattern: string): boolean {
+  if (pattern === '*') return true
   if (pattern === action) return true
   if (pattern.endsWith('.*')) {
     const prefix = pattern.slice(0, -2)
@@ -204,8 +205,12 @@ async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]>
     : [...SDK_BEFORE_EVENT_NAMES]
   const all = [...new Set([...names, ...AUTH_POLICY_ACTION_SUPPLEMENTS])]
   const wildcards = deriveWildcardPatterns(all)
-  return [...new Set([...wildcards, ...all])]
-    .sort((left, right) => left.localeCompare(right))
+  return ['*', ...new Set([...wildcards, ...all])]
+    .sort((left, right) => {
+      if (left === '*') return -1
+      if (right === '*') return 1
+      return left.localeCompare(right)
+    })
 }
 
 function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {

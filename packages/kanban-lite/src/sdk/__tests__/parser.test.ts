@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Comment, Card } from '../../shared/types'
+import type { Comment, Card, CardTask } from '../../shared/types'
 import { parseCardFile, serializeCard } from '../parser'
 
 describe('parseCardFile', () => {
@@ -186,7 +186,7 @@ forms:
     ])
   })
 
-  it('should normalize checklist task lines from frontmatter on read', () => {
+  it('should parse object-format checklist tasks from frontmatter on read', () => {
     const content = `---
 id: "task-card"
 status: "todo"
@@ -196,18 +196,32 @@ dueDate: null
 created: "2025-01-01T00:00:00.000Z"
 modified: "2025-01-01T00:00:00.000Z"
 completedAt: null
-labels: ["tasks", "in-progress"]
+labels: ["tasks"]
 attachments: []
 order: "a0"
 tasks:
-  - " [X] done"
-  - "-[ ]todo"
+  - title: "done"
+    description: ""
+    checked: true
+    createdAt: "2025-01-01T00:00:00.000Z"
+    modifiedAt: "2025-01-01T00:00:00.000Z"
+    createdBy: ""
+    modifiedBy: ""
+  - title: "todo"
+    description: ""
+    checked: false
+    createdAt: "2025-01-01T00:00:00.000Z"
+    modifiedAt: "2025-01-01T00:00:00.000Z"
+    createdBy: ""
+    modifiedBy: ""
 ---
 # Task Card`
 
     const card = parseCardFile(content, '/tmp/task-card.md')
 
-    expect(card?.tasks).toEqual(['- [x] done', '- [ ] todo'])
+    expect(card?.tasks).toHaveLength(2)
+    expect(card?.tasks?.[0]).toMatchObject({ title: 'done', checked: true })
+    expect(card?.tasks?.[1]).toMatchObject({ title: 'todo', checked: false })
   })
 })
 
@@ -225,7 +239,10 @@ describe('serializeCard', () => {
       completedAt: null,
       labels: ['backend', 'api'],
       attachments: ['design.png', 'notes.txt'],
-      tasks: ['- [ ] draft release notes', '- [x] update changelog'],
+    tasks: [
+      { title: 'draft release notes', description: '', checked: false, createdAt: '2025-01-01T00:00:00.000Z', modifiedAt: '2025-01-01T00:00:00.000Z', createdBy: '', modifiedBy: '' },
+      { title: 'update changelog', description: '', checked: true, createdAt: '2025-01-01T00:00:00.000Z', modifiedAt: '2025-01-01T00:00:00.000Z', createdBy: '', modifiedBy: '' },
+    ],
       comments: [],
       order: 'a1',
       content: '# Round Trip\n\nTest content.',

@@ -28,11 +28,11 @@ interface MarkdownEditorProps {
   cardId?: string
   frontmatter?: CardFrontmatter
   onFormSubmitSuccess?: (result: SubmitFormTransportResult) => void
-  onAddChecklistItem?: (text: string, expectedToken: string) => void
-  onEditChecklistItem?: (index: number, text: string, expectedRaw?: string) => void
-  onDeleteChecklistItem?: (index: number, expectedRaw?: string) => void
-  onCheckChecklistItem?: (index: number, expectedRaw?: string) => void
-  onUncheckChecklistItem?: (index: number, expectedRaw?: string) => void
+  onAddChecklistItem?: (title: string, description: string, expectedToken: string) => void
+  onEditChecklistItem?: (index: number, title: string, description: string, modifiedAt?: string) => void
+  onDeleteChecklistItem?: (index: number, modifiedAt?: string) => void
+  onCheckChecklistItem?: (index: number, modifiedAt?: string) => void
+  onUncheckChecklistItem?: (index: number, modifiedAt?: string) => void
 }
 
 function escapeChecklistLegacyHtml(text: string): string {
@@ -80,11 +80,11 @@ function renderChecklistItemHtml(text: string): string {
 
 interface ChecklistSectionProps {
   checklist: ChecklistReadModel
-  onAddChecklistItem?: (text: string, expectedToken: string) => void
-  onEditChecklistItem?: (index: number, text: string, expectedRaw?: string) => void
-  onDeleteChecklistItem?: (index: number, expectedRaw?: string) => void
-  onCheckChecklistItem?: (index: number, expectedRaw?: string) => void
-  onUncheckChecklistItem?: (index: number, expectedRaw?: string) => void
+  onAddChecklistItem?: (title: string, description: string, expectedToken: string) => void
+  onEditChecklistItem?: (index: number, title: string, description: string, modifiedAt?: string) => void
+  onDeleteChecklistItem?: (index: number, modifiedAt?: string) => void
+  onCheckChecklistItem?: (index: number, modifiedAt?: string) => void
+  onUncheckChecklistItem?: (index: number, modifiedAt?: string) => void
 }
 
 function ChecklistSection({
@@ -95,16 +95,38 @@ function ChecklistSection({
   onCheckChecklistItem,
   onUncheckChecklistItem,
 }: ChecklistSectionProps) {
-  const [draft, setDraft] = useState('')
+  const [draftTitle, setDraftTitle] = useState('')
+  const [draftDescription, setDraftDescription] = useState('')
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
-  const [editingText, setEditingText] = useState('')
+  const [editingTitle, setEditingTitle] = useState('')
+  const [editingDescription, setEditingDescription] = useState('')
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
   const handleAddTask = useCallback(() => {
-    const nextTask = draft.trim()
-    if (!nextTask) return
-    onAddChecklistItem?.(nextTask, checklist.token)
-    setDraft('')
-  }, [checklist.token, draft, onAddChecklistItem])
+    const nextTitle = draftTitle.trim()
+    if (!nextTitle) return
+    onAddChecklistItem?.(nextTitle, draftDescription, checklist.token)
+    setDraftTitle('')
+    setDraftDescription('')
+  }, [checklist.token, draftTitle, draftDescription, onAddChecklistItem])
+
+  function formatModifiedAt(iso: string): string {
+    try {
+      const date = new Date(iso)
+      const now = Date.now()
+      const diff = now - date.getTime()
+      const mins = Math.floor(diff / 60000)
+      if (mins < 1) return 'just now'
+      if (mins < 60) return `${mins}m ago`
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return `${hrs}h ago`
+      const days = Math.floor(hrs / 24)
+      if (days < 7) return `${days}d ago`
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    } catch {
+      return ''
+    }
+  }
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -117,107 +139,141 @@ function ChecklistSection({
       <div className="flex-1 space-y-2 overflow-auto">
         {checklist.items.length > 0 ? checklist.items.map((item) => {
           const isEditing = editingIndex === item.index
+          const isExpanded = expandedIndex === item.index
+          const firstDescLine = item.description ? item.description.split('\n')[0] : ''
 
           return (
             <div
-              key={`${item.index}:${item.expectedRaw}`}
-              className="flex items-start gap-3 rounded-lg border px-3 py-2"
+              key={`${item.index}:${item.modifiedAt}`}
+              className="rounded-lg border px-3 py-2"
               style={{ borderColor: 'var(--vscode-panel-border)' }}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  if (item.checked) {
-                    onUncheckChecklistItem?.(item.index, item.expectedRaw)
-                  } else {
-                    onCheckChecklistItem?.(item.index, item.expectedRaw)
-                  }
-                }}
-                className="mt-0.5 shrink-0 text-sm"
-                style={{ color: 'var(--vscode-foreground)' }}
-                aria-label={`${item.checked ? 'Uncheck' : 'Check'} task ${item.text}`}
-              >
-                {item.checked ? '☑' : '☐'}
-              </button>
-
-              <div className="min-w-0 flex-1 space-y-2">
-                {isEditing ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editingText}
-                      onChange={(event) => setEditingText(event.target.value)}
-                      className="w-full rounded border px-2 py-1 text-sm"
-                      style={{
-                        borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
-                        background: 'var(--vscode-input-background)',
-                        color: 'var(--vscode-input-foreground)',
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    placeholder="Title"
+                    className="w-full rounded border px-2 py-1 text-sm"
+                    style={{
+                      borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+                      background: 'var(--vscode-input-background)',
+                      color: 'var(--vscode-input-foreground)',
+                    }}
+                  />
+                  <textarea
+                    value={editingDescription}
+                    onChange={(event) => setEditingDescription(event.target.value)}
+                    placeholder="Description (optional)"
+                    rows={3}
+                    className="w-full rounded border px-2 py-1 text-sm"
+                    style={{
+                      borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+                      background: 'var(--vscode-input-background)',
+                      color: 'var(--vscode-input-foreground)',
+                      resize: 'vertical',
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextTitle = editingTitle.trim()
+                        if (!nextTitle) return
+                        onEditChecklistItem?.(item.index, nextTitle, editingDescription, item.modifiedAt)
+                        setEditingIndex(null)
+                        setEditingTitle('')
+                        setEditingDescription('')
                       }}
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextText = editingText.trim()
-                          if (!nextText) return
-                          onEditChecklistItem?.(item.index, nextText, item.expectedRaw)
-                          setEditingIndex(null)
-                          setEditingText('')
-                        }}
-                        className="rounded px-2 py-1 text-xs font-medium"
-                        style={{
-                          background: 'var(--vscode-button-background)',
-                          color: 'var(--vscode-button-foreground)',
-                        }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingIndex(null)
-                          setEditingText('')
-                        }}
-                        className="rounded px-2 py-1 text-xs"
-                        style={{ color: 'var(--vscode-descriptionForeground)' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className={cn('text-sm', item.checked && 'opacity-70 line-through')}
+                      className="rounded px-2 py-1 text-xs font-medium"
+                      style={{
+                        background: 'var(--vscode-button-background)',
+                        color: 'var(--vscode-button-foreground)',
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingIndex(null)
+                        setEditingTitle('')
+                        setEditingDescription('')
+                      }}
+                      className="rounded px-2 py-1 text-xs"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (item.checked) {
+                          onUncheckChecklistItem?.(item.index, item.modifiedAt)
+                        } else {
+                          onCheckChecklistItem?.(item.index, item.modifiedAt)
+                        }
+                      }}
+                      className="shrink-0 text-sm"
                       style={{ color: 'var(--vscode-foreground)' }}
-                      dangerouslySetInnerHTML={{ __html: renderChecklistItemHtml(item.text) }}
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingIndex(item.index)
-                          setEditingText(item.text)
-                        }}
-                        className="rounded px-2 py-1 text-xs"
-                        style={{ color: 'var(--vscode-descriptionForeground)' }}
-                        disabled={!onEditChecklistItem}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteChecklistItem?.(item.index, item.expectedRaw)}
-                        className="rounded px-2 py-1 text-xs"
-                        style={{ color: 'var(--vscode-descriptionForeground)' }}
-                        disabled={!onDeleteChecklistItem}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+                      aria-label={`${item.checked ? 'Uncheck' : 'Check'} task ${item.title}`}
+                    >
+                      {item.checked ? '☑' : '☐'}
+                    </button>
+                    <span
+                      className={cn('min-w-0 flex-1 truncate text-sm', item.checked && 'opacity-70 line-through')}
+                      style={{ color: 'var(--vscode-foreground)' }}
+                    >
+                      {item.title}
+                    </span>
+                    {item.modifiedAt && (
+                      <span className="shrink-0 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                        {formatModifiedAt(item.modifiedAt)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingIndex(item.index)
+                        setEditingTitle(item.title)
+                        setEditingDescription(item.description ?? '')
+                      }}
+                      className="shrink-0 rounded px-1 py-0.5 text-xs"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      disabled={!onEditChecklistItem}
+                      aria-label="Edit task"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteChecklistItem?.(item.index, item.modifiedAt)}
+                      className="shrink-0 rounded px-1 py-0.5 text-xs"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                      disabled={!onDeleteChecklistItem}
+                      aria-label="Delete task"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                  {firstDescLine && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedIndex(isExpanded ? null : item.index)}
+                      className="mt-1 w-full text-left text-xs"
+                      style={{ color: 'var(--vscode-descriptionForeground)' }}
+                    >
+                      {isExpanded ? item.description : firstDescLine}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )
         }) : (
@@ -227,37 +283,51 @@ function ChecklistSection({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="space-y-2">
         <input
           type="text"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          value={draftTitle}
+          onChange={(event) => setDraftTitle(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
               handleAddTask()
             }
           }}
-          placeholder="Add a task..."
-          className="flex-1 rounded border px-3 py-2 text-sm"
+          placeholder="New task title..."
+          className="w-full rounded border px-3 py-2 text-sm"
           style={{
             borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
             background: 'var(--vscode-input-background)',
             color: 'var(--vscode-input-foreground)',
           }}
         />
-        <button
-          type="button"
-          onClick={handleAddTask}
-          className="rounded px-3 py-2 text-sm font-medium"
-          style={{
-            background: 'var(--vscode-button-background)',
-            color: 'var(--vscode-button-foreground)',
-          }}
-          disabled={!onAddChecklistItem}
-        >
-          Add task
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={draftDescription}
+            onChange={(event) => setDraftDescription(event.target.value)}
+            placeholder="Description (optional)"
+            className="flex-1 rounded border px-3 py-2 text-sm"
+            style={{
+              borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+              background: 'var(--vscode-input-background)',
+              color: 'var(--vscode-input-foreground)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleAddTask}
+            className="rounded px-3 py-2 text-sm font-medium"
+            style={{
+              background: 'var(--vscode-button-background)',
+              color: 'var(--vscode-button-foreground)',
+            }}
+            disabled={!onAddChecklistItem}
+          >
+            Add task
+          </button>
+        </div>
       </div>
     </div>
   )

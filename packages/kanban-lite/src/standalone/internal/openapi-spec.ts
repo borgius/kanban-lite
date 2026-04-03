@@ -230,6 +230,8 @@ export const KANBAN_OPENAPI_SPEC = {
           formData: { type: 'object', description: 'Saved form data keyed by form ID.' },
           actions: { type: 'array', description: 'Action names available on the card.' },
           cardState: { $ref: '#/components/schemas/CardStateReadModel' },
+          permissions: { type: 'object', description: 'Server-owned task capability envelope for the current caller, covering comment, attachment, form, checklist, and named action affordances.' },
+          resolvedForms: { type: 'array', description: 'Resolved form descriptors returned on task detail and active-task reads so clients can render server-owned schemas, UI metadata, and initial data directly.' },
         },
       },
       ChecklistItemReadModel: {
@@ -519,7 +521,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'List tasks (board-scoped)',
-        description: 'Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
+        description: 'Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include a server-owned `permissions` capability envelope plus side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [boardIdParam, ...listTasksQueryParams],
         responses: { 200: { description: 'Task list.' }, 400: { description: 'Error.' } },
       },
@@ -539,7 +541,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'Get active task (board-scoped)',
-        description: 'Returns the currently active/open task for the board, or `null` when none is active. This is separate from actor-scoped `card.state` open/unread metadata.',
+        description: 'Returns the currently active/open task for the board, or `null` when none is active. Active-task read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and caller-scoped `cardState` metadata.',
         parameters: [boardIdParam],
         responses: { 200: { description: 'Active task or null.' } },
       },
@@ -548,7 +550,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Board Tasks'],
         summary: 'Get task (board-scoped)',
-        description: 'Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
+        description: 'Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and side-effect-free `cardState.unread` / `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [boardIdParam, taskIdParam],
         responses: { 200: { description: 'Task.' }, 404: { description: 'Not found.' } },
       },
@@ -808,7 +810,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'List tasks',
-        description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
+        description: 'Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include a server-owned `permissions` capability envelope plus side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: listTasksQueryParams,
         responses: { 200: { description: 'Task list.' } },
       },
@@ -827,7 +829,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'Get active task',
-        description: 'Returns the currently active/open task on the default board, or `null` when no task is active. This is separate from actor-scoped `card.state` open/unread metadata.',
+        description: 'Returns the currently active/open task on the default board, or `null` when no task is active. Active-task read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and caller-scoped `cardState` metadata.',
         responses: { 200: { description: 'Active task or null.' } },
       },
     },
@@ -835,7 +837,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Tasks'],
         summary: 'Get task',
-        description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
+        description: 'Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and side-effect-free `cardState.unread` / `cardState.open` metadata for the current actor; this is separate from active-task UI state.',
         parameters: [taskIdParam],
         responses: { 200: { description: 'Task.' }, 404: { description: 'Not found.' } },
       },

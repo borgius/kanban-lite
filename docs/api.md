@@ -271,7 +271,7 @@ Task operations on the default board
 
 **List tasks**
 
-Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
+Returns tasks on the default board. Supports exact free-text search via `q`, optional fuzzy matching via `fuzzy=true`, and field-scoped metadata filters via `meta.<field>=value`. Read models include a server-owned `permissions` capability envelope plus side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -328,7 +328,7 @@ Required: Yes
 
 **Get active task**
 
-Returns the currently active/open task on the default board, or `null` when no task is active. This is separate from actor-scoped `card.state` open/unread metadata.
+Returns the currently active/open task on the default board, or `null` when no task is active. Active-task read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and caller-scoped `cardState` metadata.
 
 #### Responses
 
@@ -340,7 +340,7 @@ Returns the currently active/open task on the default board, or `null` when no t
 
 **Get task**
 
-Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
+Returns a single task from the default board. The `:id` segment supports partial ID matching. Read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and side-effect-free `cardState.unread` / `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -717,7 +717,7 @@ Board-scoped task operations
 
 **List tasks (board-scoped)**
 
-Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
+Returns tasks for the specified board. Supports the same `q`, `fuzzy`, `meta.*`, and field filters as `/api/tasks`. Read models include a server-owned `permissions` capability envelope plus side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -782,7 +782,7 @@ Required: Yes
 
 **Get active task (board-scoped)**
 
-Returns the currently active/open task for the board, or `null` when none is active. This is separate from actor-scoped `card.state` open/unread metadata.
+Returns the currently active/open task for the board, or `null` when none is active. Active-task read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and caller-scoped `cardState` metadata.
 
 #### Parameters
 
@@ -800,7 +800,7 @@ Returns the currently active/open task for the board, or `null` when none is act
 
 **Get task (board-scoped)**
 
-Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include side-effect-free `cardState.unread` and `cardState.open` metadata for the current actor; this is separate from active-task UI state.
+Returns a single task from the specified board. The `:id` segment supports partial ID matching. Read models include server-owned `permissions`, resolved form descriptors in `resolvedForms`, and side-effect-free `cardState.unread` / `cardState.open` metadata for the current actor; this is separate from active-task UI state.
 
 #### Parameters
 
@@ -2044,6 +2044,92 @@ Resolves a workspace-relative, absolute, or `~`-prefixed path to its canonical a
 |--------|-------------|
 | `200` | Resolved absolute path. |
 | `400` | Path parameter missing. |
+
+## Mobile
+
+Minimal mobile bootstrap and opaque local-session contract for the Expo field app.
+
+### POST `/api/mobile/bootstrap`
+
+**Resolve mobile workspace bootstrap**
+
+Normalizes a typed workspace origin, deep link, or QR payload into the canonical local-auth mobile bootstrap contract. When a one-time bootstrap token is present, the response keeps the client on the token-redemption branch instead of inventing a second login abstraction.
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `workspaceOrigin` | string | Yes | Typed workspace origin, app base URL, or canonical link origin. |
+| `bootstrapToken` | string | No | Optional one-time bootstrap token carried by a deep link or QR code. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Canonical workspace bootstrap metadata. |
+| `400` | Invalid workspace origin or request payload. |
+
+### POST `/api/mobile/session`
+
+**Create a mobile opaque bearer session**
+
+Available when the local standalone auth provider is active. Exchanges local credentials or a validated one-time bootstrap token for a server-backed opaque mobile bearer session without reusing the browser cookie transport.
+
+#### Request Body
+
+Required: Yes
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `workspaceOrigin` | string | Yes | Workspace origin to bind to the created mobile session. |
+| `username` | string | No | Local username for direct mobile login. |
+| `password` | string | No | Local password for direct mobile login. |
+| `bootstrapToken` | string | No | One-time bootstrap token to redeem instead of sending credentials. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Opaque mobile session created successfully. |
+| `400` | Invalid payload or missing required fields. |
+| `401` | Invalid credentials or bootstrap token. |
+| `403` | Bootstrap token or session is not valid for the requested workspace. |
+
+### GET `/api/mobile/session`
+
+**Validate a stored mobile session**
+
+Validates a previously issued opaque mobile bearer token for cold-start and resume gating. Shared automation tokens and browser cookie sessions are not accepted here.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `workspaceOrigin` | query | string | Yes | Workspace origin expected by the mobile cache namespace. |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Mobile session is valid for the requested workspace. |
+| `400` | Missing or invalid workspaceOrigin query parameter. |
+| `401` | Opaque mobile bearer token is missing, invalid, or expired. |
+| `403` | Session belongs to a different workspace namespace. |
+
+### DELETE `/api/mobile/session`
+
+**Revoke a stored mobile session**
+
+Revokes the current opaque mobile bearer token for mobile logout. Shared automation tokens and browser cookie sessions are not accepted here.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Mobile session revoked successfully. |
+| `401` | Opaque mobile bearer token is missing, invalid, or expired. |
 
 ## Webhooks
 

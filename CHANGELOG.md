@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MF13 mobile task-detail runtime slice**: `@kanban-lite/mobile` task detail can now open the dock-selected server-resolved form, validate required root-level inputs, submit through the existing form endpoint while online, refresh task detail after success, save explicit local form drafts with resend/discard review on offline or retryable send failures, run checklist add/edit/delete/check/uncheck flows with explicit local draft resend and conflict review, and keep card actions visible-but-disabled offline while remaining strictly online-only.
+
+- **MF12 mobile comments and attachment drafts**: `@kanban-lite/mobile` task detail now supports comment create/edit/delete, durable local attachment capture/file drafts, explicit resend/discard review, and live-only destructive comment/attachment removal without silent replay.
+
+- **Server-owned mobile task read models**: Task list/detail REST responses now serialize a caller-scoped `permissions` envelope on every task plus detail/active-task `resolvedForms`, so mobile clients consume server-owned auth and form-resolution results without re-implementing policy or merge logic locally.
+
+- **Mobile auth/onboarding shell**: `@kanban-lite/mobile` now ships a real MF8 auth shell with typed workspace entry, in-app local username/password login through `POST /api/mobile/session`, deep-link/QR paste entry with optional bootstrap-token exchange, secure persistence of only the opaque mobile bearer token plus safe namespace metadata, and a no-stale-flash restore gate that revalidates through `GET /api/mobile/session` before protected UI mounts.
+
+- **Mobile Expo shell foundation and runtime guard**: Added a typed Expo Router root layout for `@kanban-lite/mobile`, variant-specific deep-link schemes that let development and preview installs coexist, and a focused static test that fails if `packages/mobile` reaches for the Node-only `kanban-lite/sdk` runtime.
+
+- **Mobile bootstrap/session SDK contract**: Added minimal public SDK types and methods for mobile workspace bootstrap resolution, optional one-time bootstrap-token branching, and safe mobile session-status payloads without introducing a duplicate mobile login abstraction.
+
+- **Mobile REST cache and draft queue foundation**: Added a task-scoped mobile REST client plus an auth-scoped, versioned sync cache for `@kanban-lite/mobile` with explicit migrations, corruption/unknown-version fallback, explicit-resend draft queue semantics, purge hooks for auth/workspace transitions, duplicate resend guards, and durable attachment-draft recovery metadata.
+
+- **Expo mobile monorepo gate scaffold**: Added a private `@kanban-lite/mobile` Expo SDK 55 workspace under `packages/mobile`, initial EAS development/preview profiles, and a monorepo ADR that locks the no-`kanban-lite/sdk` runtime boundary before backend/mobile contract work continues.
+
 - **Auth visibility plugin** (`kl-plugin-auth-visibility`): Added a new first-party `auth.visibility` package that filters cards with role-only rules after `kl-plugin-auth` resolves identity and roles. The capability is opt-in, defaults to `provider: "none"`, matches by role only, unions cards across matching rules, applies AND across fields / OR within a field, supports `assignees: ["@me"]`, and does not grant implicit admin/manager bypass.
 
 - **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk })`; process handlers receive serialized event JSON on stdin only; per-handler failures are logged while later matches continue.
@@ -27,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Mobile build and client readiness**: `@kanban-lite/mobile` now participates in root/package build verification through an Expo export build script, and the mobile REST client/cache boundary now exposes typed task list/detail, permissions, resolved-form, and workspace-scoped snapshot DTOs instead of generic JSON placeholders.
+
 - **First-party plugin package builds now run on shared Vite library config**: All `kl-plugin-*` packages now build CommonJS output and `.d.ts` declarations through one `vite build` entrypoint backed by a shared workspace config, replacing the old split `esbuild` + `tsc --emitDeclarationOnly` flow.
 - **First-party plugin package watch mode now mirrors the shared Vite build**: All `kl-plugin-*` packages now expose a `watch` script that runs the same shared Vite library build in watch mode, so root `watch:workspace` picks them up automatically.
 
@@ -44,6 +62,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Mobile durable-draft Node-safe validation**: `@kanban-lite/mobile` durable attachment helpers now lazy-load Expo file-system defaults at runtime so Node/Vitest imports stay safe while preserving the injected file-system seam, the visible-workfeed cache cleanup path no longer eagerly imports attachment runtime code in pure model tests, and the default mobile lint script now covers both `app/**` and `src/**`.
+
+- **MF8 mobile auth/runtime handoff**: `@kanban-lite/mobile` now shares one root-scoped session controller across the Expo route tree, runs restore/deep-link handling once from the root shell, exits `/(auth)` into the protected app shell after successful auth, preserves pending deep-link targets across that handoff, and removes the dead duplicate `FormSheet` route/source files that were producing editor noise.
+
+- **MF12 resend/discard safety and namespace attachment budget**: Mobile task drafts can no longer be discarded while an explicit resend is in flight, in-flight resend locks now survive hydration until resolve, and attachment draft budget checks now count every attachment draft in the active workspace+subject namespace instead of only the current task subset.
+
+- **Mobile workspace identity propagation**: Mobile bootstrap, create-session, and validate-session DTOs now carry a stable `workspaceId` alongside normalized `workspaceOrigin`, and the Expo stored-session restore path now persists and validates that workspace identity before rehydrating protected state.
+
+- **MF10/MF11 mobile visibility-shell hardening**: The Expo `My Work` and task-detail shell now purge protected cache state on logout, reauth, workspace switch, and session revocation; avoid promoting pending task targets from cache-only task lists; surface explicit cached/offline fallback with a retry affordance; make home cards full-width tap targets; and reduce task detail to one sticky primary action while demoting secondary actions.
+
+- **MF9A restore ownership hardening**: The Expo mobile stored-session restore path now purges version-1 session records whose persisted `workspaceId` is missing, null, or blank, always requires the validated `GET /api/mobile/session` response to match the stored `workspaceId`, and rewrites stored safe metadata after a successful restore so stale namespace hints do not linger.
 
 - **Checklist markdown hardening**: New checklist writes now reject raw HTML while still allowing simple inline Markdown such as bold, italics, code, and links; legacy stored checklist HTML is rendered inert in the web UI instead of becoming live DOM.
 

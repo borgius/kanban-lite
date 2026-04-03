@@ -378,6 +378,41 @@ function createVisibilityScopedAuthIdentityPluginSource(packageName: string): st
 `
 }
 
+function createTaskReadModelAuthPluginSource(packageName: string): string {
+  return `module.exports = {
+  authIdentityPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.identity'] },
+    async resolveIdentity(context) {
+      const rawToken = context && typeof context.token === 'string' ? context.token : ''
+      const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7) : rawToken
+      if (token === 'reader-token') return { subject: 'alice', roles: ['reader'] }
+      if (token === 'writer-token') return { subject: 'casey', roles: ['writer'] }
+      return null
+    },
+  },
+  authPolicyPlugin: {
+    manifest: { id: '${packageName}', provides: ['auth.policy'] },
+    async checkPolicy(identity, action) {
+      if (!identity) {
+        return { allowed: false, reason: 'auth.identity.missing' }
+      }
+
+      const roles = Array.isArray(identity.roles) ? identity.roles : []
+      if (roles.includes('writer')) {
+        return { allowed: true, actor: identity.subject }
+      }
+
+      if (roles.includes('reader') && action === 'card.checklist.show') {
+        return { allowed: true, actor: identity.subject }
+      }
+
+      return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
+    },
+  },
+}
+`
+}
+
 // Helper: create a temp webview directory with dummy static files
 function createTempWebviewDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-webview-'))
@@ -3641,6 +3676,276 @@ describe('Standalone Server Integration', () => {
         await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/tasks/private-card/read`, {}, readerHeaders))
         await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/boards/default/tasks/private-card/open`, {}, readerHeaders))
         await expectTaskNotFound(httpRequest('POST', `http://localhost:${localPort}/api/boards/default/tasks/private-card/read`, {}, readerHeaders))
+      } finally {
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
+        isolated.cleanup()
+      }
+    })
+
+    it('serializes task permissions on list/detail responses, resolves forms on detail, and keeps hidden cards not-found', async () => {
+      const packageName = 'standalone-rest-task-read-model-contract-test'
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const cleanup = installTempPackage(
+        packageName,
+        createTaskReadModelAuthPluginSource(packageName),
+      )
+
+      const localPort = await getPort()
+      const resolvedConfigPath = writeWorkspaceConfig(isolated.workspaceRoot, {
+        port: localPort,
+        forms: {
+          inspection: {
+            schema: {
+              type: 'object',
+              title: 'Inspection',
+              properties: {
+                reporter: { type: 'string' },
+                status: { type: 'string' },
+                note: { type: 'string' },
+                region: { type: 'string' },
+              },
+            },
+            data: {
+              reporter: '${assignee}',
+              status: 'new',
+            },
+          },
+        },
+        plugins: {
+          'auth.identity': { provider: packageName },
+          'auth.policy': { provider: packageName },
+          'auth.visibility': {
+            provider: 'kl-plugin-auth-visibility',
+            options: {
+              rules: [
+                { roles: ['writer'], labels: ['public', 'private'] },
+                { roles: ['reader'], labels: ['public'] },
+              ],
+            },
+          },
+        },
+      })
+
+      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
+      await sleep(200)
+
+      const writerHeaders = { Authorization: 'Bearer writer-token' }
+      const readerHeaders = { Authorization: 'Bearer reader-token' }
+
+      try {
+        const createPublicRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Public task',
+          status: 'backlog',
+          assignee: 'casey',
+          labels: ['public'],
+          metadata: { region: 'north' },
+          actions: ['dispatch'],
+          forms: [{
+            name: 'inspection',
+            data: {
+              status: 'triage',
+            },
+          }],
+          formData: {
+            inspection: {
+              note: 'persisted note',
+            },
+          },
+        }, writerHeaders)
+        expect(createPublicRes.status).toBe(201)
+        const publicCardId = JSON.parse(createPublicRes.body).data.id as string
+
+        const createCommentRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${publicCardId}/comments`, {
+          author: 'casey',
+          content: 'Writer note',
+        }, writerHeaders)
+        expect(createCommentRes.status).toBe(201)
+        const publicCommentId = JSON.parse(createCommentRes.body).data.id as string
+
+        const uploadAttachmentRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks/${publicCardId}/attachments`, {
+          files: [{
+            name: 'field-photo.txt',
+            data: Buffer.from('snapshot').toString('base64'),
+          }],
+        }, writerHeaders)
+        expect(uploadAttachmentRes.status).toBe(200)
+
+        const createPrivateRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
+          content: '# Private task',
+          status: 'backlog',
+          labels: ['private'],
+        }, writerHeaders)
+        expect(createPrivateRes.status).toBe(201)
+        const privateCardId = JSON.parse(createPrivateRes.body).data.id as string
+
+        const readerListRes = await httpGet(`http://localhost:${localPort}/api/tasks`, readerHeaders)
+        expect(readerListRes.status).toBe(200)
+        const readerListJson = JSON.parse(readerListRes.body)
+        const readerAttachmentPermissions = Object.fromEntries(
+          (readerListJson.data[0].attachments as string[]).map((attachmentName) => [attachmentName, { remove: false }]),
+        )
+        expect(readerListJson.data).toHaveLength(1)
+        expect(readerListJson.data[0]).toMatchObject({
+          id: publicCardId,
+          permissions: {
+            comment: {
+              create: false,
+              update: false,
+              delete: false,
+              byId: {
+                [publicCommentId]: {
+                  update: false,
+                  delete: false,
+                },
+              },
+            },
+            attachment: {
+              add: false,
+              remove: false,
+            },
+            form: {
+              submit: false,
+              byId: {
+                inspection: {
+                  submit: false,
+                },
+              },
+            },
+            checklist: {
+              show: true,
+              add: false,
+              edit: false,
+              delete: false,
+              check: false,
+              uncheck: false,
+            },
+            cardAction: {
+              trigger: false,
+              byKey: {
+                dispatch: {
+                  trigger: false,
+                },
+              },
+            },
+          },
+        })
+        expect(readerListJson.data[0].permissions.attachment.byName).toEqual(readerAttachmentPermissions)
+        expect(readerListJson.data[0].resolvedForms).toBeUndefined()
+
+        const writerDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${publicCardId}`, writerHeaders)
+        expect(writerDetailRes.status).toBe(200)
+        const writerDetailJson = JSON.parse(writerDetailRes.body)
+        const writerAttachmentPermissions = Object.fromEntries(
+          (writerDetailJson.data.attachments as string[]).map((attachmentName) => [attachmentName, { remove: true }]),
+        )
+        expect(writerDetailJson.data.permissions).toMatchObject({
+          comment: {
+            create: true,
+            update: true,
+            delete: true,
+            byId: {
+              [publicCommentId]: {
+                update: true,
+                delete: true,
+              },
+            },
+          },
+          attachment: {
+            add: true,
+            remove: true,
+          },
+          form: {
+            submit: true,
+            byId: {
+              inspection: {
+                submit: true,
+              },
+            },
+          },
+          checklist: {
+            show: true,
+            add: true,
+            edit: true,
+            delete: true,
+            check: true,
+            uncheck: true,
+          },
+          cardAction: {
+            trigger: true,
+            byKey: {
+              dispatch: {
+                trigger: true,
+              },
+            },
+          },
+        })
+        expect(writerDetailJson.data.permissions.attachment.byName).toEqual(writerAttachmentPermissions)
+        expect(writerDetailJson.data.resolvedForms).toEqual([
+          expect.objectContaining({
+            id: 'inspection',
+            name: 'Inspection',
+            label: 'Inspection',
+            fromConfig: true,
+            initialData: {
+              reporter: 'casey',
+              status: 'triage',
+              note: 'persisted note',
+              region: 'north',
+            },
+          }),
+        ])
+
+        const readerDetailRes = await httpGet(`http://localhost:${localPort}/api/tasks/${publicCardId}`, readerHeaders)
+        expect(readerDetailRes.status).toBe(200)
+        const readerDetailJson = JSON.parse(readerDetailRes.body)
+        const readerDetailAttachmentPermissions = Object.fromEntries(
+          (readerDetailJson.data.attachments as string[]).map((attachmentName) => [attachmentName, { remove: false }]),
+        )
+        expect(readerDetailJson.data.permissions).toMatchObject({
+          comment: {
+            create: false,
+            update: false,
+            delete: false,
+          },
+          attachment: {
+            add: false,
+            remove: false,
+          },
+          form: {
+            submit: false,
+          },
+          checklist: {
+            show: true,
+            add: false,
+            edit: false,
+            delete: false,
+            check: false,
+            uncheck: false,
+          },
+          cardAction: {
+            trigger: false,
+          },
+        })
+        expect(readerDetailJson.data.permissions.attachment.byName).toEqual(readerDetailAttachmentPermissions)
+        expect(readerDetailJson.data.resolvedForms).toEqual([
+          expect.objectContaining({
+            id: 'inspection',
+            initialData: {
+              reporter: 'casey',
+              status: 'triage',
+              note: 'persisted note',
+              region: 'north',
+            },
+          }),
+        ])
+
+        const hiddenRes = await httpGet(`http://localhost:${localPort}/api/tasks/${privateCardId}`, readerHeaders)
+        expect(hiddenRes.status).toBe(404)
+        expect(JSON.parse(hiddenRes.body)).toEqual({
+          ok: false,
+          error: 'Task not found',
+        })
       } finally {
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
         cleanup()

@@ -1,7 +1,7 @@
 import * as http from 'http'
 import * as os from 'os'
 import * as path from 'path'
-import type { Card, CardStateErrorTransport, CardStateReadModelTransport, CardStateStatusTransport } from '../../shared/types'
+import type { Card, CardStateErrorTransport, CardStateReadModelTransport, CardStateStatusTransport, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../shared/types'
 import { CARD_STATE_OPEN_DOMAIN } from '../../sdk/types'
 import type { StandaloneHttpRequestContext } from '../../sdk'
 import type { CardOpenStateValue, CardUnreadSummary } from '../../sdk/types'
@@ -30,9 +30,12 @@ export interface StandaloneCardStateReadModel extends CardStateReadModelTranspor
 
 export type StandaloneCardReadModel = StandaloneSanitizedCard & {
   cardState: StandaloneCardStateReadModel
+  permissions: TaskPermissionsReadModel
+  resolvedForms?: ResolvedFormDescriptor[]
 }
 
 export interface BuildCardReadModelOptions {
+  includeResolvedForms?: boolean
   rethrowCardStateErrors?: boolean
 }
 
@@ -132,9 +135,17 @@ export async function buildCardReadModel(
   options?: BuildCardReadModelOptions,
 ): Promise<StandaloneCardReadModel> {
   const sanitized = 'filePath' in card ? sanitizeCard(card) : card
+  const run = runWithAuth ?? (async <T,>(fn: () => Promise<T>) => fn())
+  const permissions = await run(() => ctx.sdk.getTaskPermissions(sanitized))
+  const resolvedForms = options?.includeResolvedForms
+    ? await run(() => ctx.sdk.getResolvedTaskForms(sanitized))
+    : undefined
+
   return {
     ...sanitized,
     cardState: await buildCardStateReadModel(ctx, sanitized.id, sanitized.boardId, undefined, runWithAuth, options),
+    permissions,
+    ...(options?.includeResolvedForms ? { resolvedForms: resolvedForms ?? [] } : {}),
   }
 }
 

@@ -57,6 +57,13 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 
 ## Features
 
+### Mobile field app (preview)
+
+- **Expo auth/onboarding shell**: `@kanban-lite/mobile` includes typed workspace entry, in-app local login through `POST /api/mobile/session`, deep-link or QR-paste onboarding with optional bootstrap-token exchange, secure storage of only the opaque mobile bearer token plus safe workspace/subject metadata, and a no-stale-flash restore gate that revalidates with `GET /api/mobile/session` before protected content can mount.
+- **Safer workfeed and task-detail shell**: `My Work` now uses full-card tap targets, only promotes deep-link/pending task opens after live visibility confirmation, surfaces explicit cached/offline fallback with retry, purges protected cache state on logout/reauth/workspace switch/revocation, and keeps task detail focused on one sticky primary action with lower-emphasis secondary actions.
+- **MF13 task-detail runtime slice**: task detail’s sticky primary action can now open the existing server-resolved form, edit simple root-level mobile fields, submit through the current form endpoint when online, refresh the task detail after success, queue explicit local checklist drafts for add/edit/delete/check/uncheck when live sends fail or the device is offline, surface checklist conflict review/retry with latest state, and keep card actions online-only instead of silently drafting or replaying them.
+- **MF12 task-detail comments and attachments**: task detail now supports comment create/edit/delete plus attachment capture or file-pick into durable local drafts, explicit resend/discard review, missing-file recovery, and honest live-only synced deletes/removals while keeping denied controls hidden.
+
 ### Web UI
 
 - **Multi-board support**: Create multiple boards with independent columns and settings

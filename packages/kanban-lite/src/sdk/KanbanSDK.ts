@@ -1,7 +1,8 @@
 import * as childProcess from 'node:child_process'
+import * as crypto from 'node:crypto'
 import * as path from 'path'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types'
+import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../shared/types'
 import type {
   CardDisplaySettings,
   PluginSettingsErrorPayload,
@@ -18,7 +19,7 @@ import { DELETED_STATUS_ID } from '../shared/types'
 import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities } from '../shared/config'
 import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, MobileAuthenticationContract, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
 import { AuthError, CardStateError, sanitizeCard, CARD_STATE_DEFAULT_ACTOR_MODE, CARD_STATE_OPEN_DOMAIN, CARD_STATE_UNREAD_DOMAIN, DEFAULT_CARD_STATE_ACTOR, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from './types'
@@ -94,6 +95,57 @@ function compareAvailableEvents(left: SDKAvailableEventDescriptor, right: SDKAva
   if (eventCompare !== 0) return eventCompare
   if (left.source !== right.source) return left.source === 'core' ? -1 : 1
   return (left.pluginIds?.[0] ?? '').localeCompare(right.pluginIds?.[0] ?? '')
+}
+
+const MOBILE_AUTHENTICATION_CONTRACT: Readonly<MobileAuthenticationContract> = Object.freeze({
+  provider: 'local',
+  browserLoginTransport: 'cookie-session',
+  mobileSessionTransport: 'opaque-bearer',
+  sessionKind: 'local-mobile-session-v1',
+})
+
+function cloneMobileAuthenticationContract(): MobileAuthenticationContract {
+  return { ...MOBILE_AUTHENTICATION_CONTRACT }
+}
+
+function buildMobileWorkspaceId(workspaceRoot: string): string {
+  const normalizedWorkspaceRoot = path.resolve(workspaceRoot).replace(/\\/g, '/')
+  const portableWorkspaceRoot = process.platform === 'win32'
+    ? normalizedWorkspaceRoot.toLowerCase()
+    : normalizedWorkspaceRoot
+  const hash = crypto.createHash('sha256').update(portableWorkspaceRoot).digest('hex').slice(0, 12)
+  return `workspace_${hash}`
+}
+
+function normalizeRequiredText(value: string, fieldName: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error(`${fieldName} is required`)
+  }
+  return normalized
+}
+
+function normalizeMobileWorkspaceOrigin(workspaceOrigin: string): string {
+  const normalized = normalizeRequiredText(workspaceOrigin, 'workspaceOrigin')
+  try {
+    return new URL(normalized).origin
+  } catch {
+    throw new Error('workspaceOrigin must be an absolute URL')
+  }
+}
+
+function normalizeMobileRoles(roles?: string[]): string[] {
+  if (!Array.isArray(roles)) return []
+
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const role of roles) {
+    const trimmed = role.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    normalized.push(trimmed)
+  }
+  return normalized
 }
 
 /**
@@ -883,6 +935,84 @@ export class KanbanSDK {
       policyProvider,
       identityEnabled: identityProvider !== 'noop',
       policyEnabled: policyProvider !== 'noop',
+    }
+  }
+
+  /**
+   * Resolves the minimal mobile bootstrap contract for a workspace entry attempt.
+   *
+   * This SDK-owned seam keeps the supported v1 auth contract explicit without
+   * introducing a duplicate username/password API. The result always stays scoped
+   * to the existing `local` auth provider, preserves the browser cookie-login
+   * assumption for standalone `/auth/login`, and advertises the approved opaque
+   * bearer transport that the mobile app will store after the real login or token
+   * redemption flow completes.
+   *
+   * @param input - Workspace bootstrap request from a typed origin, deep link, or QR entry.
+   * @returns The canonical workspace origin plus the next supported auth step.
+   * @throws {Error} If `workspaceOrigin` is empty or not an absolute URL.
+   *
+   * @example
+   * ```ts
+   * const bootstrap = await sdk.resolveMobileBootstrap({
+   *   workspaceOrigin: 'https://field.example.com/app/',
+   *   bootstrapToken: 'one-time-link-token'
+   * })
+   *
+   * console.log(bootstrap.workspaceOrigin) // 'https://field.example.com'
+   * console.log(bootstrap.nextStep) // 'redeem-bootstrap-token'
+   * ```
+   */
+  async resolveMobileBootstrap(input: ResolveMobileBootstrapInput): Promise<ResolveMobileBootstrapResult> {
+    const workspaceOrigin = normalizeMobileWorkspaceOrigin(input.workspaceOrigin)
+    const bootstrapToken = typeof input.bootstrapToken === 'string' ? input.bootstrapToken.trim() : ''
+    const hasBootstrapToken = bootstrapToken.length > 0
+
+    return {
+      workspaceOrigin,
+      workspaceId: buildMobileWorkspaceId(this.workspaceRoot),
+      authentication: cloneMobileAuthenticationContract(),
+      bootstrapToken: {
+        provided: hasBootstrapToken,
+        mode: hasBootstrapToken ? 'one-time' : 'none',
+      },
+      nextStep: hasBootstrapToken ? 'redeem-bootstrap-token' : 'local-login',
+    }
+  }
+
+  /**
+   * Builds the safe mobile session-status payload returned after restore validation.
+   *
+   * Host layers should call this only after validating the opaque mobile session
+   * credential against the server-owned session store. The returned shape is safe
+   * for no-stale-flash restore gates because it includes only workspace/subject
+   * namespace metadata and the fixed transport contract — never the raw token,
+   * password, or browser cookie material.
+   *
+   * @param input - Validated mobile session metadata to surface back to the app.
+   * @returns A normalized session-status payload suitable for cold-start/resume checks.
+   * @throws {Error} If `workspaceOrigin` or `subject` is empty, or if `workspaceOrigin` is not an absolute URL.
+   *
+   * @example
+   * ```ts
+   * const status = await sdk.inspectMobileSession({
+   *   workspaceOrigin: 'https://field.example.com/mobile',
+   *   subject: 'worker-7',
+   *   roles: ['technician', 'reviewer']
+   * })
+   *
+   * console.log(status.authentication.mobileSessionTransport) // 'opaque-bearer'
+   * console.log(status.roles) // ['technician', 'reviewer']
+   * ```
+   */
+  async inspectMobileSession(input: InspectMobileSessionInput): Promise<MobileSessionStatus> {
+    return {
+      workspaceOrigin: normalizeMobileWorkspaceOrigin(input.workspaceOrigin),
+      workspaceId: buildMobileWorkspaceId(this.workspaceRoot),
+      subject: normalizeRequiredText(input.subject, 'subject'),
+      roles: normalizeMobileRoles(input.roles),
+      expiresAt: input.expiresAt ?? null,
+      authentication: cloneMobileAuthenticationContract(),
     }
   }
 
@@ -2335,6 +2465,36 @@ export class KanbanSDK {
    */
   async getCard(cardId: string, boardId?: string): Promise<Card | null> {
     return Cards.getCard(this, { cardId, boardId })
+  }
+
+  /**
+   * Resolves the server-owned task permission envelope for the current caller.
+   *
+   * Accepts either a task id (which will be looked up with normal visibility
+   * semantics) or an already-loaded task object to avoid a second lookup.
+   */
+  async getTaskPermissions(card: Omit<Card, 'filePath'>): Promise<TaskPermissionsReadModel>
+  async getTaskPermissions(cardId: string, boardId?: string): Promise<TaskPermissionsReadModel | null>
+  async getTaskPermissions(cardOrId: string | Omit<Card, 'filePath'>, boardId?: string): Promise<TaskPermissionsReadModel | null> {
+    const card = typeof cardOrId === 'string'
+      ? await this.getCard(cardOrId, boardId)
+      : cardOrId
+    return card ? Cards.buildTaskPermissionsReadModel(this, card) : null
+  }
+
+  /**
+   * Resolves the server-owned form read model for a task.
+   *
+   * Accepts either a task id (which will be looked up with normal visibility
+   * semantics) or an already-loaded task object to avoid a second lookup.
+   */
+  async getResolvedTaskForms(card: Omit<Card, 'filePath'>): Promise<ResolvedFormDescriptor[]>
+  async getResolvedTaskForms(cardId: string, boardId?: string): Promise<ResolvedFormDescriptor[] | null>
+  async getResolvedTaskForms(cardOrId: string | Omit<Card, 'filePath'>, boardId?: string): Promise<ResolvedFormDescriptor[] | null> {
+    const card = typeof cardOrId === 'string'
+      ? await this.getCard(cardOrId, boardId)
+      : cardOrId
+    return card ? Cards.resolveCardForms(this, card) : null
   }
 
   /** @internal */

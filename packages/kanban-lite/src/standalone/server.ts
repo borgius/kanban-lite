@@ -11,6 +11,7 @@ import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
 import { handleCardFileRoute, setupStandaloneLifecycle } from './internal/lifecycle'
 import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
 import { handleBoardRoutes } from './internal/routes/boards'
+import { MOBILE_STANDALONE_API_DOCS, handleMobileRoutes } from './internal/routes/mobile'
 import { handleSystemRoutes } from './internal/routes/system'
 import { handleTaskRoutes } from './internal/routes/tasks'
 import { extractAuthContext, getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
@@ -20,12 +21,14 @@ import { matchRoute, type IncomingMessageWithRawBody } from './httpUtils'
 type OpenApiTag = { name: string; description?: string }
 type OpenApiOperation = Record<string, unknown>
 type OpenApiPaths = Record<string, Record<string, OpenApiOperation>>
-type OpenApiSpecWithPaths = typeof KANBAN_OPENAPI_SPEC & {
+type OpenApiDocFragment = { tags?: ReadonlyArray<OpenApiTag>; paths: OpenApiPaths }
+type OpenApiSpecWithPaths = Omit<typeof KANBAN_OPENAPI_SPEC, 'tags' | 'paths'> & {
   tags?: OpenApiTag[]
   paths: OpenApiPaths
 }
 
 const WEBHOOK_STANDALONE_PLUGIN_ID = 'webhooks'
+const BUILTIN_STANDALONE_API_DOCS = [MOBILE_STANDALONE_API_DOCS] as const
 
 const WEBHOOK_STANDALONE_API_DOCS = {
   tags: [
@@ -131,18 +134,19 @@ const WEBHOOK_STANDALONE_API_DOCS = {
   },
 } as const
 
-function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): OpenApiSpecWithPaths {
-  if (!plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)) {
-    return KANBAN_OPENAPI_SPEC as OpenApiSpecWithPaths
-  }
-
-  const baseSpec = KANBAN_OPENAPI_SPEC as OpenApiSpecWithPaths
-  const mergedTags = [...(baseSpec.tags ?? [])]
+function mergeStandaloneOpenApiDocs(
+  baseSpec: OpenApiSpecWithPaths,
+  fragments: ReadonlyArray<OpenApiDocFragment>,
+): OpenApiSpecWithPaths {
+  const mergedTags: OpenApiTag[] = [...(baseSpec.tags ?? [])]
   const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
-  for (const tag of WEBHOOK_STANDALONE_API_DOCS.tags) {
-    if (!seenTagNames.has(tag.name)) {
-      mergedTags.push(tag)
-      seenTagNames.add(tag.name)
+
+  for (const fragment of fragments) {
+    for (const tag of fragment.tags ?? []) {
+      if (!seenTagNames.has(tag.name)) {
+        mergedTags.push(tag)
+        seenTagNames.add(tag.name)
+      }
     }
   }
 
@@ -151,9 +155,20 @@ function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): O
     tags: mergedTags,
     paths: {
       ...baseSpec.paths,
-      ...WEBHOOK_STANDALONE_API_DOCS.paths,
+      ...Object.assign({}, ...fragments.map((fragment) => fragment.paths)),
     },
   }
+}
+
+function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): OpenApiSpecWithPaths {
+  const baseSpec = KANBAN_OPENAPI_SPEC as OpenApiSpecWithPaths
+  const fragments: OpenApiDocFragment[] = [...BUILTIN_STANDALONE_API_DOCS]
+
+  if (plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)) {
+    fragments.push(WEBHOOK_STANDALONE_API_DOCS)
+  }
+
+  return mergeStandaloneOpenApiDocs(baseSpec, fragments)
 }
 
 async function dispatchRequest(request: StandaloneRequestContext, handlers: StandaloneRouteHandler[]): Promise<void> {
@@ -300,6 +315,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   const handlers: StandaloneRouteHandler[] = [
     ...pluginRouteHandlers,
+    handleMobileRoutes,
     handleBoardRoutes,
     handleTaskRoutes,
     handleCardFileRoute,

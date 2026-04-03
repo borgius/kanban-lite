@@ -1,7 +1,7 @@
 import type { Card, CardSortOption, LogEntry } from '../../shared/types'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { StorageEngine } from '../plugins/types'
-import type { SDKEventType } from '../types'
+import type { AuthContext, SDKEventType } from '../types'
 
 /**
  * Minimal interface satisfied by KanbanSDK, used as the first argument to all
@@ -52,6 +52,7 @@ export interface SDKContext {
   getCard(cardId: string, boardId?: string): Promise<Card | null>
   /** @internal Raw card lookup that bypasses caller-scoped checklist projection and visibility filtering. */
   _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
+  canPerformAction(action: string, context?: AuthContext): Promise<boolean>
   getActiveCard(boardId?: string): Promise<Card | null>
   setActiveCard(cardId: string, boardId?: string): Promise<Card>
   clearActiveCard(boardId?: string): Promise<void>

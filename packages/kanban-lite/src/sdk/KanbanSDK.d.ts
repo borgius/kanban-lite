@@ -1,3 +1,4 @@
+import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types';
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types';
 import type { CardDisplaySettings, PluginSettingsErrorPayload, PluginSettingsInstallRequest, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsInstallScope, PluginSettingsRedactionPolicy, Priority } from '../shared/types';
 import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ResolvedCapabilities, Webhook } from '../shared/config';
@@ -318,8 +319,61 @@ export declare class KanbanSDK {
      */
     getAuthStatus(): AuthStatus;
     /**
+     * Resolves the minimal mobile bootstrap contract for a workspace entry attempt.
+     *
+     * This SDK-owned seam keeps the supported v1 auth contract explicit without
+     * introducing a duplicate username/password API. The result always stays scoped
+     * to the existing `local` auth provider, preserves the browser cookie-login
+     * assumption for standalone `/auth/login`, and advertises the approved opaque
+     * bearer transport that the mobile app will store after the real login or token
+     * redemption flow completes.
+     *
+     * @param input - Workspace bootstrap request from a typed origin, deep link, or QR entry.
+     * @returns The canonical workspace origin plus the next supported auth step.
+     * @throws {Error} If `workspaceOrigin` is empty or not an absolute URL.
+     *
+     * @example
+     * ```ts
+     * const bootstrap = await sdk.resolveMobileBootstrap({
+     *   workspaceOrigin: 'https://field.example.com/app/',
+     *   bootstrapToken: 'one-time-link-token'
+     * })
+     *
+     * console.log(bootstrap.workspaceOrigin) // 'https://field.example.com'
+     * console.log(bootstrap.nextStep) // 'redeem-bootstrap-token'
+     * ```
+     */
+    resolveMobileBootstrap(input: ResolveMobileBootstrapInput): Promise<ResolveMobileBootstrapResult>;
+    /**
+     * Builds the safe mobile session-status payload returned after restore validation.
+     *
+     * Host layers should call this only after validating the opaque mobile session
+     * credential against the server-owned session store. The returned shape is safe
+     * for no-stale-flash restore gates because it includes only workspace/subject
+     * namespace metadata and the fixed transport contract — never the raw token,
+     * password, or browser cookie material.
+     *
+     * @param input - Validated mobile session metadata to surface back to the app.
+     * @returns A normalized session-status payload suitable for cold-start/resume checks.
+     * @throws {Error} If `workspaceOrigin` or `subject` is empty, or if `workspaceOrigin` is not an absolute URL.
+     *
+     * @example
+     * ```ts
+     * const status = await sdk.inspectMobileSession({
+     *   workspaceOrigin: 'https://field.example.com/mobile',
+     *   subject: 'worker-7',
+     *   roles: ['technician', 'reviewer']
+     * })
+     *
+     * console.log(status.authentication.mobileSessionTransport) // 'opaque-bearer'
+     * console.log(status.roles) // ['technician', 'reviewer']
+     * ```
+     */
+    inspectMobileSession(input: InspectMobileSessionInput): Promise<MobileSessionStatus>;
+    /**
      * Returns webhook provider metadata for host surfaces and diagnostics.
      *
+    export type { CreateCardInput, SDKEventType, SDKBeforeEventType, SDKAfterEventType, SDKEventHandler, SDKOptions, AuthContext, AuthDecision, AuthErrorCategory, SDKEvent, SDKEventListener, EventListenerPlugin, BeforeEventPayload, AfterEventPayload, BeforeEventListenerResponse, SDKEventListenerPlugin, MobileAuthenticationContract, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus, CardStateErrorCode, CardStateAvailability, CardStateBackend, CardStateStatus, DefaultCardStateActor, CardOpenStateValue, CardUnreadSummary, StorageEngine, StorageEngineType, CliPluginSdk, CliPluginContext, KanbanCliPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult } from './types';
      * Use this to inspect which webhook delivery provider is active and whether
      * `kl-plugin-webhook` is installed.
      *

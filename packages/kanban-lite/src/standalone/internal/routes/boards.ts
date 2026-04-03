@@ -24,6 +24,8 @@ import {
 } from '../common'
 
 const REST_CARD_READ_OPTIONS = { rethrowCardStateErrors: true } as const
+const REST_CARD_LIST_READ_OPTIONS = REST_CARD_READ_OPTIONS
+const REST_CARD_DETAIL_READ_OPTIONS = { ...REST_CARD_READ_OPTIONS, includeResolvedForms: true } as const
 
 export async function handleBoardRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
@@ -250,7 +252,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         boardId,
         getListCardsOptions(url.searchParams),
       ))
-      jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
+      jsonOk(res, await buildCardReadModels(tasks, url.searchParams, ctx, runWithRequestAuth, REST_CARD_LIST_READ_OPTIONS))
     } catch (err) {
       handleKnownError(err)
     }
@@ -262,7 +264,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
     try {
       const { boardId } = params
       const card = await runWithRequestAuth(() => sdk.getActiveCard(boardId))
-      jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS) : null)
+      jsonOk(res, card ? await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_DETAIL_READ_OPTIONS) : null)
     } catch (err) {
       handleKnownError(err)
     }
@@ -445,7 +447,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
-        jsonOk(res, await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_READ_OPTIONS))
+        jsonOk(res, await buildCardReadModel(card, ctx, runWithRequestAuth, REST_CARD_DETAIL_READ_OPTIONS))
       }
     } catch (err) {
       handleKnownError(err)

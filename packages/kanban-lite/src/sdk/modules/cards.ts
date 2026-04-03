@@ -2,7 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Card, CardFormAttachment, CardSortOption, ResolvedFormDescriptor } from '../../shared/types'
+import type { Card, CardFormAttachment, CardSortOption, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug, formatFormDisplayName } from '../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../shared/config'
 import { buildCardInterpolationContext, prepareFormData } from '../../shared/formDataPreparation'
@@ -109,7 +109,7 @@ function getSchemaProperties(schema: Record<string, unknown>): Set<string> {
     : new Set<string>()
 }
 
-function getMetadataOverlay(card: Card, schema: Record<string, unknown>): Record<string, unknown> {
+function getMetadataOverlay(card: Omit<Card, 'filePath'>, schema: Record<string, unknown>): Record<string, unknown> {
   if (!isRecord(card.metadata)) return {}
 
   const properties = getSchemaProperties(schema)
@@ -158,7 +158,7 @@ function createInlineFormIdResolver(): (attachment: CardFormAttachment, index: n
   }
 }
 
-function resolveCardForms(ctx: SDKContext, card: Card): ResolvedFormDescriptor[] {
+export function resolveCardForms(ctx: SDKContext, card: Omit<Card, 'filePath'>): ResolvedFormDescriptor[] {
   const config = readConfig(ctx.workspaceRoot)
   const workspaceForms = config.forms ?? {}
   const attachments = card.forms ?? []
@@ -304,6 +304,110 @@ async function canShowChecklist(ctx: SDKContext): Promise<boolean> {
     return decision.allowed
   } catch {
     return false
+  }
+}
+
+function buildTaskPermissionAuthContext(ctx: SDKContext, card: Omit<Card, 'filePath'>, overrides: Partial<AuthContext> = {}): AuthContext {
+  const currentAuth = (ctx as AuthScopedCardsContext)._currentAuthContext ?? {}
+  return {
+    ...currentAuth,
+    boardId: card.boardId || ctx._resolveBoardId(undefined),
+    cardId: card.id,
+    ...overrides,
+  }
+}
+
+function getCardActionKeys(actions: Card['actions'] | undefined): string[] {
+  const keys = Array.isArray(actions)
+    ? actions
+    : isRecord(actions)
+      ? Object.keys(actions)
+      : []
+
+  return [...new Set(
+    keys
+      .filter((value): value is string => typeof value === 'string')
+      .map(value => value.trim())
+      .filter(value => value.length > 0),
+  )]
+}
+
+/**
+ * Builds the server-owned task permission read model for the current caller.
+ *
+ * This keeps policy evaluation on the server so downstream surfaces can render
+ * task affordances without re-implementing auth checks on the client.
+ */
+export async function buildTaskPermissionsReadModel(ctx: SDKContext, card: Omit<Card, 'filePath'>): Promise<TaskPermissionsReadModel> {
+  const baseContext = buildTaskPermissionAuthContext(ctx, card)
+  const commentEntries = await Promise.all((card.comments ?? []).map(async (comment) => {
+    const authContext = buildTaskPermissionAuthContext(ctx, card, { commentId: comment.id })
+    return [comment.id, {
+      update: await ctx.canPerformAction('comment.update', authContext),
+      delete: await ctx.canPerformAction('comment.delete', authContext),
+    }] as const
+  }))
+
+  const attachmentEntries = await Promise.all((card.attachments ?? []).map(async (attachment) => {
+    const authContext = buildTaskPermissionAuthContext(ctx, card, { attachment })
+    return [attachment, {
+      remove: await ctx.canPerformAction('attachment.remove', authContext),
+    }] as const
+  }))
+
+  const resolvedForms = resolveCardForms(ctx, card)
+  const formEntries = await Promise.all(resolvedForms.map(async (form) => {
+    const authContext = buildTaskPermissionAuthContext(ctx, card, { formId: form.id })
+    return [form.id, {
+      submit: await ctx.canPerformAction('form.submit', authContext),
+    }] as const
+  }))
+
+  const actionEntries = await Promise.all(getCardActionKeys(card.actions).map(async (actionKey) => {
+    const authContext = buildTaskPermissionAuthContext(ctx, card, { actionKey })
+    return [actionKey, {
+      trigger: await ctx.canPerformAction('card.action.trigger', authContext),
+    }] as const
+  }))
+
+  const commentById = Object.fromEntries(commentEntries)
+  const attachmentByName = Object.fromEntries(attachmentEntries)
+  const formById = Object.fromEntries(formEntries)
+  const actionByKey = Object.fromEntries(actionEntries)
+
+  const commentPermissions = Object.values(commentById)
+  const attachmentPermissions = Object.values(attachmentByName)
+  const formPermissions = Object.values(formById)
+  const actionPermissions = Object.values(actionByKey)
+
+  return {
+    comment: {
+      create: await ctx.canPerformAction('comment.create', baseContext),
+      update: commentPermissions.some(entry => entry.update),
+      delete: commentPermissions.some(entry => entry.delete),
+      ...(commentEntries.length > 0 ? { byId: commentById } : {}),
+    },
+    attachment: {
+      add: await ctx.canPerformAction('attachment.add', baseContext),
+      remove: attachmentPermissions.some(entry => entry.remove),
+      ...(attachmentEntries.length > 0 ? { byName: attachmentByName } : {}),
+    },
+    form: {
+      submit: formPermissions.some(entry => entry.submit),
+      ...(formEntries.length > 0 ? { byId: formById } : {}),
+    },
+    checklist: {
+      show: await ctx.canPerformAction('card.checklist.show', baseContext),
+      add: await ctx.canPerformAction('card.checklist.add', baseContext),
+      edit: await ctx.canPerformAction('card.checklist.edit', baseContext),
+      delete: await ctx.canPerformAction('card.checklist.delete', baseContext),
+      check: await ctx.canPerformAction('card.checklist.check', baseContext),
+      uncheck: await ctx.canPerformAction('card.checklist.uncheck', baseContext),
+    },
+    cardAction: {
+      trigger: actionPermissions.some(entry => entry.trigger),
+      ...(actionEntries.length > 0 ? { byKey: actionByKey } : {}),
+    },
   }
 }
 

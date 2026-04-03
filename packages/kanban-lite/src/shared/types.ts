@@ -687,6 +687,105 @@ export interface ResolvedFormDescriptor {
   fromConfig: boolean
 }
 
+/** Per-comment task permissions resolved by the server for the current caller. */
+export interface TaskCommentPermissionRecord {
+  /** `true` when the caller may update this specific comment. */
+  update: boolean
+  /** `true` when the caller may delete this specific comment. */
+  delete: boolean
+}
+
+/** Comment capability envelope resolved by the server for the current caller. */
+export interface TaskCommentPermissionsReadModel {
+  /** `true` when the caller may add a new comment to the task. */
+  create: boolean
+  /** `true` when at least one visible comment can be updated. */
+  update: boolean
+  /** `true` when at least one visible comment can be deleted. */
+  delete: boolean
+  /** Per-comment permissions keyed by visible comment id. */
+  byId?: Record<string, TaskCommentPermissionRecord>
+}
+
+/** Per-attachment task permissions resolved by the server for the current caller. */
+export interface TaskAttachmentPermissionRecord {
+  /** `true` when the caller may remove this specific attachment. */
+  remove: boolean
+}
+
+/** Attachment capability envelope resolved by the server for the current caller. */
+export interface TaskAttachmentPermissionsReadModel {
+  /** `true` when the caller may add a new attachment to the task. */
+  add: boolean
+  /** `true` when at least one visible attachment can be removed. */
+  remove: boolean
+  /** Per-attachment permissions keyed by visible attachment name/path. */
+  byName?: Record<string, TaskAttachmentPermissionRecord>
+}
+
+/** Per-form task permissions resolved by the server for the current caller. */
+export interface TaskFormPermissionRecord {
+  /** `true` when the caller may submit this specific resolved form. */
+  submit: boolean
+}
+
+/** Form capability envelope resolved by the server for the current caller. */
+export interface TaskFormPermissionsReadModel {
+  /** `true` when at least one visible resolved form can be submitted. */
+  submit: boolean
+  /** Per-form permissions keyed by resolved form id. */
+  byId?: Record<string, TaskFormPermissionRecord>
+}
+
+/** Checklist capability envelope resolved by the server for the current caller. */
+export interface TaskChecklistPermissionsReadModel {
+  /** `true` when the checklist should be shown to the caller. */
+  show: boolean
+  /** `true` when the caller may append checklist items. */
+  add: boolean
+  /** `true` when the caller may edit existing checklist items. */
+  edit: boolean
+  /** `true` when the caller may delete existing checklist items. */
+  delete: boolean
+  /** `true` when the caller may mark checklist items complete. */
+  check: boolean
+  /** `true` when the caller may mark checklist items incomplete. */
+  uncheck: boolean
+}
+
+/** Per-card-action task permissions resolved by the server for the current caller. */
+export interface TaskCardActionPermissionRecord {
+  /** `true` when the caller may trigger this specific named card action. */
+  trigger: boolean
+}
+
+/** Card-action capability envelope resolved by the server for the current caller. */
+export interface TaskCardActionPermissionsReadModel {
+  /** `true` when at least one visible named card action can be triggered. */
+  trigger: boolean
+  /** Per-card-action permissions keyed by action key/name. */
+  byKey?: Record<string, TaskCardActionPermissionRecord>
+}
+
+/**
+ * Server-owned capability envelope for a task read model.
+ *
+ * Host surfaces should serialize this object directly so callers can render
+ * task UI affordances without re-implementing policy logic on the client.
+ */
+export interface TaskPermissionsReadModel {
+  /** Comment affordances for the current caller. */
+  comment: TaskCommentPermissionsReadModel
+  /** Attachment affordances for the current caller. */
+  attachment: TaskAttachmentPermissionsReadModel
+  /** Form affordances for the current caller. */
+  form: TaskFormPermissionsReadModel
+  /** Checklist affordances for the current caller. */
+  checklist: TaskChecklistPermissionsReadModel
+  /** Named card-action affordances for the current caller. */
+  cardAction: TaskCardActionPermissionsReadModel
+}
+
 /**
  * YAML frontmatter fields stored at the top of each card's markdown file.
  *

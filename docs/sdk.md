@@ -118,6 +118,8 @@ HTTP server are all built on top of.
         * [.waitFor()](#KanbanSDK+waitFor)
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
+        * [.resolveMobileBootstrap(input)](#KanbanSDK+resolveMobileBootstrap) ⇒
+        * [.inspectMobileSession(input)](#KanbanSDK+inspectMobileSession) ⇒
         * [.getWebhookStatus()](#KanbanSDK+getWebhookStatus) ⇒
         * [.listAvailableEvents(options)](#KanbanSDK+listAvailableEvents) ⇒
         * [.listPluginSettings()](#KanbanSDK+listPluginSettings) ⇒
@@ -457,6 +459,78 @@ and whether real auth enforcement is enabled.
 const status = sdk.getAuthStatus()
 console.log(status.identityProvider) // 'noop' | 'my-token-plugin' | ...
 console.log(status.identityEnabled)  // false when no plugin configured
+```
+
+* * *
+
+<a name="KanbanSDK+resolveMobileBootstrap"></a>
+
+#### kanbanSDK.resolveMobileBootstrap(input) ⇒
+Resolves the minimal mobile bootstrap contract for a workspace entry attempt.
+
+This SDK-owned seam keeps the supported v1 auth contract explicit without
+introducing a duplicate username/password API. The result always stays scoped
+to the existing `local` auth provider, preserves the browser cookie-login
+assumption for standalone `/auth/login`, and advertises the approved opaque
+bearer transport that the mobile app will store after the real login or token
+redemption flow completes.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: The canonical workspace origin plus the next supported auth step.  
+**Throws**:
+
+- <code>Error</code> If `workspaceOrigin` is empty or not an absolute URL.
+
+
+| Param | Description |
+| --- | --- |
+| input | Workspace bootstrap request from a typed origin, deep link, or QR entry. |
+
+**Example**  
+```ts
+const bootstrap = await sdk.resolveMobileBootstrap({
+  workspaceOrigin: 'https://field.example.com/app/',
+  bootstrapToken: 'one-time-link-token'
+})
+
+console.log(bootstrap.workspaceOrigin) // 'https://field.example.com'
+console.log(bootstrap.nextStep) // 'redeem-bootstrap-token'
+```
+
+* * *
+
+<a name="KanbanSDK+inspectMobileSession"></a>
+
+#### kanbanSDK.inspectMobileSession(input) ⇒
+Builds the safe mobile session-status payload returned after restore validation.
+
+Host layers should call this only after validating the opaque mobile session
+credential against the server-owned session store. The returned shape is safe
+for no-stale-flash restore gates because it includes only workspace/subject
+namespace metadata and the fixed transport contract — never the raw token,
+password, or browser cookie material.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+**Returns**: A normalized session-status payload suitable for cold-start/resume checks.  
+**Throws**:
+
+- <code>Error</code> If `workspaceOrigin` or `subject` is empty, or if `workspaceOrigin` is not an absolute URL.
+
+
+| Param | Description |
+| --- | --- |
+| input | Validated mobile session metadata to surface back to the app. |
+
+**Example**  
+```ts
+const status = await sdk.inspectMobileSession({
+  workspaceOrigin: 'https://field.example.com/mobile',
+  subject: 'worker-7',
+  roles: ['technician', 'reviewer']
+})
+
+console.log(status.authentication.mobileSessionTransport) // 'opaque-bearer'
+console.log(status.roles) // ['technician', 'reviewer']
 ```
 
 * * *

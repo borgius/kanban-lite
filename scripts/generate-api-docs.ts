@@ -15,6 +15,7 @@ import * as path from 'path'
 import { normalizeWebhookCapabilities } from '../packages/kanban-lite/src/shared/config'
 import { resolveCapabilityBag, type StandaloneHttpPlugin } from '../packages/kanban-lite/src/sdk/plugins'
 import { KANBAN_OPENAPI_SPEC } from '../packages/kanban-lite/src/standalone/internal/openapi-spec'
+import { MOBILE_STANDALONE_API_DOCS } from '../packages/kanban-lite/src/standalone/internal/routes/mobile'
 
 const ROOT = path.resolve(__dirname, '..')
 const OUT = path.join(ROOT, 'docs', 'api.md')
@@ -57,17 +58,21 @@ type OpenAPIOperation = {
   responses?: OpenAPIResponses
 }
 
+type OpenApiTag = { name: string; description?: string }
+type OpenApiDocFragment = { tags?: ReadonlyArray<OpenApiTag>; paths: OpenAPISpec['paths'] }
+
 type OpenAPISpec = {
   info: {
     title: string
     description?: string
     version?: string
   }
-  tags?: Array<{ name: string; description?: string }>
+  tags?: OpenApiTag[]
   paths: Record<string, Record<string, OpenAPIOperation>>
 }
 
 const WEBHOOK_STANDALONE_PLUGIN_ID = 'webhooks'
+const BUILTIN_STANDALONE_API_DOCS = [MOBILE_STANDALONE_API_DOCS] as const
 
 const WEBHOOK_STANDALONE_API_DOCS = {
   tags: [
@@ -173,12 +178,39 @@ const WEBHOOK_STANDALONE_API_DOCS = {
   },
 } as const
 
+function mergeStandaloneOpenApiDocs(
+  baseSpec: OpenAPISpec,
+  fragments: ReadonlyArray<OpenApiDocFragment>,
+): OpenAPISpec {
+  const mergedTags: OpenApiTag[] = [...(baseSpec.tags ?? [])]
+  const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
+
+  for (const fragment of fragments) {
+    for (const tag of fragment.tags ?? []) {
+      if (!seenTagNames.has(tag.name)) {
+        mergedTags.push(tag)
+        seenTagNames.add(tag.name)
+      }
+    }
+  }
+
+  return {
+    ...baseSpec,
+    tags: mergedTags,
+    paths: {
+      ...baseSpec.paths,
+      ...Object.assign({}, ...fragments.map((fragment) => fragment.paths)),
+    },
+  }
+}
+
 function hasStandaloneWebhookPlugin(plugins: readonly StandaloneHttpPlugin[]): boolean {
   return plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)
 }
 
 function buildSpec(): OpenAPISpec {
   const baseSpec = KANBAN_OPENAPI_SPEC as OpenAPISpec
+  const fragments: OpenApiDocFragment[] = [...BUILTIN_STANDALONE_API_DOCS]
 
   try {
     const capabilityBag = resolveCapabilityBag(
@@ -191,30 +223,14 @@ function buildSpec(): OpenAPISpec {
       normalizeWebhookCapabilities({}),
     )
 
-    if (!hasStandaloneWebhookPlugin(capabilityBag.standaloneHttpPlugins)) {
-      return baseSpec
+    if (hasStandaloneWebhookPlugin(capabilityBag.standaloneHttpPlugins)) {
+      fragments.push(WEBHOOK_STANDALONE_API_DOCS)
     }
   } catch {
-    return baseSpec
+    return mergeStandaloneOpenApiDocs(baseSpec, fragments)
   }
 
-  const mergedTags = [...(baseSpec.tags ?? [])]
-  const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
-  for (const tag of WEBHOOK_STANDALONE_API_DOCS.tags) {
-    if (!seenTagNames.has(tag.name)) {
-      mergedTags.push(tag)
-      seenTagNames.add(tag.name)
-    }
-  }
-
-  return {
-    ...baseSpec,
-    tags: mergedTags,
-    paths: {
-      ...baseSpec.paths,
-      ...WEBHOOK_STANDALONE_API_DOCS.paths,
-    },
-  }
+  return mergeStandaloneOpenApiDocs(baseSpec, fragments)
 }
 
 const spec = buildSpec()

@@ -51,6 +51,7 @@ import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { createFileBackedCardStateProvider } from './card-state-file'
 import { MARKDOWN_PLUGIN } from './markdown'
+import { getRuntimeHost } from '../../shared/env'
 
 const runtimeRequire = createRequire(
   typeof __filename === 'string' && __filename
@@ -1173,6 +1174,9 @@ function tryLoadGlobalPackage(request: string): unknown {
 }
 
 export function loadExternalModule(request: string): unknown {
+  const hostedModule = getRuntimeHost()?.resolveExternalModule?.(request)
+  if (hostedModule !== undefined) return hostedModule
+
   // 1. Standard npm resolution (installed package or pnpm workspace symlink).
   //    This intentionally takes precedence over the direct monorepo fallback so
   //    tests and consumers can override a workspace package with an installed
@@ -1918,6 +1922,11 @@ function getGlobalNodeModulesDir(): string {
 }
 
 function resolveExternalModuleWithSource(request: string): ResolvedExternalModule {
+  const hostedModule = getRuntimeHost()?.resolveExternalModule?.(request)
+  if (hostedModule !== undefined) {
+    return { module: hostedModule, source: 'dependency' }
+  }
+
   if (WORKSPACE_ROOT) {
     const workspacePackagePath = path.resolve(WORKSPACE_ROOT, 'packages', request)
     try {

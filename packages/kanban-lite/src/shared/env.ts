@@ -1,7 +1,16 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import type { KanbanConfig } from './config'
+
+export interface RuntimeHost {
+  readConfig?(workspaceRoot: string, filePath: string): Record<string, unknown> | undefined
+  writeConfig?(workspaceRoot: string, filePath: string, config: KanbanConfig): boolean
+  loadWorkspaceEnv?(workspaceRoot: string): boolean
+  resolveExternalModule?(request: string): unknown
+}
 
 const LOADED_ENV_FILES = new Set<string>()
+let runtimeHost: RuntimeHost | null = null
 
 function parseEnvValue(rawValue: string): string {
   const trimmed = rawValue.trim()
@@ -12,6 +21,18 @@ function parseEnvValue(rawValue: string): string {
   return trimmed
 }
 
+export function installRuntimeHost(host: RuntimeHost | null): void {
+  runtimeHost = host
+}
+
+export function getRuntimeHost(): RuntimeHost | null {
+  return runtimeHost
+}
+
+export function resetRuntimeHost(): void {
+  runtimeHost = null
+}
+
 /**
  * Loads workspace-local environment variables from `<workspaceRoot>/.env`.
  *
@@ -19,6 +40,8 @@ function parseEnvValue(rawValue: string): string {
  * local defaults. The same file is parsed at most once per process.
  */
 export function loadWorkspaceEnv(workspaceRoot: string): void {
+  if (runtimeHost?.loadWorkspaceEnv?.(workspaceRoot)) return
+
   const envFilePath = path.join(workspaceRoot, '.env')
   if (LOADED_ENV_FILES.has(envFilePath)) return
 

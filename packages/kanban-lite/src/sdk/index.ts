@@ -69,6 +69,8 @@ export type {
   PluginSettingsUiSchemaElement,
 } from '../shared/types'
 export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardConfig, getDefaultBoardId, normalizeCallbackCapabilities, normalizeCardStateCapabilities } from '../shared/config'
+export type { RuntimeHost } from '../shared/env'
+export { getRuntimeHost, installRuntimeHost, loadWorkspaceEnv, resetRuntimeHost } from '../shared/env'
 export type {
   Card,
   CardStatus,

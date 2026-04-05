@@ -6,17 +6,13 @@ import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 import { configPath, readConfig } from '../shared/config'
 import type { StandaloneHttpHandler, StandaloneHttpPlugin } from '../sdk'
-import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
-import { handleCardFileRoute, setupStandaloneLifecycle } from './internal/lifecycle'
+import { setupStandaloneLifecycle } from './internal/lifecycle'
 import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
-import { handleBoardRoutes } from './internal/routes/boards'
-import { MOBILE_STANDALONE_API_DOCS, handleMobileRoutes } from './internal/routes/mobile'
-import { handleSystemRoutes } from './internal/routes/system'
-import { handleTaskRoutes } from './internal/routes/tasks'
-import { extractAuthContext, getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
+import { MOBILE_STANDALONE_API_DOCS } from './internal/routes/mobile'
 import { attachWebSocketHandlers } from './internal/websocket'
-import { matchRoute, type IncomingMessageWithRawBody } from './httpUtils'
+import type { IncomingMessageWithRawBody } from './httpUtils'
+import { createStandaloneRouteDispatcher } from './dispatch'
 
 type OpenApiTag = { name: string; description?: string }
 type OpenApiOperation = Record<string, unknown>
@@ -171,80 +167,6 @@ function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): O
   return mergeStandaloneOpenApiDocs(baseSpec, fragments)
 }
 
-async function dispatchRequest(request: StandaloneRequestContext, handlers: StandaloneRouteHandler[]): Promise<void> {
-  for (const handler of handlers) {
-    if (await handler(request)) return
-  }
-}
-
-function isApiRequestPath(pathname: string): boolean {
-  return pathname === '/api' || pathname.startsWith('/api/')
-}
-
-function isPageRequest(method: string, pathname: string): boolean {
-  return (method === 'GET' || method === 'HEAD') && !isApiRequestPath(pathname)
-}
-
-function collectStandaloneHttpHandlers(
-  requestType: 'middleware' | 'routes',
-  ctx: ReturnType<typeof createStandaloneRuntime>['ctx'],
-): StandaloneHttpHandler[] {
-  const plugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
-  const registrationOptions = {
-    sdk: ctx.sdk,
-    workspaceRoot: ctx.workspaceRoot,
-    kanbanDir: ctx.absoluteKanbanDir,
-    capabilities: ctx.sdk.capabilities?.providers ?? {
-      'card.storage': { provider: 'localfs' },
-      'attachment.storage': { provider: 'localfs' },
-    },
-    authCapabilities: ctx.sdk.capabilities?.authProviders ?? {
-      'auth.identity': { provider: 'noop' },
-      'auth.policy': { provider: 'noop' },
-      'auth.visibility': { provider: 'none' },
-    },
-    webhookCapabilities: ctx.sdk.capabilities?.webhookProviders ?? null,
-  } as const
-
-  return plugins.flatMap((plugin) => {
-    const handlers = requestType === 'middleware'
-      ? plugin.registerMiddleware?.(registrationOptions)
-      : plugin.registerRoutes?.(registrationOptions)
-    return handlers ? [...handlers] : []
-  })
-}
-
-function createRequestContext(
-  ctx: ReturnType<typeof createStandaloneRuntime>['ctx'],
-  req: IncomingMessageWithRawBody,
-  res: http.ServerResponse,
-  resolvedWebviewDir: string,
-  resolvedIndexHtml: string,
-): StandaloneRequestContext {
-  const url = new URL(req.url || '/', `http://${req.headers.host}`)
-  const pathname = url.pathname
-  const method = req.method || 'GET'
-  return {
-    ctx,
-    sdk: ctx.sdk,
-    workspaceRoot: ctx.workspaceRoot,
-    kanbanDir: ctx.absoluteKanbanDir,
-    req,
-    res,
-    url,
-    pathname,
-    method,
-    resolvedWebviewDir,
-    indexHtml: resolvedIndexHtml,
-    route: createRouteMatcher(method, pathname, matchRoute),
-    isApiRequest: isApiRequestPath(pathname),
-    isPageRequest: isPageRequest(method, pathname),
-    getAuthContext: () => getRequestAuthContext(req),
-    setAuthContext: (auth) => setRequestAuthContext(req, auth),
-    mergeAuthContext: (auth) => mergeRequestAuthContext(req, auth),
-  }
-}
-
 function resolveSwaggerUiStaticDir(): string | undefined {
   // Try require.resolve first — works correctly with pnpm's virtual store and any package manager.
   try {
@@ -310,17 +232,7 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     done(null, body as Buffer)
   })
 
-  const middlewareHandlers = collectStandaloneHttpHandlers('middleware', ctx) as StandaloneRouteHandler[]
-  const pluginRouteHandlers = collectStandaloneHttpHandlers('routes', ctx) as StandaloneRouteHandler[]
-
-  const handlers: StandaloneRouteHandler[] = [
-    ...pluginRouteHandlers,
-    handleMobileRoutes,
-    handleBoardRoutes,
-    handleTaskRoutes,
-    handleCardFileRoute,
-    handleSystemRoutes,
-  ]
+  const dispatcher = createStandaloneRouteDispatcher(ctx, resolvedWebviewDir, resolvedIndexHtml, basePath)
 
   // Set CORS headers on every response
   fastify.addHook('onRequest', async (_request, reply) => {
@@ -352,61 +264,17 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
       }
     }
 
-    const requestContext = createRequestContext(ctx, req, reply.raw, resolvedWebviewDir, resolvedIndexHtml)
-
-    await dispatchRequest(requestContext, middlewareHandlers)
+    await dispatcher.handle(req, reply.raw)
     if (!reply.sent && !reply.raw.writableEnded) {
-      await dispatchRequest(requestContext, handlers)
+      reply.hijack()
+      return
     }
 
     // Handlers write directly to res; tell Fastify not to touch the response
     reply.hijack()
   })
 
-  // Resolve auth context for WebSocket upgrade requests by running the middleware
-  // pipeline so session cookies set by auth plugins (e.g. kl-plugin-auth) are honoured.
-  const resolveWsAuthContext = async (req: http.IncomingMessage) => {
-    const silentRes = (() => {
-      const r: Record<string, unknown> = {
-        writableEnded: false,
-        writeHead() { return r },
-        setHeader() { return r },
-        removeHeader() { /* no-op */ },
-        getHeader() { return undefined },
-        getHeaders() { return {} },
-        end(..._args: unknown[]) { (r as { writableEnded: boolean }).writableEnded = true; return r },
-        write() { return false },
-      }
-      return r as unknown as import('http').ServerResponse
-    })()
-    const reqWithBody = req as IncomingMessageWithRawBody
-    const wsUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
-    const requestContext: StandaloneRequestContext = {
-      ctx,
-      sdk: ctx.sdk,
-      workspaceRoot: ctx.workspaceRoot,
-      kanbanDir: ctx.absoluteKanbanDir,
-      req: reqWithBody,
-      res: silentRes,
-      url: wsUrl,
-      pathname: wsUrl.pathname,
-      method: 'GET',
-      resolvedWebviewDir,
-      indexHtml: resolvedIndexHtml,
-      route: createRouteMatcher('GET', wsUrl.pathname, matchRoute),
-      isApiRequest: false,
-      isPageRequest: false,
-      getAuthContext: () => getRequestAuthContext(req),
-      setAuthContext: (auth) => setRequestAuthContext(req, auth),
-      mergeAuthContext: (auth) => mergeRequestAuthContext(req, auth),
-    }
-    for (const handler of middlewareHandlers) {
-      if (await handler(requestContext)) break
-    }
-    return extractAuthContext(req)
-  }
-
-  attachWebSocketHandlers(ctx, resolveWsAuthContext)
+  attachWebSocketHandlers(ctx, dispatcher.resolveWsAuthContext)
   setupStandaloneLifecycle(ctx, fastify.server)
 
   const effectiveConfigPath = resolvedConfigPath ?? configPath(path.dirname(ctx.absoluteKanbanDir))

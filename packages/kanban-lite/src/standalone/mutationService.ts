@@ -281,7 +281,9 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
   const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
   if (!card) return false
 
-  const tempUploadPath = path.join(os.tmpdir(), `kanban-upload-${card.id}-${Date.now()}-${filename}`)
+  const safeFilename = path.basename(filename) || 'upload.bin'
+  const tempUploadDir = fs.mkdtempSync(path.join(os.tmpdir(), `kanban-upload-${card.id}-`))
+  const tempUploadPath = path.join(tempUploadDir, safeFilename)
   ctx.migrating = true
   try {
     fs.writeFileSync(tempUploadPath, fileData)
@@ -291,7 +293,7 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
     await loadCards(ctx)
     return true
   } finally {
-    try { fs.unlinkSync(tempUploadPath) } catch { /* ignore */ }
+    try { fs.rmSync(tempUploadDir, { recursive: true, force: true }) } catch { /* ignore */ }
     ctx.migrating = false
   }
 }

@@ -181,11 +181,13 @@ function ToggleSwitch({
   checked,
   pending = false,
   disabled = false,
+  ariaLabel,
   onChange,
 }: {
   checked: boolean
   pending?: boolean
   disabled?: boolean
+  ariaLabel?: string
   onChange: (v: boolean) => void
 }) {
   const isDisabled = disabled || pending
@@ -196,6 +198,7 @@ function ToggleSwitch({
       role="switch"
       aria-checked={checked}
       aria-busy={pending || undefined}
+      aria-label={ariaLabel}
       disabled={isDisabled}
       onClick={() => {
         if (!isDisabled) {
@@ -263,7 +266,7 @@ function SettingsToggle({ label, description, checked, onChange }: {
           <div className="text-xs mt-0.5" style={{ color: 'var(--vscode-descriptionForeground)' }}>{description}</div>
         )}
       </div>
-      <ToggleSwitch checked={checked} onChange={onChange} />
+      <ToggleSwitch checked={checked} ariaLabel={label} onChange={onChange} />
     </div>
   )
 }
@@ -633,7 +636,10 @@ function PluginProviderOptionsEditor({
         </div>
       )}
 
-      <div className="card-jsonforms">
+      <div
+        className="card-jsonforms"
+        data-testid={`plugin-options-form-${provider.capability}-${provider.providerId}`}
+      >
         <JsonForms
           schema={schema}
           uischema={uiSchema}
@@ -871,6 +877,7 @@ function PluginOptionsSection({
             ) : plugins.map((plugin, idx) => (
               <div
                 key={plugin.key}
+                data-testid={`plugin-package-${plugin.key}`}
                 className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
                 style={{
                   ...(activePluginKey === plugin.key && !isInstallVisible
@@ -1018,6 +1025,7 @@ function PluginOptionsSection({
                           </span>
                           <ToggleSwitch
                             checked={cap.isSelected}
+                            ariaLabel={`Toggle ${cap.capability} provider ${cap.providerId}`}
                             pending={isTogglePending}
                             disabled={!onSelectPluginSettingsProvider || (cap.isSelected && !canDisable)}
                             onChange={(nextChecked) => {
@@ -1068,6 +1076,7 @@ function PluginOptionsSection({
                         return (
                           <div
                             key={`options:${capability.capability}:${capability.providerId}`}
+                            data-testid={`plugin-options-section-${capability.capability}-${capability.providerId}`}
                             className="rounded-lg border px-3 py-3 space-y-2"
                             style={{ borderColor: 'var(--vscode-panel-border)' }}
                           >
@@ -1737,6 +1746,9 @@ function SettingsPanelContent({
         style={isDrawer
           ? drawerPanelStyle(dPos, effectiveDrawerWidth, { background: 'var(--vscode-editor-background)' })
           : { background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)' }}
+        role="dialog"
+        aria-label="Settings"
+        aria-modal={isDrawer ? undefined : true}
         {...(isDrawer ? { 'data-panel-drawer': '' } : {})}
       >
         <DrawerResizeHandle
@@ -1758,7 +1770,9 @@ function SettingsPanelContent({
         >
           <h2 className="font-medium" style={{ color: 'var(--vscode-foreground)' }}>Settings</h2>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close settings"
             className="p-1.5 rounded transition-colors"
             style={{ color: 'var(--vscode-descriptionForeground)' }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}

@@ -156,6 +156,37 @@ describe('CardEditor', () => {
     expect(markup).toContain('card-attachment-tag')
   })
 
+  it('adds stable labels for the key detail controls used by browser specs', () => {
+    const markup = renderToStaticMarkup(
+      <CardEditor
+        cardId="58"
+        content={'# Artificial Intelligence and Business Development\n\nNeed final review.'}
+        frontmatter={createFrontmatter()}
+        comments={[]}
+        onSave={() => {}}
+        onClose={() => {}}
+        onDelete={() => {}}
+        onPermanentDelete={() => {}}
+        onRestore={() => {}}
+        onOpenFile={() => {}}
+        onDownloadCard={() => {}}
+        onStartWithAI={() => {}}
+        onAddAttachment={() => {}}
+        onOpenAttachment={() => {}}
+        onRemoveAttachment={() => {}}
+        onAddComment={() => {}}
+        onUpdateComment={() => {}}
+        onDeleteComment={() => {}}
+        onTransferToBoard={() => {}}
+      />,
+    )
+
+    expect(markup).toContain('aria-label="Card status"')
+    expect(markup).toContain('aria-label="Card priority"')
+    expect(markup).toContain('aria-label="Card assignee"')
+    expect(markup).toContain('aria-label="Card due date"')
+  })
+
   it('hides checklist-derived reserved labels from the manual label editor affordances', () => {
     const markup = renderToStaticMarkup(
       <CardEditor

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Comment, Card, CardTask } from '../../shared/types'
+import type { Comment, Card } from '../../shared/types'
 import { parseCardFile, serializeCard } from '../parser'
 
 describe('parseCardFile', () => {

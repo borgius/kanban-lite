@@ -35,11 +35,11 @@ interface CardEditorProps {
   onUpdateComment: (commentId: string, content: string) => void
   onDeleteComment: (commentId: string) => void
   onTransferToBoard: (toBoard: string, targetStatus: string) => void
-  onAddChecklistItem?: (text: string, expectedToken: string) => void
-  onEditChecklistItem?: (index: number, text: string, expectedRaw?: string) => void
-  onDeleteChecklistItem?: (index: number, expectedRaw?: string) => void
-  onCheckChecklistItem?: (index: number, expectedRaw?: string) => void
-  onUncheckChecklistItem?: (index: number, expectedRaw?: string) => void
+  onAddChecklistItem?: (title: string, description: string, expectedToken: string) => void
+  onEditChecklistItem?: (index: number, title: string, description: string, modifiedAt?: string) => void
+  onDeleteChecklistItem?: (index: number, modifiedAt?: string) => void
+  onCheckChecklistItem?: (index: number, modifiedAt?: string) => void
+  onUncheckChecklistItem?: (index: number, modifiedAt?: string) => void
   onTriggerAction?: (action: string) => void
   logs?: LogEntry[]
   onClearLogs?: () => void
@@ -112,16 +112,19 @@ interface DropdownProps {
   options: { value: string; label: string; dot?: string }[]
   onChange: (value: string) => void
   className?: string
+  ariaLabel?: string
 }
 
-function Dropdown({ value, options, onChange, className }: DropdownProps) {
+function Dropdown({ value, options, onChange, className, ariaLabel }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const current = options.find(o => o.value === value)
 
   return (
     <div className={cn('relative', isOpen && 'z-30', className)}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={ariaLabel}
         className="card-select-trigger"
         style={{ color: 'var(--vscode-foreground)' }}
       >
@@ -174,9 +177,10 @@ interface StatusDropdownProps {
   value: string
   onChange: (status: string) => void
   onTransferToBoard: (toBoard: string, targetStatus: string) => void
+  ariaLabel?: string
 }
 
-function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownProps) {
+function StatusDropdown({ value, onChange, onTransferToBoard, ariaLabel }: StatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const columns = useStore(s => s.columns)
   const boards = useStore(s => s.boards)
@@ -187,7 +191,9 @@ function StatusDropdown({ value, onChange, onTransferToBoard }: StatusDropdownPr
   return (
     <div className={cn('relative', isOpen && 'z-30')}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={ariaLabel}
         className="card-select-trigger"
         style={{ color: 'var(--vscode-foreground)' }}
       >
@@ -990,6 +996,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
         <PropertyRow label="Status" icon={<CircleDot size={13} />}>
           <StatusDropdown
             value={currentFrontmatter.status}
+            ariaLabel="Card status"
             onChange={(v) => handleFrontmatterUpdate({ status: v as CardStatus })}
             onTransferToBoard={onTransferToBoard}
           />
@@ -998,6 +1005,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
           <PropertyRow label="Priority" icon={<Signal size={13} />}>
             <Dropdown
               value={currentFrontmatter.priority}
+              ariaLabel="Card priority"
               options={priorities.map(p => ({ value: p, label: priorityLabels[p], dot: priorityDots[p] }))}
               onChange={(v) => handleFrontmatterUpdate({ priority: v as Priority })}
             />
@@ -1021,6 +1029,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 type="text"
                 value={currentFrontmatter.assignee || ''}
                 onChange={(e) => handleFrontmatterUpdate({ assignee: e.target.value || null })}
+                aria-label="Card assignee"
                 placeholder="No assignee"
                 className="card-property-text-input"
                 style={{ color: currentFrontmatter.assignee ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}
@@ -1034,6 +1043,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
               type="date"
               value={currentFrontmatter.dueDate || ''}
               onChange={(e) => handleFrontmatterUpdate({ dueDate: e.target.value || null })}
+              aria-label="Card due date"
               className="card-date-input"
               style={{ color: currentFrontmatter.dueDate ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}
             />

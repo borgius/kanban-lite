@@ -13,6 +13,7 @@
   },
   "homepage": "https://github.com/borgius/kanban-lite#readme",
   "scripts": {
+    "e2e": "playwright test --config=playwright.config.ts",
     "minio:up": "docker compose up -d minio minio-init",
     "minio:down": "docker compose down",
     "build": "pnpm --filter kanban-lite run build:sdk && pnpm --filter './packages/*' --if-present run build",

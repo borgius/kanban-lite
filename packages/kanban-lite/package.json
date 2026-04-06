@@ -125,7 +125,7 @@
     "docs:sdk": "pnpm --dir ../.. run docs:root:sdk",
     "docs:api": "pnpm --dir ../.. run docs:root:api",
     "docs:webhooks": "pnpm --dir ../.. run docs:root:webhooks",
-    "deploy:worker": "pnpm run build:worker && npx wrangler deploy --config wrangler.toml",
+    "deploy:worker": "node ../../scripts/deploy-cloudflare-worker.mjs",
     "package": "vsce package --no-dependencies -o ../../releases/kanban-lite-$(node -p \"require('./package.json').version\").vsix",
     "publish:npm": "npm publish --ignore-scripts",
     "publish:marketplace": "vsce publish --no-dependencies && ovsx publish --no-dependencies",

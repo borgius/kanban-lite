@@ -191,3 +191,5 @@ changes:
     change: Initial PRD for a field-worker-focused React Native mobile app initiative aligned with existing Kanban Lite auth, visibility, action, form, comment, attachment, and checklist semantics.
   - version: 0.1.1
     change: Repository platform work now also includes a runtime-host hook plus a minimal Cloudflare Workers standalone fetch entrypoint for non-Node hosts, with explicit guardrails for unsupported websocket parity in this patch.
+  - version: 0.1.2
+    change: Cloudflare follow-up documentation now includes a dedicated deployment/runtime guide and a deploy helper script that scaffolds a Wrangler worker wrapper with statically bundled plugins.

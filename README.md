@@ -75,6 +75,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Runtime-host hook + Cloudflare Worker entrypoint**: Non-Node hosts can now inject config/env/module resolution through `installRuntimeHost(...)`, and `packages/kanban-lite/src/worker` exposes a Wrangler-friendly `fetch` handler factory with explicit `501` guardrails for unsupported WebSocket/page parity in this minimal patch
+- **Cloudflare deployment guide**: See [docs/cloudflare.md](docs/cloudflare.md) for the Worker runtime model, plugin bundling caveats, websocket limitations, and the deploy helper script
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
 - **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
 - **Real-time updates**: WebSocket-powered live sync across clients

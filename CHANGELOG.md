@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Cloudflare Workers runtime-host hooks**: Added a global runtime-host override for config read/write, workspace env loading, and bundled plugin module resolution, plus a minimal Workers `fetch` entrypoint that reuses standalone route dispatch for HTTP API requests and returns an explicit `501` for WebSocket upgrades.
+- **Cloudflare Workers runtime-host hooks**: Added a global runtime-host override for config read/write, workspace env loading, and bundled plugin module resolution, plus a minimal Workers `fetch` entrypoint that reuses standalone route dispatch for HTTP API requests, a detailed `docs/cloudflare.md` guide, and a `scripts/deploy-cloudflare-worker.mjs` deploy helper that scaffolds a Wrangler wrapper with statically bundled plugins.
 
 - **Standalone Playwright E2E coverage**: The root E2E suite now covers scenario-isolated standalone browser flows for core board workflow persistence, board search/filtering, comment and checklist detail happy paths, attachment and form detail happy paths, auth/visibility login plus hidden-card denial, and one Plugin Options provider-selection persistence smoke.
 

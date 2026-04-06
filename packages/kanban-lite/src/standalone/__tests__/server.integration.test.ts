@@ -1705,6 +1705,38 @@ describe('Standalone Server Integration', () => {
 
       fs.rmSync(externalAttachmentPath, { force: true })
     })
+
+    it('POST /api/upload-attachment preserves the original filename', async () => {
+      const cardId = 'upload-filename-host'
+      const attachmentName = 'field-note.txt'
+
+      writeCardFile(tempDir, 'upload-filename-host.md', makeCardContent({
+        id: cardId,
+        title: 'Upload Filename Host',
+      }), 'backlog')
+
+      ws = await connectWs(port)
+      await sendAndReceive(ws, { type: 'ready' }, 'init')
+
+      const uploadRes = await httpRequest('POST', `http://localhost:${port}/api/upload-attachment`, {
+        cardId,
+        files: [{
+          name: attachmentName,
+          data: Buffer.from('uploaded via standalone system route').toString('base64'),
+        }],
+      })
+
+      expect(uploadRes.status).toBe(200)
+      expect(JSON.parse(uploadRes.body)).toEqual({ ok: true })
+
+      const detailRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}`)
+      expect(detailRes.status).toBe(200)
+      expect(JSON.parse(detailRes.body).data.attachments).toContain(attachmentName)
+
+      const attachmentDir = path.join(tempDir, 'boards', 'default', 'backlog', 'attachments')
+      expect(fs.existsSync(path.join(attachmentDir, attachmentName))).toBe(true)
+      expect(fs.readdirSync(attachmentDir).some((entry) => entry.includes(`kanban-upload-${cardId}-`))).toBe(false)
+    })
   })
 
   // ── No-op VSCode messages ──

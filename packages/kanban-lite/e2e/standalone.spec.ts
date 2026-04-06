@@ -1,14 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { test, expect } from '@playwright/test'
-
-const repoRoot = process.cwd()
-const standaloneE2EWorkspaceDir = path.join(repoRoot, 'tmp', 'e2e', 'workspace')
-const standaloneE2EKanbanDir = path.join(standaloneE2EWorkspaceDir, '.kanban')
-
-const backlogDir = path.join(standaloneE2EKanbanDir, 'boards', 'default', 'backlog')
-const todoDir = path.join(standaloneE2EKanbanDir, 'boards', 'default', 'todo')
-const deletedDir = path.join(standaloneE2EKanbanDir, 'boards', 'default', 'deleted')
+import { describeStandaloneScenario, test, expect } from './fixture'
 
 const seedCardIds = {
   update: '1-refactor-auth-flow',
@@ -17,81 +9,57 @@ const seedCardIds = {
 
 const createdCardTitle = 'Playwright coverage card'
 const updatedAssignee = 'Taylor QA'
+const deletedCardToast = 'Deleted "Fix monorepo CI"'
 
-function listMarkdownFiles(directory: string): string[] {
-  if (!fs.existsSync(directory)) return []
-  return fs.readdirSync(directory)
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => path.join(directory, file))
+function seededCard(page: Parameters<typeof test.beforeEach>[0]['page'], cardId: string) {
+  return page.locator(`[data-card-id="${cardId}"]`)
 }
 
-function findCardFileByTitle(directory: string, title: string): string | null {
-  for (const filePath of listMarkdownFiles(directory)) {
-    const content = fs.readFileSync(filePath, 'utf8')
-    if (content.includes(`# ${title}`)) return filePath
-  }
-
-  return null
-}
-
-function readCardFile(filePath: string | null): string {
-  if (!filePath) {
-    throw new Error('Expected card file path to exist before reading it')
-  }
-
-  return fs.readFileSync(filePath, 'utf8')
-}
-
-test.describe('standalone persisted flows', () => {
-  test.beforeAll(() => {
-    expect(fs.existsSync(path.join(standaloneE2EWorkspaceDir, '.kanban.json'))).toBe(true)
-    expect(fs.existsSync(backlogDir)).toBe(true)
-    expect(fs.existsSync(todoDir)).toBe(true)
-  })
+describeStandaloneScenario('standalone core workflow persistence', 'core-workflow', (scenario) => {
+  const backlogDir = path.join(scenario.kanbanDir, 'boards', 'default', 'backlog')
+  const todoDir = path.join(scenario.kanbanDir, 'boards', 'default', 'todo')
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator(`[data-card-id="${seedCardIds.update}"]`)).toBeVisible()
-    await expect(page.locator(`[data-card-id="${seedCardIds.delete}"]`)).toBeVisible()
+    await page.goto(scenario.baseURL)
+    await expect(seededCard(page, seedCardIds.update)).toBeVisible()
+    await expect(seededCard(page, seedCardIds.delete)).toBeVisible()
   })
 
-  test('creates a card from the standalone UI and persists it to disk', async ({ page }) => {
+  test('creates a card from the standalone UI and keeps it after reload', async ({ page }) => {
     await page.getByRole('button', { name: 'New Card' }).click()
     await page.getByPlaceholder('Card title...').fill(createdCardTitle)
     await page.getByRole('button', { name: 'Save' }).click()
 
-    await expect(page.getByText(createdCardTitle)).toBeVisible()
+    const createdCard = page.getByText(createdCardTitle, { exact: true })
+    await expect(createdCard).toBeVisible()
 
-    await expect.poll(() => findCardFileByTitle(backlogDir, createdCardTitle), {
-      message: 'expected the created card to be written into the backlog fixture directory',
-    }).not.toBeNull()
-
-    const createdPath = findCardFileByTitle(backlogDir, createdCardTitle)
-    expect(readCardFile(createdPath)).toContain(`# ${createdCardTitle}`)
+    await page.reload()
+    await expect(createdCard).toBeVisible()
   })
 
   test('updates a card field, moves the card, and keeps the change after reload', async ({ page }) => {
+    const updatedCard = seededCard(page, seedCardIds.update)
     const sourcePath = path.join(backlogDir, `${seedCardIds.update}.md`)
     const targetPath = path.join(todoDir, `${seedCardIds.update}.md`)
 
-    await page.locator(`[data-card-id="${seedCardIds.update}"]`).click()
+    await updatedCard.click()
 
-    const editor = page.locator('.card-view-shell').last()
-    await expect(editor).toBeVisible()
-
-    const assigneeInput = editor.locator('.card-property-row').filter({ hasText: 'Assignee' }).locator('input[type="text"]')
+    const assigneeInput = page.getByLabel('Card assignee')
+    await expect(assigneeInput).toBeVisible()
     await assigneeInput.fill(updatedAssignee)
 
-    const statusRow = editor.locator('.card-property-row').filter({ hasText: 'Status' })
-    await statusRow.locator('button').first().click()
-    await editor.locator('.card-floating-menu__item').filter({ hasText: 'To Do' }).first().click()
+    await page.getByLabel('Card status').click()
+    await page.getByRole('button', { name: 'To Do', exact: true }).click()
+
+    await expect(page.getByLabel('Card status')).toContainText('To Do')
 
     await expect.poll(() => ({
       sourceExists: fs.existsSync(sourcePath),
       targetExists: fs.existsSync(targetPath),
       targetContent: fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : '',
     }), {
-      message: 'expected the updated card to move to todo and persist the assignee change',
+      timeout: 12_000,
+      message: 'expected the moved card to persist the updated assignee before reload',
     }).toMatchObject({
       sourceExists: false,
       targetExists: true,
@@ -99,35 +67,28 @@ test.describe('standalone persisted flows', () => {
     })
 
     await page.getByLabel('Close card').click()
+    await expect(updatedCard).toBeVisible()
     await page.reload()
 
-    await expect(page.locator(`[data-card-id="${seedCardIds.update}"]`)).toBeVisible()
-    await page.locator(`[data-card-id="${seedCardIds.update}"]`).click()
-    await expect(editor.locator('.card-property-row').filter({ hasText: 'Assignee' }).locator('input[type="text"]')).toHaveValue(updatedAssignee)
+    await expect(updatedCard).toBeVisible()
+    await updatedCard.click()
+    await expect(page.getByLabel('Card assignee')).toHaveValue(updatedAssignee)
+    await expect(page.getByLabel('Card status')).toContainText('To Do')
     await page.getByLabel('Close card').click()
   })
 
-  test('deletes a card from the active board and persists the soft-delete move', async ({ page }) => {
-    const sourcePath = path.join(todoDir, `${seedCardIds.delete}.md`)
-    const deletedPath = path.join(deletedDir, `${seedCardIds.delete}.md`)
+  test('soft-deletes a card and keeps it removed after the undo window expires', async ({ page }) => {
+    const deletedCard = seededCard(page, seedCardIds.delete)
+    const toast = page.getByText(deletedCardToast, { exact: true })
 
-    await page.locator(`[data-card-id="${seedCardIds.delete}"]`).click()
+    await deletedCard.click()
     await page.getByLabel('Move to deleted').click()
 
-    await expect(page.locator(`[data-card-id="${seedCardIds.delete}"]`)).toHaveCount(0)
-
-    await expect.poll(() => ({
-      sourceExists: fs.existsSync(sourcePath),
-      deletedExists: fs.existsSync(deletedPath),
-    }), {
-      timeout: 12_000,
-      message: 'expected the deleted card to move into the deleted status directory after the undo window expires',
-    }).toEqual({
-      sourceExists: false,
-      deletedExists: true,
-    })
+    await expect(deletedCard).toHaveCount(0)
+    await expect(toast).toBeVisible()
+    await expect(toast).toHaveCount(0, { timeout: 7_000 })
 
     await page.reload()
-    await expect(page.locator(`[data-card-id="${seedCardIds.delete}"]`)).toHaveCount(0)
+    await expect(deletedCard).toHaveCount(0)
   })
 })

@@ -308,6 +308,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <button
           type="button"
           onClick={() => setBoardSwitcherOpen(!boardSwitcherOpen)}
+          aria-label={`Switch board: ${currentBoardName}`}
           className="flex items-center gap-1.5 px-2 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
           title="Switch board (b)"
         >
@@ -383,6 +384,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search cards"
             placeholder="Search cards, people, labels..."
             title="Search cards by text. Advanced metadata search also works with meta.field: value"
             className="w-full pl-8 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
@@ -429,6 +431,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <select
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value as Priority | 'all')}
+          aria-label="Filter by priority"
           className={selectClassName}
         >
           {priorities.map((p) => (
@@ -444,6 +447,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
+          aria-label="Filter by assignee"
           className={selectClassName}
         >
           <option value="all">All Assignees</option>
@@ -462,6 +466,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
           <button
             type="button"
             onClick={() => setLabelDropdownOpen(!labelDropdownOpen)}
+            aria-label="Filter by label"
             className={`flex items-center gap-1.5 text-sm bg-white dark:bg-zinc-800 border rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-zinc-900 dark:text-zinc-100 transition-colors ${
               labelFilter.length > 0
                 ? 'border-blue-500 dark:border-blue-400'
@@ -495,6 +500,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <select
           value={dueDateFilter}
           onChange={(e) => setDueDateFilter(e.target.value as DueDateFilter)}
+          aria-label="Filter by due date"
           className={selectClassName}
         >
           {dueDateOptions.map((d) => (
@@ -639,6 +645,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         <button
           type="button"
           onClick={() => setBoardMenuOpen(!boardMenuOpen)}
+          aria-label={`Board options: ${currentBoardName}`}
           className="flex items-center gap-1 px-2 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
           title="Board options"
         >

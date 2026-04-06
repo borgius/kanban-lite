@@ -84,5 +84,6 @@ describe('MarkdownEditor checklist tab', () => {
     expect(markup).toContain('Review docs')
     expect(markup).toContain('Ship fix')
     expect(markup).toContain('Add task')
+    expect(markup).toContain('2026-03-24')
   })
 })

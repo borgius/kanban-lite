@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { marked, Marked, type RendererObject, type Tokens } from 'marked'
+import { marked } from 'marked'
 import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
 import type { Comment, LogEntry, CardFrontmatter, SubmitFormTransportResult } from '../../shared/types'
-import { buildChecklistReadModel, isSafeChecklistLinkHref, type ChecklistReadModel } from '../../sdk/modules/checklist'
+import { buildChecklistReadModel, type ChecklistReadModel } from '../../sdk/modules/checklist'
 import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
@@ -35,47 +35,9 @@ interface MarkdownEditorProps {
   onUncheckChecklistItem?: (index: number, modifiedAt?: string) => void
 }
 
-function escapeChecklistLegacyHtml(text: string): string {
-  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function escapeChecklistHtmlAttribute(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function renderChecklistLegacyImageMarkdown({ raw, href, title, text }: Tokens.Image): string {
-  const fallback = `![${text}](${href ?? ''}${title ? ` "${title}"` : ''})`
-  return escapeChecklistLegacyHtml(raw || fallback)
-}
-
-const checklistRenderer: RendererObject<string, string> = {
-  image(token: Tokens.Image) {
-    return renderChecklistLegacyImageMarkdown(token)
-  },
-  link({ href, title, tokens }: Tokens.Link) {
-    const text = this.parser.parseInline(tokens)
-    if (!href || !isSafeChecklistLinkHref(href)) {
-      return text
-    }
-
-    const titleAttr = title ? ` title="${escapeChecklistHtmlAttribute(title)}"` : ''
-    return `<a href="${escapeChecklistHtmlAttribute(href)}"${titleAttr}>${text}</a>`
-  },
-}
-
-const checklistMarked = new Marked({
-  gfm: true,
-  breaks: true,
-  renderer: checklistRenderer,
-})
-
-function renderChecklistItemHtml(text: string): string {
-  const rendered = checklistMarked.parse(escapeChecklistLegacyHtml(text), { async: false }) as string
-  return rendered.match(/^<p>([\s\S]*)<\/p>\s*$/)?.[1] ?? rendered
+function formatChecklistModifiedAt(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso)
+  return match?.[1] ?? ''
 }
 
 interface ChecklistSectionProps {
@@ -109,24 +71,6 @@ function ChecklistSection({
     setDraftTitle('')
     setDraftDescription('')
   }, [checklist.token, draftTitle, draftDescription, onAddChecklistItem])
-
-  function formatModifiedAt(iso: string): string {
-    try {
-      const date = new Date(iso)
-      const now = Date.now()
-      const diff = now - date.getTime()
-      const mins = Math.floor(diff / 60000)
-      if (mins < 1) return 'just now'
-      if (mins < 60) return `${mins}m ago`
-      const hrs = Math.floor(mins / 60)
-      if (hrs < 24) return `${hrs}h ago`
-      const days = Math.floor(hrs / 24)
-      if (days < 7) return `${days}d ago`
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    } catch {
-      return ''
-    }
-  }
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -233,8 +177,12 @@ function ChecklistSection({
                       {item.title}
                     </span>
                     {item.modifiedAt && (
-                      <span className="shrink-0 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                        {formatModifiedAt(item.modifiedAt)}
+                      <span
+                        className="shrink-0 text-xs"
+                        style={{ color: 'var(--vscode-descriptionForeground)' }}
+                        title={item.modifiedAt}
+                      >
+                        {formatChecklistModifiedAt(item.modifiedAt)}
                       </span>
                     )}
                     <button

@@ -109,6 +109,23 @@ describe('Toolbar columns submenu', () => {
     hookRuntime.beginRender()
   })
 
+  it('adds stable labels for board and search entrypoints used by browser flows', () => {
+    const markup = renderToStaticMarkup(
+      <Toolbar
+        onOpenSettings={() => {}}
+        onAddColumn={() => {}}
+        onCreateCard={() => {}}
+        onToggleTheme={() => {}}
+        onSwitchBoard={() => {}}
+        onCreateBoard={() => {}}
+      />
+    )
+
+    expect(markup).toContain('aria-label="Switch board: Board A"')
+    expect(markup).toContain('aria-label="Search cards"')
+    expect(markup).toContain('aria-label="Board options: Board A"')
+  })
+
   it('lists non-deleted columns and reflects hidden state via checkbox items', () => {
     const markup = renderToStaticMarkup(
       <Toolbar

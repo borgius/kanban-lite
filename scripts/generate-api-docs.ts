@@ -50,10 +50,10 @@ type OpenAPIRequestBody = {
 type OpenAPIResponses = Record<string, { description?: string }>
 
 type OpenAPIOperation = {
-  tags?: string[]
+  tags?: readonly string[]
   summary?: string
   description?: string
-  parameters?: OpenAPIParameter[]
+  parameters?: readonly OpenAPIParameter[]
   requestBody?: OpenAPIRequestBody
   responses?: OpenAPIResponses
 }
@@ -275,7 +275,7 @@ function renderSchemaTable(schema?: OpenAPISchema): string[] {
   return lines
 }
 
-function renderParameters(parameters?: OpenAPIParameter[]): string[] {
+function renderParameters(parameters?: readonly OpenAPIParameter[]): string[] {
   if (!parameters?.length) return []
 
   const lines = [

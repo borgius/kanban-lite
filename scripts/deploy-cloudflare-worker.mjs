@@ -81,19 +81,27 @@ function parseArgs(argv) {
       continue
     }
     if (arg === '--name') {
-      args.name = argv[++i]
+      const value = argv[++i]
+      if (!value) fail('Missing value for --name')
+      args.name = value
       continue
     }
     if (arg === '--config') {
-      args.configPath = argv[++i]
+      const value = argv[++i]
+      if (!value) fail('Missing value for --config')
+      args.configPath = value
       continue
     }
     if (arg === '--kanban-dir') {
-      args.kanbanDir = argv[++i]
+      const value = argv[++i]
+      if (!value) fail('Missing value for --kanban-dir')
+      args.kanbanDir = value
       continue
     }
     if (arg === '--compatibility-date') {
-      args.compatibilityDate = argv[++i]
+      const value = argv[++i]
+      if (!value) fail('Missing value for --compatibility-date')
+      args.compatibilityDate = value
       continue
     }
     fail(`Unknown argument: ${arg}`)

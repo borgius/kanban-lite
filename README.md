@@ -57,13 +57,6 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 
 ## Features
 
-### Mobile field app (preview)
-
-- **Expo auth/onboarding shell**: `@kanban-lite/mobile` includes typed workspace entry, in-app local login through `POST /api/mobile/session`, deep-link or QR-paste onboarding with optional bootstrap-token exchange, secure storage of only the opaque mobile bearer token plus safe workspace/subject metadata, and a no-stale-flash restore gate that revalidates with `GET /api/mobile/session` before protected content can mount.
-- **Safer workfeed and task-detail shell**: `My Work` now uses full-card tap targets, only promotes deep-link/pending task opens after live visibility confirmation, surfaces explicit cached/offline fallback with retry, purges protected cache state on logout/reauth/workspace switch/revocation, and keeps task detail focused on one sticky primary action with lower-emphasis secondary actions.
-- **MF13 task-detail runtime slice**: task detail’s sticky primary action can now open the existing server-resolved form, edit simple root-level mobile fields, submit through the current form endpoint when online, refresh the task detail after success, queue explicit local checklist drafts for add/edit/delete/check/uncheck when live sends fail or the device is offline, surface checklist conflict review/retry with latest state, and keep card actions online-only instead of silently drafting or replaying them.
-- **MF12 task-detail comments and attachments**: task detail now supports comment create/edit/delete plus attachment capture or file-pick into durable local drafts, explicit resend/discard review, missing-file recovery, and honest live-only synced deletes/removals while keeping denied controls hidden.
-
 ### Web UI
 
 - **Multi-board support**: Create multiple boards with independent columns and settings
@@ -71,11 +64,8 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
-- **Fixed checklist tab**: Cards with checklist visibility show a dedicated `Tasks X/N` tab for task progress, inline markdown task text, and checklist mutations without mixing checklist state into the main markdown body
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
-- **Runtime-host hook + Cloudflare Worker entrypoint**: Non-Node hosts can now inject config/env/module resolution through `installRuntimeHost(...)`, and `packages/kanban-lite/src/worker` exposes Wrangler-friendly shared `fetch` + `queue` handler factories with explicit `501` guardrails for unsupported WebSocket/page parity plus a queue-backed durable Cloudflare `callback.runtime` path that stays zero-idle on the request hot path
-- **Cloudflare deployment guide**: See [docs/cloudflare.md](docs/cloudflare.md) for the Worker runtime model, plugin bundling caveats, websocket limitations, the shared callback queue ABI, and the deploy helper script that statically validates configured callback module exports before deployment
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
 - **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
 - **Real-time updates**: WebSocket-powered live sync across clients
@@ -106,7 +96,6 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Assignees**: Assign team members to cards
 - **Due dates**: Smart formatting (Overdue, Today, Tomorrow, "5d", etc.)
 - **Labels**: Tag cards with multiple labels
-- **Checklist items**: Store optional single-line markdown checklist items directly on the card, manage them from the dedicated Tasks tab, seed them at create time from the CLI / REST API / MCP server, and allow inline links only for explicit `http:`, `https:`, and `mailto:` URLs
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
 - **Streaming comments**: AI agents can stream a comment live — a blinking-cursor indicator and `streaming` badge are shown to all connected viewers while text is being written; the comment is persisted once the stream completes (see [REST API](#comments) and [`sdk.streamComment`](#sdkstreamcomment))
@@ -167,19 +156,8 @@ kl add --title "Deploy service" --actions "retry,rollback,notify"
 # Create a card with attached forms
 kl add --title "Investigate outage" --forms '[{"name":"incident-report"}]'
 
-# Seed a checklist when creating a card
-kl add --title "Ship release" --tasks '["Draft release notes","- [x] Cut RC"]'
-
 # Update form attachments or persisted per-form data
 kl edit investigate-outage --forms @forms.json --form-data @form-data.json
-
-# Checklist items
-kl checklist list ship-release --json
-kl checklist add ship-release --text "Review **docs**" --expected-token "<token-from-checklist-list>"
-kl checklist edit ship-release 0 --text "Update release notes" --expected-raw "- [ ] Draft release notes"
-kl checklist check ship-release 1 --expected-raw "- [ ] Review **docs**"
-kl checklist uncheck ship-release 1 --expected-raw "- [x] Review **docs**"
-kl checklist remove ship-release 0 --expected-raw "- [ ] Update release notes"
 
 # Show card details
 kl show implement-search
@@ -316,7 +294,7 @@ kl help api                                             # Show REST API document
 
 Use `--json` for machine-readable output. Use `--dir <path>` to specify a custom features directory. Use `--board <id>` to target a specific board.
 
-`--forms` accepts a JSON array of attached form descriptors, `--form-data` accepts a JSON object keyed by resolved form id, and `--tasks` accepts a JSON array of seeded checklist items. All three flags also support `@path/to/file.json`.
+`--forms` accepts a JSON array of attached form descriptors, and `--form-data` accepts a JSON object keyed by resolved form id. Both flags also support `@path/to/file.json`.
 
 ## Standalone Server
 
@@ -373,19 +351,13 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `GET` | `/api/tasks` | List all tasks (query: `?q=&fuzzy=&meta.<field>=&status=&priority=&assignee=&label=`) |
 | `GET` | `/api/tasks/active` | Get the currently active/open task |
 | `GET` | `/api/tasks/:id` | Get a single task |
-| `POST` | `/api/tasks` | Create a task, including optional seeded `tasks`, `forms`, and `formData` |
-| `PUT` | `/api/tasks/:id` | Update task properties, including `forms` and `formData` (generic task updates do not edit checklist items) |
-| `GET` | `/api/tasks/:id/checklist` | Get the shared checklist read model for a task |
-| `POST` | `/api/tasks/:id/checklist` | Add a checklist item (`{ text, expectedToken }`) |
-| `PUT` | `/api/tasks/:id/checklist/:index` | Edit a checklist item (`{ text, expectedRaw? }`) |
-| `DELETE` | `/api/tasks/:id/checklist/:index` | Remove a checklist item (`{ expectedRaw? }`) |
-| `POST` | `/api/tasks/:id/checklist/:index/check` | Mark a checklist item complete (`{ expectedRaw? }`) |
-| `POST` | `/api/tasks/:id/checklist/:index/uncheck` | Mark a checklist item incomplete (`{ expectedRaw? }`) |
+| `POST` | `/api/tasks` | Create a task, including optional `forms` and `formData` |
+| `PUT` | `/api/tasks/:id` | Update task properties, including `forms` and `formData` |
 | `POST` | `/api/tasks/:id/forms/:formId/submit` | Validate and submit a card form payload |
 | `PATCH` | `/api/tasks/:id/move` | Move task to column/position |
 | `DELETE` | `/api/tasks/:id` | Delete a task |
 
-Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, including checklist routes and `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`. Checklist read models now include an opaque `token` value that callers must echo back as `expectedToken` when appending a new checklist item.
+Board-scoped equivalents are available at `/api/boards/:boardId/tasks/...`, including `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`.
 
 `q` is the free-text search input, `fuzzy=true` enables typo-tolerant matching, and `meta.<field>=value` keeps metadata filtering field-scoped. The same search semantics are shared with `kl list --search ... --fuzzy` and the MCP `list_cards` tool.
 
@@ -1034,13 +1006,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `open_card` | Explicitly acknowledge unread activity and persist actor-scoped open-card state |
 | `read_card` | Explicitly acknowledge unread activity without changing open-card state |
 | `get_active_card` | Get the currently active/open card, or `null` if none is active |
-| `create_card` | Create a new card with title, body, status, priority, optional seeded tasks, metadata, forms, and formData |
-| `list_card_checklist_items` | Return the shared checklist read model for a card, including the checklist-wide add token |
-| `add_card_checklist_item` | Add a checklist item to a card using the latest `expectedToken` |
-| `edit_card_checklist_item` | Edit one checklist item with optional `expectedRaw` concurrency checks |
-| `delete_card_checklist_item` | Remove one checklist item with optional `expectedRaw` concurrency checks |
-| `check_card_checklist_item` | Mark one checklist item complete with optional `expectedRaw` concurrency checks |
-| `uncheck_card_checklist_item` | Mark one checklist item incomplete with optional `expectedRaw` concurrency checks |
+| `create_card` | Create a new card with title, body, status, priority, metadata, forms, and formData |
 | `update_card` | Update fields of an existing card, including forms and formData |
 | `submit_card_form` | Validate and submit a card form payload through the shared SDK workflow |
 | `move_card` | Move a card to a different status column |
@@ -1071,10 +1037,10 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_webhook` | Register a new webhook |
 | `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
-| `get_workspace_info` | Get workspace root path, kanban directory, active storage provider metadata, and `config.storage` resolution state |
+| `get_workspace_info` | Get workspace root path, kanban directory, and active storage provider metadata |
 
 For agent-driven search, pass `searchQuery` for free text (including inline tokens like `meta.team: backend`), set `fuzzy: true` to widen matching across text and metadata values, or use `metaFilter` when you want structured dot-notation field filters.
-| `get_storage_status` | Get current storage provider status plus configured-versus-effective `config.storage` details |
+| `get_storage_status` | Get current card/attachment storage provider status |
 | `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
 | `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |
 
@@ -1246,26 +1212,23 @@ For first-party storage plugins, `attachment.storage` now follows the active `ca
 
 ## Plugin Settings
 
-Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel in standalone and VS Code, the CLI, REST API, and MCP surfaces.
+Kanban Lite now exposes one shared plugin-settings workflow across the Settings panel, CLI, REST API, and MCP surfaces.
 
-- **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, `auth.visibility`, and `webhook.delivery`.
+- **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, and `webhook.delivery`.
 - **Storage-backed `attachment.storage` reuse**: when attachments come from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Storage-backed `card.state` reuse**: when `card.state` comes from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
-- **`config.storage` status semantics**: plugin-settings detail and status surfaces report configured provider state separately from the current effective provider for `config.storage`, including explicit failure or degraded/read-only state when the SDK reports one. Worker topology-changing `config.storage` writes are rejected as explicit runtime-mutation errors instead of silently swapping providers.
-- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, `auth.visibility` stays disabled until selected (its normalized default is `provider: "none"`), and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
+- **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
-- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable while active; options are stored in `plugins[capability].options` and only the selected provider's options are persisted. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
-- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `module`, `inline`, and `process` handlers; on Node, matching `module` rows execute through the shared SDK runtime-module resolver; and the inline `source` field renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
-- **Masked secret behavior**: allowed read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
-- **Authorization split**: `plugin-settings.read` gates plugin-settings inventory/detail reads before any payload is returned. `plugin-settings.update` gates `select`, `update-options`, and `install` mutations. The same checks are reused by the Settings panel hosts, the standalone websocket settings bridge, REST routes, CLI commands, and the current MCP tool set (`list_plugin_settings` + `get_plugin_settings` for reads plus the mutation tools for updates).
-- **Redaction is not authorization**: allowed reads still use the existing redaction contract (`••••••` placeholders plus redacted errors), but redaction does not grant plugin-settings access on its own.
+- **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
+- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers, and the inline `source` field now renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
+- **Masked secret behavior**: read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
 The same nouns are used everywhere:
 
 - **CLI**: `kl plugin-settings <list|show|select|update-options|install>`
 - **REST API**: `/api/plugin-settings`, `/api/plugin-settings/:capability/:providerId`, `/select`, `/options`, and `/install`
-- **MCP**: `list_plugin_settings`, `get_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`
+- **MCP**: `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`
 
 For the deeper runtime model, provider discovery rules, and plugin authoring details, see [docs/plugins.md](docs/plugins.md).
 
@@ -1304,11 +1267,8 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
-| `card.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, `cloudflare` | Core owns `localfs` (markdown engine). Legacy `markdown` input is normalized to `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, and `cloudflare` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, and `kl-plugin-cloudflare`. |
-| `attachment.storage` | follows `card.storage` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, `cloudflare` | Core owns `localfs`. For first-party storage plugins, omitted or redundant matching `attachment.storage` config is auto-derived from the active `card.storage` provider and reuses its options. Configure this namespace only when you want a different provider such as `kl-plugin-attachment-s3`. |
-| `callback.runtime` | `callbacks` | `callbacks`, `cloudflare` | `callbacks` resolves to `kl-plugin-callback` for same-runtime Node handlers. Worker-only `cloudflare` resolves to `kl-plugin-cloudflare`, requires enabled `type: "module"` rows, and delivers durable event-scoped queue envelopes through the shared `KANBAN_MODULES` contract. |
-
-The first-party `cloudflare` bundle is Worker-only and co-provides `card.storage`, `attachment.storage`, `card.state`, `config.storage`, and `callback.runtime` through D1 + R2 + Queues using the shared Cloudflare Worker binding/context seam.
+| `card.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs` (markdown engine). Legacy `markdown` input is normalized to `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`. |
+| `attachment.storage` | follows `card.storage` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs`. For first-party storage plugins, omitted or redundant matching `attachment.storage` config is auto-derived from the active `card.storage` provider and reuses its options. Configure this namespace only when you want a different provider such as `kl-plugin-attachment-s3`. |
 
 For first-party storage plugins, selecting `card.storage` is enough to activate the matching attachment handler with the same options:
 
@@ -1351,7 +1311,7 @@ If you want a different attachment backend, configure `attachment.storage` expli
 
 - Core built-ins are `localfs` (`card.storage`) and `localfs` (`attachment.storage`).
 - Legacy `card.storage: "markdown"` values are normalized to `localfs`.
-- `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, and `cloudflare` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, and `kl-plugin-cloudflare`.
+- `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
@@ -1397,11 +1357,7 @@ Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting t
 
 ### Callback runtime provider
 
-Same-runtime callback automation is owned by the external `kl-plugin-callback` package. Install it in the runtime environment, then select the `callbacks` provider through the shared plugin-settings flow at `plugins["callback.runtime"]`. The shared `handlers[]` list now accepts canonical `type: "module"` rows with explicit `module` and `handler` fields alongside legacy Node-only `inline` and `process` rows.
-
-When `plugins["callback.runtime"].provider` is explicitly set to `cloudflare`, the generated Worker wrapper statically bundles configured module rows into `KANBAN_MODULES`, emits the shared `queue` consumer export, and uses the logical `callbacks` queue for compact `{ version, kind, eventId }` envelopes. At runtime the Worker persists one durable D1 event record per committed event, executes matched module handlers sequentially with handler-level retry/idempotency, and rejects enabled `inline` / `process` rows because the Cloudflare path is module-only by contract.
-
-Callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to `scripts/deploy-cloudflare-worker.mjs`, and the committed/generated Wrangler configs emit `compatibility_flags = ["nodejs_compat"]` with the documented compatibility date so the Worker runtime keeps the required Node compatibility shims enabled.
+Same-runtime callback automation is owned by the external `kl-plugin-callback` package. Install it in the runtime environment, then select the `callbacks` provider through the shared plugin-settings flow at `plugins["callback.runtime"]`.
 
 ```json
 {
@@ -1411,24 +1367,13 @@ Callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to `scri
       "options": {
         "handlers": [
           {
-            "id": "module-task-created",
-            "name": "module task creation",
-            "type": "module",
-            "events": ["task.created"],
-            "enabled": true,
-            "module": "./callbacks/task-created",
-            "handler": "onTaskCreated"
-          },
-          {
-            "id": "inline-task-created",
             "name": "log task creation",
             "type": "inline",
             "events": ["task.created"],
             "enabled": true,
-            "source": "async ({ event, sdk, callback }) => { console.log(callback.handlerId, event.event, sdk.constructor.name) }"
+            "source": "async ({ event, sdk }) => { console.log(event.event, sdk.constructor.name) }"
           },
           {
-            "id": "process-task-events",
             "name": "notify local worker",
             "type": "process",
             "events": ["task.created", "task.updated"],
@@ -1444,13 +1389,10 @@ Callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to `scri
 }
 ```
 
-- `handlers[]` is one ordered mixed list; each matching row is `module`, `inline`, or `process`.
-- `type: "module"` stores the shared Worker-safe module specifier plus named export inside the same config shape used by Node and Cloudflare hosts. The shared SDK callback core keeps that configured specifier stable across hosts, treats it as part of the durable handler fingerprint/revision, and fails closed when an enabled module row is malformed.
-- Cloudflare deploys statically bundle configured `type: "module"` handlers through the Worker `KANBAN_MODULES` registry, validate that each named export exists before publish, and reserve the `callbacks` queue for compact durable `{ version, kind, eventId }` envelopes.
-- Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, are legacy Node-only mode, and receive exactly one argument shaped as `({ event, sdk, callback })`.
-- Process handlers are normal subprocesses, not sandboxed, and remain a legacy Node-only mode. They receive one serialized `{ event, callback }` JSON payload on stdin only and do not receive a live SDK object.
+- `handlers[]` is one ordered mixed list; each matching row is either `inline` or `process`.
+- Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, and receive exactly one argument shaped as `({ event, sdk })`.
+- Process handlers are normal subprocesses, not sandboxed. They receive one serialized `{ event }` JSON payload on stdin only and do not receive a live SDK object.
 - Matching handlers run in order. Failures are logged, then later matching handlers continue.
-- On Node, `kl-plugin-callback` resolves matching `type: "module"` rows through the public SDK `resolveCallbackRuntimeModule(...)` helper, resolves relative module paths from the workspace root, and invokes the configured export with `({ event, sdk, callback })`. The shared callback core otherwise requires own callable exports; the legacy bare CommonJS `module.exports = function` shortcut remains an explicit Node-only compatibility path that is only used when you write `handler: "default"`.
 - Inline JavaScript now uses the shared CodeMirror-backed JavaScript editor in Plugin Options; there is still no separate callback-specific management surface.
 
 ### MySQL setup and runtime expectations
@@ -1626,21 +1568,20 @@ These migration helpers are compatibility aliases for the markdown ↔ `sqlite` 
 
 If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibility provider, migrating back to markdown automatically drops that incompatible attachment override so the legacy `localfs` default continues to work without manual config cleanup.
 
-**MCP tools:** `get_storage_status`, `get_workspace_info`, `migrate_to_sqlite`, `migrate_to_markdown`
+**MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
 
 ## Auth / Authz Plugin Contract
 
-Kanban Lite ships auth/authz capability namespaces for `auth.identity`, `auth.policy`, and opt-in `auth.visibility`. Most protected operations are enforced through listener-only before-events before a write is committed, shared plugin-settings reads/mutations use the SDK auth actions `plugin-settings.read` and `plugin-settings.update`, and `auth.visibility` filters card reads through the canonical SDK cards seam so hidden cards behave like ordinary not-found / no-match results across SDK, REST, CLI, MCP, and UI surfaces.
+Kanban Lite ships auth/authz capability namespaces for `auth.identity` and `auth.policy`, enforced through listener-only before-events that run before a write is committed.
 
 Auth listeners can veto a mutation by throwing `AuthError`, optionally return plain-object input overrides, and preserve the same clean denial behavior across standalone, CLI, MCP, and the extension host.
 
 Host surfaces now install request-scoped auth with `sdk.runWithAuth(authContext, fn)` before calling SDK mutators. The first-party auth listener resolves identity/policy from that scoped carrier plus the before-event's actor/board hints; auth is no longer threaded through positional mutation args or a `BeforeEventPayload.auth` field.
 
-Install `kl-plugin-auth` in the environment that loads Kanban Lite. If you also want card visibility filtering, install `kl-plugin-auth-visibility` alongside it:
+Install the package in the environment that loads Kanban Lite:
 
 ```bash
 npm install kl-plugin-auth
-npm install kl-plugin-auth-visibility
 ```
 
 For local sibling-repo development, a checkout at `../kl-plugin-auth` is resolved automatically. `npm link ../kl-plugin-auth` is optional, but useful when you want an explicit local package link.
@@ -1650,9 +1591,9 @@ The shipped provider ids behave as before:
 - `auth.identity` → `noop`: all callers are treated as anonymous (identity always resolves to `null`).
 - `auth.policy` → `noop`: all actions are allowed regardless of identity (policy always returns `true`).
 
-When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface plus shared plugin-settings inventory/detail reads used by the Node-hosted adapters (standalone REST + websocket settings bridge, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
+When non-noop auth providers are configured, the SDK now performs **pre-action authorization** for the privileged async mutation surface used by the Node-hosted adapters (standalone server, CLI, MCP, and the VS Code extension host). Workspaces without auth providers configured remain fully open-access.
 
-Provider references for the auth family are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
+Provider references for both namespaces are read from `.kanban.json` via the `plugins` key — the same namespace used for storage providers:
 
 ```json
 {
@@ -1664,33 +1605,6 @@ Provider references for the auth family are read from `.kanban.json` via the `pl
 ```
 
 Raw bearer tokens, token-to-role maps, and other live secrets must **not** be stored in `.kanban.json`. Token acquisition is host-specific (VS Code `SecretStorage`, env vars for CLI/MCP, in-memory or cookies for standalone). Password *hashes* for the `local` provider may be stored in config.
-
-### `auth.visibility` provider
-
-`auth.visibility` is opt-in and normalizes to `{ provider: "none" }` when omitted. `kl-plugin-auth` still owns identity resolution and role lookup; `kl-plugin-auth-visibility` only filters cards after the SDK resolves the caller.
-
-```json
-{
-  "plugins": {
-    "auth.identity": { "provider": "kl-plugin-auth" },
-    "auth.policy": { "provider": "kl-plugin-auth" },
-    "auth.visibility": {
-      "provider": "kl-plugin-auth-visibility",
-      "options": {
-        "rules": [
-          {
-            "roles": ["design"],
-            "statuses": ["backlog"],
-            "labels": ["ux"]
-          }
-        ]
-      }
-    }
-  }
-}
-```
-
-The rule model is deliberately small: matching is role-only, cards granted by multiple matching rules are unioned, different fields inside one rule use AND semantics, values inside a field use OR semantics, `assignees` supports `@me`, and there is no implicit admin/manager bypass. If a caller matches no rules, they see no cards. When enabled, hidden cards behave as standard not-found / no-match results rather than permission-specific reveals.
 
 ### `rbac` provider
 
@@ -1715,19 +1629,17 @@ Kanban Lite ships a first-party **Role-Based Access Control (RBAC)** provider pa
 |------|-------------------|
 | `user` | `form.submit`, `comment.create`, `comment.update`, `comment.delete`, `attachment.add`, `attachment.remove`, `card.action.trigger`, `log.add` |
 | `manager` | All `user` actions plus `card.create`, `card.update`, `card.move`, `card.transfer`, `card.delete`, `board.action.trigger`, `log.clear`, `board.log.add` |
-| `admin` | All `manager` actions plus board/config and plugin-settings actions: `board.create`, `board.update`, `board.delete`, `settings.update`, `plugin-settings.read`, `plugin-settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
+| `admin` | All `manager` actions plus all board/config mutations: `board.create`, `board.update`, `board.delete`, `settings.update`, `webhook.*`, `label.*`, `column.*`, `storage.migrate`, and more |
 
 Roles are cumulative upward: `admin` includes all `manager` and `user` actions.
-
-Concretely, in the shipped RBAC matrix a default `user` cannot open the Plugin Options inventory or run `kl plugin-settings list`, while an `admin` can list/show redacted plugin settings via `plugin-settings.read` and can also select, update, and install providers via `plugin-settings.update`. Allowed reads still use masked placeholders and redacted errors; redaction does not replace authorization.
 
 When you enable `auth.policy: rbac` or `auth.policy: kl-plugin-auth` through the shared Plugin Options UI and no saved policy options exist yet, Kanban Lite now materializes the default `permissions` matrix from the built-in `RBAC_ROLE_MATRIX` into `.kanban.json` so you start from an editable baseline instead of an empty config block. The same backfill also runs when plugin-settings refresh sees a selected auth-policy provider with an empty options object.
 
 **Scope limits (v1):**
 
-- **Policy-side action-level only**: access decisions in `auth.policy` are made per-action, not per-row or per-card.
+- **Action-level only**: access decisions are made per-action, not per-row or per-card.
 - **No login flow**: the provider has no interactive authentication UI.
-- **Row filtering lives in `auth.visibility`**: denied writes still fail normally; optional partial card filtering is handled separately by `kl-plugin-auth-visibility` when `auth.visibility` is selected.
+- **No row filtering**: a denied action blocks the write; no partial result filtering is performed.
 - **Node-hosted only**: the RBAC provider runs exclusively in the Node host layer; no browser execution is performed.
 - Tokens are resolved from the host token source at call time and are **never** persisted to `.kanban.json`, returned in API responses, or echoed in error bodies or logs.
 
@@ -1775,7 +1687,7 @@ This command hashes the password, appends the user entry to `plugins["auth.ident
 
 The shared settings UI now exposes that `roles[]` catalog directly beside `users[]`, seeds it with `user`, `manager`, and `admin` by default, and uses it as the live enum source for both `users[].role` and `auth.policy.permissions[].role`. The `local` policy itself remains permissive for any authenticated identity unless you configure an explicit `auth.policy.options.permissions[]` matrix. Anonymous callers are still denied with `auth.identity.missing`.
 
-To override the default role behavior, add a custom permission matrix on `auth.policy`. In the shared Plugin Options UI, each row now picks one role plus the auth actions that role may run (the SDK before-event catalog plus `plugin-settings.read` and `plugin-settings.update`):
+To override the default role behavior, add a custom permission matrix on `auth.policy`. In the shared Plugin Options UI, each row now picks one role plus the before-events that role may run:
 
 ```json
 {
@@ -1795,7 +1707,7 @@ To override the default role behavior, add a custom permission matrix on `auth.p
 }
 ```
 
-Legacy `options.matrix` role maps remain supported for backward compatibility, and the shared Plugin Options UI now edits the simpler role-based `permissions` format while sourcing its action picker from the shared auth action catalog.
+Legacy `options.matrix` role maps remain supported for backward compatibility, and the shared Plugin Options UI now edits the simpler role-based `permissions` format while sourcing its action picker from the before-event catalog.
 
 
 

@@ -1,4 +1,5 @@
 import * as http from 'http'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import Fastify from 'fastify'
@@ -187,9 +188,31 @@ function resolveSwaggerUiStaticDir(): string | undefined {
   return undefined
 }
 
+const LOCAL_AUTH_PROVIDERS = new Set(['local', 'kl-plugin-auth'])
+
+function ensureLocalAuthToken(workspaceRoot: string): void {
+  for (const key of ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const) {
+    const val = process.env[key]
+    if (typeof val === 'string' && val.length > 0) return
+  }
+  const token = 'kl-' + crypto.randomBytes(32).toString('hex')
+  process.env['KANBAN_LITE_TOKEN'] = token
+  const envPath = path.join(workspaceRoot, '.env')
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : ''
+  const trimmed = existing.trimEnd()
+  fs.writeFileSync(envPath, trimmed ? trimmed + '\nKANBAN_LITE_TOKEN=' + token + '\n' : 'KANBAN_LITE_TOKEN=' + token + '\n', 'utf-8')
+}
+
 export function startServer(kanbanDir: string, port: number, webviewDir?: string, resolvedConfigPath?: string): http.Server {
   const workspaceRoot = path.dirname(path.resolve(kanbanDir))
   const config = readConfig(workspaceRoot)
+
+  const identityProvider = (config.plugins?.['auth.identity'] ?? config.auth?.['auth.identity'])?.provider ?? ''
+  const policyProvider = (config.plugins?.['auth.policy'] ?? config.auth?.['auth.policy'])?.provider ?? ''
+  if (LOCAL_AUTH_PROVIDERS.has(identityProvider) || LOCAL_AUTH_PROVIDERS.has(policyProvider)) {
+    ensureLocalAuthToken(workspaceRoot)
+  }
+
   const fastify = Fastify({ logger: config.logLevel ? { level: config.logLevel } : false, forceCloseConnections: true })
   const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
   const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined

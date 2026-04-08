@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -121,6 +122,16 @@ async function clearPrefix(client: S3Client, bucket: string, prefix: string): Pr
   } while (continuationToken)
 }
 
+function isMinioReachable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port: 9000 })
+    socket.setTimeout(1000)
+    socket.once('connect', () => { socket.destroy(); resolve(true) })
+    socket.once('error', () => resolve(false))
+    socket.once('timeout', () => { socket.destroy(); resolve(false) })
+  })
+}
+
 async function streamToString(body: unknown): Promise<string> {
   if (!body) return ''
   if (typeof body === 'string') return body
@@ -135,7 +146,7 @@ async function streamToString(body: unknown): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8')
 }
 
-describe('S3 attachment storage integration', () => {
+describe.skipIf(!(await isMinioReachable()))('S3 attachment storage integration', () => {
   let workspaceRoot: string
   let kanbanDir: string
   let sdk: KanbanSDK

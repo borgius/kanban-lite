@@ -27,7 +27,6 @@ Today the core capability namespaces are:
 - `callback.runtime`
 - `auth.identity`
 - `auth.policy`
-- `auth.visibility`
 
 That means:
 
@@ -36,7 +35,7 @@ That means:
 - card-state can stay actor-scoped without being mixed into shared card content,
 - a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,
 - a callback provider can run trusted inline JavaScript or subprocess handlers for committed after-events through the shared plugin-settings flow,
-- auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision, and an opt-in visibility provider can filter card reads after identity resolution,
+- auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,
 - or one provider can implement multiple capabilities explicitly in the plugin layer.
 
 This is the foundation that allows core-owned built-ins like `markdown`, compatibility ids like `sqlite` / `mysql`, fully external npm packages, and listener-only runtime plugins to coexist behind one SDK-owned action pipeline.
@@ -91,12 +90,12 @@ The runtime model in this document now has a matching public management surface 
 
 That workflow is exposed consistently through:
 
-- the Settings panel's **Plugin Options** tab in standalone and VS Code (backed by the standalone websocket settings bridge in the web UI),
+- the Settings panel's **Plugin Options** tab,
 - the CLI's top-level `plugin-settings` command,
 - the REST API's `/api/plugin-settings` routes,
 - and the MCP tools `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`.
 
-All of those surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, guarded install behavior, and auth checks.
+All four surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, and guarded install behavior.
 
 ### Capability-grouped inventory and selected-provider semantics
 
@@ -110,7 +109,6 @@ Today that means the UI/API/CLI/MCP inventory can show providers for capabilitie
 - `callback.runtime`
 - `auth.identity`
 - `auth.policy`
-- `auth.visibility`
 - `webhook.delivery`
 
 Each provider row includes:
@@ -145,7 +143,7 @@ The **Plugin Options** tab uses that metadata to render provider options through
 
 Schema and field `description` values are surfaced as visible helper text in the shared Plugin Options form, so provider authors should treat those descriptions as user-facing setup guidance rather than transport-only metadata.
 
-Saving options for an inactive provider does not change enablement and is a no-op — options are only persisted when they belong to the currently selected provider.
+Saving options for an inactive provider does not change enablement. Instead, the shared contract caches those values under `pluginOptions[capability][providerId]` in `.kanban.json`. When that provider is selected later, the cached options are restored into the canonical `plugins[capability]` entry automatically.
 
 The shared plugin-settings loader resolves provider metadata before transport. `optionsSchema()` may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside `schema` / `uiSchema` fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.
 
@@ -157,19 +155,17 @@ JSON Schema `default` values are also applied when the shared settings editor op
 
 When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into `plugins[capability].options`. For example, selecting `auth.policy: rbac` or `auth.policy: kl-plugin-auth` writes the default permission rows derived from the shipped `RBAC_ROLE_MATRIX` instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.
 
-The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the shared `module` / `handler` fields, the CodeMirror-backed inline `source` field, and the process `command` / `args` / `cwd` fields.
+The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the CodeMirror-backed inline `source` field and the process `command` / `args` / `cwd` fields.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
 ### Redacted read/list behavior
 
-Plugin settings read/list flows are safe to surface to authorized callers because redaction happens in the SDK contract, not only in the UI.
+Plugin settings read/list flows are safe to surface directly because redaction happens in the SDK contract, not only in the UI.
 
 - Inventory/list responses expose capability rows, selected-provider state, package names, discovery sources, and optional schema metadata.
 - Provider read/update responses use the shared redacted read model.
 - Persisted secrets are never re-read in plain text.
-- `plugin-settings.read` authorizes inventory/list/detail reads before any inventory or provider payload is materialized.
-- `plugin-settings.update` authorizes selected-provider changes, option updates, and guarded installs.
 
 Secret fields declared through `optionsSchema().secrets` reopen as masked write-only placeholders (`••••••`). The public behavior is:
 
@@ -178,9 +174,7 @@ Secret fields declared through `optionsSchema().secrets` reopen as masked write-
 - entering a new value replaces the stored secret,
 - and surfaced errors reuse the same redaction policy instead of echoing raw option payloads.
 
-The settings panel hosts, standalone websocket bridge, REST routes, CLI commands, and MCP tools reuse those same SDK checks. MCP currently exposes `plugin-settings.read` through `list_plugin_settings`, while its mutation tools use `plugin-settings.update`.
-
-This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely. Redaction does not replace authorization; it only limits what an allowed caller can see.
+This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely.
 
 ---
 
@@ -243,31 +237,28 @@ Important config nuance: unlike storage capabilities, webhook delivery is curren
 
 This capability owns same-runtime callback automation for committed SDK after-events.
 
-Provider ids:
+Provider id:
 
-- `callbacks` via `kl-plugin-callback`
-- `cloudflare` via `kl-plugin-cloudflare`
+- `callbacks`
+
+External package:
+
+- `kl-plugin-callback`
 
 Behavior:
 
 - is selected through the shared plugin-settings path at `plugins["callback.runtime"]`,
-- uses `provider: "callbacks"` for the Node same-runtime path or `provider: "cloudflare"` for the Cloudflare queue-backed module-runtime path,
 - persists one ordered mixed `plugins["callback.runtime"].options.handlers` array,
-- supports canonical `module` rows that store a Worker-safe module specifier plus named export inside that same shared array,
-- currently preserves legacy Node `inline` rows evaluated with `new Function` and invoked as `({ event, sdk, callback })`,
-- currently preserves legacy Node `process` rows that receive one serialized `{ event, callback }` JSON payload on stdin only,
+- supports `inline` rows evaluated with `new Function` and invoked as `({ event, sdk })`,
+- supports `process` rows that receive one serialized `{ event }` JSON payload on stdin only,
 - logs per-handler failures and continues later matching handlers.
 
 Trust model:
 
-- module rows are the shared cross-host callback contract so later Node and Worker runtimes can resolve the same saved `module` + `handler` pair without host-specific config branches,
-- the Node `callbacks` provider remains the same-runtime path for mixed `module` / `inline` / `process` arrays,
-- Cloudflare deploy/runtime tooling now statically bundles configured module rows through the Worker `KANBAN_MODULES` registry, validates that each named export exists before publish, persists one durable event record per committed event, and drives at-least-once queue delivery with compact `{ version, kind, eventId }` envelopes only when `plugins["callback.runtime"].provider === "cloudflare"`,
-- callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to the deploy helper so it can emit the Queue consumer stanza, and the committed/generated Wrangler configs carry `compatibility_flags = ["nodejs_compat"]` alongside the compatibility date,
-- inline handlers are trusted same-runtime JavaScript, not sandboxed, run with host process privileges, and remain Node-only legacy mode,
-- process handlers are ordinary subprocesses, not sandboxed, do not receive a live SDK object or other in-memory runtime handles, and remain Node-only legacy mode.
+- inline handlers are trusted same-runtime JavaScript, not sandboxed, and run with host process privileges,
+- process handlers are ordinary subprocesses, not sandboxed, and do not receive a live SDK object or other in-memory runtime handles.
 
-Inline source authoring stays inside the shared plugin-settings workflow, module/process fields remain in that same explicit JSON Forms layout, and inline JavaScript still uses the embedded CodeMirror editor rather than a plain multiline text field.
+Inline source authoring stays inside the shared plugin-settings workflow, but now uses the embedded CodeMirror JavaScript editor rather than a plain multiline text field.
 
 ---
 
@@ -303,34 +294,9 @@ External package:
 
 The built-in `rbac` policy denies `null` identity with `auth.identity.missing`, denies uncovered actions with `auth.policy.denied`, and returns the resolved caller subject as `actor` on allow.
 
-Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed auth actions for that role. The picker starts from the SDK before-event catalog and supplements it with `plugin-settings.read` and `plugin-settings.update`. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
+Both `local` and `rbac` policy providers now support an editable `options.permissions` array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the `auth.identity` role catalog via `permissions[].role` and lists the allowed before-events for that role. Existing legacy `options.matrix` role maps are still honored at runtime for backward compatibility.
 
-### `auth.visibility`
-
-This capability filters the visible subset of an already-loaded card set.
-
-Compatibility/default provider id:
-
-- `none` (default) — disabled; card reads remain unfiltered.
-
-External package:
-
-- `kl-plugin-auth-visibility`
-
-Behavior:
-
-- is selected through the shared plugin-settings path at `plugins["auth.visibility"]`,
-- consumes the SDK-resolved identity and normalized role list; it does **not** resolve tokens, sessions, or roles itself,
-- matches rules by roles only,
-- unions cards granted by multiple matching rules,
-- applies **AND** semantics across different fields and **OR** semantics within one field,
-- supports `@me` for assignee matching,
-- returns no visible cards when the caller matches no rules,
-- gives no implicit admin/manager bypass.
-
-The canonical runtime seam lives in `src/sdk/modules/cards.ts`, where the SDK filters list/get flows before host surfaces consume them. Hidden cards therefore behave as ordinary not-found or no-match results in REST, CLI, MCP, and UI flows that already resolve cards through the SDK.
-
-> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters, plus direct SDK checks for `plugin-settings.read` / `plugin-settings.update` on the shared plugin-settings workflows. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
+> **Note:** Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped `noop` / `rbac` / `local` ids resolve through `kl-plugin-auth` when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the `local` provider's `/auth/login` flow) without a separate config namespace.
 
 ---
 
@@ -339,6 +305,8 @@ The canonical runtime seam lives in `src/sdk/modules/cards.ts`, where the SDK fi
 The canonical config lives in `.kanban.json`.
 
 For plugin settings flows, the canonical persistence model is one selected provider per capability under `plugins[capability]`. That same config entry may also carry the selected provider's persisted `options` payload.
+
+Inactive providers may also have cached options stored separately under `pluginOptions[capability][providerId]` so hosts can reopen and save schema-driven forms without changing the selected provider.
 
 Example:
 
@@ -359,13 +327,18 @@ Example:
         ]
       }
     }
+  },
+  "pluginOptions": {
+    "auth.identity": {
+      "rbac": {
+        "roles": ["operator", "reviewer", "admin"]
+      }
+    }
   }
 }
 ```
 
 The plugin-settings model does not add a second `enabled` boolean. Switching providers means changing the selected provider reference for that capability.
-
-`auth.visibility` uses the same explicit disabled form, and runtime normalization resolves the capability to `{ provider: "none" }` when it is omitted so existing workspaces do not start filtering cards accidentally.
 
 For `webhook.delivery`, plugin settings also support an explicit disabled state by persisting:
 

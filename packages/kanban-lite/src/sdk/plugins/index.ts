@@ -1438,7 +1438,7 @@ function collectNodeModulePackageRequests(nodeModulesDir: string): string[] {
 
   const requests = new Set<string>()
   for (const entry of fs.readdirSync(nodeModulesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
 
     if (entry.name.startsWith('@')) {
       const scopeDir = path.join(nodeModulesDir, entry.name)
@@ -2339,18 +2339,35 @@ export async function persistPluginSettingsProviderOptions(
       provider: normalizedProviderId,
       options: persistedOptions,
     }
+    pruneRedundantDerivedStorageConfig(config)
+    writePluginSettingsConfigDocument(workspaceRoot, config)
+
+    const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
+    if (nextProvider) return nextProvider
+
+    throw new PluginSettingsStoreError(
+      'plugin-settings-provider-not-found',
+      'The requested plugin provider is not available for this capability.',
+      { capability, providerId: normalizedProviderId },
+    )
   }
+
+  // Inactive provider: return the options from this request without persisting to config.
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
-  if (nextProvider) return nextProvider
+  const selected = getCapabilitySelectedState(config, capability, sdk)
+  const inactiveOptions = createRedactedProviderOptions(persistedOptions, provider.optionsSchema, redaction)
 
-  throw new PluginSettingsStoreError(
-    'plugin-settings-provider-not-found',
-    'The requested plugin provider is not available for this capability.',
-    { capability, providerId: normalizedProviderId },
-  )
+  return {
+    capability,
+    providerId: normalizedProviderId,
+    packageName: provider.packageName,
+    discoverySource: provider.discoverySource,
+    ...(provider.optionsSchema ? { optionsSchema: provider.optionsSchema } : {}),
+    selected,
+    options: inactiveOptions,
+  }
 }
 
 function isValidAuthIdentityPlugin(plugin: unknown, providerId: string): plugin is AuthIdentityPlugin {

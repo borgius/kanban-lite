@@ -1,24 +1,9 @@
 import * as childProcess from 'node:child_process'
+import * as fs from 'node:fs'
+import { createRequire } from 'node:module'
 import * as path from 'node:path'
-import {
-  assertCallableCallbackModuleExport,
-  buildCallbackExecutionPlan,
-  buildCallbackHandlerRevisionInput,
-  CALLBACK_HANDLER_TYPES,
-  createDurableCallbackDispatchMetadata,
-  createDurableCallbackHandlerClaims,
-  createDurableCallbackHandlerRevision,
-  getDurableCallbackDispatchMetadata,
-  normalizeCallbackHandlers,
-  readConfig,
-  resolveCallbackModuleTarget,
-  resolveCallbackRuntimeModule,
-} from 'kanban-lite/sdk'
 import type {
   AfterEventPayload,
-  CallbackHandlerConfig,
-  DurableCallbackDispatchMetadata,
-  DurableCallbackHandlerClaims,
   EventBus,
   KanbanSDK,
   PluginSettingsOptionsSchemaMetadata,
@@ -26,17 +11,44 @@ import type {
 } from 'kanban-lite/sdk'
 
 export type {
-  CallbackHandlerConfig,
-  CallbackHandlerType,
-  CallbackPluginOptions,
   KanbanSDK,
   PluginSettingsOptionsSchemaMetadata,
   SDKEventListenerPlugin,
 } from 'kanban-lite/sdk'
 
+export type CallbackHandlerType = 'inline' | 'module' | 'process'
+
+export interface CallbackHandlerConfig {
+  /** Optional stable identifier for idempotency tracking in module handler callbacks. */
+  readonly id?: string
+  /** Human-friendly row label shown in shared plugin settings surfaces. */
+  readonly name: string
+  /** Whether the handler runs inline, loads a module file, or spawns a subprocess. */
+  readonly type: CallbackHandlerType
+  /** One or more committed after-events that should trigger this handler. */
+  readonly events: readonly string[]
+  /** Disable a handler without removing its configuration. */
+  readonly enabled: boolean
+  /** Inline JavaScript source used when `type === "inline"`. */
+  readonly source?: string
+  /** Relative or absolute path to a CommonJS or ESM module used when `type === "module"`. */
+  readonly module?: string
+  /** Named export from the module to invoke. Defaults to `"default"` when omitted. */
+  readonly handler?: string
+  /** Executable launched when `type === "process"`. */
+  readonly command?: string
+  /** Optional argv passed to the subprocess. */
+  readonly args?: readonly string[]
+  /** Optional working directory for subprocess execution. */
+  readonly cwd?: string
+}
+
+export interface CallbackPluginOptions {
+  readonly handlers?: readonly CallbackHandlerConfig[]
+}
+
 export interface CallbackProcessEnvelope {
   readonly event: AfterEventPayload<unknown>
-  readonly callback: DurableCallbackHandlerClaims
 }
 
 export interface CallbackRuntimeContext {
@@ -44,18 +56,25 @@ export interface CallbackRuntimeContext {
   readonly sdk: KanbanSDK
 }
 
-interface CallbackHandlerExecutableInput {
-  readonly event: AfterEventPayload<unknown>
-  readonly sdk: KanbanSDK
-  readonly callback: DurableCallbackHandlerClaims
+interface PersistedCallbackPluginConfig {
+  readonly provider?: string
+  readonly options?: CallbackPluginOptions
 }
 
-type CallbackHandlerExecutable = (input: CallbackHandlerExecutableInput) => unknown
+interface PersistedCallbackPlugins {
+  readonly 'callback.runtime'?: PersistedCallbackPluginConfig
+}
+
+interface PersistedCallbackConfig {
+  readonly plugins?: PersistedCallbackPlugins
+}
 
 type CallbackPluginOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSettingsOptionsSchemaMetadata
 
 const CALLBACK_PROVIDER_ID = 'callbacks'
 const CALLBACK_PACKAGE_ID = 'kl-plugin-callback'
+const CALLBACK_HANDLER_TYPES = ['module', 'inline', 'process'] as const
+const CONFIG_FILENAME = '.kanban.json'
 
 const SDK_AFTER_EVENT_NAMES = [
   'task.created',
@@ -94,6 +113,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function isCallbackHandlerType(value: unknown): value is CallbackHandlerType {
+  return value === 'inline' || value === 'module' || value === 'process'
+}
+
 function isAfterEventPayload(value: unknown): value is AfterEventPayload<unknown> {
   return isRecord(value)
     && isNonEmptyString(value.event)
@@ -109,41 +132,94 @@ function logCallbackFailure(handlerName: string, eventName: string, error: unkno
   )
 }
 
-function buildCallbackHandlerClaims(
-  dispatch: DurableCallbackDispatchMetadata,
-  handler: CallbackHandlerConfig,
-): DurableCallbackHandlerClaims {
-  return createDurableCallbackHandlerClaims(
-    dispatch,
-    handler.id,
-    createDurableCallbackHandlerRevision(buildCallbackHandlerRevisionInput(handler)),
-  )
+function parseCallbackConfig(workspaceRoot: string): PersistedCallbackConfig {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(workspaceRoot, CONFIG_FILENAME), 'utf-8')) as PersistedCallbackConfig
+  } catch {
+    return {}
+  }
 }
 
-function resolveDurableCallbackDispatchMetadata(
-  event: AfterEventPayload<unknown>,
-): DurableCallbackDispatchMetadata {
-  return getDurableCallbackDispatchMetadata(event.meta) ?? createDurableCallbackDispatchMetadata()
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => isNonEmptyString(entry)).map((entry) => entry.trim())
+}
+
+function normalizeCallbackHandler(raw: unknown, index: number): CallbackHandlerConfig | null {
+  if (!isRecord(raw)) {
+    console.error(`[kl-plugin-callback] ignoring invalid handler at index ${index}`)
+    return null
+  }
+
+  const name = isNonEmptyString(raw.name) ? raw.name.trim() : ''
+  const type = raw.type
+  const events = normalizeStringArray(raw.events)
+  const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true
+  if (!name || !isCallbackHandlerType(type) || events.length === 0) {
+    console.error(`[kl-plugin-callback] ignoring invalid handler at index ${index}`)
+    return null
+  }
+
+  const normalized: CallbackHandlerConfig = {
+    name,
+    type,
+    events,
+    enabled,
+    ...(isNonEmptyString(raw.id) ? { id: raw.id } : {}),
+    ...(isNonEmptyString(raw.source) ? { source: raw.source } : {}),
+    ...(isNonEmptyString(raw.module) ? { module: raw.module } : {}),
+    ...(isNonEmptyString(raw.handler) ? { handler: raw.handler } : {}),
+    ...(isNonEmptyString(raw.command) ? { command: raw.command } : {}),
+    ...(Array.isArray(raw.args) ? { args: normalizeStringArray(raw.args) } : {}),
+    ...(isNonEmptyString(raw.cwd) ? { cwd: raw.cwd } : {}),
+  }
+
+  return normalized
 }
 
 function readCallbackHandlers(workspaceRoot: string): CallbackHandlerConfig[] {
-  try {
-    const config = readConfig(workspaceRoot)
-    const callbackRuntime = config.plugins?.['callback.runtime']
-    const options = isRecord(callbackRuntime?.options) ? callbackRuntime.options : null
-    return normalizeCallbackHandlers(options?.handlers, {
-      onError(message) {
-        console.error(`[kl-plugin-callback] ${message}`)
-      },
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(
-      '[kl-plugin-callback] failed to load callback handlers from shared config repository',
-      message,
-    )
-    return []
+  const pluginConfig = parseCallbackConfig(workspaceRoot).plugins?.['callback.runtime']
+  const handlers = pluginConfig?.options?.handlers
+  if (!Array.isArray(handlers)) return []
+
+  return handlers
+    .map((handler, index) => normalizeCallbackHandler(handler, index))
+    .filter((handler): handler is CallbackHandlerConfig => handler !== null)
+}
+
+function matchesEventPattern(pattern: string, eventName: string): boolean {
+  const candidate = pattern.trim()
+  if (!candidate) return false
+  if (candidate === '*' || candidate === '**') return true
+
+  const patternSegments = candidate.split('.')
+  const eventSegments = eventName.split('.')
+
+  const matchSegments = (patternIndex: number, eventIndex: number): boolean => {
+    while (patternIndex < patternSegments.length) {
+      const segment = patternSegments[patternIndex]
+      if (segment === '**') {
+        if (patternIndex === patternSegments.length - 1) return true
+        for (let nextEventIndex = eventIndex; nextEventIndex <= eventSegments.length; nextEventIndex += 1) {
+          if (matchSegments(patternIndex + 1, nextEventIndex)) return true
+        }
+        return false
+      }
+
+      if (eventIndex >= eventSegments.length) return false
+      if (segment !== '*' && segment !== eventSegments[eventIndex]) return false
+      patternIndex += 1
+      eventIndex += 1
+    }
+
+    return eventIndex === eventSegments.length
   }
+
+  return matchSegments(0, 0)
+}
+
+function matchesHandlerEvent(handler: CallbackHandlerConfig, eventName: string): boolean {
+  return handler.enabled && handler.events.some((pattern) => matchesEventPattern(pattern, eventName))
 }
 
 function resolveHandlerCwd(workspaceRoot: string, cwd?: string): string {
@@ -151,21 +227,18 @@ function resolveHandlerCwd(workspaceRoot: string, cwd?: string): string {
   return path.isAbsolute(cwd) ? cwd : path.resolve(workspaceRoot, cwd)
 }
 
-function compileInlineHandler(
-  source: string,
-): CallbackHandlerExecutable {
+function compileInlineHandler(source: string): (input: { event: AfterEventPayload<unknown>; sdk: KanbanSDK }) => unknown {
   const compiled = new Function(`return (${source})`)() as unknown
   if (typeof compiled !== 'function') {
     throw new Error('Inline handler source must evaluate to a function.')
   }
-  return compiled as CallbackHandlerExecutable
+  return compiled as (input: { event: AfterEventPayload<unknown>; sdk: KanbanSDK }) => unknown
 }
 
 async function executeInlineHandler(
   handler: CallbackHandlerConfig,
   event: AfterEventPayload<unknown>,
   sdk: KanbanSDK | null,
-  callback: DurableCallbackHandlerClaims,
 ): Promise<void> {
   if (!isNonEmptyString(handler.source)) {
     throw new Error('Inline handlers require a non-empty source string.')
@@ -175,7 +248,7 @@ async function executeInlineHandler(
   }
 
   const executable = compileInlineHandler(handler.source)
-  await executable({ event, sdk, callback })
+  await executable({ event, sdk })
 }
 
 async function executeModuleHandler(
@@ -183,54 +256,46 @@ async function executeModuleHandler(
   event: AfterEventPayload<unknown>,
   workspaceRoot: string,
   sdk: KanbanSDK | null,
-  callback: DurableCallbackHandlerClaims,
 ): Promise<void> {
-  const moduleSpecifier = handler.module ?? ''
-  const exportName = handler.handler?.trim() ?? ''
-
-  if (!exportName) {
-    throw new Error('Module handlers require a non-empty named export.')
+  if (!isNonEmptyString(handler.module)) {
+    throw new Error('Module handlers require a non-empty module path.')
   }
   if (!sdk) {
     throw new Error('Module handlers require an attached SDK runtime context.')
   }
 
-  const moduleTarget = resolveCallbackModuleTarget(moduleSpecifier, { workspaceRoot })
+  const modulePath = path.isAbsolute(handler.module)
+    ? handler.module
+    : path.resolve(workspaceRoot, handler.module)
 
-  let loadedModule: unknown
-  try {
-    loadedModule = resolveCallbackRuntimeModule(moduleTarget.runtimeSpecifier)
-  } catch (error) {
-    if (moduleTarget.runtimeSpecifier !== moduleTarget.configuredSpecifier) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new Error(
-        `Configured callback.runtime module '${moduleTarget.configuredSpecifier}' could not be loaded from '${moduleTarget.runtimeSpecifier}'. ${message}`,
-      )
-    }
-    throw error
+  const moduleRequire = createRequire(modulePath)
+  const loaded = moduleRequire(modulePath) as Record<string, unknown>
+  const exportName = isNonEmptyString(handler.handler) ? handler.handler : 'default'
+  const fn = loaded[exportName]
+
+  if (typeof fn !== 'function') {
+    throw new Error(`Module handler export "${exportName}" is not a function in ${modulePath}`)
   }
 
-  const executable = assertCallableCallbackModuleExport<CallbackHandlerExecutable>(
-    loadedModule,
-    moduleTarget.configuredSpecifier,
-    exportName,
-    { allowBareFunctionDefault: true },
-  )
-  await executable({ event, sdk, callback })
+  const callback = {
+    handlerId: isNonEmptyString(handler.id) ? handler.id : handler.name,
+    eventId: event.timestamp,
+  }
+
+  await (fn as (input: { event: AfterEventPayload<unknown>; sdk: KanbanSDK; callback: typeof callback }) => unknown)({ event, sdk, callback })
 }
 
 async function executeProcessHandler(
   handler: CallbackHandlerConfig,
   event: AfterEventPayload<unknown>,
   workspaceRoot: string,
-  callback: DurableCallbackHandlerClaims,
 ): Promise<void> {
   const command = handler.command
   if (!isNonEmptyString(command)) {
     throw new Error('Process handlers require a non-empty command.')
   }
 
-  const envelope: CallbackProcessEnvelope = { event, callback }
+  const envelope: CallbackProcessEnvelope = { event }
   const payload = JSON.stringify(envelope)
 
   await new Promise<void>((resolve, reject) => {
@@ -289,22 +354,17 @@ async function runMatchingHandlers(input: {
   sdk: KanbanSDK | null
   event: AfterEventPayload<unknown>
 }): Promise<void> {
-  const dispatch = resolveDurableCallbackDispatchMetadata(input.event)
-  const handlers = buildCallbackExecutionPlan(
-    readCallbackHandlers(input.workspaceRoot),
-    input.event.event,
-  )
+  const handlers = readCallbackHandlers(input.workspaceRoot)
+    .filter((handler) => matchesHandlerEvent(handler, input.event.event))
 
   for (const handler of handlers) {
-    const callback = buildCallbackHandlerClaims(dispatch, handler)
-
     try {
-      if (handler.type === 'module') {
-        await executeModuleHandler(handler, input.event, input.workspaceRoot, input.sdk, callback)
-      } else if (handler.type === 'inline') {
-        await executeInlineHandler(handler, input.event, input.sdk, callback)
+      if (handler.type === 'inline') {
+        await executeInlineHandler(handler, input.event, input.sdk)
+      } else if (handler.type === 'module') {
+        await executeModuleHandler(handler, input.event, input.workspaceRoot, input.sdk)
       } else {
-        await executeProcessHandler(handler, input.event, input.workspaceRoot, callback)
+        await executeProcessHandler(handler, input.event, input.workspaceRoot)
       }
     } catch (error) {
       logCallbackFailure(handler.name, input.event.event, error)
@@ -336,7 +396,7 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
     schema: {
       type: 'object',
       title: 'Callback runtime options',
-      description: 'Configure ordered callback handlers for committed Kanban after-events. Module handlers are the shared Worker-safe Node/Cloudflare contract; inline JavaScript and process handlers remain legacy Node-focused modes inside the same handlers list.',
+      description: 'Configure ordered callback handlers for committed Kanban after-events. Inline JavaScript authoring uses the shared CodeMirror-backed editor inside plugin settings instead of a separate callback-specific surface.',
       additionalProperties: false,
       properties: {
         handlers: {
@@ -347,13 +407,13 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'name', 'type', 'events', 'enabled'],
+            required: ['name', 'type', 'events', 'enabled'],
             properties: {
               id: {
                 type: 'string',
                 title: 'ID',
                 minLength: 1,
-                description: 'Stable handler identifier used for durable event-plus-handler claims. Keep this unchanged after creation so later retries remain deterministic.',
+                description: 'Optional stable identifier used as handlerId in module handler callbacks for idempotency tracking.',
               },
               name: {
                 type: 'string',
@@ -383,30 +443,28 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                 title: 'Enabled',
                 description: 'Disable this handler without deleting its saved configuration.',
                 default: true,
-              },
-              module: {
+              },              module: {
                 type: 'string',
                 title: 'Module specifier',
                 minLength: 1,
-                description: 'Worker-safe shared callback module specifier. Node callbacks and Cloudflare deploy/runtime resolve the same saved module path instead of using host-specific callback dialects.',
+                description: 'Worker-safe shared callback module specifier. Node and Cloudflare runtimes resolve the same saved module path.',
               },
               handler: {
                 type: 'string',
                 title: 'Named export',
                 minLength: 1,
                 description: 'Named export invoked from the configured module when type is module.',
-              },
-              source: {
+              },              source: {
                 type: 'string',
                 title: 'Inline JavaScript',
                 minLength: 1,
-                description: 'Trusted same-runtime JavaScript used for legacy Node inline handlers. The runtime invokes it with exactly one argument shaped as ({ event, sdk, callback }).',
+                description: 'Trusted same-runtime JavaScript used for inline handlers. The runtime invokes it with exactly one argument shaped as ({ event, sdk }).',
               },
               command: {
                 type: 'string',
                 title: 'Command',
                 minLength: 1,
-                description: 'Executable launched for legacy Node process handlers. The runtime writes one serialized JSON payload containing both event data and durable callback claims to stdin only.',
+                description: 'Executable launched for process handlers. The runtime writes one serialized JSON payload to stdin only.',
               },
               args: {
                 type: 'array',
@@ -430,21 +488,21 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
               {
                 if: {
                   properties: {
-                    type: { const: 'module' },
-                  },
-                },
-                then: {
-                  required: ['module', 'handler'],
-                },
-              },
-              {
-                if: {
-                  properties: {
                     type: { const: 'inline' },
                   },
                 },
                 then: {
                   required: ['source'],
+                },
+              },
+              {
+                if: {
+                  properties: {
+                    type: { const: 'module' },
+                  },
+                },
+                then: {
+                  required: ['module'],
                 },
               },
               {
@@ -481,14 +539,6 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                   elements: [
                     {
                       type: 'Control',
-                      scope: '#/properties/id',
-                      label: 'ID',
-                      options: {
-                        placeholder: 'task-created-inline',
-                      },
-                    },
-                    {
-                      type: 'Control',
                       scope: '#/properties/name',
                       label: 'Name',
                       options: {
@@ -512,15 +562,41 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                     },
                     {
                       type: 'Control',
+                      scope: '#/properties/id',
+                      label: 'ID',
+                      options: {
+                        placeholder: 'my-handler-id',
+                      },
+                    },
+                    {
+                      type: 'Control',
                       scope: '#/properties/events',
                       label: 'Events',
                     },
                     {
                       type: 'Control',
-                      scope: '#/properties/module',
-                      label: 'Module specifier',
+                      scope: '#/properties/source',
+                      label: 'Inline JavaScript',
                       options: {
-                        placeholder: './callbacks/task-created',
+                        editor: 'code',
+                        language: 'javascript',
+                        height: '220px',
+                        placeholder: 'async ({ event, sdk }) => {\n  console.log(event.event)\n}',
+                      },
+                      rule: {
+                        effect: 'SHOW',
+                        condition: {
+                          scope: '#/properties/type',
+                          schema: { const: 'inline' },
+                        },
+                      },
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/module',
+                      label: 'Module path',
+                      options: {
+                        placeholder: './handlers/on-task-created.cjs',
                       },
                       rule: {
                         effect: 'SHOW',
@@ -533,33 +609,15 @@ function createCallbackOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                     {
                       type: 'Control',
                       scope: '#/properties/handler',
-                      label: 'Named export',
+                      label: 'Handler export',
                       options: {
-                        placeholder: 'onTaskCreated',
+                        placeholder: 'default',
                       },
                       rule: {
                         effect: 'SHOW',
                         condition: {
                           scope: '#/properties/type',
                           schema: { const: 'module' },
-                        },
-                      },
-                    },
-                    {
-                      type: 'Control',
-                      scope: '#/properties/source',
-                      label: 'Inline JavaScript',
-                      options: {
-                        editor: 'code',
-                        language: 'javascript',
-                        height: '220px',
-                        placeholder: 'async ({ event, sdk, callback }) => {\n  console.log(callback.handlerId, event.event)\n}',
-                      },
-                      rule: {
-                        effect: 'SHOW',
-                        condition: {
-                          scope: '#/properties/type',
-                          schema: { const: 'inline' },
                         },
                       },
                     },

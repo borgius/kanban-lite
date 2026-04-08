@@ -109,12 +109,27 @@ interface LocalAuthSession {
   expiresAt: number
 }
 
+interface MobileAuthSession {
+  username: string
+  roles: string[]
+  workspaceOrigin: string
+  expiresAt: number | null
+}
+
 type AuthConfigSnapshot = Pick<KanbanConfig, 'auth' | 'plugins'>
 
 const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const AUTH_SESSIONS_FILE = '.auth-sessions.json'
+const MOBILE_SESSIONS_FILE = '.mobile-sessions.json'
+const MOBILE_BOOTSTRAP_FILE = '.mobile-bootstrap-tokens.json'
+const MOBILE_AUTH_CONTRACT = Object.freeze({
+  provider: 'local',
+  browserLoginTransport: 'cookie-session',
+  mobileSessionTransport: 'opaque-bearer',
+  sessionKind: 'local-mobile-session-v1',
+})
 const DEFAULT_LOCAL_AUTH_ROLES = ['user', 'manager', 'admin'] as const
 const AUTH_PLUGIN_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
   maskedValue: '••••••',
@@ -735,6 +750,23 @@ async function parseLoginBody(req: import('node:http').IncomingMessage & { _rawB
 
 const LOCAL_AUTH_PROVIDER_IDS = new Set(['local', 'kl-plugin-auth'])
 
+function buildMobileWorkspaceId(workspaceRoot: string): string {
+  const normalized = path.resolve(workspaceRoot).replace(/\\/g, '/')
+  const portable = process.platform === 'win32' ? normalized.toLowerCase() : normalized
+  return 'workspace_' + crypto.createHash('sha256').update(portable).digest('hex').slice(0, 12)
+}
+
+function normalizeMobileWorkspaceOrigin(value: string): string | null {
+  try { return new URL(value.trim()).origin } catch { return null }
+}
+
+function getMobileBearerToken(req: import('node:http').IncomingMessage): string | null {
+  const auth = req.headers.authorization
+  if (typeof auth !== 'string') return null
+  const m = auth.match(/^[Bb]earer\s+(.+)$/)
+  return m ? m[1].trim() : null
+}
+
 function isLocalAuthEnabled(options: StandaloneHttpPluginRegistrationOptions): boolean {
   const authCapabilities = resolveAuthCapabilities(options)
   return LOCAL_AUTH_PROVIDER_IDS.has(authCapabilities['auth.identity'].provider)
@@ -747,6 +779,27 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
   const users = getLocalUsers(options)
   const sessionFilePath = path.join(options.kanbanDir, AUTH_SESSIONS_FILE)
   const sessionStore = loadSessionsFromFile(sessionFilePath)
+
+  // Mobile session store (separate from browser sessions)
+  const mobileSessionFilePath = path.join(options.kanbanDir, MOBILE_SESSIONS_FILE)
+  const mobileSessionStore = new Map<string, MobileAuthSession>()
+  try {
+    if (fs.existsSync(mobileSessionFilePath)) {
+      const raw = JSON.parse(fs.readFileSync(mobileSessionFilePath, 'utf-8')) as Record<string, MobileAuthSession>
+      for (const [token, session] of Object.entries(raw)) {
+        if (session && typeof session.username === 'string') mobileSessionStore.set(token, session)
+      }
+    }
+  } catch { /* ignore corrupt file */ }
+
+  function persistMobileSessions(): void {
+    try {
+      const data: Record<string, MobileAuthSession> = {}
+      for (const [token, session] of mobileSessionStore) data[token] = session
+      fs.writeFileSync(mobileSessionFilePath, JSON.stringify(data, null, 2), 'utf-8')
+    } catch { /* best-effort */ }
+  }
+
   const identityOptions = authCapabilities['auth.identity'].options
   const explicitApiToken =
     typeof identityOptions?.apiToken === 'string' && identityOptions.apiToken.length > 0
@@ -816,7 +869,9 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       if (!localAuthEnabled) return []
       return [
         async (request: StandaloneHttpRequestContext) => {
-          const isPublicAuthRoute = request.pathname === '/auth/login' || request.pathname === '/auth/logout'
+          const isPublicAuthRoute = request.pathname === '/auth/login'
+            || request.pathname === '/auth/logout'
+            || request.pathname.startsWith('/api/mobile/')
           const identity = applyRequestIdentity(request)
           if (identity || isPublicAuthRoute) return false
 
@@ -888,6 +943,138 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
           redirect(request.res, '/auth/login')
           return true
         },
+        async (request: StandaloneHttpRequestContext) => {
+          if (!request.route('POST', '/api/mobile/session')) return false
+          const rawBody = (request.req as import('node:http').IncomingMessage & { _rawBody?: Buffer })._rawBody?.toString('utf-8') ?? '{}'
+          const body = (() => { try { return JSON.parse(rawBody) as Record<string, unknown> } catch { return {} } })()
+          const rawOrigin = typeof body.workspaceOrigin === 'string' ? body.workspaceOrigin : ''
+          const workspaceOrigin = normalizeMobileWorkspaceOrigin(rawOrigin)
+          if (!workspaceOrigin) {
+            sendJson(request.res, 400, { ok: false, error: 'workspaceOrigin is required' })
+            return true
+          }
+          const bootstrapToken = typeof body.bootstrapToken === 'string' ? body.bootstrapToken.trim() : ''
+          if (bootstrapToken) {
+            const bootstrapFilePath = path.join(options.kanbanDir, MOBILE_BOOTSTRAP_FILE)
+            let grants: Record<string, { username: string; workspaceOrigin: string; expiresAt: number }> = {}
+            try {
+              if (fs.existsSync(bootstrapFilePath)) {
+                grants = JSON.parse(fs.readFileSync(bootstrapFilePath, 'utf-8')) as typeof grants
+              }
+            } catch { /* ignore */ }
+            const grant = grants[bootstrapToken]
+            if (!grant || grant.expiresAt < Date.now()) {
+              sendJson(request.res, 401, { ok: false, error: 'ERR_MOBILE_AUTH_LINK_INVALID' })
+              return true
+            }
+            const grantOrigin = normalizeMobileWorkspaceOrigin(grant.workspaceOrigin)
+            if (grantOrigin !== workspaceOrigin) {
+              sendJson(request.res, 403, { ok: false, error: 'Bootstrap token is not valid for the requested workspace.' })
+              return true
+            }
+            delete grants[bootstrapToken]
+            try { fs.writeFileSync(bootstrapFilePath, JSON.stringify(grants, null, 2), 'utf-8') } catch { /* ignore */ }
+            const user = users.find((u) => u.username === grant.username)
+            const roles = user?.role ? [user.role] : []
+            const token = crypto.randomBytes(48).toString('hex')
+            mobileSessionStore.set(token, { username: grant.username, roles, workspaceOrigin, expiresAt: null })
+            persistMobileSessions()
+            sendJson(request.res, 200, {
+              ok: true,
+              data: {
+                session: { kind: 'local-mobile-session-v1', token },
+                status: {
+                  workspaceOrigin,
+                  workspaceId: buildMobileWorkspaceId(options.workspaceRoot),
+                  subject: grant.username,
+                  roles,
+                  expiresAt: null,
+                  authentication: { ...MOBILE_AUTH_CONTRACT },
+                },
+              },
+            })
+            return true
+          }
+          const username = typeof body.username === 'string' ? body.username.trim() : ''
+          const password = typeof body.password === 'string' ? body.password : ''
+          if (!username || !password) {
+            sendJson(request.res, 400, { ok: false, error: 'username and password are required' })
+            return true
+          }
+          const user = users.find((u) => u.username === username)
+          const valid = user ? await compare(password, user.password) : false
+          if (!valid) {
+            sendJson(request.res, 401, { ok: false, error: 'Invalid credentials.' })
+            return true
+          }
+          const roles = user?.role ? [user.role] : []
+          const token = crypto.randomBytes(48).toString('hex')
+          mobileSessionStore.set(token, { username, roles, workspaceOrigin, expiresAt: null })
+          persistMobileSessions()
+          sendJson(request.res, 200, {
+            ok: true,
+            data: {
+              session: { kind: 'local-mobile-session-v1', token },
+              status: {
+                workspaceOrigin,
+                workspaceId: buildMobileWorkspaceId(options.workspaceRoot),
+                subject: username,
+                roles,
+                expiresAt: null,
+                authentication: { ...MOBILE_AUTH_CONTRACT },
+              },
+            },
+          })
+          return true
+        },
+        async (request: StandaloneHttpRequestContext) => {
+          if (!request.route('GET', '/api/mobile/session')) return false
+          const bearerToken = getMobileBearerToken(request.req)
+          if (!bearerToken) {
+            sendJson(request.res, 401, { ok: false, error: 'Authentication required' })
+            return true
+          }
+          const session = mobileSessionStore.get(bearerToken)
+          if (!session || (session.expiresAt !== null && session.expiresAt < Date.now())) {
+            if (session) { mobileSessionStore.delete(bearerToken); persistMobileSessions() }
+            sendJson(request.res, 401, { ok: false, error: 'Authentication required' })
+            return true
+          }
+          const rawOrigin = request.url.searchParams.get('workspaceOrigin') ?? ''
+          const requestedOrigin = normalizeMobileWorkspaceOrigin(rawOrigin)
+          if (!requestedOrigin) {
+            sendJson(request.res, 400, { ok: false, error: 'workspaceOrigin query parameter is required' })
+            return true
+          }
+          if (requestedOrigin !== session.workspaceOrigin) {
+            sendJson(request.res, 403, { ok: false, error: 'Mobile session is not valid for the requested workspace.' })
+            return true
+          }
+          sendJson(request.res, 200, {
+            ok: true,
+            data: {
+              workspaceOrigin: session.workspaceOrigin,
+              workspaceId: buildMobileWorkspaceId(options.workspaceRoot),
+              subject: session.username,
+              roles: session.roles,
+              expiresAt: session.expiresAt !== null ? new Date(session.expiresAt).toISOString() : null,
+              authentication: { ...MOBILE_AUTH_CONTRACT },
+            },
+          })
+          return true
+        },
+        async (request: StandaloneHttpRequestContext) => {
+          if (!request.route('DELETE', '/api/mobile/session')) return false
+          const bearerToken = getMobileBearerToken(request.req)
+          if (!bearerToken || !mobileSessionStore.has(bearerToken)) {
+            sendJson(request.res, 401, { ok: false, error: 'Authentication required' })
+            return true
+          }
+          mobileSessionStore.delete(bearerToken)
+          persistMobileSessions()
+          sendJson(request.res, 200, { ok: true })
+          return true
+        },
       ]
     },
   }
@@ -918,6 +1105,12 @@ export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 }
 
 export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
+  'card.checklist.show',
+  'card.checklist.add',
+  'card.checklist.edit',
+  'card.checklist.delete',
+  'card.checklist.check',
+  'card.checklist.uncheck',
   'form.submit',
   'comment.create',
   'comment.update',
@@ -946,6 +1139,8 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
+  'plugin-settings.read',
+  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',

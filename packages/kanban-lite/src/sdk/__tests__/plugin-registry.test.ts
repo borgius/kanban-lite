@@ -1597,8 +1597,8 @@ describe('KanbanSDK plugin settings inventory', () => {
         providerId: 'localfs',
         source: 'config',
       })
-      // Inactive provider options are not persisted; the custom value was not written
-      expect(updated.options?.values?.sqlitePath).not.toBe('.kanban/disabled.db')
+      // Inactive provider options are returned in the response but not written to config
+      expect(updated.options?.values?.sqlitePath).toBe('.kanban/disabled.db')
       expect(persistedConfig.plugins?.['card.storage']).toEqual({ provider: 'localfs' })
       expect(persistedConfig).not.toHaveProperty('pluginOptions')
       expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')

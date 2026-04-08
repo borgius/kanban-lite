@@ -1,5 +1,4 @@
 import type { KanbanConfig } from '../shared/config'
-import { normalizeConfigStorageSelection } from '../shared/config'
 import { CONFIG_REPOSITORY_DOCUMENT_ID } from './configDocumentIdentity'
 
 /** Version for the Cloudflare Worker bootstrap envelope consumed by deploy/runtime/test seams. */
@@ -93,6 +92,51 @@ export interface CreateCloudflareWorkerBootstrapInput {
   }
 }
 
+const FIRST_PARTY_CONFIG_STORAGE_DERIVATION_PROVIDER_IDS = new Set([
+  'sqlite',
+  'mysql',
+  'postgresql',
+  'mongodb',
+  'redis',
+  'cloudflare',
+])
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeWorkerProviderId(provider: string): string {
+  return provider === 'markdown' ? 'localfs' : provider
+}
+
+function getConfiguredWorkerProviderId(
+  config: Pick<CloudflareWorkerBootstrapConfig, 'plugins'>,
+  capability: 'config.storage' | 'card.storage',
+): string | null {
+  if (!isPlainRecord(config.plugins)) {
+    return null
+  }
+
+  const candidate = config.plugins[capability]
+  if (!isPlainRecord(candidate)) {
+    return null
+  }
+
+  const provider = candidate.provider
+  if (typeof provider !== 'string' || !provider.trim()) {
+    return null
+  }
+
+  return normalizeWorkerProviderId(provider.trim())
+}
+
+function inferCloudflareWorkerCardStorageProvider(
+  config: Pick<CloudflareWorkerBootstrapConfig, 'storageEngine' | 'plugins'>,
+): string {
+  return getConfiguredWorkerProviderId(config, 'card.storage')
+    ?? (config.storageEngine === 'sqlite' ? 'sqlite' : 'localfs')
+}
+
 function cloneBindingHandles(handles: CloudflareWorkerBindingHandles): CloudflareWorkerBindingHandles {
   return { ...handles }
 }
@@ -113,7 +157,7 @@ function normalizeConfigDocumentId(documentId: unknown): string {
   if (typeof documentId !== 'string' || !documentId.trim()) {
     throw new Error('Cloudflare Worker bootstrap topology.configStorage.documentId must be a non-empty string when provided.')
   }
-  return documentId
+  return documentId.trim()
 }
 
 function cloneConfig(config: CloudflareWorkerBootstrapConfig): CloudflareWorkerBootstrapConfig {
@@ -142,7 +186,7 @@ function normalizeRevisionSource(source: unknown): CloudflareWorkerConfigRevisio
   }
 
   if (candidate.kind === 'binding' && typeof candidate.binding === 'string' && candidate.binding.trim()) {
-    return { kind: 'binding', binding: candidate.binding }
+    return { kind: 'binding', binding: candidate.binding.trim() }
   }
 
   throw new Error('Cloudflare Worker bootstrap revision source must be either { kind: "bootstrap" } or { kind: "binding", binding: string }.')
@@ -159,7 +203,7 @@ function normalizeBindingHandles(handles: unknown): CloudflareWorkerBindingHandl
     if (typeof value !== 'string' || !value.trim()) {
       throw new Error(`Cloudflare Worker bootstrap binding handle '${name}' must map to a non-empty binding name.`)
     }
-    normalized[name] = value
+    normalized[name] = value.trim()
   }
   return normalized
 }
@@ -198,7 +242,15 @@ function normalizeConfigFreshnessBudget(budget: unknown): CloudflareWorkerConfig
 export function inferCloudflareWorkerConfigStorageProvider(
   config: Pick<CloudflareWorkerBootstrapConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
 ): string {
-  return normalizeConfigStorageSelection(config).effective?.provider ?? 'localfs'
+  const configuredProvider = getConfiguredWorkerProviderId(config, 'config.storage')
+  if (configuredProvider) {
+    return configuredProvider
+  }
+
+  const derivedProvider = inferCloudflareWorkerCardStorageProvider(config)
+  return FIRST_PARTY_CONFIG_STORAGE_DERIVATION_PROVIDER_IDS.has(derivedProvider)
+    ? derivedProvider
+    : 'localfs'
 }
 
 /**
@@ -223,6 +275,29 @@ export function createCloudflareWorkerBootstrap(
       configFreshness: { ...CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET },
     },
   })
+}
+
+/**
+ * Resolves a Worker bootstrap envelope from either a raw bootstrap contract
+ * or a raw embedded config document.
+ */
+export function resolveCloudflareWorkerBootstrapInput(
+  rawBootstrap: string | CloudflareWorkerBootstrap | undefined,
+  rawConfig: string | CloudflareWorkerBootstrapConfig | undefined,
+): CloudflareWorkerBootstrap | null {
+  if (rawBootstrap !== undefined) {
+    return resolveCloudflareWorkerBootstrap(rawBootstrap)
+  }
+
+  if (!rawConfig) {
+    return null
+  }
+
+  const config = typeof rawConfig === 'string'
+    ? JSON.parse(rawConfig) as CloudflareWorkerBootstrapConfig
+    : rawConfig
+
+  return createCloudflareWorkerBootstrap({ config })
 }
 
 /**

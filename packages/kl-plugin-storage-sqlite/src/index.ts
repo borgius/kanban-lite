@@ -2,7 +2,32 @@ import * as fs from 'fs/promises'
 import * as fsSync from 'fs'
 import * as path from 'path'
 import Database from 'better-sqlite3'
-import type {
+import {
+  DEFAULT_COLUMNS,
+  type AttachmentStoragePlugin,
+  type BoardConfig,
+  type BoardBackgroundMode,
+  type BoardBackgroundPreset,
+  type Card,
+  type CardStateCursor,
+  type CardStateKey,
+  type CardStateModuleContext,
+  type CardStateProvider,
+  type CardStateReadThroughInput,
+  type CardStateRecord,
+  type CardStateUnreadKey,
+  type CardStateValue,
+  type CardStateWriteInput,
+  type CardStoragePlugin,
+  type KanbanColumn,
+  type KanbanConfig,
+  type LabelDefinition,
+  type PluginSettingsOptionsSchemaMetadata,
+  type Priority,
+  type StorageEngine,
+  type Webhook,
+} from 'kanban-lite/sdk'
+export type {
   AttachmentStoragePlugin,
   BoardConfig,
   BoardBackgroundMode,
@@ -25,31 +50,7 @@ import type {
   Priority,
   StorageEngine,
   Webhook,
-} from 'kanban-lite/sdk'
-
-export type {
-  AttachmentStoragePlugin,
-  BoardConfig,
-  BoardBackgroundMode,
-  BoardBackgroundPreset,
-  Card,
-  CardStateCursor,
-  CardStateKey,
-  CardStateModuleContext,
-  CardStateProvider,
   CardStateProviderManifest,
-  CardStateReadThroughInput,
-  CardStateRecord,
-  CardStateUnreadKey,
-  CardStateValue,
-  CardStateWriteInput,
-  CardStoragePlugin,
-  KanbanColumn,
-  KanbanConfig,
-  LabelDefinition,
-  Priority,
-  StorageEngine,
-  Webhook,
 } from 'kanban-lite/sdk'
 
 // ---------------------------------------------------------------------------
@@ -71,18 +72,9 @@ type CardTask = NonNullable<Card['tasks']>[number]
 /** A form attachment on a card (named reference or inline definition). */
 export type CardFormAttachment = NonNullable<Card['forms']>[number]
 
-// ---------------------------------------------------------------------------
-// Default constants (mirrored from kanban-lite shared/types.ts)
-// ---------------------------------------------------------------------------
-
-/** Default set of kanban columns. */
-const DEFAULT_COLUMNS: KanbanColumn[] = [
-  { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-  { id: 'todo', name: 'To Do', color: '#3b82f6' },
-  { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-  { id: 'review', name: 'Review', color: '#8b5cf6' },
-  { id: 'done', name: 'Done', color: '#22c55e' },
-]
+function cloneColumns(columns: readonly KanbanColumn[]): KanbanColumn[] {
+  return columns.map((column) => ({ ...column }))
+}
 
 /** Default configuration used when no .kanban.json exists. */
 const DEFAULT_CONFIG: KanbanConfig = {
@@ -90,7 +82,7 @@ const DEFAULT_CONFIG: KanbanConfig = {
   boards: {
     default: {
       name: 'Default',
-      columns: [...DEFAULT_COLUMNS],
+      columns: cloneColumns(DEFAULT_COLUMNS),
       nextCardId: 1,
       defaultStatus: 'backlog',
       defaultPriority: 'medium',
@@ -376,7 +368,7 @@ export class SqliteStorageEngine implements StorageEngine {
       this.db.prepare(`
         INSERT INTO boards (id, name, description, columns, next_card_id, default_status, default_priority)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run('default', 'Default', null, JSON.stringify(DEFAULT_COLUMNS), 1, 'backlog', 'medium')
+      `).run('default', 'Default', null, JSON.stringify(cloneColumns(DEFAULT_COLUMNS)), 1, 'backlog', 'medium')
 
       this._setWorkspaceKey('defaultBoard', def.defaultBoard)
       this._setWorkspaceKey('kanbanDirectory', def.kanbanDirectory)

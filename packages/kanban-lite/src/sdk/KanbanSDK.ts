@@ -1,5 +1,4 @@
 import * as childProcess from 'node:child_process'
-import * as crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'path'
@@ -21,12 +20,16 @@ import { DELETED_STATUS_ID } from '../shared/types'
 import { DEFAULT_CONFIG, readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, normalizeConfigStorageSelection } from '../shared/config'
 import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
-import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, MobileAuthenticationContract, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
+import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
 import { AuthError, CardStateError, sanitizeCard, CARD_STATE_DEFAULT_ACTOR_MODE, CARD_STATE_OPEN_DOMAIN, CARD_STATE_UNREAD_DOMAIN, DEFAULT_CARD_STATE_ACTOR, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from './types'
 import type { StorageEngine } from './plugins/types'
 import { resolveKanbanDir } from './fileUtils'
+import {
+  inspectMobileSession as inspectMobileSessionContract,
+  resolveMobileBootstrap as resolveMobileBootstrapContract,
+} from './mobileSession'
 import {
   canUseDefaultCardStateActor,
   createBuiltinAuthListenerPlugin,
@@ -106,57 +109,6 @@ function compareAvailableEvents(left: SDKAvailableEventDescriptor, right: SDKAva
   if (eventCompare !== 0) return eventCompare
   if (left.source !== right.source) return left.source === 'core' ? -1 : 1
   return (left.pluginIds?.[0] ?? '').localeCompare(right.pluginIds?.[0] ?? '')
-}
-
-const MOBILE_AUTHENTICATION_CONTRACT: Readonly<MobileAuthenticationContract> = Object.freeze({
-  provider: 'local',
-  browserLoginTransport: 'cookie-session',
-  mobileSessionTransport: 'opaque-bearer',
-  sessionKind: 'local-mobile-session-v1',
-})
-
-function cloneMobileAuthenticationContract(): MobileAuthenticationContract {
-  return { ...MOBILE_AUTHENTICATION_CONTRACT }
-}
-
-function buildMobileWorkspaceId(workspaceRoot: string): string {
-  const normalizedWorkspaceRoot = path.resolve(workspaceRoot).replace(/\\/g, '/')
-  const portableWorkspaceRoot = process.platform === 'win32'
-    ? normalizedWorkspaceRoot.toLowerCase()
-    : normalizedWorkspaceRoot
-  const hash = crypto.createHash('sha256').update(portableWorkspaceRoot).digest('hex').slice(0, 12)
-  return `workspace_${hash}`
-}
-
-function normalizeRequiredText(value: string, fieldName: string): string {
-  const normalized = value.trim()
-  if (!normalized) {
-    throw new Error(`${fieldName} is required`)
-  }
-  return normalized
-}
-
-function normalizeMobileWorkspaceOrigin(workspaceOrigin: string): string {
-  const normalized = normalizeRequiredText(workspaceOrigin, 'workspaceOrigin')
-  try {
-    return new URL(normalized).origin
-  } catch {
-    throw new Error('workspaceOrigin must be an absolute URL')
-  }
-}
-
-function normalizeMobileRoles(roles?: string[]): string[] {
-  if (!Array.isArray(roles)) return []
-
-  const normalized: string[] = []
-  const seen = new Set<string>()
-  for (const role of roles) {
-    const trimmed = role.trim()
-    if (!trimmed || seen.has(trimmed)) continue
-    seen.add(trimmed)
-    normalized.push(trimmed)
-  }
-  return normalized
 }
 
 /**
@@ -1081,20 +1033,7 @@ export class KanbanSDK {
    * ```
    */
   async resolveMobileBootstrap(input: ResolveMobileBootstrapInput): Promise<ResolveMobileBootstrapResult> {
-    const workspaceOrigin = normalizeMobileWorkspaceOrigin(input.workspaceOrigin)
-    const bootstrapToken = typeof input.bootstrapToken === 'string' ? input.bootstrapToken.trim() : ''
-    const hasBootstrapToken = bootstrapToken.length > 0
-
-    return {
-      workspaceOrigin,
-      workspaceId: buildMobileWorkspaceId(this.workspaceRoot),
-      authentication: cloneMobileAuthenticationContract(),
-      bootstrapToken: {
-        provided: hasBootstrapToken,
-        mode: hasBootstrapToken ? 'one-time' : 'none',
-      },
-      nextStep: hasBootstrapToken ? 'redeem-bootstrap-token' : 'local-login',
-    }
+    return resolveMobileBootstrapContract(this.workspaceRoot, input)
   }
 
   /**
@@ -1123,14 +1062,7 @@ export class KanbanSDK {
    * ```
    */
   async inspectMobileSession(input: InspectMobileSessionInput): Promise<MobileSessionStatus> {
-    return {
-      workspaceOrigin: normalizeMobileWorkspaceOrigin(input.workspaceOrigin),
-      workspaceId: buildMobileWorkspaceId(this.workspaceRoot),
-      subject: normalizeRequiredText(input.subject, 'subject'),
-      roles: normalizeMobileRoles(input.roles),
-      expiresAt: input.expiresAt ?? null,
-      authentication: cloneMobileAuthenticationContract(),
-    }
+    return inspectMobileSessionContract(this.workspaceRoot, input)
   }
 
   /**

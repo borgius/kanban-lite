@@ -1,5 +1,5 @@
 prd_id: prd-card-tasks
-version: 0.1.0
+version: 0.1.1
 status: final
 
 user_stories:
@@ -102,3 +102,5 @@ decisions:
 changes:
   - version: 0.1.0
     change: Replace the active PRD with the initial card-tasks PRD covering shared `card.tasks` storage, fixed `Tasks X/N` UI, classic todo-list interactions, simple inline markdown, separate task auth and redaction, SDK-owned scoping, backward compatibility, and parity across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
+  - version: 0.1.1
+    change: Record the completed simplification work that reduced the MySQL/PostgreSQL, CLI, and MCP entrypoints to composition roots, canonicalized default-board columns through shared cloning/factory helpers, fixed same-provider MySQL/PostgreSQL attachment fallback to prefer engine-bound attachment factories over placeholder attachment-plugin exports, and followed with shared worker/bootstrap fail-closed helpers plus mobile-session and plugin-settings seam cleanup, reinforcing the cross-storage and cross-surface parity promised by this PRD.

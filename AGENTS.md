@@ -20,6 +20,7 @@ All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, co
 - Active-card UI state remains separate from `card.state`.
 - Callback configuration lives in shared plugin settings; v1 inline authoring uses the schema-driven plain text/textarea path rather than bespoke callback CRUD or code-editor surfaces.
 - Plugin-settings enablement must map to the selected `plugins[capability].provider`; do not add a separate enabled boolean.
+- For MySQL/PostgreSQL same-provider `attachment.storage` resolution, prefer the engine-bound attachment factory (`createMysqlAttachmentPlugin(engine)` / `createPostgresqlAttachmentPlugin(engine)`) over placeholder exported `attachmentStoragePlugin` objects; the placeholders satisfy loader shape checks but are not the live runtime path.
 - In-product plugin installs accept only exact unscoped `kl-*` package names; reject scopes, specifiers, flags, URLs, paths, and extra args.
 - Plugin-settings reads/lists/errors/install output must reuse the shared redaction policy across SDK, API, CLI, MCP, and UI surfaces.
 - JSON Forms provider-option UIs should reuse the shared `.card-jsonforms` wrapper/styling hook instead of introducing a second theme.

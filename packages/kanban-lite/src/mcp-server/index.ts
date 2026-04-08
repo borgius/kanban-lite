@@ -2,22 +2,39 @@ import * as path from 'path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
+import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
-import { buildChecklistReadModel, coerceChecklistSeedTasks } from '../sdk/modules/checklist'
-import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
+import { coerceChecklistSeedTasks } from '../sdk/modules/checklist'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, type Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
+import { AuthError } from '../sdk/types'
+import { createMcpAuthHelpers } from './auth'
 import {
-  AuthError,
-  CardStateError,
-  CARD_STATE_OPEN_DOMAIN,
-  ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
-  ERR_CARD_STATE_UNAVAILABLE,
-  type AuthContext,
-  type CardOpenStateValue,
-  type CardUnreadSummary,
-} from '../sdk/types'
+  createMcpPluginContext,
+  registerCardStateMcpTools,
+  registerChecklistMcpTools,
+  registerPluginMcpTools,
+  registerPluginSettingsMcpTools,
+} from './registrars'
+import {
+  createMcpErrorResult,
+  decorateMcpCardTitle,
+  getBoardTitleFieldsForMcp,
+  runWithResolvedMcpCardId,
+  type McpToolRegistrar,
+} from './shared'
+
+export {
+  createMcpPluginContext,
+  registerCardStateMcpTools,
+  registerChecklistMcpTools,
+  registerPluginMcpTools,
+  registerPluginSettingsMcpTools,
+} from './registrars'
+export {
+  createMcpCardStateErrorResult,
+  createMcpErrorResult,
+} from './shared'
 
 const cardFormAttachmentSchema = z.object({
   name: z.string().optional().describe('Name of a reusable workspace-config form declared under forms.<name>.'),
@@ -29,10 +46,6 @@ const cardFormAttachmentSchema = z.object({
 })
 
 const cardFormDataMapSchema = z.record(z.string(), z.record(z.string(), z.unknown()))
-const cardStateCursorSchema = z.object({
-  cursor: z.string().describe('Opaque unread activity cursor to acknowledge explicitly.'),
-  updatedAt: z.string().optional().describe('Optional timestamp associated with the cursor.'),
-})
 
 async function resolveKanbanDir(): Promise<string> {
   // 1. CLI arg --dir
@@ -54,544 +67,6 @@ async function resolveKanbanDir(): Promise<string> {
   return resolveDefaultKanbanDir(process.cwd(), configFilePath)
 }
 
-interface McpToolRegistrar {
-  tool(
-    name: string,
-    description: string,
-    inputSchema: Record<string, unknown>,
-    handler: (args: Record<string, unknown>) => Promise<McpToolResult>,
-  ): void
-}
-
-interface McpCardStateReadModel {
-  cardId: string
-  boardId: string
-  cardState: {
-    unread: CardUnreadSummary
-    open: CardStateRecord<CardOpenStateValue> | null
-  }
-}
-
-interface McpCardStateMutationModel {
-  unread: CardUnreadSummary
-  cardState: McpCardStateReadModel['cardState']
-}
-
-type McpPluginSettingsListModel = Awaited<ReturnType<KanbanSDK['listPluginSettings']>>
-type McpPluginSettingsReadModel = NonNullable<Awaited<ReturnType<KanbanSDK['getPluginSettings']>>>
-type McpPluginSettingsInstallModel = Awaited<ReturnType<KanbanSDK['installPluginSettingsPackage']>>
-
-function createMcpJsonResult(body: unknown): McpToolResult {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
-}
-
-function cardStateErrorToPublicMessage(code: typeof ERR_CARD_STATE_IDENTITY_UNAVAILABLE | typeof ERR_CARD_STATE_UNAVAILABLE): string {
-  return code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE
-    ? 'Card state is unavailable until your configured user identity can be resolved.'
-    : 'Unable to update card state right now. Refresh and try again.'
-}
-
-export function createMcpCardStateErrorResult(err: unknown): McpToolResult | null {
-  if (err instanceof CardStateError) {
-    return createMcpJsonResult({
-      code: err.code,
-      availability: err.availability,
-      message: cardStateErrorToPublicMessage(err.code),
-    })
-  }
-
-  if (!err || typeof err !== 'object') return null
-  const code = (err as { code?: unknown }).code
-  if (code !== ERR_CARD_STATE_IDENTITY_UNAVAILABLE && code !== ERR_CARD_STATE_UNAVAILABLE) return null
-
-  return createMcpJsonResult({
-    code,
-    availability: code === ERR_CARD_STATE_IDENTITY_UNAVAILABLE ? 'identity-unavailable' : 'unavailable',
-    message: cardStateErrorToPublicMessage(code),
-  })
-}
-
-async function resolveMcpCardId(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<string> {
-  const card = await sdk.getCard(cardId, boardId)
-  if (card) return card.id
-
-  const all = await sdk.listCards(undefined, boardId)
-  const matches = all.filter(item => item.id.includes(cardId))
-  if (matches.length === 1) return matches[0].id
-  if (matches.length > 1) throw new Error(`Multiple cards match "${cardId}": ${matches.map(match => match.id).join(', ')}`)
-  throw new Error(`Card not found: ${cardId}`)
-}
-
-async function runWithResolvedMcpCardId<T>(
-  sdk: KanbanSDK,
-  runWithAuth: <TResult>(fn: () => Promise<TResult>) => Promise<TResult>,
-  cardId: string,
-  boardId: string | undefined,
-  fn: (resolvedId: string) => Promise<T>,
-): Promise<T> {
-  return runWithAuth(async () => {
-    const resolvedId = await resolveMcpCardId(sdk, cardId, boardId)
-    return fn(resolvedId)
-  })
-}
-
-async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<McpCardStateReadModel> {
-  const unread = await sdk.getUnreadSummary(cardId, boardId)
-  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
-  return {
-    cardId: unread.cardId,
-    boardId: unread.boardId,
-    cardState: { unread, open },
-  }
-}
-
-async function buildMcpCardStateMutationModel(sdk: KanbanSDK, unread: CardUnreadSummary): Promise<McpCardStateMutationModel> {
-  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
-  return {
-    unread,
-    cardState: {
-      unread,
-      open,
-    },
-  }
-}
-
-function getBoardTitleFieldsForMcp(sdk: KanbanSDK, boardId?: string): readonly string[] | undefined {
-  const config = sdk.getConfigSnapshot()
-  const resolvedBoardId = boardId || config.defaultBoard
-  return config.boards[resolvedBoardId]?.title
-}
-
-function decorateMcpCardTitle<T extends { content: string; metadata?: Record<string, unknown> }>(
-  card: T,
-  titleFields?: readonly string[],
-): T & { title: string } {
-  return {
-    ...card,
-    title: getDisplayTitleFromContent(card.content, card.metadata, titleFields),
-  }
-}
-
-export function registerCardStateMcpTools(
-  server: McpToolRegistrar,
-  options: {
-    sdk: KanbanSDK
-    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
-  },
-): string[] {
-  const registeredNames = [
-    'get_card_state_status',
-    'get_card_state',
-    'open_card',
-    'read_card',
-  ]
-
-  server.tool(
-    'get_card_state_status',
-    'Get the active card-state provider status for this workspace.',
-    {},
-    async () => createMcpJsonResult(options.sdk.getCardStateStatus()),
-  )
-
-  server.tool(
-    'get_card_state',
-    'Get the side-effect-free unread/open summary for one card. Supports partial ID matching and never mutates unread state implicitly.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-    },
-    async ({ boardId, cardId }) => {
-      try {
-        const payload = await options.runWithAuth(async () => {
-          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
-          return buildMcpCardStateReadModel(options.sdk, resolvedId, typeof boardId === 'string' ? boardId : undefined)
-        })
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'open_card',
-    'Persist an explicit actor-scoped open mutation through the shared SDK card-state APIs. This acknowledges unread activity and records open-card state without changing active-card UI state.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-    },
-    async ({ boardId, cardId }) => {
-      try {
-        const payload = await options.runWithAuth(async () => {
-          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
-          const unread = await options.sdk.markCardOpened(resolvedId, typeof boardId === 'string' ? boardId : undefined)
-          return buildMcpCardStateMutationModel(options.sdk, unread)
-        })
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'read_card',
-    'Persist an explicit actor-scoped unread acknowledgement through the shared SDK card-state APIs without changing open-card state.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      readThrough: cardStateCursorSchema.optional().describe('Optional explicit unread cursor to acknowledge instead of the latest activity.'),
-    },
-    async ({ boardId, cardId, readThrough }) => {
-      try {
-        const payload = await options.runWithAuth(async () => {
-          const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), typeof boardId === 'string' ? boardId : undefined)
-          const unread = await options.sdk.markCardRead(
-            resolvedId,
-            typeof boardId === 'string' ? boardId : undefined,
-            readThrough as CardStateCursor | undefined,
-          )
-          return buildMcpCardStateMutationModel(options.sdk, unread)
-        })
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  return registeredNames
-}
-
-export function registerPluginSettingsMcpTools(
-  server: McpToolRegistrar,
-  options: {
-    sdk: KanbanSDK
-    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
-  },
-): string[] {
-  const registeredNames = [
-    'list_plugin_settings',
-    'get_plugin_settings',
-    'select_plugin_settings_provider',
-    'update_plugin_settings_options',
-    'install_plugin_settings_package',
-  ]
-
-  server.tool(
-    'list_plugin_settings',
-    'List the capability-grouped plugin provider inventory for this workspace, including selected config.storage resolution state when present.',
-    {},
-    async () => {
-      try {
-        const payload: McpPluginSettingsListModel = await options.runWithAuth(() => options.sdk.listPluginSettings())
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'get_plugin_settings',
-    'Read the redacted provider state for one capability/provider pair, including configured-versus-effective config.storage resolution details when applicable.',
-    {
-      capability: z.string().describe('Capability namespace to inspect (for example auth.identity, card.storage, or config.storage).'),
-      providerId: z.string().describe('Provider identifier to read for the capability.'),
-    },
-    async ({ capability, providerId }) => {
-      try {
-        const payload: McpPluginSettingsReadModel | null = await options.runWithAuth(() =>
-          options.sdk.getPluginSettings(String(capability) as never, String(providerId)),
-        )
-        if (!payload) {
-          return createMcpErrorResult(new PluginSettingsOperationError(createPluginSettingsErrorPayload({
-            code: 'plugin-settings-provider-not-found',
-            message: 'Plugin provider not found',
-            capability: String(capability) as never,
-            providerId: String(providerId),
-          })))
-        }
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'select_plugin_settings_provider',
-    'Persist the selected provider for a plugin capability and return the redacted provider read model. Rejected config.storage topology mutations are surfaced as explicit errors.',
-    {
-      capability: z.string().describe('Capability namespace to update (for example auth.identity, card.storage, or config.storage).'),
-      providerId: z.string().describe('Provider identifier to select for the capability.'),
-    },
-    async ({ capability, providerId }) => {
-      try {
-        const payload = await options.runWithAuth(() =>
-          options.sdk.selectPluginSettingsProvider(String(capability) as never, String(providerId)),
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'update_plugin_settings_options',
-    'Persist provider options for a capability/provider pair and return the redacted provider read model, preserving explicit config.storage error/degraded state when reported by the SDK.',
-    {
-      capability: z.string().describe('Capability namespace to update (for example auth.identity, card.storage, or config.storage).'),
-      providerId: z.string().describe('Provider identifier whose options should be updated.'),
-      options: z.record(z.string(), z.unknown()).describe('Provider options payload to persist under the selected capability/provider pair.'),
-    },
-    async ({ capability, providerId, options: nextOptions }) => {
-      try {
-        const payload: McpPluginSettingsReadModel = await options.runWithAuth(() =>
-          options.sdk.updatePluginSettingsOptions(
-            String(capability) as never,
-            String(providerId),
-            nextOptions as Record<string, unknown>,
-          ),
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'install_plugin_settings_package',
-    'Install a supported plugin package with the shared SDK guardrails and return the redacted install result.',
-    {
-      packageName: z.string().describe('Exact unscoped kl-* package name to install.'),
-      scope: z.enum(['workspace', 'global']).describe('Install destination for the supported plugin package.'),
-    },
-    async ({ packageName, scope }) => {
-      try {
-        const payload: McpPluginSettingsInstallModel = await options.runWithAuth(() => options.sdk.installPluginSettingsPackage({
-          packageName,
-          scope,
-        }))
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  return registeredNames
-}
-
-export function createMcpErrorResult(err: unknown): McpToolResult {
-  const cardStateResult = createMcpCardStateErrorResult(err)
-  if (cardStateResult) {
-    return { ...cardStateResult, isError: true }
-  }
-  if (err instanceof Error && (
-    err.message.startsWith('Multiple cards match "')
-    || err.message.startsWith('Card not found: ')
-  )) {
-    return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-  }
-  if (err instanceof PluginSettingsOperationError) {
-    return { ...createMcpJsonResult(err.payload), isError: true }
-  }
-  if (err instanceof AuthError) {
-    return { content: [{ type: 'text' as const, text: err.message }], isError: true }
-  }
-  return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
-}
-
-export function registerChecklistMcpTools(
-  server: McpToolRegistrar,
-  options: {
-    sdk: KanbanSDK
-    runWithAuth<T>(fn: () => Promise<T>): Promise<T>
-  },
-): string[] {
-  const registeredNames = [
-    'list_card_checklist_items',
-    'add_card_checklist_item',
-    'edit_card_checklist_item',
-    'delete_card_checklist_item',
-    'check_card_checklist_item',
-    'uncheck_card_checklist_item',
-  ]
-
-  const resolveBoardId = (boardId: unknown): string | undefined => typeof boardId === 'string' ? boardId : undefined
-
-  server.tool(
-    'list_card_checklist_items',
-    'List the checklist items for a card, including expectedRaw values for optimistic concurrency.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-    },
-    async ({ boardId, cardId }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) => {
-          const card = await options.sdk.getCard(resolvedId, resolveBoardId(boardId))
-          if (!card) throw new Error(`Card not found: ${cardId}`)
-          return buildChecklistReadModel(card)
-        })
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'add_card_checklist_item',
-    'Add a checklist item to a card and return the caller-scoped checklist payload. expectedToken is required to avoid lost concurrent appends.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      title: z.string().describe('Checklist item title.'),
-      description: z.string().optional().describe('Optional checklist item description (multiline supported).'),
-      expectedToken: z.string().describe('Checklist token from list_card_checklist_items required for optimistic concurrency.'),
-    },
-    async ({ boardId, cardId, title, description, expectedToken }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
-          buildChecklistReadModel(await options.sdk.addChecklistItem(resolvedId, String(title), typeof description === 'string' ? description : '', String(expectedToken), resolveBoardId(boardId)))
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'edit_card_checklist_item',
-    'Edit an existing checklist item. modifiedAt is recommended to avoid stale overwrites.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      index: z.number().int().nonnegative().describe('Checklist item index.'),
-      title: z.string().describe('Replacement checklist item title.'),
-      description: z.string().optional().describe('Replacement checklist item description (multiline supported).'),
-      modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
-    },
-    async ({ boardId, cardId, index, title, description, modifiedAt }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
-          buildChecklistReadModel(await options.sdk.editChecklistItem(resolvedId, index as number, String(title), typeof description === 'string' ? description : '', typeof modifiedAt === 'string' ? modifiedAt : undefined, resolveBoardId(boardId)))
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'delete_card_checklist_item',
-    'Delete an existing checklist item. modifiedAt is recommended to avoid stale deletes.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      index: z.number().int().nonnegative().describe('Checklist item index.'),
-      modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
-    },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
-          buildChecklistReadModel(await options.sdk.deleteChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolveBoardId(boardId)))
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'check_card_checklist_item',
-    'Mark a checklist item as checked. modifiedAt is recommended to avoid stale writes.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      index: z.number().int().nonnegative().describe('Checklist item index.'),
-      modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
-    },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
-          buildChecklistReadModel(await options.sdk.checkChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolveBoardId(boardId)))
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  server.tool(
-    'uncheck_card_checklist_item',
-    'Mark a checklist item as unchecked. modifiedAt is recommended to avoid stale writes.',
-    {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
-      cardId: z.string().describe('Card ID (or partial ID)'),
-      index: z.number().int().nonnegative().describe('Checklist item index.'),
-      modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
-    },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      try {
-        const payload = await runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolveBoardId(boardId), async (resolvedId) =>
-          buildChecklistReadModel(await options.sdk.uncheckChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolveBoardId(boardId)))
-        )
-        return createMcpJsonResult(payload)
-      } catch (err) {
-        return createMcpErrorResult(err)
-      }
-    },
-  )
-
-  return registeredNames
-}
-
-export function createMcpPluginContext(options: {
-  sdk: KanbanSDK
-  workspaceRoot: string
-  kanbanDir: string
-  runWithAuth<T>(fn: () => Promise<T>): Promise<T>
-}): McpToolContext {
-  return {
-    sdk: options.sdk,
-    workspaceRoot: options.workspaceRoot,
-    kanbanDir: options.kanbanDir,
-    runWithAuth: options.runWithAuth,
-    toErrorResult: createMcpErrorResult,
-  }
-}
-
-export function registerPluginMcpTools(
-  server: McpToolRegistrar,
-  config: Parameters<typeof resolveMcpPlugins>[0],
-  ctx: McpToolContext,
-): string[] {
-  const registeredNames: string[] = []
-  const seenNames = new Set<string>()
-
-  for (const plugin of resolveMcpPlugins(config)) {
-    for (const tool of plugin.registerTools(ctx)) {
-      if (seenNames.has(tool.name)) {
-        throw new Error(`Duplicate MCP tool registration attempted for "${tool.name}".`)
-      }
-      seenNames.add(tool.name)
-      registeredNames.push(tool.name)
-      server.tool(tool.name, tool.description, tool.inputSchema(z), async (args) => tool.handler(args, ctx))
-    }
-  }
-
-  return registeredNames
-}
-
 // --- Main ---
 
 async function main(): Promise<void> {
@@ -607,27 +82,8 @@ async function main(): Promise<void> {
     name: 'kanban-lite',
     version: '1.0.0',
   })
-
-  function resolveMcpAuthContext(): AuthContext {
-    const token = process.env.KANBAN_LITE_TOKEN || process.env.KANBAN_TOKEN
-    return token ? { token, tokenSource: 'env', transport: 'mcp' } : { transport: 'mcp' }
-  }
-
-  function runWithMcpAuth<T>(fn: () => Promise<T>): Promise<T> {
-    return sdk.runWithAuth(resolveMcpAuthContext(), fn)
-  }
-
-  function getMcpAuthStatus() {
-    const auth = sdk.getAuthStatus()
-    const ctx = resolveMcpAuthContext()
-    return {
-      ...auth,
-      configured: auth.identityEnabled || auth.policyEnabled,
-      tokenPresent: Boolean(ctx.token),
-      tokenSource: ctx.tokenSource ?? null,
-      transport: ctx.transport ?? 'mcp',
-    }
-  }
+  const { getAuthStatus: getMcpAuthStatus, runWithAuth: runWithMcpAuth } = createMcpAuthHelpers(sdk)
+  const registrar = server as unknown as McpToolRegistrar
 
   const mcpPluginContext = createMcpPluginContext({
     sdk,
@@ -1684,23 +1140,23 @@ async function main(): Promise<void> {
     }
   )
 
-  registerPluginSettingsMcpTools(server as unknown as McpToolRegistrar, {
+  registerPluginSettingsMcpTools(registrar, {
     sdk,
     runWithAuth: runWithMcpAuth,
   })
 
-  registerChecklistMcpTools(server as unknown as McpToolRegistrar, {
+  registerChecklistMcpTools(registrar, {
     sdk,
     runWithAuth: runWithMcpAuth,
   })
 
   registerPluginMcpTools(
-    server as unknown as McpToolRegistrar,
+    registrar,
     readConfig(workspaceRoot),
     mcpPluginContext,
   )
 
-  registerCardStateMcpTools(server as unknown as McpToolRegistrar, {
+  registerCardStateMcpTools(registrar, {
     sdk,
     runWithAuth: runWithMcpAuth,
   })

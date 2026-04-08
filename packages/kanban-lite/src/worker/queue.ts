@@ -11,12 +11,15 @@ import type {
   CloudflareWorkerProviderContext,
 } from '../sdk/env'
 import {
+  assertCloudflareWorkerBootstrapConfigMutation,
+  createCloudflareWorkerProviderContext,
+  resolveCloudflareWorkerBootstrapInput,
+} from '../sdk/env'
+import {
   getSharedRuntimeHost,
   installSharedRuntimeHost,
 } from '../shared/runtimeHostState'
 
-const CLOUDFLARE_WORKER_BOOTSTRAP_VERSION = 1
-const CONFIG_REPOSITORY_DOCUMENT_ID = 'workspace-config'
 const CLOUDFLARE_CALLBACK_RUNTIME_PROVIDER_ID = 'cloudflare'
 const CLOUDFLARE_CALLBACK_QUEUE_MESSAGE_KIND = 'durable-callback-event'
 const CLOUDFLARE_CALLBACK_QUEUE_MESSAGE_VERSION = 1
@@ -29,11 +32,6 @@ const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 
-const CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET = {
-  steadyStateD1ReadsPerRequest: 0,
-  maxReadsPerColdStartOrRefreshBoundary: 1,
-} as const
-
 type WorkerConfigInput = CloudflareWorkerBootstrapConfig
 export type WorkerModuleRegistry = Record<string, unknown>
 
@@ -41,8 +39,10 @@ type WorkerSdkInstance = {
   close(): void
 }
 
+type WorkerSdkConstructor = new (kanbanDir: string) => WorkerSdkInstance
+
 export interface WorkerSdkModule {
-  readonly KanbanSDK?: (new (kanbanDir: string) => WorkerSdkInstance) | unknown
+  readonly KanbanSDK?: WorkerSdkConstructor | unknown
   readonly installRuntimeHost?: ((runtimeHost: RuntimeHost) => void) | unknown
 }
 
@@ -272,225 +272,6 @@ function isValidWorkerConfigRepositoryBridge(value: unknown): value is WorkerCon
     && typeof value === 'object'
     && typeof (value as WorkerConfigRepositoryBridge).readConfigDocument === 'function'
     && typeof (value as WorkerConfigRepositoryBridge).writeConfigDocument === 'function'
-}
-
-function inferConfigStorageProvider(config: Pick<CloudflareWorkerBootstrapConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>): string {
-  const plugins = isRecord(config.plugins) ? config.plugins : null
-  const configStorage = plugins && isRecord(plugins['config.storage']) ? plugins['config.storage'] : null
-  if (typeof configStorage?.provider === 'string' && configStorage.provider.trim()) {
-    return configStorage.provider.trim()
-  }
-
-  const cardStorage = plugins && isRecord(plugins['card.storage']) ? plugins['card.storage'] : null
-  if (typeof cardStorage?.provider === 'string' && cardStorage.provider.trim()) {
-    return cardStorage.provider.trim()
-  }
-
-  return 'localfs'
-}
-
-function normalizeRevisionSource(source: unknown): { kind: 'bootstrap' } | { kind: 'binding'; binding: string } {
-  if (!source || typeof source !== 'object') {
-    return { kind: 'bootstrap' }
-  }
-
-  const candidate = source as Record<string, unknown>
-  if (candidate.kind === 'bootstrap') {
-    return { kind: 'bootstrap' }
-  }
-
-  if (candidate.kind === 'binding' && isNonEmptyString(candidate.binding)) {
-    return { kind: 'binding', binding: candidate.binding.trim() }
-  }
-
-  throw new Error('Cloudflare Worker bootstrap revision source must be either { kind: "bootstrap" } or { kind: "binding", binding: string }.')
-}
-
-function normalizeBindingHandles(handles: unknown): Record<string, string> {
-  if (!handles) return {}
-  if (!isRecord(handles)) {
-    throw new Error('Cloudflare Worker bootstrap binding handles must be an object keyed by logical handle name.')
-  }
-
-  const normalized: Record<string, string> = {}
-  for (const [name, value] of Object.entries(handles)) {
-    if (!isNonEmptyString(value)) {
-      throw new Error(`Cloudflare Worker bootstrap binding handle '${name}' must map to a non-empty binding name.`)
-    }
-    normalized[name] = value.trim()
-  }
-  return normalized
-}
-
-function normalizeConfigDocumentId(documentId: unknown): string {
-  if (documentId === undefined) {
-    return CONFIG_REPOSITORY_DOCUMENT_ID
-  }
-  if (!isNonEmptyString(documentId)) {
-    throw new Error('Cloudflare Worker bootstrap topology.configStorage.documentId must be a non-empty string when provided.')
-  }
-  return documentId.trim()
-}
-
-function normalizeConfigFreshnessBudget(budget: unknown): { steadyStateD1ReadsPerRequest: number; maxReadsPerColdStartOrRefreshBoundary: number } {
-  if (!isRecord(budget)) {
-    throw new Error('Cloudflare Worker bootstrap must include a configFreshness budget.')
-  }
-
-  const steadyStateD1ReadsPerRequest = Number(budget.steadyStateD1ReadsPerRequest)
-  const maxReadsPerColdStartOrRefreshBoundary = Number(budget.maxReadsPerColdStartOrRefreshBoundary)
-  if (!Number.isInteger(steadyStateD1ReadsPerRequest) || !Number.isInteger(maxReadsPerColdStartOrRefreshBoundary)) {
-    throw new Error('Cloudflare Worker config-freshness budgets must be integers.')
-  }
-  if (steadyStateD1ReadsPerRequest !== 0) {
-    throw new Error('Cloudflare Worker steady-state config-freshness budgets must keep D1 reads off the hot path (0 per request).')
-  }
-  if (maxReadsPerColdStartOrRefreshBoundary < 0 || maxReadsPerColdStartOrRefreshBoundary > 1) {
-    throw new Error('Cloudflare Worker config-freshness budgets allow at most one D1 revision/config read on cold start or an explicit stale-refresh boundary.')
-  }
-
-  return {
-    steadyStateD1ReadsPerRequest,
-    maxReadsPerColdStartOrRefreshBoundary,
-  }
-}
-
-function createLocalCloudflareWorkerBootstrap(config: CloudflareWorkerBootstrapConfig): CloudflareWorkerBootstrap {
-  return {
-    version: CLOUDFLARE_WORKER_BOOTSTRAP_VERSION,
-    config: cloneWorkerValue(config),
-    topology: {
-      configStorage: {
-        documentId: CONFIG_REPOSITORY_DOCUMENT_ID,
-        provider: inferConfigStorageProvider(config),
-        bindingHandles: {},
-        revisionSource: { kind: 'bootstrap' },
-      },
-    },
-    budgets: {
-      configFreshness: { ...CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET },
-    },
-  }
-}
-
-function resolveLocalCloudflareWorkerBootstrap(rawBootstrap: unknown): CloudflareWorkerBootstrap {
-  let parsed = rawBootstrap
-  if (typeof parsed === 'string') {
-    parsed = JSON.parse(parsed) as unknown
-  }
-
-  if (!isRecord(parsed)) {
-    throw new Error('Cloudflare Worker bootstrap must be an object.')
-  }
-  if (parsed.version !== CLOUDFLARE_WORKER_BOOTSTRAP_VERSION) {
-    throw new Error(`Unsupported Cloudflare Worker bootstrap version: ${String(parsed.version)}`)
-  }
-  if (!isRecord(parsed.config)) {
-    throw new Error('Cloudflare Worker bootstrap must include an embedded config object.')
-  }
-  if (!isRecord(parsed.topology) || !isRecord((parsed.topology as Record<string, unknown>).configStorage)) {
-    throw new Error('Cloudflare Worker bootstrap must include topology.configStorage.')
-  }
-
-  const configStorage = (parsed.topology as Record<string, unknown>).configStorage as Record<string, unknown>
-  const provider = isNonEmptyString(configStorage.provider) ? configStorage.provider.trim() : null
-  if (!provider) {
-    throw new Error('Cloudflare Worker bootstrap topology.configStorage.provider must be a non-empty string.')
-  }
-
-  const config = cloneWorkerValue(parsed.config as CloudflareWorkerBootstrapConfig)
-  const inferredProvider = inferConfigStorageProvider(config)
-  if (provider !== inferredProvider) {
-    throw new Error(`Cloudflare Worker bootstrap config.storage provider '${provider}' does not match the embedded config topology '${inferredProvider}'.`)
-  }
-
-  const budgets = isRecord(parsed.budgets) ? parsed.budgets : null
-  return {
-    version: CLOUDFLARE_WORKER_BOOTSTRAP_VERSION,
-    config,
-    topology: {
-      configStorage: {
-        documentId: normalizeConfigDocumentId(configStorage.documentId),
-        provider,
-        bindingHandles: normalizeBindingHandles(configStorage.bindingHandles),
-        revisionSource: normalizeRevisionSource(configStorage.revisionSource),
-      },
-    },
-    budgets: {
-      configFreshness: normalizeConfigFreshnessBudget(budgets?.configFreshness),
-    },
-  }
-}
-
-function requireRuntimeBinding(runtimeBindings: Record<string, unknown>, bindingName: string, errorContext: string): unknown {
-  if (!Object.prototype.hasOwnProperty.call(runtimeBindings, bindingName)) {
-    throw new Error(`${errorContext} requires the runtime binding '${bindingName}', but it is not available in the current Worker env.`)
-  }
-  return runtimeBindings[bindingName]
-}
-
-function createLocalCloudflareWorkerProviderContext(
-  bootstrap: CloudflareWorkerBootstrap,
-  runtimeBindings: Record<string, unknown>,
-): CloudflareWorkerProviderContext {
-  const normalizedBootstrap = resolveLocalCloudflareWorkerBootstrap(bootstrap)
-  const configStorage = cloneWorkerValue(normalizedBootstrap.topology.configStorage)
-  const resolvedBindings: Record<string, unknown> = {}
-
-  for (const [handleName, bindingName] of Object.entries(configStorage.bindingHandles)) {
-    resolvedBindings[handleName] = requireRuntimeBinding(runtimeBindings, bindingName, `Cloudflare Worker binding handle '${handleName}'`)
-  }
-
-  const revisionBinding = configStorage.revisionSource.kind === 'binding'
-    ? requireRuntimeBinding(runtimeBindings, configStorage.revisionSource.binding, 'Cloudflare Worker revision access')
-    : undefined
-
-  const frozenBindings = Object.freeze({ ...resolvedBindings })
-  const getBinding = <T = unknown>(handleName: string): T | undefined => frozenBindings[handleName] as T | undefined
-  const requireBinding = <T = unknown>(handleName: string): T => {
-    const bindingName = configStorage.bindingHandles[handleName]
-    if (!bindingName) {
-      throw new Error(`Cloudflare Worker bootstrap does not declare a binding handle named '${handleName}'.`)
-    }
-    return requireRuntimeBinding(runtimeBindings, bindingName, `Cloudflare Worker binding handle '${handleName}'`) as T
-  }
-
-  return {
-    bootstrap: normalizedBootstrap,
-    config: cloneWorkerValue(normalizedBootstrap.config),
-    configStorage,
-    bindingHandles: cloneWorkerValue(configStorage.bindingHandles),
-    bindings: frozenBindings,
-    revision: {
-      source: normalizeRevisionSource(configStorage.revisionSource),
-      getBinding<T = unknown>() {
-        return revisionBinding as T | undefined
-      },
-    },
-    getBinding,
-    requireBinding,
-    requireD1<T = unknown>(handleName: string): T {
-      return requireBinding<T>(handleName)
-    },
-    requireR2<T = unknown>(handleName: string): T {
-      return requireBinding<T>(handleName)
-    },
-    requireQueue<T = unknown>(handleName: string): T {
-      return requireBinding<T>(handleName)
-    },
-  }
-}
-
-function assertLocalCloudflareWorkerBootstrapConfigMutation(
-  bootstrap: CloudflareWorkerBootstrap,
-  nextConfig: Pick<CloudflareWorkerBootstrapConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
-): void {
-  const nextProvider = inferConfigStorageProvider(nextConfig)
-  if (nextProvider !== bootstrap.topology.configStorage.provider) {
-    throw new Error(
-      `Cloudflare Worker config.storage topology changed from '${bootstrap.topology.configStorage.provider}' to '${nextProvider}'. Update the Worker bootstrap and redeploy before applying this config change.`,
-    )
-  }
 }
 
 function getCloudflareCallbackRuntimeConfig(config: Record<string, unknown>): Record<string, unknown> | null {
@@ -817,13 +598,10 @@ function loadWorkerCallbackQueueConsumer(
 }
 
 function resolveWorkerBootstrap(options: CloudflareWorkerQueueHandlerOptions, env?: CloudflareWorkerRuntimeEnv): CloudflareWorkerBootstrap | null {
-  const rawBootstrap = options.bootstrap ?? env?.KANBAN_BOOTSTRAP
-  if (rawBootstrap !== undefined) {
-    return resolveLocalCloudflareWorkerBootstrap(rawBootstrap)
-  }
-
-  const rawConfig = options.config ?? env?.KANBAN_CONFIG
-  return rawConfig ? createLocalCloudflareWorkerBootstrap(cloneWorkerValue(rawConfig)) : null
+  return resolveCloudflareWorkerBootstrapInput(
+    options.bootstrap ?? env?.KANBAN_BOOTSTRAP,
+    options.config ?? env?.KANBAN_CONFIG,
+  )
 }
 
 function assertWorkerCallbackModules(bootstrap: CloudflareWorkerBootstrap | null, moduleRegistry: WorkerModuleRegistry): void {
@@ -871,12 +649,18 @@ function resolveWorkerSdkModule(
   options: CloudflareWorkerQueueHandlerOptions,
   moduleRegistry: WorkerModuleRegistry,
   upstreamHost?: RuntimeHost,
-): Required<Pick<WorkerSdkModule, 'KanbanSDK'>> & Pick<WorkerSdkModule, 'installRuntimeHost'> {
+): { KanbanSDK: WorkerSdkConstructor; installRuntimeHost?: (runtimeHost: RuntimeHost) => void } {
   const candidate = options.sdkModule ?? resolveWorkerModule(['kanban-lite/sdk'], moduleRegistry, upstreamHost) as WorkerSdkModule | undefined
   if (!candidate || typeof candidate.KanbanSDK !== 'function') {
     throw new Error('Cloudflare Worker queue runtime requires an injected sdkModule with a KanbanSDK constructor.')
   }
-  return candidate as Required<Pick<WorkerSdkModule, 'KanbanSDK'>> & Pick<WorkerSdkModule, 'installRuntimeHost'>
+
+  return {
+    KanbanSDK: candidate.KanbanSDK as WorkerSdkConstructor,
+    installRuntimeHost: typeof candidate.installRuntimeHost === 'function'
+      ? candidate.installRuntimeHost as (runtimeHost: RuntimeHost) => void
+      : undefined,
+  }
 }
 
 function resolveWorkerRuntimeHostHandle(
@@ -893,7 +677,7 @@ function resolveWorkerRuntimeHostHandle(
   const moduleRegistry = createWorkerModuleRegistry(options.moduleRegistry ?? env?.KANBAN_MODULES ?? {})
   const upstreamHost = options.runtimeHost ?? getSharedRuntimeHost() ?? undefined
   const workerProviderContext = bootstrap && env
-    ? createLocalCloudflareWorkerProviderContext(bootstrap, env as Record<string, unknown>)
+    ? createCloudflareWorkerProviderContext(bootstrap, env as Record<string, unknown>)
     : upstreamHost?.getCloudflareWorkerProviderContext?.() ?? null
 
   assertWorkerCallbackModules(bootstrap, moduleRegistry)
@@ -941,7 +725,7 @@ function createWorkerRuntimeHost(
   const assertCanWriteConfig = (workspaceRoot: string, filePath: string, nextConfig: RuntimeHostConfigDocument): void => {
     const clonedNextConfig = cloneWorkerValue(nextConfig)
     if (bootstrap) {
-      assertLocalCloudflareWorkerBootstrapConfigMutation(bootstrap, toRuntimeHostConfigSelection(clonedNextConfig))
+      assertCloudflareWorkerBootstrapConfigMutation(bootstrap, toRuntimeHostConfigSelection(clonedNextConfig))
       assertWorkerCallbackModuleHandlerSet(bootstrap, clonedNextConfig)
     }
     upstreamHost?.assertCanWriteConfig?.(workspaceRoot, filePath, clonedNextConfig)

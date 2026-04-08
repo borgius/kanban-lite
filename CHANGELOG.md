@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MySQL/PostgreSQL same-provider attachment runtime fallback**: The shared SDK attachment loader now prefers each package's engine-bound attachment factory when `attachment.storage` implicitly or explicitly reuses the active MySQL/PostgreSQL `card.storage` provider, so `getAttachmentStoragePath()` and `copyAttachment()` no longer fall through to validation-only placeholder exports.
+
+- **PostgreSQL attachment-plugin loader parity**: `kl-plugin-storage-postgresql` now exports an `attachmentStoragePlugin` shape that matches the SDK loader contract used by implicit same-package attachment fallback, fixing workspace SDK initialization when `.kanban.json` selects `card.storage: postgresql` without a separate attachment provider.
+
+- **Canonical default-column cloning in shared config defaults**: `packages/kanban-lite/src/shared/config.ts` now uses the shared `createDefaultColumns()` factory for every built-in default board/config path, so fallback/default configs no longer share nested column objects by reference.
+
 - **Cloudflare callback deploy/docs finalization**: The callback plugin regression test now asserts the shared checkpoint-per-handler-attempt D1 write-budget contract, committed/generated Wrangler configs emit `compatibility_flags = ["nodejs_compat"]`, and the Cloudflare deployment guide now documents the required `--callback-queue` plus queue tuning flags for callback-enabled Worker deploys.
 
 - **Cloudflare callback durability and queue bundle seams**: The Cloudflare callback queue consumer now persists handler progress after every handler attempt so later D1 write failures only replay unfinished handlers, and the generated Worker wrapper now injects the Cloudflare provider plus SDK runtime into the queue seam instead of relying on Node-only entry imports.

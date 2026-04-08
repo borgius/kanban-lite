@@ -13,11 +13,27 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+type WorkspaceStorageStatus = {
+  isFileBacked: boolean
+  providers: Record<string, { provider: string }>
+  storageEngine: string
+}
+
+type WorkspaceKanbanSdk = {
+  close(): void
+  getStorageStatus(): WorkspaceStorageStatus
+  storageEngine: { type: string }
+}
+
+type WorkspaceKanbanLiteSdkModule = {
+  KanbanSDK: new (dir: string, opts?: Record<string, unknown>) => WorkspaceKanbanSdk
+}
+
 // ---------------------------------------------------------------------------
 // Resolve workspace kanban-lite SDK
 // ---------------------------------------------------------------------------
 
-function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: new (dir: string, opts?: Record<string, unknown>) => any } {
+function loadWorkspaceKanbanLiteSdk(): WorkspaceKanbanLiteSdkModule {
   let dir = __dirname
   for (let i = 0; i < 10; i++) {
     if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
@@ -26,7 +42,7 @@ function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: new (dir: string, opts?: Rec
         throw new Error(`kanban-lite SDK not built at: ${sdkPath}\nRun: pnpm build`)
       }
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(sdkPath) as { KanbanSDK: any }
+      return require(sdkPath) as WorkspaceKanbanLiteSdkModule
     }
     const parent = path.dirname(dir)
     if (parent === dir) break

@@ -13,6 +13,7 @@ import {
   createCloudflareWorkerBootstrap,
   createCloudflareWorkerProviderContext,
   inferCloudflareWorkerConfigStorageProvider,
+  resolveCloudflareWorkerBootstrapInput,
   resolveCloudflareWorkerBootstrap,
 } from '../sdk/env'
 
@@ -92,6 +93,78 @@ describe('Cloudflare worker bootstrap contract', () => {
     expect(resolveCloudflareWorkerBootstrap(JSON.stringify(
       createCloudflareWorkerBootstrap({ config }),
     ))).toEqual(
+      createCloudflareWorkerBootstrap({ config }),
+    )
+  })
+
+  it('trims bootstrap-owned topology strings when resolving shared worker bootstrap input', () => {
+    const config: CloudflareWorkerBootstrapConfig = {
+      version: 2,
+      defaultBoard: 'default',
+      boards: { default: { columns: [] } },
+      plugins: {
+        'config.storage': { provider: 'cloudflare' },
+      },
+    }
+
+    expect(resolveCloudflareWorkerBootstrapInput(JSON.stringify({
+      version: CLOUDFLARE_WORKER_BOOTSTRAP_VERSION,
+      config,
+      topology: {
+        configStorage: {
+          documentId: ' workspace-config ',
+          provider: 'cloudflare',
+          bindingHandles: {
+            database: ' KANBAN_DB ',
+            attachments: ' KANBAN_BUCKET ',
+          },
+          revisionSource: { kind: 'binding', binding: ' KANBAN_CONFIG_REVISION ' },
+        },
+      },
+      budgets: {
+        configFreshness: CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET,
+      },
+    }), undefined)).toEqual({
+      version: CLOUDFLARE_WORKER_BOOTSTRAP_VERSION,
+      config,
+      topology: {
+        configStorage: {
+          documentId: 'workspace-config',
+          provider: 'cloudflare',
+          bindingHandles: {
+            database: 'KANBAN_DB',
+            attachments: 'KANBAN_BUCKET',
+          },
+          revisionSource: { kind: 'binding', binding: 'KANBAN_CONFIG_REVISION' },
+        },
+      },
+      budgets: {
+        configFreshness: CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET,
+      },
+    })
+  })
+
+  it('prefers raw bootstrap input over raw config input', () => {
+    const config: CloudflareWorkerBootstrapConfig = {
+      version: 2,
+      defaultBoard: 'default',
+      boards: { default: { columns: [] } },
+      storageEngine: 'sqlite',
+    }
+    const bootstrap = createCloudflareWorkerBootstrap({ config })
+
+    expect(resolveCloudflareWorkerBootstrapInput(JSON.stringify(bootstrap), '{')).toEqual(bootstrap)
+  })
+
+  it('builds a bootstrap from config-only worker input when no raw bootstrap is present', () => {
+    const config: CloudflareWorkerBootstrapConfig = {
+      version: 2,
+      defaultBoard: 'default',
+      boards: { default: { columns: [] } },
+      storageEngine: 'sqlite',
+    }
+
+    expect(resolveCloudflareWorkerBootstrapInput(undefined, JSON.stringify(config))).toEqual(
       createCloudflareWorkerBootstrap({ config }),
     )
   })

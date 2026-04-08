@@ -25,9 +25,8 @@ import type {
 } from '../shared/env'
 import {
   assertCloudflareWorkerBootstrapConfigMutation,
-  createCloudflareWorkerBootstrap,
   createCloudflareWorkerProviderContext,
-  resolveCloudflareWorkerBootstrap,
+  resolveCloudflareWorkerBootstrapInput,
 } from '../sdk/env'
 import type {
   CloudflareWorkerBootstrap,
@@ -398,25 +397,14 @@ type NodeLikeResponse = {
   end: (chunk?: string | Uint8Array) => NodeLikeResponse
 }
 
-function parseWorkerConfig(rawConfig: CloudflareWorkerRuntimeEnv['KANBAN_CONFIG'] | WorkerConfigInput | undefined): WorkerConfigInput | undefined {
-  if (!rawConfig) return undefined
-  if (typeof rawConfig === 'string') {
-    return JSON.parse(rawConfig) as WorkerConfigInput
-  }
-  return rawConfig
-}
-
 function resolveWorkerBootstrap(
   options: CloudflareWorkerFetchHandlerOptions,
   env?: CloudflareWorkerRuntimeEnv,
 ): CloudflareWorkerBootstrap | null {
-  const rawBootstrap = options.bootstrap ?? env?.KANBAN_BOOTSTRAP
-  if (rawBootstrap !== undefined) {
-    return resolveCloudflareWorkerBootstrap(rawBootstrap)
-  }
-
-  const rawConfig = options.config ?? parseWorkerConfig(env?.KANBAN_CONFIG)
-  return rawConfig ? createCloudflareWorkerBootstrap({ config: rawConfig }) : null
+  return resolveCloudflareWorkerBootstrapInput(
+    options.bootstrap ?? env?.KANBAN_BOOTSTRAP,
+    options.config ?? env?.KANBAN_CONFIG,
+  )
 }
 
 function assertWorkerCallbackModules(

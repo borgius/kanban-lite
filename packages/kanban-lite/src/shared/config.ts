@@ -7,7 +7,7 @@ import {
   type ConfigRepositoryReadResult,
 } from '../sdk/modules/configRepository'
 import type { KanbanColumn, CardDisplaySettings, CardViewMode, Priority, LabelDefinition } from './types'
-import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from './types'
+import { DEFAULT_BOARD_BACKGROUND_MODE, createDefaultColumns, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from './types'
 
 /** Capability namespaces supported by the storage plugin system. */
 export type CapabilityNamespace = 'card.storage' | 'attachment.storage'
@@ -443,7 +443,7 @@ interface KanbanConfigV1 {
 
 const DEFAULT_BOARD_CONFIG: BoardConfig = {
   name: 'Default',
-  columns: [...DEFAULT_COLUMNS],
+  columns: createDefaultColumns(),
   nextCardId: 1,
   defaultStatus: 'backlog',
   defaultPriority: 'medium'
@@ -503,7 +503,7 @@ function resolveBoardsConfig(
 export const DEFAULT_CONFIG: KanbanConfig = {
   version: 2,
   boards: {
-    default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] }
+    default: { ...DEFAULT_BOARD_CONFIG, columns: createDefaultColumns() }
   },
   defaultBoard: 'default',
   kanbanDirectory: '.kanban',
@@ -552,7 +552,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
     kanbanDirectory: '.kanban',
     defaultPriority: 'medium',
     defaultStatus: 'backlog',
-    columns: [...DEFAULT_COLUMNS],
+    columns: createDefaultColumns(),
     aiAgent: 'claude',
     nextCardId: 1,
     showPriorityBadges: true,
@@ -715,7 +715,7 @@ function createConfigReadError(
 export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {}): KanbanConfig {
   const defaults = {
     ...DEFAULT_CONFIG,
-    boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } },
+    boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: createDefaultColumns() } },
     labels: { ...(DEFAULT_CONFIG.labels ?? {}) },
   }
 

@@ -460,21 +460,40 @@ export interface KanbanColumn {
   color: string
 }
 
+const DEFAULT_COLUMN_DEFINITIONS = [
+  { id: 'backlog', name: 'Backlog', color: '#6b7280' },
+  { id: 'todo', name: 'To Do', color: '#3b82f6' },
+  { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
+  { id: 'review', name: 'Review', color: '#8b5cf6' },
+  { id: 'done', name: 'Done', color: '#22c55e' }
+] as const satisfies readonly KanbanColumn[]
+
+/**
+ * Returns a shallow object clone for each provided board column.
+ *
+ * Use this before mutating column arrays so separate boards/config objects do
+ * not share the same nested column objects by reference.
+ */
+export function cloneKanbanColumns(columns: readonly KanbanColumn[]): KanbanColumn[] {
+  return columns.map((column) => ({ ...column }))
+}
+
+/**
+ * Returns a fresh copy of the built-in default kanban columns.
+ */
+export function createDefaultColumns(): KanbanColumn[] {
+  return cloneKanbanColumns(DEFAULT_COLUMN_DEFINITIONS)
+}
+
 /**
  * The default set of five kanban columns provided when no custom columns
  * are configured: Backlog, To Do, In Progress, Review, and Done.
  *
  * @example
  * // Use as the initial column configuration
- * const config = { columns: [...DEFAULT_COLUMNS] }
+ * const config = { columns: createDefaultColumns() }
  */
-export const DEFAULT_COLUMNS: KanbanColumn[] = [
-  { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-  { id: 'todo', name: 'To Do', color: '#3b82f6' },
-  { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-  { id: 'review', name: 'Review', color: '#8b5cf6' },
-  { id: 'done', name: 'Done', color: '#22c55e' }
-]
+export const DEFAULT_COLUMNS: KanbanColumn[] = createDefaultColumns()
 
 export const DELETED_STATUS_ID = 'deleted'
 export const DELETED_COLUMN: KanbanColumn = { id: DELETED_STATUS_ID, name: 'Deleted', color: '#ef4444' }

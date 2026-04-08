@@ -1,22 +1,37 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "type": "npm",
-      "script": "build",
-      "problemMatcher": [],
-      "label": "npm: build",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
-    },
-    {
-      "type": "npm",
-      "script": "watch",
-      "problemMatcher": [],
-      "label": "npm: watch",
-      "isBackground": true
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "build",
+			"problemMatcher": [],
+			"label": "npm: build",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "npm",
+			"script": "watch",
+			"problemMatcher": [],
+			"label": "npm: watch",
+			"isBackground": true
+		},
+		{
+			"label": "wave1-review-lint-typecheck",
+			"type": "shell",
+			"command": "sh",
+			"args": [
+				"-lc",
+				"lint_exit=0; type_exit=0; pnpm exec eslint packages/kl-plugin-storage-mysql/src packages/kl-plugin-storage-postgresql/src packages/kanban-lite/src/cli packages/kanban-lite/src/mcp-server packages/kanban-lite/src/shared/types.ts packages/kanban-lite/src/sdk/modules/boards.ts packages/kl-plugin-storage-sqlite/src/index.ts || lint_exit=$?; pnpm --filter kanban-lite exec tsc -p tsconfig.json --noEmit || type_exit=$?; echo \"LINT_EXIT=$lint_exit TYPE_EXIT=$type_exit\"; if [ \"$lint_exit\" -ne 0 ]; then exit \"$lint_exit\"; fi; exit \"$type_exit\""
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish",
+				"$tsc"
+			],
+			"group": "test"
+		}
+	]
 }

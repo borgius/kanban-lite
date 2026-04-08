@@ -2,7 +2,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { generateKeyBetween } from 'fractional-indexing'
 import type { Card, KanbanColumn, BoardInfo } from '../../shared/types'
-import { generateSlug } from '../../shared/types'
+import { DEFAULT_COLUMNS, cloneKanbanColumns, generateSlug } from '../../shared/types'
 import { readConfig, writeConfig, getBoardConfig } from '../../shared/config'
 import type { BoardConfig } from '../../shared/config'
 import type { Priority } from '../../shared/types'
@@ -61,13 +61,11 @@ export function createBoard(
     throw new Error(`Board already exists: ${id}`)
   }
 
-  const columns = options?.columns || [...config.boards[config.defaultBoard]?.columns || [
-    { id: 'backlog', name: 'Backlog', color: '#6b7280' },
-    { id: 'todo', name: 'To Do', color: '#3b82f6' },
-    { id: 'in-progress', name: 'In Progress', color: '#f59e0b' },
-    { id: 'review', name: 'Review', color: '#8b5cf6' },
-    { id: 'done', name: 'Done', color: '#22c55e' }
-  ]]
+  const columns = cloneKanbanColumns(
+    options?.columns
+    ?? config.boards[config.defaultBoard]?.columns
+    ?? DEFAULT_COLUMNS
+  )
 
   config.boards[id] = {
     name,
@@ -129,7 +127,7 @@ export function updateBoard(
 
   if (updates.name !== undefined) board.name = updates.name
   if (updates.description !== undefined) board.description = updates.description
-  if (updates.columns !== undefined) board.columns = updates.columns
+  if (updates.columns !== undefined) board.columns = cloneKanbanColumns(updates.columns)
   if (updates.defaultStatus !== undefined) board.defaultStatus = updates.defaultStatus
   if (updates.defaultPriority !== undefined) board.defaultPriority = updates.defaultPriority
   if (updates.metadata !== undefined) board.metadata = updates.metadata

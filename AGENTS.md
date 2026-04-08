@@ -45,6 +45,12 @@ Never implement a feature directly in an interface layer without the SDK method 
 - **CHANGELOG.md:** Always add an entry to `CHANGELOG.md` for every new feature, behaviour change, or bug fix. Place it under an `## [Unreleased]` section at the top (or the current in-progress version block). Follow the existing format: `### Added`, `### Changed`, `### Fixed` subsections with concise bullet points.
 - **Related docs must stay in sync:** When you change plugin contracts, provider behavior, authoring workflow, or integration expectations, update all related docs in the same task. At minimum, check `README.md`, `CHANGELOG.md`, `docs/plugins.md`, and any related skill/template docs such as `.agents/skills/kanban-storage-plugin-author/**`. If an external provider package in this workspace is affected, update that package README/docs too.
 
+## File size limit
+
+- **No source file may exceed 600 lines** (excluding generated files, test fixtures, and `*.d.ts` declarations).
+- When a file reaches or exceeds 600 lines, split it into focused sub-modules (e.g. `foo/types.ts`, `foo/helpers.ts`) and keep the original as a barrel re-exporting the public API. Do not add new logic to an already-over-limit file without splitting it first.
+- The 600-line rule applies to every interface layer: SDK modules, CLI, MCP tools, standalone routes, plugins, and mobile features.
+
 ## Agent execution rules (cost control)
 
 1. Do NOT scan or summarize the entire repository.
@@ -57,6 +63,7 @@ Never implement a feature directly in an interface layer without the SDK method 
 8. Do NOT generate placeholder code or duplicate existing logic.
 9. Keep reasoning concise and implementation focused.
 10. If a task can be implemented by editing constants or inserting small functions, do that instead of restructuring the file.
+11. When creating or splitting modules, keep each file under 600 lines; if a natural sub-module would still exceed 600 lines, split it further.
 
 ## Reliability checklist
 

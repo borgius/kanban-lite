@@ -4,6 +4,7 @@ import {
   CHECKLIST_RESERVED_LABELS,
   buildChecklistReadModel,
   buildChecklistTask,
+  coerceChecklistSeedTasks,
   getChecklistStats,
   isSafeChecklistLinkHref,
   isReservedChecklistLabel,
@@ -37,6 +38,37 @@ describe('checklist helpers', () => {
       createdBy: 'alice',
       modifiedBy: 'alice',
     })
+  })
+
+  it('coerces legacy checklist markdown seed lines into CardTask entries', () => {
+    const tasks = coerceChecklistSeedTasks([
+      '- [ ] Draft release notes',
+      '- [x] Ship fix',
+    ], {
+      createdBy: 'alice',
+      now: '2026-01-01T00:00:00.000Z',
+    })
+
+    expect(tasks).toEqual([
+      {
+        title: 'Draft release notes',
+        description: '',
+        checked: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        modifiedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'alice',
+        modifiedBy: 'alice',
+      },
+      {
+        title: 'Ship fix',
+        description: '',
+        checked: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        modifiedAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'alice',
+        modifiedBy: 'alice',
+      },
+    ])
   })
 
   it('rejects blank task titles when building a task', () => {

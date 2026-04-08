@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, PLUGIN_CAPABILITY_NAMESPACES } from '../../shared/config'
+import {
+  normalizeStorageCapabilities,
+  normalizeAuthCapabilities,
+  normalizeWebhookCapabilities,
+  normalizeCardStateCapabilities,
+  normalizeCallbackCapabilities,
+  normalizeConfigStorageSelection,
+  PLUGIN_CAPABILITY_NAMESPACES,
+} from '../../shared/config'
 import type { KanbanConfig } from '../../shared/config'
 import { DEFAULT_CONFIG } from '../../shared/config'
 import { collectActiveExternalPackageNames } from '../plugins'
@@ -317,6 +325,151 @@ describe('normalizeCallbackCapabilities', () => {
   })
 })
 
+describe('normalizeConfigStorageSelection', () => {
+  it('falls back to localfs when no explicit config.storage override exists', () => {
+    const result = normalizeConfigStorageSelection(makeConfig())
+
+    expect(result).toEqual({
+      configured: null,
+      effective: { provider: 'localfs' },
+      mode: 'fallback',
+      failure: null,
+    })
+  })
+
+  it('derives the effective config.storage provider from first-party card.storage when no explicit override exists', () => {
+    const result = normalizeConfigStorageSelection(
+      makeConfig({
+        storageEngine: 'sqlite',
+        sqlitePath: '.kanban/config.db',
+      })
+    )
+
+    expect(result).toEqual({
+      configured: null,
+      effective: {
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/config.db' },
+      },
+      mode: 'derived',
+      failure: null,
+    })
+  })
+
+  it('derives config.storage from the canonical cloudflare storage bundle when no explicit override exists', () => {
+    const result = normalizeConfigStorageSelection(
+      makeConfig({
+        plugins: {
+          'card.storage': { provider: 'cloudflare' },
+        },
+      })
+    )
+
+    expect(result).toEqual({
+      configured: null,
+      effective: { provider: 'cloudflare' },
+      mode: 'derived',
+      failure: null,
+    })
+  })
+
+  it('preserves an explicit config.storage override even when it matches a derived provider default', () => {
+    const result = normalizeConfigStorageSelection(
+      makeConfig({
+        storageEngine: 'sqlite',
+        sqlitePath: '.kanban/config.db',
+        plugins: {
+          'config.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/config.db' } },
+        },
+      })
+    )
+
+    expect(result).toEqual({
+      configured: {
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/config.db' },
+      },
+      effective: {
+        provider: 'sqlite',
+        options: { sqlitePath: '.kanban/config.db' },
+      },
+      mode: 'explicit',
+      failure: null,
+    })
+  })
+
+  it('surfaces explicit override failures instead of silently deriving a fallback provider', () => {
+    const result = normalizeConfigStorageSelection(
+      makeConfig({
+        storageEngine: 'sqlite',
+        sqlitePath: '.kanban/derived.db',
+        plugins: {
+          'config.storage': { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+        },
+      }),
+      {
+        explicitFailure: {
+          code: 'config-storage-provider-unavailable',
+          message: 'Cloudflare config storage is unavailable.',
+        },
+      }
+    )
+
+    expect(result).toEqual({
+      configured: {
+        provider: 'cloudflare',
+        options: { databaseId: 'cfg-db' },
+      },
+      effective: null,
+      mode: 'error',
+      failure: {
+        code: 'config-storage-provider-unavailable',
+        message: 'Cloudflare config storage is unavailable.',
+      },
+    })
+  })
+
+  it('reports explicit degraded read-only mode only when it is explicitly declared', () => {
+    const result = normalizeConfigStorageSelection(
+      makeConfig({
+        plugins: {
+          'config.storage': { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+        },
+      }),
+      {
+        explicitFailure: {
+          code: 'config-storage-provider-degraded',
+          message: 'Cloudflare config storage is read-only.',
+          degraded: {
+            effective: { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+            readOnly: true,
+          },
+        },
+      }
+    )
+
+    expect(result).toEqual({
+      configured: {
+        provider: 'cloudflare',
+        options: { databaseId: 'cfg-db' },
+      },
+      effective: {
+        provider: 'cloudflare',
+        options: { databaseId: 'cfg-db' },
+      },
+      mode: 'degraded',
+      failure: {
+        code: 'config-storage-provider-degraded',
+        message: 'Cloudflare config storage is read-only.',
+        degraded: {
+          effective: { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+          readOnly: true,
+        },
+      },
+    })
+  })
+})
+
 describe('normalizeCardStateCapabilities', () => {
   it('defaults card.state to localfs provider when config is absent', () => {
     const result = normalizeCardStateCapabilities(makeConfig())
@@ -418,6 +571,13 @@ describe('collectActiveExternalPackageNames', () => {
       const result = collectActiveExternalPackageNames({})
       expect(result).not.toContain('kl-plugin-callback')
     })
+
+    it('selected cloudflare storage alias resolves to kl-plugin-cloudflare', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'card.storage': { provider: 'cloudflare' } },
+      })
+      expect(result).toContain('kl-plugin-cloudflare')
+    })
   })
 
   describe('auth provider discovery', () => {
@@ -490,6 +650,20 @@ describe('collectActiveExternalPackageNames', () => {
       expect(result).toContain('kl-plugin-storage-sqlite')
     })
 
+    it('config.storage reuses storage package aliases when explicitly configured', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'config.storage': { provider: 'sqlite' } },
+      })
+      expect(result).toContain('kl-plugin-storage-sqlite')
+    })
+
+    it('built-in "markdown" config.storage provider is excluded', () => {
+      const result = collectActiveExternalPackageNames({
+        plugins: { 'config.storage': { provider: 'markdown' } },
+      })
+      expect(result).not.toContain('markdown')
+    })
+
     it('custom external card.state provider from plugins is included', () => {
       const result = collectActiveExternalPackageNames({
         plugins: { 'card.state': { provider: 'my-card-state-plugin' } },
@@ -540,6 +714,7 @@ describe('plugin settings contract helpers', () => {
     expect(PLUGIN_CAPABILITY_NAMESPACES).toEqual([
       'card.storage',
       'attachment.storage',
+      'config.storage',
       'card.state',
       'auth.identity',
       'auth.policy',

@@ -22,7 +22,7 @@ import {
   DEFAULT_CONFIG,
   PLUGIN_CAPABILITY_NAMESPACES,
   normalizeCallbackCapabilities,
-  configPath,
+  normalizeConfigStorageSelection,
   normalizeAuthCapabilities,
   normalizeCardStateCapabilities,
   normalizeStorageCapabilities,
@@ -31,6 +31,7 @@ import {
 import type {
   Webhook,
   CardStateCapabilityNamespace,
+  ConfigStorageCapabilityNamespace,
   KanbanConfig,
   KLPluginPackageManifest,
   PluginCapabilityNamespace,
@@ -47,11 +48,19 @@ import type {
 import type { AuthContext, AuthDecision, AuthErrorCategory, BeforeEventPayload, SDKBeforeEventType, SDKEventListenerPlugin, SDKExtensionPlugin, SDKExtensionLoaderResult, CardStateBackend, SDKPluginEventDeclaration } from '../types'
 import { AuthError } from '../types'
 import type { KanbanSDK } from '../KanbanSDK'
+import type { CloudflareWorkerProviderContext } from '../env'
+import { getConfigRepositoryDocumentId } from '../configDocumentIdentity'
 import type { StorageEngine } from './types'
 import { createLocalFsAttachmentPlugin } from './localfs'
 import { createFileBackedCardStateProvider } from './card-state-file'
 import { MARKDOWN_PLUGIN } from './markdown'
 import { getRuntimeHost } from '../../shared/env'
+import {
+  type ConfigRepositoryDocument,
+  installConfigStorageProviderResolver,
+  readConfigRepositoryDocument,
+  writeConfigRepositoryDocument,
+} from '../modules/configRepository'
 
 const runtimeRequire = createRequire(
   typeof __filename === 'string' && __filename
@@ -357,6 +366,7 @@ export interface CardStateModuleContext {
   provider: string
   backend: Exclude<CardStateBackend, 'none'>
   options?: Record<string, unknown>
+  worker?: CloudflareWorkerProviderContext | null
 }
 
 /**
@@ -379,6 +389,43 @@ interface CardStateProviderModule {
   readonly cardStateProvider?: unknown
   readonly createCardStateProvider?: ((context: CardStateModuleContext) => unknown) | unknown
   readonly default?: unknown
+}
+
+/** Shared plugin manifest shape for `config.storage` capability providers. */
+export interface ConfigStorageProviderManifest {
+  readonly id: string
+  readonly provides: readonly ConfigStorageCapabilityNamespace[]
+}
+
+/** Shared runtime context passed to and exposed for `config.storage` providers. */
+export interface ConfigStorageModuleContext {
+  workspaceRoot: string
+  documentId: string
+  provider: string
+  backend: 'builtin' | 'external'
+  options?: Record<string, unknown>
+  worker?: CloudflareWorkerProviderContext | null
+}
+
+/** Executable contract for first-class `config.storage` capability providers. */
+export interface ConfigStorageProviderPlugin {
+  readonly manifest: ConfigStorageProviderManifest
+  optionsSchema?: PluginSettingsOptionsSchemaFactory
+  readConfigDocument(): ConfigRepositoryDocument | null | undefined
+  writeConfigDocument(document: ConfigRepositoryDocument): void
+}
+
+interface ConfigStorageProviderModule {
+  readonly configStorageProviders?: Record<string, unknown>
+  readonly configStorageProvider?: unknown
+  readonly createConfigStorageProvider?: ((context: ConfigStorageModuleContext) => unknown) | unknown
+  readonly default?: unknown
+}
+
+/** Context passed to callback runtime listener factories. */
+export interface CallbackRuntimeListenerContext {
+  readonly workspaceRoot: string
+  readonly worker: CloudflareWorkerProviderContext | null
 }
 
 /**
@@ -668,6 +715,10 @@ export interface AttachmentStoragePlugin {
   getCardDir?(card: Card): string | null
   /** Copies `sourcePath` into the attachment directory for `card`. */
   copyAttachment(sourcePath: string, card: Card): Promise<void>
+  /** Writes raw attachment bytes when the provider can persist them directly. */
+  writeAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<void>
+  /** Reads raw attachment bytes when the provider can return them directly. */
+  readAttachment?(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null>
   /**
    * Appends `content` to an existing attachment when the provider can do so
    * efficiently in-place (for example, an object-storage API with native append).
@@ -681,6 +732,18 @@ export interface AttachmentStoragePlugin {
    * Returns `null` when the provider cannot expose a safe local file.
    */
   materializeAttachment?(card: Card, attachment: string): Promise<string | null>
+}
+
+interface CardStoragePluginModule {
+  readonly cardStoragePlugin?: unknown
+  readonly createCardStoragePlugin?: ((context: CloudflareWorkerProviderContext) => unknown) | unknown
+  readonly default?: unknown
+}
+
+interface AttachmentStoragePluginModule {
+  readonly attachmentStoragePlugin?: unknown
+  readonly createAttachmentStoragePlugin?: ((context: CloudflareWorkerProviderContext) => unknown) | unknown
+  readonly default?: unknown
 }
 
 /**
@@ -1028,6 +1091,7 @@ export const PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['postgresql', 'kl-plugin-storage-postgresql'],
   ['mongodb', 'kl-plugin-storage-mongodb'],
   ['redis', 'kl-plugin-storage-redis'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 
 /**
@@ -1046,6 +1110,7 @@ export const CARD_STATE_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map(
   ['postgresql', 'kl-plugin-storage-postgresql'],
   ['mongodb', 'kl-plugin-storage-mongodb'],
   ['redis', 'kl-plugin-storage-redis'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 
 /**
@@ -1067,6 +1132,7 @@ export const WEBHOOK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
  */
 export const CALLBACK_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['callbacks', 'kl-plugin-callback'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 
 /**
@@ -1219,6 +1285,17 @@ export function loadExternalModule(request: string): unknown {
     }
     throw siblingErr
   }
+}
+
+/**
+ * Resolves a `callback.runtime` module through the standard runtime-host-first
+ * external module seam.
+ *
+ * This keeps callback providers on the public SDK contract instead of reaching
+ * into plugin-loader internals directly.
+ */
+export function resolveCallbackRuntimeModule(request: string): unknown {
+  return loadExternalModule(request)
 }
 
 type ExternalPluginDiscoverySource = Exclude<PluginSettingsDiscoverySource, 'builtin'>
@@ -1451,55 +1528,58 @@ function getPluginSchemaDefaultOptions(
 }
 
 function readPluginSettingsConfigDocument(workspaceRoot: string): KanbanConfig {
-  const filePath = configPath(workspaceRoot)
+  const result = readConfigRepositoryDocument(workspaceRoot, {
+    allowSeedFallbackOnProviderError: true,
+  })
+  if (result.status === 'missing') {
+    return structuredClone(DEFAULT_CONFIG)
+  }
 
-  let rawText: string
-  try {
-    rawText = fs.readFileSync(filePath, 'utf-8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-      return structuredClone(DEFAULT_CONFIG)
-    }
-
+  if (result.status === 'error') {
     throw new PluginSettingsStoreError(
       'plugin-settings-config-load-failed',
-      'Unable to read plugin settings from .kanban.json.',
-      { configPath: filePath },
+      result.reason === 'read'
+        ? 'Unable to read plugin settings from .kanban.json.'
+        : 'Unable to parse plugin settings from .kanban.json.',
+      { configPath: result.filePath },
     )
   }
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawText)
-  } catch {
-    throw new PluginSettingsStoreError(
-      'plugin-settings-config-load-failed',
-      'Unable to parse plugin settings from .kanban.json.',
-      { configPath: filePath },
-    )
+  return result.value as unknown as KanbanConfig
+}
+
+function getPluginSettingsConfigSaveFailureMessage(error: unknown): string | null {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message
   }
 
-  if (!isRecord(parsed)) {
-    throw new PluginSettingsStoreError(
-      'plugin-settings-config-load-failed',
-      'Unable to parse plugin settings from .kanban.json.',
-      { configPath: filePath },
-    )
+  if (isRecord(error) && typeof error.message === 'string' && error.message.trim().length > 0) {
+    return error.message
   }
 
-  return parsed as unknown as KanbanConfig
+  return null
+}
+
+function isPluginSettingsRuntimeMutationRejected(error: unknown): error is Error {
+  const message = getPluginSettingsConfigSaveFailureMessage(error)
+  return message?.startsWith('Cloudflare Worker config.storage topology changed from ') ?? false
 }
 
 function writePluginSettingsConfigDocument(workspaceRoot: string, config: KanbanConfig): void {
-  const filePath = configPath(workspaceRoot)
+  const result = writeConfigRepositoryDocument(workspaceRoot, config)
+  if (result.status === 'error') {
+    if (isPluginSettingsRuntimeMutationRejected(result.cause)) {
+      throw new PluginSettingsStoreError(
+        'plugin-settings-runtime-mutation-rejected',
+        result.cause.message,
+        { configPath: result.filePath },
+      )
+    }
 
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
-  } catch {
     throw new PluginSettingsStoreError(
       'plugin-settings-config-save-failed',
       'Unable to save plugin settings to .kanban.json.',
-      { configPath: filePath },
+      { configPath: result.filePath },
     )
   }
 }
@@ -1648,6 +1728,7 @@ function normalizeProviderIdForComparison(
   providerId: string,
 ): string {
   if (capability === 'card.storage' && providerId === 'markdown') return 'localfs'
+  if (capability === 'config.storage' && providerId === 'markdown') return 'localfs'
   if (capability === 'card.state' && providerId === 'builtin') return 'localfs'
   return providerId
 }
@@ -1967,6 +2048,10 @@ function tryResolveExternalModuleWithSource(request: string): ResolvedExternalMo
   }
 }
 
+function getCloudflareWorkerProviderContext(): CloudflareWorkerProviderContext | null {
+  return getRuntimeHost()?.getCloudflareWorkerProviderContext?.() ?? null
+}
+
 function isValidCardStoragePluginCandidate(plugin: unknown): plugin is CardStoragePlugin {
   if (!plugin || typeof plugin !== 'object') return false
   const candidate = plugin as CardStoragePlugin
@@ -1992,6 +2077,88 @@ function isValidCardStateProviderCandidate(provider: unknown): provider is CardS
     && typeof candidate.manifest?.id === 'string'
     && Array.isArray(candidate.manifest?.provides)
     && candidate.manifest.provides.includes('card.state')
+}
+
+function isValidConfigStorageProviderManifest(
+  manifest: unknown,
+  providerId?: string,
+): manifest is ConfigStorageProviderManifest {
+  if (!manifest || typeof manifest !== 'object') return false
+  const candidate = manifest as ConfigStorageProviderManifest
+  return typeof candidate.id === 'string'
+    && (providerId === undefined || candidate.id === providerId)
+    && Array.isArray(candidate.provides)
+    && candidate.provides.includes('config.storage')
+}
+
+function isValidConfigStorageProviderCandidate(
+  plugin: unknown,
+  providerId?: string,
+): plugin is ConfigStorageProviderPlugin {
+  if (!plugin || typeof plugin !== 'object') return false
+  const candidate = plugin as ConfigStorageProviderPlugin
+  return typeof candidate.readConfigDocument === 'function'
+    && typeof candidate.writeConfigDocument === 'function'
+    && isValidConfigStorageProviderManifest(candidate.manifest, providerId)
+}
+
+function selectConfigStorageProvider(
+  mod: ConfigStorageProviderModule,
+  providerId: string,
+): ConfigStorageProviderPlugin | null {
+  const mapped = mod.configStorageProviders?.[providerId]
+  if (isValidConfigStorageProviderCandidate(mapped, providerId)) return mapped
+
+  const direct = mod.configStorageProvider ?? mod.default
+  if (isValidConfigStorageProviderCandidate(direct, providerId)) return direct
+
+  return null
+}
+
+function createConfigStorageModuleContext(
+  ref: ProviderRef,
+  workspaceRoot: string,
+  documentId: string,
+): ConfigStorageModuleContext {
+  const context: ConfigStorageModuleContext = {
+    workspaceRoot,
+    documentId,
+    provider: ref.provider,
+    backend: ref.provider === 'localfs' ? 'builtin' : 'external',
+  }
+
+  if (ref.options) {
+    context.options = structuredClone(ref.options)
+  }
+
+  const worker = getCloudflareWorkerProviderContext()
+  if (worker) {
+    context.worker = worker
+  }
+
+  return context
+}
+
+function resolveDiscoveredConfigStorageProvider(
+  mod: ConfigStorageProviderModule,
+  providerId: string,
+  sdk: KanbanSDK,
+): ConfigStorageProviderPlugin | null {
+  const context = createConfigStorageModuleContext(
+    { provider: providerId },
+    sdk.workspaceRoot,
+    getConfigRepositoryDocumentId(),
+  )
+
+  if (typeof mod.createConfigStorageProvider === 'function') {
+    const created = mod.createConfigStorageProvider(context)
+    if (isValidConfigStorageProviderCandidate(created, providerId)) {
+      return created
+    }
+    return null
+  }
+
+  return selectConfigStorageProvider(mod, providerId)
 }
 
 async function getProviderOptionsSchemaCandidate(
@@ -2052,6 +2219,12 @@ function registerBuiltinPluginProviders(
     discoverySource: 'builtin',
   })
   addDiscoveredProvider(inventory, {
+    capability: 'config.storage',
+    providerId: 'localfs',
+    packageName: 'localfs',
+    discoverySource: 'builtin',
+  })
+  addDiscoveredProvider(inventory, {
     capability: 'card.state',
     providerId: 'localfs',
     packageName: 'localfs',
@@ -2099,6 +2272,20 @@ async function inspectExternalPluginModule(
             const plugin = isValidCardStoragePluginCandidate(mod.cardStoragePlugin)
               ? mod.cardStoragePlugin
               : isValidCardStoragePluginCandidate(mod.default) ? mod.default : null
+            if (plugin) {
+              add({
+                capability, providerId, packageName: request, discoverySource: resolved.source,
+                optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, plugin, sdk),
+              })
+            }
+            break
+          }
+          case 'config.storage': {
+            const plugin = resolveDiscoveredConfigStorageProvider(
+              mod as ConfigStorageProviderModule,
+              providerId,
+              sdk,
+            )
             if (plugin) {
               add({
                 capability, providerId, packageName: request, discoverySource: resolved.source,
@@ -2234,6 +2421,7 @@ async function inspectExternalPluginModule(
 function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, providerId: string): boolean {
   const normalizedProviderId = (() => {
     if (capability === 'card.storage' && providerId === 'markdown') return 'localfs'
+    if (capability === 'config.storage' && providerId === 'markdown') return 'localfs'
     if (capability === 'card.state' && providerId === 'builtin') return 'localfs'
     return providerId
   })()
@@ -2241,6 +2429,8 @@ function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, p
   switch (capability) {
     case 'card.storage':
       return BUILTIN_CARD_PLUGINS.has(normalizedProviderId)
+    case 'config.storage':
+      return normalizedProviderId === 'localfs'
     case 'attachment.storage':
       return BUILTIN_ATTACHMENT_IDS.has(normalizedProviderId)
     case 'card.state':
@@ -2259,6 +2449,7 @@ function isBuiltinProviderForCapability(capability: PluginCapabilityNamespace, p
 function resolveExternalPackageName(capability: PluginCapabilityNamespace, providerId: string): string {
   switch (capability) {
     case 'card.storage':
+    case 'config.storage':
     case 'attachment.storage':
       return PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'card.state':
@@ -2366,7 +2557,11 @@ async function buildPluginSettingsInventoryCatalog(
   return inventory
 }
 
-function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capability: PluginCapabilityNamespace): PluginSettingsSelectedState {
+function getCapabilitySelectedState(
+  config: PluginSettingsConfigSnapshot,
+  capability: PluginCapabilityNamespace,
+  sdk: KanbanSDK,
+): PluginSettingsSelectedState {
   if (isPluginSettingsCapabilityDisabled(config, capability)) {
     return {
       capability,
@@ -2386,6 +2581,19 @@ function getCapabilitySelectedState(config: PluginSettingsConfigSnapshot, capabi
           : config.storageEngine !== undefined
             ? 'legacy'
             : 'default',
+      }
+    }
+    case 'config.storage': {
+      const selected = sdk.resolveConfigStorageStatus(config)
+      return {
+        capability,
+        providerId: selected.effective?.provider ?? null,
+        source: config.plugins?.['config.storage']
+          ? 'config'
+          : config.storageEngine !== undefined && selected.mode === 'derived'
+            ? 'legacy'
+            : 'default',
+        resolution: selected,
       }
     }
     case 'attachment.storage': {
@@ -2477,6 +2685,10 @@ function getSelectedProviderRef(config: PluginSettingsConfigSnapshot, capability
   switch (capability) {
     case 'card.storage':
       return normalizeStorageCapabilities(config)['card.storage']
+    case 'config.storage': {
+      const selected = normalizeConfigStorageSelection(config)
+      return selected.configured ?? selected.effective
+    }
     case 'attachment.storage':
       return normalizeStorageCapabilities(config)['attachment.storage']
     case 'card.state':
@@ -2566,7 +2778,7 @@ export async function discoverPluginSettingsInventory(
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
 
   const capabilities: PluginSettingsCapabilityRow[] = PLUGIN_CAPABILITY_NAMESPACES.map((capability) => {
-    const selected = getCapabilitySelectedState(config, capability)
+    const selected = getCapabilitySelectedState(config, capability, sdk)
     const providers = [...(inventory.get(capability)?.values() ?? [])]
       .sort((left, right) => left.providerId.localeCompare(right.providerId))
       .map<PluginSettingsProviderRow>((provider) => ({
@@ -2616,7 +2828,7 @@ export async function readPluginSettingsProvider(
 
   if (!provider) return null
 
-  const selected = getCapabilitySelectedState(config, capability)
+  const selected = getCapabilitySelectedState(config, capability, sdk)
   const options = createRedactedProviderOptions(
     getPersistedPluginProviderOptions(config, capability, providerId),
     provider.optionsSchema,
@@ -3126,7 +3338,18 @@ function tryLoadBundledAuthCompatExports(): BundledAuthCompatExports | null {
  * @internal
  */
 function loadExternalCardPlugin(providerName: string): CardStoragePlugin {
-  const mod = loadExternalModule(providerName) as { default?: unknown; cardStoragePlugin?: unknown }
+  const mod = loadExternalModule(providerName) as CardStoragePluginModule
+  const workerContext = getCloudflareWorkerProviderContext()
+
+  if (workerContext && typeof mod.createCardStoragePlugin === 'function') {
+    const created = mod.createCardStoragePlugin(workerContext)
+    if (isValidCardStoragePluginCandidate(created)) {
+      return created
+    }
+    throw new Error(
+      `Plugin "${providerName}" exported createCardStoragePlugin(context) but it did not return a valid cardStoragePlugin.`,
+    )
+  }
 
   const plugin = (mod.cardStoragePlugin ?? mod.default) as CardStoragePlugin | undefined
   if (
@@ -3150,7 +3373,18 @@ function loadExternalCardPlugin(providerName: string): CardStoragePlugin {
  * @internal
  */
 function loadExternalAttachmentPlugin(providerName: string): AttachmentStoragePlugin {
-  const mod = loadExternalModule(providerName) as { default?: unknown; attachmentStoragePlugin?: unknown }
+  const mod = loadExternalModule(providerName) as AttachmentStoragePluginModule
+  const workerContext = getCloudflareWorkerProviderContext()
+
+  if (workerContext && typeof mod.createAttachmentStoragePlugin === 'function') {
+    const created = mod.createAttachmentStoragePlugin(workerContext)
+    if (isValidAttachmentStoragePluginCandidate(created)) {
+      return created
+    }
+    throw new Error(
+      `Plugin "${providerName}" exported createAttachmentStoragePlugin(context) but it did not return a valid attachmentStoragePlugin.`,
+    )
+  }
 
   const plugin = (mod.attachmentStoragePlugin ?? mod.default) as AttachmentStoragePlugin | undefined
   if (
@@ -3255,6 +3489,11 @@ function createCardStateModuleContext(ref: ProviderRef, kanbanDir: string): Card
     context.options = ref.options
   }
 
+  const worker = getCloudflareWorkerProviderContext()
+  if (worker) {
+    context.worker = worker
+  }
+
   return context
 }
 
@@ -3348,6 +3587,69 @@ function resolveCardStateProviderFromStorage(
   return { provider: createFileBackedCardStateProvider(builtinContext), context: builtinContext }
 }
 
+function loadExternalConfigStorageProvider(
+  packageName: string,
+  providerId: string,
+  context: ConfigStorageModuleContext,
+): ConfigStorageProviderPlugin {
+  const mod = loadExternalModule(packageName) as ConfigStorageProviderModule
+
+  if (typeof mod.createConfigStorageProvider === 'function') {
+    const created = mod.createConfigStorageProvider(context)
+    if (isValidConfigStorageProviderCandidate(created, providerId)) {
+      return created
+    }
+    throw new Error(
+      `Plugin "${packageName}" exported createConfigStorageProvider(context) but it did not return a valid configStorageProvider.`,
+    )
+  }
+
+  const provider = selectConfigStorageProvider(mod, providerId)
+  if (!provider) {
+    throw new Error(
+      `Plugin "${packageName}" does not export a valid configStorageProvider for "${providerId}". `
+      + `Expected configStorageProviders["${providerId}"] or configStorageProvider/default export with `
+      + `readConfigDocument, writeConfigDocument, and a manifest that provides 'config.storage'.`,
+    )
+  }
+
+  return provider
+}
+
+export function resolveConfigStorageProviderForRepository(
+  ref: ProviderRef,
+  workspaceRoot: string,
+  documentId: string,
+): { provider: ConfigStorageProviderPlugin; context: ConfigStorageModuleContext } {
+  const normalizedRef = ref.provider === 'markdown'
+    ? {
+        provider: 'localfs',
+        ...(ref.options !== undefined ? { options: structuredClone(ref.options) } : {}),
+      }
+    : {
+        provider: ref.provider,
+        ...(ref.options !== undefined ? { options: structuredClone(ref.options) } : {}),
+      }
+
+  const context = createConfigStorageModuleContext(normalizedRef, workspaceRoot, documentId)
+  if (context.provider === 'localfs') {
+    throw new Error('The built-in localfs config repository does not require an external config.storage provider.')
+  }
+
+  const packageName = PROVIDER_ALIASES.get(context.provider) ?? context.provider
+  const provider = loadExternalConfigStorageProvider(packageName, context.provider, context)
+
+  return {
+    provider,
+    context: {
+      ...context,
+      provider: provider.manifest.id,
+    },
+  }
+}
+
+installConfigStorageProviderResolver(resolveConfigStorageProviderForRepository)
+
 /** @internal Shape of a loaded webhook provider package module. */
 interface WebhookProviderModule {
   webhookProviderPlugin?: unknown
@@ -3360,6 +3662,7 @@ interface WebhookProviderModule {
 interface CallbackRuntimeModule {
   callbackListenerPlugin?: unknown
   CallbackListenerPlugin?: unknown
+  createCallbackListenerPlugin?: ((context: CallbackRuntimeListenerContext) => unknown) | unknown
   default?: unknown
 }
 
@@ -3427,7 +3730,20 @@ function loadWebhookPluginPack(providerName: string, workspaceRoot: string): Web
 }
 
 function loadCallbackRuntimeListener(providerName: string, workspaceRoot: string): SDKEventListenerPlugin {
-  const mod = loadExternalModule(providerName) as CallbackRuntimeModule
+  const mod = resolveCallbackRuntimeModule(providerName) as CallbackRuntimeModule
+
+  if (typeof mod.createCallbackListenerPlugin === 'function') {
+    const created = mod.createCallbackListenerPlugin({
+      workspaceRoot,
+      worker: getCloudflareWorkerProviderContext(),
+    })
+    if (isValidSDKEventListenerPlugin(created)) {
+      return created
+    }
+    throw new Error(
+      `Plugin "${providerName}" exported createCallbackListenerPlugin(context) but it did not return a valid callback runtime listener.`,
+    )
+  }
 
   const directListener = isSDKEventListenerPluginConstructor(mod.CallbackListenerPlugin)
     ? mod.CallbackListenerPlugin
@@ -3731,6 +4047,13 @@ export function collectActiveExternalPackageNames(config: {
   const attachmentProvider = config.plugins?.['attachment.storage']?.provider
   if (attachmentProvider && !BUILTIN_ATTACHMENT_IDS.has(attachmentProvider)) {
     add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
+  }
+
+  const configStorageProvider = config.plugins?.['config.storage']?.provider === 'markdown'
+    ? 'localfs'
+    : config.plugins?.['config.storage']?.provider
+  if (configStorageProvider && configStorageProvider !== 'localfs') {
+    add(PROVIDER_ALIASES.get(configStorageProvider) ?? configStorageProvider)
   }
 
   const cardStateProvider = config.plugins?.['card.state']?.provider === 'builtin'

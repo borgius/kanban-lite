@@ -163,6 +163,7 @@ function getPluginCapabilityFallbackProviderId(capability: PluginCapabilityNames
   switch (capability) {
     case 'card.storage':
     case 'attachment.storage':
+    case 'config.storage':
     case 'card.state':
       return 'localfs'
     case 'callback.runtime':

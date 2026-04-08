@@ -32,6 +32,7 @@ function getPluginSettingsErrorStatus(code: string): number {
     case 'invalid-plugin-install-scope':
     case 'plugin-settings-options-invalid':
     case 'plugin-settings-install-failed':
+    case 'plugin-settings-runtime-mutation-rejected':
       return 400
     case 'plugin-settings-provider-not-found':
       return 404
@@ -403,6 +404,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       storageEngine: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
       providers: buildProviderSummary(storageStatus, webhookStatus),
+      configStorage: storageStatus.configStorage,
       cardState: cardStateStatus,
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
@@ -428,6 +430,7 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       type: storageStatus.storageEngine,
       sqlitePath: wsConfig.sqlitePath,
       providers: buildProviderSummary(storageStatus, webhookStatus),
+      configStorage: storageStatus.configStorage,
       cardState: cardStateStatus,
       isFileBacked: storageStatus.isFileBacked,
       watchGlob: storageStatus.watchGlob,
@@ -522,27 +525,18 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
         res.end('Card not found')
         return true
       }
-      const attachmentPath = await sdk.materializeAttachment(card, filename)
-      if (!attachmentPath) {
-        res.writeHead(501, { 'Content-Type': 'text/plain' })
-        res.end('Attachment provider does not expose a local file path')
+      const attachment = await sdk.getAttachmentData(cardId, filename, ctx.currentBoardId)
+      if (!attachment) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('Attachment not found')
         return true
       }
       const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
-      const contentType = getContentType(filename, MIME_TYPES)
-      const fs = await import('fs')
-      fs.readFile(attachmentPath, (err, data) => {
-        if (err) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' })
-          res.end('File not found')
-          return
-        }
-        res.writeHead(200, {
-          'Content-Type': contentType,
-          'Content-Disposition': `${disposition}; filename="${filename}"`,
-        })
-        res.end(data)
+      res.writeHead(200, {
+        'Content-Type': attachment.contentType ?? getContentType(filename, MIME_TYPES),
+        'Content-Disposition': `${disposition}; filename="${filename}"`,
       })
+      res.end(Buffer.from(attachment.data))
     } catch (err) {
       const authErr = getAuthErrorLike(err)
       if (authErr) {

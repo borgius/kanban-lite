@@ -136,7 +136,7 @@ importers:
         version: 3.20.0
       '@tiptap/react':
         specifier: ^3.15.3
-        version: 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/starter-kit':
         specifier: ^3.15.3
         version: 3.20.0
@@ -193,7 +193,7 @@ importers:
         version: 3.25.76
       zustand:
         specifier: ^5.0.10
-        version: 5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
+        version: 5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
       kl-plugin-auth:
         specifier: workspace:*
@@ -209,10 +209,10 @@ importers:
     dependencies:
       '@langchain/langgraph':
         specifier: '>=0.2.0'
-        version: 1.2.6(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod-to-json-schema@3.25.1(zod@3.25.76))(zod@3.25.76)
+        version: 1.2.6(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(zod-to-json-schema@3.25.1(zod@3.25.76))(zod@3.25.76)
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@18.3.1))(zod@3.25.76)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@3.25.76)
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -261,7 +261,7 @@ importers:
         version: 3.1014.0
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -280,7 +280,7 @@ importers:
         version: 3.0.3
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -296,7 +296,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -312,7 +312,23 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.33
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@1.21.7)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/kl-plugin-cloudflare:
+    dependencies:
+      kanban-lite:
+        specifier: '>=1.0.0'
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@18.3.1))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -328,7 +344,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -347,7 +363,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -366,7 +382,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -388,7 +404,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -410,7 +426,7 @@ importers:
         version: 12.8.0
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -429,7 +445,7 @@ importers:
     dependencies:
       kanban-lite:
         specifier: '>=1.0.0'
-        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
+        version: 1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -10935,7 +10951,7 @@ snapshots:
       '@langchain/core': 1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0)
       uuid: 10.0.0
 
-  '@langchain/langgraph-sdk@1.8.2(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@langchain/langgraph-sdk@1.8.2(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@types/json-schema': 7.0.15
       p-queue: 9.1.0
@@ -10943,14 +10959,14 @@ snapshots:
       uuid: 13.0.0
     optionalDependencies:
       '@langchain/core': 1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0)
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
 
-  '@langchain/langgraph@1.2.6(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod-to-json-schema@3.25.1(zod@3.25.76))(zod@3.25.76)':
+  '@langchain/langgraph@1.2.6(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(zod-to-json-schema@3.25.1(zod@3.25.76))(zod@3.25.76)':
     dependencies:
       '@langchain/core': 1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0)
       '@langchain/langgraph-checkpoint': 1.0.1(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))
-      '@langchain/langgraph-sdk': 1.8.2(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@langchain/langgraph-sdk': 1.8.2(@langchain/core@1.1.36(@opentelemetry/api@1.9.0)(ws@8.19.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@standard-schema/spec': 1.1.0
       uuid: 10.0.0
       zod: 3.25.76
@@ -11582,9 +11598,7 @@ snapshots:
       metro-runtime: 0.83.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
     optional: true
 
   '@react-native/normalize-colors@0.74.89': {}
@@ -12428,12 +12442,12 @@ snapshots:
       prosemirror-transform: 1.11.0
       prosemirror-view: 1.41.6
 
-  '@tiptap/react@3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@tiptap/react@3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@tiptap/core': 3.20.0(@tiptap/pm@3.20.0)
       '@tiptap/pm': 3.20.0
-      '@types/react': 18.3.28
-      '@types/react-dom': 18.3.7(@types/react@18.3.28)
+      '@types/react': 19.2.14
+      '@types/react-dom': 19.1.11(@types/react@19.2.14)
       '@types/use-sync-external-store': 0.0.6
       fast-equals: 5.4.0
       react: 18.3.1
@@ -15596,13 +15610,13 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  kanban-lite@1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@18.3.1))(zod@3.25.76):
+  kanban-lite@1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@18.3.1))(zod@4.3.6):
     dependencies:
-      '@modelcontextprotocol/sdk': 1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.26.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
       '@tanstack/react-router': 1.166.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/extension-placeholder': 3.20.0(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
       '@tiptap/pm': 3.20.0
-      '@tiptap/react': 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tiptap/react': 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/starter-kit': 3.20.0
       better-sqlite3: 12.8.0
       chokidar: 4.0.3
@@ -15618,7 +15632,7 @@ snapshots:
       tailwind-merge: 2.6.1
       tiptap-markdown: 0.9.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))
       ws: 8.19.0
-      zustand: 5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
+      zustand: 5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - '@floating-ui/dom'
@@ -15633,13 +15647,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  kanban-lite@1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6):
+  kanban-lite@1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@3.25.76):
     dependencies:
-      '@modelcontextprotocol/sdk': 1.26.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@tanstack/react-router': 1.166.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/extension-placeholder': 3.20.0(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
       '@tiptap/pm': 3.20.0
-      '@tiptap/react': 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tiptap/react': 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/starter-kit': 3.20.0
       better-sqlite3: 12.8.0
       chokidar: 4.0.3
@@ -15655,7 +15669,44 @@ snapshots:
       tailwind-merge: 2.6.1
       tiptap-markdown: 0.9.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))
       ws: 8.19.0
-      zustand: 5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@19.2.0))
+      zustand: 5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@19.2.0))
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - '@floating-ui/dom'
+      - '@tiptap/core'
+      - '@tiptap/extensions'
+      - '@types/react'
+      - '@types/react-dom'
+      - bufferutil
+      - immer
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - zod
+
+  kanban-lite@1.0.55(@cfworker/json-schema@4.1.1)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(use-sync-external-store@1.6.0(react@19.2.0))(zod@4.3.6):
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.26.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@tanstack/react-router': 1.166.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tiptap/extension-placeholder': 3.20.0(@tiptap/extensions@3.20.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0))
+      '@tiptap/pm': 3.20.0
+      '@tiptap/react': 3.20.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))(@tiptap/pm@3.20.0)(@types/react-dom@19.1.11(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tiptap/starter-kit': 3.20.0
+      better-sqlite3: 12.8.0
+      chokidar: 4.0.3
+      clsx: 2.1.1
+      fractional-indexing: 3.2.0
+      fuse.js: 7.1.0
+      js-yaml: 4.1.1
+      lucide-react: 0.562.0(react@18.3.1)
+      marked: 17.0.3
+      open: 10.2.0
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      tailwind-merge: 2.6.1
+      tiptap-markdown: 0.9.0(@tiptap/core@3.20.0(@tiptap/pm@3.20.0))
+      ws: 8.19.0
+      zustand: 5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@19.2.0))
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - '@floating-ui/dom'
@@ -18448,15 +18499,15 @@ snapshots:
 
   zod@4.3.6: {}
 
-  zustand@5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)):
+  zustand@5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)):
     optionalDependencies:
-      '@types/react': 18.3.28
+      '@types/react': 19.2.14
       react: 18.3.1
       use-sync-external-store: 1.6.0(react@18.3.1)
 
-  zustand@5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@19.2.0)):
+  zustand@5.0.11(@types/react@19.2.14)(react@18.3.1)(use-sync-external-store@1.6.0(react@19.2.0)):
     optionalDependencies:
-      '@types/react': 18.3.28
+      '@types/react': 19.2.14
       react: 18.3.1
       use-sync-external-store: 1.6.0(react@19.2.0)
 

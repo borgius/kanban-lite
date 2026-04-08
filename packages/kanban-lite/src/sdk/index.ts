@@ -72,6 +72,26 @@ export { readConfig, writeConfig, configToSettings, settingsToConfig, getBoardCo
 export type { RuntimeHost } from '../shared/env'
 export { getRuntimeHost, installRuntimeHost, loadWorkspaceEnv, resetRuntimeHost } from '../shared/env'
 export type {
+  CloudflareWorkerBindingHandles,
+  CloudflareWorkerBootstrap,
+  CloudflareWorkerBootstrapConfig,
+  CloudflareWorkerConfigFreshnessBudget,
+  CloudflareWorkerConfigRevisionSource,
+  CloudflareWorkerConfigStorageTopology,
+  CloudflareWorkerProviderContext,
+  CloudflareWorkerProviderRevisionAccess,
+  CreateCloudflareWorkerBootstrapInput,
+} from './env'
+export {
+  assertCloudflareWorkerBootstrapConfigMutation,
+  CLOUDFLARE_WORKER_BOOTSTRAP_VERSION,
+  CLOUDFLARE_WORKER_CONFIG_FRESHNESS_BUDGET,
+  createCloudflareWorkerBootstrap,
+  createCloudflareWorkerProviderContext,
+  inferCloudflareWorkerConfigStorageProvider,
+  resolveCloudflareWorkerBootstrap,
+} from './env'
+export type {
   Card,
   CardStatus,
   Priority,
@@ -97,6 +117,9 @@ export type {
   AuthPolicyPlugin,
   AuthVisibilityFilterInput,
   AuthVisibilityPlugin,
+  ConfigStorageModuleContext,
+  ConfigStorageProviderManifest,
+  ConfigStorageProviderPlugin,
   RbacPrincipalEntry,
   RbacRole,
   WebhookProviderPlugin,
@@ -110,6 +133,7 @@ export type {
   CardStateUnreadKey,
   CardStateValue,
   CardStateWriteInput,
+  CallbackRuntimeListenerContext,
   PluginManifest,
   CardStoragePlugin,
   AttachmentStoragePlugin,
@@ -133,6 +157,7 @@ export {
   NOOP_IDENTITY_PLUGIN,
   NOOP_POLICY_PLUGIN,
   canUseDefaultCardStateActor,
+  resolveCallbackRuntimeModule,
   resolvePluginSettingsOptionsSchema,
 } from './plugins/index'
 export type {
@@ -148,3 +173,55 @@ export { EventBus } from './eventBus'
 export type { EventBusOptions, EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 export type { KanbanResource, KanbanEventTransport, KanbanEventDescriptor, KanbanActionDescriptor } from './integrationCatalog'
 export { KANBAN_EVENT_CATALOG, KANBAN_ACTION_CATALOG, getEventsByResource, getSdkBeforeEvents, getSdkAfterEvents, getApiAfterEvents, getActionsByResource } from './integrationCatalog'
+export type { DurableCallbackDispatchMetadata, DurableCallbackHandlerClaims } from './callbacks/contract'
+export {
+  CALLBACK_DURABLE_EVENT_RECORD_D1_WRITE_BUDGET,
+  CALLBACK_EVENT_ID_PREFIX,
+  CALLBACK_HANDLER_IDEMPOTENCY_SCOPE,
+  buildCallbackHandlerIdempotencyKey,
+  createDurableCallbackDispatchMetadata,
+  createDurableCallbackEventId,
+  createDurableCallbackHandlerClaims,
+  createDurableCallbackHandlerRevision,
+  getDurableCallbackDispatchMetadata,
+  getDurableCallbackHandlerClaims,
+  withDurableCallbackDispatchMeta,
+} from './callbacks/contract'
+export type {
+  CallbackHandlerConfig,
+  CallbackHandlerType,
+  CallbackModuleTarget,
+  CallbackPluginOptions,
+} from './callbacks/core'
+export {
+  assertCallableCallbackModuleExport,
+  buildCallbackExecutionPlan,
+  buildCallbackHandlerRevisionInput,
+  CALLBACK_HANDLER_TYPES,
+  matchesCallbackEventPattern,
+  normalizeCallbackHandlers,
+  resolveCallbackModuleTarget,
+} from './callbacks/core'
+export type {
+  CallbackModuleHandlerConfig,
+  CloudflareCallbackModuleRegistryEntry,
+  CloudflareCallbackQueueContract,
+  CloudflareCallbackQueueMessageEnvelope,
+} from './callbacks/cloudflare'
+export {
+  assertCloudflareCallbackModuleHandlerSetMatchesBootstrap,
+  assertCloudflareCallbackModuleRegistry,
+  CLOUDFLARE_CALLBACK_RUNTIME_PROVIDER_ID,
+  CLOUDFLARE_CALLBACK_MODULE_REGISTRY_NAME,
+  CLOUDFLARE_CALLBACK_QUEUE_CONSUMER_DEFAULTS,
+  CLOUDFLARE_CALLBACK_QUEUE_CONTRACT,
+  CLOUDFLARE_CALLBACK_QUEUE_ENTRYPOINT_EXPORT,
+  CLOUDFLARE_CALLBACK_QUEUE_HANDLE,
+  CLOUDFLARE_CALLBACK_QUEUE_MESSAGE_KIND,
+  CLOUDFLARE_CALLBACK_QUEUE_MESSAGE_VERSION,
+  collectCloudflareCallbackModuleRegistryEntries,
+  createCloudflareCallbackQueueMessageEnvelope,
+  getConfiguredCallbackModuleHandlers,
+  hasCloudflareCallbackModuleHandlers,
+  parseCloudflareCallbackQueueMessageEnvelope,
+} from './callbacks/cloudflare'

@@ -1,6 +1,11 @@
-import * as fs from 'fs'
 import * as path from 'path'
-import { getRuntimeHost, loadWorkspaceEnv } from './env'
+import { loadWorkspaceEnv } from './env'
+import {
+  ConfigRepositoryProviderError,
+  readConfigRepositoryDocument,
+  writeConfigRepositoryDocument,
+  type ConfigRepositoryReadResult,
+} from '../sdk/modules/configRepository'
 import type { KanbanColumn, CardDisplaySettings, CardViewMode, Priority, LabelDefinition } from './types'
 import { DEFAULT_BOARD_BACKGROUND_MODE, DEFAULT_COLUMNS, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from './types'
 
@@ -57,9 +62,58 @@ export type CallbackCapabilitySelections = Partial<Record<CallbackCapabilityName
 /** Fully normalized callback capability selections used at runtime. */
 export type ResolvedCallbackCapabilities = Record<CallbackCapabilityNamespace, ProviderRef>
 
+/** Capability namespace for workspace config storage providers. */
+export type ConfigStorageCapabilityNamespace = 'config.storage'
+
+/** Optional runtime flags for reading config from the shared repository. */
+export interface ReadConfigOptions {
+  /**
+   * Allows seed/bootstrap recovery when an explicit non-localfs config.storage
+   * provider errors, while keeping generic reads fail-closed by default.
+   */
+  allowSeedFallbackOnProviderError?: boolean
+}
+
+/** Partial config-storage capability selections from config. */
+export type ConfigStorageCapabilitySelections = Partial<Record<ConfigStorageCapabilityNamespace, ProviderRef>>
+
+/** Effective resolution mode for the first-class config-storage provider contract. */
+export type ConfigStorageResolutionMode = 'explicit' | 'derived' | 'fallback' | 'error' | 'degraded'
+
+/** Explicit degraded/read-only state surfaced for a failed config-storage override. */
+export interface ConfigStorageDegradedState {
+  /** Effective provider retained while operating in degraded mode. */
+  effective: ProviderRef
+  /** Explicitly reports whether the degraded mode is read-only. */
+  readOnly: boolean
+}
+
+/** Explicit failure state surfaced when an authoritative config-storage override cannot be used cleanly. */
+export interface ConfigStorageFailure {
+  /** Machine-readable failure code surfaced to hosts. */
+  code: string
+  /** Human-readable failure message surfaced to hosts. */
+  message: string
+  /** Optional degraded/read-only state. When omitted the explicit override fails closed. */
+  degraded?: ConfigStorageDegradedState
+}
+
+/** Configured-versus-effective resolution for the first-class config-storage capability. */
+export interface ConfigStorageCapabilityResolution {
+  /** Explicit local/bootstrap override, when one exists. */
+  configured: ProviderRef | null
+  /** Effective provider after explicit, derived, fallback, or degraded resolution. */
+  effective: ProviderRef | null
+  /** Resolution mode describing how the effective provider was chosen. */
+  mode: ConfigStorageResolutionMode
+  /** Explicit failure or degraded state when the configured override cannot be used cleanly. */
+  failure: ConfigStorageFailure | null
+}
+
 /** Capability namespaces surfaced by the plugin settings inventory and selection flows. */
 export type PluginCapabilityNamespace =
   | CapabilityNamespace
+  | ConfigStorageCapabilityNamespace
   | CardStateCapabilityNamespace
   | AuthCapabilityNamespace
   | WebhookCapabilityNamespace
@@ -69,6 +123,7 @@ export type PluginCapabilityNamespace =
 export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] = [
   'card.storage',
   'attachment.storage',
+  'config.storage',
   'card.state',
   'auth.identity',
   'auth.policy',
@@ -394,6 +449,52 @@ const DEFAULT_BOARD_CONFIG: BoardConfig = {
   defaultPriority: 'medium'
 }
 
+const VALID_BOARD_PRIORITIES: readonly Priority[] = ['critical', 'high', 'medium', 'low']
+
+function isConfigRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasRawBoardsRecord(value: unknown): value is Record<string, unknown> {
+  return isConfigRecord(value)
+}
+
+function isKanbanColumnRecord(value: unknown): value is KanbanColumn {
+  return isConfigRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.color === 'string'
+}
+
+function isBoardConfigRecord(value: unknown): value is BoardConfig {
+  return isConfigRecord(value)
+    && typeof value.name === 'string'
+    && Array.isArray(value.columns)
+    && value.columns.every(isKanbanColumnRecord)
+    && typeof value.nextCardId === 'number'
+    && typeof value.defaultStatus === 'string'
+    && typeof value.defaultPriority === 'string'
+    && VALID_BOARD_PRIORITIES.includes(value.defaultPriority as Priority)
+}
+
+function resolveBoardsConfig(
+  rawBoards: unknown,
+  defaults: KanbanConfig['boards'],
+): KanbanConfig['boards'] {
+  if (!hasRawBoardsRecord(rawBoards)) {
+    return defaults
+  }
+
+  const entries = Object.entries(rawBoards)
+  if (entries.length === 0) {
+    return defaults
+  }
+
+  return entries.every(([, board]) => isBoardConfigRecord(board))
+    ? Object.fromEntries(entries) as KanbanConfig['boards']
+    : defaults
+}
+
 /**
  * Default configuration used when no `.kanban.json` file exists or when
  * fields are missing from an existing config. Includes a single `'default'`
@@ -534,8 +635,10 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
  */
 function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
   const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.[])/.test(nodePath)
+  const isCallbackInlineSourcePath = /^\.plugins\."callback\.runtime"\.options\.handlers\[\d+\]\.source$/.test(nodePath)
+    || /^\.pluginOptions\."callback\.runtime"\.(?:[^.[\]]+|"[^"]+")\.handlers\[\d+\]\.source$/.test(nodePath)
 
-  if (isFormDefaultDataPath) {
+  if (isFormDefaultDataPath || isCallbackInlineSourcePath) {
     return node
   }
 
@@ -568,9 +671,29 @@ function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = 
   return node
 }
 
+function createConfigReadError(
+  readResult: Extract<ConfigRepositoryReadResult, { status: 'error' }>,
+): Error {
+  const action = readResult.reason === 'parse' ? 'parse' : 'read'
+  if (readResult.cause instanceof ConfigRepositoryProviderError) {
+    return new Error(
+      `Configuration error: Failed to ${action} workspace config at '${readResult.filePath}' via config.storage provider '${readResult.cause.providerId}'. ${readResult.cause.message}`,
+    )
+  }
+
+  const causeMessage = readResult.cause instanceof Error
+    ? readResult.cause.message
+    : String(readResult.cause)
+  return new Error(
+    `Configuration error: Failed to ${action} workspace config at '${readResult.filePath}'. ${causeMessage}`,
+  )
+}
+
 /**
- * Reads the kanban config from disk. If the file is missing or unreadable,
- * returns the default config. If the file contains a v1 config, it is
+ * Reads the kanban config from the shared repository. If the config is
+ * missing, returns the default config. If the repository/provider reports a
+ * read or parse failure, throws a configuration error instead of silently
+ * falling back to defaults. If the file contains a v1 config, it is
  * automatically migrated to v2 format and persisted back to disk.
  *
  * Any `${VAR_NAME}` placeholders found in string values are resolved against
@@ -580,33 +703,37 @@ function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = 
  * safe default.
  *
  * @param workspaceRoot - Absolute path to the workspace root directory.
+ * @param options - Optional runtime read flags. Generic callers should use the
+ *   default fail-closed behavior; control-plane/bootstrap paths may opt into
+ *   seed fallback on provider errors.
  * @returns The parsed (and possibly migrated) kanban configuration.
  *
  * @example
  * const config = readConfig('/home/user/my-project')
  * console.log(config.defaultBoard) // => 'default'
  */
-export function readConfig(workspaceRoot: string): KanbanConfig {
-  const filePath = configPath(workspaceRoot)
+export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {}): KanbanConfig {
   const defaults = {
     ...DEFAULT_CONFIG,
     boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: [...DEFAULT_COLUMNS] } },
     labels: { ...(DEFAULT_CONFIG.labels ?? {}) },
   }
 
-  const hostedRaw = getRuntimeHost()?.readConfig?.(workspaceRoot, filePath)
-
-  // Parse the file first; fall back to defaults only for read/parse failures.
-  let raw: Record<string, unknown>
-  if (hostedRaw !== undefined) {
-    raw = hostedRaw
-  } else {
-    try {
-      raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-    } catch {
-      return defaults
-    }
+  // Missing config still falls back to defaults. Repository/provider failures
+  // must stay fail-closed so explicit config.storage overrides surface cleanly.
+  const readResult = readConfigRepositoryDocument(
+    workspaceRoot,
+    options.allowSeedFallbackOnProviderError
+      ? { allowSeedFallbackOnProviderError: true }
+      : undefined,
+  )
+  if (readResult.status === 'missing') {
+    return defaults
   }
+  if (readResult.status === 'error') {
+    throw createConfigReadError(readResult)
+  }
+  const raw = readResult.value
 
   // Load .env from workspace root before resolving placeholders so that
   // variables defined there are available without requiring the operator to
@@ -627,7 +754,7 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
   try {
     // True v1: explicitly version 1, OR version absent AND no boards object
     // A versionless modern config (has a boards object) must NOT be treated as v1
-    const isV1 = raw.version === 1 || (!raw.version && !(typeof raw.boards === 'object' && raw.boards !== null && !Array.isArray(raw.boards)))
+    const isV1 = raw.version === 1 || (raw.version == null && !hasRawBoardsRecord(raw.boards))
     if (isV1) {
       // Migrate v1 to v2 and persist
       const v2 = migrateConfigV1ToV2(raw)
@@ -635,7 +762,12 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
       return v2
     }
     // Merge with defaults for any missing fields
-    const config = { ...defaults, ...raw }
+    const config: KanbanConfig = {
+      ...defaults,
+      ...raw,
+      version: 2,
+      boards: resolveBoardsConfig(raw.boards, defaults.boards),
+    }
     // Ensure boards object exists with at least default board
     if (!config.boards || Object.keys(config.boards).length === 0) {
       config.boards = defaults.boards
@@ -664,9 +796,9 @@ export function readConfig(workspaceRoot: string): KanbanConfig {
  * writeConfig('/home/user/my-project', config)
  */
 export function writeConfig(workspaceRoot: string, config: KanbanConfig): void {
-  const filePath = configPath(workspaceRoot)
-  if (getRuntimeHost()?.writeConfig?.(workspaceRoot, filePath, config)) return
-  fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+  const writeResult = writeConfigRepositoryDocument(workspaceRoot, config)
+  if (writeResult.status === 'ok') return
+  throw writeResult.cause
 }
 
 /**
@@ -841,6 +973,95 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
   return ref.options !== undefined
     ? { provider: ref.provider, options: { ...ref.options } }
     : { provider: ref.provider }
+}
+
+const FIRST_PARTY_CONFIG_STORAGE_DERIVATION_PROVIDER_IDS = new Set([
+  'sqlite',
+  'mysql',
+  'postgresql',
+  'mongodb',
+  'redis',
+  'cloudflare',
+])
+
+function cloneConfigStorageFailure(failure: ConfigStorageFailure): ConfigStorageFailure {
+  return failure.degraded
+    ? {
+        code: failure.code,
+        message: failure.message,
+        degraded: {
+          effective: cloneProviderRef(failure.degraded.effective),
+          readOnly: failure.degraded.readOnly,
+        },
+      }
+    : {
+        code: failure.code,
+        message: failure.message,
+      }
+}
+
+function normalizeConfigStorageProviderRef(ref: ProviderRef): ProviderRef {
+  return ref.provider === 'markdown'
+    ? {
+        provider: 'localfs',
+        ...(ref.options !== undefined ? { options: { ...ref.options } } : {}),
+      }
+    : cloneProviderRef(ref)
+}
+
+/**
+ * Normalizes configured-versus-effective `config.storage` selection.
+ *
+ * Resolution order:
+ * 1. Explicit `plugins['config.storage']` override (authoritative)
+ * 2. Derived first-party storage provider from `card.storage`
+ * 3. Local-file fallback (`localfs`)
+ *
+ * When an explicit override is present and fails, the caller must surface that
+ * failure explicitly instead of silently deriving a replacement provider. A
+ * degraded/read-only effective provider is only allowed when it is passed in
+ * explicitly via `explicitFailure.degraded`.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeConfigStorageSelection(
+  config: Pick<KanbanConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>,
+  options: { explicitFailure?: ConfigStorageFailure | null } = {},
+): ConfigStorageCapabilityResolution {
+  const configured = config.plugins?.['config.storage']
+    ? normalizeConfigStorageProviderRef(config.plugins['config.storage'])
+    : null
+
+  if (configured) {
+    const failure = options.explicitFailure ? cloneConfigStorageFailure(options.explicitFailure) : null
+    if (failure?.degraded) {
+      return {
+        configured,
+        effective: cloneProviderRef(failure.degraded.effective),
+        mode: 'degraded',
+        failure,
+      }
+    }
+
+    return {
+      configured,
+      effective: failure ? null : cloneProviderRef(configured),
+      mode: failure ? 'error' : 'explicit',
+      failure,
+    }
+  }
+
+  const derived = normalizeStorageCapabilities(config)['card.storage']
+  const effective = FIRST_PARTY_CONFIG_STORAGE_DERIVATION_PROVIDER_IDS.has(derived.provider)
+    ? cloneProviderRef(derived)
+    : { provider: 'localfs' }
+
+  return {
+    configured: null,
+    effective,
+    mode: FIRST_PARTY_CONFIG_STORAGE_DERIVATION_PROVIDER_IDS.has(derived.provider) ? 'derived' : 'fallback',
+    failure: null,
+  }
 }
 
 /**

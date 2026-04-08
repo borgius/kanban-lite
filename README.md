@@ -74,8 +74,8 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Fixed checklist tab**: Cards with checklist visibility show a dedicated `Tasks X/N` tab for task progress, inline markdown task text, and checklist mutations without mixing checklist state into the main markdown body
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
-- **Runtime-host hook + Cloudflare Worker entrypoint**: Non-Node hosts can now inject config/env/module resolution through `installRuntimeHost(...)`, and `packages/kanban-lite/src/worker` exposes a Wrangler-friendly `fetch` handler factory with explicit `501` guardrails for unsupported WebSocket/page parity in this minimal patch
-- **Cloudflare deployment guide**: See [docs/cloudflare.md](docs/cloudflare.md) for the Worker runtime model, plugin bundling caveats, websocket limitations, and the deploy helper script
+- **Runtime-host hook + Cloudflare Worker entrypoint**: Non-Node hosts can now inject config/env/module resolution through `installRuntimeHost(...)`, and `packages/kanban-lite/src/worker` exposes Wrangler-friendly shared `fetch` + `queue` handler factories with explicit `501` guardrails for unsupported WebSocket/page parity plus a queue-backed durable Cloudflare `callback.runtime` path that stays zero-idle on the request hot path
+- **Cloudflare deployment guide**: See [docs/cloudflare.md](docs/cloudflare.md) for the Worker runtime model, plugin bundling caveats, websocket limitations, the shared callback queue ABI, and the deploy helper script that statically validates configured callback module exports before deployment
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
 - **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
 - **Real-time updates**: WebSocket-powered live sync across clients
@@ -1071,10 +1071,10 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | `add_webhook` | Register a new webhook |
 | `update_webhook` | Update a webhook (url, events, secret, active) |
 | `remove_webhook` | Remove a webhook |
-| `get_workspace_info` | Get workspace root path, kanban directory, and active storage provider metadata |
+| `get_workspace_info` | Get workspace root path, kanban directory, active storage provider metadata, and `config.storage` resolution state |
 
 For agent-driven search, pass `searchQuery` for free text (including inline tokens like `meta.team: backend`), set `fuzzy: true` to widen matching across text and metadata values, or use `metaFilter` when you want structured dot-notation field filters.
-| `get_storage_status` | Get current card/attachment storage provider status |
+| `get_storage_status` | Get current storage provider status plus configured-versus-effective `config.storage` details |
 | `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
 | `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |
 
@@ -1251,12 +1251,13 @@ Kanban Lite now exposes one shared plugin-settings workflow across the Settings 
 - **Capability-grouped inventory**: the **Plugin Options** tab groups providers by capability such as `card.storage`, `attachment.storage`, `card.state`, `callback.runtime`, `auth.identity`, `auth.policy`, `auth.visibility`, and `webhook.delivery`.
 - **Storage-backed `attachment.storage` reuse**: when attachments come from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
 - **Storage-backed `card.state` reuse**: when `card.state` comes from the active storage plugin (`sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), Plugin Options reuses the same provider/database settings as `card.storage` instead of showing a second DB configuration form.
+- **`config.storage` status semantics**: plugin-settings detail and status surfaces report configured provider state separately from the current effective provider for `config.storage`, including explicit failure or degraded/read-only state when the SDK reports one. Worker topology-changing `config.storage` writes are rejected as explicit runtime-mutation errors instead of silently swapping providers.
 - **Selected-provider semantics**: enablement is represented only by the selected provider stored under `plugins[capability]` in `.kanban.json`; there is no separate enabled boolean. The UI now uses per-provider on/off toggles, `auth.visibility` stays disabled until selected (its normalized default is `provider: "none"`), and `webhook.delivery` may be explicitly disabled with `provider: "none"` while preserving stored options for later re-enable.
 - **Discovery metadata**: every provider row carries its package name and discovery source (`builtin`, `workspace`, `dependency`, `global`, or `sibling`) so you can tell why it is available in the current runtime.
 - **Schema-driven configuration**: when a provider exports `optionsSchema()`, the UI renders provider options in dedicated sections after the capability list through the same JSON Forms stack used elsewhere in the app instead of bespoke per-provider forms. Schema-backed providers remain editable even while toggled off; inactive-provider saves are cached under `pluginOptions[capability][providerId]` and restored into `plugins[capability]` when that provider is enabled later. Providers may also supply a matching `uiSchema` so nested arrays and object-heavy settings render with explicit groups, detail editors, and conditional rules instead of the generic fallback layout. Plugin settings discovery resolves sync/async schema metadata before it reaches JSON Forms, so provider authors may derive enum lists or other schema values from the active SDK runtime.
-- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `inline` and `process` handlers, and the inline `source` field now renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
+- **Callback runtime**: the first-party `kl-plugin-callback` package uses the same schema-driven path at `plugins["callback.runtime"]`. Its `options.handlers[]` payload is one ordered mixed list for `module`, `inline`, and `process` handlers; on Node, matching `module` rows execute through the shared SDK runtime-module resolver; and the inline `source` field renders in an embedded CodeMirror JavaScript editor inside the shared Plugin Options flow.
 - **Masked secret behavior**: allowed read/list surfaces return redacted option payloads only. Persisted secret fields reopen as masked write-only placeholders (`••••••`); leave the masked value unchanged to keep the current secret, or type a new value to replace it.
-- **Authorization split**: `plugin-settings.read` gates plugin-settings inventory/detail reads before any payload is returned. `plugin-settings.update` gates `select`, `update-options`, and `install` mutations. The same checks are reused by the Settings panel hosts, the standalone websocket settings bridge, REST routes, CLI commands, and the current MCP tool set (`list_plugin_settings` for reads plus the mutation tools for updates).
+- **Authorization split**: `plugin-settings.read` gates plugin-settings inventory/detail reads before any payload is returned. `plugin-settings.update` gates `select`, `update-options`, and `install` mutations. The same checks are reused by the Settings panel hosts, the standalone websocket settings bridge, REST routes, CLI commands, and the current MCP tool set (`list_plugin_settings` + `get_plugin_settings` for reads plus the mutation tools for updates).
 - **Redaction is not authorization**: allowed reads still use the existing redaction contract (`••••••` placeholders plus redacted errors), but redaction does not grant plugin-settings access on its own.
 - **Guarded installs**: in-product installs accept only exact unscoped `kl-*` package names plus an explicit `workspace` or `global` scope. They always run with lifecycle scripts disabled, reject version specifiers / flags / URLs / paths / shell fragments, and surface only redacted diagnostics.
 
@@ -1264,7 +1265,7 @@ The same nouns are used everywhere:
 
 - **CLI**: `kl plugin-settings <list|show|select|update-options|install>`
 - **REST API**: `/api/plugin-settings`, `/api/plugin-settings/:capability/:providerId`, `/select`, `/options`, and `/install`
-- **MCP**: `list_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`
+- **MCP**: `list_plugin_settings`, `get_plugin_settings`, `select_plugin_settings_provider`, `update_plugin_settings_options`, and `install_plugin_settings_package`
 
 For the deeper runtime model, provider discovery rules, and plugin authoring details, see [docs/plugins.md](docs/plugins.md).
 
@@ -1303,8 +1304,11 @@ If both forms are present, `plugins[namespace]` wins for that namespace and lega
 
 | Capability | Default | Core providers / compatibility ids | Notes |
 |-----------|---------|------------------------------------|-------|
-| `card.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs` (markdown engine). Legacy `markdown` input is normalized to `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`. |
-| `attachment.storage` | follows `card.storage` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis` | Core owns `localfs`. For first-party storage plugins, omitted or redundant matching `attachment.storage` config is auto-derived from the active `card.storage` provider and reuses its options. Configure this namespace only when you want a different provider such as `kl-plugin-attachment-s3`. |
+| `card.storage` | `localfs` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, `cloudflare` | Core owns `localfs` (markdown engine). Legacy `markdown` input is normalized to `localfs`. `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, and `cloudflare` are compatibility ids that resolve to `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, and `kl-plugin-cloudflare`. |
+| `attachment.storage` | follows `card.storage` | `localfs`, `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, `cloudflare` | Core owns `localfs`. For first-party storage plugins, omitted or redundant matching `attachment.storage` config is auto-derived from the active `card.storage` provider and reuses its options. Configure this namespace only when you want a different provider such as `kl-plugin-attachment-s3`. |
+| `callback.runtime` | `callbacks` | `callbacks`, `cloudflare` | `callbacks` resolves to `kl-plugin-callback` for same-runtime Node handlers. Worker-only `cloudflare` resolves to `kl-plugin-cloudflare`, requires enabled `type: "module"` rows, and delivers durable event-scoped queue envelopes through the shared `KANBAN_MODULES` contract. |
+
+The first-party `cloudflare` bundle is Worker-only and co-provides `card.storage`, `attachment.storage`, `card.state`, `config.storage`, and `callback.runtime` through D1 + R2 + Queues using the shared Cloudflare Worker binding/context seam.
 
 For first-party storage plugins, selecting `card.storage` is enough to activate the matching attachment handler with the same options:
 
@@ -1347,7 +1351,7 @@ If you want a different attachment backend, configure `attachment.storage` expli
 
 - Core built-ins are `localfs` (`card.storage`) and `localfs` (`attachment.storage`).
 - Legacy `card.storage: "markdown"` values are normalized to `localfs`.
-- `sqlite`, `mysql`, `postgresql`, `mongodb`, and `redis` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, and `kl-plugin-storage-redis`.
+- `sqlite`, `mysql`, `postgresql`, `mongodb`, `redis`, and `cloudflare` remain valid provider ids, but they resolve to the external packages `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, and `kl-plugin-cloudflare`.
 - External providers are resolved by npm package name at runtime from the environment running the CLI, standalone server, MCP server, extension host, or the published ESM SDK build. Install them in that environment before selecting them in `.kanban.json`.
 - Missing plugin packages fail with an actionable install hint (for example `npm install <package>`).
 - This repository also contains a developer-facing example/scaffold external attachment provider at `tmp/kl-plugin-attachment-s3` for S3-compatible object stores. It is a separate package workspace, not a built-in `kanban-lite` provider.
@@ -1393,7 +1397,11 @@ Webhook delivery keeps its own top-level `webhookPlugin` config key. Selecting t
 
 ### Callback runtime provider
 
-Same-runtime callback automation is owned by the external `kl-plugin-callback` package. Install it in the runtime environment, then select the `callbacks` provider through the shared plugin-settings flow at `plugins["callback.runtime"]`.
+Same-runtime callback automation is owned by the external `kl-plugin-callback` package. Install it in the runtime environment, then select the `callbacks` provider through the shared plugin-settings flow at `plugins["callback.runtime"]`. The shared `handlers[]` list now accepts canonical `type: "module"` rows with explicit `module` and `handler` fields alongside legacy Node-only `inline` and `process` rows.
+
+When `plugins["callback.runtime"].provider` is explicitly set to `cloudflare`, the generated Worker wrapper statically bundles configured module rows into `KANBAN_MODULES`, emits the shared `queue` consumer export, and uses the logical `callbacks` queue for compact `{ version, kind, eventId }` envelopes. At runtime the Worker persists one durable D1 event record per committed event, executes matched module handlers sequentially with handler-level retry/idempotency, and rejects enabled `inline` / `process` rows because the Cloudflare path is module-only by contract.
+
+Callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to `scripts/deploy-cloudflare-worker.mjs`, and the committed/generated Wrangler configs emit `compatibility_flags = ["nodejs_compat"]` with the documented compatibility date so the Worker runtime keeps the required Node compatibility shims enabled.
 
 ```json
 {
@@ -1403,13 +1411,24 @@ Same-runtime callback automation is owned by the external `kl-plugin-callback` p
       "options": {
         "handlers": [
           {
+            "id": "module-task-created",
+            "name": "module task creation",
+            "type": "module",
+            "events": ["task.created"],
+            "enabled": true,
+            "module": "./callbacks/task-created",
+            "handler": "onTaskCreated"
+          },
+          {
+            "id": "inline-task-created",
             "name": "log task creation",
             "type": "inline",
             "events": ["task.created"],
             "enabled": true,
-            "source": "async ({ event, sdk }) => { console.log(event.event, sdk.constructor.name) }"
+            "source": "async ({ event, sdk, callback }) => { console.log(callback.handlerId, event.event, sdk.constructor.name) }"
           },
           {
+            "id": "process-task-events",
             "name": "notify local worker",
             "type": "process",
             "events": ["task.created", "task.updated"],
@@ -1425,10 +1444,13 @@ Same-runtime callback automation is owned by the external `kl-plugin-callback` p
 }
 ```
 
-- `handlers[]` is one ordered mixed list; each matching row is either `inline` or `process`.
-- Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, and receive exactly one argument shaped as `({ event, sdk })`.
-- Process handlers are normal subprocesses, not sandboxed. They receive one serialized `{ event }` JSON payload on stdin only and do not receive a live SDK object.
+- `handlers[]` is one ordered mixed list; each matching row is `module`, `inline`, or `process`.
+- `type: "module"` stores the shared Worker-safe module specifier plus named export inside the same config shape used by Node and Cloudflare hosts. The shared SDK callback core keeps that configured specifier stable across hosts, treats it as part of the durable handler fingerprint/revision, and fails closed when an enabled module row is malformed.
+- Cloudflare deploys statically bundle configured `type: "module"` handlers through the Worker `KANBAN_MODULES` registry, validate that each named export exists before publish, and reserve the `callbacks` queue for compact durable `{ version, kind, eventId }` envelopes.
+- Inline handlers are trusted same-runtime JavaScript evaluated with `new Function`. They are not sandboxed, run with host process privileges, are legacy Node-only mode, and receive exactly one argument shaped as `({ event, sdk, callback })`.
+- Process handlers are normal subprocesses, not sandboxed, and remain a legacy Node-only mode. They receive one serialized `{ event, callback }` JSON payload on stdin only and do not receive a live SDK object.
 - Matching handlers run in order. Failures are logged, then later matching handlers continue.
+- On Node, `kl-plugin-callback` resolves matching `type: "module"` rows through the public SDK `resolveCallbackRuntimeModule(...)` helper, resolves relative module paths from the workspace root, and invokes the configured export with `({ event, sdk, callback })`. The shared callback core otherwise requires own callable exports; the legacy bare CommonJS `module.exports = function` shortcut remains an explicit Node-only compatibility path that is only used when you write `handler: "default"`.
 - Inline JavaScript now uses the shared CodeMirror-backed JavaScript editor in Plugin Options; there is still no separate callback-specific management surface.
 
 ### MySQL setup and runtime expectations
@@ -1604,7 +1626,7 @@ These migration helpers are compatibility aliases for the markdown ↔ `sqlite` 
 
 If a workspace was explicitly using the `sqlite` or `mysql` attachment compatibility provider, migrating back to markdown automatically drops that incompatible attachment override so the legacy `localfs` default continues to work without manual config cleanup.
 
-**MCP tools:** `get_storage_status`, `migrate_to_sqlite`, `migrate_to_markdown`
+**MCP tools:** `get_storage_status`, `get_workspace_info`, `migrate_to_sqlite`, `migrate_to_markdown`
 
 ## Auth / Authz Plugin Contract
 

@@ -175,8 +175,14 @@ describe('S3 attachment storage integration', () => {
     expect(sdk.getStorageStatus()).toEqual({
       storageEngine: 'markdown',
       providers: {
-        'card.storage': { provider: 'markdown' },
+        'card.storage': { provider: 'localfs' },
         'attachment.storage': { provider: 'kl-plugin-attachment-s3' },
+      },
+      configStorage: {
+        configured: null,
+        effective: { provider: 'localfs' },
+        mode: 'fallback',
+        failure: null,
       },
       isFileBacked: true,
       watchGlob: 'boards/**/*.md',

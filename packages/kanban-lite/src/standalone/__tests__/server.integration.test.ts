@@ -11,6 +11,7 @@ import { broadcast } from '../broadcastService'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../../sdk/KanbanSDK'
 import { buildChecklistReadModel } from '../../sdk/modules/checklist'
 import { CardStateError, ERR_CARD_STATE_UNAVAILABLE } from '../../sdk/types'
+import type { CardTask } from '../../shared/types'
 
 type CardStateReadPayload = {
   unread?: Record<string, unknown> | null
@@ -4567,7 +4568,17 @@ describe('Standalone Server Integration', () => {
       expect(createRes.status).toBe(201)
       const created = JSON.parse(createRes.body)
       const cardId = created.data.id as string
-      expect(created.data.tasks).toEqual(['- [ ] Draft release notes'])
+      expect(created.data.tasks).toEqual([
+        expect.objectContaining({
+          title: 'Draft release notes',
+          description: '',
+          checked: false,
+          createdAt: expect.any(String),
+          modifiedAt: expect.any(String),
+          createdBy: expect.any(String),
+          modifiedBy: expect.any(String),
+        }),
+      ])
 
       const listRes = await httpGet(`http://localhost:${port}/api/tasks/${cardId}/checklist`)
       expect(listRes.status).toBe(200)
@@ -4583,68 +4594,81 @@ describe('Standalone Server Integration', () => {
         items: [
           {
             index: 0,
-            raw: '- [ ] Draft release notes',
-            expectedRaw: '- [ ] Draft release notes',
             checked: false,
-            text: 'Draft release notes',
+            title: 'Draft release notes',
+            description: '',
+            createdAt: expect.any(String),
+            modifiedAt: expect.any(String),
+            createdBy: expect.any(String),
+            modifiedBy: expect.any(String),
           },
         ],
       })
       expect(listed.token).toMatch(/^cl1:/)
 
       const missingTokenAddRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
-        text: 'Review **docs**',
+        title: 'Review **docs**',
       })
       expect(missingTokenAddRes.status).toBe(400)
       expect(JSON.parse(missingTokenAddRes.body).error).toContain('expectedToken')
 
       const addRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
-        text: 'Review **docs**',
+        title: 'Review **docs**',
         expectedToken: listed.token,
       })
       expect(addRes.status).toBe(200)
-      expect(JSON.parse(addRes.body).data.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+      const added = JSON.parse(addRes.body).data
+      expect(added.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
 
       const staleAddRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist`, {
-        text: 'Lost update',
+        title: 'Lost update',
         expectedToken: listed.token,
       })
       expect(staleAddRes.status).toBe(400)
       expect(JSON.parse(staleAddRes.body).error).toContain('stale')
 
       const editRes = await httpRequest('PUT', `http://localhost:${port}/api/tasks/${cardId}/checklist/0`, {
-        text: 'Update release notes',
-        expectedRaw: '- [ ] Draft release notes',
+        title: 'Update release notes',
+        modifiedAt: listed.items[0].modifiedAt,
       })
       expect(editRes.status).toBe(200)
-      expect(JSON.parse(editRes.body).data.items[0]).toEqual({
+      const edited = JSON.parse(editRes.body).data
+      expect(edited.items[0]).toEqual({
         index: 0,
-        raw: '- [ ] Update release notes',
-        expectedRaw: '- [ ] Update release notes',
         checked: false,
-        text: 'Update release notes',
+        title: 'Update release notes',
+        description: '',
+        createdAt: expect.any(String),
+        modifiedAt: expect.any(String),
+        createdBy: expect.any(String),
+        modifiedBy: expect.any(String),
       })
 
       const checkRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist/1/check`, {
-        expectedRaw: '- [ ] Review **docs**',
+        modifiedAt: added.items[1].modifiedAt,
       })
       expect(checkRes.status).toBe(200)
-      expect(JSON.parse(checkRes.body).data.summary).toEqual({ total: 2, completed: 1, incomplete: 1 })
+      const checked = JSON.parse(checkRes.body).data
+      expect(checked.summary).toEqual({ total: 2, completed: 1, incomplete: 1 })
 
       const uncheckRes = await httpRequest('POST', `http://localhost:${port}/api/tasks/${cardId}/checklist/1/uncheck`, {
-        expectedRaw: '- [x] Review **docs**',
+        modifiedAt: checked.items[1].modifiedAt,
       })
       expect(uncheckRes.status).toBe(200)
-      expect(JSON.parse(uncheckRes.body).data.items[1]).toEqual({
+      const unchecked = JSON.parse(uncheckRes.body).data
+      expect(unchecked.items[1]).toEqual({
         index: 1,
-        raw: '- [ ] Review **docs**',
-        expectedRaw: '- [ ] Review **docs**',
         checked: false,
-        text: 'Review **docs**',
+        title: 'Review **docs**',
+        description: '',
+        createdAt: expect.any(String),
+        modifiedAt: expect.any(String),
+        createdBy: expect.any(String),
+        modifiedBy: expect.any(String),
       })
 
       const deleteRes = await httpRequest('DELETE', `http://localhost:${port}/api/tasks/${cardId}/checklist/0`, {
-        expectedRaw: '- [ ] Update release notes',
+        modifiedAt: edited.items[0].modifiedAt,
       })
       expect(deleteRes.status).toBe(200)
       const deleted = JSON.parse(deleteRes.body).data
@@ -4659,10 +4683,13 @@ describe('Standalone Server Integration', () => {
         items: [
           {
             index: 0,
-            raw: '- [ ] Review **docs**',
-            expectedRaw: '- [ ] Review **docs**',
             checked: false,
-            text: 'Review **docs**',
+            title: 'Review **docs**',
+            description: '',
+            createdAt: expect.any(String),
+            modifiedAt: expect.any(String),
+            createdBy: expect.any(String),
+            modifiedBy: expect.any(String),
           },
         ],
       })
@@ -4701,14 +4728,15 @@ describe('Standalone Server Integration', () => {
       expect(listed.token).toMatch(/^cl1:/)
 
       const addRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-checklist/tasks/${cardId}/checklist`, {
-        text: 'Ship release notes',
+        title: 'Ship release notes',
         expectedToken: listed.token,
       })
       expect(addRes.status).toBe(200)
-      expect(JSON.parse(addRes.body).data.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+      const added = JSON.parse(addRes.body).data
+      expect(added.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
 
       const checkRes = await httpRequest('POST', `http://localhost:${port}/api/boards/qa-checklist/tasks/${cardId}/checklist/0/check`, {
-        expectedRaw: '- [ ] Verify build',
+        modifiedAt: listed.items[0].modifiedAt,
       })
       expect(checkRes.status).toBe(200)
       expect(JSON.parse(checkRes.body).data).toMatchObject({
@@ -4722,17 +4750,23 @@ describe('Standalone Server Integration', () => {
         items: [
           {
             index: 0,
-            raw: '- [x] Verify build',
-            expectedRaw: '- [x] Verify build',
             checked: true,
-            text: 'Verify build',
+            title: 'Verify build',
+            description: '',
+            createdAt: expect.any(String),
+            modifiedAt: expect.any(String),
+            createdBy: expect.any(String),
+            modifiedBy: expect.any(String),
           },
           {
             index: 1,
-            raw: '- [ ] Ship release notes',
-            expectedRaw: '- [ ] Ship release notes',
             checked: false,
-            text: 'Ship release notes',
+            title: 'Ship release notes',
+            description: '',
+            createdAt: expect.any(String),
+            modifiedAt: expect.any(String),
+            createdBy: expect.any(String),
+            modifiedBy: expect.any(String),
           },
         ],
       })
@@ -5202,17 +5236,25 @@ describe('Standalone Server Integration', () => {
       const checklistToken = buildChecklistReadModel({
         id: cardId,
         boardId: 'default',
-        tasks: (opened.frontmatter as { tasks?: string[] } | undefined)?.tasks,
+        tasks: (opened.frontmatter as { tasks?: CardTask[] } | undefined)?.tasks,
       }).token
 
       const refreshed = await sendAndReceiveMatching(
         ws,
-        { type: 'addChecklistItem', cardId, text: 'Review websocket flow', expectedToken: checklistToken },
+        { type: 'addChecklistItem', cardId, title: 'Review websocket flow', expectedToken: checklistToken },
         'cardContent',
         (payload) => payload.cardId === cardId && Array.isArray((payload.frontmatter as { tasks?: unknown[] } | undefined)?.tasks),
       )
 
-      expect((refreshed.frontmatter as { tasks?: string[] }).tasks).toEqual(['- [ ] Review websocket flow'])
+      expect((refreshed.frontmatter as { tasks?: CardTask[] }).tasks).toEqual([
+        expect.objectContaining({
+          title: 'Review websocket flow',
+          description: '',
+          checked: false,
+          createdAt: expect.any(String),
+          modifiedAt: expect.any(String),
+        }),
+      ])
     })
 
     it('PUT /api/tasks/:id should return 404 for non-existent task', async () => {
@@ -5633,6 +5675,30 @@ describe('Standalone Server Integration', () => {
         options: { apiToken: '••••••' },
       })
       expect(res.status).toBe(403)
+      spy.mockRestore()
+    })
+
+    it('PUT /api/plugin-settings/:capability/:providerId/select surfaces rejected config.storage topology mutations', async () => {
+      const spy = vi.spyOn(KanbanSDK.prototype, 'selectPluginSettingsProvider').mockRejectedValue(
+        new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+          code: 'plugin-settings-runtime-mutation-rejected',
+          message: "Cloudflare Worker config.storage topology changed from 'cloudflare' to 'localfs'. Update the Worker bootstrap and redeploy before applying this config change.",
+          capability: 'config.storage',
+          providerId: 'localfs',
+        })),
+      )
+
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/config.storage/localfs/select`)
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body)).toMatchObject({
+        ok: false,
+        error: "Cloudflare Worker config.storage topology changed from 'cloudflare' to 'localfs'. Update the Worker bootstrap and redeploy before applying this config change.",
+        data: {
+          code: 'plugin-settings-runtime-mutation-rejected',
+          capability: 'config.storage',
+          providerId: 'localfs',
+        },
+      })
       spy.mockRestore()
     })
 

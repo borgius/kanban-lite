@@ -1,3 +1,4 @@
+import * as fs from 'node:fs/promises'
 import * as path from 'path'
 import type { Card } from '../../shared/types'
 import type { SDKContext } from './context'
@@ -8,14 +9,31 @@ import type { SDKContext } from './context'
  * Adds a file attachment to a card.
  */
 export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: { cardId: string; sourcePath: string; boardId?: string }): Promise<Card> {
+  const fileName = path.basename(sourcePath)
+  const data = await fs.readFile(sourcePath)
+  return addAttachmentData(ctx, { cardId, filename: fileName, data, boardId })
+}
+
+/**
+ * Adds raw attachment data to a card.
+ */
+export async function addAttachmentData(
+  ctx: SDKContext,
+  {
+    cardId,
+    filename,
+    data,
+    boardId,
+  }: { cardId: string; filename: string; data: string | Uint8Array; boardId?: string },
+): Promise<Card> {
   const visibleCard = await ctx.getCard(cardId, boardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
   const card = await ctx._getCardRaw(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const fileName = path.basename(sourcePath)
+  const fileName = path.basename(filename)
 
-  await ctx.copyAttachment(sourcePath, card)
+  await ctx.writeAttachment(card, fileName, data)
 
   if (!card.attachments.includes(fileName)) {
     card.attachments.push(fileName)
@@ -50,6 +68,21 @@ export async function listAttachments(ctx: SDKContext, { cardId, boardId }: { ca
   const card = await ctx.getCard(cardId, boardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   return card.attachments
+}
+
+/**
+ * Reads raw attachment data for a card.
+ */
+export async function getAttachmentData(
+  ctx: SDKContext,
+  { cardId, filename, boardId }: { cardId: string; filename: string; boardId?: string },
+): Promise<{ data: Uint8Array; contentType?: string } | null> {
+  const card = await ctx.getCard(cardId, boardId)
+  if (!card) throw new Error(`Card not found: ${cardId}`)
+  if (!card.attachments.includes(filename)) {
+    return null
+  }
+  return ctx.readAttachment(card, filename)
 }
 
 /**

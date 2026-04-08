@@ -1,8 +1,8 @@
 # kl-plugin-storage-redis
 
-A [kanban-lite](https://github.com/borgius/kanban-lite) `card.storage` and `attachment.storage` plugin for Redis.
+A [kanban-lite](https://github.com/borgius/kanban-lite) `card.storage`, `config.storage`, and `attachment.storage` plugin for Redis.
 
-Cards and comments are stored in Redis hashes. Workspace configuration (boards, columns, settings, labels, webhooks) continues to be sourced from `.kanban.json`. Attachment files are stored on the local filesystem at `.kanban/boards/{boardId}/{status}/attachments/`.
+Cards and comments are stored in Redis hashes. Workspace configuration can also be stored in Redis with the same connection options when `config.storage` is selected or derived from `card.storage`. Attachment files are stored on the local filesystem at `.kanban/boards/{boardId}/{status}/attachments/`.
 
 ## Install
 
@@ -19,9 +19,10 @@ npm install kl-plugin-storage-redis ioredis
 ## Capabilities
 
 - `card.storage` — persists cards and comments in Redis hashes
+- `config.storage` — persists workspace config documents in Redis with the same connection options as `card.storage`
 - `attachment.storage` — copies attachment files to local filesystem paths under `.kanban/`
 
-In kanban-lite, selecting `redis` under `card.storage` is enough to auto-derive this package's `attachment.storage` and `card.state` providers with the same options. You only need an explicit `plugins["attachment.storage"]` entry when choosing a different attachment backend such as S3.
+In kanban-lite, selecting `redis` under `card.storage` is enough to auto-derive this package's `attachment.storage`, `card.state`, and `config.storage` providers with the same options. You only need an explicit `plugins["attachment.storage"]` entry when choosing a different attachment backend such as S3. If you keep an explicit `plugins["config.storage"]` override (for example `localfs` from bootstrap config), kanban-lite preserves that override instead of pruning it as redundant.
 
 ## `.kanban.json` example
 
@@ -49,6 +50,8 @@ In kanban-lite, selecting `redis` under `card.storage` is enough to auto-derive 
 | `password` | no | — | Redis password |
 | `db` | no | `0` | Redis database index |
 | `keyPrefix` | no | `kanban` | Prefix for Redis keys |
+
+The same options payload is used when `redis` owns `config.storage`, whether you select it explicitly under `plugins["config.storage"]` or let kanban-lite derive it from `card.storage`.
 
 ## Data layout
 

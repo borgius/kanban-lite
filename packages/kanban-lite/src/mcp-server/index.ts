@@ -2,9 +2,9 @@ import * as path from 'path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
+import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
-import { buildChecklistReadModel } from '../sdk/modules/checklist'
+import { buildChecklistReadModel, coerceChecklistSeedTasks } from '../sdk/modules/checklist'
 import { resolveMcpPlugins, type CardStateCursor, type CardStateRecord, type McpToolContext, type McpToolResult } from '../sdk/plugins'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent, type Priority } from '../shared/types'
 import { readConfig } from '../shared/config'
@@ -272,6 +272,7 @@ export function registerPluginSettingsMcpTools(
 ): string[] {
   const registeredNames = [
     'list_plugin_settings',
+    'get_plugin_settings',
     'select_plugin_settings_provider',
     'update_plugin_settings_options',
     'install_plugin_settings_package',
@@ -279,7 +280,7 @@ export function registerPluginSettingsMcpTools(
 
   server.tool(
     'list_plugin_settings',
-    'List the capability-grouped plugin provider inventory for this workspace.',
+    'List the capability-grouped plugin provider inventory for this workspace, including selected config.storage resolution state when present.',
     {},
     async () => {
       try {
@@ -292,10 +293,37 @@ export function registerPluginSettingsMcpTools(
   )
 
   server.tool(
-    'select_plugin_settings_provider',
-    'Persist the selected provider for a plugin capability and return the redacted provider read model.',
+    'get_plugin_settings',
+    'Read the redacted provider state for one capability/provider pair, including configured-versus-effective config.storage resolution details when applicable.',
     {
-      capability: z.string().describe('Capability namespace to update (for example auth.identity or card.storage).'),
+      capability: z.string().describe('Capability namespace to inspect (for example auth.identity, card.storage, or config.storage).'),
+      providerId: z.string().describe('Provider identifier to read for the capability.'),
+    },
+    async ({ capability, providerId }) => {
+      try {
+        const payload: McpPluginSettingsReadModel | null = await options.runWithAuth(() =>
+          options.sdk.getPluginSettings(String(capability) as never, String(providerId)),
+        )
+        if (!payload) {
+          return createMcpErrorResult(new PluginSettingsOperationError(createPluginSettingsErrorPayload({
+            code: 'plugin-settings-provider-not-found',
+            message: 'Plugin provider not found',
+            capability: String(capability) as never,
+            providerId: String(providerId),
+          })))
+        }
+        return createMcpJsonResult(payload)
+      } catch (err) {
+        return createMcpErrorResult(err)
+      }
+    },
+  )
+
+  server.tool(
+    'select_plugin_settings_provider',
+    'Persist the selected provider for a plugin capability and return the redacted provider read model. Rejected config.storage topology mutations are surfaced as explicit errors.',
+    {
+      capability: z.string().describe('Capability namespace to update (for example auth.identity, card.storage, or config.storage).'),
       providerId: z.string().describe('Provider identifier to select for the capability.'),
     },
     async ({ capability, providerId }) => {
@@ -312,9 +340,9 @@ export function registerPluginSettingsMcpTools(
 
   server.tool(
     'update_plugin_settings_options',
-    'Persist provider options for a capability/provider pair and return the redacted provider read model.',
+    'Persist provider options for a capability/provider pair and return the redacted provider read model, preserving explicit config.storage error/degraded state when reported by the SDK.',
     {
-      capability: z.string().describe('Capability namespace to update (for example auth.identity or card.storage).'),
+      capability: z.string().describe('Capability namespace to update (for example auth.identity, card.storage, or config.storage).'),
       providerId: z.string().describe('Provider identifier whose options should be updated.'),
       options: z.record(z.string(), z.unknown()).describe('Provider options payload to persist under the selected capability/provider pair.'),
     },
@@ -807,7 +835,7 @@ async function main(): Promise<void> {
           assignee: assignee || null,
           dueDate: dueDate || null,
           labels: labels || [],
-          tasks: tasks || undefined,
+          tasks: coerceChecklistSeedTasks(tasks),
           metadata,
           actions,
           boardId,
@@ -1712,7 +1740,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'get_workspace_info',
-    'Get the workspace root path, cards directory, and active storage engine.',
+    'Get the workspace root path, cards directory, active storage engine, and configured-versus-effective config.storage status.',
     {},
     async () => {
       const cfg = readConfig(workspaceRoot)
@@ -1733,6 +1761,7 @@ async function main(): Promise<void> {
             storageEngine: storageStatus.storageEngine,
             sqlitePath: cfg.sqlitePath ?? null,
             providers,
+            configStorage: storageStatus.configStorage,
             isFileBacked: storageStatus.isFileBacked,
             watchGlob: storageStatus.watchGlob,
             auth: getMcpAuthStatus(),
@@ -1746,7 +1775,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'get_storage_status',
-    'Get the current storage engine type and configuration.',
+    'Get the current storage engine type plus configured-versus-effective config.storage status, including explicit failure or degraded state when present.',
     {},
     async () => {
       const cfg = readConfig(workspaceRoot)
@@ -1764,6 +1793,7 @@ async function main(): Promise<void> {
             storageEngine: storageStatus.storageEngine,
             sqlitePath: cfg.sqlitePath ?? null,
             providers,
+            configStorage: storageStatus.configStorage,
             isFileBacked: storageStatus.isFileBacked,
             watchGlob: storageStatus.watchGlob,
           }, null, 2),

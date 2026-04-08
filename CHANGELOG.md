@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-party Cloudflare storage bundle** (`kl-plugin-cloudflare`): Added a Worker-safe `cloudflare` provider that co-provides `card.storage`, `attachment.storage`, `card.state`, and `config.storage`, storing structured data/config/state in D1 and attachment blobs in R2 through the shared Worker binding/context seam without background polling or always-on runtime work.
+
+- **Cloudflare queue-backed callback runtime** (`kl-plugin-cloudflare`): The Worker host and deploy helper now share a formal callback module + queue ABI (`KANBAN_MODULES`, `callbacks`, compact `{ version, kind, eventId }` envelopes), statically validate configured callback module exports before deployment, persist one durable D1 event record per committed event, execute matched module handlers sequentially through the Worker `queue` export, retry only failed handlers with canonical handler-level idempotency claims, and reject enabled `inline` / `process` rows when `plugins["callback.runtime"].provider = "cloudflare"`.
+
 - **Cloudflare Workers runtime-host hooks**: Added a global runtime-host override for config read/write, workspace env loading, and bundled plugin module resolution, plus a minimal Workers `fetch` entrypoint that reuses standalone route dispatch for HTTP API requests, a detailed `docs/cloudflare.md` guide, and a `scripts/deploy-cloudflare-worker.mjs` deploy helper that scaffolds a Wrangler wrapper with statically bundled plugins.
 
 - **Standalone Playwright E2E coverage**: The root E2E suite now covers scenario-isolated standalone browser flows for core board workflow persistence, board search/filtering, comment and checklist detail happy paths, attachment and form detail happy paths, auth/visibility login plus hidden-card denial, and one Plugin Options provider-selection persistence smoke.
@@ -31,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Auth visibility plugin** (`kl-plugin-auth-visibility`): Added a new first-party `auth.visibility` package that filters cards with role-only rules after `kl-plugin-auth` resolves identity and roles. The capability is opt-in, defaults to `provider: "none"`, matches by role only, unions cards across matching rules, applies AND across fields / OR within a field, supports `assignees: ["@me"]`, and does not grant implicit admin/manager bypass.
 
-- **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk })`; process handlers receive serialized event JSON on stdin only; per-handler failures are logged while later matches continue.
+- **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk, callback })`; process handlers receive serialized `{ event, callback }` JSON on stdin only; per-handler failures are logged while later matches continue.
 
 - **Async plugin option-schema resolution helper**: Plugin settings discovery now resolves sync/async `optionsSchema()` metadata before it reaches SDK/UI/API/CLI/MCP consumers, and plugin authors can use the shared SDK helper to populate schema or UI values from runtime data such as the live available-event catalog.
 
@@ -46,6 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standard plugin package manifest** (`pluginManifest` export): Every first-party plugin package now exports a `pluginManifest` constant declaring its capabilities and integration surfaces. The engine uses this manifest for fast, reliable discovery instead of exhaustive duck-typing. New types `KLPluginPackageManifest` and `PluginIntegrationNamespace` are exported from `kanban-lite/sdk`. All first-party plugin packages (`kl-plugin-auth`, `kl-plugin-storage-sqlite`, `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, `kl-plugin-storage-mongodb`, `kl-plugin-storage-redis`, `kl-plugin-attachment-s3`, `kl-plugin-webhook`) include the manifest. Third-party plugins without `pluginManifest` still work via the legacy probing fallback.
 
 ### Changed
+
+- **Callback runtime shared module contract**: `kl-plugin-callback` now accepts canonical `type: "module"` handler rows with explicit `module` and `handler` fields in the existing `plugins["callback.runtime"].options.handlers[]` list, includes those fields in stable durable handler fingerprints/revisions, and documents `inline` / `process` as legacy Node-only modes instead of introducing a Worker-only callback dialect.
+
+- **Node callback module execution parity**: `kl-plugin-callback` now executes matching `type: "module"` rows on Node through the public SDK `resolveCallbackRuntimeModule(...)` seam, invoking the configured export with `({ event, sdk, callback })` while preserving existing handler ordering, durable claims, duplicate-id refusal behavior, and continue-on-error semantics for mixed module/inline/process arrays.
+
+- **Shared callback core extraction**: Transport-neutral callback row normalization, fail-closed enabled module validation, event-pattern matching, ordered execution-plan selection, module-target resolution, and shared export validation now live under `packages/kanban-lite/src/sdk/callbacks/` so Node and Cloudflare callback runtimes consume one contract. The legacy bare CommonJS `module.exports = function` default shortcut remains an explicit Node-only compatibility path.
+
+- **`config.storage` host parity and rejection surfacing**: shared plugin-settings reads now include MCP `get_plugin_settings` parity beside CLI/REST detail flows, storage/workspace status docs now call out configured-versus-effective `config.storage` reporting, and Worker-style topology-changing `config.storage` mutations surface as explicit rejected runtime mutations instead of generic silent provider swaps.
+
+- **MySQL/PostgreSQL/Redis storage bundles now co-provide `config.storage`**: `kl-plugin-storage-mysql`, `kl-plugin-storage-postgresql`, and `kl-plugin-storage-redis` now advertise `config.storage` alongside their existing storage capabilities and persist workspace config with the same connection/options payload used by `card.storage`, while preserving explicit local/bootstrap `plugins["config.storage"]` overrides in stored documents.
+
+- **Durable callback pre-queue contract**: SDK after-events now reserve `meta.callback` for a durable callback event ID, event-plus-handler idempotency semantics, and the Cloudflare durable-record D1 write budget contract (one claim/upsert plus one checkpoint per handler attempt, with the terminal summary folded into the last checkpoint) so direct callback listeners and upcoming queue runtime work share one contract.
 
 - **Mobile build and client readiness**: `@kanban-lite/mobile` now participates in root/package build verification through an Expo export build script, and the mobile REST client/cache boundary now exposes typed task list/detail, permissions, resolved-form, and workspace-scoped snapshot DTOs instead of generic JSON placeholders.
 
@@ -66,6 +82,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Cloudflare callback deploy/docs finalization**: The callback plugin regression test now asserts the shared checkpoint-per-handler-attempt D1 write-budget contract, committed/generated Wrangler configs emit `compatibility_flags = ["nodejs_compat"]`, and the Cloudflare deployment guide now documents the required `--callback-queue` plus queue tuning flags for callback-enabled Worker deploys.
+
+- **Cloudflare callback durability and queue bundle seams**: The Cloudflare callback queue consumer now persists handler progress after every handler attempt so later D1 write failures only replay unfinished handlers, and the generated Worker wrapper now injects the Cloudflare provider plus SDK runtime into the queue seam instead of relying on Node-only entry imports.
+
+- **Cloudflare callback Wave 1 contract hardening**: Queue planning/deploy activation now keys off an explicit `plugins["callback.runtime"].provider = "cloudflare"` selection, the deploy helper can carry bootstrap-owned config-storage binding/revision inputs forward into the generated Worker bootstrap, malformed enabled module rows fail closed instead of being silently dropped, and callback module validation now requires own callable exports rather than inherited prototype properties.
+
+- **Callback explicit handler ID collision hardening**: `kl-plugin-callback` now refuses duplicate normalized handler IDs across both configured and legacy-derived handlers, so explicit ID reuse and cross-source collisions fail closed before execution instead of aliasing the same durable callback identity.
+
+- **Callback legacy handler durability hardening**: `kl-plugin-callback` no longer derives missing handler IDs from row position; legacy handlers now use stable content-derived identities that survive reordering, and ambiguous duplicate legacy handlers fail closed until they are assigned explicit IDs so durable callback claims remain deterministic.
+
+- **Wave 3 config fallback tightening**: Generic `readConfig()` paths now fail closed when an explicit non-`localfs` `config.storage` provider is unavailable or returns no remote document under a runtime host, while seed/bootstrap recovery remains scoped to explicit control-plane and bootstrap reads that opt into it.
+
+- **Wave 3 checklist contract test parity**: CLI, MCP, and standalone checklist validation now stay aligned with the richer `CardTask`/`ChecklistReadModel` contract, and standalone type cleanup removes a duplicate `CreateCardData` export plus an unused server import that were blocking focused type/lint verification.
+
+- **Fail-closed runtime config reads for explicit `config.storage` overrides**: Generic `readConfig()` calls now distinguish missing config from repository/provider failures, keep missing-workspace defaults intact, surface explicit non-`localfs` config-storage read/parse errors as configuration failures, and preserve seed/bootstrap recovery only for the narrow SDK bootstrap and plugin-settings control-plane paths that explicitly opt into it.
 
 - **Mobile SecureStore key normalization**: `@kanban-lite/mobile` now maps logical session and cache keys onto Expo SecureStore-safe physical keys before any read/write/delete call, preventing startup/auth restore crashes from `/`, `:`, and percent-encoded cache namespace separators while preserving the existing logical storage contracts in app code and tests.
 

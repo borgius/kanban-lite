@@ -639,12 +639,20 @@ export declare class KanbanSDK {
      * bus as an {@link SDKEvent}. After-event listeners are non-blocking: the event bus
      * isolates errors per listener so a failing listener never prevents sibling listeners
      * from executing and never propagates to the SDK caller.
+        *
+        * The SDK reserves `meta.callback` for durable callback delivery metadata. Every
+        * committed after-event receives a durable callback event ID before any queue enqueue
+        * or direct handler dispatch, plus explicit event-plus-handler idempotency semantics
+        * and the Cloudflare durable-record D1 budget contract: one claim/upsert plus one
+        * checkpoint after each handler attempt, with the terminal summary folded into the
+        * last checkpoint so the lifecycle budget is `1 + total handler attempts`.
      *
      * @param event   - After-event name (e.g. `'task.created'`).
      * @param data    - The committed mutation result.
      * @param actor   - Resolved acting principal, if known.
      * @param boardId - Board context for this event, if applicable.
-     * @param meta    - Optional audit metadata.
+        * @param meta    - Optional audit metadata. The SDK appends a reserved
+        *   `meta.callback` contract before dispatch.
      *
      * @internal
      */
@@ -691,6 +699,13 @@ export declare class KanbanSDK {
      * normal copy/materialization path.
      */
     appendAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>;
+    /** Reads raw attachment bytes, preferring provider-native byte helpers when available. */
+    readAttachment(card: Card, attachment: string): Promise<{
+        data: Uint8Array;
+        contentType?: string;
+    } | null>;
+    /** Writes raw attachment bytes, preferring provider-native byte helpers when available. */
+    writeAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<void>;
     /**
      * Resolves or materializes a safe local file path for a named attachment.
      *
@@ -1437,6 +1452,10 @@ export declare class KanbanSDK {
      */
     addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card>;
     /**
+     * Adds a raw attachment payload to a card without requiring a source file path.
+     */
+    addAttachmentData(cardId: string, filename: string, data: string | Uint8Array, boardId?: string): Promise<Card>;
+    /**
      * Removes an attachment reference from a card's metadata.
      *
      * This removes the attachment filename from the card's `attachments` array
@@ -1469,6 +1488,13 @@ export declare class KanbanSDK {
      * ```
      */
     listAttachments(cardId: string, boardId?: string): Promise<string[]>;
+    /**
+     * Reads raw attachment bytes for a card.
+     */
+    getAttachmentData(cardId: string, filename: string, boardId?: string): Promise<{
+        data: Uint8Array;
+        contentType?: string;
+    } | null>;
     /**
      * Returns the absolute path to the attachment directory for a card.
      *

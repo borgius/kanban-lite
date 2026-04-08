@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import type { ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Card } from '../shared/types'
+import type { Card, CardTask } from '../shared/types'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { AuthError } from '../sdk/types'
 import { cmdActive, cmdAdd, cmdChecklist, cmdColumns, cmdEdit, cmdForm, cmdLabels, cmdList, cmdPluginSettings, parseArgs, showHelp } from './index'
@@ -459,6 +459,19 @@ function makeCard(overrides: Partial<Card> = {}): Card {
   }
 }
 
+function makeChecklistTask(title: string, overrides: Partial<CardTask> = {}): CardTask {
+  return {
+    title,
+    description: '',
+    checked: false,
+    createdAt: '2026-03-18T00:00:00.000Z',
+    modifiedAt: '2026-03-18T00:00:00.000Z',
+    createdBy: 'test-user',
+    modifiedBy: 'test-user',
+    ...overrides,
+  }
+}
+
 function mockProcessExit(): ReturnType<typeof vi.spyOn> {
   return vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
     throw new Error(`process.exit:${code ?? 0}`)
@@ -579,8 +592,8 @@ describe('CLI list command', () => {
     expect(helpText).toContain('plugin-settings install <packageName> --scope <workspace|global>')
     expect(helpText).toContain('form submit <id> <form>')
     expect(helpText).toContain('checklist list <id>')
-    expect(helpText).toContain('checklist add <id> --text <text> --expected-token <token>')
-    expect(helpText).toContain('checklist check <id> <index> --expected-raw')
+    expect(helpText).toContain('checklist add <id> --title <title> --expected-token <token>')
+    expect(helpText).toContain('checklist check <id> <index> --modified-at <iso>')
     expect(helpText).toContain("--forms '<json|@file>'")
     expect(helpText).toContain("--form-data '<json|@file>'")
     expect(helpText).toContain("--data '<json|@file>'")
@@ -869,11 +882,14 @@ describe('CLI checklist commands', () => {
     vi.restoreAllMocks()
   })
 
-  it('lists visible checklist items with machine-friendly expectedRaw values', async () => {
+  it('lists visible checklist items with the rich checklist read model', async () => {
     const sdk = {
       getCard: vi.fn().mockResolvedValue(makeCard({
         id: 'card-checklist',
-        tasks: ['- [ ] Draft release notes', '- [x] Ship fix'],
+        tasks: [
+          makeChecklistTask('Draft release notes'),
+          makeChecklistTask('Ship fix', { checked: true }),
+        ],
         labels: ['tasks'],
       })),
       runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
@@ -895,17 +911,23 @@ describe('CLI checklist commands', () => {
       items: [
         {
           index: 0,
-          raw: '- [ ] Draft release notes',
-          expectedRaw: '- [ ] Draft release notes',
           checked: false,
-          text: 'Draft release notes',
+          title: 'Draft release notes',
+          description: '',
+          createdAt: '2026-03-18T00:00:00.000Z',
+          modifiedAt: '2026-03-18T00:00:00.000Z',
+          createdBy: 'test-user',
+          modifiedBy: 'test-user',
         },
         {
           index: 1,
-          raw: '- [x] Ship fix',
-          expectedRaw: '- [x] Ship fix',
           checked: true,
-          text: 'Ship fix',
+          title: 'Ship fix',
+          description: '',
+          createdAt: '2026-03-18T00:00:00.000Z',
+          modifiedAt: '2026-03-18T00:00:00.000Z',
+          createdBy: 'test-user',
+          modifiedBy: 'test-user',
         },
       ],
     })
@@ -915,7 +937,10 @@ describe('CLI checklist commands', () => {
   it('passes expectedToken through checklist adds and prints the refreshed checklist token', async () => {
     const updated = makeCard({
       id: 'card-checklist',
-      tasks: ['- [ ] Draft release notes', '- [ ] Review **docs**'],
+      tasks: [
+        makeChecklistTask('Draft release notes'),
+        makeChecklistTask('Review **docs**'),
+      ],
       labels: ['tasks', 'in-progress'],
     })
     const sdk = {
@@ -926,37 +951,65 @@ describe('CLI checklist commands', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdChecklist(sdk as KanbanSDK, ['add', 'card-checklist'], {
-      text: 'Review **docs**',
+      title: 'Review **docs**',
       'expected-token': 'cl1:stale-proof',
       json: true,
     })
 
-    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', 'cl1:stale-proof', undefined)
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', '', 'cl1:stale-proof', undefined)
     const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
-    expect(payload.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
+    expect(payload).toMatchObject({
+      summary: { total: 2, completed: 0, incomplete: 2 },
+      items: [
+        {
+          index: 0,
+          checked: false,
+          title: 'Draft release notes',
+          description: '',
+          createdAt: '2026-03-18T00:00:00.000Z',
+          modifiedAt: '2026-03-18T00:00:00.000Z',
+          createdBy: 'test-user',
+          modifiedBy: 'test-user',
+        },
+        {
+          index: 1,
+          checked: false,
+          title: 'Review **docs**',
+          description: '',
+          createdAt: '2026-03-18T00:00:00.000Z',
+          modifiedAt: '2026-03-18T00:00:00.000Z',
+          createdBy: 'test-user',
+          modifiedBy: 'test-user',
+        },
+      ],
+    })
     expect(payload.token).toMatch(/^cl1:/)
   })
 
-  it('passes expectedRaw through checklist edits and prints the caller-scoped result', async () => {
+  it('passes modifiedAt through checklist edits and prints the caller-scoped result', async () => {
     const updated = makeCard({
       id: 'card-checklist',
-      tasks: ['- [ ] Updated copy'],
+      tasks: [makeChecklistTask('Updated copy')],
       labels: ['tasks', 'in-progress'],
     })
     const sdk = {
-      getCard: vi.fn().mockResolvedValue(makeCard({ id: 'card-checklist', tasks: ['- [ ] Original copy'], labels: ['tasks', 'in-progress'] })),
+      getCard: vi.fn().mockResolvedValue(makeCard({
+        id: 'card-checklist',
+        tasks: [makeChecklistTask('Original copy')],
+        labels: ['tasks', 'in-progress'],
+      })),
       editChecklistItem: vi.fn().mockResolvedValue(updated),
       runWithAuth: vi.fn((ctx: unknown, fn: () => Promise<unknown>) => fn()),
     } as unknown as Pick<KanbanSDK, 'getCard' | 'editChecklistItem' | 'runWithAuth'>
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await cmdChecklist(sdk as KanbanSDK, ['edit', 'card-checklist', '0'], {
-      text: 'Updated copy',
-      'expected-raw': '- [ ] Original copy',
+      title: 'Updated copy',
+      'modified-at': '2026-03-18T00:00:00.000Z',
       json: true,
     })
 
-    expect(sdk.editChecklistItem).toHaveBeenCalledWith('card-checklist', 0, 'Updated copy', '- [ ] Original copy', undefined)
+    expect(sdk.editChecklistItem).toHaveBeenCalledWith('card-checklist', 0, 'Updated copy', '', '2026-03-18T00:00:00.000Z', undefined)
     const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
     expect(payload).toMatchObject({
       cardId: 'card-checklist',
@@ -969,10 +1022,13 @@ describe('CLI checklist commands', () => {
       items: [
         {
           index: 0,
-          raw: '- [ ] Updated copy',
-          expectedRaw: '- [ ] Updated copy',
           checked: false,
-          text: 'Updated copy',
+          title: 'Updated copy',
+          description: '',
+          createdAt: '2026-03-18T00:00:00.000Z',
+          modifiedAt: '2026-03-18T00:00:00.000Z',
+          createdBy: 'test-user',
+          modifiedBy: 'test-user',
         },
       ],
     })
@@ -1782,6 +1838,121 @@ describe('CLI plugin-settings commands', () => {
           apiToken: 'updated-local-token',
           users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
         },
+      })
+    } finally {
+      cleanup()
+    }
+  }, 20_000)
+
+  it('exposes config.storage read, select, and cached update flows via the generic plugin-settings commands', async () => {
+    const { configPath, cleanup } = createCliWorkspace({
+      plugins: {
+        'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/cards.db' } },
+        'config.storage': { provider: 'localfs' },
+      },
+      auth: {
+        'auth.identity': { provider: 'noop' },
+        'auth.policy': { provider: 'noop' },
+      },
+    })
+
+    try {
+      const showResult = await runCliCommand([
+        'plugin-settings',
+        'show',
+        'config.storage',
+        'localfs',
+        '--json',
+        '--config',
+        configPath,
+      ])
+
+      expect(showResult.exitCode).toBe(0)
+      expect(JSON.parse(showResult.stdout)).toMatchObject({
+        capability: 'config.storage',
+        providerId: 'localfs',
+        selected: {
+          capability: 'config.storage',
+          providerId: 'localfs',
+          source: 'config',
+          resolution: {
+            configured: { provider: 'localfs' },
+            effective: { provider: 'localfs' },
+            mode: 'explicit',
+            failure: null,
+          },
+        },
+      })
+
+      const selectResult = await runCliCommand([
+        'plugin-settings',
+        'select',
+        'config.storage',
+        'markdown',
+        '--json',
+        '--config',
+        configPath,
+      ])
+
+      expect(selectResult.exitCode).toBe(0)
+      expect(JSON.parse(selectResult.stdout)).toMatchObject({
+        capability: 'config.storage',
+        providerId: 'localfs',
+        selected: {
+          capability: 'config.storage',
+          providerId: 'localfs',
+          source: 'config',
+          resolution: {
+            configured: { provider: 'localfs' },
+            effective: { provider: 'localfs' },
+            mode: 'explicit',
+            failure: null,
+          },
+        },
+      })
+
+      const updateResult = await runCliCommand([
+        'plugin-settings',
+        'update-options',
+        'config.storage',
+        'localfs',
+        '--options',
+        JSON.stringify({ rootDir: '.kanban/config' }),
+        '--json',
+        '--config',
+        configPath,
+      ])
+
+      expect(updateResult.exitCode).toBe(0)
+      expect(JSON.parse(updateResult.stdout)).toMatchObject({
+        capability: 'config.storage',
+        providerId: 'localfs',
+        selected: {
+          capability: 'config.storage',
+          providerId: 'localfs',
+          source: 'config',
+          resolution: {
+            configured: {
+              provider: 'localfs',
+              options: { rootDir: '.kanban/config' },
+            },
+            effective: {
+              provider: 'localfs',
+              options: { rootDir: '.kanban/config' },
+            },
+            mode: 'explicit',
+            failure: null,
+          },
+        },
+      })
+
+      const persistedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+        plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+
+      expect(persistedConfig.plugins['config.storage']).toEqual({
+        provider: 'localfs',
+        options: { rootDir: '.kanban/config' },
       })
     } finally {
       cleanup()

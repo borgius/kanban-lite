@@ -1,7 +1,12 @@
 import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createCardStateProvider } from './index'
+import {
+  __setRedisConfigStorageRunnerForTests,
+  createCardStateProvider,
+  createConfigStorageProvider,
+  pluginManifest,
+} from './index'
 
 const runtimeRequire = createRequire(import.meta.url)
 const redisModulePath = runtimeRequire.resolve('ioredis')
@@ -12,7 +17,95 @@ afterEach(() => {
   if (cachedModule) {
     cachedModule.exports = originalRedisModule
   }
+  __setRedisConfigStorageRunnerForTests(null)
   vi.restoreAllMocks()
+})
+
+describe('kl-plugin-storage-redis config.storage provider', () => {
+  it('advertises config.storage in the package manifest', () => {
+    expect(pluginManifest.capabilities['config.storage']).toEqual(['redis'])
+  })
+
+  it('round-trips workspace config with the same connection options payload used by card.storage', () => {
+    const commands: Array<{
+      action: 'read' | 'write'
+      connection: {
+        host?: string
+        port?: number
+        password?: string
+        db?: number
+        keyPrefix?: string
+      }
+      documentId: string
+      document?: Record<string, unknown>
+    }> = []
+    let storedDocument: Record<string, unknown> | null = null
+
+    __setRedisConfigStorageRunnerForTests((command) => {
+      commands.push(structuredClone(command))
+
+      if (command.action === 'write') {
+        storedDocument = structuredClone(command.document ?? null) as Record<string, unknown> | null
+        return null
+      }
+
+      return storedDocument
+    })
+
+    const provider = createConfigStorageProvider({
+      workspaceRoot: '/tmp/workspace',
+      documentId: 'workspace-config',
+      provider: 'redis',
+      backend: 'external',
+      options: {
+        host: 'redis.test',
+        port: 6380,
+        password: 'secret',
+        db: 2,
+        keyPrefix: 'cfg',
+      },
+    })
+
+    const document: Record<string, unknown> = {
+      version: 2,
+      defaultBoard: 'default',
+      plugins: {
+        'config.storage': {
+          provider: 'localfs',
+          options: { scope: 'bootstrap' },
+        },
+      },
+    }
+
+    provider.writeConfigDocument(document)
+
+    expect(provider.readConfigDocument()).toEqual(document)
+    expect(commands).toEqual([
+      {
+        action: 'write',
+        connection: {
+          host: 'redis.test',
+          port: 6380,
+          password: 'secret',
+          db: 2,
+          keyPrefix: 'cfg',
+        },
+        documentId: 'workspace-config',
+        document,
+      },
+      {
+        action: 'read',
+        connection: {
+          host: 'redis.test',
+          port: 6380,
+          password: 'secret',
+          db: 2,
+          keyPrefix: 'cfg',
+        },
+        documentId: 'workspace-config',
+      },
+    ])
+  })
 })
 
 describe('kl-plugin-storage-redis card.state provider', () => {

@@ -3,6 +3,10 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
+import {
+  CALLBACK_DURABLE_EVENT_RECORD_D1_WRITE_BUDGET,
+  getDurableCallbackDispatchMetadata,
+} from '../callbacks/contract'
 import { AuthError } from '../types'
 import type { AfterEventPayload, SDKEvent } from '../types'
 
@@ -312,7 +316,15 @@ describe('KanbanSDK._runAfterEvent', () => {
     expect(payload.data).toEqual({ id: '1' })
     expect(payload.actor).toBe('alice')
     expect(payload.boardId).toBe('board-1')
-    expect(payload.meta).toEqual({ audit: true })
+    expect(payload.meta).toMatchObject({ audit: true })
+    const callbackMeta = getDurableCallbackDispatchMetadata(payload.meta)
+    expect(callbackMeta).toEqual({
+      eventId: expect.stringMatching(/^cb_evt_/),
+      idempotencyScope: 'event-handler',
+      budgets: {
+        durableEventRecordD1Writes: CALLBACK_DURABLE_EVENT_RECORD_D1_WRITE_BUDGET,
+      },
+    })
     expect(typeof payload.timestamp).toBe('string')
   })
 

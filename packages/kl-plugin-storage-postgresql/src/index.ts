@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import type {
@@ -8,11 +9,9 @@ import type {
   CardStateKey,
   CardStateModuleContext,
   CardStateProvider,
-  CardStateProviderManifest,
   CardStateReadThroughInput,
   CardStateRecord,
   CardStateUnreadKey,
-  CardStateValue,
   CardStateWriteInput,
   CardStoragePlugin,
   PluginSettingsOptionsSchemaMetadata,
@@ -45,6 +44,26 @@ export type {
 // ---------------------------------------------------------------------------
 
 export type Comment = Card['comments'][number]
+
+export interface ConfigStorageProviderManifest {
+  readonly id: string
+  readonly provides: readonly string[]
+}
+
+export interface ConfigStorageModuleContext {
+  workspaceRoot: string
+  documentId: string
+  provider: string
+  backend: 'builtin' | 'external'
+  options?: Record<string, unknown>
+  worker?: unknown
+}
+
+export interface ConfigStorageProviderPlugin {
+  readonly manifest: ConfigStorageProviderManifest
+  readConfigDocument(): Record<string, unknown> | null | undefined
+  writeConfigDocument(document: Record<string, unknown>): void
+}
 
 /** Card format version constant (matches kanban-lite's CARD_FORMAT_VERSION). */
 const CARD_FORMAT_VERSION = 2
@@ -90,6 +109,27 @@ export interface PostgresqlConnectionConfig {
   database: string
   /** Optional SSL configuration passed through to pg. */
   ssl?: unknown
+}
+
+const POSTGRESQL_DATABASE_OPTION_ERROR =
+  'kl-plugin-storage-postgresql: PostgreSQL storage requires a "database" option. '
+  + 'Set it in .kanban.json: { "plugins": { "card.storage": { "provider": "postgresql", '
+  + '"options": { "database": "my_db", "host": "localhost", "user": "postgres", "password": "" } } } }'
+
+function resolvePostgresqlConnectionConfig(options?: Record<string, unknown>): PostgresqlConnectionConfig {
+  const database = options?.database
+  if (typeof database !== 'string' || !database) {
+    throw new Error(POSTGRESQL_DATABASE_OPTION_ERROR)
+  }
+
+  return {
+    host: (options?.host as string | undefined) ?? 'localhost',
+    port: typeof options?.port === 'number' ? options.port : 5432,
+    user: (options?.user as string | undefined) ?? 'postgres',
+    password: (options?.password as string | undefined) ?? '',
+    database,
+    ...(options?.ssl !== undefined ? { ssl: options.ssl } : {}),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +509,7 @@ export class PostgresqlStorageEngine implements StorageEngine {
       completedAt: row.completed_at ?? null,
       labels: this._parseJson<string[]>(row.labels, []),
       attachments: this._parseJson<string[]>(row.attachments, []),
-      ...(row.tasks ? { tasks: this._parseJson<string[]>(row.tasks, []) } : {}),
+      ...(row.tasks ? { tasks: this._parseJson<NonNullable<Card['tasks']>>(row.tasks, [] as NonNullable<Card['tasks']>) } : {}),
       order: row.order_key,
       content: row.content,
       comments,
@@ -550,23 +590,7 @@ export function createPostgresqlAttachmentPlugin(engine: StorageEngine): Attachm
 export const cardStoragePlugin: CardStoragePlugin = {
   manifest: { id: 'postgresql', provides: ['card.storage'] as const },
   createEngine(kanbanDir: string, options?: Record<string, unknown>): PostgresqlStorageEngine {
-    const database = options?.database
-    if (typeof database !== 'string' || !database) {
-      throw new Error(
-        'kl-plugin-storage-postgresql: PostgreSQL storage requires a "database" option. ' +
-        'Set it in .kanban.json: { "plugins": { "card.storage": { "provider": "postgresql", ' +
-        '"options": { "database": "my_db", "host": "localhost", "user": "postgres", "password": "" } } } }',
-      )
-    }
-    const connConfig: PostgresqlConnectionConfig = {
-      host: (options?.host as string | undefined) ?? 'localhost',
-      port: typeof options?.port === 'number' ? options.port : 5432,
-      user: (options?.user as string | undefined) ?? 'postgres',
-      password: (options?.password as string | undefined) ?? '',
-      database,
-      ...(options?.ssl !== undefined ? { ssl: options.ssl } : {}),
-    }
-    return new PostgresqlStorageEngine(kanbanDir, connConfig)
+    return new PostgresqlStorageEngine(kanbanDir, resolvePostgresqlConnectionConfig(options))
   },
   nodeCapabilities: {
     isFileBacked: false,
@@ -699,11 +723,156 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
   }
 }
 
+// ---------------------------------------------------------------------------
+// config.storage provider (merged into storage package)
+// ---------------------------------------------------------------------------
+
+type PostgresqlConfigStorageCommand =
+  | {
+      action: 'read'
+      connection: PostgresqlConnectionConfig
+      documentId: string
+    }
+  | {
+      action: 'write'
+      connection: PostgresqlConnectionConfig
+      documentId: string
+      document: Record<string, unknown>
+    }
+
+type PostgresqlConfigStorageRunner = (
+  command: PostgresqlConfigStorageCommand,
+) => Record<string, unknown> | null
+
+const POSTGRESQL_CONFIG_STORAGE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS kanban_config_documents (
+  document_id TEXT PRIMARY KEY,
+  document_text TEXT NOT NULL,
+  updated_at VARCHAR(50) NOT NULL
+)
+`
+
+const POSTGRESQL_CONFIG_STORAGE_SELECT_SQL =
+  'SELECT document_text FROM kanban_config_documents WHERE document_id = $1'
+
+const POSTGRESQL_CONFIG_STORAGE_UPSERT_SQL = `
+INSERT INTO kanban_config_documents (document_id, document_text, updated_at)
+VALUES ($1, $2, $3)
+ON CONFLICT (document_id) DO UPDATE SET
+  document_text = EXCLUDED.document_text,
+  updated_at = EXCLUDED.updated_at
+`
+
+function runPostgresqlConfigStorageCommand(
+  command: PostgresqlConfigStorageCommand,
+): Record<string, unknown> | null {
+  const script = `
+const fs = require('node:fs');
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const { Pool } = require('pg');
+const schemaSql = ${JSON.stringify(POSTGRESQL_CONFIG_STORAGE_SCHEMA_SQL)};
+const selectSql = ${JSON.stringify(POSTGRESQL_CONFIG_STORAGE_SELECT_SQL)};
+const upsertSql = ${JSON.stringify(POSTGRESQL_CONFIG_STORAGE_UPSERT_SQL)};
+
+(async () => {
+  const connection = payload.connection ?? {};
+  const pool = new Pool({
+    host: connection.host ?? 'localhost',
+    port: connection.port ?? 5432,
+    user: connection.user ?? 'postgres',
+    password: connection.password ?? '',
+    database: connection.database,
+    max: 1,
+    ...(connection.ssl !== undefined ? { ssl: connection.ssl } : {}),
+  });
+
+  try {
+    await pool.query(schemaSql);
+
+    if (payload.action === 'read') {
+      const result = await pool.query(selectSql, [payload.documentId]);
+      const row = Array.isArray(result.rows) ? result.rows[0] : undefined;
+      const rawDocument = row && typeof row.document_text === 'string' ? row.document_text : null;
+      process.stdout.write(rawDocument ?? 'null');
+      return;
+    }
+
+    await pool.query(upsertSql, [
+      payload.documentId,
+      JSON.stringify(payload.document ?? {}),
+      new Date().toISOString(),
+    ]);
+    process.stdout.write('null');
+  } finally {
+    await pool.end();
+  }
+})().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exit(1);
+});
+`
+
+  const result = spawnSync(process.execPath, ['-e', script], {
+    input: JSON.stringify(command),
+    encoding: 'utf8',
+  })
+
+  if (result.status !== 0) {
+    const details = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n')
+    throw new Error(
+      `kl-plugin-storage-postgresql: unable to ${command.action} workspace config via PostgreSQL.`
+      + (details ? `\n${details}` : ''),
+    )
+  }
+
+  const rawOutput = result.stdout.trim()
+  if (!rawOutput || rawOutput === 'null') return null
+
+  const parsed = JSON.parse(rawOutput) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('kl-plugin-storage-postgresql: PostgreSQL config storage returned an invalid config document.')
+  }
+
+  return parsed as Record<string, unknown>
+}
+
+let postgresqlConfigStorageRunner: PostgresqlConfigStorageRunner = runPostgresqlConfigStorageCommand
+
+export function __setPostgresqlConfigStorageRunnerForTests(
+  runner: PostgresqlConfigStorageRunner | null,
+): void {
+  postgresqlConfigStorageRunner = runner ?? runPostgresqlConfigStorageCommand
+}
+
+export function createConfigStorageProvider(context: ConfigStorageModuleContext): ConfigStorageProviderPlugin {
+  const connection = resolvePostgresqlConnectionConfig(context.options)
+
+  return {
+    manifest: { id: 'postgresql', provides: ['config.storage'] as const },
+    readConfigDocument(): Record<string, unknown> | null {
+      return postgresqlConfigStorageRunner({
+        action: 'read',
+        connection,
+        documentId: context.documentId,
+      })
+    },
+    writeConfigDocument(document: Record<string, unknown>): void {
+      postgresqlConfigStorageRunner({
+        action: 'write',
+        connection,
+        documentId: context.documentId,
+        document,
+      })
+    },
+  }
+}
+
 /** Standard package manifest for engine discovery. */
 export const pluginManifest = {
   id: 'kl-plugin-storage-postgresql',
   capabilities: {
     'card.storage': ['postgresql'] as const,
+    'config.storage': ['postgresql'] as const,
     'attachment.storage': ['postgresql'] as const,
     'card.state': ['postgresql'] as const,
   },

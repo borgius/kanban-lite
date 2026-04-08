@@ -157,7 +157,7 @@ JSON Schema `default` values are also applied when the shared settings editor op
 
 When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into `plugins[capability].options`. For example, selecting `auth.policy: rbac` or `auth.policy: kl-plugin-auth` writes the default permission rows derived from the shipped `RBAC_ROLE_MATRIX` instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.
 
-The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the CodeMirror-backed inline `source` field and the process `command` / `args` / `cwd` fields.
+The first-party `kl-plugin-callback` package uses this path directly: `plugins["callback.runtime"].options.handlers` is one ordered mixed array, and its explicit `uiSchema` switches the shared JSON Forms detail editor between the shared `module` / `handler` fields, the CodeMirror-backed inline `source` field, and the process `command` / `args` / `cwd` fields.
 
 If a provider does not expose `optionsSchema()`, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.
 
@@ -243,28 +243,31 @@ Important config nuance: unlike storage capabilities, webhook delivery is curren
 
 This capability owns same-runtime callback automation for committed SDK after-events.
 
-Provider id:
+Provider ids:
 
-- `callbacks`
-
-External package:
-
-- `kl-plugin-callback`
+- `callbacks` via `kl-plugin-callback`
+- `cloudflare` via `kl-plugin-cloudflare`
 
 Behavior:
 
 - is selected through the shared plugin-settings path at `plugins["callback.runtime"]`,
+- uses `provider: "callbacks"` for the Node same-runtime path or `provider: "cloudflare"` for the Cloudflare queue-backed module-runtime path,
 - persists one ordered mixed `plugins["callback.runtime"].options.handlers` array,
-- supports `inline` rows evaluated with `new Function` and invoked as `({ event, sdk })`,
-- supports `process` rows that receive one serialized `{ event }` JSON payload on stdin only,
+- supports canonical `module` rows that store a Worker-safe module specifier plus named export inside that same shared array,
+- currently preserves legacy Node `inline` rows evaluated with `new Function` and invoked as `({ event, sdk, callback })`,
+- currently preserves legacy Node `process` rows that receive one serialized `{ event, callback }` JSON payload on stdin only,
 - logs per-handler failures and continues later matching handlers.
 
 Trust model:
 
-- inline handlers are trusted same-runtime JavaScript, not sandboxed, and run with host process privileges,
-- process handlers are ordinary subprocesses, not sandboxed, and do not receive a live SDK object or other in-memory runtime handles.
+- module rows are the shared cross-host callback contract so later Node and Worker runtimes can resolve the same saved `module` + `handler` pair without host-specific config branches,
+- the Node `callbacks` provider remains the same-runtime path for mixed `module` / `inline` / `process` arrays,
+- Cloudflare deploy/runtime tooling now statically bundles configured module rows through the Worker `KANBAN_MODULES` registry, validates that each named export exists before publish, persists one durable event record per committed event, and drives at-least-once queue delivery with compact `{ version, kind, eventId }` envelopes only when `plugins["callback.runtime"].provider === "cloudflare"`,
+- callback-enabled Cloudflare deploys must pass `--callback-queue <name>` to the deploy helper so it can emit the Queue consumer stanza, and the committed/generated Wrangler configs carry `compatibility_flags = ["nodejs_compat"]` alongside the compatibility date,
+- inline handlers are trusted same-runtime JavaScript, not sandboxed, run with host process privileges, and remain Node-only legacy mode,
+- process handlers are ordinary subprocesses, not sandboxed, do not receive a live SDK object or other in-memory runtime handles, and remain Node-only legacy mode.
 
-Inline source authoring stays inside the shared plugin-settings workflow, but now uses the embedded CodeMirror JavaScript editor rather than a plain multiline text field.
+Inline source authoring stays inside the shared plugin-settings workflow, module/process fields remain in that same explicit JSON Forms layout, and inline JavaScript still uses the embedded CodeMirror editor rather than a plain multiline text field.
 
 ---
 

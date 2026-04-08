@@ -31,6 +31,8 @@ export interface ChecklistReadModel {
   items: ChecklistItemReadModel[]
 }
 
+export type ChecklistSeedTaskInput = string | CardTask
+
 function hashChecklistSnapshot(snapshot: string, seed: number, prime: number): string {
   let hash = seed >>> 0
 
@@ -237,6 +239,51 @@ export function buildChecklistTask(
     createdBy,
     modifiedBy: createdBy,
   }
+}
+
+const CHECKLIST_SEED_MARKDOWN_LINE_RE = /^\s*[-*]\s+\[(?<checked>[ xX])\]\s+(?<title>.+?)\s*$/
+
+function cloneChecklistTask(task: CardTask): CardTask {
+  return {
+    title: task.title,
+    description: task.description,
+    checked: task.checked,
+    createdAt: task.createdAt,
+    modifiedAt: task.modifiedAt,
+    createdBy: task.createdBy,
+    modifiedBy: task.modifiedBy,
+  }
+}
+
+function coerceChecklistSeedTask(
+  entry: ChecklistSeedTaskInput,
+  options: { createdBy?: string; now?: string },
+): CardTask {
+  if (typeof entry !== 'string') {
+    return cloneChecklistTask(entry)
+  }
+
+  const normalized = entry.replace(/\r\n/g, '\n')
+  const [firstLine = '', ...descriptionLines] = normalized.split('\n')
+  const match = firstLine.match(CHECKLIST_SEED_MARKDOWN_LINE_RE)
+  const title = (match?.groups?.title ?? firstLine).trim()
+  const description = descriptionLines.join('\n').trim()
+  const task = buildChecklistTask(title, description, options.createdBy ?? '', options.now)
+
+  if (match?.groups?.checked?.toLowerCase() === 'x') {
+    task.checked = true
+  }
+
+  return task
+}
+
+export function coerceChecklistSeedTasks(
+  tasks: readonly ChecklistSeedTaskInput[] | undefined,
+  options: { createdBy?: string; now?: string } = {},
+): CardTask[] | undefined {
+  if (!tasks || tasks.length === 0) return undefined
+
+  return tasks.map((task) => coerceChecklistSeedTask(task, options))
 }
 
 export function normalizeChecklistTasks(tasks: readonly CardTask[] | undefined): CardTask[] | undefined {

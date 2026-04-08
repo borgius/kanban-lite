@@ -1,195 +1,104 @@
-prd_id: prd-mobile-field-app
+prd_id: prd-card-tasks
 version: 0.1.0
-status: draft
-
-objective: |
-  Add a React Native mobile app for Kanban Lite on Android and iPhone that helps
-  field workers complete assigned work quickly and safely while reusing the
-  repo's existing auth, visibility, action, form, comment, attachment, and
-  checklist semantics as the source of truth.
-
-assumptions:
-  - The mobile client is a REST-first Expo/React Native shell; the server remains the source of truth for auth, visibility, actions, forms, comments, attachments, and checklist state.
-  - The primary mobile persona is a field employee who opens the app to review and finish assigned work, not to administer boards or workspace settings.
-  - The app must feel offline-friendly: last synced assigned work remains readable offline, in-progress capture is stored locally, and reconnect/sync state is explicit.
-  - Modern 2026 mobile UX means thumb-friendly layout, camera-first capture, dark mode, accessible tap targets, and clear sync/auth state.
-  - Existing Kanban Lite auth providers remain host-owned; mobile-specific onboarding may require new backend contracts where the repo does not already define them.
+status: final
 
 user_stories:
-  - as_a: field worker
-    i_want: a fast mobile "My work" experience for assigned tasks
-    so_that: I can finish work without navigating a desktop-first board UI
-  - as_a: newly invited worker
-    i_want: to join via workspace domain, magic link, deep link, or QR
-    so_that: onboarding from the field takes seconds
-  - as_a: authorized worker
-    i_want: to see only the tasks, columns, forms, attachments, comments, and actions I am allowed to access
-    so_that: the app stays simple and does not leak hidden work
-  - as_a: mobile contributor
-    i_want: to add comments, photos/files, checklist progress, form submissions, and card actions from my phone
-    so_that: I can complete the task where the work happens
-  - as_a: deployer
-    i_want: the mobile app to reuse Kanban Lite's REST/auth semantics rather than inventing a second rules engine
-    so_that: policy, visibility, and audit behavior stay consistent across clients
+  - as_a: card collaborator
+    i_want: a dedicated `Tasks X/N` tab on card details
+    so_that: I can track checklist progress directly on the card
+  - as_a: card collaborator
+    i_want: to add, edit, delete, check, and uncheck tasks inline
+    so_that: card work can be managed as a classic todo list without extra entities or navigation
+  - as_a: policy author
+    i_want: task visibility and task actions to be authorized separately
+    so_that: users can be allowed to open a card without automatically seeing or mutating its tasks
+  - as_a: platform maintainer
+    i_want: tasks to behave the same across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins
+    so_that: card task workflows stay portable across every supported interface and backend
 
 scope:
   in_scope:
-    - Ship an Expo/React Native mobile shell for iOS and Android that consumes Kanban Lite through REST-first mobile-friendly flows.
-    - Optimize the default mobile information architecture around assigned work, due work, and quick task completion rather than workspace administration.
-    - Support domain-based workspace discovery/login entry, plus magic-link/deep-link and QR-based onboarding flows once the server contract is defined.
-    - Respect the existing auth family as source of truth: `auth.identity` resolves identity, `auth.policy` decides allowed protected actions, and `auth.visibility` filters the visible card set.
-    - Show only auth-visible tasks and derive mobile column sections from the visible task set so hidden cards do not leak through counts or previews.
-    - Show card action buttons only when the current caller may trigger `card.action.trigger`; hide or disable disallowed or unavailable actions.
-    - Support mobile comment flows using the existing comment model and stored order.
-    - Support file/photo attachments through the existing attachment provider contract.
-    - Support attached forms and server-side form submission semantics, including per-form saved data and server-owned validation.
-    - Support checklist/task flows through the shared checklist read model and optimistic-concurrency inputs (`expectedToken`, `expectedRaw`).
-    - Preserve offline-friendly field workflows via cached assigned work, local drafts, reconnect-aware sync status, and safe retry UX.
+    - Add an optional shared card field `card.tasks: string[]`.
+    - Represent each task item as a single-line markdown task string such as `- [ ] text` or `- [x] **done**`.
+    - Add a fixed card-detail tab labeled `Tasks X/N`, where X is the completed count and N is the total count.
+    - Support classic todo-list interactions: add, delete, check, uncheck, and inline text editing.
+    - Support simple inline markdown in task text while editing and rendering: bold, italic, code, and links.
+    - Let the auth plugin authorize `show`, `add`, `edit`, `delete`, `check`, and `uncheck` task actions independently.
+    - Protect task visibility separately from general card visibility even though tasks live on the shared card object.
+    - Omit the `tasks` field entirely from card payloads when the caller lacks task-show permission.
+    - Keep SDK-owned task auth and redaction as the canonical behavior, with hosts rendering already-scoped data.
+    - Support tasks across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
+    - Preserve backward compatibility so cards without tasks remain valid.
   out_of_scope:
-    - Replacing the web UI, CLI, MCP server, or VS Code extension.
-    - Board, column, label, webhook, plugin-settings, or auth-provider administration from mobile.
-    - A new client-side authorization or visibility engine that diverges from SDK/server behavior.
-    - Board-action configuration or plugin installation flows.
-    - Guaranteed offline execution of side-effecting card actions/webhooks.
-    - Push notifications, background geolocation, or route optimization.
-    - A mobile-only data model for comments, forms, attachments, or checklists.
+    - Nested subtasks, task-level assignees, due dates, priorities, attachments, or comments.
+    - Rich markdown blocks, HTML, embeds, or other formatting beyond simple inline markdown.
+    - Separate standalone task entities, task IDs, or task metadata outside the stored markdown task line.
+    - Host-local task auth or redaction rules that diverge from SDK behavior.
+    - Breaking schema changes or mandatory migration for cards that do not use tasks.
 
 acceptance_criteria:
-  - criterion: The mobile app is implemented as a REST-first Expo/React Native client for Android and iPhone, with server-owned auth, visibility, and business logic.
-    verification: Review app architecture and network flows to confirm mobile reads/writes use documented REST endpoints and do not reimplement auth, policy, or visibility locally.
-  - criterion: A worker can start onboarding from a workspace domain, deep link/magic link, or QR entry point and land in the correct workspace/session when the backend supports the selected flow.
-    verification: Exercise each entry path and confirm the app resolves the target workspace, authenticates the user, and returns to the assigned-work home screen without manual token copying.
-  - criterion: Mobile task discovery respects `auth.visibility`, so the visible task list is the same caller-specific subset returned by Kanban Lite and hidden tasks behave as unavailable/not found.
-    verification: Compare the same user across mobile and another supported interface against the same workspace rules and confirm matching visible task results plus not-found behavior for hidden task opens.
-  - criterion: The mobile UI shows only allowed actions and task affordances for the current caller.
-    verification: Use role/policy combinations where `card.action.trigger`, `form.submit`, `comment.create`, `comment.update`, `comment.delete`, `attachment.add`, and `attachment.remove` differ and confirm the app only renders the authorized controls.
-  - criterion: Mobile comments, photo/file attachments, forms, and checklist operations reuse the current Kanban Lite models rather than inventing mobile-specific payload shapes.
-    verification: Verify comments use the comment endpoints/model, attachments upload/download through the attachment endpoints, forms submit via `/api/tasks/:id/forms/:formId/submit`, and checklist mutations use the documented checklist endpoints and concurrency guards.
-  - criterion: Checklist/task progress remains separate from the card markdown body and preserves existing optimistic-concurrency semantics.
-    verification: Add, edit, check, uncheck, and remove checklist items from mobile while simulating concurrent changes; confirm `expectedToken` / `expectedRaw` conflicts surface as retryable sync errors rather than silent overwrites.
-  - criterion: Field workers can continue working during poor connectivity without losing captured work.
-    verification: Put the device offline after an initial sync, reopen assigned work, capture draft comments, form input, photo attachments, and checklist intents locally, then reconnect and confirm pending work is either synced or clearly marked failed with recovery actions.
-  - criterion: Side-effecting card actions are connectivity-aware and do not fire blindly from an offline queue.
-    verification: Attempt to trigger a card action while offline and confirm the app explains why the action cannot run or requires reconnect instead of replaying an unknown webhook side effect later.
-  - criterion: The mobile UX is field-worker optimized and modern for 2026 mobile use.
-    verification: Review the shipped flows to confirm thumb-friendly navigation, quick camera capture, large primary actions, dark-mode support, and explicit sync/auth/session status on iPhone and Android.
+  - criterion: Cards may include an optional `tasks` array and cards without tasks remain valid everywhere.
+    verification: Create, read, and update cards with and without `tasks` across supported surfaces and backends and confirm both shapes work without migration requirements.
+  - criterion: Each task is stored as a single-line markdown task string in `card.tasks`.
+    verification: Persist tasks and confirm stored values use strings like `- [ ] text` and `- [x] **done**` rather than a task-object schema.
+  - criterion: The card-detail UI includes a fixed `Tasks X/N` tab for callers allowed to view tasks.
+    verification: Open cards with zero, incomplete, and completed tasks and confirm the tab label reflects completed versus total counts.
+  - criterion: Users can add, edit inline, delete, check, and uncheck tasks.
+    verification: Exercise each task action and confirm the resulting `card.tasks` entries update correctly.
+  - criterion: Task text supports simple inline markdown while editing and rendering.
+    verification: Author tasks containing bold, italic, code, and links and confirm raw markdown is preserved while rendered views display the supported inline formatting.
+  - criterion: The auth plugin authorizes `show`, `add`, `edit`, `delete`, `check`, and `uncheck` independently.
+    verification: Configure distinct allow and deny cases per action and confirm each surface enforces the same action-specific outcomes.
+  - criterion: Task visibility is protected separately from general card visibility.
+    verification: Use a caller who can view a card but lacks task-show permission and confirm the card remains visible while the `tasks` field is omitted rather than returned as an empty array.
+  - criterion: The SDK owns task auth and redaction behavior and hosts do not re-scope task data locally.
+    verification: Review the cross-surface flow and confirm hosts consume SDK-scoped payloads instead of applying their own task-visibility logic.
+  - criterion: Tasks are supported consistently across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
+    verification: Persist and retrieve task-bearing cards through each supported interface and backend and confirm parity of stored values, counts, and omission semantics.
 
-needs_clarification:
-  - What exact server bootstrap contract should domain-based login use: plain base URL entry, tenant/domain discovery endpoint, or a dedicated mobile workspace-discovery API?
-  - What is the canonical magic-link/deep-link contract for Kanban Lite mobile: token issuance endpoint, token lifetime, one-time vs reusable behavior, refresh/session exchange, and final deep-link URL format?
-  - What payload should QR onboarding carry: workspace URL only, invite token, user enrollment token, or a signed one-time bootstrap envelope?
-  - Should empty columns with zero currently visible tasks be hidden entirely on mobile, or shown as empty sections when the user may still browse that status/column?
-  - Should checklist mutations get explicit auth action names of their own, or continue to inherit current server behavior even though the documented protected action catalog does not currently enumerate checklist-specific actions?
-  - How far should offline write support go for comments, forms, attachments, and checklist changes: local drafts only, auto-retry queue, or explicit user-confirmed resend after reconnect?
-  - Does mobile onboarding need SSO/OIDC/email-link providers beyond the current local login + bearer-token patterns already documented in the repo?
-  - Should mobile support search/browse beyond assigned work in v1, or remain intentionally scoped to "My work", due work, and direct links/QR entries?
+needs_clarification: []
 
 features:
-  - name: Assigned-work home
-    overview: A mobile-first landing experience centered on the caller's visible assigned tasks, urgent work, and quick completion flows.
+  - name: Shared card task field
+    overview: Add optional `card.tasks: string[]` to store checklist items on cards.
     status: planned
-  - name: Domain + link + QR onboarding
-    overview: Workers can join the right workspace from typed domain entry, magic/deep links, or QR scans.
+  - name: Markdown task-line storage
+    overview: Store each task as a single-line markdown task string that carries both completion state and lightweight inline formatting.
     status: planned
-  - name: Auth- and visibility-safe task discovery
-    overview: Mobile lists and opens only the caller's SDK/REST-visible task set and derives column presentation from that filtered result.
+  - name: Fixed `Tasks X/N` card-detail tab
+    overview: Show a dedicated card-detail tab with completed and total task counts.
     status: planned
-  - name: Mobile task detail workspace
-    overview: Each task detail view supports comments, attachments, actions, forms, and checklist progress with field-friendly ergonomics.
+  - name: Classic todo-list interactions
+    overview: Support add, delete, check, uncheck, and inline task-text editing.
     status: planned
-  - name: Camera-first attachments
-    overview: Workers can capture or attach photos/files from the device and upload them through the existing attachment provider path.
+  - name: Simple inline markdown task text
+    overview: Support bold, italic, code, and links in task text during editing and rendering.
     status: planned
-  - name: Offline-friendly local drafts
-    overview: The app caches assigned work and preserves in-progress capture with explicit pending/synced/failed status during reconnects.
+  - name: Separate task auth and redaction
+    overview: Authorize `show`, `add`, `edit`, `delete`, `check`, and `uncheck` independently and omit `tasks` entirely when `show` is denied.
     status: planned
-  - name: Online-safe action triggers
-    overview: Named card actions are shown only when allowed and only run when connectivity is sufficient for safe server execution.
+  - name: Cross-surface and cross-storage parity
+    overview: Keep task behavior consistent across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.
     status: planned
-
-state_machines:
-  - name: mobile_onboarding_session
-    states:
-      - no_workspace
-      - workspace_resolved
-      - auth_challenge_pending
-      - authenticated
-      - session_stale
-    transitions:
-      - from: no_workspace
-        to: workspace_resolved
-        trigger: The user enters a workspace domain or opens a QR/deep link that resolves to a valid Kanban Lite mobile workspace target.
-      - from: workspace_resolved
-        to: auth_challenge_pending
-        trigger: The app starts the configured mobile onboarding/login flow for that workspace.
-      - from: auth_challenge_pending
-        to: authenticated
-        trigger: The server accepts the onboarding/login exchange and returns a usable authenticated mobile session/token context.
-      - from: authenticated
-        to: session_stale
-        trigger: The stored session expires, is revoked, or fails a protected API call.
-      - from: session_stale
-        to: auth_challenge_pending
-        trigger: The user reauthenticates through the supported login flow.
-  - name: mobile_sync_state
-    states:
-      - synced
-      - offline_cached
-      - pending_upload
-      - sync_conflict
-      - sync_failed
-    transitions:
-      - from: synced
-        to: offline_cached
-        trigger: Connectivity is lost after at least one successful sync and the app falls back to the last visible local snapshot.
-      - from: offline_cached
-        to: pending_upload
-        trigger: The user records local draft work such as comment text, attachment capture, form input, or checklist intent.
-      - from: pending_upload
-        to: synced
-        trigger: Reconnect succeeds and the server accepts the queued draft or online retry.
-      - from: pending_upload
-        to: sync_conflict
-        trigger: The server rejects the replay because task or checklist state changed and optimistic-concurrency inputs are stale.
-      - from: pending_upload
-        to: sync_failed
-        trigger: The replay fails for another actionable reason such as validation, auth loss, or attachment upload failure.
-      - from: sync_conflict
-        to: pending_upload
-        trigger: The user reviews the latest task state and retries with refreshed server data.
-
-errors:
-  - code: ERR_MOBILE_WORKSPACE_UNRESOLVED
-    message: Unable to resolve this Kanban Lite workspace. Check the domain, QR, or invite link and try again.
-  - code: ERR_MOBILE_AUTH_LINK_INVALID
-    message: This mobile login link is invalid or expired. Request a new link and try again.
-  - code: ERR_MOBILE_TASK_NOT_VISIBLE
-    message: This task is no longer available for your account.
-  - code: ERR_MOBILE_SYNC_CONFLICT
-    message: This task changed on another client. Refresh the latest state and retry your update.
-  - code: ERR_MOBILE_ACTION_REQUIRES_ONLINE
-    message: This action needs a live connection before it can run safely.
 
 decisions:
-  - decision: The first mobile release is a REST-first Expo/React Native app for iOS and Android.
-    rationale: Kanban Lite already exposes the required task, comment, attachment, form, and checklist APIs; reusing them keeps the mobile shell thinner and consistent with the rest of the product.
-  - decision: Mobile is assigned-work-first, not admin-first.
-    rationale: The objective is helping field employees finish assigned work quickly, so the default IA should favor "My work", due work, and deep-linked task completion over workspace configuration.
-  - decision: The server remains the source of truth for identity, policy, visibility, forms, actions, comments, attachments, and checklist behavior.
-    rationale: Reusing existing repo semantics prevents client-side rule drift and keeps cross-surface auth/visibility behavior consistent.
-  - decision: Mobile column presentation is derived from the caller's visible task set rather than from raw board totals.
-    rationale: The repo already treats hidden cards as unavailable/not found; mobile should not leak hidden work via counts or previews.
-  - decision: Offline friendliness means cached reading plus local draft capture/retry, not blind offline execution of side-effecting webhooks/actions.
-    rationale: Card actions can trigger external side effects, so v1 should prefer safe online execution while still preserving field-captured work locally.
-  - decision: Checklist flows must preserve the existing shared checklist model and optimistic-concurrency inputs.
-    rationale: The current API already documents `expectedToken` and `expectedRaw`; mobile should keep those guarantees instead of inventing a weaker conflict model.
-  - decision: Onboarding must support domain, deep-link/magic-link, and QR entry paths, with exact server contracts clarified separately where the repo does not define them yet.
-    rationale: Fast field onboarding is core to the initiative, but the current codebase does not yet standardize those mobile-specific auth/bootstrap contracts.
+  - decision: Task data is stored on the shared card as `card.tasks: string[]`.
+    rationale: Tasks are part of shared card content and must stay portable across interfaces and storage backends.
+  - decision: Each task item is represented as a single-line markdown task string.
+    rationale: Markdown task-line syntax keeps storage human-readable while encoding completion state and simple inline formatting in one value.
+  - decision: The UI exposes tasks in a fixed `Tasks X/N` card-detail tab.
+    rationale: A fixed tab makes checklist state discoverable and provides a stable home for card task management.
+  - decision: Task text supports only simple inline markdown.
+    rationale: Bold, italic, code, and links cover common task authoring needs without expanding into rich-text or block-markdown editing.
+  - decision: Task permissions are authorized separately for `show`, `add`, `edit`, `delete`, `check`, and `uncheck`.
+    rationale: Operators need fine-grained control over who can view tasks at all and which task mutations each caller may perform.
+  - decision: When task-show permission is denied, card payloads omit the `tasks` field entirely rather than returning an empty array.
+    rationale: Omission preserves separate visibility semantics and avoids conflating hidden tasks with visible-but-empty tasks.
+  - decision: The SDK owns task auth and redaction behavior.
+    rationale: Centralizing scoping in the SDK keeps REST API, CLI, MCP, UI, and storage integrations consistent and prevents host-specific leaks or drift.
+  - decision: The feature is additive and backward-compatible.
+    rationale: Existing cards remain valid without migration because `tasks` is optional and absent unless used.
 
 changes:
   - version: 0.1.0
-    change: Initial PRD for a field-worker-focused React Native mobile app initiative aligned with existing Kanban Lite auth, visibility, action, form, comment, attachment, and checklist semantics.
-  - version: 0.1.1
-    change: Repository platform work now also includes a runtime-host hook plus a minimal Cloudflare Workers standalone fetch entrypoint for non-Node hosts, with explicit guardrails for unsupported websocket parity in this patch.
-  - version: 0.1.2
-    change: Cloudflare follow-up documentation now includes a dedicated deployment/runtime guide and a deploy helper script that scaffolds a Wrangler worker wrapper with statically bundled plugins.
+    change: Replace the active PRD with the initial card-tasks PRD covering shared `card.tasks` storage, fixed `Tasks X/N` UI, classic todo-list interactions, simple inline markdown, separate task auth and redaction, SDK-owned scoping, backward compatibility, and parity across SDK, REST API, CLI, MCP, default markdown storage, and all first-party storage plugins.

@@ -107,14 +107,6 @@ function createRbacDefaultPermissionEntries(): PermissionMatrixEntry[] {
 interface LocalAuthSession {
   username: string
   expiresAt: number
-  kind?: 'cookie-session' | 'local-mobile-session-v1'
-  workspaceOrigin?: string
-}
-
-interface MobileBootstrapGrant {
-  username: string
-  workspaceOrigin: string
-  expiresAt: number
 }
 
 type AuthConfigSnapshot = Pick<KanbanConfig, 'auth' | 'plugins'>
@@ -122,34 +114,12 @@ type AuthConfigSnapshot = Pick<KanbanConfig, 'auth' | 'plugins'>
 const API_TOKEN_ENV_KEYS = ['KANBAN_LITE_TOKEN', 'KANBAN_TOKEN'] as const
 const LOCAL_AUTH_COOKIE = 'kanban_lite_session'
 const LOCAL_AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const LOCAL_MOBILE_SESSION_KIND = 'local-mobile-session-v1'
 const AUTH_SESSIONS_FILE = '.auth-sessions.json'
-const MOBILE_BOOTSTRAP_TOKENS_FILE = '.mobile-bootstrap-tokens.json'
 const DEFAULT_LOCAL_AUTH_ROLES = ['user', 'manager', 'admin'] as const
 const AUTH_PLUGIN_SECRET_REDACTION: PluginSettingsRedactionPolicy = {
   maskedValue: '••••••',
   writeOnly: true,
   targets: ['read', 'list', 'error'],
-}
-
-function buildStableWorkspaceId(workspaceRoot: string): string {
-  const normalizedWorkspaceRoot = path.resolve(workspaceRoot).replace(/\\/g, '/')
-  const portableWorkspaceRoot = process.platform === 'win32'
-    ? normalizedWorkspaceRoot.toLowerCase()
-    : normalizedWorkspaceRoot
-  const hashValue = crypto.createHash('sha256').update(portableWorkspaceRoot).digest('hex').slice(0, 12)
-  return `workspace_${hashValue}`
-}
-
-function resolveWorkspaceId(value: unknown, workspaceRoot: string): string {
-  if (typeof value === 'string') {
-    const normalized = value.trim()
-    if (normalized.length > 0) {
-      return normalized
-    }
-  }
-
-  return buildStableWorkspaceId(workspaceRoot)
 }
 
 function getDefaultLocalAuthRoles(): string[] {
@@ -166,34 +136,7 @@ function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
   return roles ?? getDefaultLocalAuthRoles()
 }
 
-const AUTH_POLICY_ACTION_SUPPLEMENTS = [
-  'card.checklist.show',
-  'plugin-settings.read',
-  'plugin-settings.update',
-] as const
-
-function actionMatchesPattern(action: string, pattern: string): boolean {
-  if (pattern === '*') return true
-  if (pattern === action) return true
-  if (pattern.endsWith('.*')) {
-    const prefix = pattern.slice(0, -2)
-    return action.startsWith(`${prefix}.`)
-  }
-  return false
-}
-
-function deriveWildcardPatterns(actions: readonly string[]): string[] {
-  const prefixes = new Set<string>()
-  for (const action of actions) {
-    const parts = action.split('.')
-    for (let i = 1; i < parts.length; i++) {
-      prefixes.add(parts.slice(0, i).join('.'))
-    }
-  }
-  return [...prefixes].sort((a, b) => a.localeCompare(b)).map((prefix) => `${prefix}.*`)
-}
-
-async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]> {
+async function getAvailableAuthPolicyBeforeEvents(sdk?: KanbanSDK): Promise<string[]> {
   const events = typeof sdk?.listAvailableEvents === 'function'
     ? await sdk.listAvailableEvents({ type: 'before' })
     : undefined
@@ -203,14 +146,7 @@ async function getAvailableAuthPolicyActions(sdk?: KanbanSDK): Promise<string[]>
   const names = configuredEvents && configuredEvents.length > 0
     ? configuredEvents
     : [...SDK_BEFORE_EVENT_NAMES]
-  const all = [...new Set([...names, ...AUTH_POLICY_ACTION_SUPPLEMENTS])]
-  const wildcards = deriveWildcardPatterns(all)
-  return ['*', ...new Set([...wildcards, ...all])]
-    .sort((left, right) => {
-      if (left === '*') return -1
-      if (right === '*') return 1
-      return left.localeCompare(right)
-    })
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right))
 }
 
 function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
@@ -342,7 +278,7 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
   const permissionsSchema: Record<string, unknown> = {
     type: 'array',
     title: 'Permission matrix',
-    description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the actions it may run. When omitted, the provider uses its default policy behavior.',
+    description: 'Optional per-role permission rules. Choose a role from the auth.identity role catalog and the before-events it may run. When omitted, the provider uses its default policy behavior.',
     items: {
       type: 'object',
       additionalProperties: false,
@@ -357,13 +293,13 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
         },
         actions: {
           type: 'array',
-          title: 'Actions',
+          title: 'Events',
           minItems: 1,
           uniqueItems: true,
           items: {
             type: 'string',
-            title: 'Action',
-            enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyActions(sdk),
+            title: 'Before-event',
+            enum: async (sdk: KanbanSDK) => getAvailableAuthPolicyBeforeEvents(sdk),
             minLength: 1,
           },
         },
@@ -408,7 +344,7 @@ function createAuthPolicyOptionsSchema(providerId = 'kl-plugin-auth'): PluginSet
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed actions',
+                      label: 'Allowed before-events',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -449,21 +385,9 @@ function loadSessionsFromFile(filePath: string): Map<string, LocalAuthSession> {
     const store = new Map<string, LocalAuthSession>()
     for (const [id, session] of Object.entries(parsed)) {
       if (!isRecord(session)) continue
-      const { username, expiresAt, kind, workspaceOrigin } = session as {
-        username?: unknown
-        expiresAt?: unknown
-        kind?: unknown
-        workspaceOrigin?: unknown
-      }
+      const { username, expiresAt } = session as { username?: unknown; expiresAt?: unknown }
       if (typeof username !== 'string' || typeof expiresAt !== 'number') continue
-      if (expiresAt > now) {
-        store.set(id, {
-          username,
-          expiresAt,
-          ...(kind === 'cookie-session' || kind === LOCAL_MOBILE_SESSION_KIND ? { kind } : {}),
-          ...(typeof workspaceOrigin === 'string' && workspaceOrigin.length > 0 ? { workspaceOrigin } : {}),
-        })
-      }
+      if (expiresAt > now) store.set(id, { username, expiresAt })
     }
     return store
   } catch {
@@ -475,42 +399,6 @@ function persistSessionsToFile(filePath: string, store: Map<string, LocalAuthSes
   const data: Record<string, LocalAuthSession> = {}
   for (const [id, session] of store) {
     data[id] = session
-  }
-  fs.promises.writeFile(filePath, JSON.stringify(data), 'utf-8').catch(() => undefined)
-}
-
-function loadMobileBootstrapGrantsFromFile(filePath: string): Map<string, MobileBootstrapGrant> {
-  try {
-    const raw = fs.readFileSync(filePath, 'utf-8')
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    const now = Date.now()
-    const store = new Map<string, MobileBootstrapGrant>()
-    for (const [token, grant] of Object.entries(parsed)) {
-      if (!isRecord(grant)) continue
-      const { username, workspaceOrigin, expiresAt } = grant as {
-        username?: unknown
-        workspaceOrigin?: unknown
-        expiresAt?: unknown
-      }
-      if (typeof username !== 'string' || typeof workspaceOrigin !== 'string' || typeof expiresAt !== 'number') continue
-      if (expiresAt > now) {
-        store.set(token, {
-          username,
-          workspaceOrigin,
-          expiresAt,
-        })
-      }
-    }
-    return store
-  } catch {
-    return new Map()
-  }
-}
-
-function persistMobileBootstrapGrantsToFile(filePath: string, store: Map<string, MobileBootstrapGrant>): void {
-  const data: Record<string, MobileBootstrapGrant> = {}
-  for (const [token, grant] of store) {
-    data[token] = grant
   }
   fs.promises.writeFile(filePath, JSON.stringify(data), 'utf-8').catch(() => undefined)
 }
@@ -596,15 +484,6 @@ function getConfiguredApiToken(): string | null {
   return null
 }
 
-function buildMobileAuthenticationContract() {
-  return {
-    provider: 'local' as const,
-    browserLoginTransport: 'cookie-session' as const,
-    mobileSessionTransport: 'opaque-bearer' as const,
-    sessionKind: LOCAL_MOBILE_SESSION_KIND,
-  }
-}
-
 function safeTokenEquals(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left)
   const rightBuffer = Buffer.from(right)
@@ -678,7 +557,7 @@ function checkPermissionMatrixPolicy(
 
   const roles = new Set(identity.roles ?? [])
   for (const entry of entries) {
-    if (roles.has(entry.role) && entry.actions.some((pattern) => actionMatchesPattern(action, pattern))) {
+    if (roles.has(entry.role) && entry.actions.includes(action)) {
       return { allowed: true, actor: identity.subject }
     }
   }
@@ -737,14 +616,6 @@ function getLocalUsers(options: StandaloneHttpPluginRegistrationOptions): LocalA
     if (role) entry.role = role
     return [entry]
   })
-}
-
-function buildLocalAuthIdentity(username: string, users: readonly LocalAuthUser[]): AuthIdentity {
-  const user = users.find((candidate) => candidate.username === username)
-  return {
-    subject: username,
-    ...(typeof user?.role === 'string' && user.role.length > 0 ? { roles: [user.role] } : {}),
-  }
 }
 
 function escapeHtml(value: string): string {
@@ -858,34 +729,6 @@ async function parseLoginBody(req: import('node:http').IncomingMessage & { _rawB
   }
 }
 
-async function parseMobileSessionBody(req: import('node:http').IncomingMessage & { _rawBody?: Buffer }): Promise<{
-  workspaceOrigin: string
-  username: string
-  password: string
-  bootstrapToken: string
-}> {
-  const contentType = String(req.headers['content-type'] ?? '').toLowerCase()
-  const rawBody = req._rawBody?.toString('utf-8') ?? ''
-
-  if (contentType.includes('application/json')) {
-    const parsed = rawBody ? JSON.parse(rawBody) as Record<string, unknown> : {}
-    return {
-      workspaceOrigin: typeof parsed.workspaceOrigin === 'string' ? parsed.workspaceOrigin : '',
-      username: typeof parsed.username === 'string' ? parsed.username : '',
-      password: typeof parsed.password === 'string' ? parsed.password : '',
-      bootstrapToken: typeof parsed.bootstrapToken === 'string' ? parsed.bootstrapToken : '',
-    }
-  }
-
-  const params = new URLSearchParams(rawBody)
-  return {
-    workspaceOrigin: params.get('workspaceOrigin') ?? '',
-    username: params.get('username') ?? '',
-    password: params.get('password') ?? '',
-    bootstrapToken: params.get('bootstrapToken') ?? '',
-  }
-}
-
 const LOCAL_AUTH_PROVIDER_IDS = new Set(['local', 'kl-plugin-auth'])
 
 function isLocalAuthEnabled(options: StandaloneHttpPluginRegistrationOptions): boolean {
@@ -899,7 +742,6 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
   const localAuthEnabled = isLocalAuthEnabled(options)
   const users = getLocalUsers(options)
   const sessionFilePath = path.join(options.kanbanDir, AUTH_SESSIONS_FILE)
-  const mobileBootstrapFilePath = path.join(options.kanbanDir, MOBILE_BOOTSTRAP_TOKENS_FILE)
   const sessionStore = loadSessionsFromFile(sessionFilePath)
   const identityOptions = authCapabilities['auth.identity'].options
   const explicitApiToken =
@@ -917,9 +759,9 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       'or set the KANBAN_LITE_TOKEN environment variable before starting the server.',
     )
   })()
-  const registrationSdk = options.sdk
 
-  const getStoredSession = (sessionId: string | null | undefined): LocalAuthSession | null => {
+  const getSessionIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
+    const sessionId = parseCookies(request.req.headers.cookie)[LOCAL_AUTH_COOKIE]
     if (!sessionId) return null
     const session = sessionStore.get(sessionId)
     if (!session) return null
@@ -928,160 +770,15 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       persistSessionsToFile(sessionFilePath, sessionStore)
       return null
     }
-    return session
-  }
-
-  const resolveCanonicalWorkspaceOrigin = async (workspaceOrigin: string, bootstrapToken?: string | null): Promise<string> => {
-    if (registrationSdk) {
-      const payload = await registrationSdk.resolveMobileBootstrap({ workspaceOrigin, bootstrapToken })
-      return payload.workspaceOrigin
-    }
-
-    return new URL(workspaceOrigin).origin.toLowerCase()
-  }
-
-  const buildMobileSessionStatus = async (username: string, workspaceOrigin: string, expiresAt: number) => {
-    const identity = buildLocalAuthIdentity(username, users)
-    if (registrationSdk) {
-      const status = await registrationSdk.inspectMobileSession({
-        workspaceOrigin,
-        subject: identity.subject,
-        roles: identity.roles,
-        expiresAt: new Date(expiresAt).toISOString(),
-      })
-      const statusRecord = status as unknown as Record<string, unknown>
-
-      return {
-        ...status,
-        workspaceId: resolveWorkspaceId(statusRecord.workspaceId, options.workspaceRoot),
-      }
-    }
-
-    return {
-      workspaceOrigin: await resolveCanonicalWorkspaceOrigin(workspaceOrigin),
-      workspaceId: buildStableWorkspaceId(options.workspaceRoot),
-      subject: identity.subject,
-      roles: [...(identity.roles ?? [])],
-      expiresAt: new Date(expiresAt).toISOString(),
-      authentication: buildMobileAuthenticationContract(),
-    }
-  }
-
-  const createBrowserSession = (username: string): string => {
-    const sessionId = crypto.randomBytes(24).toString('hex')
-    sessionStore.set(sessionId, {
-      username,
-      expiresAt: Date.now() + LOCAL_AUTH_SESSION_TTL_MS,
-      kind: 'cookie-session',
-    })
-    persistSessionsToFile(sessionFilePath, sessionStore)
-    return sessionId
-  }
-
-  const createMobileSession = async (username: string, workspaceOrigin: string) => {
-    const token = crypto.randomBytes(32).toString('hex')
-    const expiresAt = Date.now() + LOCAL_AUTH_SESSION_TTL_MS
-    sessionStore.set(token, {
-      username,
-      expiresAt,
-      kind: LOCAL_MOBILE_SESSION_KIND,
-      workspaceOrigin,
-    })
-    persistSessionsToFile(sessionFilePath, sessionStore)
-    return {
-      session: {
-        kind: LOCAL_MOBILE_SESSION_KIND,
-        token,
-      },
-      status: await buildMobileSessionStatus(username, workspaceOrigin, expiresAt),
-    }
-  }
-
-  const getCookieSessionIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
-    const sessionId = parseCookies(request.req.headers.cookie)[LOCAL_AUTH_COOKIE]
-    const session = getStoredSession(sessionId)
-    if (!session || session.kind === LOCAL_MOBILE_SESSION_KIND) return null
-    return buildLocalAuthIdentity(session.username, users)
-  }
-
-  const getMobileSession = (token: string | null | undefined): {
-    token: string
-    session: LocalAuthSession
-    identity: AuthIdentity
-  } | null => {
-    if (!token) return null
-    const session = getStoredSession(token)
-    if (!session || session.kind !== LOCAL_MOBILE_SESSION_KIND) return null
-    if (typeof session.workspaceOrigin !== 'string' || session.workspaceOrigin.length === 0) return null
-    return {
-      token,
-      session,
-      identity: buildLocalAuthIdentity(session.username, users),
-    }
-  }
-
-  const revokeMobileSession = (token: string | null | undefined): boolean => {
-    const mobileSession = getMobileSession(token)
-    if (!mobileSession) return false
-    sessionStore.delete(mobileSession.token)
-    persistSessionsToFile(sessionFilePath, sessionStore)
-    return true
-  }
-
-  const redeemMobileBootstrapToken = async (
-    rawToken: string,
-    workspaceOrigin: string,
-  ): Promise<{ ok: true; username: string } | { ok: false; status: number; error: string }> => {
-    const token = rawToken.trim()
-    if (token.length === 0) {
-      return { ok: false, status: 401, error: 'ERR_MOBILE_AUTH_LINK_INVALID' }
-    }
-
-    const grants = loadMobileBootstrapGrantsFromFile(mobileBootstrapFilePath)
-    const grant = grants.get(token)
-    if (!grant) {
-      return { ok: false, status: 401, error: 'ERR_MOBILE_AUTH_LINK_INVALID' }
-    }
-
-    if (grant.expiresAt <= Date.now()) {
-      grants.delete(token)
-      persistMobileBootstrapGrantsToFile(mobileBootstrapFilePath, grants)
-      return { ok: false, status: 401, error: 'ERR_MOBILE_AUTH_LINK_INVALID' }
-    }
-
-    const grantWorkspaceOrigin = await resolveCanonicalWorkspaceOrigin(grant.workspaceOrigin)
-    if (grantWorkspaceOrigin !== workspaceOrigin) {
-      return { ok: false, status: 403, error: 'Mobile session bootstrap token is not valid for the requested workspace.' }
-    }
-
-    const user = users.find((candidate) => candidate.username === grant.username)
-    if (!user) {
-      grants.delete(token)
-      persistMobileBootstrapGrantsToFile(mobileBootstrapFilePath, grants)
-      return { ok: false, status: 401, error: 'ERR_MOBILE_AUTH_LINK_INVALID' }
-    }
-
-    grants.delete(token)
-    persistMobileBootstrapGrantsToFile(mobileBootstrapFilePath, grants)
-    return { ok: true, username: user.username }
+    const user = users.find((u) => u.username === session.username)
+    const identity: AuthIdentity = { subject: session.username }
+    if (typeof user?.role === 'string' && user.role.length > 0) identity.roles = [user.role]
+    return identity
   }
 
   const applyRequestIdentity = (request: StandaloneHttpRequestContext): AuthIdentity | null => {
     const authorization = request.req.headers.authorization
-    const headerToken = normalizeToken(typeof authorization === 'string' ? authorization : undefined)
     const queryToken = request.url.searchParams.get('token')
-    const mobileSession = getMobileSession(headerToken)
-    if (mobileSession) {
-      request.mergeAuthContext({
-        token: mobileSession.token,
-        tokenSource: 'request-header',
-        transport: 'http',
-        identity: mobileSession.identity,
-        actorHint: mobileSession.identity.subject,
-      })
-      return mobileSession.identity
-    }
-
     const requestToken = normalizeToken(
       typeof authorization === 'string' ? authorization : queryToken ?? undefined,
     )
@@ -1097,7 +794,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       return { subject: 'api-token' }
     }
 
-    const sessionIdentity = getCookieSessionIdentity(request)
+    const sessionIdentity = getSessionIdentity(request)
     if (sessionIdentity) {
       request.mergeAuthContext({
         transport: 'http',
@@ -1115,10 +812,7 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       if (!localAuthEnabled) return []
       return [
         async (request: StandaloneHttpRequestContext) => {
-          const isPublicAuthRoute = request.pathname === '/auth/login'
-            || request.pathname === '/auth/logout'
-            || request.pathname === '/api/mobile/bootstrap'
-            || (request.pathname === '/api/mobile/session' && request.method === 'POST')
+          const isPublicAuthRoute = request.pathname === '/auth/login' || request.pathname === '/auth/logout'
           const identity = applyRequestIdentity(request)
           if (identity || isPublicAuthRoute) return false
 
@@ -1164,7 +858,12 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
             return true
           }
 
-          const sessionId = createBrowserSession(user.username)
+          const sessionId = crypto.randomBytes(24).toString('hex')
+          sessionStore.set(sessionId, {
+            username: user.username,
+            expiresAt: Date.now() + LOCAL_AUTH_SESSION_TTL_MS,
+          })
+          persistSessionsToFile(sessionFilePath, sessionStore)
           setCookie(request.res, LOCAL_AUTH_COOKIE, sessionId, [
             'Path=/',
             'HttpOnly',
@@ -1172,100 +871,6 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
             `Max-Age=${Math.floor(LOCAL_AUTH_SESSION_TTL_MS / 1000)}`,
           ])
           redirect(request.res, returnTo)
-          return true
-        },
-        async (request: StandaloneHttpRequestContext) => {
-          if (!request.route('POST', '/api/mobile/session')) return false
-
-          try {
-            const body = await parseMobileSessionBody(request.req)
-            const workspaceOrigin = body.workspaceOrigin.trim()
-            if (workspaceOrigin.length === 0) {
-              sendJson(request.res, 400, { ok: false, error: 'workspaceOrigin is required' })
-              return true
-            }
-
-            const canonicalWorkspaceOrigin = await resolveCanonicalWorkspaceOrigin(workspaceOrigin, body.bootstrapToken)
-            const bootstrapToken = body.bootstrapToken.trim()
-
-            if (bootstrapToken.length > 0) {
-              const grant = await redeemMobileBootstrapToken(bootstrapToken, canonicalWorkspaceOrigin)
-              if (!grant.ok) {
-                sendJson(request.res, grant.status, { ok: false, error: grant.error })
-                return true
-              }
-
-              sendJson(request.res, 200, { ok: true, data: await createMobileSession(grant.username, canonicalWorkspaceOrigin) })
-              return true
-            }
-
-            const username = body.username.trim()
-            const password = body.password
-            if (username.length === 0 || password.length === 0) {
-              sendJson(request.res, 400, { ok: false, error: 'username and password are required' })
-              return true
-            }
-
-            const user = users.find((candidate) => candidate.username === username)
-            const passwordMatches = user ? await compare(password, user.password) : false
-            if (!user || !passwordMatches) {
-              sendJson(request.res, 401, { ok: false, error: 'Invalid username or password.' })
-              return true
-            }
-
-            sendJson(request.res, 200, { ok: true, data: await createMobileSession(user.username, canonicalWorkspaceOrigin) })
-          } catch (error) {
-            sendJson(request.res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) })
-          }
-
-          return true
-        },
-        async (request: StandaloneHttpRequestContext) => {
-          if (!request.route('GET', '/api/mobile/session')) return false
-
-          try {
-            const mobileSession = getMobileSession(normalizeToken(typeof request.req.headers.authorization === 'string' ? request.req.headers.authorization : undefined))
-            if (!mobileSession) {
-              sendJson(request.res, 401, { ok: false, error: 'Authentication required' })
-              return true
-            }
-
-            const rawWorkspaceOrigin = request.url.searchParams.get('workspaceOrigin')?.trim() ?? ''
-            if (rawWorkspaceOrigin.length === 0) {
-              sendJson(request.res, 400, { ok: false, error: 'workspaceOrigin is required' })
-              return true
-            }
-
-            const requestedWorkspaceOrigin = await resolveCanonicalWorkspaceOrigin(rawWorkspaceOrigin)
-            if (requestedWorkspaceOrigin !== mobileSession.session.workspaceOrigin) {
-              sendJson(request.res, 403, { ok: false, error: 'Mobile session is not valid for the requested workspace.' })
-              return true
-            }
-
-            sendJson(request.res, 200, {
-              ok: true,
-              data: await buildMobileSessionStatus(
-                mobileSession.identity.subject,
-                mobileSession.session.workspaceOrigin,
-                mobileSession.session.expiresAt,
-              ),
-            })
-          } catch (error) {
-            sendJson(request.res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) })
-          }
-
-          return true
-        },
-        async (request: StandaloneHttpRequestContext) => {
-          if (!request.route('DELETE', '/api/mobile/session')) return false
-
-          const revoked = revokeMobileSession(normalizeToken(typeof request.req.headers.authorization === 'string' ? request.req.headers.authorization : undefined))
-          if (!revoked) {
-            sendJson(request.res, 401, { ok: false, error: 'Authentication required' })
-            return true
-          }
-
-          sendJson(request.res, 200, { ok: true })
           return true
         },
         async (request: StandaloneHttpRequestContext) => {
@@ -1309,12 +914,6 @@ export const RBAC_IDENTITY_PLUGIN: AuthIdentityPlugin = {
 }
 
 export const RBAC_USER_ACTIONS: ReadonlySet<string> = new Set([
-  'card.checklist.show',
-  'card.checklist.add',
-  'card.checklist.edit',
-  'card.checklist.delete',
-  'card.checklist.check',
-  'card.checklist.uncheck',
   'form.submit',
   'comment.create',
   'comment.update',
@@ -1343,8 +942,6 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'board.update',
   'board.delete',
   'settings.update',
-  'plugin-settings.read',
-  'plugin-settings.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',
@@ -1467,7 +1064,7 @@ const KL_AUTH_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
  *
  * When `options.permissions` is provided it **overrides** the provider's default
  * policy behavior with an explicit per-role permission matrix. The shared
- * settings UI writes role-based rows and uses the live action catalog,
+ * settings UI writes role-based rows and uses the live before-event catalog,
  * while legacy `options.matrix` role maps remain supported for backward
  * compatibility.
  *
@@ -1537,11 +1134,6 @@ const SDK_BEFORE_EVENT_NAMES: readonly SDKBeforeEventType[] = [
   'card.delete',
   'card.transfer',
   'card.action.trigger',
-  'card.checklist.add',
-  'card.checklist.edit',
-  'card.checklist.delete',
-  'card.checklist.check',
-  'card.checklist.uncheck',
   'card.purgeDeleted',
   'comment.create',
   'comment.update',

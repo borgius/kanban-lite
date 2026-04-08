@@ -1,5 +1,7 @@
 import * as childProcess from 'node:child_process'
 import * as crypto from 'node:crypto'
+import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
 import * as path from 'path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../shared/types'
@@ -16,8 +18,8 @@ import type {
   Priority,
 } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities } from '../shared/config'
-import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook } from '../shared/config'
+import { DEFAULT_CONFIG, readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, normalizeConfigStorageSelection } from '../shared/config'
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, MobileAuthenticationContract, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
@@ -34,10 +36,19 @@ import {
   PluginSettingsStoreError,
   readPluginSettingsProvider,
   resolveCapabilityBag,
+  resolveConfigStorageProviderForRepository,
 } from './plugins'
 import type { CardStateCursor, CardStateRecord, ResolvedCapabilityBag } from './plugins'
-import { loadWorkspaceEnv } from '../shared/env'
+import { getRuntimeHost, loadWorkspaceEnv } from '../shared/env'
 import { KANBAN_EVENT_CATALOG } from './integrationCatalog'
+import { withDurableCallbackDispatchMeta } from './callbacks/contract'
+import {
+  ConfigRepositoryProviderError,
+  readConfigRepositoryDocument,
+  readSeedConfigRepositoryDocument,
+} from './modules/configRepository'
+import type { ConfigRepositoryReadResult } from './modules/configRepository'
+import { getConfigRepositoryDocumentId } from './configDocumentIdentity'
 import * as Boards from './modules/boards'
 import * as Cards from './modules/cards'
 import * as Labels from './modules/labels'
@@ -196,6 +207,8 @@ export interface StorageStatus {
   storageEngine: string
   /** Fully resolved provider selections, or `null` when a pre-built storage engine was injected. */
   providers: ResolvedCapabilities | null
+  /** Configured-versus-effective `config.storage` provider state for diagnostics and host transports. */
+  configStorage: ConfigStorageCapabilityResolution
   /** Whether the active card provider stores cards as local files. */
   isFileBacked: boolean
   /** File-watcher glob for local card files, or `null` for non-file-backed providers. */
@@ -244,6 +257,8 @@ type ReadonlySnapshot<T> =
       : T extends object
         ? { readonly [K in keyof T]: ReadonlySnapshot<T[K]> }
         : T
+
+      type ConfigStorageResolutionInput = Pick<KanbanConfig, 'storageEngine' | 'sqlitePath' | 'plugins'>
 
 /** Shared plugin secret redaction targets that every surface must honor. */
 export const PLUGIN_SETTINGS_REDACTION_TARGETS = ['read', 'list', 'error'] as const satisfies readonly PluginSettingsRedactionTarget[]
@@ -615,13 +630,21 @@ function cloneProviderRef(ref: ProviderRef): ProviderRef {
     : { provider: ref.provider }
 }
 
+function readBootstrapConfig(kanbanDir: string): KanbanConfig {
+  try {
+    return readConfig(path.dirname(kanbanDir), { allowSeedFallbackOnProviderError: true })
+  } catch {
+    return structuredClone(DEFAULT_CONFIG) as KanbanConfig
+  }
+}
+
 function resolveConfiguredAuthCapabilities(kanbanDir: string): ResolvedAuthCapabilities {
-  const config = readConfig(path.dirname(kanbanDir))
+  const config = readBootstrapConfig(kanbanDir)
   return normalizeAuthCapabilities(config)
 }
 
 function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions): ResolvedCapabilities {
-  const config = readConfig(path.dirname(kanbanDir))
+  const config = readBootstrapConfig(kanbanDir)
   const capabilities = normalizeStorageCapabilities(config)
 
   if (options?.storageEngine === 'sqlite') {
@@ -644,17 +667,17 @@ function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions):
 }
 
 function resolveConfiguredWebhookCapabilities(kanbanDir: string): ResolvedWebhookCapabilities {
-  const config = readConfig(path.dirname(kanbanDir))
+  const config = readBootstrapConfig(kanbanDir)
   return normalizeWebhookCapabilities(config)
 }
 
 function resolveConfiguredCallbackCapabilities(kanbanDir: string): ResolvedCallbackCapabilities {
-  const config = readConfig(path.dirname(kanbanDir))
+  const config = readBootstrapConfig(kanbanDir)
   return normalizeCallbackCapabilities(config)
 }
 
 function resolveConfiguredCardStateCapabilities(kanbanDir: string): ResolvedCardStateCapabilities {
-  const config = readConfig(path.dirname(kanbanDir))
+  const config = readBootstrapConfig(kanbanDir)
   return normalizeCardStateCapabilities(config)
 }
 
@@ -885,6 +908,99 @@ export class KanbanSDK {
     return this._capabilities
   }
 
+  private _getRuntimeConfigStorageInput(snapshotResult: ConfigRepositoryReadResult): ConfigStorageResolutionInput {
+    const resolvedSnapshotResult = snapshotResult.status === 'error'
+      ? readSeedConfigRepositoryDocument(
+          this.workspaceRoot,
+          path.join(this.workspaceRoot, '.kanban.json'),
+        )
+      : snapshotResult
+    const snapshot = resolvedSnapshotResult.status === 'ok'
+      ? structuredClone(resolvedSnapshotResult.value) as ConfigStorageResolutionInput
+      : {} as ConfigStorageResolutionInput
+    if (snapshot.plugins?.['config.storage']) return snapshot
+
+    const runtimeCardProvider = this._capabilities?.providers['card.storage']
+      ? structuredClone(this._capabilities.providers['card.storage'])
+      : { provider: this._storage.type }
+
+    return {
+      storageEngine: snapshot.storageEngine,
+      sqlitePath: snapshot.sqlitePath,
+      plugins: {
+        ...(snapshot.plugins ?? {}),
+        'card.storage': runtimeCardProvider,
+      },
+    }
+  }
+
+  private _getConfigStorageFailureFromRepositoryResult(
+    configured: ProviderRef,
+    repositoryResult: ConfigRepositoryReadResult,
+  ): ConfigStorageFailure | null {
+    if (repositoryResult.status !== 'error') return null
+    const repositoryError = repositoryResult.cause
+    if (!(repositoryError instanceof ConfigRepositoryProviderError)) return null
+    if (repositoryError.providerId !== configured.provider) return null
+
+    return {
+      code: 'config-storage-provider-unavailable',
+      message: repositoryError.message,
+    }
+  }
+
+  private _resolveConfigStorageFailure(
+    input: ConfigStorageResolutionInput,
+    repositoryResult?: ConfigRepositoryReadResult,
+  ): ConfigStorageFailure | null {
+    const runtimeHostFailure = getRuntimeHost()?.getConfigStorageFailure?.(
+      this.workspaceRoot,
+      structuredClone(input) as ConfigStorageResolutionInput,
+    )
+    if (runtimeHostFailure !== undefined) {
+      return runtimeHostFailure ? structuredClone(runtimeHostFailure) as ConfigStorageFailure : null
+    }
+
+    const configured = normalizeConfigStorageSelection(input).configured
+    if (!configured || configured.provider === 'localfs') return null
+
+    try {
+      resolveConfigStorageProviderForRepository(
+        configured,
+        this.workspaceRoot,
+        getConfigRepositoryDocumentId(),
+      )
+    } catch {
+      return {
+        code: 'config-storage-provider-unavailable',
+        message: `Configured config.storage provider '${configured.provider}' is unavailable in this runtime.`,
+      }
+    }
+
+    const resolvedRepositoryResult = repositoryResult ?? readConfigRepositoryDocument(this.workspaceRoot)
+    return this._getConfigStorageFailureFromRepositoryResult(configured, resolvedRepositoryResult)
+  }
+
+  /**
+   * Resolves configured-versus-effective `config.storage` provider state.
+   *
+   * When no explicit `config.storage` override exists, the runtime status path
+   * derives the effective provider from the SDK instance's active `card.storage`
+   * provider so constructor overrides and injected engines report accurately.
+   * Plugin-settings callers may pass a config snapshot to resolve selection state
+   * against the persisted document instead.
+   */
+  resolveConfigStorageStatus(config?: ConfigStorageResolutionInput): ConfigStorageCapabilityResolution {
+    const repositoryResult = readConfigRepositoryDocument(this.workspaceRoot)
+    const input = config
+      ? structuredClone(config) as ConfigStorageResolutionInput
+      : this._getRuntimeConfigStorageInput(repositoryResult)
+
+    return normalizeConfigStorageSelection(input, {
+      explicitFailure: this._resolveConfigStorageFailure(input, repositoryResult),
+    })
+  }
+
   /**
    * Returns storage/provider metadata for host surfaces and diagnostics.
    *
@@ -906,6 +1022,7 @@ export class KanbanSDK {
     return {
       storageEngine: this._storage.type,
       providers: this._capabilities?.providers ?? null,
+      configStorage: this.resolveConfigStorageStatus(),
       isFileBacked: this._capabilities?.isFileBacked ?? this._storage.type === 'markdown',
       watchGlob: this._capabilities?.getWatchGlob() ?? (this._storage.type === 'markdown' ? 'boards/**/*.md' : null),
     }
@@ -1864,12 +1981,20 @@ export class KanbanSDK {
    * bus as an {@link SDKEvent}. After-event listeners are non-blocking: the event bus
    * isolates errors per listener so a failing listener never prevents sibling listeners
    * from executing and never propagates to the SDK caller.
+    *
+    * The SDK reserves `meta.callback` for durable callback delivery metadata. Every
+    * committed after-event receives a durable callback event ID before any queue enqueue
+    * or direct handler dispatch, plus explicit event-plus-handler idempotency semantics
+    * and the Cloudflare durable-record D1 budget contract: one claim/upsert plus one
+    * checkpoint after each handler attempt, with the terminal summary folded into the
+    * last checkpoint for a full lifecycle budget of `1 + total handler attempts`.
    *
    * @param event   - After-event name (e.g. `'task.created'`).
    * @param data    - The committed mutation result.
    * @param actor   - Resolved acting principal, if known.
    * @param boardId - Board context for this event, if applicable.
-   * @param meta    - Optional audit metadata.
+    * @param meta    - Optional audit metadata. The SDK appends a reserved
+    *   `meta.callback` contract before dispatch.
    *
    * @internal
    */
@@ -1887,7 +2012,7 @@ export class KanbanSDK {
       actor: resolvedActor,
       boardId,
       timestamp: new Date().toISOString(),
-      meta,
+      meta: withDurableCallbackDispatchMeta(meta),
     }
     this._eventBus.emit(event, {
       type: event,
@@ -1957,6 +2082,44 @@ export class KanbanSDK {
     const appendHandler = this._capabilities?.attachmentStorage.appendAttachment
     if (!appendHandler) return false
     return appendHandler(card, attachment, content)
+  }
+
+  /** Reads raw attachment bytes, preferring provider-native byte helpers when available. */
+  async readAttachment(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null> {
+    const readHandler = this._capabilities?.attachmentStorage.readAttachment
+    if (readHandler) {
+      return readHandler(card, attachment)
+    }
+
+    const materializedPath = await this.materializeAttachment(card, attachment)
+    if (!materializedPath) {
+      return null
+    }
+
+    try {
+      return { data: await fs.readFile(materializedPath) }
+    } catch {
+      return null
+    }
+  }
+
+  /** Writes raw attachment bytes, preferring provider-native byte helpers when available. */
+  async writeAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<void> {
+    const writeHandler = this._capabilities?.attachmentStorage.writeAttachment
+    if (writeHandler) {
+      await writeHandler(card, attachment, content)
+      return
+    }
+
+    const safeAttachment = path.basename(attachment)
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kanban-attachment-'))
+    const tempPath = path.join(tempDir, safeAttachment)
+    try {
+      await fs.writeFile(tempPath, content)
+      await this.copyAttachment(tempPath, card)
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true })
+    }
   }
 
   /**
@@ -3091,6 +3254,21 @@ export class KanbanSDK {
   }
 
   /**
+   * Adds a raw attachment payload to a card without requiring a source file path.
+   */
+  async addAttachmentData(cardId: string, filename: string, data: string | Uint8Array, boardId?: string): Promise<Card> {
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Attachments.addAttachmentData>>(
+      'attachment.add',
+      { cardId, filename, data, boardId },
+      undefined,
+      boardId,
+    )
+    const card = await Attachments.addAttachmentData(this, mergedInput)
+    this._runAfterEvent('attachment.added', { cardId: mergedInput.cardId, attachment: path.basename(mergedInput.filename) }, undefined, card.boardId ?? this._resolveBoardId(mergedInput.boardId))
+    return this._getScopedMutationCard(card)
+  }
+
+  /**
    * Removes an attachment reference from a card's metadata.
    *
    * This removes the attachment filename from the card's `attachments` array
@@ -3130,6 +3308,13 @@ export class KanbanSDK {
    */
   async listAttachments(cardId: string, boardId?: string): Promise<string[]> {
     return Attachments.listAttachments(this, { cardId, boardId })
+  }
+
+  /**
+   * Reads raw attachment bytes for a card.
+   */
+  async getAttachmentData(cardId: string, filename: string, boardId?: string): Promise<{ data: Uint8Array; contentType?: string } | null> {
+    return Attachments.getAttachmentData(this, { cardId, filename, boardId })
   }
 
   /**

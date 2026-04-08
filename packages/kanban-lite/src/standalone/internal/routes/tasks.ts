@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import type { Card, CreateCardPayload, Priority } from '../../../shared/types'
 import type { CardStateCursor } from '../../../sdk/plugins'
-import { buildChecklistReadModel } from '../../../sdk/modules/checklist'
+import { buildChecklistReadModel, coerceChecklistSeedTasks, type ChecklistSeedTaskInput } from '../../../sdk/modules/checklist'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { authErrorToHttpStatus, extractAuthContext, getCardStateErrorLike } from '../../authUtils'
 import { broadcast, broadcastCardContentToEditingClients, broadcastCommentStreamStart, broadcastCommentChunk, broadcastCommentStreamDone, broadcastLogsUpdatedToEditingClients, buildInitMessage, loadCards } from '../../broadcastService'
@@ -105,7 +105,7 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         assignee: (body.assignee as string) || null,
         dueDate: (body.dueDate as string) || null,
         labels: (body.labels as string[]) || [],
-        tasks: body.tasks as string[] | undefined,
+        tasks: coerceChecklistSeedTasks(body.tasks as ChecklistSeedTaskInput[] | undefined),
         metadata: body.metadata as Record<string, unknown> | undefined,
         actions: body.actions as string[] | Record<string, string> | undefined,
         forms: body.forms as CreateCardPayload['forms'],
@@ -480,25 +480,18 @@ export async function handleTaskRoutes(request: StandaloneRequestContext): Promi
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const attachmentPath = await sdk.materializeAttachment(card, taskParams.filename)
-      if (!attachmentPath) {
-        jsonError(res, 501, 'Attachment provider does not expose a local file path')
+      const attachment = await sdk.getAttachmentData(taskParams.id, taskParams.filename, ctx.currentBoardId)
+      if (!attachment) {
+        jsonError(res, 404, 'Attachment not found')
         return true
       }
       const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline'
-      fs.readFile(attachmentPath, (err, data) => {
-        if (err) {
-          res.writeHead(404)
-          res.end('File not found')
-          return
-        }
-        res.writeHead(200, {
-          'Content-Type': getContentType(taskParams.filename, MIME_TYPES),
-          'Content-Disposition': `${disposition}; filename="${taskParams.filename}"`,
-          'Access-Control-Allow-Origin': '*',
-        })
-        res.end(data)
+      res.writeHead(200, {
+        'Content-Type': attachment.contentType ?? getContentType(taskParams.filename, MIME_TYPES),
+        'Content-Disposition': `${disposition}; filename="${taskParams.filename}"`,
+        'Access-Control-Allow-Origin': '*',
       })
+      res.end(Buffer.from(attachment.data))
     } catch (err) {
       handleKnownError(err)
     }

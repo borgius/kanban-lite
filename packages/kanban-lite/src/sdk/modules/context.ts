@@ -35,6 +35,8 @@ export interface SDKContext {
   getLocalCardPath(card: Card): string | null
   getAttachmentStoragePath(card: Card): string | null
   appendAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
+  readAttachment(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null>
+  writeAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<void>
   materializeAttachment(card: Card, attachment: string): Promise<string | null>
   copyAttachment(sourcePath: string, card: Card): Promise<void>
 

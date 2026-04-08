@@ -249,6 +249,12 @@ function createSdkStub() {
     getStorageStatus: createTypedMock<KanbanSDK['getStorageStatus']>(() => ({
       storageEngine: 'markdown',
       providers: null,
+      configStorage: {
+        configured: null,
+        effective: { provider: 'localfs' },
+        mode: 'fallback',
+        failure: null,
+      },
       isFileBacked: true,
       watchGlob: null,
     })),

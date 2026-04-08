@@ -12,7 +12,6 @@ import type {
   CardStateKey,
   CardStateModuleContext,
   CardStateProvider,
-  CardStateProviderManifest,
   CardStateReadThroughInput,
   CardStateRecord,
   CardStateUnreadKey,
@@ -67,6 +66,7 @@ const DEFAULT_BOARD_BACKGROUND_PRESET: BoardBackgroundPreset = 'aurora'
 
 /** A single comment on a card. */
 export type Comment = Card['comments'][number]
+type CardTask = NonNullable<Card['tasks']>[number]
 
 /** A form attachment on a card (named reference or inline definition). */
 export type CardFormAttachment = NonNullable<Card['forms']>[number]
@@ -704,7 +704,7 @@ export class SqliteStorageEngine implements StorageEngine {
       completedAt: row.completed_at ?? null,
       labels: JSON.parse(row.labels || '[]') as string[],
       attachments: JSON.parse(row.attachments || '[]') as string[],
-      ...(row.tasks ? { tasks: JSON.parse(row.tasks) as string[] } : {}),
+      ...(row.tasks ? { tasks: JSON.parse(row.tasks) as CardTask[] } : {}),
       order: row.order_key,
       content: row.content,
       comments,

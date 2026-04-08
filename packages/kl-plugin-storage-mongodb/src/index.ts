@@ -8,7 +8,6 @@ import type {
   CardStateKey,
   CardStateModuleContext,
   CardStateProvider,
-  CardStateProviderManifest,
   CardStateReadThroughInput,
   CardStateRecord,
   CardStateUnreadKey,
@@ -45,6 +44,7 @@ export type {
 // ---------------------------------------------------------------------------
 
 export type Comment = Card['comments'][number]
+type CardTask = NonNullable<Card['tasks']>[number]
 
 /** Card format version constant (matches kanban-lite's CARD_FORMAT_VERSION). */
 const CARD_FORMAT_VERSION = 2
@@ -141,7 +141,7 @@ interface CardDoc {
   completed_at: string | null
   labels: string[]
   attachments: string[]
-  tasks: string[] | null
+  tasks: CardTask[] | null
   order_key: string
   content: string
   metadata: Record<string, unknown> | null

@@ -116,6 +116,7 @@ HTTP server are all built on top of.
         * [.listenerCount()](#KanbanSDK+listenerCount)
         * [.hasListeners()](#KanbanSDK+hasListeners)
         * [.waitFor()](#KanbanSDK+waitFor)
+        * [.resolveConfigStorageStatus()](#KanbanSDK+resolveConfigStorageStatus)
         * [.getStorageStatus()](#KanbanSDK+getStorageStatus) ⇒
         * [.getAuthStatus()](#KanbanSDK+getAuthStatus) ⇒
         * [.resolveMobileBootstrap(input)](#KanbanSDK+resolveMobileBootstrap) ⇒
@@ -140,7 +141,7 @@ HTTP server are all built on top of.
         * [.getUnreadSummary()](#KanbanSDK+getUnreadSummary)
         * [.markCardOpened()](#KanbanSDK+markCardOpened)
         * [.markCardRead()](#KanbanSDK+markCardRead)
-        * [._authorizeAction(action, context)](#KanbanSDK+_authorizeAction) ⇒
+        * [._resolveActorForMutation()](#KanbanSDK+_resolveActorForMutation)
         * [.canPerformAction(action, context)](#KanbanSDK+canPerformAction) ⇒
         * [.runWithAuth(auth, fn)](#KanbanSDK+runWithAuth) ⇒
         * [._resolveEventActor()](#KanbanSDK+_resolveEventActor)
@@ -149,6 +150,8 @@ HTTP server are all built on top of.
         * [.getLocalCardPath(card)](#KanbanSDK+getLocalCardPath) ⇒
         * [.getAttachmentStoragePath(card)](#KanbanSDK+getAttachmentStoragePath) ⇒
         * [.appendAttachment()](#KanbanSDK+appendAttachment)
+        * [.readAttachment()](#KanbanSDK+readAttachment)
+        * [.writeAttachment()](#KanbanSDK+writeAttachment)
         * [.materializeAttachment(card, attachment)](#KanbanSDK+materializeAttachment) ⇒
         * [.copyAttachment(sourcePath, card)](#KanbanSDK+copyAttachment)
         * [.close()](#KanbanSDK+close)
@@ -198,8 +201,10 @@ HTTP server are all built on top of.
         * [.getLabelsInGroup(group)](#KanbanSDK+getLabelsInGroup) ⇒
         * [.filterCardsByLabelGroup(group, boardId)](#KanbanSDK+filterCardsByLabelGroup) ⇒
         * [.addAttachment(cardId, sourcePath, boardId)](#KanbanSDK+addAttachment) ⇒
+        * [.addAttachmentData()](#KanbanSDK+addAttachmentData)
         * [.removeAttachment(cardId, attachment, boardId)](#KanbanSDK+removeAttachment) ⇒
         * [.listAttachments(cardId, boardId)](#KanbanSDK+listAttachments) ⇒
+        * [.getAttachmentData()](#KanbanSDK+getAttachmentData)
         * [.getAttachmentDir(cardId, boardId)](#KanbanSDK+getAttachmentDir) ⇒
         * [.listComments(cardId, boardId)](#KanbanSDK+listComments) ⇒
         * [.addComment(cardId, author, content, boardId)](#KanbanSDK+addComment) ⇒
@@ -417,6 +422,21 @@ Check whether any listeners are registered for an event or for the bus overall.
 
 #### kanbanSDK.waitFor()
 Wait for the next matching SDK event and resolve with its payload.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+resolveConfigStorageStatus"></a>
+
+#### kanbanSDK.resolveConfigStorageStatus()
+Resolves configured-versus-effective `config.storage` provider state.
+
+When no explicit `config.storage` override exists, the runtime status path
+derives the effective provider from the SDK instance's active `card.storage`
+provider so constructor overrides and injected engines report accurately.
+Plugin-settings callers may pass a config snapshot to resolve selection state
+against the persisted document instead.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -856,32 +876,23 @@ unread activity explicitly. Configured-identity failures surface as
 
 * * *
 
-<a name="KanbanSDK+_authorizeAction"></a>
+<a name="KanbanSDK+_resolveActorForMutation"></a>
 
-#### kanbanSDK.\_authorizeAction(action, context) ⇒
-Resolves caller identity and evaluates whether the named action is permitted.
+#### kanbanSDK.\_resolveActorForMutation()
+Resolves the acting user for checklist mutations.
 
-This is the internal SDK pre-action authorization seam. SDK methods that
-represent mutating or privileged operations should call this before
-executing their logic.
+When an auth plugin is active and identity resolves successfully, the
+identity subject (username) is returned. When no identity is available
+the method falls back to a transport-based default:
 
-When no auth plugins are configured the built-in noop path allows all
-actions anonymously, preserving the current open-access behavior
-for workspaces without an auth configuration.
+- `'extension'` → `'user'`   (VS Code extension webview)
+- `'http'`      → `'api'`    (REST API / standalone WebSocket)
+- `'mcp'`       → `'mcp'`    (MCP server)
+- `'cli'`       → `'cli'`    (command-line interface)
+- other / none  → `'sdk'`    (direct SDK use)
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
-**Returns**: Fulfilled [AuthDecision](AuthDecision) when the action is permitted.  
-**Throws**:
-
-- <code>AuthError</code> When the policy plugin denies the action.
-
 **Internal**:   
-
-| Param | Description |
-| --- | --- |
-| action | Canonical action name (e.g. `'card.create'`, `'board.delete'`). |
-| context | Optional auth context from the inbound request. |
-
 
 * * *
 
@@ -984,6 +995,13 @@ bus as an [SDKEvent](SDKEvent). After-event listeners are non-blocking: the even
 isolates errors per listener so a failing listener never prevents sibling listeners
 from executing and never propagates to the SDK caller.
 
+The SDK reserves `meta.callback` for durable callback delivery metadata. Every
+committed after-event receives a durable callback event ID before any queue enqueue
+or direct handler dispatch, plus explicit event-plus-handler idempotency semantics
+and the Cloudflare durable-record D1 budget contract: one claim/upsert plus one
+checkpoint after each handler attempt, with the terminal summary folded into the
+last checkpoint for a full lifecycle budget of `1 + total handler attempts`.
+
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Internal**:   
 
@@ -993,7 +1011,7 @@ from executing and never propagates to the SDK caller.
 | data | The committed mutation result. |
 | actor | Resolved acting principal, if known. |
 | boardId | Board context for this event, if applicable. |
-| meta | Optional audit metadata. |
+| meta | Optional audit metadata. The SDK appends a reserved   `meta.callback` contract before dispatch. |
 
 
 * * *
@@ -1055,6 +1073,24 @@ attachment provider supports it.
 Returns `true` when the provider handled the append directly and `false`
 when callers should fall back to rewriting the attachment through the
 normal copy/materialization path.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+readAttachment"></a>
+
+#### kanbanSDK.readAttachment()
+Reads raw attachment bytes, preferring provider-native byte helpers when available.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
+<a name="KanbanSDK+writeAttachment"></a>
+
+#### kanbanSDK.writeAttachment()
+Writes raw attachment bytes, preferring provider-native byte helpers when available.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -1659,7 +1695,7 @@ another when two callers read the same checklist snapshot.
 <a name="KanbanSDK+editChecklistItem"></a>
 
 #### kanbanSDK.editChecklistItem()
-Edits an existing checklist item's text while preserving its checked state.
+Edits an existing checklist item's title and description while preserving its checked state.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -1668,7 +1704,7 @@ Edits an existing checklist item's text while preserving its checked state.
 <a name="KanbanSDK+deleteChecklistItem"></a>
 
 #### kanbanSDK.deleteChecklistItem()
-Deletes a checklist item using stale-write protection via `expectedRaw`.
+Deletes a checklist item using stale-write protection via `modifiedAt`.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -1677,7 +1713,7 @@ Deletes a checklist item using stale-write protection via `expectedRaw`.
 <a name="KanbanSDK+checkChecklistItem"></a>
 
 #### kanbanSDK.checkChecklistItem()
-Marks a checklist item complete using stale-write protection via `expectedRaw`.
+Marks a checklist item complete using stale-write protection via `modifiedAt`.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -1686,7 +1722,7 @@ Marks a checklist item complete using stale-write protection via `expectedRaw`.
 <a name="KanbanSDK+uncheckChecklistItem"></a>
 
 #### kanbanSDK.uncheckChecklistItem()
-Marks a checklist item incomplete using stale-write protection via `expectedRaw`.
+Marks a checklist item incomplete using stale-write protection via `modifiedAt`.
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
@@ -2098,6 +2134,15 @@ console.log(card.attachments) // ['screenshot.png']
 
 * * *
 
+<a name="KanbanSDK+addAttachmentData"></a>
+
+#### kanbanSDK.addAttachmentData()
+Adds a raw attachment payload to a card without requiring a source file path.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
+
+* * *
+
 <a name="KanbanSDK+removeAttachment"></a>
 
 #### kanbanSDK.removeAttachment(cardId, attachment, boardId) ⇒
@@ -2148,6 +2193,15 @@ Lists all attachment filenames for a card.
 const files = await sdk.listAttachments('42')
 // ['screenshot.png', 'debug-log.txt']
 ```
+
+* * *
+
+<a name="KanbanSDK+getAttachmentData"></a>
+
+#### kanbanSDK.getAttachmentData()
+Reads raw attachment bytes for a card.
+
+**Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 
 * * *
 
@@ -3472,23 +3526,6 @@ configPath('/home/user/my-project')
 
 * * *
 
-<a name="loadDotEnv"></a>
-
-### loadDotEnv(dir)
-Loads key–value pairs from a `.env` file in the given directory into
-`process.env`. Existing environment variables are never overwritten so that
-real OS-level values always take precedence over file-based defaults.
-Silently does nothing if the file does not exist.
-
-**Kind**: global function  
-
-| Param | Description |
-| --- | --- |
-| dir | Directory that may contain a `.env` file. |
-
-
-* * *
-
 <a name="resolveConfigEnvVars"></a>
 
 ### resolveConfigEnvVars(node, configFileName, nodePath) ⇒
@@ -3520,9 +3557,11 @@ path segment, matching the convention used in `.kanban.json` error messages.
 
 <a name="readConfig"></a>
 
-### readConfig(workspaceRoot) ⇒
-Reads the kanban config from disk. If the file is missing or unreadable,
-returns the default config. If the file contains a v1 config, it is
+### readConfig(workspaceRoot, options) ⇒
+Reads the kanban config from the shared repository. If the config is
+missing, returns the default config. If the repository/provider reports a
+read or parse failure, throws a configuration error instead of silently
+falling back to defaults. If the file contains a v1 config, it is
 automatically migrated to v2 format and persisted back to disk.
 
 Any `${VAR_NAME}` placeholders found in string values are resolved against
@@ -3537,6 +3576,7 @@ safe default.
 | Param | Description |
 | --- | --- |
 | workspaceRoot | Absolute path to the workspace root directory. |
+| options | Optional runtime read flags. Generic callers should use the   default fail-closed behavior; control-plane/bootstrap paths may opt into   seed fallback on provider errors. |
 
 **Example**  
 ```js
@@ -3711,6 +3751,27 @@ const config = readConfig('/home/user/my-project')
 const updated = settingsToConfig(config, { ...configToSettings(config), cardViewMode: 'normal' })
 writeConfig('/home/user/my-project', updated)
 ```
+
+* * *
+
+<a name="normalizeConfigStorageSelection"></a>
+
+### normalizeConfigStorageSelection()
+Normalizes configured-versus-effective `config.storage` selection.
+
+Resolution order:
+1. Explicit `plugins['config.storage']` override (authoritative)
+2. Derived first-party storage provider from `card.storage`
+3. Local-file fallback (`localfs`)
+
+When an explicit override is present and fails, the caller must surface that
+failure explicitly instead of silently deriving a replacement provider. A
+degraded/read-only effective provider is only allowed when it is passed in
+explicitly via `explicitFailure.degraded`.
+
+The input object is never mutated.
+
+**Kind**: global function  
 
 * * *
 
@@ -4288,6 +4349,19 @@ on Windows it is `{prefix}/node_modules`.
 
 **Kind**: global function  
 **Internal**:   
+
+* * *
+
+<a name="resolveCallbackRuntimeModule"></a>
+
+### resolveCallbackRuntimeModule()
+Resolves a `callback.runtime` module through the standard runtime-host-first
+external module seam.
+
+This keeps callback providers on the public SDK contract instead of reaching
+into plugin-loader internals directly.
+
+**Kind**: global function  
 
 * * *
 

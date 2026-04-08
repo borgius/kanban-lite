@@ -4,17 +4,19 @@ import * as path from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, CALLBACK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
 import { MarkdownStorageEngine } from '../plugins/markdown'
 import { KanbanSDK, PluginSettingsOperationError } from '../KanbanSDK'
-import { normalizeAuthCapabilities, normalizeCallbackCapabilities, normalizeWebhookCapabilities } from '../../shared/config'
+import { normalizeAuthCapabilities, normalizeCallbackCapabilities, normalizeWebhookCapabilities, readConfig } from '../../shared/config'
+import { installRuntimeHost, resetRuntimeHost } from '../../shared/env'
 import { AuthError, DEFAULT_CARD_STATE_ACTOR, CARD_STATE_DEFAULT_ACTOR_MODE, ERR_CARD_STATE_IDENTITY_UNAVAILABLE, ERR_CARD_STATE_UNAVAILABLE } from '../types'
 import type { AuthContext, AuthDecision } from '../types'
 import type { AuthIdentity } from '../plugins'
+import { readConfigRepositoryDocument, writeConfigRepositoryDocument } from '../modules/configRepository'
 
 type PluginSettingsUiDetailElement = {
   scope?: string
@@ -37,6 +39,12 @@ type PluginSettingsUiRoot = {
   }>
 }
 
+type TempConfigStorageGlobal = typeof globalThis & {
+  __tempConfigStorageDocument?: Record<string, unknown>
+  __tempConfigStorageWrites?: Array<Record<string, unknown>>
+  __tempConfigStorageContexts?: Array<Record<string, unknown>>
+}
+
 function expectPresent<T>(value: T | null | undefined, message: string): T {
   expect(value).toBeDefined()
   expect(value).not.toBeNull()
@@ -51,14 +59,69 @@ function createTempDir(): string {
 }
 
 const runtimeRequire = createRequire(import.meta.url)
+const nodeModule = runtimeRequire('node:module') as typeof import('node:module') & {
+  _pathCache?: Record<string, string>
+}
+
+function normalizeCacheHint(value: string): string {
+  return value.replace(/\\/g, '/')
+}
+
+function clearRequireResolutionCaches(hints: Array<string | null | undefined>): void {
+  const normalizedHints = hints
+    .filter((hint): hint is string => typeof hint === 'string' && hint.length > 0)
+    .map(normalizeCacheHint)
+
+  if (normalizedHints.length === 0) return
+
+  for (const cacheKey of Object.keys(runtimeRequire.cache)) {
+    const normalizedCacheKey = normalizeCacheHint(cacheKey)
+    if (normalizedHints.some((hint) => normalizedCacheKey.includes(hint))) {
+      delete runtimeRequire.cache[cacheKey]
+    }
+  }
+
+  const pathCache = nodeModule._pathCache
+  if (!pathCache) return
+
+  for (const [cacheKey, cacheValue] of Object.entries(pathCache)) {
+    const normalizedCacheKey = normalizeCacheHint(cacheKey)
+    const normalizedCacheValue = normalizeCacheHint(String(cacheValue))
+    if (normalizedHints.some((hint) => normalizedCacheKey.includes(hint) || normalizedCacheValue.includes(hint))) {
+      delete pathCache[cacheKey]
+    }
+  }
+}
+
+function pathExistsOrIsSymlink(targetPath: string): boolean {
+  return fs.existsSync(targetPath) || fs.lstatSync(targetPath, { throwIfNoEntry: false }) !== undefined
+}
+
+function getPreferredWorkspaceRestoreTarget(packageDir: string, packageName: string): string | null {
+  const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+  if (!fs.existsSync(siblingPackagePath)) {
+    return null
+  }
+  return path.relative(path.dirname(packageDir), siblingPackagePath)
+}
 
 function installTempPackage(packageName: string, entrySource: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
   const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+  const preferredWorkspaceRestoreTarget = getPreferredWorkspaceRestoreTarget(packageDir, packageName)
   let existingSymlinkTarget: string | null = null
+  let existingSymlinkRealPath: string | null = null
   let backupDir: string | null = null
 
   const clearPackageCache = (): void => {
+    clearRequireResolutionCaches([
+      packageName,
+      packageDir,
+      siblingPackagePath,
+      existingSymlinkTarget,
+      existingSymlinkRealPath,
+      backupDir,
+    ])
     for (const candidate of [packageName, packageDir, siblingPackagePath]) {
       try {
         const resolved = runtimeRequire.resolve(candidate)
@@ -69,12 +132,15 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
     }
   }
 
-  if (fs.existsSync(packageDir)) {
+  if (pathExistsOrIsSymlink(packageDir)) {
     try {
       existingSymlinkTarget = fs.readlinkSync(packageDir)
+      existingSymlinkRealPath = path.resolve(path.dirname(packageDir), existingSymlinkTarget)
     } catch {
-      backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
-      fs.cpSync(packageDir, backupDir, { recursive: true })
+      if (preferredWorkspaceRestoreTarget === null) {
+        backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+        fs.cpSync(packageDir, backupDir, { recursive: true })
+      }
     }
     fs.rmSync(packageDir, { recursive: true, force: true })
   }
@@ -91,7 +157,10 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
   return () => {
     clearPackageCache()
     fs.rmSync(packageDir, { recursive: true, force: true })
-    if (existingSymlinkTarget !== null) {
+    if (preferredWorkspaceRestoreTarget !== null) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.symlinkSync(preferredWorkspaceRestoreTarget, packageDir)
+    } else if (existingSymlinkTarget !== null) {
       fs.symlinkSync(existingSymlinkTarget, packageDir)
     } else if (backupDir) {
       fs.mkdirSync(path.dirname(packageDir), { recursive: true })
@@ -105,10 +174,20 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
 function installBrokenPackageSymlink(packageName: string): () => void {
   const packageDir = path.join(process.cwd(), 'node_modules', packageName)
   const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+  const preferredWorkspaceRestoreTarget = getPreferredWorkspaceRestoreTarget(packageDir, packageName)
   let existingSymlinkTarget: string | null = null
+  let existingSymlinkRealPath: string | null = null
   let backupDir: string | null = null
 
   const clearPackageCache = (): void => {
+    clearRequireResolutionCaches([
+      packageName,
+      packageDir,
+      siblingPackagePath,
+      existingSymlinkTarget,
+      existingSymlinkRealPath,
+      backupDir,
+    ])
     for (const candidate of [packageName, packageDir, siblingPackagePath]) {
       try {
         const resolved = runtimeRequire.resolve(candidate)
@@ -119,12 +198,15 @@ function installBrokenPackageSymlink(packageName: string): () => void {
     }
   }
 
-  if (fs.existsSync(packageDir) || fs.lstatSync(packageDir, { throwIfNoEntry: false })) {
+  if (pathExistsOrIsSymlink(packageDir)) {
     try {
       existingSymlinkTarget = fs.readlinkSync(packageDir)
+      existingSymlinkRealPath = path.resolve(path.dirname(packageDir), existingSymlinkTarget)
     } catch {
-      backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
-      fs.cpSync(packageDir, backupDir, { recursive: true })
+      if (preferredWorkspaceRestoreTarget === null) {
+        backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
+        fs.cpSync(packageDir, backupDir, { recursive: true })
+      }
     }
     fs.rmSync(packageDir, { recursive: true, force: true })
   }
@@ -138,7 +220,10 @@ function installBrokenPackageSymlink(packageName: string): () => void {
   return () => {
     clearPackageCache()
     fs.rmSync(packageDir, { recursive: true, force: true })
-    if (existingSymlinkTarget !== null) {
+    if (preferredWorkspaceRestoreTarget !== null) {
+      fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+      fs.symlinkSync(preferredWorkspaceRestoreTarget, packageDir)
+    } else if (existingSymlinkTarget !== null) {
       fs.symlinkSync(existingSymlinkTarget, packageDir)
     } else if (backupDir) {
       fs.mkdirSync(path.dirname(packageDir), { recursive: true })
@@ -147,6 +232,21 @@ function installBrokenPackageSymlink(packageName: string): () => void {
     }
     clearPackageCache()
   }
+}
+
+function expectPackageRestoredToWorkspaceSymlink(packageName: string): void {
+  const packageDir = path.join(process.cwd(), 'node_modules', packageName)
+  const siblingPackagePath = path.join(process.cwd(), '..', packageName)
+
+  expect(fs.existsSync(siblingPackagePath)).toBe(true)
+  expect(fs.lstatSync(packageDir).isSymbolicLink()).toBe(true)
+  expect(fs.realpathSync(packageDir)).toBe(fs.realpathSync(siblingPackagePath))
+}
+
+async function loadFreshResolveCapabilityBag(): Promise<typeof resolveCapabilityBag> {
+  vi.resetModules()
+  const { resolveCapabilityBag: freshResolveCapabilityBag } = await import('../plugins')
+  return freshResolveCapabilityBag
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +655,10 @@ describe('PROVIDER_ALIASES', () => {
     expect(PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-storage-sqlite')
   })
 
+  it('maps cloudflare to kl-plugin-cloudflare', () => {
+    expect(PROVIDER_ALIASES.get('cloudflare')).toBe('kl-plugin-cloudflare')
+  })
+
   it('maps mysql to kl-plugin-storage-mysql', () => {
     expect(PROVIDER_ALIASES.get('mysql')).toBe('kl-plugin-storage-mysql')
   })
@@ -567,6 +671,7 @@ describe('PROVIDER_ALIASES', () => {
 
   it('contains the expected short alias ids', () => {
     expect([...PROVIDER_ALIASES.keys()].sort()).toEqual([
+      'cloudflare',
       'mongodb',
       'mysql',
       'postgresql',
@@ -585,6 +690,10 @@ describe('CARD_STATE_PROVIDER_ALIASES', () => {
     expect(CARD_STATE_PROVIDER_ALIASES.get('sqlite')).toBe('kl-plugin-storage-sqlite')
   })
 
+  it('maps cloudflare to kl-plugin-cloudflare', () => {
+    expect(CARD_STATE_PROVIDER_ALIASES.get('cloudflare')).toBe('kl-plugin-cloudflare')
+  })
+
   it('has no alias for unknown card.state provider ids', () => {
     expect(CARD_STATE_PROVIDER_ALIASES.get('some-external-provider')).toBeUndefined()
     expect(CARD_STATE_PROVIDER_ALIASES.get('builtin')).toBeUndefined()
@@ -597,6 +706,7 @@ describe('CARD_STATE_PROVIDER_ALIASES', () => {
       'postgresql',
       'mongodb',
       'redis',
+      'cloudflare',
     ])
   })
 })
@@ -1018,8 +1128,10 @@ describe('KanbanSDK plugin settings inventory', () => {
         isSelected: true,
       })
       expect(handlers.type).toBe('array')
-      expect(handlerProperties.type?.enum).toEqual(['inline', 'process'])
+      expect(handlerProperties.type?.enum).toEqual(['module', 'inline', 'process'])
       expect(handlerProperties.events?.type).toBe('array')
+      expect(handlerProperties.module?.type).toBe('string')
+      expect(handlerProperties.handler?.type).toBe('string')
       expect(handlerProperties.source?.type).toBe('string')
       expect(handlerProperties.command?.type).toBe('string')
       expect(handlersOptions?.showSortButtons).toBe(true)
@@ -1204,6 +1316,69 @@ describe('KanbanSDK plugin settings inventory', () => {
       expect(sqliteCardStateProvider).not.toHaveProperty('optionsSchema')
     } finally {
       sdk.close()
+    }
+  })
+
+  it('surfaces runtime-reported degraded config.storage state in plugin settings selected state', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'config.storage': { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+        },
+      }),
+      'utf-8',
+    )
+
+    installRuntimeHost({
+      getConfigStorageFailure() {
+        return {
+          code: 'config-storage-provider-degraded',
+          message: 'Cloudflare config storage is read-only.',
+          degraded: {
+            effective: { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+            readOnly: true,
+          },
+        }
+      },
+    })
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const inventory = await sdk.listPluginSettings()
+      const configStorage = inventory.capabilities.find((entry) => entry.capability === 'config.storage')
+      const localfsReadback = await sdk.getPluginSettings('config.storage', 'localfs')
+
+      expect(configStorage?.selected).toEqual({
+        capability: 'config.storage',
+        providerId: 'cloudflare',
+        source: 'config',
+        resolution: {
+          configured: {
+            provider: 'cloudflare',
+            options: { databaseId: 'cfg-db' },
+          },
+          effective: {
+            provider: 'cloudflare',
+            options: { databaseId: 'cfg-db' },
+          },
+          mode: 'degraded',
+          failure: {
+            code: 'config-storage-provider-degraded',
+            message: 'Cloudflare config storage is read-only.',
+            degraded: {
+              effective: { provider: 'cloudflare', options: { databaseId: 'cfg-db' } },
+              readOnly: true,
+            },
+          },
+        },
+      })
+      expect(localfsReadback?.selected).toEqual(configStorage?.selected)
+    } finally {
+      sdk.close()
+      resetRuntimeHost()
     }
   })
 
@@ -1740,6 +1915,16 @@ describe('KanbanSDK plugin settings inventory', () => {
     const handlerOptions = {
       handlers: [
         {
+          id: 'module-created',
+          name: 'module-created',
+          type: 'module',
+          events: ['task.created'],
+          enabled: true,
+          module: './callbacks/task-created',
+          handler: 'onTaskCreated',
+        },
+        {
+          id: 'inline-created',
           name: 'inline-created',
           type: 'inline',
           events: ['task.created'],
@@ -1747,6 +1932,7 @@ describe('KanbanSDK plugin settings inventory', () => {
           source: 'async ({ event, sdk }) => { console.log(event.event, Boolean(sdk)) }',
         },
         {
+          id: 'process-created',
           name: 'process-created',
           type: 'process',
           events: ['task.created'],
@@ -2150,6 +2336,12 @@ describe('ResolvedCapabilityBag file/watch capabilities', () => {
         'card.storage': { provider: 'localfs' },
         'attachment.storage': { provider: 'localfs' },
       },
+      configStorage: {
+        configured: null,
+        effective: { provider: 'localfs' },
+        mode: 'fallback',
+        failure: null,
+      },
       isFileBacked: true,
       watchGlob: 'boards/**/*.md',
     })
@@ -2170,11 +2362,265 @@ describe('ResolvedCapabilityBag file/watch capabilities', () => {
         'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
         'attachment.storage': { provider: 'sqlite' },
       },
+      configStorage: {
+        configured: null,
+        effective: { provider: 'sqlite', options: { sqlitePath: '.kanban/kanban.db' } },
+        mode: 'derived',
+        failure: null,
+      },
       isFileBacked: false,
       watchGlob: null,
     })
 
     sdk.close()
+  })
+
+  it('KanbanSDK getStorageStatus surfaces explicit unavailable config.storage overrides', () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'config.storage': { provider: 'missing-config-storage-plugin', options: { endpoint: 'https://cfg.test' } },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    expect(sdk.getStorageStatus().configStorage).toEqual({
+      configured: {
+        provider: 'missing-config-storage-plugin',
+        options: { endpoint: 'https://cfg.test' },
+      },
+      effective: null,
+      mode: 'error',
+      failure: {
+        code: 'config-storage-provider-unavailable',
+        message: "Configured config.storage provider 'missing-config-storage-plugin' is unavailable in this runtime.",
+      },
+    })
+
+    sdk.close()
+  })
+
+  it('routes explicit config.storage reads and writes through executable providers', async () => {
+    const cleanup = installTempPackage(
+      'temp-config-storage-provider',
+      `module.exports = {
+  pluginManifest: {
+    id: 'temp-config-storage-provider',
+    capabilities: { 'config.storage': ['temp-config-storage-provider'] },
+  },
+  createConfigStorageProvider(context) {
+    globalThis.__tempConfigStorageContexts ??= []
+    globalThis.__tempConfigStorageContexts.push({
+      workspaceRoot: context.workspaceRoot,
+      documentId: context.documentId,
+      provider: context.provider,
+      backend: context.backend,
+      options: context.options,
+      hasWorker: Boolean(context.worker),
+    })
+    return {
+      manifest: { id: 'temp-config-storage-provider', provides: ['config.storage'] },
+      readConfigDocument() {
+        return structuredClone(globalThis.__tempConfigStorageDocument)
+      },
+      writeConfigDocument(nextDocument) {
+        const cloned = structuredClone(nextDocument)
+        globalThis.__tempConfigStorageDocument = cloned
+        globalThis.__tempConfigStorageWrites ??= []
+        globalThis.__tempConfigStorageWrites.push(cloned)
+      },
+    }
+  },
+}
+`,
+    )
+
+    const tempConfigStorageGlobal = globalThis as TempConfigStorageGlobal
+    tempConfigStorageGlobal.__tempConfigStorageDocument = {
+      version: 2,
+      defaultBoard: 'provider-default',
+      boards: {
+        'provider-default': {
+          columns: [],
+        },
+      },
+      showLabels: false,
+      customField: { preserved: true },
+      plugins: {
+        'config.storage': { provider: 'temp-config-storage-provider', options: { region: 'test' } },
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'provider-api-token',
+            tokenHeader: 'x-provider-token',
+          },
+        },
+      },
+    }
+    tempConfigStorageGlobal.__tempConfigStorageWrites = []
+    tempConfigStorageGlobal.__tempConfigStorageContexts = []
+
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'config.storage': { provider: 'temp-config-storage-provider', options: { region: 'test' } },
+        },
+      }),
+      'utf-8',
+    )
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const readResult = readConfigRepositoryDocument(workspaceDir)
+      const runtimeConfig = readConfig(workspaceDir)
+
+      try {
+        expect(readResult).toMatchObject({ status: 'ok' })
+        const config = (readResult.status === 'ok' ? readResult.value : {}) as Record<string, unknown> & {
+          plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
+        }
+
+        expect(runtimeConfig.defaultBoard).toBe('provider-default')
+        expect(runtimeConfig.showLabels).toBe(false)
+        expect(config.showLabels).toBe(false)
+        expect(config.customField).toEqual({ preserved: true })
+        expect(config.plugins?.['config.storage']).toEqual({
+          provider: 'temp-config-storage-provider',
+          options: { region: 'test' },
+        })
+        expect(tempConfigStorageGlobal.__tempConfigStorageContexts).toBeDefined()
+        expect(tempConfigStorageGlobal.__tempConfigStorageContexts?.length).toBeGreaterThan(0)
+        expect(tempConfigStorageGlobal.__tempConfigStorageContexts).toEqual(
+          expect.arrayContaining([
+            {
+              workspaceRoot: workspaceDir,
+              documentId: 'workspace-config',
+              provider: 'temp-config-storage-provider',
+              backend: 'external',
+              options: { region: 'test' },
+              hasWorker: false,
+            },
+          ]),
+        )
+
+        expect(sdk.getStorageStatus().configStorage).toMatchObject({
+          configured: {
+            provider: 'temp-config-storage-provider',
+            options: { region: 'test' },
+          },
+          effective: {
+            provider: 'temp-config-storage-provider',
+            options: { region: 'test' },
+          },
+          mode: 'explicit',
+        })
+
+        const pluginSettings = await sdk.getPluginSettings('auth.identity', 'local')
+        expect(pluginSettings).toMatchObject({
+          capability: 'auth.identity',
+          providerId: 'local',
+          selected: {
+            capability: 'auth.identity',
+            providerId: 'local',
+            source: 'config',
+          },
+          options: {
+            values: {
+              apiToken: '••••••',
+              tokenHeader: '••••••',
+            },
+          },
+        })
+
+        const writeResult = writeConfigRepositoryDocument(workspaceDir, {
+          ...config,
+          showLabels: true,
+          anotherUnknownField: 'still-there',
+        })
+
+        expect(writeResult).toEqual({ status: 'ok', filePath: path.join(workspaceDir, '.kanban.json') })
+
+        expect(tempConfigStorageGlobal.__tempConfigStorageWrites).toHaveLength(1)
+        expect(tempConfigStorageGlobal.__tempConfigStorageWrites?.[0]).toMatchObject({
+          showLabels: true,
+          customField: { preserved: true },
+          anotherUnknownField: 'still-there',
+          plugins: {
+            'config.storage': { provider: 'temp-config-storage-provider', options: { region: 'test' } },
+          },
+        })
+      } finally {
+        sdk.close()
+      }
+    } finally {
+      cleanup()
+      delete tempConfigStorageGlobal.__tempConfigStorageDocument
+      delete tempConfigStorageGlobal.__tempConfigStorageWrites
+      delete tempConfigStorageGlobal.__tempConfigStorageContexts
+    }
+  })
+
+  it('fails closed for explicit config.storage providers that import but lack executable read/write methods', () => {
+    const cleanup = installTempPackage(
+      'temp-invalid-config-storage-provider',
+      `module.exports = {
+  pluginManifest: {
+    id: 'temp-invalid-config-storage-provider',
+    capabilities: { 'config.storage': ['temp-invalid-config-storage-provider'] },
+  },
+  configStoragePlugin: {
+    manifest: { id: 'temp-invalid-config-storage-provider', provides: ['config.storage'] },
+  },
+}
+`,
+    )
+
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'config.storage': { provider: 'temp-invalid-config-storage-provider' },
+        },
+      }),
+      'utf-8',
+    )
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      const missingConfigWorkspaceDir = createTempDir()
+
+      try {
+        expect(readConfig(missingConfigWorkspaceDir).defaultBoard).toBe('default')
+
+        expect(sdk.getStorageStatus().configStorage).toMatchObject({
+          configured: { provider: 'temp-invalid-config-storage-provider' },
+          effective: null,
+          mode: 'error',
+          failure: {
+            code: 'config-storage-provider-unavailable',
+          },
+        })
+        expect(readConfigRepositoryDocument(workspaceDir)).toMatchObject({
+          status: 'error',
+          reason: 'read',
+        })
+        expect(() => readConfig(workspaceDir)).toThrow(/temp-invalid-config-storage-provider/)
+
+        sdk.close()
+      } finally {
+        fs.rmSync(missingConfigWorkspaceDir, { recursive: true, force: true })
+      }
+    } finally {
+      cleanup()
+    }
   })
 })
 
@@ -3244,17 +3690,20 @@ describe('resolveCapabilityBag – callback.runtime', () => {
   let kanbanDir: string
 
   beforeEach(() => {
+    resetRuntimeHost()
     workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-callback-test-'))
     kanbanDir = path.join(workspaceDir, '.kanban')
     fs.mkdirSync(kanbanDir, { recursive: true })
   })
 
   afterEach(() => {
+    resetRuntimeHost()
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
   it('exports the callback provider alias map', () => {
     expect(CALLBACK_PROVIDER_ALIASES.get('callbacks')).toBe('kl-plugin-callback')
+    expect(CALLBACK_PROVIDER_ALIASES.get('cloudflare')).toBe('kl-plugin-cloudflare')
   })
 
   it('returns callbackListener=null when callbackCapabilities is omitted', () => {
@@ -3266,8 +3715,8 @@ describe('resolveCapabilityBag – callback.runtime', () => {
     expect(bag.callbackProviders).toBeNull()
   })
 
-  it('loads callbackListenerPlugin from a temp-installed package', () => {
-    const cleanup = installTempPackage('kl-plugin-callback', `
+  it('loads callbackListenerPlugin from a temp-installed package', async () => {
+    const cleanup = installTempPackage('temp-callback-runtime-package', `
       module.exports = {
         callbackListenerPlugin: {
           manifest: { id: 'test-callback-listener', provides: ['event.listener'] },
@@ -3280,9 +3729,10 @@ describe('resolveCapabilityBag – callback.runtime', () => {
 
     try {
       const callbackCaps = normalizeCallbackCapabilities({
-        plugins: { 'callback.runtime': { provider: 'callbacks' } },
+        plugins: { 'callback.runtime': { provider: 'temp-callback-runtime-package' } },
       })
-      const bag = resolveCapabilityBag(
+      const resolveFreshCapabilityBag = await loadFreshResolveCapabilityBag()
+      const bag = resolveFreshCapabilityBag(
         { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
         kanbanDir,
         undefined,
@@ -3300,14 +3750,15 @@ describe('resolveCapabilityBag – callback.runtime', () => {
     }
   })
 
-  it('falls back to the workspace callback package when node_modules contains a stale symlink', () => {
+  it('falls back to the workspace callback package when node_modules contains a stale symlink', async () => {
     const cleanup = installBrokenPackageSymlink('kl-plugin-callback')
 
     try {
       const callbackCaps = normalizeCallbackCapabilities({
         plugins: { 'callback.runtime': { provider: 'callbacks' } },
       })
-      const bag = resolveCapabilityBag(
+      const resolveFreshCapabilityBag = await loadFreshResolveCapabilityBag()
+      const bag = resolveFreshCapabilityBag(
         { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
         kanbanDir,
         undefined,
@@ -3321,6 +3772,52 @@ describe('resolveCapabilityBag – callback.runtime', () => {
     } finally {
       cleanup()
     }
+
+    expectPackageRestoredToWorkspaceSymlink('kl-plugin-callback')
+  })
+
+  it('falls back to the workspace callback package after a temp package swap leaves stale resolution state behind', async () => {
+    const callbackCaps = normalizeCallbackCapabilities({
+      plugins: { 'callback.runtime': { provider: 'callbacks' } },
+    })
+    const packageDir = path.join(process.cwd(), 'node_modules', 'kl-plugin-callback')
+    const installCleanup = installTempPackage('kl-plugin-callback', `
+      module.exports = {
+        callbackListenerPlugin: {
+          manifest: { id: 'temp-swap-callback-listener', provides: ['event.listener'] },
+          register: () => {},
+          unregister: () => {},
+        },
+      }
+    `)
+
+    try {
+      expect(fs.lstatSync(packageDir).isDirectory()).toBe(true)
+      expect(fs.readFileSync(path.join(packageDir, 'index.js'), 'utf-8')).toContain('temp-swap-callback-listener')
+    } finally {
+      installCleanup()
+    }
+
+    const brokenCleanup = installBrokenPackageSymlink('kl-plugin-callback')
+
+    try {
+      const resolveFreshCapabilityBag = await loadFreshResolveCapabilityBag()
+      const bag = resolveFreshCapabilityBag(
+        { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+        kanbanDir,
+        undefined,
+        undefined,
+        undefined,
+        callbackCaps,
+      )
+
+      expect(bag.callbackListener?.manifest.id).toBe('kl-plugin-callback')
+      expect(bag.callbackListener?.manifest.provides).toContain('event.listener')
+    } finally {
+      brokenCleanup()
+    }
+
+    expectPackageRestoredToWorkspaceSymlink('kl-plugin-callback')
   })
 })
 

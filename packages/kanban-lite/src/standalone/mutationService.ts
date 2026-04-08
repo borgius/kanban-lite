@@ -1,15 +1,18 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { type Comment, type Card, type KanbanColumn, type CardDisplaySettings, type CreateCardPayload } from '../shared/types'
+import { type Comment, type Card, type CardTask, type KanbanColumn, type CardDisplaySettings, type CreateCardPayload } from '../shared/types'
 import { serializeCard } from '../sdk/parser'
+import { coerceChecklistSeedTasks } from '../sdk/modules/checklist'
 import { type SubmitFormInput, type SubmitFormResult } from '../sdk/types'
 import type { StandaloneContext } from './context'
 import { getAuthErrorLike } from './authUtils'
 import { broadcast, buildInitMessage, loadCards } from './broadcastService'
 import { buildCardFrontmatter } from './cardHelpers'
 
-type CreateCardData = CreateCardPayload
+export type CreateCardData = Omit<CreateCardPayload, 'tasks'> & {
+  tasks?: Array<CardTask | string>
+}
 
 export async function doCreateCard(ctx: StandaloneContext, data: CreateCardData): Promise<Card> {
   return doCreateCardForBoard(ctx, data)
@@ -25,7 +28,7 @@ export async function doCreateCardForBoard(ctx: StandaloneContext, data: CreateC
       assignee: data.assignee,
       dueDate: data.dueDate,
       labels: data.labels,
-      tasks: data.tasks,
+      tasks: coerceChecklistSeedTasks(data.tasks),
       metadata: data.metadata,
       actions: data.actions,
       forms: data.forms,
@@ -282,18 +285,14 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
   if (!card) return false
 
   const safeFilename = path.basename(filename) || 'upload.bin'
-  const tempUploadDir = fs.mkdtempSync(path.join(os.tmpdir(), `kanban-upload-${card.id}-`))
-  const tempUploadPath = path.join(tempUploadDir, safeFilename)
   ctx.migrating = true
   try {
-    fs.writeFileSync(tempUploadPath, fileData)
-    const updated = await ctx.sdk.addAttachment(cardId, tempUploadPath, ctx.currentBoardId)
+    const updated = await ctx.sdk.addAttachmentData(cardId, safeFilename, fileData, ctx.currentBoardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await loadCards(ctx)
     return true
   } finally {
-    try { fs.rmSync(tempUploadDir, { recursive: true, force: true }) } catch { /* ignore */ }
     ctx.migrating = false
   }
 }
@@ -404,5 +403,4 @@ export async function doClearLogs(ctx: StandaloneContext, cardId: string): Promi
 }
 
 // Re-export type alias for callers
-export type { CreateCardData }
 export { buildCardFrontmatter }

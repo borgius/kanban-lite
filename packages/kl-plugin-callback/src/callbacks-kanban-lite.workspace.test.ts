@@ -9,19 +9,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '../../kanban-lite/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
 import { StdioClientTransport } from '../../kanban-lite/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { KanbanSDK } from '../../kanban-lite/src/sdk/KanbanSDK'
+import { installRuntimeHost, resetRuntimeHost } from '../../kanban-lite/src/shared/env'
 import { startServer } from '../../kanban-lite/src/standalone/server'
+import * as callbackRuntimeModule from './index'
 
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = path.resolve(__dirname, '../../..')
 const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 const CLI_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/cli/index.ts')
 const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/index.ts')
+const SDK_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/dist/sdk/index.cjs')
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
 type CallbackEventRecord = {
   event: string
   cardId: string | null
   hasCreateCard: boolean
+  hasCallbackClaims: boolean
 }
 
 type CallbackWorkspace = {
@@ -37,9 +41,23 @@ function createCallbackWorkspace(prefix: string): CallbackWorkspace {
   const kanbanDir = path.join(workspaceRoot, '.kanban')
   const configPath = path.join(workspaceRoot, '.kanban.json')
   const callbackLogPath = path.join(workspaceRoot, 'callback-events.jsonl')
-  const inlineSource = `async function ({ event, sdk }) { const { appendFileSync } = await import('node:fs'); const cardId = event && event.data && typeof event.data === 'object' && 'id' in event.data ? event.data.id : null; appendFileSync(${JSON.stringify(callbackLogPath)}, JSON.stringify({ event: event.event, cardId, hasCreateCard: typeof sdk.createCard === "function" }) + "\\n", "utf8"); }`
+  const callbackModulePath = path.join(workspaceRoot, 'callback-handler.cjs')
 
   fs.mkdirSync(kanbanDir, { recursive: true })
+  fs.writeFileSync(
+    callbackModulePath,
+    [
+      "const { appendFileSync } = require('node:fs')",
+      'module.exports = {',
+      '  onTaskCreated({ event, sdk, callback }) {',
+      '    const cardId = event && event.data && typeof event.data === "object" && "id" in event.data ? event.data.id : null',
+      `    appendFileSync(${JSON.stringify(callbackLogPath)}, JSON.stringify({ event: event.event, cardId, hasCreateCard: typeof sdk.createCard === "function", hasCallbackClaims: Boolean(callback && typeof callback.handlerId === "string" && typeof callback.eventId === "string") }) + "\\n", "utf8")`,
+      '  },',
+      '}',
+    ].join('\n'),
+    'utf-8',
+  )
+
   fs.writeFileSync(
     configPath,
     JSON.stringify({
@@ -61,11 +79,13 @@ function createCallbackWorkspace(prefix: string): CallbackWorkspace {
           options: {
             handlers: [
               {
+                id: 'capture-task-created',
                 name: 'capture-task-created',
-                type: 'inline',
+                type: 'module',
                 events: ['task.created'],
                 enabled: true,
-                source: inlineSource,
+                module: './callback-handler.cjs',
+                handler: 'onTaskCreated',
               },
             ],
           },
@@ -110,6 +130,41 @@ function stripAnsi(value: string): string {
   return value.replace(ANSI_ESCAPE_PATTERN, '')
 }
 
+function installLocalCallbackPluginRuntimeHost(): () => void {
+  installRuntimeHost({
+    resolveExternalModule(request) {
+      if (request === 'kl-plugin-callback') return callbackRuntimeModule
+      return undefined
+    },
+  })
+
+  return () => {
+    resetRuntimeHost()
+  }
+}
+
+function createLocalWorkspaceSdkPreload(workspaceRoot: string): string {
+  const preloadPath = path.join(workspaceRoot, 'resolve-local-kanban-sdk.cjs')
+  fs.writeFileSync(
+    preloadPath,
+    [
+      "const Module = require('node:module')",
+      `const sdkEntrypoint = ${JSON.stringify(SDK_ENTRYPOINT)}`,
+      'const originalResolveFilename = Module._resolveFilename',
+      'Module._resolveFilename = function (request, parent, isMain, options) {',
+      "  if (request === 'kanban-lite/sdk') return sdkEntrypoint",
+      '  return originalResolveFilename.call(this, request, parent, isMain, options)',
+      '}',
+    ].join('\n'),
+    'utf-8',
+  )
+  return preloadPath
+}
+
+function appendNodeRequireOption(preloadPath: string): string {
+  return [process.env.NODE_OPTIONS, `--require=${preloadPath}`].filter(Boolean).join(' ')
+}
+
 function readMcpTextContent(result: unknown): string {
   if (!result || typeof result !== 'object') return 'null'
 
@@ -132,6 +187,7 @@ async function expectSingleTaskCreatedEvent(callbackLogPath: string): Promise<Ca
     expect(records[0]).toMatchObject({
       event: 'task.created',
       hasCreateCard: true,
+      hasCallbackClaims: true,
     })
     record = records[0]
   })
@@ -194,11 +250,13 @@ async function httpRequest(
 
 afterEach(() => {
   vi.restoreAllMocks()
+  resetRuntimeHost()
 })
 
 describe('callback runtime reachability across kanban-lite host surfaces', () => {
   it('fires the configured callback from direct SDK mutations', async () => {
     const workspace = createCallbackWorkspace('kl-callback-sdk')
+    const restoreRuntimeHost = installLocalCallbackPluginRuntimeHost()
     const sdk = new KanbanSDK(workspace.kanbanDir)
 
     try {
@@ -209,12 +267,14 @@ describe('callback runtime reachability across kanban-lite host surfaces', () =>
       expect(record.cardId).toBe(created.id)
     } finally {
       sdk.close()
+      restoreRuntimeHost()
       workspace.cleanup()
     }
   })
 
   it('fires the configured callback from standalone HTTP mutations', async () => {
     const workspace = createCallbackWorkspace('kl-callback-api')
+    const restoreRuntimeHost = installLocalCallbackPluginRuntimeHost()
     const port = await getPort()
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -245,12 +305,14 @@ describe('callback runtime reachability across kanban-lite host surfaces', () =>
       })
       logSpy.mockRestore()
       errorSpy.mockRestore()
+      restoreRuntimeHost()
       workspace.cleanup()
     }
   })
 
   it('fires the configured callback from CLI mutations', async () => {
     const workspace = createCallbackWorkspace('kl-callback-cli')
+    const preloadPath = createLocalWorkspaceSdkPreload(workspace.workspaceRoot)
 
     try {
       const result = await execFileAsync(
@@ -268,7 +330,11 @@ describe('callback runtime reachability across kanban-lite host surfaces', () =>
         ],
         {
           cwd: workspace.workspaceRoot,
-          env: { ...process.env, NO_COLOR: '1' },
+          env: {
+            ...process.env,
+            NO_COLOR: '1',
+            NODE_OPTIONS: appendNodeRequireOption(preloadPath),
+          },
         },
       )
 
@@ -285,6 +351,7 @@ describe('callback runtime reachability across kanban-lite host surfaces', () =>
 
   it('fires the configured callback from MCP mutations', async () => {
     const workspace = createCallbackWorkspace('kl-callback-mcp')
+    const preloadPath = createLocalWorkspaceSdkPreload(workspace.workspaceRoot)
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [
@@ -296,7 +363,11 @@ describe('callback runtime reachability across kanban-lite host surfaces', () =>
         workspace.configPath,
       ],
       cwd: workspace.workspaceRoot,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+        NODE_OPTIONS: appendNodeRequireOption(preloadPath),
+      },
       stderr: 'pipe',
     })
     const client = new Client({ name: 'kl-plugin-callback-test-client', version: '1.0.0' })

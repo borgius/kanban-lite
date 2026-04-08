@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import type {
@@ -8,11 +9,9 @@ import type {
   CardStateKey,
   CardStateModuleContext,
   CardStateProvider,
-  CardStateProviderManifest,
   CardStateReadThroughInput,
   CardStateRecord,
   CardStateUnreadKey,
-  CardStateValue,
   CardStateWriteInput,
   CardStoragePlugin,
   PluginSettingsOptionsSchemaMetadata,
@@ -45,6 +44,26 @@ export type {
 // ---------------------------------------------------------------------------
 
 export type Comment = Card['comments'][number]
+
+export interface ConfigStorageProviderManifest {
+  readonly id: string
+  readonly provides: readonly string[]
+}
+
+export interface ConfigStorageModuleContext {
+  workspaceRoot: string
+  documentId: string
+  provider: string
+  backend: 'builtin' | 'external'
+  options?: Record<string, unknown>
+  worker?: unknown
+}
+
+export interface ConfigStorageProviderPlugin {
+  readonly manifest: ConfigStorageProviderManifest
+  readConfigDocument(): Record<string, unknown> | null | undefined
+  writeConfigDocument(document: Record<string, unknown>): void
+}
 
 /** Card format version constant (matches kanban-lite's CARD_FORMAT_VERSION). */
 const CARD_FORMAT_VERSION = 2
@@ -88,6 +107,16 @@ export interface RedisConnectionConfig {
   db?: number
   /** Key prefix. @default 'kanban' */
   keyPrefix?: string
+}
+
+function resolveRedisConnectionConfig(options?: Record<string, unknown>): RedisConnectionConfig {
+  return {
+    host: (options?.host as string | undefined) ?? 'localhost',
+    port: typeof options?.port === 'number' ? options.port : 6379,
+    password: options?.password as string | undefined,
+    db: typeof options?.db === 'number' ? options.db : 0,
+    keyPrefix: (options?.keyPrefix as string | undefined) ?? 'kanban',
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +164,7 @@ interface CardDoc {
   completed_at: string | null
   labels: string[]
   attachments: string[]
-  tasks: string[] | null
+  tasks: NonNullable<Card['tasks']> | null
   order_key: string
   content: string
   metadata: Record<string, unknown> | null
@@ -483,14 +512,7 @@ export function createRedisAttachmentPlugin(engine: StorageEngine): AttachmentSt
 export const cardStoragePlugin: CardStoragePlugin = {
   manifest: { id: 'redis', provides: ['card.storage'] as const },
   createEngine(kanbanDir: string, options?: Record<string, unknown>): RedisStorageEngine {
-    const connConfig: RedisConnectionConfig = {
-      host: (options?.host as string | undefined) ?? 'localhost',
-      port: typeof options?.port === 'number' ? options.port : 6379,
-      password: options?.password as string | undefined,
-      db: typeof options?.db === 'number' ? options.db : 0,
-      keyPrefix: (options?.keyPrefix as string | undefined) ?? 'kanban',
-    }
-    return new RedisStorageEngine(kanbanDir, connConfig)
+    return new RedisStorageEngine(kanbanDir, resolveRedisConnectionConfig(options))
   },
   nodeCapabilities: {
     isFileBacked: false,
@@ -600,11 +622,125 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
   }
 }
 
+// ---------------------------------------------------------------------------
+// config.storage provider (merged into storage package)
+// ---------------------------------------------------------------------------
+
+type RedisConfigStorageCommand =
+  | {
+      action: 'read'
+      connection: RedisConnectionConfig
+      documentId: string
+    }
+  | {
+      action: 'write'
+      connection: RedisConnectionConfig
+      documentId: string
+      document: Record<string, unknown>
+    }
+
+type RedisConfigStorageRunner = (command: RedisConfigStorageCommand) => Record<string, unknown> | null
+
+const REDIS_CONFIG_STORAGE_HASH_SUFFIX = ':config_documents'
+
+function runRedisConfigStorageCommand(command: RedisConfigStorageCommand): Record<string, unknown> | null {
+  const script = `
+const fs = require('node:fs');
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const Redis = require('ioredis').default;
+
+(async () => {
+  const connection = payload.connection ?? {};
+  const client = new Redis({
+    host: connection.host ?? 'localhost',
+    port: connection.port ?? 6379,
+    password: connection.password,
+    db: connection.db ?? 0,
+    lazyConnect: true,
+  });
+
+  try {
+    const keyPrefix = connection.keyPrefix ?? 'kanban';
+    const configKey = keyPrefix + ${JSON.stringify(REDIS_CONFIG_STORAGE_HASH_SUFFIX)};
+
+    if (payload.action === 'read') {
+      const rawDocument = await client.hget(configKey, payload.documentId);
+      process.stdout.write(rawDocument ?? 'null');
+      return;
+    }
+
+    await client.hset(configKey, payload.documentId, JSON.stringify(payload.document ?? {}));
+    process.stdout.write('null');
+  } finally {
+    await client.quit();
+  }
+})().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exit(1);
+});
+`
+
+  const result = spawnSync(process.execPath, ['-e', script], {
+    input: JSON.stringify(command),
+    encoding: 'utf8',
+  })
+
+  if (result.status !== 0) {
+    const details = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n')
+    throw new Error(
+      `kl-plugin-storage-redis: unable to ${command.action} workspace config via Redis.`
+      + (details ? `\n${details}` : ''),
+    )
+  }
+
+  const rawOutput = result.stdout.trim()
+  if (!rawOutput || rawOutput === 'null') return null
+
+  const parsed = JSON.parse(rawOutput) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('kl-plugin-storage-redis: Redis config storage returned an invalid config document.')
+  }
+
+  return parsed as Record<string, unknown>
+}
+
+let redisConfigStorageRunner: RedisConfigStorageRunner = runRedisConfigStorageCommand
+
+export function __setRedisConfigStorageRunnerForTests(
+  runner: RedisConfigStorageRunner | null,
+): void {
+  redisConfigStorageRunner = runner ?? runRedisConfigStorageCommand
+}
+
+export function createConfigStorageProvider(context: ConfigStorageModuleContext): ConfigStorageProviderPlugin {
+  const connection = resolveRedisConnectionConfig(context.options)
+
+  return {
+    manifest: { id: 'redis', provides: ['config.storage'] as const },
+    readConfigDocument(): Record<string, unknown> | null {
+      return redisConfigStorageRunner({
+        action: 'read',
+        connection,
+        documentId: context.documentId,
+      })
+    },
+    writeConfigDocument(document: Record<string, unknown>): void {
+      redisConfigStorageRunner({
+        action: 'write',
+        connection,
+        documentId: context.documentId,
+        document,
+      })
+    },
+  }
+}
+
 /** Standard package manifest for engine discovery. */
 export const pluginManifest = {
   id: 'kl-plugin-storage-redis',
   capabilities: {
     'card.storage': ['redis'] as const,
+    'config.storage': ['redis'] as const,
     'attachment.storage': ['redis'] as const,
     'card.state': ['redis'] as const,
   },

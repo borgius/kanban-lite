@@ -1,4 +1,4 @@
-import type { PluginCapabilityNamespace } from './config'
+import type { ConfigStorageCapabilityResolution, PluginCapabilityNamespace } from './config'
 import type { KanbanSDK } from '../sdk/KanbanSDK'
 
 /**
@@ -909,6 +909,8 @@ export interface PluginSettingsSelectedState {
   capability: PluginCapabilityNamespace
   providerId: string | null
   source: PluginSettingsSelectionSource
+  /** Optional configured/effective resolution details for capabilities such as `config.storage`. */
+  resolution?: ConfigStorageCapabilityResolution
 }
 
 /** Provider inventory row surfaced inside a capability group. */

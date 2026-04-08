@@ -8,6 +8,12 @@ import type { BoardConfig } from '../../shared/config'
 import type { Priority } from '../../shared/types'
 import type { SDKContext } from './context'
 
+function isLocalAttachmentDirectory(dir: string | null): dir is string {
+  return typeof dir === 'string'
+    && path.isAbsolute(dir)
+    && !/^[a-z]+:\/\//i.test(dir)
+}
+
 // --- Board management ---
 
 /**
@@ -239,7 +245,7 @@ export async function transferCard(
 
   if (card.attachments.length > 0) {
     const dstAttachDir = ctx.getAttachmentStoragePath(card)
-    if (srcAttachDir && dstAttachDir && srcAttachDir !== dstAttachDir) {
+    if (isLocalAttachmentDirectory(srcAttachDir) && isLocalAttachmentDirectory(dstAttachDir) && srcAttachDir !== dstAttachDir) {
       await fs.mkdir(dstAttachDir, { recursive: true })
       await Promise.all(
         card.attachments.map(async (filename) => {

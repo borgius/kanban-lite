@@ -329,7 +329,16 @@ export interface AfterEventPayload<TResult = unknown> {
   readonly boardId?: string
   /** ISO-8601 timestamp when the mutation was committed. */
   readonly timestamp: string
-  /** Optional audit metadata supplied by the SDK action runner. */
+  /**
+   * Optional audit metadata supplied by the SDK action runner.
+   *
+   * The SDK reserves `meta.callback` for the durable callback-dispatch contract:
+   * it contains a durable event ID, event-plus-handler idempotency semantics,
+   * and the Cloudflare durable-record D1 budget contract: one claim/upsert plus
+   * one checkpoint after each handler attempt, with the terminal summary folded
+   * into the last checkpoint for a full lifecycle budget of `1 + total handler
+   * attempts`.
+   */
   readonly meta?: Record<string, unknown>
 }
 

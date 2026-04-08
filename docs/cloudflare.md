@@ -10,7 +10,7 @@ It is intentionally explicit about the limits: the current Worker entrypoint is 
 
 The repository now includes:
 
-- a Worker-friendly fetch entrypoint at `packages/kanban-lite/src/worker/index.ts`
+- a Worker-friendly fetch + queue entrypoint at `packages/kanban-lite/src/worker/index.ts`
 - runtime-host hooks that let non-Node hosts inject:
   - config reads/writes
   - workspace env loading
@@ -42,7 +42,23 @@ Cloudflare Workers cannot rely on that model, so the Worker entrypoint installs 
 
 That means the same SDK and standalone HTTP route layer can run without using the Node filesystem/module loader path by default.
 
-### 2. The Worker reuses the standalone HTTP dispatcher
+### 2. `fetch` and `queue` share one bootstrap + module-registry contract
+
+The Worker entrypoint now treats HTTP requests and callback queue deliveries as two faces of the same host contract:
+
+- both entrypoints resolve the same embedded bootstrap envelope
+- both entrypoints use the same `KANBAN_MODULES` registry for Worker-safe static imports
+- both entrypoints enforce the same fail-closed callback module validation before work begins
+
+For durable callback delivery, the queue-side ABI is intentionally compact and zero-idle:
+
+- logical queue handle: `callbacks`
+- consumer export: `queue`
+- payload shape: `{ version, kind, eventId }`
+
+The queue payload carries only a durable callback event reference, not the full event blob. The Worker persists one D1 event snapshot per committed callback event, then replays matched module handlers sequentially from that durable record while checkpointing after every handler attempt. Retries skip already-completed handlers, keep canonical handler-level idempotency claims, and preserve the same Worker budget goal: no polling, no cron, and no extra steady-state request-path D1 reads. The durable-record write model is one claim/upsert plus one checkpoint per handler attempt, with the terminal summary folded into the final checkpoint rather than a fixed two-write cap, for a total lifecycle budget of `1 + total handler attempts`.
+
+### 3. The Worker reuses the standalone HTTP dispatcher
 
 The Worker does not reimplement the REST API.
 
@@ -58,7 +74,7 @@ So the Worker path still uses the existing standalone handlers for:
 - mobile routes
 - standalone HTTP plugin routes/middleware
 
-### 3. Static assets come from the Wrangler `ASSETS` binding
+### 4. Static assets come from the Wrangler `ASSETS` binding
 
 The standalone webview build still lives in:
 
@@ -66,7 +82,7 @@ The standalone webview build still lives in:
 
 Wrangler serves those files through the `ASSETS` binding declared in `packages/kanban-lite/wrangler.toml`.
 
-### 4. Plugins are bundled, not discovered dynamically
+### 5. Plugins are bundled, not discovered dynamically
 
 On Node, Kanban Lite can discover plugins through installed packages, workspace packages, global npm installs, and a sibling-package fallback.
 
@@ -167,7 +183,7 @@ The script:
 
 1. reads a `.kanban.json` file at deploy time
 2. generates a temporary Worker wrapper entrypoint
-3. statically imports the requested plugin packages
+3. statically imports the requested plugin packages plus any configured `callback.runtime` module handlers when `plugins["callback.runtime"].provider === "cloudflare"`
 4. builds the standalone web assets (unless `--skip-build` is used)
 5. calls `wrangler deploy` with a generated config
 
@@ -176,8 +192,15 @@ The script:
 Cloudflare Workers do not support the Node plugin discovery path used by the Node standalone server. The generated wrapper solves that by embedding:
 
 - the deploy-time config JSON
-- the selected plugin imports
+- any bootstrap-owned `config.storage` binding-handle and revision-source inputs passed to the helper
+- the selected plugin imports and any configured callback module handler imports
 - a prebuilt `moduleRegistry`
+
+Before deployment continues, the helper also validates that configured callback modules resolve cleanly and that each named handler export exists. If a module cannot be resolved or a named export is missing, deployment fails closed before the Worker is published.
+
+If `callback.runtime` stays on the Node `callbacks` provider instead, the generated Worker remains fetch-only: it embeds the config snapshot but does not emit callback module imports or a queue consumer. When the provider is `cloudflare`, the generated Worker bundles only module handlers, rejects enabled `inline` / `process` rows, and delivers one compact queue message per committed event rather than one message per matched handler.
+
+Callback-enabled Cloudflare deploys also emit `compatibility_flags = ["nodejs_compat"]` alongside the configured compatibility date so Worker-safe SDK/plugin imports keep the required Node compatibility shims available at runtime.
 
 ---
 
@@ -202,6 +225,23 @@ node scripts/deploy-cloudflare-worker.mjs \
   --plugin kl-plugin-callback
 ```
 
+### Deploy with callback.runtime provider `cloudflare`
+
+If `plugins["callback.runtime"].provider` is `cloudflare` and any enabled `type: "module"` handlers are configured, `--callback-queue <name>` is required so the helper can emit an explicit Cloudflare Queue consumer. The related queue tuning flags stay optional but should be set deliberately for production rollouts.
+
+```bash
+node scripts/deploy-cloudflare-worker.mjs \
+  --name kanban-lite-worker \
+  --config /absolute/path/to/.kanban.json \
+  --plugin kl-plugin-auth \
+  --plugin kl-plugin-cloudflare \
+  --callback-queue kanban-callbacks \
+  --callback-max-batch-size 1 \
+  --callback-max-batch-timeout 0 \
+  --callback-max-retries 3 \
+  --callback-dead-letter-queue kanban-callbacks-dlq
+```
+
 ### Dry run
 
 ```bash
@@ -220,6 +260,13 @@ node scripts/deploy-cloudflare-worker.mjs \
 - `--config <path>`: absolute or relative path to the `.kanban.json` file to embed
 - `--plugin <package>`: plugin package to statically bundle; may be repeated
 - `--kanban-dir <path>`: logical kanban directory passed to the Worker runtime (default: `.kanban`)
+- `--config-storage-binding <logical=binding>`: repeatable bootstrap-owned Worker binding handle mapping (for example `database=KANBAN_DB` or `callbacks=KANBAN_QUEUE`)
+- `--config-revision-binding <binding>`: Worker binding that exposes the current config revision for bootstrap-owned refresh checks
+- `--callback-queue <name>`: required when `plugins["callback.runtime"].provider === "cloudflare"` and any enabled `type: "module"` handlers exist; names the Cloudflare Queue consumer the helper emits into the generated Wrangler config
+- `--callback-max-batch-size <n>`: optional Queue consumer `max_batch_size` override for callback-enabled Cloudflare deploys (default: `1`)
+- `--callback-max-batch-timeout <n>`: optional Queue consumer `max_batch_timeout` override in seconds for callback-enabled Cloudflare deploys (default: `0`)
+- `--callback-max-retries <n>`: optional Queue consumer `max_retries` override for callback-enabled Cloudflare deploys (default: `3`)
+- `--callback-dead-letter-queue <name>`: optional dead-letter queue name emitted as `dead_letter_queue` for callback-enabled Cloudflare deploys
 - `--compatibility-date <yyyy-mm-dd>`: Wrangler compatibility date override
 - `--skip-build`: skip `pnpm run build:worker`
 - `--dry-run`: generate the wrapper/config and print the Wrangler command without deploying
@@ -234,13 +281,14 @@ The committed baseline config is:
 name = "kanban-lite-worker"
 main = "src/worker/index.ts"
 compatibility_date = "2026-04-05"
+compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "dist/standalone-webview"
 binding = "ASSETS"
 ```
 
-The deployment helper generates a temporary deploy config so it can point Wrangler at the generated wrapper entrypoint while still reusing the same assets directory.
+The deployment helper generates a temporary deploy config so it can point Wrangler at the generated wrapper entrypoint while still reusing the same assets directory. Generated configs also emit the same `nodejs_compat` flag and append `[[queues.consumers]]` when callback-enabled Cloudflare module handlers require queue delivery.
 
 ---
 
@@ -266,11 +314,14 @@ The deployment helper generates a temporary deploy config so it can point Wrangl
      --plugin kl-plugin-webhook
    ```
 
-4. Verify:
-   - static board assets load
-   - REST API routes respond
-   - any bundled standalone plugin routes work
-   - `/ws` returns the documented unsupported response
+If the workspace selects `plugins["callback.runtime"].provider = "cloudflare"`, add `--callback-queue <name>` and any queue tuning flags shown above before deploying.
+
+After deploying, verify that:
+
+- static board assets load
+- REST API routes respond
+- any bundled standalone plugin routes work
+- `/ws` returns the documented unsupported response
 
 ---
 
@@ -307,8 +358,9 @@ Cloudflare support currently means:
 
 - reuse the Kanban Lite SDK and standalone HTTP pipeline
 - inject config and plugin modules through the runtime-host seam
+- use the first-party `cloudflare` storage bundle for `card.storage`, `attachment.storage`, `card.state`, and `config.storage` with D1 + R2 through the shared Worker binding/context contract
 - deploy a generated Worker wrapper with Wrangler
 - serve standalone assets through the `ASSETS` binding
 - accept that realtime WebSocket parity still needs a Durable Object follow-up
 
-If you need full standalone parity on Cloudflare, the next major step is a Durable Object-backed realtime layer plus Worker-safe storage/provider implementations.
+If you need full standalone parity on Cloudflare, the next major step is a Durable Object-backed realtime layer for realtime parity; the v1 Worker-safe storage/provider bundle is now available via the canonical `cloudflare` provider id.

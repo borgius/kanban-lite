@@ -1,7 +1,7 @@
 import type { KanbanColumn, CreateCardPayload, Priority, Card } from '../../../shared/types'
 import { readConfig } from '../../../shared/config'
 import type { CardStateCursor } from '../../../sdk/plugins'
-import { buildChecklistReadModel } from '../../../sdk/modules/checklist'
+import { buildChecklistReadModel, coerceChecklistSeedTasks, type ChecklistSeedTaskInput } from '../../../sdk/modules/checklist'
 import { sanitizeCard, AuthError } from '../../../sdk/types'
 import { buildInitMessage, broadcast, loadCards } from '../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../cardHelpers'
@@ -288,7 +288,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         assignee: (body.assignee as string) || null,
         dueDate: (body.dueDate as string) || null,
         labels: (body.labels as string[]) || [],
-        tasks: body.tasks as string[] | undefined,
+        tasks: coerceChecklistSeedTasks(body.tasks as ChecklistSeedTaskInput[] | undefined),
         metadata: body.metadata as Record<string, unknown> | undefined,
         actions: body.actions as string[] | Record<string, string> | undefined,
         forms: body.forms as CreateCardPayload['forms'],
@@ -323,15 +323,22 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
     try {
       const { boardId, id } = params
       const body = await readBody(req)
-      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
-        jsonError(res, 400, 'text is required')
+      if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+        jsonError(res, 400, 'title is required')
         return true
       }
       if (typeof body.expectedToken !== 'string' || body.expectedToken.trim().length === 0) {
         jsonError(res, 400, 'expectedToken is required')
         return true
       }
-      const card = await runWithRequestAuth(() => doAddChecklistItem(ctx, id, body.text as string, body.expectedToken as string, boardId))
+      const card = await runWithRequestAuth(() => doAddChecklistItem(
+        ctx,
+        id,
+        body.title as string,
+        typeof body.description === 'string' ? body.description : '',
+        body.expectedToken as string,
+        boardId,
+      ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
       } else {
@@ -348,16 +355,17 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
     try {
       const { boardId, id, index } = params
       const body = await readBody(req)
-      if (typeof body.text !== 'string' || body.text.trim().length === 0) {
-        jsonError(res, 400, 'text is required')
+      if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+        jsonError(res, 400, 'title is required')
         return true
       }
       const card = await runWithRequestAuth(() => doEditChecklistItem(
         ctx,
         id,
         parseChecklistIndex(index),
-        body.text as string,
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        body.title as string,
+        typeof body.description === 'string' ? body.description : '',
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
         boardId,
       ))
       if (!card) {
@@ -380,7 +388,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
         boardId,
       ))
       if (!card) {
@@ -403,7 +411,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
         boardId,
       ))
       if (!card) {
@@ -426,7 +434,7 @@ export async function handleBoardRoutes(request: StandaloneRequestContext): Prom
         ctx,
         id,
         parseChecklistIndex(index),
-        typeof body.expectedRaw === 'string' ? body.expectedRaw : undefined,
+        typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
         boardId,
       ))
       if (!card) {

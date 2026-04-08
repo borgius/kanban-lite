@@ -12,6 +12,8 @@
     "src/shared/config.ts"
   ],
   "exclude": [
-    "src/sdk/__tests__"
+    "src/sdk/__tests__",
+    "src/sdk/**/__tests__/**",
+    "src/sdk/**/*.test.ts"
   ]
 }

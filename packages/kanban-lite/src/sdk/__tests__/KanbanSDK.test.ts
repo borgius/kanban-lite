@@ -5,6 +5,10 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
 import {
+  CALLBACK_DURABLE_EVENT_RECORD_D1_WRITE_BUDGET,
+  getDurableCallbackDispatchMetadata,
+} from '../callbacks/contract'
+import {
   AuthError,
   CardStateError,
   CARD_STATE_DEFAULT_ACTOR_MODE,
@@ -26,6 +30,7 @@ type CallbackLifecycleState = {
   registerCalls: number
   unregisterCalls: number
   observedEvents: number
+  lastObservedMeta: unknown
   unsubscribe: (() => void) | null
 }
 
@@ -76,7 +81,10 @@ function installTempPackage(packageName: string, entrySource: string): () => voi
 
   if (fs.existsSync(packageDir)) {
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), `${packageName.replace(/[^a-z0-9-]/gi, '-')}-backup-`))
-    fs.cpSync(packageDir, backupDir, { recursive: true })
+    const backupSource = fs.lstatSync(packageDir).isSymbolicLink()
+      ? fs.realpathSync(packageDir)
+      : packageDir
+    fs.cpSync(backupSource, backupDir, { recursive: true })
     fs.rmSync(packageDir, { recursive: true, force: true })
   }
 
@@ -282,8 +290,9 @@ describe('KanbanSDK', () => {
     register(bus) {
       const state = globalThis.__kanbanCallbackLifecycle
       state.registerCalls += 1
-      state.unsubscribe = bus.on('task.created', () => {
+          state.unsubscribe = bus.on('task.created', (payload) => {
         state.observedEvents += 1
+            state.lastObservedMeta = payload.data && payload.data.meta ? payload.data.meta : null
       })
     },
     unregister() {
@@ -312,6 +321,7 @@ describe('KanbanSDK', () => {
           registerCalls: 0,
           unregisterCalls: 0,
           observedEvents: 0,
+          lastObservedMeta: null,
           unsubscribe: null,
         }
 
@@ -325,6 +335,15 @@ describe('KanbanSDK', () => {
 
         expect(lifecycleGlobal.__kanbanCallbackLifecycle?.registerCalls).toBe(1)
         expect(lifecycleGlobal.__kanbanCallbackLifecycle?.observedEvents).toBe(1)
+        expect(getDurableCallbackDispatchMetadata(
+          lifecycleGlobal.__kanbanCallbackLifecycle?.lastObservedMeta,
+        )).toEqual({
+          eventId: expect.stringMatching(/^cb_evt_/),
+          idempotencyScope: 'event-handler',
+          budgets: {
+            durableEventRecordD1Writes: CALLBACK_DURABLE_EVENT_RECORD_D1_WRITE_BUDGET,
+          },
+        })
 
         callbackSdk.close()
 

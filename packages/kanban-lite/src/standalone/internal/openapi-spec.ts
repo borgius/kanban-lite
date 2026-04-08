@@ -78,7 +78,7 @@ const pluginCapabilityParam = {
   in: 'path' as const,
   required: true as const,
   schema: { type: 'string' as const },
-  description: 'Plugin capability namespace (for example `auth.identity` or `card.storage`).',
+  description: 'Plugin capability namespace (for example `auth.identity`, `card.storage`, or `config.storage`).',
 }
 
 const pluginProviderIdParam = {
@@ -1363,7 +1363,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Plugins'],
         summary: 'List plugin providers',
-        description: 'Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.',
+        description: 'Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. `config.storage` rows include configured-versus-effective resolution details, including explicit failure or degraded/read-only state when the SDK reports one. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.',
         responses: {
           200: { description: 'Capability-grouped plugin inventory.' },
           401: { description: 'Authentication required.' },
@@ -1376,7 +1376,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Plugins'],
         summary: 'Read plugin settings',
-        description: 'Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.',
+        description: 'Returns the redacted plugin-settings read model for one provider. `config.storage` reads include configured-versus-effective resolution details so clients can distinguish explicit configured state from the current effective provider and any surfaced failure/degraded mode. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         responses: {
           200: { description: 'Redacted provider read model.' },
@@ -1391,10 +1391,11 @@ export const KANBAN_OPENAPI_SPEC = {
       put: {
         tags: ['Plugins'],
         summary: 'Select plugin provider',
-        description: 'Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation.',
+        description: 'Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation. For `config.storage`, Worker topology-changing updates are rejected as explicit runtime-mutation errors instead of silently swapping the effective provider.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         responses: {
           200: { description: 'Updated redacted provider read model after selection.' },
+          400: { description: 'Rejected runtime mutation or invalid request payload.' },
           403: { description: 'Forbidden.' },
           404: { description: 'Provider not found for the requested capability.' },
           500: { description: 'Unable to persist the selected provider.' },
@@ -1405,7 +1406,7 @@ export const KANBAN_OPENAPI_SPEC = {
       put: {
         tags: ['Plugins'],
         summary: 'Update plugin options',
-        description: 'Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets.',
+        description: 'Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. `config.storage` responses continue to surface configured-versus-effective resolution and any explicit failure/degraded state reported by the SDK.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         requestBody: {
           required: true,
@@ -1425,7 +1426,7 @@ export const KANBAN_OPENAPI_SPEC = {
         },
         responses: {
           200: { description: 'Updated redacted provider read model after persisting options.' },
-          400: { description: 'Invalid options payload.' },
+          400: { description: 'Invalid options payload or rejected runtime mutation.' },
           403: { description: 'Forbidden.' },
           404: { description: 'Provider not found for the requested capability.' },
           500: { description: 'Unable to persist plugin options.' },
@@ -1536,7 +1537,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Workspace'],
         summary: 'Get workspace info',
-        description: 'Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support.',
+        description: 'Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support and the configured-versus-effective `config.storage` resolution state.',
         responses: { 200: { description: 'Workspace info.' } },
       },
     },
@@ -1552,7 +1553,7 @@ export const KANBAN_OPENAPI_SPEC = {
       get: {
         tags: ['Workspace'],
         summary: 'Get storage status',
-        description: 'Returns the active card, attachment, webhook, and `card.state` provider IDs plus host-facing file/watch metadata.',
+        description: 'Returns the active storage providers plus host-facing file/watch metadata and the configured-versus-effective `config.storage` resolution, including explicit failure or degraded/read-only state when present.',
         responses: { 200: { description: 'Storage status.' } },
       },
     },

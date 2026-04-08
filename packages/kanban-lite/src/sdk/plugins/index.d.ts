@@ -1,8 +1,9 @@
 import * as http from 'node:http';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import type { Card, PluginSettingsOptionsSchemaMetadata, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsRedactionPolicy } from '../../shared/types';
-import type { Webhook, CardStateCapabilityNamespace, PluginCapabilityNamespace, ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
+import type { Webhook, CardStateCapabilityNamespace, ConfigStorageCapabilityNamespace, PluginCapabilityNamespace, ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
 import type { AuthContext, AuthDecision, SDKEventListenerPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types';
+import type { CloudflareWorkerProviderContext } from '../env';
 import type { KanbanSDK } from '../KanbanSDK';
 import type { StorageEngine } from './types';
 /**
@@ -167,6 +168,7 @@ export interface CardStateModuleContext {
     provider: string;
     backend: Exclude<CardStateBackend, 'none'>;
     options?: Record<string, unknown>;
+    worker?: CloudflareWorkerProviderContext | null;
 }
 /**
  * Contract for first-class `card.state` capability providers.
@@ -302,6 +304,13 @@ export interface AttachmentStoragePlugin {
     getCardDir?(card: Card): string | null;
     /** Copies `sourcePath` into the attachment directory for `card`. */
     copyAttachment(sourcePath: string, card: Card): Promise<void>;
+    /** Writes raw attachment bytes when the provider can persist them directly. */
+    writeAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<void>;
+    /** Reads raw attachment bytes when the provider can return them directly. */
+    readAttachment?(card: Card, attachment: string): Promise<{
+        data: Uint8Array;
+        contentType?: string;
+    } | null>;
     /**
      * Appends `content` to an existing attachment when the provider can do so
      * efficiently in-place (for example, an object-storage API with native append).
@@ -315,6 +324,32 @@ export interface AttachmentStoragePlugin {
      * Returns `null` when the provider cannot expose a safe local file.
      */
     materializeAttachment?(card: Card, attachment: string): Promise<string | null>;
+}
+/** Shared plugin manifest shape for `config.storage` capability providers. */
+export interface ConfigStorageProviderManifest {
+    readonly id: string;
+    readonly provides: readonly ConfigStorageCapabilityNamespace[];
+}
+/** Shared runtime context passed to and exposed for `config.storage` providers. */
+export interface ConfigStorageModuleContext {
+    workspaceRoot: string;
+    documentId: string;
+    provider: string;
+    backend: 'builtin' | 'external';
+    options?: Record<string, unknown>;
+    worker?: CloudflareWorkerProviderContext | null;
+}
+/** Executable contract for first-class `config.storage` capability providers. */
+export interface ConfigStorageProviderPlugin {
+    readonly manifest: ConfigStorageProviderManifest;
+    optionsSchema?: PluginSettingsOptionsSchemaFactory;
+    readConfigDocument(): Record<string, unknown> | null | undefined;
+    writeConfigDocument(document: Record<string, unknown>): void;
+}
+/** Context passed to callback runtime listener factories. */
+export interface CallbackRuntimeListenerContext {
+    readonly workspaceRoot: string;
+    readonly worker: CloudflareWorkerProviderContext | null;
 }
 /**
  * Standalone HTTP request context exposed to plugin-provided middleware and routes.

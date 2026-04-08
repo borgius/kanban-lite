@@ -1,6 +1,7 @@
 name = "kanban-lite-worker"
 main = "src/worker/index.ts"
 compatibility_date = "2026-04-05"
+compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "dist/standalone-webview"

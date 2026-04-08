@@ -2,7 +2,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { KanbanSDK, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
-import { buildChecklistReadModel } from '../sdk/modules/checklist'
+import { buildChecklistReadModel, coerceChecklistSeedTasks, type ChecklistSeedTaskInput } from '../sdk/modules/checklist'
 import type { Card, Priority, CardSortOption } from '../shared/types'
 import { getDisplayTitleFromContent, getTitleFromContent } from '../shared/types'
 import { configPath, readConfig } from '../shared/config'
@@ -259,7 +259,10 @@ function printChecklistReadModel(payload: ReturnType<typeof buildChecklistReadMo
   }
 
   for (const item of payload.items) {
-    console.log(`  ${bold(String(item.index))}. ${item.checked ? green('[x]') : dim('[ ]')} ${item.text || dim('(empty)')}`)
+    console.log(`  ${bold(String(item.index))}. ${item.checked ? green('[x]') : dim('[ ]')} ${item.title || dim('(empty)')}`)
+    if (item.description.trim().length > 0) {
+      console.log(`     ${dim(item.description.split('\n').join('\n     '))}`)
+    }
   }
 }
 
@@ -629,9 +632,16 @@ export async function cmdAdd(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const formData = hasFormDataFlag
     ? await parseJsonObjectFlag(flags['form-data'] as string, 'form-data') as Card['formData']
     : undefined
-  const tasks = typeof flags.tasks === 'string'
-    ? await parseJsonArrayFlag<string>(flags.tasks, 'tasks')
+  const rawTasks = typeof flags.tasks === 'string'
+    ? await parseJsonArrayFlag<ChecklistSeedTaskInput>(flags.tasks, 'tasks')
     : undefined
+  let tasks: Card['tasks']
+  try {
+    tasks = coerceChecklistSeedTasks(rawTasks)
+  } catch (err) {
+    console.error(red(`Error: ${err instanceof Error ? err.message : String(err)}`))
+    process.exit(1)
+  }
 
   const content = `# ${title}${body ? '\n\n' + body : ''}`
 
@@ -1941,14 +1951,14 @@ ${bold('Form Commands:')}
 
 ${bold('Checklist Commands:')}
   checklist list <id>         List checklist items on a card
-  checklist add <id> --text <text> --expected-token <token>
+  checklist add <id> --title <title> --expected-token <token>
                               Add a checklist item to a card
-  checklist edit <id> <index> Edit a checklist item (--text, --expected-raw)
+  checklist edit <id> <index> Edit a checklist item (--title, --description, --modified-at)
   checklist delete <id> <index>
-                              Delete a checklist item (--expected-raw)
-  checklist check <id> <index> --expected-raw <line>
+                              Delete a checklist item (--modified-at)
+  checklist check <id> <index> --modified-at <iso>
                               Check a checklist item
-  checklist uncheck <id> <index> --expected-raw <line>
+  checklist uncheck <id> <index> --modified-at <iso>
                               Uncheck a checklist item
 
 ${bold('Settings Commands:')}
@@ -2012,7 +2022,9 @@ ${bold('Form Options:')}
 ${bold('Checklist Options:')}
   --text <text>               Checklist item text for add/edit
   --expected-token <token>   Latest checklist token required for add optimistic concurrency
-  --expected-raw <line>       Current raw checklist line for optimistic concurrency
+  --title <title>            Checklist item title for add/edit
+  --description <text>       Checklist item description for add/edit
+  --modified-at <iso>        Current checklist item modifiedAt value for stale-write protection
 
 ${bold('Transfer Options:')}
   --from <board>              Source board (required)
@@ -2062,6 +2074,7 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
         storageEngine: storageStatus.storageEngine,
         sqlitePath: cfg.sqlitePath ?? null,
         providers,
+        configStorage: storageStatus.configStorage,
         isFileBacked: storageStatus.isFileBacked,
         watchGlob: storageStatus.watchGlob,
       }))
@@ -2071,6 +2084,15 @@ async function cmdStorage(sdk: KanbanSDK, positional: string[], flags: Flags, wo
       if (providers) {
         console.log(`Card provider:  ${providers['card.storage']}`)
         console.log(`Attach provider:${providers['attachment.storage']}`)
+      }
+      const configuredConfigStorage = storageStatus.configStorage.configured?.provider
+      const effectiveConfigStorage = storageStatus.configStorage.effective?.provider ?? 'unavailable'
+      const configStorageSummary = configuredConfigStorage
+        ? `${configuredConfigStorage} -> ${effectiveConfigStorage} (${storageStatus.configStorage.mode})`
+        : `${effectiveConfigStorage} (${storageStatus.configStorage.mode})`
+      console.log(`Config store:   ${configStorageSummary}`)
+      if (storageStatus.configStorage.failure) {
+        console.log(`Config issue:   ${storageStatus.configStorage.failure.message}`)
       }
       console.log(`File-backed:    ${storageStatus.isFileBacked ? 'yes' : 'no'}`)
       if (storageStatus.watchGlob) console.log(`Watch glob:     ${storageStatus.watchGlob}`)

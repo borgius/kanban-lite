@@ -1,4 +1,3 @@
-import * as os from 'node:os'
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import type { Card } from '../../shared/types'
@@ -80,6 +79,11 @@ async function resolveExistingLogPath(ctx: SDKContext, card: Card): Promise<stri
 }
 
 async function readLogText(ctx: SDKContext, card: Card): Promise<string> {
+  const logAttachment = await ctx.readAttachment(card, getLogFileName(card))
+  if (logAttachment) {
+    return new TextDecoder().decode(logAttachment.data)
+  }
+
   const existingPath = await resolveExistingLogPath(ctx, card)
   if (!existingPath) return ''
   try {
@@ -90,16 +94,7 @@ async function readLogText(ctx: SDKContext, card: Card): Promise<string> {
 }
 
 async function writeLogText(ctx: SDKContext, card: Card, content: string): Promise<void> {
-  const logFileName = getLogFileName(card)
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kanban-log-'))
-  const tempPath = path.join(tempDir, logFileName)
-
-  try {
-    await fs.writeFile(tempPath, content, 'utf-8')
-    await ctx.copyAttachment(tempPath, card)
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true })
-  }
+  await ctx.writeAttachment(card, getLogFileName(card), content)
 }
 
 async function appendLogText(ctx: SDKContext, card: Card, content: string): Promise<boolean> {

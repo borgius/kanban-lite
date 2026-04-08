@@ -14,6 +14,7 @@ import { Client } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/cl
 import { StdioClientTransport } from '../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js'
 import { createMcpPluginContext, registerCardStateMcpTools, registerChecklistMcpTools, registerPluginMcpTools, registerPluginSettingsMcpTools } from './index'
 import { createPluginSettingsErrorPayload, KanbanSDK, PluginSettingsOperationError } from '../sdk/KanbanSDK'
+import { buildChecklistTask } from '../sdk/modules/checklist'
 import * as pluginRegistry from '../sdk/plugins'
 import { createBuiltinAuthListenerPlugin, resolveCapabilityBag } from '../sdk/plugins'
 import { AuthError, ERR_CARD_STATE_IDENTITY_UNAVAILABLE } from '../sdk/types'
@@ -1006,29 +1007,73 @@ describe('MCP plugin-settings parity tools', () => {
 
     expect(registered).toEqual([
       'list_plugin_settings',
+      'get_plugin_settings',
       'select_plugin_settings_provider',
       'update_plugin_settings_options',
       'install_plugin_settings_package',
     ])
     expect(tools.map((tool) => tool.name)).toEqual(registered)
     expect(Object.keys(tools.find((tool) => tool.name === 'list_plugin_settings')?.schema ?? {})).toEqual([])
+    expect(Object.keys(tools.find((tool) => tool.name === 'get_plugin_settings')?.schema ?? {})).toEqual(['capability', 'providerId'])
     expect(Object.keys(tools.find((tool) => tool.name === 'select_plugin_settings_provider')?.schema ?? {})).toEqual(['capability', 'providerId'])
     expect(Object.keys(tools.find((tool) => tool.name === 'update_plugin_settings_options')?.schema ?? {})).toEqual(['capability', 'providerId', 'options'])
     expect(Object.keys(tools.find((tool) => tool.name === 'install_plugin_settings_package')?.schema ?? {})).toEqual(['packageName', 'scope'])
   })
 
-  it('returns redacted plugin-settings payloads for list and update flows', async () => {
+  it('returns redacted plugin-settings payloads for list, read, and update flows', async () => {
+    fs.writeFileSync(path.join(workspaceDir, '.kanban.json'), JSON.stringify({
+      plugins: {
+        'config.storage': {
+          provider: 'localfs',
+        },
+        'auth.identity': {
+          provider: 'local',
+          options: {
+            apiToken: 'mcp-super-secret-token',
+            users: [{ username: 'alice', password: 'mcp-super-secret-password', role: 'admin' }],
+          },
+        },
+        'auth.policy': { provider: 'noop' },
+      },
+    }, null, 2))
+    sdk.close()
+    sdk = new KanbanSDK(kanbanDir)
+
     const { tools } = capturePluginSettingsTools(sdk)
     const listTool = tools.find((tool) => tool.name === 'list_plugin_settings')
+    const readTool = tools.find((tool) => tool.name === 'get_plugin_settings')
     const updateTool = tools.find((tool) => tool.name === 'update_plugin_settings_options')
 
     expect(listTool).toBeDefined()
+    expect(readTool).toBeDefined()
     expect(updateTool).toBeDefined()
 
     const listResult = await listTool!.handler({})
     expect(listResult.isError).toBeUndefined()
     expect(listResult.content[0].text).not.toContain('mcp-super-secret-token')
     expect(listResult.content[0].text).not.toContain('mcp-super-secret-password')
+
+    const readResult = await readTool!.handler({
+      capability: 'config.storage',
+      providerId: 'localfs',
+    })
+
+    expect(readResult.isError).toBeUndefined()
+    expect(JSON.parse(readResult.content[0].text)).toMatchObject({
+      capability: 'config.storage',
+      providerId: 'localfs',
+      selected: {
+        capability: 'config.storage',
+        providerId: 'localfs',
+        source: 'config',
+        resolution: {
+          configured: { provider: 'localfs' },
+          effective: { provider: 'localfs' },
+          mode: 'explicit',
+          failure: null,
+        },
+      },
+    })
 
     const updateResult = await updateTool!.handler({
       capability: 'auth.identity',
@@ -1330,7 +1375,7 @@ describe('MCP checklist tools', () => {
     fs.rmSync(workspaceDir, { recursive: true, force: true })
   })
 
-  it('registers checklist MCP tools with explicit expectedRaw contracts', () => {
+  it('registers checklist MCP tools with explicit checklist concurrency contracts', () => {
     const { registered, tools } = captureChecklistTools(sdk)
 
     expect(registered).toEqual([
@@ -1343,13 +1388,16 @@ describe('MCP checklist tools', () => {
     ])
     expect(tools.map((tool) => tool.name)).toEqual(registered)
     expect(Object.keys(tools.find((tool) => tool.name === 'list_card_checklist_items')?.schema ?? {})).toEqual(['boardId', 'cardId'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'add_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'text', 'expectedToken'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'edit_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'text', 'expectedRaw'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'check_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'expectedRaw'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'add_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'title', 'description', 'expectedToken'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'edit_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'title', 'description', 'modifiedAt'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'check_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'modifiedAt'])
   })
 
   it('returns checklist items plus optimistic-concurrency values through the MCP checklist tools', async () => {
-    const card = await sdk.createCard({ content: '# MCP checklist', tasks: ['- [ ] First task'] })
+    const card = await sdk.createCard({
+      content: '# MCP checklist',
+      tasks: [buildChecklistTask('First task', '', '', '2026-01-01T00:00:00.000Z')],
+    })
     const { tools } = captureChecklistTools(sdk)
 
     const listTool = tools.find((tool) => tool.name === 'list_card_checklist_items')
@@ -1372,10 +1420,13 @@ describe('MCP checklist tools', () => {
       items: [
         {
           index: 0,
-          raw: '- [ ] First task',
-          expectedRaw: '- [ ] First task',
           checked: false,
-          text: 'First task',
+          title: 'First task',
+          description: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          modifiedAt: '2026-01-01T00:00:00.000Z',
+          createdBy: expect.any(String),
+          modifiedBy: expect.any(String),
         },
       ],
     })
@@ -1383,7 +1434,7 @@ describe('MCP checklist tools', () => {
 
     const added = JSON.parse(readMcpTextContent(await addTool!.handler({
       cardId: card.id,
-      text: 'Second task',
+      title: 'Second task',
       expectedToken: listed.token,
     })))
     expect(added.summary).toEqual({ total: 2, completed: 0, incomplete: 2 })
@@ -1392,7 +1443,7 @@ describe('MCP checklist tools', () => {
     const checked = JSON.parse(readMcpTextContent(await checkTool!.handler({
       cardId: card.id,
       index: 1,
-      expectedRaw: '- [ ] Second task',
+      modifiedAt: added.items[1].modifiedAt,
     })))
     expect(checked).toMatchObject({
       cardId: card.id,
@@ -1405,17 +1456,23 @@ describe('MCP checklist tools', () => {
       items: [
         {
           index: 0,
-          raw: '- [ ] First task',
-          expectedRaw: '- [ ] First task',
           checked: false,
-          text: 'First task',
+          title: 'First task',
+          description: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          modifiedAt: '2026-01-01T00:00:00.000Z',
+          createdBy: expect.any(String),
+          modifiedBy: expect.any(String),
         },
         {
           index: 1,
-          raw: '- [x] Second task',
-          expectedRaw: '- [x] Second task',
           checked: true,
-          text: 'Second task',
+          title: 'Second task',
+          description: '',
+          createdAt: expect.any(String),
+          modifiedAt: expect.any(String),
+          createdBy: expect.any(String),
+          modifiedBy: expect.any(String),
         },
       ],
     })

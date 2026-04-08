@@ -56,7 +56,6 @@ import {
   cloneProviderRef,
   createRedactedProviderOptions,
   ensurePluginSettingsOptionsRecord,
-  getCachedPluginProviderOptions,
   getPersistedPluginProviderOptions,
   getPluginSchemaDefaultOptions,
   getMutablePluginsRecord,
@@ -68,7 +67,6 @@ import {
   pruneRedundantDerivedStorageConfig,
   readPluginSettingsConfigDocument,
   resolvePluginSettingsOptionsSchema,
-  setCachedPluginProviderOptions,
   writePluginSettingsConfigDocument,
 } from './plugin-settings'
 
@@ -1378,7 +1376,7 @@ export type PluginSettingsOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSett
 
 type PluginSettingsConfigSnapshot = Pick<
   KanbanConfig,
-  'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
+  'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
 >
 
 const BUILTIN_AUTH_PROVIDER_IDS: ReadonlySet<string> = new Set(['noop'])
@@ -2168,7 +2166,12 @@ export async function discoverPluginSettingsInventory(
 ): Promise<PluginSettingsPayload> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   if (pruneRedundantDerivedStorageConfig(config)) {
-    writePluginSettingsConfigDocument(workspaceRoot, config)
+    try {
+      writePluginSettingsConfigDocument(workspaceRoot, config)
+    } catch {
+      // Best-effort cleanup; do not fail the read when the configured
+      // config.storage provider is unavailable (e.g. plugin not installed).
+    }
   }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
 
@@ -2200,7 +2203,12 @@ export async function readPluginSettingsProvider(
 ): Promise<PluginSettingsProviderReadModel | null> {
   const config = readPluginSettingsConfigDocument(workspaceRoot)
   if (pruneRedundantDerivedStorageConfig(config)) {
-    writePluginSettingsConfigDocument(workspaceRoot, config)
+    try {
+      writePluginSettingsConfigDocument(workspaceRoot, config)
+    } catch {
+      // Best-effort cleanup; do not fail the read when the configured
+      // config.storage provider is unavailable (e.g. plugin not installed).
+    }
   }
   const inventory = await buildPluginSettingsInventoryCatalog(workspaceRoot, config, sdk)
   let provider = inventory.get(capability)?.get(providerId) ?? null
@@ -2268,16 +2276,10 @@ export async function persistPluginSettingsProviderSelection(
   const currentTargetOptions = getPersistedPluginProviderOptions(config, capability, normalizedProviderId)
 
   const selectedRef = getSelectedProviderRef(config, capability)
-  if (selectedRef?.provider && isRecord(selectedRef.options)) {
-    setCachedPluginProviderOptions(config, capability, selectedRef.provider, selectedRef.options)
-  }
-
-  const cachedTargetOptions = getCachedPluginProviderOptions(config, capability, normalizedProviderId)
   const selectedTargetOptions = selectedRef?.provider === normalizedProviderId && isRecord(selectedRef.options)
     ? structuredClone(selectedRef.options)
     : undefined
   const nextOptions = selectedTargetOptions
-    ?? cachedTargetOptions
     ?? (configuredRef?.provider === 'none' && isRecord(configuredRef.options)
       ? structuredClone(configuredRef.options)
       : undefined)
@@ -2331,8 +2333,6 @@ export async function persistPluginSettingsProviderOptions(
     currentOptions,
     isRecord(mergedOptions) ? mergedOptions : {},
   )
-
-  setCachedPluginProviderOptions(config, capability, normalizedProviderId, persistedOptions)
 
   if (selectedRef?.provider === normalizedProviderId) {
     getMutablePluginsRecord(config)[capability] = {

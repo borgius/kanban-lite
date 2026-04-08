@@ -125,16 +125,13 @@ function writeWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
   }
 
   const plugins = (config.plugins ?? {}) as PersistedWebhookPlugins
-  const webhookPlugin = plugins['webhook.delivery']
-  if (webhookPlugin && typeof webhookPlugin === 'object') {
-    const options = (webhookPlugin.options ?? {}) as Record<string, unknown>
-    options.webhooks = webhooks
-    webhookPlugin.options = options
-    plugins['webhook.delivery'] = webhookPlugin
-    config.plugins = plugins as Record<string, unknown>
-  }
+  const webhookPlugin = plugins['webhook.delivery'] ?? { provider: 'webhooks' }
+  const options = (webhookPlugin.options ?? {}) as Record<string, unknown>
+  options.webhooks = webhooks
+  webhookPlugin.options = options
+  plugins['webhook.delivery'] = webhookPlugin
+  config.plugins = plugins as Record<string, unknown>
 
-  config.webhooks = webhooks
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 

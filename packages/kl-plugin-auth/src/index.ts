@@ -557,11 +557,15 @@ function checkPermissionMatrixPolicy(
 
   const roles = new Set(identity.roles ?? [])
   for (const entry of entries) {
-    if (roles.has(entry.role) && entry.actions.includes(action)) {
+    const isWildcard = entry.actions.includes('*')
+    const isExact = entry.actions.includes(action)
+    if (roles.has(entry.role) && (isWildcard || isExact)) {
+      console.debug('[kl-plugin-auth] policy allow: role=%s action=%s via=%s', entry.role, action, isWildcard ? 'wildcard' : 'exact')
       return { allowed: true, actor: identity.subject }
     }
   }
 
+  console.debug('[kl-plugin-auth] policy deny: subject=%s action=%s roles=%s', identity.subject, action, [...roles].join(','))
   return { allowed: false, reason: 'auth.policy.denied', actor: identity.subject }
 }
 

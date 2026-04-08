@@ -1041,4 +1041,27 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       actor: 'Ada',
     })
   })
+
+  it('wildcard "*" in actions grants all actions for the matching role', async () => {
+    const plugin = createAuthPolicyPlugin({
+      permissions: [
+        { role: 'user', actions: ['card.create'] },
+        { role: 'admin', actions: ['*'] },
+      ],
+    })
+
+    // admin with wildcard can do any action, including plugin-settings.read
+    await expect(
+      plugin.checkPolicy({ subject: 'root', roles: ['admin'] }, 'plugin-settings.read', { transport: 'http' }),
+    ).resolves.toMatchObject({ allowed: true, actor: 'root' })
+
+    await expect(
+      plugin.checkPolicy({ subject: 'root', roles: ['admin'] }, 'card.delete', { transport: 'http' }),
+    ).resolves.toMatchObject({ allowed: true, actor: 'root' })
+
+    // user role without wildcard still limited to its explicit list
+    await expect(
+      plugin.checkPolicy({ subject: 'bob', roles: ['user'] }, 'plugin-settings.read', { transport: 'http' }),
+    ).resolves.toMatchObject({ allowed: false, reason: 'auth.policy.denied' })
+  })
 })

@@ -9,6 +9,8 @@ import type { SDKContext } from './context'
  * Adds a file attachment to a card.
  */
 export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: { cardId: string; sourcePath: string; boardId?: string }): Promise<Card> {
+  const visibleCard = await ctx.getCard(cardId, boardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
   const fileName = path.basename(sourcePath)
   const data = await fs.readFile(sourcePath)
   return addAttachmentData(ctx, { cardId, filename: fileName, data, boardId })

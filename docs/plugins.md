@@ -145,7 +145,7 @@ The **Plugin Options** tab uses that metadata to render provider options through
 
 Schema and field `description` values are surfaced as visible helper text in the shared Plugin Options form, so provider authors should treat those descriptions as user-facing setup guidance rather than transport-only metadata.
 
-Saving options for an inactive provider does not change enablement. Instead, the shared contract caches those values under `pluginOptions[capability][providerId]` in `.kanban.json`. When that provider is selected later, the cached options are restored into the canonical `plugins[capability]` entry automatically.
+Saving options for an inactive provider does not change enablement and is a no-op — options are only persisted when they belong to the currently selected provider.
 
 The shared plugin-settings loader resolves provider metadata before transport. `optionsSchema()` may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside `schema` / `uiSchema` fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.
 
@@ -340,8 +340,6 @@ The canonical config lives in `.kanban.json`.
 
 For plugin settings flows, the canonical persistence model is one selected provider per capability under `plugins[capability]`. That same config entry may also carry the selected provider's persisted `options` payload.
 
-Inactive providers may also have cached options stored separately under `pluginOptions[capability][providerId]` so hosts can reopen and save schema-driven forms without changing the selected provider.
-
 Example:
 
 ```json
@@ -359,13 +357,6 @@ Example:
             "role": "admin"
           }
         ]
-      }
-    }
-  },
-  "pluginOptions": {
-    "auth.identity": {
-      "rbac": {
-        "roles": ["operator", "reviewer", "admin"]
       }
     }
   }

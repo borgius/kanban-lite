@@ -135,9 +135,6 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
 /** Partial plugin capability selections keyed by the full plugin settings namespace set. */
 export type PluginCapabilitySelections = Partial<Record<PluginCapabilityNamespace, ProviderRef>>
 
-/** Persisted provider options keyed by capability and provider id for inactive plugin settings forms. */
-export type PluginOptionsStore = Partial<Record<PluginCapabilityNamespace, Record<string, Record<string, unknown>>>>
-
 /** Integration surfaces a plugin package may contribute beyond capability providers. */
 export type PluginIntegrationNamespace =
   | 'standalone.http'
@@ -311,7 +308,11 @@ export interface KanbanConfig {
   boardBackgroundPreset: import('./types').BoardBackgroundPreset
   /** Port number for the standalone HTTP server. */
   port: number
-  /** Registered webhook endpoints for event notifications. */
+  /**
+   * @deprecated Use `plugins["webhook.delivery"].options.webhooks` instead.
+   * This top-level field is no longer written to by the SDK or `kl-plugin-webhook`.
+   * It is retained for backward-compatibility reads only and will be removed in a future version.
+   */
   webhooks?: Webhook[]
   /** Label definitions keyed by label name, with color and optional group. */
   labels?: Record<string, LabelDefinition>
@@ -371,14 +372,6 @@ export interface KanbanConfig {
      * any value in the legacy {@link auth} key.
    */
   plugins?: PluginCapabilitySelections
-  /**
-   * Cached provider-specific plugin options keyed by capability and provider id.
-   *
-   * This store lets hosts reopen schema-driven forms and persist edits even when
-   * a provider is not currently selected for its capability. Runtime enablement
-   * still comes only from `plugins[capability].provider`.
-   */
-  pluginOptions?: PluginOptionsStore
   /**
    * Legacy auth provider selections.
     * @deprecated Prefer declaring `auth.identity`, `auth.policy`, and
@@ -599,7 +592,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   // Preserve modern fields that may exist even in legacy configs
   // (e.g. webhooks manually added before upgrading, or partially-upgraded configs)
   const modernPassthroughKeys = [
-    'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'pluginOptions', 'auth',
+    'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'auth',
     'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
     'boardBackgroundMode', 'boardBackgroundPreset',
     'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'columnWidth', 'port'
@@ -636,7 +629,6 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
 function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
   const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.[])/.test(nodePath)
   const isCallbackInlineSourcePath = /^\.plugins\."callback\.runtime"\.options\.handlers\[\d+\]\.source$/.test(nodePath)
-    || /^\.pluginOptions\."callback\.runtime"\.(?:[^.[\]]+|"[^"]+")\.handlers\[\d+\]\.source$/.test(nodePath)
 
   if (isFormDefaultDataPath || isCallbackInlineSourcePath) {
     return node

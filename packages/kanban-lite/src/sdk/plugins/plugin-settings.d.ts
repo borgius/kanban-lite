@@ -51,19 +51,6 @@ export declare function normalizePluginSettingsProviderOptionsForPersistence(
 
 export declare function getMutablePluginsRecord(config: KanbanConfig): PluginCapabilitySelections
 
-export declare function getCachedPluginProviderOptions(
-  config: Pick<KanbanConfig, 'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'>,
-  capability: PluginCapabilityNamespace,
-  providerId: string,
-): Record<string, unknown> | undefined
-
-export declare function setCachedPluginProviderOptions(
-  config: KanbanConfig,
-  capability: PluginCapabilityNamespace,
-  providerId: string,
-  options: Record<string, unknown> | undefined,
-): void
-
 export declare function normalizeProviderIdForComparison(
   capability: PluginCapabilityNamespace,
   providerId: string,
@@ -72,12 +59,12 @@ export declare function normalizeProviderIdForComparison(
 export declare function pruneRedundantDerivedStorageConfig(config: KanbanConfig): boolean
 
 export declare function getSelectedProviderRef(
-  config: Pick<KanbanConfig, 'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'>,
+  config: Pick<KanbanConfig, 'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'>,
   capability: PluginCapabilityNamespace,
 ): ProviderRef | null
 
 export declare function getPersistedPluginProviderOptions(
-  config: Pick<KanbanConfig, 'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'>,
+  config: Pick<KanbanConfig, 'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'>,
   capability: PluginCapabilityNamespace,
   providerId: string,
 ): Record<string, unknown> | undefined

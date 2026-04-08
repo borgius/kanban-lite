@@ -20,6 +20,9 @@ vi.mock('react', async (importOriginal) => {
     useRef<T>(initialValue: T) {
       return { current: initialValue }
     },
+    useCallback<T extends (...args: never[]) => unknown>(fn: T) {
+      return fn
+    },
   }
 })
 
@@ -38,6 +41,10 @@ vi.mock('lucide-react', () => ({
 
 vi.mock('./CardItem', () => ({ CardItem: () => null }))
 vi.mock('./QuickAddInput', () => ({ QuickAddInput: () => null }))
+vi.mock('../store', () => ({
+  useStore: (selector: (s: { cardSettings: { columnWidth: number } }) => unknown) =>
+    selector({ cardSettings: { columnWidth: 288 } }),
+}))
 
 import { KanbanColumn } from './KanbanColumn'
 

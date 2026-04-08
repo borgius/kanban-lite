@@ -142,6 +142,9 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
  */
 export function loadWebhooks(workspaceRoot: string): Webhook[] {
   const config = readConfig(workspaceRoot)
+  const pluginWebhooks = (config.plugins?.['webhook.delivery'] as { options?: { webhooks?: Webhook[] } } | undefined)?.options?.webhooks
+  if (Array.isArray(pluginWebhooks)) return pluginWebhooks
+  // Backward-compat fallback: read from the deprecated top-level field.
   return config.webhooks || []
 }
 
@@ -153,7 +156,10 @@ export function loadWebhooks(workspaceRoot: string): Webhook[] {
  */
 export function saveWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
   const config = readConfig(workspaceRoot)
-  config.webhooks = webhooks
+  const plugins = config.plugins ?? {}
+  const delivery = plugins['webhook.delivery'] ?? { provider: 'webhooks' }
+  delivery.options = { ...(delivery.options ?? {}), webhooks }
+  config.plugins = { ...plugins, 'webhook.delivery': delivery }
   writeConfig(workspaceRoot, config)
 }
 

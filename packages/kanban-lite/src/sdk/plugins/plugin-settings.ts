@@ -34,7 +34,7 @@ export type PluginSettingsOptionsSchemaValueResolver<T = unknown> = (
 
 type PluginSettingsConfigSnapshot = Pick<
   KanbanConfig,
-  'auth' | 'pluginOptions' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
+  'auth' | 'plugins' | 'sqlitePath' | 'storageEngine' | 'webhookPlugin'
 >
 
 type UnknownRecord = Record<string, unknown>
@@ -339,66 +339,6 @@ export function getMutablePluginsRecord(config: KanbanConfig): PluginCapabilityS
   return nextPlugins
 }
 
-function getMutablePluginOptionsRecord(config: KanbanConfig): NonNullable<KanbanConfig['pluginOptions']> {
-  const existing = isRecord(config.pluginOptions) ? config.pluginOptions : {}
-  const nextOptions: NonNullable<KanbanConfig['pluginOptions']> = {}
-
-  for (const [capability, providers] of Object.entries(existing)) {
-    if (!isRecord(providers)) continue
-
-    const nextProviders: Record<string, Record<string, unknown>> = {}
-    for (const [providerId, options] of Object.entries(providers)) {
-      if (isRecord(options)) {
-        nextProviders[providerId] = structuredClone(options)
-      }
-    }
-
-    if (Object.keys(nextProviders).length > 0) {
-      nextOptions[capability as PluginCapabilityNamespace] = nextProviders
-    }
-  }
-
-  config.pluginOptions = nextOptions
-  return nextOptions
-}
-
-export function getCachedPluginProviderOptions(
-  config: PluginSettingsConfigSnapshot,
-  capability: PluginCapabilityNamespace,
-  providerId: string,
-): Record<string, unknown> | undefined {
-  const providers = config.pluginOptions?.[capability]
-  if (!isRecord(providers)) return undefined
-
-  const options = providers[providerId]
-  return isRecord(options) ? structuredClone(options) : undefined
-}
-
-export function setCachedPluginProviderOptions(
-  config: KanbanConfig,
-  capability: PluginCapabilityNamespace,
-  providerId: string,
-  options: Record<string, unknown> | undefined,
-): void {
-  const pluginOptions = getMutablePluginOptionsRecord(config)
-  const nextProviders = isRecord(pluginOptions[capability])
-    ? { ...pluginOptions[capability] }
-    : {}
-
-  if (options === undefined) {
-    delete nextProviders[providerId]
-  } else {
-    nextProviders[providerId] = structuredClone(options)
-  }
-
-  if (Object.keys(nextProviders).length === 0) {
-    delete pluginOptions[capability]
-    return
-  }
-
-  pluginOptions[capability] = nextProviders
-}
-
 export function normalizeProviderIdForComparison(
   capability: PluginCapabilityNamespace,
   providerId: string,
@@ -435,10 +375,6 @@ function pruneEmptyPluginSettingsContainers(config: KanbanConfig): void {
   if (isRecord(config.plugins) && Object.keys(config.plugins).length === 0) {
     delete config.plugins
   }
-
-  if (isRecord(config.pluginOptions) && Object.keys(config.pluginOptions).length === 0) {
-    delete config.pluginOptions
-  }
 }
 
 function pruneRedundantDerivedCardStateConfig(config: KanbanConfig): boolean {
@@ -451,13 +387,6 @@ function pruneRedundantDerivedCardStateConfig(config: KanbanConfig): boolean {
   const plugins = getMutablePluginsRecord(config)
   delete plugins['card.state']
 
-  setCachedPluginProviderOptions(config, 'card.state', configured.provider, undefined)
-  const normalizedConfiguredProvider = normalizeProviderIdForComparison('card.state', configured.provider)
-  if (normalizedConfiguredProvider !== configured.provider) {
-    setCachedPluginProviderOptions(config, 'card.state', normalizedConfiguredProvider, undefined)
-  }
-
-  setCachedPluginProviderOptions(config, 'card.state', derived.provider, undefined)
   pruneEmptyPluginSettingsContainers(config)
   return true
 }
@@ -480,13 +409,6 @@ function pruneRedundantDerivedAttachmentStorageConfig(config: KanbanConfig): boo
   const plugins = getMutablePluginsRecord(config)
   delete plugins['attachment.storage']
 
-  setCachedPluginProviderOptions(config, 'attachment.storage', configured.provider, undefined)
-  const normalizedConfiguredProvider = normalizeProviderIdForComparison('attachment.storage', configured.provider)
-  if (normalizedConfiguredProvider !== configured.provider) {
-    setCachedPluginProviderOptions(config, 'attachment.storage', normalizedConfiguredProvider, undefined)
-  }
-
-  setCachedPluginProviderOptions(config, 'attachment.storage', derived.provider, undefined)
   pruneEmptyPluginSettingsContainers(config)
   return true
 }
@@ -547,7 +469,7 @@ export function getPersistedPluginProviderOptions(
     return structuredClone(selectedRef.options)
   }
 
-  return getCachedPluginProviderOptions(config, capability, providerId)
+  return undefined
 }
 
 function tokenizePluginSettingsPath(value: string): string[] {

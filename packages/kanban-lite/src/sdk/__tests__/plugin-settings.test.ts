@@ -202,17 +202,11 @@ describe('plugin settings helper extraction seam', () => {
         'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
         'attachment.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/ignored.db' } },
       },
-      pluginOptions: {
-        'attachment.storage': {
-          sqlite: { sqlitePath: '.kanban/ignored.db' },
-        },
-      },
     } as unknown as KanbanConfig
 
     expect(pruneRedundantDerivedStorageConfig(config)).toBe(true)
     expect(config.plugins).toEqual({
       'card.storage': { provider: 'sqlite', options: { sqlitePath: '.kanban/custom.db' } },
     })
-    expect(config.pluginOptions).toBeUndefined()
   })
 })

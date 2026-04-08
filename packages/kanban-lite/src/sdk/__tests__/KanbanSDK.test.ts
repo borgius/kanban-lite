@@ -429,49 +429,63 @@ module.exports = { CallbackListenerPlugin }
               users: [{ username: 'alice', password: '$2b$12$existing-hash' }],
             },
           },
+          'webhook.delivery': {
+            provider: 'webhooks',
+            options: {
+              webhooks: [
+                { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
+              ],
+            },
+          },
         },
-        webhooks: [
-          { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
-        ],
       })
 
-      const firstSnapshot = sdk.getConfigSnapshot() as unknown as {
+      type SnapshotShape = {
         defaultBoard: string
         boards: { default: { name: string } }
-        webhooks: Array<{ url: string }>
         plugins: {
           'auth.identity': {
             options: {
               users: Array<{ username: string; password: string }>
             }
           }
+          'webhook.delivery': {
+            options: {
+              webhooks: Array<{ url: string }>
+            }
+          }
         }
       }
+
+      const firstSnapshot = sdk.getConfigSnapshot() as unknown as SnapshotShape
       firstSnapshot.defaultBoard = 'mutated-board'
       firstSnapshot.boards.default.name = 'Mutated Board'
-      firstSnapshot.webhooks[0].url = 'https://example.com/mutated'
+      firstSnapshot.plugins['webhook.delivery'].options.webhooks[0].url = 'https://example.com/mutated'
       firstSnapshot.plugins['auth.identity'].options.users.push({ username: 'mallory', password: 'bad-hash' })
 
-      const secondSnapshot = sdk.getConfigSnapshot()
-      const secondWebhooks = expectPresent(secondSnapshot.webhooks, 'Expected webhooks in config snapshot copy test')
+      const secondSnapshot = sdk.getConfigSnapshot() as unknown as SnapshotShape
+      const secondWebhookDelivery = expectPresent(
+        secondSnapshot.plugins?.['webhook.delivery'],
+        'Expected webhook.delivery plugin in config snapshot copy test',
+      )
       const secondAuthIdentity = expectPresent(
         secondSnapshot.plugins?.['auth.identity'],
         'Expected auth.identity plugin in config snapshot copy test',
       )
-      const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as typeof firstSnapshot
+      const persisted = JSON.parse(fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8')) as SnapshotShape
 
       expect(secondSnapshot.defaultBoard).toBe('default')
       expect(secondSnapshot.boards.default.name).toBe('Default')
-      expect(secondWebhooks[0].url).toBe('https://example.com/original')
-      expect((secondAuthIdentity.options as typeof firstSnapshot.plugins['auth.identity']['options']).users).toEqual([
+      expect(secondWebhookDelivery.options.webhooks[0].url).toBe('https://example.com/original')
+      expect((secondAuthIdentity.options as SnapshotShape['plugins']['auth.identity']['options']).users).toEqual([
         { username: 'alice', password: '$2b$12$existing-hash' },
       ])
       expect(sdk.listWebhooks()).toEqual([
         { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
       ])
-      expect(persisted.defaultBoard).toBe('default')
-      expect(persisted.boards.default.name).toBe('Default')
-      expect(persisted.webhooks).toEqual([
+      expect(secondSnapshot.defaultBoard).toBe('default')
+      expect(secondSnapshot.boards.default.name).toBe('Default')
+      expect(persisted.plugins['webhook.delivery'].options.webhooks).toEqual([
         { id: 'wh_snapshot', url: 'https://example.com/original', events: ['*'], active: true },
       ])
       expect(persisted.plugins['auth.identity'].options.users).toEqual([

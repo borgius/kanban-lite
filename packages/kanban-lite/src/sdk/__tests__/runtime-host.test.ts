@@ -447,13 +447,6 @@ describe('runtime host overrides', () => {
               provider: 'localfs',
             },
           },
-          pluginOptions: {
-            'config.storage': {
-              'failing-config-storage': {
-                endpoint: 'https://cfg.test',
-              },
-            },
-          },
         },
       ])
     } finally {

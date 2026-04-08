@@ -159,6 +159,15 @@ function enableStandaloneWebhookPlugin(workspaceDir: string): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
+function writePluginWebhooks(workspaceDir: string, webhooks: unknown[]): void {
+  const configPath = path.join(workspaceDir, '.kanban.json')
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
+  const plugins = (config.plugins ?? {}) as Record<string, unknown>
+  plugins['webhook.delivery'] = { provider: 'webhooks', options: { webhooks } }
+  config.plugins = plugins
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+}
+
 // ---------------------------------------------------------------------------
 // CRUD tests — exercised through KanbanSDK public methods
 // ---------------------------------------------------------------------------
@@ -218,12 +227,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     const port = (server.address() as net.AddressInfo).port
 
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_delivery', url: `http://127.0.0.1:${port}/hook`, events: ['task.created'], active: true },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
@@ -244,12 +250,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     const port = (server.address() as net.AddressInfo).port
 
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_inactive', url: `http://127.0.0.1:${port}/hook`, events: ['*'], active: false },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
@@ -270,13 +273,10 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     const port = (server.address() as net.AddressInfo).port
 
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
     // Webhook only listens for column.created; createCard emits task.created
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_filtered', url: `http://127.0.0.1:${port}/hook`, events: ['column.created'], active: true },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
@@ -305,12 +305,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     const port = (server.address() as net.AddressInfo).port
 
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_wildcard', url: `http://127.0.0.1:${port}/hook`, events: ['*'], active: true },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
@@ -340,12 +337,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     const port = (server.address() as net.AddressInfo).port
 
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_signed', url: `http://127.0.0.1:${port}/hook`, events: ['*'], active: true, secret: 'test-secret' },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
@@ -363,12 +357,9 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
 
   it('handles delivery failure gracefully (does not reject the SDK mutation)', async () => {
     const { workspaceDir, kanbanDir, cleanup } = createTempWorkspace()
-    const configPath = path.join(workspaceDir, '.kanban.json')
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    writePluginWebhooks(workspaceDir, [
       { id: 'wh_unreachable', url: 'http://127.0.0.1:1/hook', events: ['*'], active: true },
-    ]
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    ])
 
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })

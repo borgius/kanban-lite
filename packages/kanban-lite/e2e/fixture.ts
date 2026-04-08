@@ -30,7 +30,6 @@ const standaloneScenarioDefinitions = {
   'auth-visibility': {
     templateDir: path.join(fixtureTemplatesDir, 'auth-visibility'),
     port: 4176,
-    healthPath: '/auth/login',
   },
   'plugin-options': {
     templateDir: path.join(fixtureTemplatesDir, 'plugin-options'),

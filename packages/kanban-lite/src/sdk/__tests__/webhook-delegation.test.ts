@@ -230,9 +230,11 @@ describe('KanbanSDK – single delivery regression: one SDK mutation → one out
     // Register a webhook pointing to the test server in the workspace config
     const configPath = path.join(workspaceDir, '.kanban.json')
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>
-    config.webhooks = [
+    const plugins = (config.plugins ?? {}) as Record<string, unknown>
+    plugins['webhook.delivery'] = { provider: 'webhooks', options: { webhooks: [
       { id: 'wh_single_delivery', url: `http://127.0.0.1:${port}/hook`, events: ['task.created'], active: true },
-    ]
+    ] } }
+    config.plugins = plugins
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 
     try {

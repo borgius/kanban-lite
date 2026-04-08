@@ -234,7 +234,12 @@ function readConfigRepositoryDocumentFromRuntimeHost(
   workspaceRoot: string,
   filePath: string,
 ): ConfigRepositoryReadResult | null {
-  const hostResult = getRuntimeHost()?.readConfigRepositoryDocument?.(workspaceRoot, filePath)
+  let hostResult: RuntimeHostConfigRepositoryReadResult | undefined
+  try {
+    hostResult = getRuntimeHost()?.readConfigRepositoryDocument?.(workspaceRoot, filePath)
+  } catch (error) {
+    return { status: 'error', filePath, reason: 'read', cause: error }
+  }
   if (hostResult === undefined) {
     return null
   }

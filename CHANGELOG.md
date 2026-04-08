@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`kl-plugin-auth` wildcard permission `"*"` now grants all actions**: `checkPermissionMatrixPolicy` was doing a literal `Array.includes` check, so `"actions": ["*"]` never matched any real action and admin users were always denied for actions like `plugin-settings.read`. The check now treats `"*"` as a catch-all that allows every action for the matching role.
+
+### Changed
+
+- **Removed `pluginOptions` secondary cache**: The `pluginOptions[capability][providerId]` store in `.kanban.json` has been removed. Plugin options are now stored exclusively in `plugins[capability].options` for the active provider. Saving options for a provider that is not currently selected is a no-op. The `PluginOptionsStore` type, `KanbanConfig.pluginOptions` field, and the related SDK functions (`getCachedPluginProviderOptions`, `setCachedPluginProviderOptions`) have been deleted.
+
 ### Added
 
 - **First-party Cloudflare storage bundle** (`kl-plugin-cloudflare`): Added a Worker-safe `cloudflare` provider that co-provides `card.storage`, `attachment.storage`, `card.state`, and `config.storage`, storing structured data/config/state in D1 and attachment blobs in R2 through the shared Worker binding/context seam without background polling or always-on runtime work.

@@ -1825,20 +1825,11 @@ describe('CLI plugin-settings commands', () => {
       const persistedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
         plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
         auth: Record<string, { provider: string; options?: Record<string, unknown> }>
-        pluginOptions: Record<string, Record<string, Record<string, unknown>>>
       }
       expect(persistedConfig.plugins['card.storage']).toEqual({ provider: 'localfs' })
       expect(persistedConfig.plugins['attachment.storage']).toBeUndefined()
       expect(persistedConfig.auth['auth.identity']).toEqual({ provider: 'noop' })
-      expect(persistedConfig.pluginOptions['card.storage']).toMatchObject({
-        sqlite: { sqlitePath: '.kanban/custom.db' },
-      })
-      expect(persistedConfig.pluginOptions['auth.identity']).toMatchObject({
-        local: {
-          apiToken: 'updated-local-token',
-          users: [{ username: 'alice', password: '$2b$12$new-hash', role: 'manager' }],
-        },
-      })
+      expect(persistedConfig).not.toHaveProperty('pluginOptions')
     } finally {
       cleanup()
     }

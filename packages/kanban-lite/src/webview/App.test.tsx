@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   BoardInfo,
   Card,
@@ -297,6 +297,25 @@ vi.mock('react', async (importOriginal) => {
       hookRuntime.cursor++
       return callback
     },
+    lazy<T extends React.ComponentType<never>>(
+      factory: () => Promise<{ default: T }>
+    ): React.LazyExoticComponent<T> {
+      // Non-throwing wrapper: factory Promise resolves on the next microtask tick.
+      // Components render null until resolved; no Suspense throwing required.
+      let resolved: T | null = null
+      void factory().then(
+        (mod: { default: T }) => { resolved = mod.default },
+        () => { /* ignore load errors in tests */ }
+      )
+      function LazyWrapper(props: React.ComponentPropsWithoutRef<T>): React.ReactElement | null {
+        return resolved
+          ? (actual.createElement(resolved as React.ComponentType<React.ComponentPropsWithoutRef<T>>, props) as React.ReactElement)
+          : null
+      }
+      return LazyWrapper as unknown as React.LazyExoticComponent<T>
+    },
+    // Passthrough – children are always rendered synchronously, no Thenable handling.
+    Suspense: (({ children }: { children?: React.ReactNode }) => children ?? null) as unknown as typeof actual.Suspense,
   }
 })
 
@@ -449,6 +468,12 @@ describe('App connection notices', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
 
     expect(renderApp()).not.toContain('Reconnecting…')
+    // Render a second time to stabilise the message-handler cursor after React's
+    // first-render Suspense retry (unresolved lazy imports cause App to run twice on
+    // the very first renderToStaticMarkup call in a process; the extra renderApp()
+    // re-registers the handler with the single-pass cursor so dispatchMessage writes
+    // to the same slot that subsequent renders read from).
+    renderApp()
     expect(postMessageSpy).toHaveBeenCalledWith({ type: 'ready' })
 
     dispatchMessage({
@@ -475,6 +500,8 @@ describe('App connection notices', () => {
   it('renders a fatal notice and clears it once connectivity is restored', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
 
+    renderApp()
+    // Stabilise message-handler cursor (see reconnecting test comment above).
     renderApp()
 
     dispatchMessage({
@@ -592,7 +619,7 @@ describe('App connection notices', () => {
 
   it('renders a resize handle for the board logs drawer in drawer mode', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[6] = true
+    hookRuntime.values[7] = true
 
     const markup = renderApp()
 
@@ -606,7 +633,7 @@ describe('App connection notices', () => {
       ...DEFAULT_CARD_SETTINGS,
       panelMode: 'popup',
     }
-    hookRuntime.values[6] = {
+    hookRuntime.values[7] = {
       id: 'card-1',
       content: '# Card',
       frontmatter: { status: 'backlog' },
@@ -656,7 +683,7 @@ describe('App connection notices', () => {
 describe('App resize preview and commit timing', () => {
   it('preview updates the in-memory drawer width without posting saveSettings', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[6] = true // editingCard truthy → drawer panel renders
+    hookRuntime.values[7] = true // editingCard truthy → drawer panel renders
 
     renderApp()
 
@@ -671,7 +698,7 @@ describe('App resize preview and commit timing', () => {
 
   it('commit saves settings exactly once and clears the in-memory preview', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[6] = true // editingCard truthy → drawer panel renders
+    hookRuntime.values[7] = true // editingCard truthy → drawer panel renders
 
     renderApp()
 
@@ -693,9 +720,23 @@ describe('App resize preview and commit timing', () => {
 })
 
 describe('App plugin settings bridge', () => {
+  beforeAll(async () => {
+    // Prime the LazyWrapper closures so all lazy-imported mocks are fully resolved
+    // before the first render that checks their output. Node.js's async ESM loader
+    // won't process these dynamic imports until explicitly awaited here.
+    await Promise.all([
+      import('./components/CreateCardDialog'),
+      import('./components/CardEditor'),
+      import('./components/SettingsPanel'),
+      import('./components/LogsSection'),
+    ])
+  })
+
   it('passes plugin inventory into the settings panel and routes read, select, update, and install actions through the shared bridge', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
 
+    // Stabilise the message-handler cursor (matching the connection-notice tests pattern).
+    renderApp()
     renderApp()
 
     dispatchMessage({
@@ -877,7 +918,7 @@ describe('App live card refresh', () => {
 
     renderApp()
 
-    expect(hookRuntime.values[6]).toMatchObject({
+    expect(hookRuntime.values[7]).toMatchObject({
       content: '# New title',
       comments: [{ id: 'c1', author: 'bot', created: '2024-01-02T00:00:00.000Z', content: 'Synced from server' }],
       frontmatter: expect.objectContaining({
@@ -891,7 +932,7 @@ describe('App live card refresh', () => {
 
   it('hydrates an already-open card from cardsUpdated payloads', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[6] = {
+    hookRuntime.values[7] = {
       id: 'card-2',
       content: '# Existing',
       frontmatter: {
@@ -938,7 +979,7 @@ describe('App live card refresh', () => {
 
     renderApp()
 
-    expect(hookRuntime.values[6]).toMatchObject({
+    expect(hookRuntime.values[7]).toMatchObject({
       comments: [{ id: 'c2', author: 'api', created: '2024-01-03T00:00:00.000Z', content: 'Added externally' }],
       logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
       frontmatter: expect.objectContaining({

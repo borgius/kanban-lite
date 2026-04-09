@@ -2644,8 +2644,10 @@ export class KanbanSDK {
   /**
    * Retrieves the card currently marked as active/open in this workspace.
    *
-   * Active-card state is persisted in the workspace so other interfaces
-   * (standalone server, CLI, MCP, and VS Code) can query the same card.
+    * Active-card state is persisted in the workspace so other interfaces
+    * (standalone server, CLI, MCP, and VS Code) can query the same card.
+    * Depending on the host runtime, that persistence may use the local
+    * `.active-card.json` sidecar or a host-managed runtime store.
    * Returns `null` when no card is currently active.
    *
    * @param boardId - Optional board ID. When provided, returns the active card

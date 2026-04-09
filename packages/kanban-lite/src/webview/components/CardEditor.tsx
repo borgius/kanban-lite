@@ -822,10 +822,13 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
 
 export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange, canUpdateMetadata = true }: CardEditorProps) {
   const { cardSettings, boards, currentBoard, setCardSettings } = useStore()
-  const pinnedMetadataKeys = useMemo(
-    () => boards.find(b => b.id === currentBoard)?.metadata ?? [],
-    [boards, currentBoard],
-  )
+  const pinnedMetadataKeys = useMemo(() => {
+    const boardMetaDefs = boards.find(b => b.id === currentBoard)?.metadata
+    if (!boardMetaDefs) return []
+    return Object.entries(boardMetaDefs)
+      .filter(([, def]) => def.highlighted)
+      .map(([k]) => k)
+  }, [boards, currentBoard])
   const titleMetadataKeys = useMemo(
     () => boards.find(b => b.id === currentBoard)?.title,
     [boards, currentBoard],

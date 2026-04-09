@@ -1289,6 +1289,8 @@ function App(): React.JSX.Element {
           onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
           onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
           initialTab={settingsTab}
+          boardMeta={boards.find(b => b.id === currentBoard)?.metadata}
+          onSaveBoardMeta={(metadata) => vscode.postMessage({ type: 'updateBoardMeta', boardId: currentBoard, metadata })}
         />
       </Suspense>
 

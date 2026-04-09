@@ -3,7 +3,7 @@ import { JsonForms } from '@jsonforms/react'
 import { createAjv, type UISchemaElement } from '@jsonforms/core'
 import { vanillaCells, vanillaRenderers } from '@jsonforms/vanilla-renderers'
 import { X, ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react'
-import type { PluginCapabilityNamespace } from '../../shared/config'
+import type { PluginCapabilityNamespace, BoardMetaFieldDef } from '../../shared/config'
 import type {
   BoardBackgroundMode,
   BoardBackgroundPreset,
@@ -24,7 +24,7 @@ import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSetting
 import type { CardViewMode } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
-import type { SettingsTab } from '../settingsTabs'
+import type { SettingsTab, BoardSubTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
 import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDrawer } from '../drawerPositionHelpers'
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
@@ -47,8 +47,7 @@ const pluginDiscoverySourceLabels: Record<PluginSettingsDiscoverySource, string>
 
 const settingsTabLabels: Record<SettingsTab, string> = {
   general: 'General',
-  defaults: 'Defaults',
-  labels: 'Labels',
+  board: 'Board',
   pluginOptions: 'Plugin Options',
 }
 
@@ -103,6 +102,8 @@ interface SettingsPanelProps {
   onPluginOptionsTabActivated?: () => void
   onTabChange?: (tab: SettingsTab) => void
   initialTab?: SettingsTab
+  boardMeta?: Record<string, BoardMetaFieldDef>
+  onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
 }
 
 export function SettingsPanel({
@@ -127,6 +128,8 @@ export function SettingsPanel({
   onPluginOptionsTabActivated,
   onTabChange,
   initialTab,
+  boardMeta,
+  onSaveBoardMeta,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
@@ -151,6 +154,8 @@ export function SettingsPanel({
       onPluginOptionsTabActivated={onPluginOptionsTabActivated}
       onTabChange={onTabChange}
       initialTab={initialTab}
+      boardMeta={boardMeta}
+      onSaveBoardMeta={onSaveBoardMeta}
     />
   )
 }
@@ -1654,6 +1659,235 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
   )
 }
 
+const boardSubTabLabels: Record<BoardSubTab, string> = {
+  defaults: 'Defaults',
+  labels: 'Labels',
+  meta: 'Meta',
+}
+
+function MetaBuilderSection({
+  boardMeta,
+  onSave,
+}: {
+  boardMeta?: Record<string, BoardMetaFieldDef>
+  onSave?: (meta: Record<string, BoardMetaFieldDef>) => void
+}) {
+  const [meta, setMeta] = useState<Record<string, BoardMetaFieldDef>>(() => boardMeta ? structuredClone(boardMeta) : {})
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [draftKey, setDraftKey] = useState('')
+  const [draftDefault, setDraftDefault] = useState('')
+  const [draftDescription, setDraftDescription] = useState('')
+  const [draftHighlighted, setDraftHighlighted] = useState(false)
+  const [isAdding, setIsAdding] = useState(false)
+
+  useEffect(() => { setMeta(boardMeta ? structuredClone(boardMeta) : {}) }, [boardMeta])
+
+  const startAdd = () => {
+    setIsAdding(true)
+    setEditingKey(null)
+    setDraftKey('')
+    setDraftDefault('')
+    setDraftDescription('')
+    setDraftHighlighted(false)
+  }
+
+  const startEdit = (key: string) => {
+    const def = meta[key] ?? {}
+    setEditingKey(key)
+    setIsAdding(false)
+    setDraftKey(key)
+    setDraftDefault(def.default !== undefined ? String(def.default) : '')
+    setDraftDescription(def.description ?? '')
+    setDraftHighlighted(def.highlighted ?? false)
+  }
+
+  const cancelEdit = () => {
+    setEditingKey(null)
+    setIsAdding(false)
+  }
+
+  const commitEdit = () => {
+    const trimmedKey = draftKey.trim()
+    if (!trimmedKey) return
+    const def: BoardMetaFieldDef = {}
+    if (draftDefault.trim() !== '') def.default = draftDefault.trim()
+    if (draftDescription.trim() !== '') def.description = draftDescription.trim()
+    if (draftHighlighted) def.highlighted = true
+
+    const next = { ...meta }
+    if (editingKey && editingKey !== trimmedKey) {
+      delete next[editingKey]
+    }
+    next[trimmedKey] = def
+    setMeta(next)
+    onSave?.(next)
+    setEditingKey(null)
+    setIsAdding(false)
+  }
+
+  const deleteField = (key: string) => {
+    const next = { ...meta }
+    delete next[key]
+    setMeta(next)
+    onSave?.(next)
+  }
+
+  const isEditingRow = (key: string) => editingKey === key
+
+  const rowBase = 'flex items-center gap-2 px-4 py-2 text-sm'
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--vscode-input-background)',
+    color: 'var(--vscode-input-foreground)',
+    border: '1px solid var(--vscode-input-border, transparent)',
+    borderRadius: 4,
+    padding: '2px 6px',
+    fontSize: 12,
+    minWidth: 0,
+  }
+
+  const renderFormRow = () => (
+    <div className="px-4 py-2 flex flex-col gap-2" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
+      <div className="flex gap-2">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+          <label className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Name</label>
+          <input
+            style={inputStyle}
+            value={draftKey}
+            onChange={e => setDraftKey(e.target.value)}
+            placeholder="field_key"
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit() }}
+            autoFocus
+          />
+        </div>
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+          <label className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Default</label>
+          <input
+            style={inputStyle}
+            value={draftDefault}
+            onChange={e => setDraftDefault(e.target.value)}
+            placeholder="(optional)"
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit() }}
+          />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Description</label>
+        <input
+          style={inputStyle}
+          value={draftDescription}
+          onChange={e => setDraftDescription(e.target.value)}
+          placeholder="(optional)"
+          onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit() }}
+        />
+      </div>
+      <div
+        className="flex items-center justify-between gap-4 cursor-pointer"
+        onClick={() => setDraftHighlighted(v => !v)}
+      >
+        <div>
+          <div className="text-sm" style={{ color: 'var(--vscode-foreground)' }}>Show on card</div>
+          <div className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Display this field on card previews</div>
+        </div>
+        <ToggleSwitch checked={draftHighlighted} ariaLabel="Show on card" onChange={setDraftHighlighted} />
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button
+          type="button"
+          className="px-3 py-1 text-xs rounded"
+          style={{ background: 'var(--vscode-button-secondaryBackground)', color: 'var(--vscode-button-secondaryForeground)' }}
+          onClick={cancelEdit}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="px-3 py-1 text-xs rounded"
+          style={{ background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)' }}
+          onClick={commitEdit}
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="py-3">
+      <div className="flex items-center justify-between px-4 pb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+          Metadata Fields
+        </h3>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded"
+          style={{ background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)' }}
+          onClick={startAdd}
+        >
+          <Plus size={12} />
+          Add field
+        </button>
+      </div>
+      <div>
+        {Object.keys(meta).length === 0 && !isAdding && (
+          <div className="px-4 py-3 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            No metadata fields defined. Add a field to display card metadata on previews.
+          </div>
+        )}
+        {Object.entries(meta).map(([key, def]) =>
+          isEditingRow(key) ? (
+            <div key={key}>{renderFormRow()}</div>
+          ) : (
+            <div
+              key={key}
+              className={rowBase}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="font-mono text-sm" style={{ color: 'var(--vscode-foreground)' }}>{key}</div>
+                {def.description && (
+                  <div className="text-xs truncate" style={{ color: 'var(--vscode-descriptionForeground)' }}>{def.description}</div>
+                )}
+              </div>
+              {def.highlighted && (
+                <span
+                  className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5"
+                  style={{ background: 'var(--vscode-button-background)', color: 'var(--vscode-button-foreground)' }}
+                >
+                  visible
+                </span>
+              )}
+              <button
+                type="button"
+                aria-label={`Edit ${key}`}
+                className="shrink-0 p-1 rounded"
+                style={{ color: 'var(--vscode-descriptionForeground)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--vscode-foreground)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--vscode-descriptionForeground)'}
+                onClick={() => startEdit(key)}
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete ${key}`}
+                className="shrink-0 p-1 rounded"
+                style={{ color: 'var(--vscode-descriptionForeground)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--vscode-errorForeground, #f87171)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--vscode-descriptionForeground)'}
+                onClick={() => deleteField(key)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )
+        )}
+        {isAdding && renderFormRow()}
+      </div>
+    </div>
+  )
+}
+
 function SettingsPanelContent({
   settings,
   workspace,
@@ -1675,9 +1909,12 @@ function SettingsPanelContent({
   onPluginOptionsTabActivated,
   onTabChange,
   initialTab,
+  boardMeta,
+  onSaveBoardMeta,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
+  const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>('defaults')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
@@ -1788,7 +2025,7 @@ function SettingsPanelContent({
           className="flex"
           style={{ borderBottom: '1px solid var(--vscode-panel-border)' }}
         >
-          {(['general', 'defaults', 'labels', 'pluginOptions'] as const).map(tab => (
+          {(['general', 'board', 'pluginOptions'] as const).map(tab => (
             <button
               key={tab}
               type="button"
@@ -1987,31 +2224,74 @@ function SettingsPanelContent({
             </>
           )}
 
-          {activeTab === 'defaults' && (
-            <SettingsSection title="Defaults">
-              <SettingsDropdown
-                label="Default Priority"
-                value={local.defaultPriority}
-                options={priorityConfig}
-                onChange={v => update({ defaultPriority: v as Priority })}
-              />
-              <SettingsDropdown
-                label="Default Status"
-                value={local.defaultStatus}
-                options={statusOptions}
-                onChange={v => update({ defaultStatus: v as CardStatus })}
-              />
-            </SettingsSection>
-          )}
+          {activeTab === 'board' && (
+            <div className="flex h-full min-h-0" style={{ borderTop: '1px solid var(--vscode-panel-border)' }}>
+              {/* Left sub-navigation */}
+              <div
+                className="flex flex-col shrink-0 py-2"
+                style={{ width: 96, borderRight: '1px solid var(--vscode-panel-border)' }}
+              >
+                {(['defaults', 'labels', 'meta'] as const).map(sub => (
+                  <button
+                    key={sub}
+                    type="button"
+                    onClick={() => setBoardSubTab(sub)}
+                    className="px-3 py-2 text-xs text-left transition-colors relative"
+                    style={{
+                      color: boardSubTab === sub
+                        ? 'var(--vscode-foreground)'
+                        : 'var(--vscode-descriptionForeground)',
+                      background: boardSubTab === sub
+                        ? 'var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground))'
+                        : 'transparent',
+                      fontWeight: boardSubTab === sub ? 600 : undefined,
+                    }}
+                    onMouseEnter={e => {
+                      if (boardSubTab !== sub) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'
+                    }}
+                    onMouseLeave={e => {
+                      if (boardSubTab !== sub) e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    {boardSubTabLabels[sub]}
+                  </button>
+                ))}
+              </div>
 
-          {activeTab === 'labels' && (
-            <SettingsSection title="Labels">
-              <LabelsSection
-                onSetLabel={onSetLabel}
-                onRenameLabel={onRenameLabel}
-                onDeleteLabel={onDeleteLabel}
-              />
-            </SettingsSection>
+              {/* Right content */}
+              <div className="flex-1 min-w-0 overflow-auto">
+                {boardSubTab === 'defaults' && (
+                  <SettingsSection title="Defaults">
+                    <SettingsDropdown
+                      label="Default Priority"
+                      value={local.defaultPriority}
+                      options={priorityConfig}
+                      onChange={v => update({ defaultPriority: v as Priority })}
+                    />
+                    <SettingsDropdown
+                      label="Default Status"
+                      value={local.defaultStatus}
+                      options={statusOptions}
+                      onChange={v => update({ defaultStatus: v as CardStatus })}
+                    />
+                  </SettingsSection>
+                )}
+
+                {boardSubTab === 'labels' && (
+                  <SettingsSection title="Labels">
+                    <LabelsSection
+                      onSetLabel={onSetLabel}
+                      onRenameLabel={onRenameLabel}
+                      onDeleteLabel={onDeleteLabel}
+                    />
+                  </SettingsSection>
+                )}
+
+                {boardSubTab === 'meta' && (
+                  <MetaBuilderSection boardMeta={boardMeta} onSave={onSaveBoardMeta} />
+                )}
+              </div>
+            </div>
           )}
 
           {activeTab === 'pluginOptions' && (

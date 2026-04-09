@@ -9,7 +9,7 @@ import {
 import type { KanbanColumn, CardDisplaySettings, CardViewMode, Priority, LabelDefinition } from '../types'
 import { DEFAULT_BOARD_BACKGROUND_MODE, createDefaultColumns, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from '../types'
 import type {
-  ReadConfigOptions, ProviderRef, Webhook, BoardConfig, FormDefinition, KanbanConfig,
+  ReadConfigOptions, ProviderRef, Webhook, BoardConfig, FormDefinition, KanbanConfig, BoardMetaFieldDef,
 } from './types'
 
 const VALID_BOARD_PRIORITIES: readonly Priority[] = ['critical', 'high', 'medium', 'low']
@@ -81,9 +81,22 @@ function resolveBoardsConfig(
     return defaults
   }
 
-  return entries.every(([, board]) => isBoardConfigRecord(board))
+  const boards = entries.every(([, board]) => isBoardConfigRecord(board))
     ? Object.fromEntries(entries) as KanbanConfig['boards']
     : defaults
+
+  // Migrate old string[] metadata to Record<string, BoardMetaFieldDef>
+  for (const board of Object.values(boards) as BoardConfig[]) {
+    if (Array.isArray(board.metadata)) {
+      const migrated: Record<string, BoardMetaFieldDef> = {}
+      for (const key of board.metadata as unknown as string[]) {
+        migrated[key] = { highlighted: true }
+      }
+      board.metadata = migrated
+    }
+  }
+
+  return boards
 }
 
 /**

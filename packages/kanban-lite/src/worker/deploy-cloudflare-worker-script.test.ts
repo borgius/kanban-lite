@@ -226,6 +226,75 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     expect(wranglerSource).toContain('dead_letter_queue = "kanban-callbacks-dlq"')
   })
 
+  it('emits Durable Object active-card wiring in the generated worker entry and Wrangler config', async () => {
+    const {
+      createGeneratedWorker,
+      createGeneratedWranglerConfig,
+    } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const options = {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+    }
+
+    const entryPath = await createGeneratedWorker(tempDir, options)
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    expect(entrySource).toContain('import { DurableObject } from "cloudflare:workers"')
+    expect(entrySource).toContain('export class KanbanActiveCardState extends DurableObject')
+    expect(entrySource).toContain('async getActiveCardState()')
+    expect(entrySource).toContain('async setActiveCardState(state)')
+    expect(entrySource).toContain('async clearActiveCardState()')
+
+    const wranglerConfigPath = await createGeneratedWranglerConfig(tempDir, options)
+    const wranglerSource = fs.readFileSync(wranglerConfigPath, 'utf8')
+    expect(wranglerSource).toContain('[[durable_objects.bindings]]')
+    expect(wranglerSource).toContain('name = "KANBAN_ACTIVE_CARD_STATE"')
+    expect(wranglerSource).toContain('class_name = "KanbanActiveCardState"')
+    expect(wranglerSource).toContain('[[migrations]]')
+    expect(wranglerSource).toContain('tag = "kanban-active-card-state-v1"')
+    expect(wranglerSource).toContain('new_sqlite_classes = ["KanbanActiveCardState"]')
+  })
+
+  it('bundles required auth provider packages for Worker-safe default auth resolution', async () => {
+    const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const entryPath = await createGeneratedWorker(tempDir, {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+    })
+
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    expect(entrySource).toMatch(/"kl-plugin-auth": moduleRegistryEntry\d+/)
+  })
+
   it('generates import specifiers that resolve back to the source files from macOS temp directories', async () => {
     const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
     const tempDir = createTempDir()
@@ -256,7 +325,7 @@ describe('deploy-cloudflare-worker callback module contract', () => {
 
     const entrySource = fs.readFileSync(entryPath, 'utf8')
     const entryDir = path.dirname(entryPath)
-    const specifiers = readImportSpecifiers(entrySource)
+    const specifiers = readImportSpecifiers(entrySource).filter((specifier) => specifier.startsWith('.'))
 
     expect(specifiers.length).toBeGreaterThan(0)
 

@@ -57,6 +57,7 @@ export interface CloudflareWorkerRuntimeEnv {
   KANBAN_BOOTSTRAP?: string | CloudflareWorkerBootstrap
   KANBAN_CONFIG?: string | WorkerConfigInput
   KANBAN_MODULES?: WorkerModuleRegistry
+  KANBAN_ACTIVE_CARD_STATE?: unknown
   ASSETS?: { fetch(request: Request): Promise<Response> }
 }
 

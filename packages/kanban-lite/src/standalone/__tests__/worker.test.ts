@@ -255,9 +255,7 @@ describe('Cloudflare worker entrypoint', () => {
     }
     const originalResolve = pluginLoaderRequire.resolve
 
-    pluginLoaderRequire.resolve = ((request: string) => {
-      throw new Error(`REQUEST:${request}`)
-    }) as typeof pluginLoaderRequire.resolve
+    pluginLoaderRequire.resolve = undefined as unknown as typeof pluginLoaderRequire.resolve
 
     try {
       const handler = createCloudflareWorkerFetchHandler({

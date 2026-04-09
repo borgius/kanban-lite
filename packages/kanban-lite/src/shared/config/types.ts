@@ -172,6 +172,23 @@ export interface Webhook {
 }
 
 /**
+ * Definition for a single board-level metadata field.
+ *
+ * Stored as the value in `BoardConfig.metadata[fieldName]`.
+ */
+export interface BoardMetaFieldDef {
+  /** Default value pre-filled when the field has no data for a card. */
+  default?: unknown
+  /** Tooltip / explanatory text shown when the field is highlighted on a card. */
+  description?: string
+  /**
+   * When `true`, this field is shown in the card card preview.
+   * Replaces the old `BoardConfig.metadata` string-array "pinned" behaviour.
+   */
+  highlighted?: boolean
+}
+
+/**
  * Configuration for a single kanban board.
  *
  * Each board has its own set of columns and default status/priority values.
@@ -197,8 +214,16 @@ export interface BoardConfig {
   defaultPriority: Priority
   /** Named board-level actions available in the toolbar. Map of action key to display title. */
   actions?: Record<string, string>
-  /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
-  metadata?: string[]
+  /**
+   * Named metadata field definitions for the board.
+   * Keys are field names; values describe display behaviour and defaults.
+   *
+   * Previously this was a plain `string[]` of pinned field names.  The new
+   * shape preserves backward-compatibility: old configs with a string array
+   * are automatically migrated so that every entry maps to
+   * `{ highlighted: true }`.
+   */
+  metadata?: Record<string, BoardMetaFieldDef>
   /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
   title?: string[]
   /** Column IDs currently minimized (shown as a narrow rail) on this board. */

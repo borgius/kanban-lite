@@ -30,6 +30,17 @@ export type RuntimeHostConfigRepositoryWriteResult =
   | { status: 'ok'; providerId?: string }
   | { status: 'error'; cause: unknown; providerId?: string }
 
+export interface RuntimeHostActiveCardScope {
+  workspaceRoot: string
+  kanbanDir: string
+}
+
+export interface RuntimeHostActiveCardState {
+  cardId: string
+  boardId: string
+  updatedAt: string
+}
+
 export interface RuntimeHost {
   readConfig?(workspaceRoot: string, filePath: string): RuntimeHostConfigDocument | undefined
   writeConfig?(workspaceRoot: string, filePath: string, config: RuntimeHostConfigDocument): boolean
@@ -49,6 +60,14 @@ export interface RuntimeHost {
   ): ConfigStorageFailure | null | undefined
   loadWorkspaceEnv?(workspaceRoot: string): boolean
   resolveExternalModule?(request: string): unknown
+  readActiveCardState?(
+    scope: RuntimeHostActiveCardScope,
+  ): RuntimeHostActiveCardState | null | Promise<RuntimeHostActiveCardState | null>
+  writeActiveCardState?(
+    scope: RuntimeHostActiveCardScope,
+    state: RuntimeHostActiveCardState,
+  ): void | Promise<void>
+  clearActiveCardState?(scope: RuntimeHostActiveCardScope): void | Promise<void>
   getCloudflareWorkerProviderContext?(): CloudflareWorkerProviderContext | null | undefined
 }
 

@@ -28,6 +28,41 @@ import {
   resolveWorkerConfigRepositoryOwnerState,
 } from './worker-utils'
 
+const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
+
+type WorkerActiveCardStateScope = Parameters<NonNullable<RuntimeHost['readActiveCardState']>>[0]
+type WorkerActiveCardStateValue = NonNullable<Awaited<ReturnType<NonNullable<RuntimeHost['readActiveCardState']>>>>
+
+interface WorkerActiveCardStateDurableObjectStub {
+  getActiveCardState(): Promise<WorkerActiveCardStateValue | null>
+  setActiveCardState(state: WorkerActiveCardStateValue): Promise<void>
+  clearActiveCardState(): Promise<void>
+}
+
+interface WorkerActiveCardStateDurableObjectNamespace {
+  getByName(name: string): WorkerActiveCardStateDurableObjectStub
+}
+
+function getWorkerActiveCardStateNamespace(
+  env: CloudflareWorkerRuntimeEnv | undefined,
+): WorkerActiveCardStateDurableObjectNamespace | null {
+  const candidate = env?.[CLOUDFLARE_ACTIVE_CARD_STATE_BINDING]
+  if (!candidate || typeof candidate !== 'object') {
+    return null
+  }
+
+  return typeof (candidate as WorkerActiveCardStateDurableObjectNamespace).getByName === 'function'
+    ? candidate as WorkerActiveCardStateDurableObjectNamespace
+    : null
+}
+
+function getWorkerActiveCardStateStub(
+  namespace: WorkerActiveCardStateDurableObjectNamespace,
+  scope: WorkerActiveCardStateScope,
+): WorkerActiveCardStateDurableObjectStub {
+  return namespace.getByName(`active-card:${scope.workspaceRoot}:${scope.kanbanDir}`)
+}
+
 export function resolveWorkerRuntimeHostHandle(
   options: CloudflareWorkerFetchHandlerOptions,
   env: CloudflareWorkerRuntimeEnv | undefined,
@@ -63,6 +98,7 @@ export function resolveWorkerRuntimeHostHandle(
     upstreamHost,
     workerProviderContext,
     configOwner,
+    env,
   )
 
   return state.workerRuntimeHost
@@ -81,11 +117,13 @@ function createWorkerRuntimeHost(
   upstreamHost?: RuntimeHost,
   workerProviderContext?: CloudflareWorkerProviderContext | null,
   configOwner?: WorkerConfigRepositoryOwnerState | null,
+  env?: CloudflareWorkerRuntimeEnv,
 ): WorkerRuntimeHostHandle {
   let committedConfig: RuntimeHostConfigDocument | undefined = cloneWorkerValue(bootstrap?.config)
   let hasAuthoritativeConfig = false
   let dispatcherStale = false
   const requestConfigStorage = new AsyncLocalStorage<WorkerRequestConfigState>()
+  const activeCardNamespace = getWorkerActiveCardStateNamespace(env)
 
   const assertCanWriteConfig = (workspaceRoot: string, filePath: string, nextConfig: RuntimeHostConfigDocument): void => {
     const clonedNextConfig = cloneWorkerValue(nextConfig)
@@ -220,6 +258,30 @@ function createWorkerRuntimeHost(
       }
       return upstreamHost?.resolveExternalModule?.(request)
     },
+    ...(activeCardNamespace || upstreamHost?.readActiveCardState || upstreamHost?.writeActiveCardState || upstreamHost?.clearActiveCardState
+      ? {
+          async readActiveCardState(scope: WorkerActiveCardStateScope) {
+            if (activeCardNamespace) {
+              return cloneWorkerValue(await getWorkerActiveCardStateStub(activeCardNamespace, scope).getActiveCardState())
+            }
+            return cloneWorkerValue(await upstreamHost?.readActiveCardState?.(scope))
+          },
+          async writeActiveCardState(scope: WorkerActiveCardStateScope, state: WorkerActiveCardStateValue) {
+            if (activeCardNamespace) {
+              await getWorkerActiveCardStateStub(activeCardNamespace, scope).setActiveCardState(cloneWorkerValue(state))
+              return
+            }
+            await upstreamHost?.writeActiveCardState?.(scope, cloneWorkerValue(state))
+          },
+          async clearActiveCardState(scope: WorkerActiveCardStateScope) {
+            if (activeCardNamespace) {
+              await getWorkerActiveCardStateStub(activeCardNamespace, scope).clearActiveCardState()
+              return
+            }
+            await upstreamHost?.clearActiveCardState?.(scope)
+          },
+        }
+      : {}),
     getCloudflareWorkerProviderContext() {
       return workerProviderContext ?? upstreamHost?.getCloudflareWorkerProviderContext?.() ?? null
     },

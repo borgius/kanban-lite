@@ -2,6 +2,7 @@ import * as fs from 'fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SDKContext } from '../modules/context'
 import { writeActiveCardState } from '../modules/cards/helpers'
+import { resetRuntimeHost } from '../../shared/env'
 
 vi.mock('fs/promises', async () => {
   const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises')
@@ -82,6 +83,7 @@ function createContext(): SDKContext {
 }
 
 afterEach(() => {
+  resetRuntimeHost()
   vi.clearAllMocks()
 })
 

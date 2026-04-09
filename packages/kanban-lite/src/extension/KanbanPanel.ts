@@ -422,6 +422,20 @@ export class KanbanPanel {
             }
             break
           }
+          case 'updateBoardMeta': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            try {
+              const boardId = message.boardId ?? this._currentBoardId
+              if (boardId) {
+                await this._runWithAuth(sdk, () => sdk.updateBoard(boardId, { metadata: message.metadata }))
+                this._sendCardsToWebview()
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to update board metadata: ${err}`)
+            }
+            break
+          }
           case 'renameLabel': {
             const sdk = this._getSDK()
             if (!sdk) break

@@ -76,6 +76,10 @@ export function isRecoverableMissingModuleError(err: unknown, ...hints: string[]
 }
 
 function resolveInstalledModuleEntry(request: string): string | null {
+  if (typeof runtimeRequire.resolve !== 'function') {
+    return null
+  }
+
   try {
     return runtimeRequire.resolve(request)
   } catch (err: unknown) {
@@ -113,6 +117,17 @@ export function loadExternalModule(request: string): unknown {
   if (hostedModule !== undefined) return hostedModule
 
   // 1. Standard npm resolution (installed package or pnpm workspace symlink).
+  //    Some worker runtimes expose createRequire() without require.resolve().
+  //    In that case fall back to a direct require() probe before workspace
+  //    lookup so installed dependencies still win over monorepo fallbacks.
+  if (typeof runtimeRequire.resolve !== 'function') {
+    try {
+      return runtimeRequire(request)
+    } catch (err: unknown) {
+      if (!isRecoverableMissingModuleError(err, request, path.join('node_modules', request))) throw err
+    }
+  }
+
   const resolvedInstalledEntry = resolveInstalledModuleEntry(request)
   if (resolvedInstalledEntry) {
     try {

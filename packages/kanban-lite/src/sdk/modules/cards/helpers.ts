@@ -15,13 +15,10 @@ import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, Su
 import type { SDKContext } from '../context'
 import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from '../checklist'
 import { appendActivityLog } from '../logs'
+import { getRuntimeHost, type RuntimeHostActiveCardState } from '../../../shared/env'
 
 
-export interface ActiveCardState {
-  cardId: string
-  boardId: string
-  updatedAt: string
-}
+export interface ActiveCardState extends RuntimeHostActiveCardState {}
 
 const IGNORABLE_ACTIVE_CARD_STATE_ERROR_CODES = new Set([
   'EPERM',
@@ -34,6 +31,30 @@ const IGNORABLE_ACTIVE_CARD_STATE_ERROR_PATTERN = /operation not permitted|read-
 
 export function getActiveCardStateFilePath(ctx: SDKContext): string {
   return path.join(ctx.kanbanDir, '.active-card.json')
+}
+
+function getRuntimeHostActiveCardScope(ctx: SDKContext): { workspaceRoot: string; kanbanDir: string } {
+  return {
+    workspaceRoot: ctx.workspaceRoot,
+    kanbanDir: ctx.kanbanDir,
+  }
+}
+
+function normalizeActiveCardState(value: unknown): ActiveCardState | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Partial<ActiveCardState>
+  if (typeof candidate.cardId !== 'string' || typeof candidate.boardId !== 'string') {
+    return null
+  }
+
+  return {
+    cardId: candidate.cardId,
+    boardId: candidate.boardId,
+    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
+  }
 }
 
 function shouldIgnoreActiveCardStatePersistenceError(error: unknown): boolean {
@@ -435,21 +456,28 @@ export async function buildTaskPermissionsReadModel(ctx: SDKContext, card: Omit<
 }
 
 export async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardState | null> {
+  const runtimeHost = getRuntimeHost()
+  if (runtimeHost?.readActiveCardState) {
+    return normalizeActiveCardState(
+      await runtimeHost.readActiveCardState(getRuntimeHostActiveCardScope(ctx)),
+    )
+  }
+
   try {
     const raw = await fs.readFile(getActiveCardStateFilePath(ctx), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<ActiveCardState>
-    if (typeof parsed.cardId !== 'string' || typeof parsed.boardId !== 'string') return null
-    return {
-      cardId: parsed.cardId,
-      boardId: parsed.boardId,
-      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
-    }
+    return normalizeActiveCardState(JSON.parse(raw))
   } catch {
     return null
   }
 }
 
 export async function writeActiveCardState(ctx: SDKContext, state: ActiveCardState): Promise<void> {
+  const runtimeHost = getRuntimeHost()
+  if (runtimeHost?.writeActiveCardState) {
+    await runtimeHost.writeActiveCardState(getRuntimeHostActiveCardScope(ctx), state)
+    return
+  }
+
   try {
     await fs.mkdir(ctx.kanbanDir, { recursive: true })
     await fs.writeFile(getActiveCardStateFilePath(ctx), JSON.stringify(state, null, 2), 'utf-8')
@@ -457,6 +485,20 @@ export async function writeActiveCardState(ctx: SDKContext, state: ActiveCardSta
     if (!shouldIgnoreActiveCardStatePersistenceError(error)) {
       throw error
     }
+  }
+}
+
+export async function clearPersistedActiveCardState(ctx: SDKContext): Promise<void> {
+  const runtimeHost = getRuntimeHost()
+  if (runtimeHost?.clearActiveCardState) {
+    await runtimeHost.clearActiveCardState(getRuntimeHostActiveCardScope(ctx))
+    return
+  }
+
+  try {
+    await fs.unlink(getActiveCardStateFilePath(ctx))
+  } catch {
+    // ignore missing files
   }
 }
 

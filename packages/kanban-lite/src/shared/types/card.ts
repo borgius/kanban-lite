@@ -1,4 +1,4 @@
-import type { FormDefinition } from '../config'
+import type { FormDefinition, BoardMetaFieldDef } from '../config'
 
 export const CARD_FORMAT_VERSION = 1
 
@@ -214,8 +214,8 @@ export interface BoardInfo {
   columns?: KanbanColumn[]
   /** Named board-level actions available in the toolbar. Map of action key to display title. */
   actions?: Record<string, string>
-  /** Metadata keys that are always shown in the card detail panel (before the Advanced section). */
-  metadata?: string[]
+  /** Named metadata field definitions; keys with `highlighted: true` are shown on card previews. */
+  metadata?: Record<string, BoardMetaFieldDef>
   /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
   title?: string[]
   /** Reusable named workspace forms available for attachment/resolution on this board. */

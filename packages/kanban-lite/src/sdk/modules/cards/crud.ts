@@ -1,5 +1,3 @@
-import * as fs from 'fs/promises'
-import * as path from 'path'
 import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Card, CardFormAttachment, CardSortOption, CardTask, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../../shared/types'
@@ -15,7 +13,7 @@ import type { SDKContext } from '../context'
 import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from '../checklist'
 import { appendActivityLog } from '../logs'
 
-import { type ActiveCardState, getActiveCardStateFilePath, writeActiveCardState, readActiveCardState, resolveCardForms, buildTaskPermissionsReadModel, assertChecklistReservedLabelUpdateAllowed, canShowChecklist, applyCardVisibilityFilter, getQualifyingCardEditFields, requireExpectedChecklistToken, requireExpectedModifiedAt } from './helpers'
+import { writeActiveCardState, readActiveCardState, clearPersistedActiveCardState, resolveCardForms, buildTaskPermissionsReadModel, assertChecklistReservedLabelUpdateAllowed, canShowChecklist, applyCardVisibilityFilter, getQualifyingCardEditFields, requireExpectedChecklistToken, requireExpectedModifiedAt } from './helpers'
 
 // --- Card CRUD ---
 
@@ -170,11 +168,7 @@ export async function clearActiveCard(ctx: SDKContext, { boardId }: { boardId?: 
     return
   }
 
-  try {
-    await fs.unlink(getActiveCardStateFilePath(ctx))
-  } catch {
-    // ignore missing files
-  }
+  await clearPersistedActiveCardState(ctx)
 }
 
 /**

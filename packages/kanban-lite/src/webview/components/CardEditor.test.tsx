@@ -24,7 +24,7 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
 
 const storeState = {
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
-  boards: [{ id: 'default', name: 'Default', metadata: ['customer'], title: ['customer', 'ticket'] }],
+  boards: [{ id: 'default', name: 'Default', metadata: { customer: { highlighted: true } }, title: ['customer', 'ticket'] }],
   currentBoard: 'default',
   cards: [],
   columns: [{ id: 'backlog', name: 'Backlog', color: '#3b82f6' }],

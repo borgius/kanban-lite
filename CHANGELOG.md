@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Cloudflare Worker open-card HTTP sync**: Opening a card through the standalone Worker HTTP bridge now treats Worker-style `.active-card.json` write failures as non-fatal, so card preview/drawer loads no longer fail with `Error: operation not permitted` when the runtime has no writable local filesystem.
+- **Cloudflare Worker active-card persistence**: The standalone Worker runtime now stores workspace active-card selection in a generated Durable Object, so HTTP bridge open/preview flows keep `/api/tasks/active` working without a writable `.active-card.json` sidecar. Non-Worker hosts still fall back to the local file-backed active-card state.
 
 - **Standalone Cloudflare Worker browser bootstrap**: The standalone browser shim now falls back to an HTTP webview-sync bridge when the Cloudflare Worker entrypoint returns `501` for `/ws`, so deployed boards load and keep handling user actions instead of hanging forever on `Loading...`.
 

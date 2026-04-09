@@ -46,7 +46,7 @@ export const CARD_STATE_OPEN_DOMAIN = 'open'
  * Value persisted for the built-in explicit open-card mutation.
  *
  * This records actor-scoped `card.state` data and is distinct from workspace
- * active-card UI state such as `.active-card.json`.
+ * active-card UI state such as the local `.active-card.json` sidecar.
  */
 export interface CardOpenStateValue extends Record<string, unknown> {
   /** When the actor explicitly opened the card. */

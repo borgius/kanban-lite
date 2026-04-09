@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws'
 import type { AuthContext } from '../../sdk/types'
 import { readConfig } from '../../shared/config'
+import type { BoardMetaFieldDef } from '../../shared/config'
 import type { StandaloneContext } from '../context'
 import {
   broadcast,
@@ -180,6 +181,15 @@ export async function dispatchBoardMessage(
       await runWithScopedAuth(() => ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string }))
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })
       broadcast(ctx, buildInitMessage(ctx))
+      break
+    }
+
+    case 'updateBoardMeta': {
+      const boardId = (msg.boardId as string | undefined) ?? ctx.currentBoardId ?? undefined
+      if (boardId) {
+        await runWithScopedAuth(() => ctx.sdk.updateBoard(boardId, { metadata: msg.metadata as Record<string, BoardMetaFieldDef> }))
+        broadcast(ctx, buildInitMessage(ctx))
+      }
       break
     }
 

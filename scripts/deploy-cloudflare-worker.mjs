@@ -19,6 +19,30 @@ const workerSdkEntrypoint = path.join(packageRoot, 'src', 'sdk', 'index.ts')
 const standaloneAssetsDir = path.join(packageRoot, 'dist', 'standalone-webview')
 const defaultCompatibilityDate = '2026-04-05'
 const defaultCompatibilityFlags = ['nodejs_compat']
+const activeCardDurableObjectBinding = 'KANBAN_ACTIVE_CARD_STATE'
+const activeCardDurableObjectClassName = 'KanbanActiveCardState'
+const activeCardDurableObjectMigrationTag = 'kanban-active-card-state-v1'
+const firstPartyStorageProviderIds = new Set(['sqlite', 'mysql', 'postgresql', 'mongodb', 'redis', 'cloudflare'])
+const storageProviderPackages = new Map([
+  ['sqlite', 'kl-plugin-storage-sqlite'],
+  ['mysql', 'kl-plugin-storage-mysql'],
+  ['postgresql', 'kl-plugin-storage-postgresql'],
+  ['mongodb', 'kl-plugin-storage-mongodb'],
+  ['redis', 'kl-plugin-storage-redis'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
+])
+const authProviderPackages = new Map([
+  ['noop', 'kl-plugin-auth'],
+  ['rbac', 'kl-plugin-auth'],
+  ['local', 'kl-plugin-auth'],
+])
+const webhookProviderPackages = new Map([
+  ['webhooks', 'kl-plugin-webhook'],
+])
+const callbackProviderPackages = new Map([
+  ['callbacks', 'kl-plugin-callback'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
+])
 const nodeConsole = globalThis.console
 const nodeProcess = globalThis.process
 
@@ -231,6 +255,146 @@ function getCapabilityProvider(config, capability) {
     : null
 }
 
+function normalizeProviderId(provider) {
+  if (provider === 'markdown' || provider === 'builtin') {
+    return 'localfs'
+  }
+  return provider
+}
+
+function getLegacyAuthProvider(config, capability) {
+  const auth = config && typeof config === 'object' && !Array.isArray(config) && config.auth && typeof config.auth === 'object' && !Array.isArray(config.auth)
+    ? config.auth
+    : null
+  const selection = auth && auth[capability] && typeof auth[capability] === 'object' && !Array.isArray(auth[capability])
+    ? auth[capability]
+    : null
+  return typeof selection?.provider === 'string' && selection.provider.trim()
+    ? normalizeProviderId(selection.provider.trim())
+    : null
+}
+
+function getLegacyWebhookProvider(config) {
+  const webhookPlugin = config && typeof config === 'object' && !Array.isArray(config) && config.webhookPlugin && typeof config.webhookPlugin === 'object' && !Array.isArray(config.webhookPlugin)
+    ? config.webhookPlugin
+    : null
+  const selection = webhookPlugin && webhookPlugin['webhook.delivery'] && typeof webhookPlugin['webhook.delivery'] === 'object' && !Array.isArray(webhookPlugin['webhook.delivery'])
+    ? webhookPlugin['webhook.delivery']
+    : null
+  return typeof selection?.provider === 'string' && selection.provider.trim()
+    ? normalizeProviderId(selection.provider.trim())
+    : null
+}
+
+function inferCardStorageProvider(config) {
+  const configured = getCapabilityProvider(config, 'card.storage')
+  if (configured) {
+    return normalizeProviderId(configured)
+  }
+  return config?.storageEngine === 'sqlite' ? 'sqlite' : 'localfs'
+}
+
+function inferAttachmentStorageProvider(config) {
+  const configured = getCapabilityProvider(config, 'attachment.storage')
+  const cardStorageProvider = inferCardStorageProvider(config)
+  if (!configured) {
+    return cardStorageProvider
+  }
+
+  const normalizedConfigured = normalizeProviderId(configured)
+  return normalizedConfigured === cardStorageProvider || (normalizedConfigured === 'localfs' && cardStorageProvider !== 'localfs')
+    ? cardStorageProvider
+    : normalizedConfigured
+}
+
+function inferConfigStorageProvider(config) {
+  const configured = getCapabilityProvider(config, 'config.storage')
+  if (configured) {
+    return normalizeProviderId(configured)
+  }
+
+  const derived = inferCardStorageProvider(config)
+  return firstPartyStorageProviderIds.has(derived)
+    ? derived
+    : 'localfs'
+}
+
+function inferCardStateProvider(config) {
+  const configured = getCapabilityProvider(config, 'card.state')
+  if (configured) {
+    return normalizeProviderId(configured)
+  }
+  return inferCardStorageProvider(config)
+}
+
+function inferAuthIdentityProvider(config) {
+  return normalizeProviderId(
+    getCapabilityProvider(config, 'auth.identity')
+      ?? getLegacyAuthProvider(config, 'auth.identity')
+      ?? 'noop',
+  )
+}
+
+function inferAuthPolicyProvider(config) {
+  return normalizeProviderId(
+    getCapabilityProvider(config, 'auth.policy')
+      ?? getLegacyAuthProvider(config, 'auth.policy')
+      ?? 'noop',
+  )
+}
+
+function inferAuthVisibilityProvider(config) {
+  return normalizeProviderId(
+    getCapabilityProvider(config, 'auth.visibility')
+      ?? getLegacyAuthProvider(config, 'auth.visibility')
+      ?? 'none',
+  )
+}
+
+function inferWebhookDeliveryProvider(config) {
+  return normalizeProviderId(
+    getCapabilityProvider(config, 'webhook.delivery')
+      ?? getLegacyWebhookProvider(config)
+      ?? 'none',
+  )
+}
+
+function inferCallbackRuntimeProvider(config) {
+  return normalizeProviderId(
+    getCapabilityProvider(config, 'callback.runtime')
+      ?? 'none',
+  )
+}
+
+function resolveProviderPackage(providerId, packageMap) {
+  if (!providerId || providerId === 'localfs' || providerId === 'none') {
+    return null
+  }
+  return packageMap.get(providerId) ?? providerId
+}
+
+function collectRequiredWorkerPluginPackages(config) {
+  const packages = new Set()
+
+  const add = (packageName) => {
+    if (packageName) {
+      packages.add(packageName)
+    }
+  }
+
+  add(resolveProviderPackage(inferCardStorageProvider(config), storageProviderPackages))
+  add(resolveProviderPackage(inferAttachmentStorageProvider(config), storageProviderPackages))
+  add(resolveProviderPackage(inferConfigStorageProvider(config), storageProviderPackages))
+  add(resolveProviderPackage(inferCardStateProvider(config), storageProviderPackages))
+  add(resolveProviderPackage(inferAuthIdentityProvider(config), authProviderPackages))
+  add(resolveProviderPackage(inferAuthPolicyProvider(config), authProviderPackages))
+  add(resolveProviderPackage(inferAuthVisibilityProvider(config), authProviderPackages))
+  add(resolveProviderPackage(inferWebhookDeliveryProvider(config), webhookProviderPackages))
+  add(resolveProviderPackage(inferCallbackRuntimeProvider(config), callbackProviderPackages))
+
+  return [...packages]
+}
+
 export async function buildCloudflareCallbackModuleBundlePlan(options) {
   const sdk = await loadCloudflareWorkerSdk()
   const entries = sdk.collectCloudflareCallbackModuleRegistryEntries(options.config)
@@ -337,14 +501,20 @@ export async function createGeneratedWorker(tempDir, options) {
   const hasCallbackQueueConsumer = (await buildCloudflareCallbackQueueConsumerConfig(options)) !== null
   await validateCloudflareCallbackModuleBundlePlan(tempDir, callbackModulePlan.entries)
 
-  const importLines = [`import { createCloudflareWorkerFetchHandler } from ${JSON.stringify(entryImport)}`]
+  const importLines = [
+    'import { DurableObject } from "cloudflare:workers"',
+    `import { createCloudflareWorkerFetchHandler } from ${JSON.stringify(entryImport)}`,
+  ]
   if (hasCallbackQueueConsumer) {
     importLines.push(`import { createCloudflareWorkerQueueHandler } from ${JSON.stringify(queueEntryImport)}`)
     importLines.push(`import * as sdkRuntimeModule from ${JSON.stringify(sdkEntryImport)}`)
   }
   const registryEntries = []
   let registryImportIndex = 0
-  const pluginNames = [...options.plugins].filter((pluginName) => pluginName !== 'kl-plugin-cloudflare')
+  const pluginNames = [...new Set([
+    ...collectRequiredWorkerPluginPackages(options.config),
+    ...options.plugins,
+  ])].filter((pluginName) => pluginName !== 'kl-plugin-cloudflare')
 
   pluginNames.forEach((pluginName, index) => {
     const source = resolvePluginSource(pluginName)
@@ -372,6 +542,37 @@ export async function createGeneratedWorker(tempDir, options) {
   }
 
   const generatedEntry = `${importLines.join('\n')}
+
+export class ${activeCardDurableObjectClassName} extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env)
+  }
+
+  async getActiveCardState() {
+    const state = await this.ctx.storage.get('active-card')
+    if (!state || typeof state !== 'object') {
+      return null
+    }
+
+    if (typeof state.cardId !== 'string' || typeof state.boardId !== 'string') {
+      return null
+    }
+
+    return {
+      cardId: state.cardId,
+      boardId: state.boardId,
+      updatedAt: typeof state.updatedAt === 'string' ? state.updatedAt : new Date().toISOString(),
+    }
+  }
+
+  async setActiveCardState(state) {
+    await this.ctx.storage.put('active-card', state)
+  }
+
+  async clearActiveCardState() {
+    await this.ctx.storage.delete('active-card')
+  }
+}
 
 const embeddedBootstrap = ${JSON.stringify(embeddedBootstrap, null, 2)}
 const moduleRegistry = {
@@ -443,6 +644,18 @@ function renderQueueConsumerConfigBlock(queueConsumer) {
   return `${lines.join('\n')}\n`
 }
 
+function renderDurableObjectBlocks() {
+  return `
+[[durable_objects.bindings]]
+name = ${JSON.stringify(activeCardDurableObjectBinding)}
+class_name = ${JSON.stringify(activeCardDurableObjectClassName)}
+
+[[migrations]]
+tag = ${JSON.stringify(activeCardDurableObjectMigrationTag)}
+new_sqlite_classes = [${JSON.stringify(activeCardDurableObjectClassName)}]
+`
+}
+
 function renderCustomDomainRouteBlocks(customDomains, customDomainZoneName) {
   const normalizedDomains = normalizeCustomDomainList(customDomains)
   if (normalizedDomains.length === 0) {
@@ -471,7 +684,7 @@ workers_dev = true
 [assets]
 directory = ${JSON.stringify(standaloneAssetsDir)}
 binding = "ASSETS"
-${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}`
+${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderDurableObjectBlocks()}`
   const configPath = path.join(tempDir, 'wrangler.toml')
   fs.writeFileSync(configPath, config, 'utf8')
   return configPath

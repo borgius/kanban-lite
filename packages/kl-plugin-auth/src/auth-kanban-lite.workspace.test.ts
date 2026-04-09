@@ -9,10 +9,10 @@
  * Prerequisites: run `pnpm build` (or `pnpm --filter kanban-lite build`) first.
  */
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cliPlugin, createStandaloneHttpPlugin, type StandaloneHttpPluginRegistrationOptions } from './index'
+import { createTempKanbanWorkspace, loadWorkspaceKanbanLiteSdk } from '../../kanban-lite/src/test-utils/workspace'
 
 interface WorkspaceAuthStatus {
   identityProvider: string
@@ -46,29 +46,7 @@ interface WorkspaceKanbanSdkCtor {
   new (dir: string, opts?: Record<string, unknown>): WorkspaceKanbanSdk
 }
 
-// ---------------------------------------------------------------------------
-// Resolve workspace kanban-lite SDK
-// ---------------------------------------------------------------------------
-
-function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: WorkspaceKanbanSdkCtor } {
-  let dir = __dirname
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
-      const sdkPath = path.join(dir, 'packages', 'kanban-lite', 'dist', 'sdk', 'index.cjs')
-      if (!fs.existsSync(sdkPath)) {
-        throw new Error(`kanban-lite SDK not built at: ${sdkPath}\nRun: pnpm build`)
-      }
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(sdkPath) as { KanbanSDK: WorkspaceKanbanSdkCtor }
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error('Cannot find workspace root (pnpm-workspace.yaml not found)')
-}
-
-const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
+const { KanbanSDK } = loadWorkspaceKanbanLiteSdk<{ KanbanSDK: WorkspaceKanbanSdkCtor }>(__dirname)
 
 function writeLocalAuthConfig(
   workspaceDir: string,
@@ -125,15 +103,14 @@ function makeStandaloneOptions(
 describe('kl-plugin-auth: consumption via kanban-lite workspace SDK', () => {
   let workspaceDir: string
   let kanbanDir: string
+  let cleanupWorkspace = () => {}
 
   beforeEach(() => {
-    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kl-auth-ws-'))
-    kanbanDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(kanbanDir, { recursive: true })
+    ;({ workspaceDir, kanbanDir, cleanup: cleanupWorkspace } = createTempKanbanWorkspace('kl-auth-ws-'))
   })
 
   afterEach(() => {
-    fs.rmSync(workspaceDir, { recursive: true, force: true })
+    cleanupWorkspace()
   })
 
   it('KanbanSDK resolves rbac identity and policy providers from .kanban.json auth config', () => {
@@ -197,7 +174,7 @@ describe('kl-plugin-auth: consumption via kanban-lite workspace SDK', () => {
       )
 
       expect(plugin.registerMiddleware?.()).toHaveLength(1)
-      expect(plugin.registerRoutes?.()).toHaveLength(3)
+      expect(plugin.registerRoutes?.()).toHaveLength(6)
     } finally {
       sdk.close()
       if (savedToken === undefined) delete process.env.KANBAN_LITE_TOKEN

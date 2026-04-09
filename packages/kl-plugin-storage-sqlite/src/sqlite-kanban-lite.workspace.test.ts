@@ -9,33 +9,11 @@
  * Prerequisites: run `pnpm build` (or `pnpm --filter kanban-lite build`) first.
  */
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createTempKanbanWorkspace, loadWorkspaceKanbanLiteSdk } from '../../kanban-lite/src/test-utils/workspace'
 
-// ---------------------------------------------------------------------------
-// Resolve workspace kanban-lite SDK
-// ---------------------------------------------------------------------------
-
-function loadWorkspaceKanbanLiteSdk(): { KanbanSDK: new (dir: string, opts?: Record<string, unknown>) => any } {
-  let dir = __dirname
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
-      const sdkPath = path.join(dir, 'packages', 'kanban-lite', 'dist', 'sdk', 'index.cjs')
-      if (!fs.existsSync(sdkPath)) {
-        throw new Error(`kanban-lite SDK not built at: ${sdkPath}\nRun: pnpm build`)
-      }
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(sdkPath) as { KanbanSDK: any }
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error('Cannot find workspace root (pnpm-workspace.yaml not found)')
-}
-
-const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
+const { KanbanSDK } = loadWorkspaceKanbanLiteSdk<{ KanbanSDK: new (dir: string, opts?: Record<string, unknown>) => any }>(__dirname)
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -44,15 +22,14 @@ const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
 describe('kl-plugin-storage-sqlite: consumption via kanban-lite workspace SDK', () => {
   let workspaceDir: string
   let kanbanDir: string
+  let cleanupWorkspace = () => {}
 
   beforeEach(() => {
-    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kl-sqlite-ws-'))
-    kanbanDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(kanbanDir, { recursive: true })
+    ;({ workspaceDir, kanbanDir, cleanup: cleanupWorkspace } = createTempKanbanWorkspace('kl-sqlite-ws-'))
   })
 
   afterEach(() => {
-    fs.rmSync(workspaceDir, { recursive: true, force: true })
+    cleanupWorkspace()
   })
 
   it('KanbanSDK resolves kl-plugin-storage-sqlite via the "sqlite" provider alias', () => {

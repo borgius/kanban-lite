@@ -9,9 +9,9 @@
  * Prerequisites: run `pnpm build` (or `pnpm --filter kanban-lite build`) first.
  */
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createTempKanbanWorkspace, loadWorkspaceKanbanLiteSdk } from '../../kanban-lite/src/test-utils/workspace'
 
 type WorkspaceStorageStatus = {
   isFileBacked: boolean
@@ -29,29 +29,7 @@ type WorkspaceKanbanLiteSdkModule = {
   KanbanSDK: new (dir: string, opts?: Record<string, unknown>) => WorkspaceKanbanSdk
 }
 
-// ---------------------------------------------------------------------------
-// Resolve workspace kanban-lite SDK
-// ---------------------------------------------------------------------------
-
-function loadWorkspaceKanbanLiteSdk(): WorkspaceKanbanLiteSdkModule {
-  let dir = __dirname
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
-      const sdkPath = path.join(dir, 'packages', 'kanban-lite', 'dist', 'sdk', 'index.cjs')
-      if (!fs.existsSync(sdkPath)) {
-        throw new Error(`kanban-lite SDK not built at: ${sdkPath}\nRun: pnpm build`)
-      }
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require(sdkPath) as WorkspaceKanbanLiteSdkModule
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error('Cannot find workspace root (pnpm-workspace.yaml not found)')
-}
-
-const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
+const { KanbanSDK } = loadWorkspaceKanbanLiteSdk<WorkspaceKanbanLiteSdkModule>(__dirname)
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -60,15 +38,14 @@ const { KanbanSDK } = loadWorkspaceKanbanLiteSdk()
 describe('kl-plugin-storage-mysql: consumption via kanban-lite workspace SDK', () => {
   let workspaceDir: string
   let kanbanDir: string
+  let cleanupWorkspace = () => {}
 
   beforeEach(() => {
-    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kl-mysql-ws-'))
-    kanbanDir = path.join(workspaceDir, '.kanban')
-    fs.mkdirSync(kanbanDir, { recursive: true })
+    ;({ workspaceDir, kanbanDir, cleanup: cleanupWorkspace } = createTempKanbanWorkspace('kl-mysql-ws-'))
   })
 
   afterEach(() => {
-    fs.rmSync(workspaceDir, { recursive: true, force: true })
+    cleanupWorkspace()
   })
 
   it('KanbanSDK resolves kl-plugin-storage-mysql via the "mysql" provider alias', () => {

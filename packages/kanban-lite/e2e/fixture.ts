@@ -30,10 +30,15 @@ const standaloneScenarioDefinitions = {
   'auth-visibility': {
     templateDir: path.join(fixtureTemplatesDir, 'auth-visibility'),
     port: 4176,
+    healthToken: 'kl-playwright-auth-visibility',
   },
   'plugin-options': {
     templateDir: path.join(fixtureTemplatesDir, 'plugin-options'),
     port: 4177,
+  },
+  'card-drawer': {
+    templateDir: path.join(fixtureTemplatesDir, 'card-drawer'),
+    port: 4178,
   },
 } as const
 
@@ -49,6 +54,7 @@ export type StandaloneE2EScenario = {
   port: number
   baseURL: string
   healthURL: string
+  healthToken?: string
   startupArguments: readonly string[]
 }
 
@@ -268,7 +274,11 @@ async function waitForScenarioHealth(
     }
 
     try {
-      const response = await fetch(scenario.healthURL)
+      const headers: Record<string, string> = {}
+      if (scenario.healthToken) {
+        headers['Authorization'] = `Bearer ${scenario.healthToken}`
+      }
+      const response = await fetch(scenario.healthURL, { headers })
       if (response.ok) return
       lastError = `health check returned HTTP ${response.status}`
     } catch (error) {
@@ -356,6 +366,7 @@ export function resolveStandaloneE2EScenario(
   const configPath = path.join(workspaceDir, '.kanban.json')
   const baseURL = `http://127.0.0.1:${definition.port}`
   const healthPath = 'healthPath' in definition ? definition.healthPath : '/api/health'
+  const healthToken = 'healthToken' in definition ? definition.healthToken : undefined
 
   return {
     name: scenarioName,
@@ -367,6 +378,7 @@ export function resolveStandaloneE2EScenario(
     port: definition.port,
     baseURL,
     healthURL: `${baseURL}${healthPath}`,
+    healthToken,
     startupArguments: [
       '--config',
       configPath,

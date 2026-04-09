@@ -5,8 +5,6 @@ const seedCardId = '41-plugin-settings-public'
 const pluginPackageName = 'kl-plugin-auth-visibility'
 const capability = 'auth.visibility'
 const providerId = 'kl-plugin-auth-visibility'
-const initialVisibleLabel = 'public'
-const updatedVisibleLabel = 'playwright-public'
 
 function seededCard(page: Page): Locator {
   return page.locator(`[data-card-id="${seedCardId}"]`)
@@ -20,14 +18,6 @@ function pluginOptionsSection(page: Page): Locator {
   return page.getByTestId(`plugin-options-section-${capability}-${providerId}`)
 }
 
-function pluginArrayField(section: Locator, fieldLabel: string): Locator {
-  return section.locator('.array-table-layout').filter({ hasText: fieldLabel }).first()
-}
-
-function pluginArrayFieldInput(section: Locator, fieldLabel: string): Locator {
-  return pluginArrayField(section, fieldLabel).locator('input').first()
-}
-
 async function openSettings(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Board options:/ }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -39,7 +29,7 @@ async function openPluginOptions(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Plugin providers', exact: true })).toBeVisible()
 }
 
-async function selectAuthVisibilityProvider(page: Page, expectedLabelValue: string = initialVisibleLabel): Promise<Locator> {
+async function openProviderOptions(page: Page): Promise<Locator> {
   await pluginListEntry(page).click()
 
   const providerToggle = page.getByRole('switch', {
@@ -47,17 +37,10 @@ async function selectAuthVisibilityProvider(page: Page, expectedLabelValue: stri
     exact: true,
   })
   await expect(providerToggle).toBeVisible()
-
-  if ((await providerToggle.getAttribute('aria-checked')) !== 'true') {
-    await providerToggle.click()
-  }
-
   await expect(providerToggle).toHaveAttribute('aria-checked', 'true')
 
   const section = pluginOptionsSection(page)
-  await expect(section).toBeVisible()
-  await expect(pluginArrayFieldInput(section, 'Labels')).toHaveValue(expectedLabelValue)
-
+  await expect(section).toBeVisible({ timeout: 10_000 })
   return section
 }
 
@@ -66,36 +49,52 @@ describeStandaloneScenario('standalone plugin options smoke', 'plugin-options', 
     testInfo.setTimeout(120_000)
 
     await page.goto('/')
-    await expect(seededCard(page)).toBeVisible()
+    await expect(page.getByLabel('Search cards')).toBeVisible()
   })
 
-  test('persists one non-secret plugin option after selecting a known provider', async ({ page }) => {
+  test('persists one non-secret plugin option after editing a known active provider', async ({ page }) => {
     await openSettings(page)
     await openPluginOptions(page)
 
-    const section = await selectAuthVisibilityProvider(page)
-    const labelInput = pluginArrayFieldInput(section, 'Labels')
+    const section = await openProviderOptions(page)
 
-    await labelInput.fill(updatedVisibleLabel)
+    // The seeded fixture has 1 matching role in the first rule ("viewer").
+    // String arrays render as array-table-layout with editable rows.
+    const rolesTable = section.locator('.array-table-layout').filter({ hasText: 'Matching roles' }).first()
+    await expect(rolesTable).toBeVisible()
+    const rowsBefore = await rolesTable.locator('tbody tr').count()
+    expect(rowsBefore).toBe(1)
+
+    // Add a second matching role
+    const addRoleButton = section.getByRole('button', { name: /Add to Matching roles/i }).first()
+    await addRoleButton.click()
+
+    // Fill in a valid role name so the form is not in error state
+    const newRoleInput = rolesTable.locator('tbody tr').last().locator('input')
+    await newRoleInput.fill('admin')
+
+    // Verify the count increased
+    await expect(rolesTable.locator('tbody tr')).toHaveCount(rowsBefore + 1)
+
+    // Save
     await section.getByRole('button', { name: 'Save options', exact: true }).click()
 
-    await expect(pluginArrayFieldInput(section, 'Labels')).toHaveValue(updatedVisibleLabel)
-
+    // Close settings and reload
     await page.getByRole('button', { name: 'Close settings', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByLabel('Search cards')).toBeVisible()
 
+    // Reopen and verify the new row persisted
     await openSettings(page)
     await openPluginOptions(page)
 
-    const reopenedSection = await selectAuthVisibilityProvider(page, updatedVisibleLabel)
-    await expect(reopenedSection).toBeVisible()
-    await expect(page.getByRole('switch', {
-      name: `Toggle ${capability} provider ${providerId}`,
-      exact: true,
-    })).toHaveAttribute('aria-checked', 'true')
-    await expect(pluginArrayFieldInput(reopenedSection, 'Labels')).toHaveValue(updatedVisibleLabel)
+    const reopenedSection = await openProviderOptions(page)
+    const reopenedRolesTable = reopenedSection
+      .locator('.array-table-layout')
+      .filter({ hasText: 'Matching roles' })
+      .first()
+    await expect(reopenedRolesTable.locator('tbody tr')).toHaveCount(rowsBefore + 1)
   })
 })

@@ -2,84 +2,23 @@
 
 A VSCode extension + standalone server + CLI + MCP server for managing kanban boards stored as markdown files (default) or SQLite.
 
-## Feature Parity
+## Repo-wide defaults
 
-All three interfaces (API, CLI, MCP) support the same operations: cards CRUD, columns CRUD, settings get/update, webhooks CRUD, workspace info. When adding new functionality, add it to all three.
+- The SDK is the source of truth for shared business logic. Keep API, CLI, and MCP behavior in feature parity when a capability changes.
+- Make surgical edits only: avoid unrelated refactors, large rewrites, or new dependencies unless the task clearly needs them.
+- **No source file may exceed 600 lines** (excluding generated files, test fixtures, and `*.d.ts` declarations). Split oversized modules before adding more logic.
+- For user-facing changes, update `README.md` and `CHANGELOG.md`, and regenerate generated docs from source comments or route metadata instead of editing generated docs directly.
+- Use the scoped instructions in `.github/instructions/` and repo skills for React/TSX work, kanban core surface changes, capability/provider invariants, plugin option schemas, and reliability-sensitive flows.
 
-## Capability/provider namespaces
+## Post-change verification (mandatory)
 
-- `card.state` is a first-class capability/provider namespace.
-- `callback.runtime` is a first-class capability/provider namespace.
-- Cloudflare `callback.runtime` uses `plugins["callback.runtime"].provider === "cloudflare"` with `type: "module"` handlers only.
-- Cloudflare queue delivery is event-scoped; durable checkpoints and idempotency are tracked per handler.
-- Enabled Cloudflare callback module-set changes are bootstrap/redeploy gated and must fail closed on runtime drift.
-- Actor-scoped card state (for example unread/open state) must live outside shared card content/frontmatter.
-- Standalone transports that expose `card.state` (for example websocket init/`cardsUpdated` payloads) must decorate cards per request/session auth context; raw shared broadcasts must not carry actor-scoped state.
-- Board-configured card display titles (for example metadata-based prefixes) must use the shared display-title helper; raw markdown title extraction remains the source of truth for storage, filenames, and rename logic.
-- The built-in default backend is file-backed sidecar storage; SQLite support ships as a first-party provider package.
-- Active-card UI state remains separate from `card.state`.
-- Callback configuration lives in shared plugin settings; v1 inline authoring uses the schema-driven plain text/textarea path rather than bespoke callback CRUD or code-editor surfaces.
-- Plugin-settings enablement must map to the selected `plugins[capability].provider`; do not add a separate enabled boolean.
-- For MySQL/PostgreSQL same-provider `attachment.storage` resolution, prefer the engine-bound attachment factory (`createMysqlAttachmentPlugin(engine)` / `createPostgresqlAttachmentPlugin(engine)`) over placeholder exported `attachmentStoragePlugin` objects; the placeholders satisfy loader shape checks but are not the live runtime path.
-- In-product plugin installs accept only exact unscoped `kl-*` package names; reject scopes, specifiers, flags, URLs, paths, and extra args.
-- Plugin-settings reads/lists/errors/install output must reuse the shared redaction policy across SDK, API, CLI, MCP, and UI surfaces.
-- JSON Forms provider-option UIs should reuse the shared `.card-jsonforms` wrapper/styling hook instead of introducing a second theme.
-- When creating or changing plugin `optionsSchema()` / `uiSchema` metadata, load `.agents/skills/plugin-options-schema-author/SKILL.md` first and prefer explicit JSON Forms layouts for arrays and nested objects instead of relying on the generated fallback UI schema.
+After **every** code change, before marking a task complete:
 
-## Implementation Order
+1. **TypeScript** — run `pnpm exec tsc --noEmit` (or the package-scoped equivalent) and fix all errors and warnings introduced by the change.
+2. **Build** — confirm the project builds successfully (`nr build` or `pnpm build`); do not proceed if the build fails.
+3. **Unit tests** — run `nr test` and fix any failing tests introduced by the change.
+4. **E2E tests** — run `nr e2e` and fix any failing tests introduced by the change.
 
-Always follow this order when adding or modifying any feature:
-
-1. **SDK first** — implement the core logic in `src/sdk/KanbanSDK.ts` (or supporting SDK files) with full JSDoc comments before touching any interface layer.
-2. **API** — add or update the corresponding REST endpoint(s) in `src/standalone/server.ts`.
-3. **CLI** — add or update the command in `src/cli/index.ts`.
-4. **MCP** — add or update the tool definition in `src/mcp-server/index.ts`.
-
-Never implement a feature directly in an interface layer without the SDK method existing first. The SDK is the single source of truth for all business logic.
-
-## Documentation
-
-- **JSDoc:** Always update JSDoc comments when changing any logic, parameters, return types, or behavior of functions, methods, interfaces, or types. JSDoc is the source of truth for `docs/sdk.md`.
-- **Generated docs:** `docs/api.md`, `docs/sdk.md`, and `docs/webhooks.md` are autogenerated. Never edit them manually. Update the source (JSDoc for SDK, route metadata in `scripts/generate-api-docs.ts` for API, `scripts/generate-webhooks-docs.ts` for webhooks) and run `npm run docs` to regenerate.
-- **README.md:** Always update `README.md` when adding or modifying user-facing features. Update the relevant Features section, configuration examples, CLI usage examples, REST API tables, and MCP tool table as appropriate.
-- **CHANGELOG.md:** Always add an entry to `CHANGELOG.md` for every new feature, behaviour change, or bug fix. Place it under an `## [Unreleased]` section at the top (or the current in-progress version block). Follow the existing format: `### Added`, `### Changed`, `### Fixed` subsections with concise bullet points.
-- **Related docs must stay in sync:** When you change plugin contracts, provider behavior, authoring workflow, or integration expectations, update all related docs in the same task. At minimum, check `README.md`, `CHANGELOG.md`, `docs/plugins.md`, and any related skill/template docs such as `.agents/skills/kanban-storage-plugin-author/**`. If an external provider package in this workspace is affected, update that package README/docs too.
-
-## File size limit
-
-- **No source file may exceed 600 lines** (excluding generated files, test fixtures, and `*.d.ts` declarations).
-- When a file reaches or exceeds 600 lines, split it into focused sub-modules (e.g. `foo/types.ts`, `foo/helpers.ts`) and keep the original as a barrel re-exporting the public API. Do not add new logic to an already-over-limit file without splitting it first.
-- The 600-line rule applies to every interface layer: SDK modules, CLI, MCP tools, standalone routes, plugins, and mobile features.
-
-## Agent execution rules (cost control)
-
-1. Do NOT scan or summarize the entire repository.
-2. Only open and modify the specific file(s) listed in the task plan.
-3. Do NOT rewrite large files from scratch.
-4. Make minimal surgical edits only where required.
-5. Do NOT refactor unrelated code.
-6. Do NOT change formatting, imports, or structure unless strictly necessary.
-7. Do NOT add new dependencies.
-8. Do NOT generate placeholder code or duplicate existing logic.
-9. Keep reasoning concise and implementation focused.
-10. If a task can be implemented by editing constants or inserting small functions, do that instead of restructuring the file.
-11. When creating or splitting modules, keep each file under 600 lines; if a natural sub-module would still exceed 600 lines, split it further.
-
-## Reliability checklist
-
-Before finalizing async, retry, webhook, payment, or callback-related changes, explicitly check for:
-
-1. **Race conditions in async flows** — do not only implement the happy path; reason about concurrent requests, overlapping callbacks, and out-of-order resolution.
-2. **Silent error swallowing** — avoid broad `try/catch` blocks that suppress failures or log nothing; surface actionable error context.
-3. **Naive retry logic** — do not add retries without bounded backoff and jitter; avoid hammering production APIs under load.
-4. **State assumptions** — do not assume a clean state; account for stale, partial, duplicated, migrated, or otherwise dirty real-world data.
-5. **Missing idempotency** — for payments, webhooks, callbacks, and retried APIs, ensure repeated delivery does not double-apply side effects.
-
-## React / TSX lint contract
-
-- When editing React or TSX, write code that passes `eslint.config.mjs` without adding new inline `eslint-disable` comments.
-- Prefer complete hook dependency arrays, self-closing empty JSX, omitted `={true}` boolean props, stable keys, and no useless fragments.
-- Avoid nested component definitions unless they are intentionally local and short-lived.
-- After React or TSX edits, run the relevant lint target and fix the violations introduced by your change.
+A task is **not complete** until all four checks pass with no new failures. Do not hand back to the user with red tests or build errors.
 
 Goal: complete the tasks with the smallest possible code changes and minimal token usage.

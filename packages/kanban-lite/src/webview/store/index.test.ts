@@ -347,6 +347,7 @@ describe('webview store dynamic form tabs', () => {
 
     expect(isCardTabRouteCandidate('preview')).toBe(true)
     expect(isCardTabRouteCandidate('comments')).toBe(true)
+    expect(isCardTabRouteCandidate('meta')).toBe(true)
     expect(isCardTabRouteCandidate('form:bug-report')).toBe(true)
     expect(isCardTabRouteCandidate('mystery')).toBe(false)
 

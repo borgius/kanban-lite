@@ -13,7 +13,7 @@ import { isReservedChecklistLabel } from '../../sdk/modules/checklist'
 interface CreateCardDialogProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (data: { status: CardStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[] }) => void
+  onCreate: (data: { status: CardStatus; priority: Priority; content: string; assignee: string | null; dueDate: string | null; labels: string[]; actions: string[]; metadata?: Record<string, unknown> }) => void
   onSaveSettings: (settings: CardDisplaySettings) => void
   initialStatus?: CardStatus
 }
@@ -402,6 +402,8 @@ function CreateCardDialogContent({
   const [labels, setLabels] = useState<string[]>([])
   const [actions, setActions] = useState<string[]>([])
   const [description, setDescription] = useState('')
+  const [localMetadata, setLocalMetadata] = useState<Record<string, unknown> | undefined>(undefined)
+  const [metadataInvalid, setMetadataInvalid] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Focus input on mount
@@ -411,15 +413,18 @@ function CreateCardDialogContent({
   }, [])
 
   const handleSubmit = () => {
+    if (metadataInvalid) return
     const desc = description.trim()
     const heading = title.trim()
     const content = heading
       ? `# ${heading}${desc ? `\n\n${desc}` : ''}`
       : desc
-    onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels, actions })
+    const metadata = localMetadata && Object.keys(localMetadata).length > 0 ? localMetadata : undefined
+    onCreate({ status, priority, content, assignee: assignee.trim() || null, dueDate: dueDate || null, labels, actions, metadata })
   }
 
   const handleSaveAndClose = () => {
+    if (metadataInvalid) return
     handleSubmit()
     onClose()
   }
@@ -565,6 +570,12 @@ function CreateCardDialogContent({
             value={description}
             onChange={setDescription}
             placeholder="Add a description..."
+            currentMetadata={localMetadata}
+            onMetadataChange={(md) => {
+              setLocalMetadata(md)
+              setMetadataInvalid(false)
+            }}
+            onMetadataInvalid={() => setMetadataInvalid(true)}
           />
         </div>
 
@@ -604,13 +615,16 @@ function CreateCardDialogContent({
             <button
               type="button"
               onClick={handleSaveAndClose}
+              disabled={metadataInvalid}
               className="px-3 py-1.5 text-xs font-medium rounded transition-colors"
               style={{
                 color: 'var(--vscode-button-foreground)',
                 background: 'var(--vscode-button-background)',
+                opacity: metadataInvalid ? 0.5 : undefined,
+                cursor: metadataInvalid ? 'not-allowed' : undefined,
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'var(--vscode-button-background)'}
+              onMouseEnter={e => { if (!metadataInvalid) e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)' }}
+              onMouseLeave={e => { if (!metadataInvalid) e.currentTarget.style.background = 'var(--vscode-button-background)' }}
             >
               Save
             </button>

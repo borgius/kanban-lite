@@ -1195,6 +1195,7 @@ export class KanbanPanel {
 
     this._currentEditingCardId = cardId
     const canShowChecklist = await this._canShowChecklist()
+    const canUpdateMetadata = await this._canUpdateMetadata()
 
     this._panel.webview.postMessage({
       type: 'cardContent',
@@ -1202,7 +1203,8 @@ export class KanbanPanel {
       content: card.content,
       frontmatter: this._buildCardFrontmatter(card, canShowChecklist),
       comments: card.comments || [],
-      logs: await this._getLogsForCard(card.id)
+      logs: await this._getLogsForCard(card.id),
+      canUpdateMetadata,
     })
   }
 
@@ -1327,6 +1329,17 @@ export class KanbanPanel {
 
     try {
       return await sdk.canPerformAction('card.checklist.show', await this._getAuthContext())
+    } catch {
+      return false
+    }
+  }
+
+  private async _canUpdateMetadata(): Promise<boolean> {
+    const sdk = this._getSDK()
+    if (!sdk) return true
+
+    try {
+      return await sdk.canPerformAction('card.update', await this._getAuthContext())
     } catch {
       return false
     }

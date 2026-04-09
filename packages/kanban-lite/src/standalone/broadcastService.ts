@@ -63,7 +63,7 @@ export function getClientsEditingCard(ctx: StandaloneContext, cardId: string): W
   return matches
 }
 
-function buildCardContentMessage(card: Card, logs: LogEntry[], canShowChecklist: boolean): unknown {
+function buildCardContentMessage(card: Card, logs: LogEntry[], canShowChecklist: boolean, canUpdateMetadata: boolean): unknown {
   const frontmatter = buildCardFrontmatter(card)
   if (canShowChecklist) {
     frontmatter.tasks = card.tasks ?? []
@@ -76,6 +76,7 @@ function buildCardContentMessage(card: Card, logs: LogEntry[], canShowChecklist:
     frontmatter,
     comments: card.comments || [],
     logs,
+    canUpdateMetadata,
   }
 }
 
@@ -222,7 +223,8 @@ export async function sendCardContent(
 
   const logs = await resolveVisibleCardLogs(ctx, visibleCard.id, scopedAuth, visibleCard.boardId)
   const canShowChecklist = await ctx.sdk.canPerformAction('card.checklist.show', scopedAuth)
-  ws.send(JSON.stringify(buildCardContentMessage(visibleCard, logs, canShowChecklist)))
+  const canUpdateMetadata = await ctx.sdk.canPerformAction('card.update', scopedAuth)
+  ws.send(JSON.stringify(buildCardContentMessage(visibleCard, logs, canShowChecklist, canUpdateMetadata)))
   return true
 }
 

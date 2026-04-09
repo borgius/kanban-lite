@@ -64,6 +64,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline markdown editor on right
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
+- **Meta tab — inline YAML metadata editor**: The card editor includes a dedicated `Meta` tab for editing `frontmatter.metadata` as raw YAML. In edit mode, valid changes autosave via the existing debounce pipeline; invalid YAML stays as local draft text with an inline error and never reaches storage. In the create-card dialog, metadata is staged locally and included in the card payload on Save; the Save button is disabled while any YAML errors remain unresolved.
 - **Layout toggle**: Switch between horizontal and vertical board layouts
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection

@@ -8,7 +8,7 @@ import type { SettingsTab } from '../settingsTabs'
 export type DueDateFilter = 'all' | 'overdue' | 'today' | 'this-week' | 'no-date'
 export type LayoutMode = 'horizontal' | 'vertical'
 export type SortOrder = 'order' | 'created:asc' | 'created:desc' | 'modified:asc' | 'modified:desc'
-export const FIXED_CARD_TABS = ['write', 'preview', 'tasks', 'comments', 'logs'] as const
+export const FIXED_CARD_TABS = ['write', 'preview', 'tasks', 'comments', 'logs', 'meta'] as const
 export const DEFAULT_CARD_TAB = 'preview'
 
 export type FixedCardTab = (typeof FIXED_CARD_TABS)[number]

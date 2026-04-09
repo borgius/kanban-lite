@@ -6,6 +6,7 @@ import { buildChecklistReadModel, type ChecklistReadModel } from '../../sdk/modu
 import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
+import { MetadataEditorTab } from './MetadataEditorTab'
 import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
 import { useStore, type CardTab, createFormCardTabId } from '../store'
 import { CardFormTab, resolveCardFormDescriptors } from './CardFormTab'
@@ -33,6 +34,9 @@ interface MarkdownEditorProps {
   onDeleteChecklistItem?: (index: number, modifiedAt?: string) => void
   onCheckChecklistItem?: (index: number, modifiedAt?: string) => void
   onUncheckChecklistItem?: (index: number, modifiedAt?: string) => void
+  currentMetadata?: Record<string, unknown>
+  onMetadataChange?: (metadata: Record<string, unknown>) => void
+  onMetadataInvalid?: () => void
 }
 
 function formatChecklistModifiedAt(iso: string): string {
@@ -282,7 +286,7 @@ function ChecklistSection({
 }
 
 
-export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange, cardId, frontmatter, onFormSubmitSuccess, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown...', className, autoFocus, mode = 'create', comments, onAddComment, onUpdateComment, onDeleteComment, logs, onClearLogs, logsFilter, onLogsFilterChange, cardId, frontmatter, onFormSubmitSuccess, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, currentMetadata, onMetadataChange, onMetadataInvalid }: MarkdownEditorProps) {
   const isEditMode = mode === 'edit'
   const writeLabel = isEditMode ? 'Edit' : 'Write'
 
@@ -394,6 +398,15 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
               {tab === 'write' ? writeLabel : 'Preview'}
             </button>
           ))}
+          {onMetadataChange && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('meta')}
+              className={cn('card-markdown-tab', activeTab === 'meta' && 'is-active')}
+            >
+              Meta
+            </button>
+          )}
           {checklist && (
             <button
               type="button"
@@ -545,6 +558,13 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
             onClearLogs={onClearLogs}
             logsFilter={logsFilter}
             onLogsFilterChange={onLogsFilterChange}
+          />
+        )}
+        {activeTab === 'meta' && onMetadataChange && (
+          <MetadataEditorTab
+            metadata={currentMetadata}
+            onMetadataChange={onMetadataChange}
+            onInvalidYaml={onMetadataInvalid}
           />
         )}
       </div>

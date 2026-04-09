@@ -24,6 +24,12 @@ vi.mock('./LogsSection', () => ({
   LogsSection: () => <div data-logs-section="" />,
 }))
 
+vi.mock('./MetadataEditorTab', () => ({
+  MetadataEditorTab: ({ metadata }: { metadata?: Record<string, unknown> }) => (
+    <div data-metadata-editor-tab="" data-has-metadata={metadata && Object.keys(metadata).length > 0 ? 'true' : 'false'} />
+  ),
+}))
+
 vi.mock('./CardFormTab', () => ({
   CardFormTab: () => <div data-card-form-tab="" />,
   resolveCardFormDescriptors: () => [],
@@ -85,5 +91,38 @@ describe('MarkdownEditor checklist tab', () => {
     expect(markup).toContain('Ship fix')
     expect(markup).toContain('Add task')
     expect(markup).toContain('2026-03-24')
+  })
+})
+
+describe('MarkdownEditor meta tab', () => {
+  it('renders a Meta tab button when onMetadataChange is provided', () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownEditor
+        value={'# Card title'}
+        onChange={() => {}}
+        mode="edit"
+        cardId="card-1"
+        frontmatter={createFrontmatter()}
+        currentMetadata={{ env: 'prod' }}
+        onMetadataChange={() => {}}
+      />,
+    )
+
+    // The Meta tab button should be present
+    expect(markup).toContain('>Meta<')
+  })
+
+  it('does not render a Meta tab button when onMetadataChange is not provided', () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownEditor
+        value={'# Card title'}
+        onChange={() => {}}
+        mode="edit"
+        cardId="card-1"
+        frontmatter={createFrontmatter()}
+      />,
+    )
+
+    expect(markup).not.toContain('>Meta<')
   })
 })

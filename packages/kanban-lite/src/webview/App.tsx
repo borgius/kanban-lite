@@ -158,6 +158,7 @@ function App(): React.JSX.Element {
     comments: Comment[]
     logs: LogEntry[]
     contentVersion: number
+    canUpdateMetadata?: boolean
   } | null>(null)
   const editingCardIdRef = useRef<string | null>(null)
 
@@ -511,7 +512,8 @@ function App(): React.JSX.Element {
             comments: message.comments || [],
             // Preserve existing logs when server omits them (e.g. on status change broadcast)
             logs: message.logs !== undefined ? message.logs : (prev?.id === message.cardId ? prev.logs : []),
-            contentVersion: contentVersionRef.current
+            contentVersion: contentVersionRef.current,
+            canUpdateMetadata: message.canUpdateMetadata !== false,
           }))
           break
         }
@@ -1214,6 +1216,7 @@ function App(): React.JSX.Element {
                     logs={editingCard.logs}
                     onClearLogs={handleClearLogs}
                     logsFilter={cardSettings.logsFilter}
+                    canUpdateMetadata={editingCard.canUpdateMetadata}
                     onLogsFilterChange={(filter) => {
                       const next = { ...cardSettings, logsFilter: filter }
                       setCardSettings(next)

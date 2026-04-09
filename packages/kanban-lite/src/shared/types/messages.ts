@@ -107,7 +107,7 @@ export type ExtensionMessage =
   | ConnectionStatusMessage
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
-  | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[]; logs?: LogEntry[] }
+  | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[]; logs?: LogEntry[]; canUpdateMetadata?: boolean }
   | ShowSettingsMessage
   | PluginSettingsResultMessage
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }

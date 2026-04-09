@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Meta tab — inline YAML metadata editor**: The shared card editor now includes a `Meta` tab that lets users edit `frontmatter.metadata` as raw YAML directly inside the editor. In edit mode, valid changes are autosaved via the existing 800 ms debounce pipeline. In the create-card dialog, metadata is staged locally and included in the card payload when the dialog is saved; the Save button is disabled while the YAML draft is invalid. Invalid YAML is never persisted — it stays as local draft text with an inline error message until corrected.
+
 - **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk })`; process handlers receive serialized event JSON on stdin only; per-handler failures are logged while later matches continue.
 
 - **Async plugin option-schema resolution helper**: Plugin settings discovery now resolves sync/async `optionsSchema()` metadata before it reaches SDK/UI/API/CLI/MCP consumers, and plugin authors can use the shared SDK helper to populate schema or UI values from runtime data such as the live available-event catalog.

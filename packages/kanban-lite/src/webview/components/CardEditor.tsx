@@ -45,6 +45,7 @@ interface CardEditorProps {
   onClearLogs?: () => void
   logsFilter?: import('../../shared/types').CardDisplaySettings['logsFilter']
   onLogsFilterChange?: (filter: NonNullable<import('../../shared/types').CardDisplaySettings['logsFilter']>) => void
+  canUpdateMetadata?: boolean
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -819,7 +820,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange, canUpdateMetadata = true }: CardEditorProps) {
   const { cardSettings, boards, currentBoard, setCardSettings } = useStore()
   const pinnedMetadataKeys = useMemo(
     () => boards.find(b => b.id === currentBoard)?.metadata ?? [],
@@ -1196,6 +1197,8 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 onDeleteChecklistItem={onDeleteChecklistItem}
                 onCheckChecklistItem={onCheckChecklistItem}
                 onUncheckChecklistItem={onUncheckChecklistItem}
+                currentMetadata={currentFrontmatter.metadata}
+                onMetadataChange={canUpdateMetadata ? (metadata) => handleFrontmatterUpdate({ metadata }) : undefined}
               />
             </section>
           </div>

@@ -160,6 +160,12 @@ export interface TaskCardActionPermissionsReadModel {
   byKey?: Record<string, TaskCardActionPermissionRecord>
 }
 
+/** Metadata capability envelope resolved by the server for the current caller. */
+export interface TaskMetadataPermissionsReadModel {
+  /** `true` when the caller may edit card metadata (requires `card.update`). */
+  update: boolean
+}
+
 /**
  * Server-owned capability envelope for a task read model.
  *
@@ -177,6 +183,8 @@ export interface TaskPermissionsReadModel {
   checklist: TaskChecklistPermissionsReadModel
   /** Named card-action affordances for the current caller. */
   cardAction: TaskCardActionPermissionsReadModel
+  /** Metadata affordances for the current caller. */
+  metadata: TaskMetadataPermissionsReadModel
 }
 
 /**

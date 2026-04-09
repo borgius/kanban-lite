@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createAjv } from '@jsonforms/core'
+import type Ajv from 'ajv'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Card, CardFormAttachment, CardSortOption, CardTask, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug, formatFormDisplayName } from '../../../shared/types'
@@ -26,7 +27,7 @@ export function getActiveCardStateFilePath(ctx: SDKContext): string {
   return path.join(ctx.kanbanDir, '.active-card.json')
 }
 
-export const formAjv = createAjv({ allErrors: true, strict: false })
+export const formAjv: Ajv = createAjv({ allErrors: true, strict: false })
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -404,6 +405,9 @@ export async function buildTaskPermissionsReadModel(ctx: SDKContext, card: Omit<
     cardAction: {
       trigger: actionPermissions.some(entry => entry.trigger),
       ...(actionEntries.length > 0 ? { byKey: actionByKey } : {}),
+    },
+    metadata: {
+      update: await ctx.canPerformAction('card.update', baseContext),
     },
   }
 }

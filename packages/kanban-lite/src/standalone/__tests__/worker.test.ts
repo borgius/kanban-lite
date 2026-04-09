@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as authPluginModule from '../../../../kl-plugin-auth/src/index'
 import * as cloudflareProviderModule from '../../../../kl-plugin-cloudflare/src/index'
 import {
   configToSettings,
@@ -14,9 +15,10 @@ import {
   writeConfig,
 } from '../../shared/config'
 import type { StorageEngine } from '../../sdk/plugins/types'
+import { runtimeRequire as pluginLoaderRequire } from '../../sdk/plugins/plugin-loader'
 import { resolveCapabilityBag } from '../../sdk/plugins'
 import { readConfigRepositoryDocument } from '../../sdk/modules/configRepository'
-import { resetRuntimeHost } from '../../shared/env'
+import { getRuntimeHost, resetRuntimeHost } from '../../shared/env'
 import { createCloudflareWorkerBootstrap } from '../../sdk/env'
 import {
   buildCallbackHandlerRevisionInput,
@@ -193,6 +195,159 @@ describe('Cloudflare worker entrypoint', () => {
 
     expect(response.status).toBe(501)
     await expect(response.text()).resolves.toContain('WebSocket upgrades are not supported')
+  })
+
+  it('serves health checks with the built-in cloudflare storage provider aliases and no explicit module registry entry', async () => {
+    const workspaceRoot = '/virtual/worker-built-in-cloudflare'
+    const database = new FakeCallbackD1Database()
+    const bucket = {
+      async put() {
+        return undefined
+      },
+      async get() {
+        return null
+      },
+    }
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir: `${workspaceRoot}/.kanban`,
+      bootstrap: createCloudflareWorkerBootstrap({
+        config: {
+          ...createWorkerBootstrapConfig(),
+          plugins: {
+            ...createWorkerBootstrapConfig().plugins,
+            'card.storage': { provider: 'cloudflare' },
+            'attachment.storage': { provider: 'cloudflare' },
+            'config.storage': { provider: 'cloudflare' },
+            'webhook.delivery': { provider: 'none' },
+          },
+        },
+        topology: {
+          configStorage: {
+            bindingHandles: {
+              database: 'KANBAN_DB',
+              attachments: 'KANBAN_BUCKET',
+            },
+          },
+        },
+      }),
+      moduleRegistry: {},
+    })
+
+    const response = await handler(new Request('https://example.test/api/health'), {
+      KANBAN_DB: database,
+      KANBAN_BUCKET: bucket,
+    })
+
+    expect(response.status).toBe(200)
+  })
+
+  it('serves health checks when the plugin loader runtime lacks require.resolve()', async () => {
+    const workspaceRoot = '/virtual/worker-built-in-cloudflare-no-resolve'
+    const database = new FakeCallbackD1Database()
+    const bucket = {
+      async put() {
+        return undefined
+      },
+      async get() {
+        return null
+      },
+    }
+    const originalResolve = pluginLoaderRequire.resolve
+
+    pluginLoaderRequire.resolve = ((request: string) => {
+      throw new Error(`REQUEST:${request}`)
+    }) as typeof pluginLoaderRequire.resolve
+
+    try {
+      const handler = createCloudflareWorkerFetchHandler({
+        kanbanDir: `${workspaceRoot}/.kanban`,
+        bootstrap: createCloudflareWorkerBootstrap({
+          config: {
+            ...createWorkerBootstrapConfig(),
+            plugins: {
+              ...createWorkerBootstrapConfig().plugins,
+              'card.storage': { provider: 'cloudflare' },
+              'attachment.storage': { provider: 'cloudflare' },
+              'config.storage': { provider: 'cloudflare' },
+              'webhook.delivery': { provider: 'none' },
+            },
+          },
+          topology: {
+            configStorage: {
+              bindingHandles: {
+                database: 'KANBAN_DB',
+                attachments: 'KANBAN_BUCKET',
+              },
+            },
+          },
+        }),
+        moduleRegistry: {
+          'kl-plugin-auth': authPluginModule,
+        },
+      })
+
+      const response = await handler(new Request('https://example.test/api/health'), {
+        KANBAN_DB: database,
+        KANBAN_BUCKET: bucket,
+      })
+
+      const body = await response.text()
+      const runtimeModuleAvailable = Boolean(getRuntimeHost()?.resolveExternalModule?.('kl-plugin-cloudflare'))
+
+      if (response.status !== 200) {
+        throw new Error(`status=${response.status} runtimeModuleAvailable=${runtimeModuleAvailable} body=${body}`)
+      }
+
+      expect(response.status).toBe(200)
+    } finally {
+      pluginLoaderRequire.resolve = originalResolve
+    }
+  })
+
+  it('syncs standalone webview messages over HTTP when websocket upgrades are unavailable', async () => {
+    const workspaceRoot = createTempWorkspaceRoot()
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir: path.join(workspaceRoot, '.kanban'),
+      bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
+    })
+
+    const response = await handler(new Request('https://example.test/api/webview-sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          { type: 'ready' },
+          { type: 'openSettings' },
+        ],
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+
+    const body = await response.json() as {
+      ok: boolean
+      data: { messages: Array<Record<string, unknown>> }
+    }
+
+    expect(body.ok).toBe(true)
+
+    const initMessages = body.data.messages.filter((message) => message.type === 'init')
+    expect(initMessages.length).toBeGreaterThan(0)
+    expect(initMessages.at(-1)).toMatchObject({
+      type: 'init',
+      cards: [],
+    })
+    expect(body.data.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'showSettings',
+        settings: expect.objectContaining({
+          defaultStatus: expect.any(String),
+        }),
+      }),
+    ]))
   })
 
   it('fails closed during request handling when callback.runtime module handlers are missing from the Worker registry', async () => {

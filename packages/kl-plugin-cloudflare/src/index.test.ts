@@ -127,6 +127,10 @@ class FakeD1Database {
   executeRun(query: string, values: unknown[]): { success: true; meta: { changes: number } } {
     const normalized = normalizeQuery(query)
 
+    if (normalized.startsWith('create table if not exists') || normalized.startsWith('create index if not exists')) {
+      return { success: true, meta: { changes: 0 } }
+    }
+
     if (normalized.startsWith('insert into cards')) {
       const [cardId, boardId, status, cardJson] = values as [string, string, string, string]
       this.cards.set(`${boardId}:${cardId}`, { boardId, cardId, status, cardJson })
@@ -304,6 +308,12 @@ class AsyncFakeD1Database {
   }
 }
 
+class AsyncExecRejectingD1Database extends AsyncFakeD1Database {
+  override async exec(_query: string): Promise<{ success: true }> {
+    throw new Error('D1_EXEC_ERROR: Error in line 1: CREATE TABLE IF NOT EXISTS cards (: incomplete input: SQLITE_ERROR')
+  }
+}
+
 class FakeR2ObjectBody {
   constructor(private readonly bytes: Uint8Array) {}
 
@@ -414,6 +424,23 @@ describe('kl-plugin-cloudflare', () => {
 
     await engine.deleteCard(card)
     await expect(engine.scanCards('/virtual/workspace/.kanban/boards/default', 'default')).resolves.toEqual([])
+  })
+
+  it('falls back to per-statement schema setup when D1 exec rejects multi-statement schema SQL', async () => {
+    const database = new AsyncExecRejectingD1Database()
+    const bucket = new FakeR2Bucket()
+    const worker = createWorkerContext(database, bucket)
+    const engine = createCardStoragePlugin(worker).createEngine('/virtual/workspace/.kanban')
+    const card = makeCard({ id: 'card-d1-fallback' })
+
+    await expect(engine.init()).resolves.toBeUndefined()
+    await expect(engine.writeCard(card)).resolves.toBeUndefined()
+    await expect(engine.scanCards('/virtual/workspace/.kanban/boards/default', 'default')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'card-d1-fallback',
+        status: 'todo',
+      }),
+    ])
   })
 
   it('round-trips config documents and card state through the shared D1 binding', async () => {

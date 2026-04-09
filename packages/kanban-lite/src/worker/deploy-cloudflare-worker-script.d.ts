@@ -30,6 +30,12 @@ declare module '../../../../scripts/deploy-cloudflare-worker.mjs' {
     plugins: string[]
     kanbanDir: string
     compatibilityDate: string
+    configStorageBindingHandles?: Record<string, string>
+    configStorageRevisionBinding?: string
+    d1Bindings?: Record<string, string>
+    r2Bindings?: Record<string, string>
+    queueProducers?: Record<string, string>
+    createResources?: boolean
     callbackQueue?: string
     callbackMaxBatchSize?: number
     callbackMaxBatchTimeout?: number
@@ -41,6 +47,13 @@ declare module '../../../../scripts/deploy-cloudflare-worker.mjs' {
     name: string
     config: Record<string, unknown>
     compatibilityDate: string
+    customDomains?: string[]
+    customDomainZoneName?: string
+    configStorageBindingHandles?: Record<string, string>
+    configStorageRevisionBinding?: string
+    resolvedD1Bindings?: Record<string, { name: string; id: string }>
+    resolvedR2Bindings?: Record<string, string>
+    resolvedQueueProducers?: Record<string, string>
     callbackQueue?: string
     callbackMaxBatchSize?: number
     callbackMaxBatchTimeout?: number

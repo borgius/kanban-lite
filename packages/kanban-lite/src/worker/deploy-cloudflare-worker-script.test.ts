@@ -41,6 +41,8 @@ function loadDeployCloudflareWorkerScript(): Promise<{
     name: string
     config: Record<string, unknown>
     compatibilityDate: string
+    customDomains?: string[]
+    customDomainZoneName?: string
     configStorageBindingHandles?: Record<string, string>
     configStorageRevisionBinding?: string
     callbackQueue?: string
@@ -65,6 +67,10 @@ function createTempDir(): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-lite-worker-script-'))
   tempDirs.push(tempDir)
   return tempDir
+}
+
+function readImportSpecifiers(source: string): string[] {
+  return [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1])
 }
 
 afterEach(() => {
@@ -200,10 +206,10 @@ describe('deploy-cloudflare-worker callback module contract', () => {
 
     expect(entrySource).toContain('queue: createCloudflareWorkerQueueHandler')
     expect(entrySource).toContain('sdkModule: sdkRuntimeModule')
-    expect(entrySource).toContain('"kl-plugin-cloudflare": moduleRegistryEntry')
     expect(entrySource).toContain(JSON.stringify('./callbacks/deliver.ts'))
     expect(entrySource).toMatch(/"bindingHandles": \{\s+"database": "KANBAN_DB",\s+"callbacks": "KANBAN_QUEUE"\s+\}/)
     expect(entrySource).toMatch(/"revisionSource": \{\s+"kind": "binding",\s+"binding": "KANBAN_CONFIG_REVISION"\s+\}/)
+    expect(entrySource).not.toContain('packages/kl-plugin-cloudflare/src/index.ts')
     expect(entrySource).not.toContain('from "./workspace/callbacks/disabled.ts"')
     expect(entrySource).not.toContain('"./callbacks/disabled.ts": moduleRegistryEntry')
 
@@ -211,12 +217,53 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const wranglerSource = fs.readFileSync(wranglerConfigPath, 'utf8')
 
     expect(wranglerSource).toContain('compatibility_flags = ["nodejs_compat"]')
+    expect(wranglerSource).toContain('workers_dev = true')
     expect(wranglerSource).toContain('[[queues.consumers]]')
     expect(wranglerSource).toContain('queue = "kanban-callbacks"')
     expect(wranglerSource).toContain('max_batch_size = 1')
     expect(wranglerSource).toContain('max_batch_timeout = 0')
     expect(wranglerSource).toContain('max_retries = 3')
     expect(wranglerSource).toContain('dead_letter_queue = "kanban-callbacks-dlq"')
+  })
+
+  it('generates import specifiers that resolve back to the source files from macOS temp directories', async () => {
+    const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const entryPath = await createGeneratedWorker(tempDir, {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+        plugins: {
+          'config.storage': { provider: 'cloudflare' },
+        },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+      configStorageBindingHandles: {
+        database: 'KANBAN_DB',
+      },
+    })
+
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    const entryDir = path.dirname(entryPath)
+    const specifiers = readImportSpecifiers(entrySource)
+
+    expect(specifiers.length).toBeGreaterThan(0)
+
+    for (const specifier of specifiers) {
+      const resolved = fs.realpathSync.native(path.resolve(entryDir, specifier))
+      expect(fs.existsSync(resolved)).toBe(true)
+    }
   })
 
   it('does not activate Cloudflare queue wiring for non-cloudflare callback providers', async () => {
@@ -271,6 +318,63 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const wranglerSource = fs.readFileSync(wranglerConfigPath, 'utf8')
 
     expect(wranglerSource).toContain('compatibility_flags = ["nodejs_compat"]')
+    expect(wranglerSource).toContain('workers_dev = true')
     expect(wranglerSource).not.toContain('[[queues.consumers]]')
+  })
+
+  it('emits deduplicated custom-domain routes in the generated Wrangler config', async () => {
+    const { createGeneratedWranglerConfig } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+
+    const wranglerConfigPath = await createGeneratedWranglerConfig(tempDir, {
+      name: 'kanban-test-worker',
+      compatibilityDate: '2026-04-05',
+      customDomains: [' KK.IncidentMidn.com ', 'kk.incidentmidn.com'],
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+      },
+    })
+
+    const wranglerSource = fs.readFileSync(wranglerConfigPath, 'utf8')
+
+    expect(wranglerSource.match(/\[\[routes\]\]/g)).toHaveLength(1)
+    expect(wranglerSource).toContain('pattern = "kk.incidentmidn.com"')
+    expect(wranglerSource).toContain('custom_domain = true')
+    expect(wranglerSource).toContain('zone_name = "incidentmidn.com"')
+  })
+
+  it('rejects invalid custom-domain values before generating Wrangler config', async () => {
+    const { createGeneratedWranglerConfig } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+
+    await expect(createGeneratedWranglerConfig(tempDir, {
+      name: 'kanban-test-worker',
+      compatibilityDate: '2026-04-05',
+      customDomains: ['https://kk.incidentmidn.com'],
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+      },
+    })).rejects.toThrow(/custom domains must be concrete hostnames/i)
+  })
+
+  it('rejects custom-domain zone names that do not match the configured hostname', async () => {
+    const { createGeneratedWranglerConfig } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+
+    await expect(createGeneratedWranglerConfig(tempDir, {
+      name: 'kanban-test-worker',
+      compatibilityDate: '2026-04-05',
+      customDomains: ['kk.incidentmidn.com'],
+      customDomainZoneName: 'example.com',
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+      },
+    })).rejects.toThrow(/does not belong to the configured zone/i)
   })
 })

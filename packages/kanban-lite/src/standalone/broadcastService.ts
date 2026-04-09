@@ -158,6 +158,10 @@ async function buildClientInitMessage(ctx: StandaloneContext, authContext?: Auth
   }
 }
 
+export async function buildScopedInitMessage(ctx: StandaloneContext, authContext?: AuthContext): Promise<unknown> {
+  return buildClientInitMessage(ctx, authContext)
+}
+
 async function buildClientCardsUpdatedMessage(ctx: StandaloneContext, authContext?: AuthContext): Promise<unknown> {
   return {
     type: 'cardsUpdated',

@@ -44,6 +44,12 @@ export function createGeneratedWorker(tempDir: string, options: {
   plugins: string[]
   kanbanDir: string
   compatibilityDate: string
+  configStorageBindingHandles?: Record<string, string>
+  configStorageRevisionBinding?: string
+  d1Bindings?: Record<string, string>
+  r2Bindings?: Record<string, string>
+  queueProducers?: Record<string, string>
+  createResources?: boolean
   callbackQueue?: string
   callbackMaxBatchSize?: number
   callbackMaxBatchTimeout?: number
@@ -55,6 +61,13 @@ export function createGeneratedWranglerConfig(tempDir: string, options: {
   name: string
   config: Record<string, unknown>
   compatibilityDate: string
+  customDomains?: string[]
+  customDomainZoneName?: string
+  configStorageBindingHandles?: Record<string, string>
+  configStorageRevisionBinding?: string
+  resolvedD1Bindings?: Record<string, { name: string; id: string }>
+  resolvedR2Bindings?: Record<string, string>
+  resolvedQueueProducers?: Record<string, string>
   callbackQueue?: string
   callbackMaxBatchSize?: number
   callbackMaxBatchTimeout?: number

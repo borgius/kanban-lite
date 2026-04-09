@@ -1,5 +1,6 @@
 node_modules
 .env
+.env.cloudflare
 dist
 out
 .DS_Store

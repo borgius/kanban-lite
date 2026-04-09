@@ -37,8 +37,6 @@ import {
   type ConfigDocument,
   type JsonRecord,
   type MaybePromise,
-  sdkRuntime,
-  runtimeRequire,
 } from './types'
 
 export const configDocumentCache = new Map<string, ConfigDocument>()
@@ -506,6 +504,22 @@ export function getAttachmentsBucket(worker: CloudflareWorkerProviderContext | n
   return requireWorkerContext(worker, capability).requireR2<CloudflareR2Bucket>('attachments')
 }
 
+const CREATE_SCHEMA_STATEMENTS = CREATE_SCHEMA_SQL
+  .split(';')
+  .map((statement) => statement.trim())
+  .filter((statement) => statement.length > 0)
+
+function shouldRetrySchemaWithPreparedStatements(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /D1_EXEC_ERROR|SQLITE_ERROR|incomplete input|syntax error/i.test(message)
+}
+
+async function applySchemaWithPreparedStatements(database: CloudflareD1Database): Promise<void> {
+  for (const statement of CREATE_SCHEMA_STATEMENTS) {
+    await database.prepare(statement).run()
+  }
+}
+
 export function ensureSchema(database: CloudflareD1Database): MaybePromise<void> {
   const existing = schemaReady.get(database)
   if (existing === true) return
@@ -513,16 +527,36 @@ export function ensureSchema(database: CloudflareD1Database): MaybePromise<void>
     return existing
   }
 
-  const result = database.exec(CREATE_SCHEMA_SQL)
-  if (isPromiseLike(result)) {
-    const pending = result.then(() => {
+  try {
+    const result = database.exec(CREATE_SCHEMA_SQL)
+    if (isPromiseLike(result)) {
+      const pending = result
+        .catch(async (error) => {
+          if (!shouldRetrySchemaWithPreparedStatements(error)) {
+            throw error
+          }
+          await applySchemaWithPreparedStatements(database)
+        })
+        .then(() => {
+          schemaReady.set(database, true)
+        })
+      schemaReady.set(database, pending)
+      return pending
+    }
+
+    schemaReady.set(database, true)
+    return
+  } catch (error) {
+    if (!shouldRetrySchemaWithPreparedStatements(error)) {
+      throw error
+    }
+
+    const pending = applySchemaWithPreparedStatements(database).then(() => {
       schemaReady.set(database, true)
     })
     schemaReady.set(database, pending)
     return pending
   }
-
-  schemaReady.set(database, true)
 }
 
 export function toUint8Array(value: string | Uint8Array | ArrayBuffer): Uint8Array {

@@ -22,32 +22,8 @@ const defaultCompatibilityFlags = ['nodejs_compat']
 const nodeConsole = globalThis.console
 const nodeProcess = globalThis.process
 
-function printHelp() {
-  nodeConsole.log(`Usage:
-  node scripts/deploy-cloudflare-worker.mjs --name <worker-name> --config <path> [options]
-
-Options:
-  --name <name>                  Cloudflare Worker name
-  --config <path>                Path to the .kanban.json file to embed
-  --plugin <package>             Plugin package to statically bundle (repeatable)
-  --kanban-dir <path>            Logical kanban dir for the Worker runtime (default: .kanban)
-  --config-storage-binding <logical=binding>
-                                 Bootstrap-owned Worker binding handle (repeatable)
-  --config-revision-binding <binding>
-                                 Worker binding that exposes the current config revision
-  --callback-queue <name>        Queue name for enabled callback.runtime module handlers
-  --callback-max-batch-size <n>  Queue consumer max batch size (default: 1)
-  --callback-max-batch-timeout <n>
-                                 Queue consumer max batch timeout seconds (default: 0)
-  --callback-max-retries <n>     Queue consumer max retries (default: 3)
-  --callback-dead-letter-queue <name>
-                                 Optional dead-letter queue name for callback delivery
-  --compatibility-date <date>    Wrangler compatibility date (default: ${defaultCompatibilityDate})
-  --skip-build                   Skip pnpm run build:worker
-  --dry-run                      Print generated paths and wrangler command without deploying
-  --help                         Show this help
-`)
-}
+import { printHelp, parseArgs, runDeployInteractive } from './lib/deploy-prompts.mjs'
+import { ensureD1Database, findD1DatabaseByName, ensureR2Bucket, ensureQueue } from './lib/cloudflare-resources.mjs'
 
 function fail(message) {
   nodeConsole.error(message)
@@ -65,142 +41,23 @@ function run(command, args, cwd) {
   }
 }
 
+function resolveRealPath(targetPath) {
+  try {
+    return fs.realpathSync.native(targetPath)
+  } catch {
+    return path.resolve(targetPath)
+  }
+}
+
 function toImportSpecifier(fromDir, targetPath) {
-  const relative = path.relative(fromDir, targetPath).split(path.sep).join('/')
+  const relative = path.relative(
+    resolveRealPath(fromDir),
+    resolveRealPath(targetPath),
+  ).split(path.sep).join('/')
   return relative.startsWith('.') ? relative : `./${relative}`
 }
 
-function parseIntegerOption(value, flag, minimum = 0) {
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < minimum) {
-    fail(`${flag} must be an integer greater than or equal to ${minimum}`)
-  }
-  return parsed
-}
 
-function parseBindingHandleOption(value, flag) {
-  const separatorIndex = typeof value === 'string' ? value.indexOf('=') : -1
-  if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
-    fail(`${flag} must use the format <logical-handle>=<binding-name>`)
-  }
-
-  const handleName = value.slice(0, separatorIndex).trim()
-  const bindingName = value.slice(separatorIndex + 1).trim()
-  if (!handleName || !bindingName) {
-    fail(`${flag} must use the format <logical-handle>=<binding-name>`)
-  }
-
-  return { handleName, bindingName }
-}
-
-function parseArgs(argv) {
-  const args = {
-    plugins: [],
-    kanbanDir: '.kanban',
-    compatibilityDate: defaultCompatibilityDate,
-    configStorageBindingHandles: {},
-    configStorageRevisionBinding: undefined,
-    callbackQueue: undefined,
-    callbackMaxBatchSize: undefined,
-    callbackMaxBatchTimeout: undefined,
-    callbackMaxRetries: undefined,
-    callbackDeadLetterQueue: undefined,
-    dryRun: false,
-    skipBuild: false,
-  }
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    if (arg === '--help') {
-      args.help = true
-      continue
-    }
-    if (arg === '--dry-run') {
-      args.dryRun = true
-      continue
-    }
-    if (arg === '--skip-build') {
-      args.skipBuild = true
-      continue
-    }
-    if (arg === '--plugin') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --plugin')
-      args.plugins.push(value)
-      continue
-    }
-    if (arg === '--name') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --name')
-      args.name = value
-      continue
-    }
-    if (arg === '--config') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --config')
-      args.configPath = value
-      continue
-    }
-    if (arg === '--kanban-dir') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --kanban-dir')
-      args.kanbanDir = value
-      continue
-    }
-    if (arg === '--config-storage-binding') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --config-storage-binding')
-      const { handleName, bindingName } = parseBindingHandleOption(value, '--config-storage-binding')
-      args.configStorageBindingHandles[handleName] = bindingName
-      continue
-    }
-    if (arg === '--config-revision-binding') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --config-revision-binding')
-      args.configStorageRevisionBinding = value
-      continue
-    }
-    if (arg === '--callback-queue') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --callback-queue')
-      args.callbackQueue = value
-      continue
-    }
-    if (arg === '--callback-max-batch-size') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --callback-max-batch-size')
-      args.callbackMaxBatchSize = parseIntegerOption(value, '--callback-max-batch-size', 1)
-      continue
-    }
-    if (arg === '--callback-max-batch-timeout') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --callback-max-batch-timeout')
-      args.callbackMaxBatchTimeout = parseIntegerOption(value, '--callback-max-batch-timeout', 0)
-      continue
-    }
-    if (arg === '--callback-max-retries') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --callback-max-retries')
-      args.callbackMaxRetries = parseIntegerOption(value, '--callback-max-retries', 0)
-      continue
-    }
-    if (arg === '--callback-dead-letter-queue') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --callback-dead-letter-queue')
-      args.callbackDeadLetterQueue = value
-      continue
-    }
-    if (arg === '--compatibility-date') {
-      const value = argv[++i]
-      if (!value) fail('Missing value for --compatibility-date')
-      args.compatibilityDate = value
-      continue
-    }
-    fail(`Unknown argument: ${arg}`)
-  }
-
-  return args
-}
 
 function resolvePluginSource(packageName) {
   const localSource = path.join(repoRoot, 'packages', packageName, 'src', 'index.ts')
@@ -239,6 +96,86 @@ function normalizeBuildErrorMessage(error) {
   }
 
   return error instanceof Error ? error.message : String(error)
+}
+
+function normalizeCustomDomain(domain) {
+  if (typeof domain !== 'string') {
+    return null
+  }
+
+  const normalized = domain.trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  if (normalized.includes('://') || normalized.includes('/') || normalized.includes('*')) {
+    throw new Error(`Custom domains must be concrete hostnames without schemes, wildcards, or paths. Received: ${domain}`)
+  }
+
+  if (!/^[a-z0-9.-]+$/.test(normalized)) {
+    throw new Error(`Custom domains may contain only letters, numbers, dots, and hyphens. Received: ${domain}`)
+  }
+
+  return normalized
+}
+
+function normalizeCustomDomainList(customDomains) {
+  const normalizedDomains = []
+  const seen = new Set()
+
+  for (const candidate of customDomains ?? []) {
+    const normalized = normalizeCustomDomain(candidate)
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    normalizedDomains.push(normalized)
+  }
+
+  return normalizedDomains
+}
+
+function inferCustomDomainZoneName(customDomains) {
+  const normalizedDomains = normalizeCustomDomainList(customDomains)
+  if (normalizedDomains.length === 0) {
+    return null
+  }
+
+  const inferredZones = new Set(
+    normalizedDomains.map((domain) => {
+      const parts = domain.split('.').filter(Boolean)
+      if (parts.length < 2) {
+        throw new Error(`Custom domains must contain at least a zone and top-level domain. Received: ${domain}`)
+      }
+      return parts.length === 2 ? parts.join('.') : parts.slice(1).join('.')
+    }),
+  )
+
+  if (inferredZones.size > 1) {
+    throw new Error('Multiple custom domains resolved to different zone names. Pass --custom-domain-zone <zone> to disambiguate the target Cloudflare zone.')
+  }
+
+  return [...inferredZones][0] ?? null
+}
+
+function resolveCustomDomainZoneName(customDomains, customDomainZoneName) {
+  const normalizedDomains = normalizeCustomDomainList(customDomains)
+  if (normalizedDomains.length === 0) {
+    return null
+  }
+
+  const zoneName = normalizeCustomDomain(customDomainZoneName) ?? inferCustomDomainZoneName(normalizedDomains)
+  if (!zoneName) {
+    return null
+  }
+
+  for (const domain of normalizedDomains) {
+    if (domain !== zoneName && !domain.endsWith(`.${zoneName}`)) {
+      throw new Error(`Custom domain '${domain}' does not belong to the configured zone '${zoneName}'.`)
+    }
+  }
+
+  return zoneName
 }
 
 async function loadCloudflareWorkerSdk() {
@@ -292,11 +229,6 @@ function getCapabilityProvider(config, capability) {
   return typeof selection?.provider === 'string' && selection.provider.trim()
     ? selection.provider.trim()
     : null
-}
-
-function requiresBundledCloudflareProvider(config) {
-  return getCapabilityProvider(config, 'config.storage') === 'cloudflare'
-    || getCapabilityProvider(config, 'callback.runtime') === 'cloudflare'
 }
 
 export async function buildCloudflareCallbackModuleBundlePlan(options) {
@@ -412,11 +344,7 @@ export async function createGeneratedWorker(tempDir, options) {
   }
   const registryEntries = []
   let registryImportIndex = 0
-  const pluginNames = [...options.plugins]
-
-  if (requiresBundledCloudflareProvider(options.config) && !pluginNames.includes('kl-plugin-cloudflare')) {
-    pluginNames.unshift('kl-plugin-cloudflare')
-  }
+  const pluginNames = [...options.plugins].filter((pluginName) => pluginName !== 'kl-plugin-cloudflare')
 
   pluginNames.forEach((pluginName, index) => {
     const source = resolvePluginSource(pluginName)
@@ -460,6 +388,40 @@ ${workerExports.join(',\n')}
   return entryPath
 }
 
+function renderD1BindingBlocks(bindings) {
+  if (!bindings || Object.keys(bindings).length === 0) return ''
+  return Object.entries(bindings)
+    .map(([binding, { name, id }]) => `
+[[d1_databases]]
+binding = ${JSON.stringify(binding)}
+database_name = ${JSON.stringify(name)}
+database_id = ${JSON.stringify(id)}
+`)
+    .join('')
+}
+
+function renderR2BindingBlocks(bindings) {
+  if (!bindings || Object.keys(bindings).length === 0) return ''
+  return Object.entries(bindings)
+    .map(([binding, name]) => `
+[[r2_buckets]]
+binding = ${JSON.stringify(binding)}
+bucket_name = ${JSON.stringify(name)}
+`)
+    .join('')
+}
+
+function renderQueueProducerBlocks(producers) {
+  if (!producers || Object.keys(producers).length === 0) return ''
+  return Object.entries(producers)
+    .map(([binding, queue]) => `
+[[queues.producers]]
+binding = ${JSON.stringify(binding)}
+queue = ${JSON.stringify(queue)}
+`)
+    .join('')
+}
+
 function renderQueueConsumerConfigBlock(queueConsumer) {
   if (!queueConsumer) {
     return ''
@@ -481,30 +443,56 @@ function renderQueueConsumerConfigBlock(queueConsumer) {
   return `${lines.join('\n')}\n`
 }
 
+function renderCustomDomainRouteBlocks(customDomains, customDomainZoneName) {
+  const normalizedDomains = normalizeCustomDomainList(customDomains)
+  if (normalizedDomains.length === 0) {
+    return ''
+  }
+
+  const zoneName = resolveCustomDomainZoneName(normalizedDomains, customDomainZoneName)
+
+  return normalizedDomains
+    .map((domain) => `
+[[routes]]
+pattern = ${JSON.stringify(domain)}
+custom_domain = true
+zone_name = ${JSON.stringify(zoneName)}
+`)
+    .join('')
+}
+
 export async function createGeneratedWranglerConfig(tempDir, options) {
   const queueConsumer = await buildCloudflareCallbackQueueConsumerConfig(options)
   const config = `name = ${JSON.stringify(options.name)}
 compatibility_date = ${JSON.stringify(options.compatibilityDate)}
 compatibility_flags = ${JSON.stringify(defaultCompatibilityFlags)}
+workers_dev = true
 
 [assets]
 directory = ${JSON.stringify(standaloneAssetsDir)}
 binding = "ASSETS"
-${renderQueueConsumerConfigBlock(queueConsumer)}`
+${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}`
   const configPath = path.join(tempDir, 'wrangler.toml')
   fs.writeFileSync(configPath, config, 'utf8')
   return configPath
 }
 
 async function main() {
-  const options = parseArgs(nodeProcess.argv.slice(2))
+  let options = parseArgs(nodeProcess.argv.slice(2))
   if (options.help) {
     printHelp()
     return
   }
 
+  // Interactive mode when required args are missing
+  if (!options.name || !options.configPath) {
+    options = await runDeployInteractive(options)
+  }
+
   if (!options.name) fail('Missing required --name')
   if (!options.configPath) fail('Missing required --config')
+  options.customDomains = normalizeCustomDomainList(options.customDomains)
+  options.customDomainZoneName = resolveCustomDomainZoneName(options.customDomains, options.customDomainZoneName) ?? undefined
 
   const configPath = path.resolve(nodeProcess.cwd(), options.configPath)
   if (!fs.existsSync(configPath)) {
@@ -517,6 +505,36 @@ async function main() {
   }
 
   const embeddedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+
+  // Resolve D1/R2/Queue resources, optionally creating them via wrangler
+  const resolvedD1Bindings = {}
+  const resolvedR2Bindings = { ...options.r2Bindings }
+  const resolvedQueueProducers = { ...options.queueProducers }
+
+  for (const [binding, dbName] of Object.entries(options.d1Bindings ?? {})) {
+    if (options.createResources) {
+      resolvedD1Bindings[binding] = ensureD1Database(dbName)
+    } else {
+      const existing = findD1DatabaseByName(dbName)
+      if (!existing) fail(`D1 database not found: ${dbName}. Pass --create-resources to auto-create it.`)
+      resolvedD1Bindings[binding] = { id: existing.uuid, name: existing.name ?? dbName }
+    }
+  }
+
+  if (options.createResources) {
+    for (const bucketName of Object.values(options.r2Bindings ?? {})) {
+      ensureR2Bucket(bucketName)
+    }
+    for (const queueName of Object.values(options.queueProducers ?? {})) {
+      ensureQueue(queueName)
+    }
+    const callbacksBinding = options.configStorageBindingHandles?.callbacks
+    if (options.callbackQueue && callbacksBinding) {
+      ensureQueue(options.callbackQueue)
+      resolvedQueueProducers[callbacksBinding] ??= options.callbackQueue
+    }
+  }
+
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-lite-cloudflare-'))
   const callbackQueueConsumer = await buildCloudflareCallbackQueueConsumerConfig({
     ...options,
@@ -530,6 +548,9 @@ async function main() {
   const wranglerConfigPath = await createGeneratedWranglerConfig(tempDir, {
     ...options,
     config: embeddedConfig,
+    resolvedD1Bindings,
+    resolvedR2Bindings,
+    resolvedQueueProducers,
   })
 
   const wranglerArgs = ['wrangler', 'deploy', entryPath, '--config', wranglerConfigPath]
@@ -537,7 +558,10 @@ async function main() {
   if (options.dryRun) {
     nodeConsole.log(`Generated worker entry: ${entryPath}`)
     nodeConsole.log(`Generated wrangler config: ${wranglerConfigPath}`)
+    nodeConsole.log(fs.readFileSync(wranglerConfigPath, 'utf8'))
     nodeConsole.log(`Plugins: ${options.plugins.length > 0 ? options.plugins.join(', ') : '(none)'}`)
+    nodeConsole.log(`Custom domains: ${options.customDomains.length > 0 ? options.customDomains.join(', ') : '(none)'}`)
+    nodeConsole.log(`Custom domain zone: ${options.customDomainZoneName ?? '(auto)'}`)
     nodeConsole.log(`Callback queue consumer: ${callbackQueueConsumer ? JSON.stringify(callbackQueueConsumer) : '(disabled)'}`)
     nodeConsole.log(`\n$ npx ${wranglerArgs.join(' ')}`)
     return

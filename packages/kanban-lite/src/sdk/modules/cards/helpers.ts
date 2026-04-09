@@ -23,8 +23,30 @@ export interface ActiveCardState {
   updatedAt: string
 }
 
+const IGNORABLE_ACTIVE_CARD_STATE_ERROR_CODES = new Set([
+  'EPERM',
+  'EROFS',
+  'ENOSYS',
+  'ERR_ACCESS_DENIED',
+])
+
+const IGNORABLE_ACTIVE_CARD_STATE_ERROR_PATTERN = /operation not permitted|read-only file system|access denied|not implemented/i
+
 export function getActiveCardStateFilePath(ctx: SDKContext): string {
   return path.join(ctx.kanbanDir, '.active-card.json')
+}
+
+function shouldIgnoreActiveCardStatePersistenceError(error: unknown): boolean {
+  const code = typeof (error as { code?: unknown } | null)?.code === 'string'
+    ? (error as { code: string }).code
+    : ''
+
+  if (IGNORABLE_ACTIVE_CARD_STATE_ERROR_CODES.has(code)) {
+    return true
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  return IGNORABLE_ACTIVE_CARD_STATE_ERROR_PATTERN.test(message)
 }
 
 export const formAjv: Ajv = createAjv({ allErrors: true, strict: false })
@@ -428,8 +450,14 @@ export async function readActiveCardState(ctx: SDKContext): Promise<ActiveCardSt
 }
 
 export async function writeActiveCardState(ctx: SDKContext, state: ActiveCardState): Promise<void> {
-  await fs.mkdir(ctx.kanbanDir, { recursive: true })
-  await fs.writeFile(getActiveCardStateFilePath(ctx), JSON.stringify(state, null, 2), 'utf-8')
+  try {
+    await fs.mkdir(ctx.kanbanDir, { recursive: true })
+    await fs.writeFile(getActiveCardStateFilePath(ctx), JSON.stringify(state, null, 2), 'utf-8')
+  } catch (error) {
+    if (!shouldIgnoreActiveCardStatePersistenceError(error)) {
+      throw error
+    }
+  }
 }
 
 

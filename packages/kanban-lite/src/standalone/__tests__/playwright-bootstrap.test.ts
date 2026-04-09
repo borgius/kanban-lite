@@ -13,6 +13,7 @@ const expectedWaveOneScenarios = [
   { name: 'attachments-forms', templateDirName: 'attachments-forms', port: 4175 },
   { name: 'auth-visibility', templateDirName: 'auth-visibility', port: 4176 },
   { name: 'plugin-options', templateDirName: 'plugin-options', port: 4177 },
+  { name: 'card-drawer', templateDirName: 'card-drawer', port: 4178 },
 ] as const
 
 async function loadFixtureModule(): Promise<typeof import('../../../e2e/fixture')> {

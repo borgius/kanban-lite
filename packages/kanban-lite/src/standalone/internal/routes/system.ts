@@ -13,6 +13,7 @@ import {
 import { MIME_TYPES, jsonError, jsonOk, readBody } from '../../httpUtils'
 import type { StandaloneRequestContext } from '../common'
 import { buildProviderSummary, getContentType, resolveStaticFilePath, resolveWorkspacePath } from '../common'
+import { syncWebviewMessages } from '../webview-sync'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
@@ -86,6 +87,34 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
       currentBoard: ctx.currentBoardId ?? config.defaultBoard,
       workspaceRoot,
     })
+    return true
+  }
+
+  params = route('POST', '/api/webview-sync')
+  if (params) {
+    try {
+      const body = await readBody(req)
+      const rawMessages = Array.isArray(body.messages)
+        ? body.messages
+        : body.message !== undefined
+          ? [body.message]
+          : []
+
+      if (rawMessages.length === 0) {
+        jsonError(res, 400, 'messages must be a non-empty array')
+        return true
+      }
+
+      const messages = await syncWebviewMessages(ctx, rawMessages, extractAuthContext(req))
+      jsonOk(res, { messages })
+    } catch (err) {
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
+      } else {
+        jsonError(res, 400, String(err))
+      }
+    }
     return true
   }
 

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cloudflare deploy script custom domains**: `scripts/deploy-cloudflare-worker.mjs` now accepts repeatable `--custom-domain <hostname>` values plus `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` env defaults, supports an explicit `--custom-domain-zone` / `KANBAN_CF_CUSTOM_DOMAIN_ZONE` override, emits Worker `custom_domain` route blocks in the generated `wrangler.toml`, and keeps `workers_dev = true` so deployments can attach hostnames such as `kk.incidentmidn.com` without manual Wrangler edits or losing the default `*.workers.dev` URL.
+
 - **Meta tab — inline YAML metadata editor**: The shared card editor now includes a `Meta` tab that lets users edit `frontmatter.metadata` as raw YAML directly inside the editor. In edit mode, valid changes are autosaved via the existing 800 ms debounce pipeline. In the create-card dialog, metadata is staged locally and included in the card payload when the dialog is saved; the Save button is disabled while the YAML draft is invalid. Invalid YAML is never persisted — it stays as local draft text with an inline error message until corrected.
 
 - **First-party callback runtime plugin** (`kl-plugin-callback`): Added the shared `callback.runtime` plugin-settings flow with an ordered mixed `handlers[]` model for inline and subprocess handlers. Inline handlers are trusted same-runtime JavaScript invoked as `({ event, sdk })`; process handlers receive serialized event JSON on stdin only; per-handler failures are logged while later matches continue.
@@ -44,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Cloudflare Worker open-card HTTP sync**: Opening a card through the standalone Worker HTTP bridge now treats Worker-style `.active-card.json` write failures as non-fatal, so card preview/drawer loads no longer fail with `Error: operation not permitted` when the runtime has no writable local filesystem.
+
+- **Standalone Cloudflare Worker browser bootstrap**: The standalone browser shim now falls back to an HTTP webview-sync bridge when the Cloudflare Worker entrypoint returns `501` for `/ws`, so deployed boards load and keep handling user actions instead of hanging forever on `Loading...`.
 
 - **Plugin Options helper text now shows without focusing fields**: The shared Settings → Plugin Options form now surfaces schema-level descriptions and keeps field descriptions visible even before focus, so provider setup notes such as S3 environment-variable guidance are actually visible in the UI instead of hiding behind JSON Forms focus state.
 

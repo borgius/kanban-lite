@@ -113,6 +113,74 @@ afterEach(() => {
 })
 
 describe('standalone shim reconnect behavior', () => {
+  it('falls back to the HTTP bridge when websocket bootstrap cannot connect', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+
+    const firstSocket = MockWebSocket.instances[0]
+    firstSocket.emitClose()
+
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const fetchMock = vi.mocked(fetch)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/webview-sync',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      messages: [{ type: 'ready' }],
+    })
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'init',
+        columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+      }),
+      '*',
+    )
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'connectionStatus',
+        connected: true,
+        reconnecting: false,
+        fatal: false,
+        retryCount: 0,
+        maxRetries: 5,
+      }),
+      '*',
+    )
+  })
+
   it('retries after an unexpected close and replays the ready handshake on recovery', async () => {
     vi.useFakeTimers()
     const postMessageSpy = vi.fn()

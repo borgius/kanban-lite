@@ -8,6 +8,7 @@ if (!('acquireVsCodeApi' in window)) {
 
 const kbBase = (window as unknown as { __KB_BASE__?: string }).__KB_BASE__ ?? ''
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${kbBase}/ws`
+const HTTP_SYNC_URL = `${kbBase}/api/webview-sync`
 const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 4000] as const
 const MAX_RETRIES = RECONNECT_DELAYS_MS.length
 
@@ -21,6 +22,8 @@ let latestOpenCardMessage: string | null = null
 let reconnectAttemptCount = 0
 let reconnectTimer: number | null = null
 let allowReconnect = true
+let httpFallbackActive = false
+let httpFallbackActivation: Promise<boolean> | null = null
 
 function getDisconnectedSubmitErrorMessage(): string {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -40,6 +43,102 @@ function clearReconnectTimer() {
     window.clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+}
+
+function isSocketOpen(): boolean {
+  return connected && ws !== null && ws.readyState === WebSocket.OPEN
+}
+
+function parseCachedMessage(json: string | null): Record<string, unknown> | null {
+  if (!json) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    return parsed && typeof parsed.type === 'string' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function buildHttpSyncMessages(message: unknown): unknown[] {
+  const msg = message as { type?: unknown } | null
+  const replayedSwitchBoardMessage = parseCachedMessage(latestSwitchBoardMessage)
+  const replayedOpenCardMessage = parseCachedMessage(latestOpenCardMessage)
+  const messages: unknown[] = []
+
+  if (replayedSwitchBoardMessage && msg?.type !== 'switchBoard') {
+    messages.push(replayedSwitchBoardMessage)
+  }
+
+  if (
+    replayedOpenCardMessage
+    && msg?.type !== 'openCard'
+    && msg?.type !== 'switchBoard'
+    && msg?.type !== 'createBoard'
+  ) {
+    messages.push(replayedOpenCardMessage)
+  }
+
+  messages.push(message)
+  return messages
+}
+
+async function syncMessagesOverHttp(messages: unknown[]): Promise<void> {
+  const response = await fetch(HTTP_SYNC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  })
+
+  const payload = await response.json() as {
+    ok?: boolean
+    error?: string
+    data?: { messages?: unknown[] }
+  }
+
+  if (!response.ok || payload.ok !== true) {
+    throw new Error(payload.error ?? `HTTP sync failed with status ${response.status}`)
+  }
+
+  for (const message of payload.data?.messages ?? []) {
+    window.postMessage(message, '*')
+  }
+}
+
+async function activateHttpFallback(): Promise<boolean> {
+  if (httpFallbackActive) {
+    return true
+  }
+
+  if (httpFallbackActivation) {
+    return httpFallbackActivation
+  }
+
+  httpFallbackActivation = (async () => {
+    try {
+      await syncMessagesOverHttp(buildHttpSyncMessages({ type: 'ready' }))
+      httpFallbackActive = true
+      connected = true
+      clearReconnectTimer()
+      reconnectAttemptCount = 0
+      emitConnectionStatus({
+        connected: true,
+        reconnecting: false,
+        fatal: false,
+        retryCount: 0,
+        maxRetries: MAX_RETRIES,
+      })
+      return true
+    } catch {
+      return false
+    } finally {
+      httpFallbackActivation = null
+    }
+  })()
+
+  return httpFallbackActivation
 }
 
 function sendPendingBootstrapState(socket: WebSocket) {
@@ -66,7 +165,7 @@ function flushInitialPendingMessages(socket: WebSocket) {
 function scheduleReconnect(reason: string) {
   connected = false
 
-  if (!allowReconnect) {
+  if (!allowReconnect || httpFallbackActive || httpFallbackActivation) {
     return
   }
 
@@ -105,6 +204,10 @@ function scheduleReconnect(reason: string) {
 }
 
 function connect() {
+  if (httpFallbackActive) {
+    return
+  }
+
   const socket = new WebSocket(WS_URL)
   ws = socket
 
@@ -162,6 +265,15 @@ function connect() {
     }
 
     ws = null
+    if (!hasConnectedOnce && readyRequested) {
+      void activateHttpFallback().then((activated) => {
+        if (!activated && ws === null) {
+          scheduleReconnect('socket-closed')
+        }
+      })
+      return
+    }
+
     scheduleReconnect('socket-closed')
   })
 }
@@ -287,9 +399,17 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
 
     const json = JSON.stringify(message)
+    const syncMessages = buildHttpSyncMessages(message)
+
     if (msg.type === 'ready') {
       readyRequested = true
-      if (connected && ws && ws.readyState === WebSocket.OPEN) {
+      if (httpFallbackActive) {
+        void syncMessagesOverHttp(syncMessages).catch((err) => {
+          console.error('Standalone HTTP fallback failed:', err)
+        })
+        return
+      }
+      if (isSocketOpen()) {
         ws.send(json)
       }
       return
@@ -308,13 +428,19 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
 
     if (msg.type === 'switchBoard' || msg.type === 'openCard' || msg.type === 'closeCard') {
-      if (connected && ws && ws.readyState === WebSocket.OPEN) {
+      if (httpFallbackActive) {
+        void syncMessagesOverHttp(syncMessages).catch((err) => {
+          console.error('Standalone HTTP fallback failed:', err)
+        })
+        return
+      }
+      if (isSocketOpen()) {
         ws.send(json)
       }
       return
     }
 
-    if (msg.type === 'submitForm' && (!connected || !ws || ws.readyState !== WebSocket.OPEN)) {
+    if (msg.type === 'submitForm' && !httpFallbackActive && !isSocketOpen()) {
       window.postMessage({
         type: 'submitFormResult',
         callbackKey: msg.callbackKey,
@@ -323,7 +449,11 @@ function handleOpenAttachment(cardId: string, attachment: string) {
       return
     }
 
-    if (connected && ws && ws.readyState === WebSocket.OPEN) {
+    if (httpFallbackActive) {
+      void syncMessagesOverHttp(syncMessages).catch((err) => {
+        console.error('Standalone HTTP fallback failed:', err)
+      })
+    } else if (isSocketOpen()) {
       ws.send(json)
     } else if (!hasConnectedOnce) {
       pendingMessages.push(json)

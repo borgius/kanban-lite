@@ -91,9 +91,14 @@ export function getConfigStorageOptions(
 }
 
 export function createWorkerModuleRegistry(baseRegistry: WorkerModuleRegistry): WorkerModuleRegistry {
+  const bundledCloudflareProvider = baseRegistry.cloudflare
+    ?? baseRegistry['kl-plugin-cloudflare']
+    ?? bundledCloudflareProviderModule
+
   return {
     ...baseRegistry,
-    'kl-plugin-cloudflare': baseRegistry['kl-plugin-cloudflare'] ?? bundledCloudflareProviderModule,
+    cloudflare: bundledCloudflareProvider,
+    'kl-plugin-cloudflare': bundledCloudflareProvider,
   }
 }
 

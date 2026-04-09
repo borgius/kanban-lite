@@ -69,7 +69,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Event-driven pub/sub**: SDK events are dispatched through an EventEmitter2-based event bus with wildcard routing, powering webhooks, auth events, and custom subscriptions
 - **Explicit SDK unread/card-state APIs**: Advanced SDK consumers can inspect side-effect-free actor-scoped unread/open state with `getCardState()` / `getUnreadSummary()` and acknowledge it intentionally via `markCardOpened()` / `markCardRead()` without coupling unread semantics to `setActiveCard()` or the UI's active-card selection
 - **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
-- **Real-time updates**: WebSocket-powered live sync across clients
+- **Real-time updates**: WebSocket-powered live sync across clients, with an automatic HTTP sync fallback for standalone Cloudflare Worker deployments where `/ws` upgrades are unavailable
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
 - **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list even before a provider is enabled, reuse provider-authored JSON Forms `uiSchema` layouts for grouped sections, inline array editors, and code-enabled controls such as callback inline source, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
@@ -1793,6 +1793,12 @@ Board configuration is stored in `.kanban.json` at your project root. It support
 `customHeadHtml` injects raw HTML into the standalone board's `<head>` element — useful for analytics snippets, custom CSS, or guided-tour scripts. `customHeadHtmlFile` does the same but reads from a file path relative to the workspace root; when both are set, `customHeadHtmlFile` takes precedence.
 
 `basePath` enables subfolder deployments behind a reverse proxy. Set it to the URL prefix under which the board is served (e.g. `"/kanban"`) so that all asset URLs, the WebSocket endpoint, and API routes are correctly prefixed. Leave unset (or empty) for root-domain deployments.
+
+When you deploy the standalone UI through the Cloudflare Worker entrypoint, the browser now falls back to the same board/message bridge over HTTP when `/ws` upgrades are unavailable. You still lose live push fanout between tabs until WebSocket support lands in the Worker entrypoint, but the board loads normally and user actions continue to work.
+
+Card open/preview flows over that HTTP bridge now also fail soft when the Worker runtime refuses local `.active-card.json` writes, so previewing a card no longer breaks with `Error: operation not permitted` just because the runtime has no writable filesystem.
+
+The interactive `scripts/deploy-cloudflare-worker.mjs` flow also accepts repeatable `--custom-domain <hostname>` values (or `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` in `.env.cloudflare`) and emits Cloudflare Worker `custom_domain` route blocks in the generated `wrangler.toml`. Set `KANBAN_CF_CUSTOM_DOMAIN_ZONE` / `--custom-domain-zone <zone>` when you want to pin the target zone explicitly; otherwise the script infers it from the hostname. The generated config also keeps `workers_dev = true`, so env-driven deployments can attach hostnames like `kk.incidentmidn.com` without giving up the default `*.workers.dev` URL.
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 

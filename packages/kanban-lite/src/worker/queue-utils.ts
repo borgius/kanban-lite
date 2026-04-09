@@ -424,7 +424,18 @@ export function getConfigStorageOptions(bootstrap: CloudflareWorkerBootstrap | n
 }
 
 export function createWorkerModuleRegistry(baseRegistry: WorkerModuleRegistry): WorkerModuleRegistry {
-  return { ...baseRegistry }
+  const bundledCloudflareProvider = baseRegistry.cloudflare
+    ?? baseRegistry['kl-plugin-cloudflare']
+
+  if (!bundledCloudflareProvider) {
+    return { ...baseRegistry }
+  }
+
+  return {
+    ...baseRegistry,
+    cloudflare: bundledCloudflareProvider,
+    'kl-plugin-cloudflare': bundledCloudflareProvider,
+  }
 }
 
 export function resolveWorkerModule(requestCandidates: readonly string[], moduleRegistry: WorkerModuleRegistry, upstreamHost?: RuntimeHost): unknown {
